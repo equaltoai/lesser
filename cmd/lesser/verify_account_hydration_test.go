@@ -286,6 +286,7 @@ func TestRunVerifyAccountHydration(t *testing.T) {
 
 	require.Contains(t, output, "verify account-hydration complete")
 	require.Contains(t, output, "table: test-table")
+	require.Contains(t, output, "env: dev")
 	require.Contains(t, output, "aws_profile: Sim")
 	require.Contains(t, output, "checked: 2")
 	require.Contains(t, output, "agent_rows: 2")

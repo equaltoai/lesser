@@ -109,6 +109,7 @@ func runVerifyAccountHydration(argv []string) error {
 
 	fmt.Println("verify account-hydration complete")
 	fmt.Println("table:", summary.TableName)
+	fmt.Println("env:", summary.ResolvedEnv)
 	if resolvedProfile != "" {
 		fmt.Println("aws_profile:", resolvedProfile)
 	}

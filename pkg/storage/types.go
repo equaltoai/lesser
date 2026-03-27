@@ -548,16 +548,17 @@ type WalletCredential struct {
 
 // WalletChallenge represents a wallet authentication challenge
 type WalletChallenge struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Address   string    `json:"address"`
-	ChainID   int       `json:"chain_id"`
-	Nonce     string    `json:"nonce"`
-	Message   string    `json:"message"`
-	IssuedAt  time.Time `json:"issued_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Used      bool      `json:"used"`  // Set after first verification (wallet/verify)
-	Spent     bool      `json:"spent"` // Set after second verification (wallet/link)
+	ID                    string    `json:"id"`
+	Username              string    `json:"username"`
+	Address               string    `json:"address"`
+	ChainID               int       `json:"chain_id"`
+	Nonce                 string    `json:"nonce"`
+	Message               string    `json:"message"`
+	IssuedAt              time.Time `json:"issued_at"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	Used                  bool      `json:"used"`                             // Set after first verification (wallet/verify)
+	Spent                 bool      `json:"spent"`                            // Set after second verification (wallet/link)
+	RegistrationCompleted bool      `json:"registration_completed,omitempty"` // Set after account registration succeeds.
 }
 
 // WeeklyActivity represents aggregated weekly activity metrics

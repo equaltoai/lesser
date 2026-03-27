@@ -153,22 +153,17 @@ func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
 	challenge, err := authService.CreateWalletChallenge(context.Background(), address, 1, "alice")
 	require.NoError(t, err)
 
-	// Registration flow: wallet linking without an auth token must match the
-	// challenge ID that registration stored on the user record.
-	user := state.usersByUsername["alice"]
-	user.Metadata = map[string]interface{}{"registration_challenge_id": challenge.ID}
-	state.usersByUsername["alice"] = user
-
 	state.walletChallengesByID = map[string]storagemodels.WalletChallenge{
 		challenge.ID: {
-			ID:        challenge.ID,
-			Username:  challenge.Username,
-			Address:   challenge.Address,
-			ChainID:   challenge.ChainID,
-			Nonce:     challenge.Nonce,
-			Message:   challenge.Message,
-			IssuedAt:  challenge.IssuedAt,
-			ExpiresAt: challenge.ExpiresAt,
+			ID:                    challenge.ID,
+			Username:              challenge.Username,
+			Address:               challenge.Address,
+			ChainID:               challenge.ChainID,
+			Nonce:                 challenge.Nonce,
+			Message:               challenge.Message,
+			IssuedAt:              challenge.IssuedAt,
+			ExpiresAt:             challenge.ExpiresAt,
+			RegistrationCompleted: true,
 		},
 	}
 

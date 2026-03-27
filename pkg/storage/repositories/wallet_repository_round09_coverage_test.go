@@ -42,14 +42,15 @@ func TestWalletRepository_Round09_WalletChallenge_CRUD(t *testing.T) {
 	repo := NewWalletRepository(mockDB, "test-table", zap.NewNop(), newRound09CostService())
 
 	require.NoError(t, repo.StoreWalletChallenge(ctx, &storage.WalletChallenge{
-		ID:        "challenge-1",
-		Username:  "user-1",
-		Address:   "0xabc",
-		ChainID:   1,
-		Nonce:     "n",
-		Message:   "m",
-		IssuedAt:  baseTime,
-		ExpiresAt: baseTime.Add(time.Minute),
+		ID:                    "challenge-1",
+		Username:              "user-1",
+		Address:               "0xabc",
+		ChainID:               1,
+		Nonce:                 "n",
+		Message:               "m",
+		IssuedAt:              baseTime,
+		ExpiresAt:             baseTime.Add(time.Minute),
+		RegistrationCompleted: true,
 	}))
 
 	got, err := repo.GetWalletChallenge(ctx, "challenge-1")

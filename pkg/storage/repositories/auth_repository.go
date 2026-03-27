@@ -635,14 +635,15 @@ func (r *AuthRepository) GetWalletChallenge(ctx context.Context, challengeID str
 
 	// Convert to storage model
 	result := &storage.WalletChallenge{
-		ID:        model.ID,
-		Username:  model.Username,
-		Address:   model.Address,
-		ChainID:   model.ChainID,
-		Nonce:     model.Nonce,
-		Message:   model.Message,
-		IssuedAt:  model.IssuedAt,
-		ExpiresAt: model.ExpiresAt,
+		ID:                    model.ID,
+		Username:              model.Username,
+		Address:               model.Address,
+		ChainID:               model.ChainID,
+		Nonce:                 model.Nonce,
+		Message:               model.Message,
+		IssuedAt:              model.IssuedAt,
+		ExpiresAt:             model.ExpiresAt,
+		RegistrationCompleted: model.RegistrationCompleted,
 	}
 
 	r.logger.Debug("retrieved wallet challenge",

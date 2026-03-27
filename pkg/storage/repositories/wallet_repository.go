@@ -49,14 +49,15 @@ func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger, costS
 func (r *WalletRepository) StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error {
 	// Convert storage.WalletChallenge to models.WalletChallenge
 	model := &models.WalletChallenge{
-		ID:        challenge.ID,
-		Username:  challenge.Username,
-		Address:   challenge.Address,
-		ChainID:   challenge.ChainID,
-		Nonce:     challenge.Nonce,
-		Message:   challenge.Message,
-		IssuedAt:  challenge.IssuedAt,
-		ExpiresAt: challenge.ExpiresAt,
+		ID:                    challenge.ID,
+		Username:              challenge.Username,
+		Address:               challenge.Address,
+		ChainID:               challenge.ChainID,
+		Nonce:                 challenge.Nonce,
+		Message:               challenge.Message,
+		IssuedAt:              challenge.IssuedAt,
+		ExpiresAt:             challenge.ExpiresAt,
+		RegistrationCompleted: challenge.RegistrationCompleted,
 	}
 
 	// Update keys
@@ -90,14 +91,15 @@ func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID s
 
 	// Convert back to storage.WalletChallenge
 	challenge := &storage.WalletChallenge{
-		ID:        model.ID,
-		Username:  model.Username,
-		Address:   model.Address,
-		ChainID:   model.ChainID,
-		Nonce:     model.Nonce,
-		Message:   model.Message,
-		IssuedAt:  model.IssuedAt,
-		ExpiresAt: model.ExpiresAt,
+		ID:                    model.ID,
+		Username:              model.Username,
+		Address:               model.Address,
+		ChainID:               model.ChainID,
+		Nonce:                 model.Nonce,
+		Message:               model.Message,
+		IssuedAt:              model.IssuedAt,
+		ExpiresAt:             model.ExpiresAt,
+		RegistrationCompleted: model.RegistrationCompleted,
 	}
 
 	return challenge, nil

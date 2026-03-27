@@ -547,6 +547,7 @@ func populateRound08StructForCoverage(target any, idx int, baseTime time.Time) {
 		model.Message = "message"
 		model.IssuedAt = now
 		model.ExpiresAt = now.Add(5 * time.Minute)
+		model.RegistrationCompleted = true
 		_ = model.UpdateKeys()
 
 	case *models.WalletIndex:

@@ -6945,6 +6945,8 @@ components:
                     type: string
                 nonce:
                     type: string
+                registration_completed:
+                    type: boolean
                 spent:
                     type: boolean
                 used:

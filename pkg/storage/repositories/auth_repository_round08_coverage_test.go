@@ -350,14 +350,15 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 		)
 
 		require.NoError(t, repo.StoreWalletChallenge(ctx, &storage.WalletChallenge{
-			ID:        "wc",
-			Username:  "user-1",
-			Address:   "0xabc",
-			ChainID:   1,
-			Nonce:     "n",
-			Message:   "m",
-			IssuedAt:  time.Time{},
-			ExpiresAt: time.Now().Add(time.Minute),
+			ID:                    "wc",
+			Username:              "user-1",
+			Address:               "0xabc",
+			ChainID:               1,
+			Nonce:                 "n",
+			Message:               "m",
+			IssuedAt:              time.Time{},
+			ExpiresAt:             time.Now().Add(time.Minute),
+			RegistrationCompleted: true,
 		}))
 
 		mockDBNF := new(mocks.MockDB)

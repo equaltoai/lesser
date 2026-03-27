@@ -27,6 +27,7 @@ import (
 	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 type noopEncryptor struct{}
@@ -138,6 +139,8 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 
 	var mu sync.Mutex
 	where := make(map[string]any)
+	walletChallenges := make(map[string]models.WalletChallenge)
+	var currentModel any
 	resetWhere := func() {
 		mu.Lock()
 		where = make(map[string]any)
@@ -154,10 +157,32 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		val, ok := where[field]
 		return val, ok
 	}
+	storeWalletChallenge := func(model models.WalletChallenge) {
+		mu.Lock()
+		defer mu.Unlock()
+		walletChallenges[model.ID] = model
+	}
+	getWalletChallenge := func(challengeID string) (models.WalletChallenge, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		model, ok := walletChallenges[challengeID]
+		return model, ok
+	}
+	setCurrentModel := func(model any) {
+		mu.Lock()
+		defer mu.Unlock()
+		currentModel = model
+	}
+	getCurrentModel := func() any {
+		mu.Lock()
+		defer mu.Unlock()
+		return currentModel
+	}
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
-	db.On("Model", mock.Anything).Run(func(_ mock.Arguments) {
+	db.On("Model", mock.Anything).Run(func(arguments mock.Arguments) {
 		resetWhere()
+		setCurrentModel(arguments.Get(0))
 	}).Return(q).Maybe()
 	db.On("Transaction", mock.Anything).Return(nil).Maybe()
 	db.On("Migrate").Return(nil).Maybe()
@@ -217,6 +242,33 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 	if opts.firstMuteFirstError != nil {
 		q.On("First", mock.AnythingOfType("*models.Mute")).Return(opts.firstMuteFirstError).Once()
 	}
+	q.On("Create").Run(func(_ mock.Arguments) {
+		if model, ok := getCurrentModel().(*models.WalletChallenge); ok && model != nil {
+			storeWalletChallenge(*model)
+		}
+	}).Return(nil).Maybe()
+	q.On("Update", mock.Anything).Run(func(_ mock.Arguments) {
+		if model, ok := getCurrentModel().(*models.WalletChallenge); ok && model != nil {
+			storeWalletChallenge(*model)
+		}
+	}).Return(nil).Maybe()
+	q.On("First", mock.AnythingOfType("*models.WalletChallenge")).Run(func(arguments mock.Arguments) {
+		dest := arguments.Get(0).(*models.WalletChallenge)
+		challengeID := extractUsernameFromWhere(getWhere, "PK", "WALLET_CHALLENGE#", "challenge-1")
+		if stored, ok := getWalletChallenge(challengeID); ok {
+			*dest = stored
+			return
+		}
+		dest.ID = challengeID
+		dest.Username = "alice"
+		dest.Address = "0xabc"
+		dest.ChainID = 1
+		dest.Nonce = "nonce"
+		dest.Message = "message"
+		dest.IssuedAt = time.Now().Add(-time.Minute)
+		dest.ExpiresAt = time.Now().Add(5 * time.Minute)
+		_ = dest.UpdateKeys()
+	}).Return(nil).Maybe()
 
 	q.On("First", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
@@ -1023,6 +1075,74 @@ func TestService_Round13_RegisterAccount_SucceedsWithoutEmail(t *testing.T) {
 	require.NotNil(t, got.Actor)
 	assert.Equal(t, "alice", got.Account.User.Username)
 	assert.True(t, strings.Contains(got.Actor.ID, "/users/alice"))
+}
+
+func TestService_Round13_RegisterAccount_BindsTypedWalletChallenge(t *testing.T) {
+	ctx := context.Background()
+	logger := zaptest.NewLogger(t)
+	baseTime := time.Now().UTC()
+	tableName := "test-table"
+
+	db := newPermissiveDynamormDB(t, permissiveDBOptions{forceUserNotFound: true})
+	accountRepo := repositories.NewAccountRepository(db, tableName, "example.com", logger)
+	accountRepo.SetEncryptor(noopEncryptor{})
+	accountRepo.SetPermissionService(nil)
+	accountRepo.SetEventService(nil)
+	accountRepo.SetCachingService(nil)
+
+	storageImpl := &permissiveAccountsStorage{
+		MockRepositoryStorage: NewMockRepositoryStorage(),
+		db:                    db,
+		tableName:             tableName,
+		logger:                logger,
+		account:               accountRepo,
+		actor:                 repositories.NewActorRepository(db, tableName, logger),
+		relationship:          repositories.NewRelationshipRepository(db, tableName, logger),
+		social:                repositories.NewSocialRepository(db, tableName, logger, nil),
+		user:                  repositories.NewUserRepository(db, tableName, logger),
+		marker:                repositories.NewMarkerRepository(db, tableName, logger, nil),
+		analytics:             repositories.NewTrendingRepository(db, logger, nil),
+		instance:              repositories.NewInstanceRepository(db, tableName, logger),
+		domainBlock:           repositories.NewDomainBlockRepository(db, tableName, logger),
+		quote:                 repositories.NewQuoteRepository(db, tableName, logger, nil),
+		activity:              repositories.NewActivityRepository(db, tableName, logger, nil),
+	}
+
+	require.NoError(t, accountRepo.StoreWalletChallenge(ctx, &storage.WalletChallenge{
+		ID:        "wc-1",
+		Username:  "alice",
+		Address:   "0xabc",
+		ChainID:   1,
+		Nonce:     "nonce",
+		Message:   "message",
+		IssuedAt:  baseTime,
+		ExpiresAt: baseTime.Add(time.Hour),
+	}))
+
+	cryptoSvc := staticCryptoService{
+		publicKeyPEM:  []byte("PUBLIC KEY"),
+		privateKeyPEM: []byte("PRIVATE KEY"),
+		key:           struct{}{},
+	}
+
+	svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, cryptoSvc, staticAuthService{hash: "hash"}, logger, "example.com")
+
+	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
+		Username:                "alice",
+		Agreement:               true,
+		Locale:                  "en",
+		RegistrationChallengeID: "wc-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, got.Account)
+	require.NotNil(t, got.Account.User)
+	require.Nil(t, got.Account.User.Metadata)
+
+	challenge, err := accountRepo.GetWalletChallenge(ctx, "wc-1")
+	require.NoError(t, err)
+	require.NotNil(t, challenge)
+	require.True(t, challenge.RegistrationCompleted)
 }
 
 func TestService_Round13_MoreBranchesAndErrors(t *testing.T) {

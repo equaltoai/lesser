@@ -214,7 +214,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Enforce that unauthenticated wallet linking is only allowed immediately after registration.
-	// The registration handler stores the verified challenge ID in user metadata; unauth flows must match it.
+	// The registration handler marks the verified challenge on the typed wallet challenge row.
 	accountRepo := h.repos.Account()
 	if accountRepo == nil {
 		return h.respondWithError(ctx, http.StatusInternalServerError, "internal server error")
@@ -224,16 +224,8 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.respondBadRequest(ctx, "user not found")
 	}
 
-	if !isAuthenticated {
-		expectedChallengeID := ""
-		if user.Metadata != nil {
-			if v, ok := user.Metadata["registration_challenge_id"].(string); ok {
-				expectedChallengeID = strings.TrimSpace(v)
-			}
-		}
-		if expectedChallengeID == "" || expectedChallengeID != strings.TrimSpace(req.ChallengeID) {
-			return h.respondWithError(ctx, http.StatusUnauthorized, "registration challenge mismatch")
-		}
+	if !isAuthenticated && !challenge.RegistrationCompleted {
+		return h.respondWithError(ctx, http.StatusUnauthorized, "registration challenge mismatch")
 	}
 
 	// Verify the signature directly (single verification).
@@ -282,22 +274,8 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 			return h.respondWithError(ctx, http.StatusInternalServerError, "failed to create session")
 		}
 
-		// Return success with JWT for stateless OAuth flow
-		// Client will use this JWT to authenticate with /oauth/authorize
-		// Clear registration-only metadata so unauth linking can't be reused.
-		if user != nil && user.Metadata != nil {
-			updatedMetadata := map[string]interface{}{}
-			for k, v := range user.Metadata {
-				if k == "registration_challenge_id" {
-					continue
-				}
-				updatedMetadata[k] = v
-			}
-			if err := accountRepo.UpdateUser(ctx.Context(), username, map[string]interface{}{"metadata": updatedMetadata}); err != nil {
-				h.logger.Warn("failed to clear registration challenge metadata", zap.Error(err))
-			}
-		}
-
+		// Return success with JWT for stateless OAuth flow.
+		// Client will use this JWT to authenticate with /oauth/authorize.
 		return okJSON(apimodels.WalletLinkResponse{
 			Success:     true,
 			Message:     "wallet linked successfully",

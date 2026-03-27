@@ -23,7 +23,10 @@
 4. Agent governance is not part of the core-account contract.
    - quarantine, delegation, verification, self-sovereign scopes, and key-rotation state must be read through typed governance accessors
    - API and GraphQL surfaces must not treat `User.Metadata` as a governance source
-5. `GetAccount` keeps actor hydration as best effort.
+5. Registration-time wallet proof is not part of generic account metadata.
+   - unauthenticated wallet-link completion must rely on typed `WalletChallenge` state
+   - registration must not persist `registration_challenge_id` in `User.Metadata`
+6. `GetAccount` keeps actor hydration as best effort.
    - a missing actor row still returns a usable account with `User` populated and `Actor == nil`
    - hot-path callers must consume only the account fields they actually need
 
