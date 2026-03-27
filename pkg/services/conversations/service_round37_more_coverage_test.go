@@ -529,7 +529,7 @@ func TestService_applyDirectMessageSendTransition_PropagatesRepositoryErrors(t *
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).
 		Return(errors.New("boom")).
 		Once()
 
@@ -552,7 +552,7 @@ func TestService_applyDirectMessageSendTransition_PropagatesStatusMirrorErrors(t
 	publishedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
 	conversationRepo.
-		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).
 		Return(nil).
 		Once()
 	noteRepo.

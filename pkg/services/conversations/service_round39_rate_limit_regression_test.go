@@ -70,7 +70,7 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 		testConversationStateContract("alice", "conv123", nil),
 		nil,
 	).Once()
-	conversationRepo.On("ApplyDirectMessageSend", mock.Anything, mock.AnythingOfType("*models.DirectMessageSendTransition")).Return(errors.New("boom")).Once()
+	conversationRepo.On("ApplyDirectMessageSend", mock.Anything, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).Return(errors.New("boom")).Once()
 
 	_, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
