@@ -592,40 +592,6 @@ func (r *ConversationRepository) UpdateConversationLastStatus(_ context.Context,
 	return nil
 }
 
-// AddParticipant adds a participant to a conversation
-func (r *ConversationRepository) AddParticipant(_ context.Context, conversationID, participantID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.participants[conversationID] = append(r.participants[conversationID], participantID)
-	r.userConversations[participantID] = append(r.userConversations[participantID], conversationID)
-	return nil
-}
-
-// RemoveParticipant removes a participant from a conversation
-func (r *ConversationRepository) RemoveParticipant(_ context.Context, conversationID, participantID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Remove from participants
-	parts := r.participants[conversationID]
-	for i, p := range parts {
-		if p == participantID {
-			r.participants[conversationID] = append(parts[:i], parts[i+1:]...)
-			break
-		}
-	}
-	// Remove from user conversations
-	convs := r.userConversations[participantID]
-	for i, c := range convs {
-		if c == conversationID {
-			r.userConversations[participantID] = append(convs[:i], convs[i+1:]...)
-			break
-		}
-	}
-	return nil
-}
-
 // GetConversationParticipants retrieves the list of participants in a conversation
 func (r *ConversationRepository) GetConversationParticipants(_ context.Context, conversationID string) ([]string, error) {
 	r.mu.RLock()
@@ -636,11 +602,6 @@ func (r *ConversationRepository) GetConversationParticipants(_ context.Context, 
 		return nil, storage.ErrNotFound
 	}
 	return parts, nil
-}
-
-// LeaveConversation removes a participant from a conversation
-func (r *ConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	return r.RemoveParticipant(ctx, conversationID, username)
 }
 
 // CreateConversationMute creates a new conversation mute

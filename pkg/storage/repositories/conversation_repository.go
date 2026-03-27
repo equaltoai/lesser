@@ -821,41 +821,6 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 	return r.countMessagesAfterTime(ctx, conversationID, lastReadTime)
 }
 
-// LeaveConversation removes a participant from a conversation (KEEP - Complex participant management)
-func (r *ConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	// This delegates to RemoveParticipant
-	return r.RemoveParticipant(ctx, conversationID, username)
-}
-
-// AddParticipant adds a participant to a conversation (KEEP - Complex participant management)
-func (r *ConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
-	log := r.logger.With(
-		zap.String("conversation_id", conversationID),
-		zap.String("participant_id", participantID),
-	)
-
-	// Get the conversation
-	conv, err := r.GetConversation(ctx, conversationID)
-	if err != nil {
-		return err
-	}
-
-	// Check if already a participant
-	for _, p := range conv.Participants {
-		if p == participantID {
-			log.Debug("participant already in conversation")
-			return nil // Already a participant
-		}
-	}
-
-	// Add participant
-	conv.Participants = append(conv.Participants, participantID)
-	conv.UpdatedAt = time.Now()
-
-	// Update the conversation
-	return r.CreateConversation(ctx, conv, conv.Participants)
-}
-
 // GetConversationParticipants retrieves the list of participants in a conversation (KEEP - Participant retrieval logic)
 func (r *ConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
 	conv, err := r.GetConversation(ctx, conversationID)
@@ -924,39 +889,6 @@ func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Contex
 	}
 
 	return nil
-}
-
-// RemoveParticipant removes a participant from a conversation (KEEP - Complex participant management)
-func (r *ConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
-	log := r.logger.With(
-		zap.String("conversation_id", conversationID),
-		zap.String("participant_id", participantID),
-	)
-
-	// Get the conversation
-	conv, err := r.GetConversation(ctx, conversationID)
-	if err != nil {
-		return err
-	}
-
-	// Remove participant
-	newParticipants := make([]string, 0, len(conv.Participants))
-	for _, p := range conv.Participants {
-		if p != participantID {
-			newParticipants = append(newParticipants, p)
-		}
-	}
-
-	if len(newParticipants) == len(conv.Participants) {
-		log.Debug("participant not found in conversation")
-		return nil // Participant not found
-	}
-
-	conv.Participants = newParticipants
-	conv.UpdatedAt = time.Now()
-
-	// Update the conversation
-	return r.CreateConversation(ctx, conv, conv.Participants)
 }
 
 // CreateConversationMute creates a new conversation mute (KEEP - Mute business logic)

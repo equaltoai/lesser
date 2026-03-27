@@ -177,16 +177,6 @@ func (m *mockConversationRepository) ListConversationParticipantStates(ctx conte
 	return args.Get(0).([]*interfaces.UserConversationStateContract), args.Error(1)
 }
 
-func (m *mockConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
-
-func (m *mockConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
-
 func (m *mockConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
 	args := m.Called(ctx, conversationID)
 	if args.Get(0) == nil {
@@ -296,11 +286,6 @@ func (m *mockConversationRepository) UpdateConversationLastStatus(ctx context.Co
 
 func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
 	args := m.Called(ctx, transition)
-	return args.Error(0)
-}
-
-func (m *mockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	args := m.Called(ctx, conversationID, username)
 	return args.Error(0)
 }
 

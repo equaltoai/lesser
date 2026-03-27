@@ -46,11 +46,8 @@ func TestRound07_ConversationRepository_SweepSuccess(t *testing.T) {
 	_ = repo.MarkStatusRead(ctx, "conv-1", "status-ignored", "user-1")
 	_, _ = repo.GetUnreadStatusCount(ctx, "conv-1", "user-1")
 
-	_ = repo.LeaveConversation(ctx, "conv-1", "user-1")
-	_ = repo.AddParticipant(ctx, "conv-1", "user-3")
 	_, _ = repo.GetConversationParticipants(ctx, "conv-1")
 	_ = repo.UpdateConversationLastStatus(ctx, "conv-1", "status-2")
-	_ = repo.RemoveParticipant(ctx, "conv-1", "user-2")
 
 	mute := &storage.ConversationMute{
 		Username:       "user-1",
@@ -285,19 +282,6 @@ func TestRound07_ConversationRepository_StatusCreateValidationErrors(t *testing.
 	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
 	require.Error(t, repo.MarkConversationRead(context.Background(), "", "user-1"))
 	require.Error(t, repo.MarkConversationUnread(context.Background(), "", "user-1"))
-}
-
-func TestRound07_ConversationRepository_AddAndRemoveParticipant_EdgeBranches(t *testing.T) {
-	baseTime := time.Unix(1, 0).UTC()
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	setupPermissiveRound07Mocks(mockDB, mockQuery, nil, baseTime)
-
-	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	// Already a participant -> no-op.
-	require.NoError(t, repo.AddParticipant(context.Background(), "conv-1", "user-2"))
-	// Participant not found -> no-op.
-	require.NoError(t, repo.RemoveParticipant(context.Background(), "conv-1", "user-3"))
 }
 
 func TestRound07_ConversationRepository_CreateConversation_EmptyParticipantsAndLookupKeyError(t *testing.T) {

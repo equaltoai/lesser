@@ -276,18 +276,6 @@ func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context,
 
 // ===== Participant Operations =====
 
-// AddParticipant mocks the AddParticipant method
-func (m *MockConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
-
-// RemoveParticipant mocks the RemoveParticipant method
-func (m *MockConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
-
 // GetConversationParticipants mocks the GetConversationParticipants method
 func (m *MockConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
 	args := m.Called(ctx, conversationID)
@@ -318,12 +306,6 @@ func (m *MockConversationRepository) GetConversationParticipantRecord(ctx contex
 // UpdateConversationParticipantRecord mocks the UpdateConversationParticipantRecord method
 func (m *MockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
 	args := m.Called(ctx, record)
-	return args.Error(0)
-}
-
-// LeaveConversation mocks the LeaveConversation method
-func (m *MockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	args := m.Called(ctx, conversationID, username)
 	return args.Error(0)
 }
 
