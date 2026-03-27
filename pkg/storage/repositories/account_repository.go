@@ -37,9 +37,10 @@ type AccountRepository struct {
 
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
-	statusRepo   interfaces.StatusRepository // For accessing status objects
-	actorRepo    *ActorRepository
-	bookmarkRepo *BookmarkRepository
+	statusRepo     interfaces.StatusRepository // For accessing status objects
+	actorRepo      *ActorRepository
+	bookmarkRepo   *BookmarkRepository
+	governanceRepo *AgentGovernanceRepository
 }
 
 type userVersionProjection struct {
@@ -74,6 +75,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 		tableName:              tableName,
 		domain:                 domain,
 		actorRepo:              NewActorRepository(db, tableName, logger),
+		governanceRepo:         NewAgentGovernanceRepository(db, tableName, logger),
 	}
 }
 
@@ -95,6 +97,7 @@ func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain s
 		tableName:              tableName,
 		domain:                 domain,
 		actorRepo:              NewActorRepositoryWithCostTracking(db, tableName, logger, costService),
+		governanceRepo:         NewAgentGovernanceRepository(db, tableName, logger),
 	}
 }
 
@@ -108,6 +111,11 @@ func (r *AccountRepository) SetBookmarkRepository(bookmarkRepo *BookmarkReposito
 	r.bookmarkRepo = bookmarkRepo
 }
 
+// SetAgentGovernanceRepository overrides the governance repository dependency.
+func (r *AccountRepository) SetAgentGovernanceRepository(governanceRepo *AgentGovernanceRepository) {
+	r.governanceRepo = governanceRepo
+}
+
 // SetEncryptor overrides the encryptor used for actor private keys.
 // When unset, the repository uses KMS based on runtime configuration.
 func (r *AccountRepository) SetEncryptor(encryptor marshalers.Encryptor) {
@@ -119,6 +127,13 @@ func (r *AccountRepository) getBookmarkRepository() *BookmarkRepository {
 		r.bookmarkRepo = NewBookmarkRepository(r.db, r.tableName, r.logger)
 	}
 	return r.bookmarkRepo
+}
+
+func (r *AccountRepository) getAgentGovernanceRepository() *AgentGovernanceRepository {
+	if r.governanceRepo == nil {
+		r.governanceRepo = NewAgentGovernanceRepository(r.db, r.tableName, r.logger)
+	}
+	return r.governanceRepo
 }
 
 // SetStorage is deprecated - storage dependency removed in Phase 5.6
@@ -338,6 +353,26 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 	}
 
 	return r.modelToStorageUser(user), nil
+}
+
+// GetAgentGovernanceState retrieves typed governance state for an agent account.
+func (r *AccountRepository) GetAgentGovernanceState(ctx context.Context, username string) (*storage.AgentGovernanceState, error) {
+	return r.getAgentGovernanceRepository().GetAgentGovernanceState(ctx, username)
+}
+
+// GetAgentGovernanceStatesByUsernames batch-loads typed governance state for agent accounts.
+func (r *AccountRepository) GetAgentGovernanceStatesByUsernames(ctx context.Context, usernames []string) (map[string]*storage.AgentGovernanceState, error) {
+	return r.getAgentGovernanceRepository().GetAgentGovernanceStatesByUsernames(ctx, usernames)
+}
+
+// PutAgentGovernanceState upserts typed governance state for an agent account.
+func (r *AccountRepository) PutAgentGovernanceState(ctx context.Context, state *storage.AgentGovernanceState) error {
+	return r.getAgentGovernanceRepository().PutAgentGovernanceState(ctx, state)
+}
+
+// DeleteAgentGovernanceState removes typed governance state for an agent account.
+func (r *AccountRepository) DeleteAgentGovernanceState(ctx context.Context, username string) error {
+	return r.getAgentGovernanceRepository().DeleteAgentGovernanceState(ctx, username)
 }
 
 // GetUserByEmail is OBSOLETE - email is forbidden

@@ -2495,6 +2495,48 @@ func (s *Service) GetUser(ctx context.Context, username string) (*storage.User, 
 	return user, nil
 }
 
+// GetAgentGovernanceState loads typed governance state for an agent account.
+func (s *Service) GetAgentGovernanceState(ctx context.Context, username string) (*storage.AgentGovernanceState, error) {
+	if s.storage == nil {
+		return nil, ErrStorageNotAvailable
+	}
+
+	accountRepo := s.storage.Account()
+	if accountRepo == nil {
+		return nil, ErrAccountRepositoryNotAvailable
+	}
+
+	return accountRepo.GetAgentGovernanceState(ctx, username)
+}
+
+// GetAgentGovernanceStatesByUsernames batch-loads typed governance state for agent accounts.
+func (s *Service) GetAgentGovernanceStatesByUsernames(ctx context.Context, usernames []string) (map[string]*storage.AgentGovernanceState, error) {
+	if s.storage == nil {
+		return nil, ErrStorageNotAvailable
+	}
+
+	accountRepo := s.storage.Account()
+	if accountRepo == nil {
+		return nil, ErrAccountRepositoryNotAvailable
+	}
+
+	return accountRepo.GetAgentGovernanceStatesByUsernames(ctx, usernames)
+}
+
+// PutAgentGovernanceState upserts typed governance state for an agent account.
+func (s *Service) PutAgentGovernanceState(ctx context.Context, state *storage.AgentGovernanceState) error {
+	if s.storage == nil {
+		return ErrStorageNotAvailable
+	}
+
+	accountRepo := s.storage.Account()
+	if accountRepo == nil {
+		return ErrAccountRepositoryNotAvailable
+	}
+
+	return accountRepo.PutAgentGovernanceState(ctx, state)
+}
+
 // GetPreferenceQuery represents a request to get a user preference
 type GetPreferenceQuery struct {
 	UserID string `json:"user_id" validate:"required"`
