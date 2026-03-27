@@ -611,6 +611,35 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.agentKeyChallengesByID = map[string]storagemodels.AgentKeyChallenge{}
 			}
 			state.agentKeyChallengesByID[m.ID] = *m
+		case *storagemodels.WalletCredential:
+			if m == nil {
+				return
+			}
+			address := strings.ToLower(strings.TrimSpace(m.Address))
+			username := strings.TrimSpace(m.Username)
+			if username == "" || address == "" {
+				return
+			}
+			if state.walletCredentialsByAddress == nil {
+				state.walletCredentialsByAddress = map[string]storagemodels.WalletCredential{}
+			}
+			if state.walletCredentialsByUser == nil {
+				state.walletCredentialsByUser = map[string][]storagemodels.WalletCredential{}
+			}
+			state.walletCredentialsByAddress[address] = *m
+			wallets := state.walletCredentialsByUser[username]
+			replaced := false
+			for i := range wallets {
+				if strings.EqualFold(wallets[i].Address, address) {
+					wallets[i] = *m
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				wallets = append(wallets, *m)
+			}
+			state.walletCredentialsByUser[username] = wallets
 		}
 	}).Maybe()
 
@@ -618,11 +647,36 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		mockQuery.On("Delete").Return(state.deleteErrorOnce).Once()
 	}
 	mockQuery.On("Delete").Return(nil).Run(func(_ mock.Arguments) {
-		if state.refreshTokensByToken == nil {
-			return
-		}
-		if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REFRESHTOKEN#") {
-			delete(state.refreshTokensByToken, strings.TrimPrefix(pk, "REFRESHTOKEN#"))
+		switch state.model.(type) {
+		case *storagemodels.WalletCredential:
+			pk, okPK := state.whereString("PK")
+			sk, okSK := state.whereString("SK")
+			if !okPK || !okSK || !strings.HasPrefix(pk, "USER#") || !strings.HasPrefix(sk, "WALLET#") {
+				return
+			}
+			username := strings.TrimPrefix(pk, "USER#")
+			address := strings.ToLower(strings.TrimPrefix(sk, "WALLET#"))
+			delete(state.walletCredentialsByAddress, address)
+			wallets := state.walletCredentialsByUser[username]
+			filtered := wallets[:0]
+			for _, wallet := range wallets {
+				if strings.EqualFold(wallet.Address, address) {
+					continue
+				}
+				filtered = append(filtered, wallet)
+			}
+			if len(filtered) == 0 {
+				delete(state.walletCredentialsByUser, username)
+				return
+			}
+			state.walletCredentialsByUser[username] = filtered
+		default:
+			if state.refreshTokensByToken == nil {
+				return
+			}
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REFRESHTOKEN#") {
+				delete(state.refreshTokensByToken, strings.TrimPrefix(pk, "REFRESHTOKEN#"))
+			}
 		}
 	}).Maybe()
 
@@ -659,6 +713,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
 			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
+		case *storagemodels.WalletChallenge:
+			if m == nil {
+				return
+			}
+			if state.walletChallengesByID == nil {
+				state.walletChallengesByID = map[string]storagemodels.WalletChallenge{}
+			}
+			state.walletChallengesByID[m.ID] = *m
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()

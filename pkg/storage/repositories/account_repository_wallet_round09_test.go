@@ -416,6 +416,21 @@ func TestRound09_AccountRepository_WalletChallengesAndDeletes(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.Anything).Return(errors.New("boom")).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+		repo.SetValidationService(nil)
+		repo.SetPermissionService(nil)
+		repo.SetEventService(nil)
+		repo.SetCachingService(nil)
+
+		require.Error(t, repo.ResetWalletChallengeSpent(ctx, "c1"))
+	}
+
+	{
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("Update", mock.Anything).Return(errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
@@ -446,6 +461,21 @@ func TestRound09_AccountRepository_WalletChallengesAndDeletes(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("Update", mock.Anything).Return(errors.New("boom")).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+		repo.SetValidationService(nil)
+		repo.SetPermissionService(nil)
+		repo.SetEventService(nil)
+		repo.SetCachingService(nil)
+
+		require.Error(t, repo.ResetWalletChallengeSpent(ctx, "c1"))
+	}
+
+	{
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -457,6 +487,7 @@ func TestRound09_AccountRepository_WalletChallengesAndDeletes(t *testing.T) {
 		require.NoError(t, repo.MarkWalletChallengeUsed(ctx, "c1"))
 		require.NoError(t, repo.MarkWalletChallengeRegistrationCompleted(ctx, "c1"))
 		require.NoError(t, repo.MarkWalletChallengeSpent(ctx, "c1"))
+		require.NoError(t, repo.ResetWalletChallengeSpent(ctx, "c1"))
 	}
 
 	{

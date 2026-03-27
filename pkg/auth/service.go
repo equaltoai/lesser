@@ -27,6 +27,7 @@ type authAccountRepository interface {
 	GetSession(ctx context.Context, sessionID string) (*storage.Session, error)
 	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
 	MarkWalletChallengeSpent(ctx context.Context, challengeID string) error
+	ResetWalletChallengeSpent(ctx context.Context, challengeID string) error
 	GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error)
 	StoreRecoveryToken(ctx context.Context, key string, data map[string]any) error
 }
@@ -479,8 +480,9 @@ func (as *AuthService) LoginWithWalletAfterLinking(ctx context.Context, username
 	}, nil
 }
 
-// LinkWallet links a wallet to an existing user account
-func (as *AuthService) LinkWallet(ctx context.Context, username, address string, chainID int, walletType string) error {
+// LinkWallet links a wallet to an existing user account.
+// The returned boolean reports whether this call created a new link.
+func (as *AuthService) LinkWallet(ctx context.Context, username, address string, chainID int, walletType string) (bool, error) {
 	return as.walletService.LinkWallet(ctx, username, address, chainID, walletType)
 }
 
@@ -491,6 +493,16 @@ func (as *AuthService) MarkWalletChallengeSpent(ctx context.Context, challengeID
 		return ErrWalletCheck
 	}
 	return accountRepo.MarkWalletChallengeSpent(ctx, challengeID)
+}
+
+// ResetWalletChallengeSpent clears the spent flag so an onboarding proof can be retried
+// after downstream work is safely rolled back.
+func (as *AuthService) ResetWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return ErrWalletCheck
+	}
+	return accountRepo.ResetWalletChallengeSpent(ctx, challengeID)
 }
 
 // GetWalletChallenge retrieves a wallet challenge by ID

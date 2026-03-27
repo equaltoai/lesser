@@ -623,8 +623,7 @@ func (r *AccountRepository) MarkWalletChallengeRegistrationCompleted(ctx context
 	return nil
 }
 
-// MarkWalletChallengeSpent marks a challenge as spent (second verification)
-func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
+func (r *AccountRepository) setWalletChallengeSpent(ctx context.Context, challengeID string, spent bool) error {
 	var model models.WalletChallenge
 
 	// Get the challenge
@@ -637,16 +636,36 @@ func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challe
 		return ErrorHandler.HandleGetError(err, EntityWalletChallenge, challengeID)
 	}
 
-	// Mark as spent
-	model.Spent = true
+	model.Spent = spent
 
-	// Update
 	err = r.db.WithContext(ctx).Model(&model).Update()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityWalletChallenge, challengeID)
 	}
 
+	return nil
+}
+
+// MarkWalletChallengeSpent marks a challenge as spent (second verification)
+func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	if err := r.setWalletChallengeSpent(ctx, challengeID, true); err != nil {
+		return err
+	}
+
 	r.logger.Debug("marked wallet challenge as spent",
+		zap.String("challengeID", challengeID))
+
+	return nil
+}
+
+// ResetWalletChallengeSpent clears the spent flag so a completed registration
+// proof can be retried after downstream work is rolled back.
+func (r *AccountRepository) ResetWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	if err := r.setWalletChallengeSpent(ctx, challengeID, false); err != nil {
+		return err
+	}
+
+	r.logger.Debug("reset wallet challenge spent flag",
 		zap.String("challengeID", challengeID))
 
 	return nil

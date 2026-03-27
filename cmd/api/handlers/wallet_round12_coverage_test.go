@@ -319,7 +319,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
 	})
 
-	t.Run("link_wallet_link_wallet_error_returns_500", func(t *testing.T) {
+	t.Run("link_wallet_link_wallet_error_restores_challenge_for_retry", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -345,9 +345,25 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
+
+		challenge := state.walletChallengesByID["c1"]
+		require.False(t, challenge.Spent)
+		require.Empty(t, state.walletCredentialsByAddress)
+
+		ctxRetry, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
+			Address:     address,
+			Username:    "alice",
+			WalletType:  "ethereum",
+			ChallengeID: "c1",
+			Signature:   signature,
+			Message:     message,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxRetry))
+		require.True(t, state.walletChallengesByID["c1"].Spent)
 	})
 
-	t.Run("link_wallet_session_creation_error_returns_500", func(t *testing.T) {
+	t.Run("link_wallet_session_creation_error_restores_retry_for_new_link", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -372,6 +388,26 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
+
+		challenge := state.walletChallengesByID["c1"]
+		require.False(t, challenge.Spent)
+		require.Empty(t, state.walletCredentialsByAddress)
+
+		user := state.usersByUsername["alice"]
+		user.Approved = true
+		state.usersByUsername["alice"] = user
+
+		ctxRetry, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
+			Address:     address,
+			Username:    "alice",
+			WalletType:  "ethereum",
+			ChallengeID: "c1",
+			Signature:   signature,
+			Message:     message,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxRetry))
+		require.True(t, state.walletChallengesByID["c1"].Spent)
 	})
 
 	t.Run("unlink_wallet_unauthorized_returns_401", func(t *testing.T) {

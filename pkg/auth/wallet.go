@@ -223,8 +223,9 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	return username, nil
 }
 
-// LinkWallet links a wallet to an existing user account
-func (s *WalletService) LinkWallet(ctx context.Context, username, address string, chainID int, walletType string) error {
+// LinkWallet links a wallet to an existing user account.
+// The returned boolean reports whether this call created a new link.
+func (s *WalletService) LinkWallet(ctx context.Context, username, address string, chainID int, walletType string) (bool, error) {
 	// Normalize address
 	address = strings.ToLower(address)
 
@@ -232,7 +233,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	existingWallets, err := s.repo.GetUserWalletCredentials(ctx, username)
 	if err != nil && !theorydb.IsNotFound(err) {
 		s.logger.Error("failed to check user's existing wallets", zap.Error(err), zap.String("username", username))
-		return errors.Join(ErrWalletCheck, err)
+		return false, errors.Join(ErrWalletCheck, err)
 	}
 
 	// Check if this specific user already has this wallet linked
@@ -241,7 +242,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 			s.logger.Info("wallet already linked to this user",
 				zap.String("username", username),
 				zap.String("address", address))
-			return nil // Already linked - idempotent operation
+			return false, nil // Already linked - idempotent operation
 		}
 	}
 
@@ -258,7 +259,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	// Store wallet credential
 	if err := s.repo.StoreWalletCredential(ctx, wallet); err != nil {
 		s.logger.Error("failed to store wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
-		return errors.Join(ErrWalletStorage, err)
+		return false, errors.Join(ErrWalletStorage, err)
 	}
 
 	s.logger.Info("linked wallet to account",
@@ -266,7 +267,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 		zap.String("address", address),
 		zap.String("type", walletType))
 
-	return nil
+	return true, nil
 }
 
 // GetUserWallets returns all wallets linked to a user

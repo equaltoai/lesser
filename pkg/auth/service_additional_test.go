@@ -178,7 +178,9 @@ func TestAuthService_WalletFlows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "alice", resp.Me)
 
-	require.NoError(t, as.LinkWallet(context.Background(), "alice", address, 1, "ethereum"))
+	created, err := as.LinkWallet(context.Background(), "alice", address, 1, "ethereum")
+	require.NoError(t, err)
+	require.True(t, created)
 	wallets, err := as.GetUserWallets(context.Background(), "alice")
 	require.NoError(t, err)
 	require.Len(t, wallets, 1)
@@ -194,6 +196,7 @@ func TestAuthService_WalletFlows(t *testing.T) {
 	_, err = as.LoginWithWallet(context.Background(), &WalletVerifyRequest{}, "d", "ua", "ip")
 	require.Error(t, err)
 	require.ErrorIs(t, as.MarkWalletChallengeSpent(context.Background(), "x"), ErrWalletCheck)
+	require.ErrorIs(t, as.ResetWalletChallengeSpent(context.Background(), "x"), ErrWalletCheck)
 	_, err = as.GetWalletChallenge(context.Background(), "x")
 	require.ErrorIs(t, err, ErrWalletCheck)
 }

@@ -159,10 +159,14 @@ func TestWalletService_CreateChallenge_VerifySignatureAndLinkFlow(t *testing.T) 
 	require.Equal(t, "alice", username)
 
 	// LinkWallet handles "not found" by creating the wallet credential.
-	require.NoError(t, svc.LinkWallet(context.Background(), "alice", address, 1, "ethereum"))
+	created, err := svc.LinkWallet(context.Background(), "alice", address, 1, "ethereum")
+	require.NoError(t, err)
+	require.True(t, created)
 
 	// Idempotent re-link returns nil.
-	require.NoError(t, svc.LinkWallet(context.Background(), "alice", address, 1, "ethereum"))
+	created, err = svc.LinkWallet(context.Background(), "alice", address, 1, "ethereum")
+	require.NoError(t, err)
+	require.False(t, created)
 
 	wallets, err := svc.GetUserWallets(context.Background(), "alice")
 	require.NoError(t, err)

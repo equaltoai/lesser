@@ -249,7 +249,15 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Link the wallet
-	if err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); err != nil {
+	walletLinkCreated, err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType)
+	if err != nil {
+		if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
+			h.logger.Error("failed to restore wallet challenge after wallet-link failure",
+				zap.String("challengeId", req.ChallengeID),
+				zap.String("username", username),
+				zap.String("address", req.Address),
+				zap.Error(resetErr))
+		}
 		h.logger.Error("failed to link wallet",
 			zap.String("username", username),
 			zap.String("address", req.Address),
@@ -272,6 +280,28 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		// This session will be used by /oauth/authorize to generate authorization code
 		authResponse, err := authService.LoginWithWalletAfterLinking(ctx.Context(), username, deviceName, userAgent, ipAddress)
 		if err != nil {
+			if walletLinkCreated {
+				if unlinkErr := authService.UnlinkWallet(ctx.Context(), username, req.Address); unlinkErr != nil {
+					h.logger.Error("failed to rollback wallet link after session creation failure",
+						zap.String("username", username),
+						zap.String("address", req.Address),
+						zap.String("challengeId", req.ChallengeID),
+						zap.Error(unlinkErr))
+				} else if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
+					h.logger.Error("failed to restore wallet challenge after session creation failure",
+						zap.String("username", username),
+						zap.String("address", req.Address),
+						zap.String("challengeId", req.ChallengeID),
+						zap.Error(resetErr))
+					if _, relinkErr := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); relinkErr != nil {
+						h.logger.Error("failed to restore wallet link after challenge reset failure",
+							zap.String("username", username),
+							zap.String("address", req.Address),
+							zap.String("challengeId", req.ChallengeID),
+							zap.Error(relinkErr))
+					}
+				}
+			}
 			h.logger.Error("failed to create session after wallet linking",
 				zap.String("username", username),
 				zap.String("address", req.Address),
