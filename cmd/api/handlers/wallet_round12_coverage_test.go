@@ -291,7 +291,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
-	t.Run("link_wallet_mark_challenge_spent_failure_is_non_fatal", func(t *testing.T) {
+	t.Run("link_wallet_mark_challenge_spent_failure_returns_500", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -316,7 +316,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     message,
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctx))
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_link_wallet_error_returns_500", func(t *testing.T) {

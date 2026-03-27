@@ -237,10 +237,15 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.respondWithError(ctx, http.StatusUnauthorized, "signature verification failed")
 	}
 
-	// Mark challenge as spent (second and final use).
+	// Mark challenge as spent (second and final use) before linking the wallet.
+	// If this write fails, fail closed so a completed registration proof cannot
+	// be replayed into a fresh session/JWT.
 	if err := authService.MarkWalletChallengeSpent(ctx.Context(), req.ChallengeID); err != nil {
-		h.logger.Warn("failed to mark challenge as spent", zap.Error(err))
-		// Non-fatal - continue
+		h.logger.Error("failed to mark challenge as spent",
+			zap.String("challengeId", req.ChallengeID),
+			zap.String("username", username),
+			zap.Error(err))
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to finalize wallet challenge")
 	}
 
 	// Link the wallet
