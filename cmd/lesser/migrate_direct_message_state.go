@@ -41,6 +41,9 @@ type directMessageStateMigrationSummary struct {
 	LegacyReadStateRowsDeleted   int
 	LegacyMessageRowsPlanned     int
 	LegacyMessageRowsDeleted     int
+	OrphanLookupRowsPlanned      int
+	OrphanLookupRowsDeleted      int
+	ValidationErrors             int
 	SampleConversationIDs        []string
 }
 
@@ -143,6 +146,9 @@ func printDirectMessageStateMigrationSummary(
 	fmt.Printf("legacy_read_state_rows_deleted: %d\n", summary.LegacyReadStateRowsDeleted)
 	fmt.Printf("legacy_message_rows_planned: %d\n", summary.LegacyMessageRowsPlanned)
 	fmt.Printf("legacy_message_rows_deleted: %d\n", summary.LegacyMessageRowsDeleted)
+	fmt.Printf("orphan_lookup_rows_planned: %d\n", summary.OrphanLookupRowsPlanned)
+	fmt.Printf("orphan_lookup_rows_deleted: %d\n", summary.OrphanLookupRowsDeleted)
+	fmt.Printf("validation_errors: %d\n", summary.ValidationErrors)
 	printConversationMigrationSamples(summary.SampleConversationIDs)
 
 	if !apply {
@@ -198,6 +204,8 @@ func executeDirectMessageStateMigration(
 		return summary, err
 	}
 	desiredLookupPlans := map[string]directMessageLookupPlan{}
+	expectedParticipantCounts := map[string]int{}
+	actualParticipantCounts := map[string]int{}
 
 	scanInput := &dynamodb.ScanInput{
 		TableName:        aws.String(tableName),
@@ -234,6 +242,7 @@ func executeDirectMessageStateMigration(
 			conversation.ThreadLastTime = lastStatusTime
 
 			summary.ActiveConversations++
+			expectedParticipantCounts[conversation.ConversationID] = len(conversation.Participants)
 			if statusCount > 0 {
 				summary.StatusBackedConversations++
 				summary.ThreadStatusesScanned += statusCount
@@ -261,6 +270,7 @@ func executeDirectMessageStateMigration(
 				}
 
 				summary.CanonicalStateRowsPlanned++
+				actualParticipantCounts[conversation.ConversationID]++
 				if !apply || !changed {
 					continue
 				}
@@ -297,6 +307,11 @@ func executeDirectMessageStateMigration(
 	}
 	sort.Strings(lookupKeys)
 	summary.LookupRowsPlanned = len(lookupKeys)
+	for conversationID, expectedCount := range expectedParticipantCounts {
+		if actualParticipantCounts[conversationID] != expectedCount {
+			summary.ValidationErrors++
+		}
+	}
 
 	for _, lookupKey := range lookupKeys {
 		plan := desiredLookupPlans[lookupKey]
@@ -311,6 +326,28 @@ func executeDirectMessageStateMigration(
 			return summary, fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
 		}
 		summary.LookupRowsUpserted++
+	}
+
+	orphanLookupKeys := make([]string, 0)
+	for lookupKey := range existingLookupRows {
+		if _, ok := desiredLookupPlans[lookupKey]; ok {
+			continue
+		}
+		orphanLookupKeys = append(orphanLookupKeys, lookupKey)
+	}
+	sort.Strings(orphanLookupKeys)
+	summary.OrphanLookupRowsPlanned = len(orphanLookupKeys)
+	for _, lookupKey := range orphanLookupKeys {
+		if !apply {
+			continue
+		}
+		if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName: aws.String(tableName),
+			Key:       attributeMapKeyAttributes(existingLookupRows[lookupKey]),
+		}); err != nil {
+			return summary, fmt.Errorf("delete orphan conversation participant lookup %s: %w", lookupKey, err)
+		}
+		summary.OrphanLookupRowsDeleted++
 	}
 
 	for _, statusItem := range directStatusesForRepair {

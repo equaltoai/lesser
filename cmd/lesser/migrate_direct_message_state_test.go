@@ -87,6 +87,9 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "legacy_read_state_rows_deleted: 0")
 	require.Contains(t, output, "legacy_message_rows_planned: 0")
 	require.Contains(t, output, "legacy_message_rows_deleted: 0")
+	require.Contains(t, output, "orphan_lookup_rows_planned: 0")
+	require.Contains(t, output, "orphan_lookup_rows_deleted: 0")
+	require.Contains(t, output, "validation_errors: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
@@ -146,6 +149,9 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Zero(t, summary.LegacyReadStateRowsDeleted)
 	require.Zero(t, summary.LegacyMessageRowsPlanned)
 	require.Zero(t, summary.LegacyMessageRowsDeleted)
+	require.Zero(t, summary.OrphanLookupRowsPlanned)
+	require.Zero(t, summary.OrphanLookupRowsDeleted)
+	require.Zero(t, summary.ValidationErrors)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -247,6 +253,9 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.Equal(t, 2, summary.LegacyReadStateRowsDeleted)
 	require.Zero(t, summary.LegacyMessageRowsPlanned)
 	require.Zero(t, summary.LegacyMessageRowsDeleted)
+	require.Zero(t, summary.OrphanLookupRowsPlanned)
+	require.Zero(t, summary.OrphanLookupRowsDeleted)
+	require.Zero(t, summary.ValidationErrors)
 	require.Len(t, client.putInputs, 5)
 	require.Len(t, client.deleteInputs, 4)
 
@@ -431,6 +440,28 @@ func TestExecuteDirectMessageStateMigration_ApplyDeletesLegacyConversationMessag
 	require.NoError(t, err)
 	require.Equal(t, 1, summary.LegacyMessageRowsPlanned)
 	require.Equal(t, 1, summary.LegacyMessageRowsDeleted)
+	require.Len(t, client.deleteInputs, 1)
+}
+
+func TestExecuteDirectMessageStateMigration_ApplyDeletesOrphanLookupRows(t *testing.T) {
+	client := &fakeUserKeyMigrationClient{
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{Items: []map[string]types.AttributeValue{
+				conversationLookupRow("arch,scout", "conv-stale"),
+			}},
+			{},
+			{},
+			{},
+		},
+	}
+
+	summary, err := executeDirectMessageStateMigration(context.Background(), client, "simulacrum-dev-main-table", true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.OrphanLookupRowsPlanned)
+	require.Equal(t, 1, summary.OrphanLookupRowsDeleted)
 	require.Len(t, client.deleteInputs, 1)
 }
 
