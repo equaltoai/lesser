@@ -11,6 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
+	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -48,6 +49,70 @@ type userVersionProjection struct {
 	PK    string `theorydb:"pk"`
 	SK    string `theorydb:"sk"`
 	Value int    `theorydb:"version"`
+}
+
+type userCoreProjection struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	Table string `json:"-"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	Username           string               `theorydb:"attr:username"`
+	Email              string               `theorydb:"attr:email"`
+	PasswordHash       string               `theorydb:"attr:passwordHash"`
+	DisplayName        string               `theorydb:"attr:displayName"`
+	Note               string               `theorydb:"attr:note"`
+	Avatar             string               `theorydb:"attr:avatar"`
+	Header             string               `theorydb:"attr:header"`
+	URL                string               `theorydb:"attr:url"`
+	Locked             bool                 `theorydb:"attr:locked"`
+	Discoverable       bool                 `theorydb:"attr:discoverable"`
+	Fields             []map[string]string  `theorydb:"attr:fields"`
+	CreatedAt          time.Time            `theorydb:"attr:createdAt"`
+	UpdatedAt          time.Time            `theorydb:"attr:updatedAt"`
+	Approved           bool                 `theorydb:"attr:approved"`
+	Suspended          bool                 `theorydb:"attr:suspended"`
+	Silenced           bool                 `theorydb:"attr:silenced"`
+	Role               string               `theorydb:"attr:role"`
+	Locale             string               `theorydb:"attr:locale"`
+	RecoveryMethods    []string             `theorydb:"attr:recoveryMethods"`
+	AllowNSFW          bool                 `theorydb:"attr:allowNSFW"`
+	RequireNSFWWarning bool                 `theorydb:"attr:requireNSFWWarning"`
+	IsAgent            bool                 `theorydb:"attr:isAgent"`
+	AgentType          string               `theorydb:"attr:agentType"`
+	AgentCapabilities  *agents.Capabilities `theorydb:"json,attr:agentCapabilities"`
+	AgentVersion       string               `theorydb:"attr:agentVersion"`
+	AgentOwner         string               `theorydb:"attr:agentOwner"`
+	AgentCreatedBy     string               `theorydb:"attr:agentCreatedBy"`
+	AgentPublicKey     string               `theorydb:"attr:agentPublicKey"`
+	AgentKeyType       string               `theorydb:"attr:agentKeyType"`
+	Version            int                  `theorydb:"version,attr:version"`
+}
+
+func (p userCoreProjection) TableName() string {
+	if strings.TrimSpace(p.Table) != "" {
+		return p.Table
+	}
+	return models.MainTableName
+}
+
+type userMetadataProjection struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	Table string `json:"-"`
+	PK    string `theorydb:"pk,attr:PK"`
+	SK    string `theorydb:"sk,attr:SK"`
+
+	Metadata map[string]interface{} `theorydb:"attr:metadata"`
+}
+
+func (p userMetadataProjection) TableName() string {
+	if strings.TrimSpace(p.Table) != "" {
+		return p.Table
+	}
+	return models.MainTableName
 }
 
 func (p userVersionProjection) TableName() string {
@@ -347,12 +412,11 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 
 // GetUser retrieves user authentication data
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
-	user, _, err := r.getUserModel(ctx, username)
+	user, _, err := r.getCoreUser(ctx, username)
 	if err != nil {
 		return nil, err
 	}
-
-	return r.modelToStorageUser(user), nil
+	return user, nil
 }
 
 // GetAgentGovernanceState retrieves typed governance state for an agent account.
@@ -525,6 +589,36 @@ func (r *AccountRepository) getUserModel(ctx context.Context, username string) (
 	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, canonical)
 }
 
+func (r *AccountRepository) getCoreUser(ctx context.Context, username string) (*storage.User, string, error) {
+	canonical := r.canonicalUsername(username)
+	for _, candidate := range r.usernameLookupCandidates(username) {
+		projection, err := r.loadUserCoreProjectionByUsername(ctx, candidate)
+		if err == nil {
+			user := r.userCoreProjectionToStorageUser(projection)
+			r.hydrateOptionalUserMetadata(ctx, candidate, user)
+			return user, candidate, nil
+		}
+		if !isAccountNotFound(err) {
+			r.logger.Error("failed to get core user", zap.Error(err), zap.String("username", canonical))
+			return nil, "", ErrorHandler.HandleGetError(err, EntityUser, canonical)
+		}
+	}
+
+	if projection, err := r.lookupUserCoreProjectionByCanonicalHandle(ctx, canonical); err == nil && projection != nil {
+		resolvedUsername := strings.TrimSpace(projection.Username)
+		user := r.userCoreProjectionToStorageUser(projection)
+		r.hydrateOptionalUserMetadata(ctx, resolvedUsername, user)
+		return user, resolvedUsername, nil
+	} else if err != nil && !isAccountNotFound(err) {
+		r.logger.Error("failed to resolve core user by canonical handle",
+			zap.String("username", canonical),
+			zap.Error(err))
+		return nil, "", ErrorHandler.HandleGetError(err, EntityUser, canonical)
+	}
+
+	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, canonical)
+}
+
 func (r *AccountRepository) getActorModel(ctx context.Context, username string) (*models.Actor, string, error) {
 	canonical := r.canonicalUsername(username)
 	attemptedUsernames := map[string]struct{}{}
@@ -572,7 +666,7 @@ func (r *AccountRepository) getActorModel(ctx context.Context, username string) 
 }
 
 func (r *AccountRepository) resolveStoredUsername(ctx context.Context, username string) (string, error) {
-	_, resolvedUsername, err := r.getUserModel(ctx, username)
+	_, resolvedUsername, err := r.getCoreUser(ctx, username)
 	if err != nil {
 		return "", err
 	}
@@ -580,14 +674,14 @@ func (r *AccountRepository) resolveStoredUsername(ctx context.Context, username 
 }
 
 func (r *AccountRepository) lookupStoredUsernameByCanonicalHandle(ctx context.Context, username string) (string, error) {
-	user, err := r.lookupUserModelByCanonicalHandle(ctx, username)
+	projection, err := r.lookupUserCoreProjectionByCanonicalHandle(ctx, username)
 	if err != nil {
 		return "", err
 	}
-	if user == nil {
+	if projection == nil {
 		return "", nil
 	}
-	return strings.TrimSpace(user.Username), nil
+	return strings.TrimSpace(projection.Username), nil
 }
 
 func (r *AccountRepository) lookupUserModelByCanonicalHandle(ctx context.Context, username string) (*models.User, error) {
@@ -624,6 +718,73 @@ func (r *AccountRepository) lookupUserModelByCanonicalHandle(ctx context.Context
 	}
 
 	return &userModel, nil
+}
+
+func (r *AccountRepository) loadUserCoreProjectionByUsername(ctx context.Context, username string) (*userCoreProjection, error) {
+	if r.db == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	projection := &userCoreProjection{Table: r.tableName}
+	pk := fmt.Sprintf("USER#%s", username)
+	if err := r.db.WithContext(ctx).Model(projection).
+		Where("PK", "=", pk).
+		Where("SK", "=", models.SKMetadata).
+		First(projection); err != nil {
+		return nil, err
+	}
+	return projection, nil
+}
+
+func (r *AccountRepository) lookupUserCoreProjectionByCanonicalHandle(ctx context.Context, username string) (*userCoreProjection, error) {
+	if r.db == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	normalizedUsername := strings.ToLower(strings.TrimSpace(username))
+	if normalizedUsername == "" {
+		return nil, storage.ErrNotFound
+	}
+
+	prefix := normalizedUsername
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+
+	projection := &userCoreProjection{Table: r.tableName}
+	err := r.db.WithContext(ctx).Model(projection).
+		Index("gsi5").
+		Where("gsi5PK", "=", fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)).
+		Where("gsi5SK", "=", normalizedUsername).
+		Limit(1).
+		First(projection)
+	if err != nil {
+		return nil, err
+	}
+
+	return projection, nil
+}
+
+func (r *AccountRepository) hydrateOptionalUserMetadata(ctx context.Context, username string, user *storage.User) {
+	if user == nil || r.db == nil {
+		return
+	}
+
+	metadataProjection := &userMetadataProjection{Table: r.tableName}
+	pk := fmt.Sprintf("USER#%s", username)
+	if err := r.db.WithContext(ctx).Model(metadataProjection).
+		Where("PK", "=", pk).
+		Where("SK", "=", models.SKMetadata).
+		First(metadataProjection); err != nil {
+		if !isAccountNotFound(err) {
+			r.logger.Warn("optional user metadata decode failed; returning core account data",
+				zap.String("username", username),
+				zap.Error(err))
+		}
+		return
+	}
+
+	user.Metadata = cloneMetadata(metadataProjection.Metadata)
 }
 
 func (r *AccountRepository) isLocalDomain(domain string) bool {
@@ -896,6 +1057,45 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	}
 
 	return user
+}
+
+func (r *AccountRepository) userCoreProjectionToStorageUser(projection *userCoreProjection) *storage.User {
+	if projection == nil {
+		return nil
+	}
+
+	return r.modelToStorageUser(&models.User{
+		Username:           projection.Username,
+		Email:              projection.Email,
+		PasswordHash:       projection.PasswordHash,
+		DisplayName:        projection.DisplayName,
+		Note:               projection.Note,
+		Avatar:             projection.Avatar,
+		Header:             projection.Header,
+		URL:                projection.URL,
+		Locked:             projection.Locked,
+		Discoverable:       projection.Discoverable,
+		Fields:             cloneFields(projection.Fields),
+		CreatedAt:          projection.CreatedAt,
+		UpdatedAt:          projection.UpdatedAt,
+		Approved:           projection.Approved,
+		Suspended:          projection.Suspended,
+		Silenced:           projection.Silenced,
+		Role:               projection.Role,
+		Locale:             projection.Locale,
+		RecoveryMethods:    append([]string(nil), projection.RecoveryMethods...),
+		AllowNSFW:          projection.AllowNSFW,
+		RequireNSFWWarning: projection.RequireNSFWWarning,
+		IsAgent:            projection.IsAgent,
+		AgentType:          projection.AgentType,
+		AgentCapabilities:  projection.AgentCapabilities,
+		AgentVersion:       projection.AgentVersion,
+		AgentOwner:         projection.AgentOwner,
+		AgentCreatedBy:     projection.AgentCreatedBy,
+		AgentPublicKey:     projection.AgentPublicKey,
+		AgentKeyType:       projection.AgentKeyType,
+		Version:            projection.Version,
+	})
 }
 
 func (r *AccountRepository) normalizeLocalActorIdentity(username string, actor *activitypub.Actor) *activitypub.Actor {

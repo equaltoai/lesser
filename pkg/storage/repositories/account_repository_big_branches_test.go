@@ -66,7 +66,26 @@ func TestAccountRepository_GetAccount_ActorNotFoundAndErrorBranches(t *testing.T
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
+			user.Username = "alice"
+			user.Role = "user"
+			user.CreatedAt = baseTime
+			user.UpdatedAt = baseTime
+			user.Version = 1
+		}).Return(nil).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userMetadataProjection)
+			return ok
+		})).Return(nil).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
 			_, ok := dest.(*models.Actor)
+			return ok
+		})).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
 			return ok
 		})).Return(dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
@@ -83,6 +102,21 @@ func TestAccountRepository_GetAccount_ActorNotFoundAndErrorBranches(t *testing.T
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
+			user.Username = "alice"
+			user.Role = "user"
+			user.CreatedAt = baseTime
+			user.UpdatedAt = baseTime
+			user.Version = 1
+		}).Return(nil).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userMetadataProjection)
+			return ok
+		})).Return(nil).Once()
 		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
 			_, ok := dest.(*models.Actor)
 			return ok

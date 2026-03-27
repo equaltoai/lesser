@@ -213,5 +213,23 @@ func populateAccountRepositoryStructForCoverage(target any, idx int, baseTime ti
 		model.PK = "USER#user-1"
 		model.SK = models.SKMetadata
 		model.Value = 1
+
+	case *userCoreProjection:
+		model.Table = "test-table"
+		model.PK = "USER#user-1"
+		model.SK = models.SKMetadata
+		model.Username = fmt.Sprintf("user-%d", idx+1)
+		model.PasswordHash = "$2a$10$9Ay8tAONpS50qIdW.6P7Q.0i1o5nYVnDWAlC4AgdnbIXpNUv25B1q" // "password"
+		model.Role = "user"
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		model.Approved = true
+		model.Version = 1
+
+	case *userMetadataProjection:
+		model.Table = "test-table"
+		model.PK = "USER#user-1"
+		model.SK = models.SKMetadata
+		model.Metadata = map[string]interface{}{"theme": "dark"}
 	}
 }

@@ -127,20 +127,24 @@ func TestAccountRepository_SearchByWebfinger_LocalDomainCanonicalizesMixedCaseUs
 	mockQuery := new(mocks.MockQuery)
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Return(errors.ErrItemNotFound).Once()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Run(func(args mock.Arguments) {
-		user := args.Get(0).(*models.User)
+		user := args.Get(0).(*userCoreProjection)
+		user.Table = "test-table"
+		user.PK = "USER#Medic"
+		user.SK = models.SKMetadata
 		user.Username = "Medic"
 		user.Role = "user"
+		user.Approved = true
+		user.Version = 1
 		user.CreatedAt = baseTime
 		user.UpdatedAt = baseTime
-		_ = user.UpdateKeys()
 	}).Return(nil).Once()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
@@ -182,20 +186,24 @@ func TestAccountRepository_SearchByWebfinger_ManagedLesserSoulAliasIsLocal(t *te
 	mockQuery := new(mocks.MockQuery)
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Return(errors.ErrItemNotFound).Once()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Run(func(args mock.Arguments) {
-		user := args.Get(0).(*models.User)
+		user := args.Get(0).(*userCoreProjection)
+		user.Table = "test-table"
+		user.PK = "USER#Agent-0"
+		user.SK = models.SKMetadata
 		user.Username = "Agent-0"
 		user.Role = "user"
+		user.Approved = true
+		user.Version = 1
 		user.CreatedAt = baseTime
 		user.UpdatedAt = baseTime
-		_ = user.UpdateKeys()
 	}).Return(nil).Once()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
@@ -237,7 +245,14 @@ func TestAccountRepository_SearchAllActors_FilteringAndErrorBranches(t *testing.
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("First", mock.Anything).Return(errors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*models.Actor)
+			return ok
+		})).Return(errors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
+			return ok
+		})).Return(errors.ErrItemNotFound).Once()
 
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Actor)

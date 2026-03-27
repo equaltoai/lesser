@@ -166,6 +166,145 @@ func (s *round10QueryState) whereString(field string) (string, bool) {
 	return str, ok
 }
 
+func round10ResolveUserForRead(state *round10QueryState) storagemodels.User {
+	if state == nil {
+		now := time.Now()
+		return storagemodels.User{Username: "alice", Role: "user", Approved: true, Version: 1, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}
+	}
+
+	username := ""
+	if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "USER#") {
+		username = strings.TrimPrefix(pk, "USER#")
+	} else if gsi5pk, ok := state.whereString("gsi5PK"); ok && strings.HasPrefix(gsi5pk, "USER_HANDLE_PREFIX#") {
+		if gsi5sk, ok := state.whereString("gsi5SK"); ok {
+			for candidate, user := range state.usersByUsername {
+				if strings.EqualFold(strings.TrimSpace(user.Username), gsi5sk) || strings.EqualFold(strings.TrimSpace(candidate), gsi5sk) {
+					return user
+				}
+			}
+			username = gsi5sk
+		}
+	}
+
+	if user, ok := state.usersByUsername[username]; ok {
+		return user
+	}
+	for candidate, user := range state.usersByUsername {
+		if strings.EqualFold(strings.TrimSpace(user.Username), username) || strings.EqualFold(strings.TrimSpace(candidate), username) {
+			return user
+		}
+	}
+
+	role := "user"
+	if strings.EqualFold(username, "admin") {
+		role = "admin"
+	}
+	now := time.Now()
+	user := storagemodels.User{
+		Username:  username,
+		Role:      role,
+		Approved:  true,
+		Version:   1,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now,
+	}
+	for candidate, actor := range state.actorsByUser {
+		if !strings.EqualFold(candidate, username) && !strings.EqualFold(actor.Username, username) {
+			continue
+		}
+		if actor.Actor != nil && strings.EqualFold(strings.TrimSpace(actor.Actor.Type), "Service") {
+			user.IsAgent = true
+		}
+		break
+	}
+	return user
+}
+
+func round10HasUserForRead(state *round10QueryState) bool {
+	if state == nil || state.usersByUsername == nil {
+		return false
+	}
+	user := round10ResolveUserForRead(state)
+	if strings.TrimSpace(user.Username) == "" {
+		return false
+	}
+	for candidate, existing := range state.usersByUsername {
+		if strings.EqualFold(strings.TrimSpace(existing.Username), user.Username) || strings.EqualFold(strings.TrimSpace(candidate), user.Username) {
+			return true
+		}
+	}
+	return false
+}
+
+func round10PopulateAccountProjection(dest any, state *round10QueryState) bool {
+	typeName := reflect.TypeOf(dest).String()
+	if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+		return false
+	}
+
+	user := round10ResolveUserForRead(state)
+	value := reflect.ValueOf(dest).Elem()
+	round10SetField(value, "Table", "test-table")
+	round10SetField(value, "PK", "USER#"+user.Username)
+	round10SetField(value, "SK", storagemodels.SKMetadata)
+
+	if typeName == "*repositories.userMetadataProjection" {
+		round10SetField(value, "Metadata", user.Metadata)
+		return true
+	}
+
+	round10SetField(value, "Username", user.Username)
+	round10SetField(value, "Email", user.Email)
+	round10SetField(value, "PasswordHash", user.PasswordHash)
+	round10SetField(value, "DisplayName", user.DisplayName)
+	round10SetField(value, "Note", user.Note)
+	round10SetField(value, "Avatar", user.Avatar)
+	round10SetField(value, "Header", user.Header)
+	round10SetField(value, "URL", user.URL)
+	round10SetField(value, "Locked", user.Locked)
+	round10SetField(value, "Discoverable", user.Discoverable)
+	round10SetField(value, "Fields", user.Fields)
+	round10SetField(value, "CreatedAt", user.CreatedAt)
+	round10SetField(value, "UpdatedAt", user.UpdatedAt)
+	round10SetField(value, "Approved", user.Approved)
+	round10SetField(value, "Suspended", user.Suspended)
+	round10SetField(value, "Silenced", user.Silenced)
+	round10SetField(value, "Role", user.Role)
+	round10SetField(value, "Locale", user.Locale)
+	round10SetField(value, "RecoveryMethods", user.RecoveryMethods)
+	round10SetField(value, "AllowNSFW", user.AllowNSFW)
+	round10SetField(value, "RequireNSFWWarning", user.RequireNSFWWarning)
+	round10SetField(value, "IsAgent", user.IsAgent)
+	round10SetField(value, "AgentType", user.AgentType)
+	round10SetField(value, "AgentCapabilities", user.AgentCapabilities)
+	round10SetField(value, "AgentVersion", user.AgentVersion)
+	round10SetField(value, "AgentOwner", user.AgentOwner)
+	round10SetField(value, "AgentCreatedBy", user.AgentCreatedBy)
+	round10SetField(value, "AgentPublicKey", user.AgentPublicKey)
+	round10SetField(value, "AgentKeyType", user.AgentKeyType)
+	round10SetField(value, "Version", user.Version)
+	return true
+}
+
+func round10SetField(target reflect.Value, name string, value any) {
+	field := target.FieldByName(name)
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	if value == nil {
+		field.Set(reflect.Zero(field.Type()))
+		return
+	}
+	incoming := reflect.ValueOf(value)
+	if incoming.Type().AssignableTo(field.Type()) {
+		field.Set(incoming)
+		return
+	}
+	if incoming.Type().ConvertibleTo(field.Type()) {
+		field.Set(incoming.Convert(field.Type()))
+	}
+}
+
 func round10NewLiftContext(method, path string, headers, query map[string]string, body any) (*apptheory.Context, error) {
 	var bodyBytes []byte
 	if body != nil {
@@ -701,6 +840,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if dest == nil {
+			return false
+		}
+		typeName := reflect.TypeOf(dest).String()
+		if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+			return false
+		}
+		if pk, ok := state.whereString("PK"); ok && state.notFoundPKs[pk] {
+			return true
+		}
+		if gsi5sk, ok := state.whereString("gsi5SK"); ok && state.notFoundPKs["USER#"+strings.TrimSpace(gsi5sk)] {
+			return true
+		}
+		if state.usersByUsername == nil {
+			return false
+		}
+		return !round10HasUserForRead(state)
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
 		if _, ok := dest.(*storagemodels.User); !ok {
 			return false
 		}
@@ -748,6 +907,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
+		if round10PopulateAccountProjection(dest, state) {
+			return
+		}
 		switch d := dest.(type) {
 		case *storagemodels.AgentInstanceConfig:
 			if state.agentInstanceConfig != nil {
@@ -772,6 +934,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			if user, ok := state.usersByUsername[username]; ok {
 				*d = user
 				return
+			}
+			for candidate, user := range state.usersByUsername {
+				if strings.EqualFold(strings.TrimSpace(user.Username), username) || strings.EqualFold(strings.TrimSpace(candidate), username) {
+					*d = user
+					return
+				}
 			}
 			*d = storagemodels.User{Username: username, Role: "user", Approved: true, Version: 1}
 		case *storagemodels.AgentGovernanceState:

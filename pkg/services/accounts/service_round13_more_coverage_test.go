@@ -197,6 +197,13 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 
 	if opts.forceUserNotFound {
 		q.On("First", mock.AnythingOfType("*models.User")).Return(dynamormErrors.ErrItemNotFound).Maybe()
+		q.On("First", mock.MatchedBy(func(dest any) bool {
+			if dest == nil {
+				return false
+			}
+			typeName := reflect.TypeOf(dest).String()
+			return typeName == "*repositories.userCoreProjection" || typeName == "*repositories.userMetadataProjection"
+		})).Return(dynamormErrors.ErrItemNotFound).Maybe()
 	}
 	if opts.forceMarkerNotFound {
 		q.On("First", mock.AnythingOfType("*models.Marker")).Return(dynamormErrors.ErrItemNotFound).Maybe()
@@ -360,6 +367,10 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 func fillModelPointer(t *testing.T, dest any, getWhere func(string) (any, bool), opts permissiveDBOptions) {
 	t.Helper()
 
+	if fillAccountsUserProjection(dest, getWhere, opts) {
+		return
+	}
+
 	switch v := dest.(type) {
 	case *models.User:
 		username := extractUsernameFromWhere(getWhere, "PK", "USER#", "alice")
@@ -436,6 +447,61 @@ func fillModelPointer(t *testing.T, dest any, getWhere func(string) (any, bool),
 	default:
 		// Leave other models as zero values.
 		return
+	}
+}
+
+func fillAccountsUserProjection(dest any, getWhere func(string) (any, bool), opts permissiveDBOptions) bool {
+	if dest == nil {
+		return false
+	}
+	typeName := reflect.TypeOf(dest).String()
+	if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+		return false
+	}
+
+	username := extractUsernameFromWhere(getWhere, "PK", "USER#", "alice")
+	if gsi5sk := extractStringFromWhere(getWhere, "gsi5SK"); strings.TrimSpace(gsi5sk) != "" {
+		username = strings.TrimSpace(gsi5sk)
+	}
+
+	value := reflect.ValueOf(dest).Elem()
+	setAccountsProjectionField(value, "Table", "test-table")
+	setAccountsProjectionField(value, "PK", "USER#"+username)
+	setAccountsProjectionField(value, "SK", models.SKMetadata)
+
+	if typeName == "*repositories.userMetadataProjection" {
+		setAccountsProjectionField(value, "Metadata", map[string]any{})
+		return true
+	}
+
+	now := time.Now()
+	setAccountsProjectionField(value, "Username", username)
+	setAccountsProjectionField(value, "DisplayName", username)
+	setAccountsProjectionField(value, "Role", "user")
+	setAccountsProjectionField(value, "Approved", true)
+	setAccountsProjectionField(value, "Suspended", opts.forceUserSuspended)
+	setAccountsProjectionField(value, "Version", 1)
+	setAccountsProjectionField(value, "CreatedAt", now.Add(-time.Hour))
+	setAccountsProjectionField(value, "UpdatedAt", now)
+	return true
+}
+
+func setAccountsProjectionField(target reflect.Value, name string, value any) {
+	field := target.FieldByName(name)
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	if value == nil {
+		field.Set(reflect.Zero(field.Type()))
+		return
+	}
+	incoming := reflect.ValueOf(value)
+	if incoming.Type().AssignableTo(field.Type()) {
+		field.Set(incoming)
+		return
+	}
+	if incoming.Type().ConvertibleTo(field.Type()) {
+		field.Set(incoming.Convert(field.Type()))
 	}
 }
 

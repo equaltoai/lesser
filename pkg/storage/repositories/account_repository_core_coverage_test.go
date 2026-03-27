@@ -191,15 +191,20 @@ func TestAccountRepository_ValidateCredentials_SuccessAndFailures(t *testing.T) 
 	require.NoError(t, err)
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Run(func(args mock.Arguments) {
-		user := args.Get(0).(*models.User)
+		user := args.Get(0).(*userCoreProjection)
+		user.Table = "test-table"
+		user.PK = "USER#alice"
+		user.SK = models.SKMetadata
 		user.Username = "alice"
 		user.PasswordHash = string(passwordHash)
+		user.Role = "user"
+		user.Approved = true
+		user.Version = 1
 		user.CreatedAt = baseTime
 		user.UpdatedAt = baseTime
-		_ = user.UpdateKeys()
 	}).Return(nil).Once()
 
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, mockUpdateBuilder, baseTime)

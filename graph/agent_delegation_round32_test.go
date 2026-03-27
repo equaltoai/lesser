@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -104,21 +105,116 @@ func (s *delegationGraphState) user(username string) *storageModels.User {
 	if s == nil || s.users == nil {
 		return nil
 	}
-	return s.users[username]
+	if user, ok := s.users[username]; ok {
+		return user
+	}
+	for candidate, user := range s.users {
+		if strings.EqualFold(candidate, username) || strings.EqualFold(user.Username, username) {
+			return user
+		}
+	}
+	return nil
 }
 
 func (s *delegationGraphState) actor(username string) *storageModels.Actor {
 	if s == nil || s.actors == nil {
 		return nil
 	}
-	return s.actors[username]
+	if actor, ok := s.actors[username]; ok {
+		return actor
+	}
+	for candidate, actor := range s.actors {
+		if strings.EqualFold(candidate, username) || strings.EqualFold(actor.Username, username) {
+			return actor
+		}
+	}
+	return nil
 }
 
 func (s *delegationGraphState) governanceState(username string) *storageModels.AgentGovernanceState {
 	if s == nil || s.governance == nil {
 		return nil
 	}
-	return s.governance[username]
+	if governance, ok := s.governance[username]; ok {
+		return governance
+	}
+	for candidate, governance := range s.governance {
+		if strings.EqualFold(candidate, username) || strings.EqualFold(governance.Username, username) {
+			return governance
+		}
+	}
+	return nil
+}
+
+func delegationPopulateUserProjection(dest any, user *storageModels.User) bool {
+	if dest == nil || user == nil {
+		return false
+	}
+	typeName := reflect.TypeOf(dest).String()
+	if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+		return false
+	}
+
+	value := reflect.ValueOf(dest).Elem()
+	delegationSetField(value, "Table", "test-table")
+	delegationSetField(value, "PK", "USER#"+user.Username)
+	delegationSetField(value, "SK", storageModels.SKMetadata)
+
+	if typeName == "*repositories.userMetadataProjection" {
+		delegationSetField(value, "Metadata", user.Metadata)
+		return true
+	}
+
+	delegationSetField(value, "Username", user.Username)
+	delegationSetField(value, "Email", user.Email)
+	delegationSetField(value, "PasswordHash", user.PasswordHash)
+	delegationSetField(value, "DisplayName", user.DisplayName)
+	delegationSetField(value, "Note", user.Note)
+	delegationSetField(value, "Avatar", user.Avatar)
+	delegationSetField(value, "Header", user.Header)
+	delegationSetField(value, "URL", user.URL)
+	delegationSetField(value, "Locked", user.Locked)
+	delegationSetField(value, "Discoverable", user.Discoverable)
+	delegationSetField(value, "Fields", user.Fields)
+	delegationSetField(value, "CreatedAt", user.CreatedAt)
+	delegationSetField(value, "UpdatedAt", user.UpdatedAt)
+	delegationSetField(value, "Approved", user.Approved)
+	delegationSetField(value, "Suspended", user.Suspended)
+	delegationSetField(value, "Silenced", user.Silenced)
+	delegationSetField(value, "Role", user.Role)
+	delegationSetField(value, "Locale", user.Locale)
+	delegationSetField(value, "RecoveryMethods", user.RecoveryMethods)
+	delegationSetField(value, "AllowNSFW", user.AllowNSFW)
+	delegationSetField(value, "RequireNSFWWarning", user.RequireNSFWWarning)
+	delegationSetField(value, "IsAgent", user.IsAgent)
+	delegationSetField(value, "AgentType", user.AgentType)
+	delegationSetField(value, "AgentCapabilities", user.AgentCapabilities)
+	delegationSetField(value, "AgentVersion", user.AgentVersion)
+	delegationSetField(value, "AgentOwner", user.AgentOwner)
+	delegationSetField(value, "AgentCreatedBy", user.AgentCreatedBy)
+	delegationSetField(value, "AgentPublicKey", user.AgentPublicKey)
+	delegationSetField(value, "AgentKeyType", user.AgentKeyType)
+	delegationSetField(value, "Version", user.Version)
+	return true
+}
+
+func delegationSetField(target reflect.Value, name string, value any) {
+	field := target.FieldByName(name)
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	if value == nil {
+		field.Set(reflect.Zero(field.Type()))
+		return
+	}
+	incoming := reflect.ValueOf(value)
+	if incoming.Type().AssignableTo(field.Type()) {
+		field.Set(incoming)
+		return
+	}
+	if incoming.Type().ConvertibleTo(field.Type()) {
+		field.Set(incoming.Convert(field.Type()))
+	}
 }
 
 func (s *delegationGraphState) refreshTokensForUserClient(username, clientID string) []storageModels.RefreshToken {
@@ -265,6 +361,30 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 		*dest = nil
 	}).Return(nil).Maybe()
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if dest == nil {
+			return false
+		}
+		typeName := reflect.TypeOf(dest).String()
+		if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+			return false
+		}
+		username := strings.TrimPrefix(lastPK, "USER#")
+		return state.user(username) == nil
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if dest == nil {
+			return false
+		}
+		typeName := reflect.TypeOf(dest).String()
+		if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+			return false
+		}
+		username := strings.TrimPrefix(lastPK, "USER#")
+		return state.user(username) != nil
+	})).Run(func(args mock.Arguments) {
+		_ = delegationPopulateUserProjection(args.Get(0), state.user(strings.TrimPrefix(lastPK, "USER#")))
+	}).Return(nil).Maybe()
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
 		_, ok := dest.(*storageModels.User)
 		username := strings.TrimPrefix(lastPK, "USER#")

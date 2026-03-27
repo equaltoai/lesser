@@ -29,20 +29,23 @@ func TestAccountRepository_GetUser_FallsBackToLegacyMixedCaseKeys(t *testing.T) 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userCoreProjection")).
 		Return(dynamormErrors.ErrItemNotFound).
 		Once()
-	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userCoreProjection")).
 		Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "Arch"
 			user.Role = "user"
 			user.CreatedAt = now
 			user.UpdatedAt = now
-			_ = user.UpdateKeys()
 		}).
+		Return(nil).
+		Once()
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userMetadataProjection")).
 		Return(nil).
 		Once()
 
@@ -52,7 +55,7 @@ func TestAccountRepository_GetUser_FallsBackToLegacyMixedCaseKeys(t *testing.T) 
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	require.Equal(t, "Arch", user.Username)
-	mockQuery.AssertNumberOfCalls(t, "First", 2)
+	mockQuery.AssertNumberOfCalls(t, "First", 3)
 }
 
 func TestAccountRepository_GetUser_ResolvesLegacyMixedCaseKeysViaCanonicalHandleIndex(t *testing.T) {
@@ -62,23 +65,24 @@ func TestAccountRepository_GetUser_ResolvesLegacyMixedCaseKeysViaCanonicalHandle
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Index", "gsi5").Return(mockQuery).Once()
-	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userCoreProjection")).
 		Return(dynamormErrors.ErrItemNotFound).
 		Once()
-	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userCoreProjection")).
 		Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "Medic"
 			user.Role = "user"
 			user.CreatedAt = now
 			user.UpdatedAt = now
-			user.GSI5PK = "USER_HANDLE_PREFIX#me"
-			user.GSI5SK = "medic"
-			_ = user.UpdateKeys()
 		}).
+		Return(nil).
+		Once()
+	mockQuery.On("First", mock.AnythingOfType("*repositories.userMetadataProjection")).
 		Return(nil).
 		Once()
 
@@ -88,7 +92,7 @@ func TestAccountRepository_GetUser_ResolvesLegacyMixedCaseKeysViaCanonicalHandle
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	require.Equal(t, "Medic", user.Username)
-	mockQuery.AssertNumberOfCalls(t, "First", 2)
+	mockQuery.AssertNumberOfCalls(t, "First", 3)
 	mockQuery.AssertCalled(t, "Index", "gsi5")
 }
 
