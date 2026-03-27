@@ -16,15 +16,6 @@ type MockConversationRepository struct {
 	mock.Mock
 }
 
-func (m *MockConversationRepository) hasExpectation(method string) bool {
-	for _, call := range m.ExpectedCalls {
-		if call.Method == method {
-			return true
-		}
-	}
-	return false
-}
-
 // NewMockConversationRepository creates a new mock conversation repository
 func NewMockConversationRepository() *MockConversationRepository {
 	return &MockConversationRepository{}

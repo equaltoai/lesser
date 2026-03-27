@@ -26,15 +26,6 @@ type mockConversationRepository struct {
 	directMessageWritesFrozenErr error
 }
 
-func (m *mockConversationRepository) hasExpectation(method string) bool {
-	for _, call := range m.ExpectedCalls {
-		if call.Method == method {
-			return true
-		}
-	}
-	return false
-}
-
 func testConversationStateContract(viewerID, conversationID string, apply func(*interfaces.UserConversationStateContract)) *interfaces.UserConversationStateContract {
 	state := &interfaces.UserConversationStateContract{
 		ViewerID:       viewerID,
