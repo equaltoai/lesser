@@ -32,6 +32,23 @@ type conversationTransactionalDB interface {
 	TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
+// DirectMessageWritesFrozen reports whether the singleton DM migration state currently
+// blocks live DM mutations.
+func (r *ConversationRepository) DirectMessageWritesFrozen(ctx context.Context) (bool, error) {
+	var state models.DirectMessageMigrationState
+	err := r.GetDB().WithContext(ctx).Model(&models.DirectMessageMigrationState{}).
+		Where("PK", "=", models.DirectMessageMigrationStatePK).
+		Where("SK", "=", models.DirectMessageMigrationStateSK).
+		First(&state)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return state.WritesFrozen, nil
+}
+
 func conversationParticipantLookupPK(participants []string) string {
 	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
 }

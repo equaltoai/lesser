@@ -22,6 +22,8 @@ import (
 
 type mockConversationRepository struct {
 	mock.Mock
+	directMessageWritesFrozen    bool
+	directMessageWritesFrozenErr error
 }
 
 func (m *mockConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
@@ -172,6 +174,10 @@ func (m *mockConversationRepository) GetConversationStatuses(ctx context.Context
 func (m *mockConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
 	args := m.Called(ctx, conversationID, statusID)
 	return args.Error(0)
+}
+
+func (m *mockConversationRepository) DirectMessageWritesFrozen(context.Context) (bool, error) {
+	return m.directMessageWritesFrozen, m.directMessageWritesFrozenErr
 }
 
 func (m *mockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {

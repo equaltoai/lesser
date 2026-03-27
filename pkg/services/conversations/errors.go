@@ -76,6 +76,9 @@ var (
 	// Note: intentionally generic to avoid leaking block direction.
 	ErrDirectMessageBlocked = apperrors.AccessDeniedForResource("direct message", "blocked")
 
+	// ErrDirectMessageWritesFrozen is returned when DM writes are frozen for migration.
+	ErrDirectMessageWritesFrozen = apperrors.ResourceLocked("direct message migration", "writes")
+
 	// ErrMessageRequestPending is returned when a sender attempts to send additional messages
 	// before a message request has been accepted.
 	ErrMessageRequestPending = apperrors.NewAppError(apperrors.CodeForbidden, apperrors.CategoryBusiness, "Message request pending")

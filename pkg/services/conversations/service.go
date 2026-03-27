@@ -72,6 +72,10 @@ type transactionalDirectMessageStatusFinalizer interface {
 	FinalizeCreatedStatus(ctx context.Context, status *models.Status) error
 }
 
+type directMessageWriteFreezeChecker interface {
+	DirectMessageWritesFrozen(ctx context.Context) (bool, error)
+}
+
 type directMessageSendAttempt struct {
 	conversation  *models.Conversation
 	status        *models.Status
@@ -112,6 +116,26 @@ func NewService(
 		logger:           logger,
 		domainName:       domainName,
 	}
+}
+
+func (s *Service) ensureDirectMessageWritesAllowed(ctx context.Context) error {
+	if s == nil || s.conversationRepo == nil {
+		return nil
+	}
+
+	checker, ok := s.conversationRepo.(directMessageWriteFreezeChecker)
+	if !ok {
+		return nil
+	}
+
+	frozen, err := checker.DirectMessageWritesFrozen(ctx)
+	if err != nil {
+		return err
+	}
+	if frozen {
+		return ErrDirectMessageWritesFrozen
+	}
+	return nil
 }
 
 // Command structs for operations
@@ -249,6 +273,9 @@ type Result struct {
 func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversationCommand) (*ConversationResult, error) {
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
 	}
 
 	creatorID := strings.TrimSpace(cmd.CreatorID)
@@ -963,6 +990,9 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
+	}
 
 	s.logger.Info("sending direct message",
 		zap.String("sender_id", cmd.SenderID),
@@ -1234,6 +1264,9 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
+	}
 
 	var retryErr error
 	for attempt := 0; attempt < directMessageSendRetryLimit; attempt++ {
@@ -1259,6 +1292,9 @@ func (s *Service) AcceptMessageRequest(ctx context.Context, cmd *AcceptMessageRe
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
+	}
 
 	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateAccepted, "dm.request.accept")
 }
@@ -1267,6 +1303,9 @@ func (s *Service) AcceptMessageRequest(ctx context.Context, cmd *AcceptMessageRe
 func (s *Service) DeclineMessageRequest(ctx context.Context, cmd *DeclineMessageRequestCommand) (*ConversationResult, error) {
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
 	}
 
 	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateDeclined, "dm.request.decline")
@@ -1326,6 +1365,13 @@ func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationI
 
 // MarkConversationRead marks a conversation as read for a specific user
 func (s *Service) MarkConversationRead(ctx context.Context, cmd *MarkConversationReadCommand) (*ConversationResult, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
+	}
+
 	s.logger.Debug("marking conversation as read",
 		zap.String("conversation_id", cmd.ConversationID),
 		zap.String("user_id", cmd.UserID))
@@ -2017,6 +2063,9 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 	if cmd == nil {
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return nil, err
+	}
 
 	conversationID := strings.TrimSpace(cmd.ConversationID)
 	userID := strings.TrimSpace(cmd.UserID)
@@ -2095,6 +2144,9 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 func (s *Service) DeleteMessage(ctx context.Context, cmd *DeleteMessageCommand) (bool, error) {
 	if cmd == nil {
 		return false, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+	if err := s.ensureDirectMessageWritesAllowed(ctx); err != nil {
+		return false, err
 	}
 
 	viewerUsername := strings.TrimSpace(cmd.UserID)
