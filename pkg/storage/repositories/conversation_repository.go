@@ -666,7 +666,7 @@ func (r *ConversationRepository) GetMutedConversations(ctx context.Context, user
 	var mutes []models.ConversationMute
 	err := r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Scan(&mutes)
+		All(&mutes)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "muted")

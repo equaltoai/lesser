@@ -268,7 +268,7 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 	_, err = repo.IsConversationMuted(context.Background(), "user-1", "conv-1")
 	require.Error(t, err)
 
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.ConversationMute)
 		*ptr = []models.ConversationMute{
 			{Username: "user-1", ConversationID: "expired", ExpiresAt: time.Now().Add(-time.Minute)},
@@ -280,7 +280,7 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 	require.NoError(t, err)
 	require.Equal(t, []string{"active"}, ids)
 
-	mockQuery.On("Scan", mock.Anything).Return(stdErrors.New("scan-failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(stdErrors.New("query-failed")).Once()
 	_, err = repo.GetMutedConversations(context.Background(), "user-1")
 	require.Error(t, err)
 }
