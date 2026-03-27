@@ -44,38 +44,22 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		}))
 	})
 
-	t.Run("mergeVisibleConversationStatePages orders by sort time", func(t *testing.T) {
-		inbox := []*models.UserConversationState{{
-			ConversationID: "conv-1",
-			SortAt:         time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC),
-		}}
-		requests := []*models.UserConversationState{{
-			ConversationID: "conv-2",
-			SortAt:         time.Date(2026, 3, 25, 11, 0, 0, 0, time.UTC),
-		}}
-
-		merged, nextCursor, hasMore := mergeVisibleConversationStatePages(inbox, requests, 1)
-		require.Len(t, merged, 1)
-		require.Equal(t, "conv-1", merged[0].ConversationID)
-		require.True(t, hasMore)
-		require.Equal(t, merged[0].LegacyListCursor(), nextCursor)
-	})
-
 	t.Run("projection helpers preserve canonical state and clone conversation payloads", func(t *testing.T) {
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
 		lastReadAt := conversationTimePtr(sortAt.Add(-30 * time.Minute))
 		state := &models.UserConversationState{
-			ViewerID:       "alice",
-			ConversationID: "conv-1",
-			CounterpartID:  "bob",
-			Folder:         models.UserConversationFolderInbox,
-			RequestState:   models.DmRequestStateAccepted,
-			Unread:         true,
-			LastReadAt:     lastReadAt,
-			SortAt:         sortAt,
-			CreatedAt:      sortAt.Add(-time.Hour),
-			UpdatedAt:      sortAt,
+			ViewerID:        "alice",
+			ConversationID:  "conv-1",
+			CounterpartID:   "bob",
+			Folder:          models.UserConversationFolderInbox,
+			RequestState:    models.DmRequestStateAccepted,
+			PreviewStatusID: "status-1",
+			Unread:          true,
+			LastReadAt:      lastReadAt,
+			SortAt:          sortAt,
+			CreatedAt:       sortAt.Add(-time.Hour),
+			UpdatedAt:       sortAt,
 		}
 		conversation := &models.Conversation{
 			ID:           "conv-1",
@@ -90,25 +74,12 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.True(t, contract.Unread)
 		require.Equal(t, lastReadAt.UTC(), *contract.LastReadAt)
 
-		require.Nil(t, stateModelFromContract(nil))
-		model := stateModelFromContract(contract)
-		require.NotNil(t, model)
-		require.Equal(t, contract.ViewerID, model.ViewerID)
-		require.Equal(t, contract.ConversationID, model.ConversationID)
-		require.Equal(t, contract.CounterpartID, model.CounterpartID)
-		require.Equal(t, contract.RequestState, model.RequestState)
-		require.Equal(t, contract.SortAt, model.SortAt)
-		require.NotNil(t, model.LastReadAt)
-		require.Equal(t, *contract.LastReadAt, *model.LastReadAt)
-
-		modelsFromContracts := stateModelsFromContracts([]*interfaces.UserConversationStateContract{nil, contract})
-		require.Len(t, modelsFromContracts, 1)
-		require.Equal(t, contract.ConversationID, modelsFromContracts[0].ConversationID)
-
-		require.Nil(t, cloneConversationForViewer(nil, false))
-		cloned := cloneConversationForViewer(conversation, true)
+		require.Nil(t, cloneConversationForViewer(nil, nil))
+		cloned := cloneConversationForViewer(conversation, state)
 		require.NotNil(t, cloned)
 		require.True(t, cloned.Unread)
+		require.NotNil(t, cloned.ViewerState)
+		require.Equal(t, "status-1", cloned.ViewerState.PreviewStatusID)
 		cloned.Participants[0] = "mutated"
 		require.Equal(t, "alice", conversation.Participants[0])
 
@@ -470,6 +441,9 @@ func TestRound34_ConversationRepository_GetUserConversationsByFolder_UsesFolderQ
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "conv-1", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
+	require.NotNil(t, result.Items[0].ViewerState)
+	require.Equal(t, models.UserConversationFolderRequests, result.Items[0].ViewerState.Folder)
+	require.Equal(t, "bob", result.Items[0].ViewerState.CounterpartID)
 }
 
 func TestRound34_ConversationRepository_GetUserConversationsByFolder_PropagatesFolderQueryError(t *testing.T) {
@@ -491,15 +465,148 @@ func TestRound34_ConversationRepository_GetUserConversationsByFolder_PropagatesF
 	require.Error(t, err)
 }
 
-func TestRound34_ConversationRepository_GetUserConversations_UsesMergedFolderQueries(t *testing.T) {
+func TestRound34_ConversationRepository_GetUserConversationsByRequestState_MapsRequestStateToFolderQuery(t *testing.T) {
+	t.Run("pending uses requests folder", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		requestQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
+		requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
+		requestQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#REQUESTS").Return(requestQuery).Once()
+		requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
+		requestQuery.On("Limit", 2).Return(requestQuery).Once()
+		requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.UserConversationState)
+			*dest = []*models.UserConversationState{{
+				ViewerID:       "alice",
+				ConversationID: "conv-pending",
+				CounterpartID:  "bob",
+				Folder:         models.UserConversationFolderRequests,
+				RequestState:   models.DmRequestStatePending,
+				SortAt:         sortAt,
+			}}
+		}).Return(nil).Once()
+
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-pending").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.Conversation)
+			*dest = models.Conversation{
+				ID:           "conv-pending",
+				Participants: []string{"alice", "bob"},
+				UpdatedAt:    sortAt,
+			}
+		}).Return(nil).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		result, err := repo.GetUserConversationsByRequestState(ctx, "alice", models.DmRequestStatePending, interfaces.PaginationOptions{Limit: 1})
+		require.NoError(t, err)
+		require.Len(t, result.Items, 1)
+		require.Equal(t, "conv-pending", result.Items[0].ID)
+	})
+
+	t.Run("accepted defaults to inbox folder", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		inboxQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(inboxQuery).Once()
+		inboxQuery.On("Index", "gsi1").Return(inboxQuery).Once()
+		inboxQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(inboxQuery).Once()
+		inboxQuery.On("OrderBy", "gsi1SK", "DESC").Return(inboxQuery).Once()
+		inboxQuery.On("Limit", 2).Return(inboxQuery).Once()
+		inboxQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.UserConversationState)
+			*dest = []*models.UserConversationState{{
+				ViewerID:       "alice",
+				ConversationID: "conv-accepted",
+				CounterpartID:  "bob",
+				Folder:         models.UserConversationFolderInbox,
+				RequestState:   models.DmRequestStateAccepted,
+				SortAt:         sortAt,
+			}}
+		}).Return(nil).Once()
+
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-accepted").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.Conversation)
+			*dest = models.Conversation{
+				ID:           "conv-accepted",
+				Participants: []string{"alice", "bob"},
+				UpdatedAt:    sortAt,
+			}
+		}).Return(nil).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		result, err := repo.GetUserConversationsByRequestState(ctx, "alice", models.DmRequestStateAccepted, interfaces.PaginationOptions{Limit: 1})
+		require.NoError(t, err)
+		require.Len(t, result.Items, 1)
+		require.Equal(t, "conv-accepted", result.Items[0].ID)
+	})
+
+	t.Run("declined uses declined folder", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		declinedQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(declinedQuery).Once()
+		declinedQuery.On("Index", "gsi1").Return(declinedQuery).Once()
+		declinedQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#DECLINED").Return(declinedQuery).Once()
+		declinedQuery.On("OrderBy", "gsi1SK", "DESC").Return(declinedQuery).Once()
+		declinedQuery.On("Limit", 2).Return(declinedQuery).Once()
+		declinedQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.UserConversationState)
+			*dest = []*models.UserConversationState{{
+				ViewerID:       "alice",
+				ConversationID: "conv-declined",
+				CounterpartID:  "bob",
+				Folder:         models.UserConversationFolderDeclined,
+				RequestState:   models.DmRequestStateDeclined,
+				SortAt:         sortAt,
+			}}
+		}).Return(nil).Once()
+
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-declined").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.Conversation)
+			*dest = models.Conversation{
+				ID:           "conv-declined",
+				Participants: []string{"alice", "bob"},
+				UpdatedAt:    sortAt,
+			}
+		}).Return(nil).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		result, err := repo.GetUserConversationsByRequestState(ctx, "alice", models.DmRequestStateDeclined, interfaces.PaginationOptions{Limit: 1})
+		require.NoError(t, err)
+		require.Len(t, result.Items, 1)
+		require.Equal(t, "conv-declined", result.Items[0].ID)
+	})
+}
+
+func TestRound34_ConversationRepository_GetUserConversations_UsesInboxFolderQuery(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	inboxQuery := new(mocks.MockQuery)
-	requestQuery := new(mocks.MockQuery)
 	conversationQuery := new(mocks.MockQuery)
 	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
-	mockDB.On("WithContext", ctx).Return(mockDB).Times(3)
+	mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
 	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(inboxQuery).Once()
 	inboxQuery.On("Index", "gsi1").Return(inboxQuery).Once()
 	inboxQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(inboxQuery).Once()
@@ -507,19 +614,9 @@ func TestRound34_ConversationRepository_GetUserConversations_UsesMergedFolderQue
 	inboxQuery.On("Limit", 2).Return(inboxQuery).Once()
 	inboxQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.UserConversationState)
-		*dest = []*models.UserConversationState{}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
-	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
-	requestQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#REQUESTS").Return(requestQuery).Once()
-	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
-	requestQuery.On("Limit", 2).Return(requestQuery).Once()
-	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.UserConversationState)
 		*dest = []*models.UserConversationState{
-			{ViewerID: "alice", ConversationID: "conv-2", CounterpartID: "bob", Folder: models.UserConversationFolderRequests, SortAt: sortAt, Unread: true},
-			{ViewerID: "alice", ConversationID: "conv-3", CounterpartID: "cara", Folder: models.UserConversationFolderRequests, SortAt: sortAt.Add(-time.Hour), Unread: true},
+			{ViewerID: "alice", ConversationID: "conv-2", CounterpartID: "bob", Folder: models.UserConversationFolderInbox, SortAt: sortAt, Unread: true},
+			{ViewerID: "alice", ConversationID: "conv-3", CounterpartID: "cara", Folder: models.UserConversationFolderInbox, SortAt: sortAt.Add(-time.Hour), Unread: true},
 		}
 	}).Return(nil).Once()
 
@@ -653,14 +750,16 @@ func TestRound34_ConversationRepository_GetUnreadConversations_ProjectsCanonical
 	unreadQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.UserConversationState)
 		*dest = []*models.UserConversationState{{
-			ViewerID:       "alice",
-			ConversationID: "conv-8",
-			CounterpartID:  "bob",
-			Folder:         models.UserConversationFolderInbox,
-			Unread:         true,
-			SortAt:         sortAt,
-			CreatedAt:      sortAt.Add(-time.Hour),
-			UpdatedAt:      sortAt,
+			ViewerID:        "alice",
+			ConversationID:  "conv-8",
+			CounterpartID:   "bob",
+			Folder:          models.UserConversationFolderInbox,
+			RequestState:    models.DmRequestStateAccepted,
+			PreviewStatusID: "status-preview",
+			Unread:          true,
+			SortAt:          sortAt,
+			CreatedAt:       sortAt.Add(-time.Hour),
+			UpdatedAt:       sortAt,
 		}}
 	}).Return(nil).Once()
 
@@ -682,6 +781,9 @@ func TestRound34_ConversationRepository_GetUnreadConversations_ProjectsCanonical
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "conv-8", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
+	require.NotNil(t, result.Items[0].ViewerState)
+	require.Equal(t, "status-preview", result.Items[0].ViewerState.PreviewStatusID)
+	require.Equal(t, "bob", result.Items[0].ViewerState.CounterpartID)
 }
 
 func TestRound34_ConversationRepository_GetUnreadConversations_WrapsConversationLoadError(t *testing.T) {

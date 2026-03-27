@@ -4,7 +4,6 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -92,13 +91,27 @@ func defaultUserConversationState(conversation *models.Conversation, viewerID st
 	return state
 }
 
-func cloneConversationForViewer(conversation *models.Conversation, unread bool) *models.Conversation {
+func cloneUserConversationState(state *models.UserConversationState) *models.UserConversationState {
+	if state == nil {
+		return nil
+	}
+
+	cloned := *state
+	return &cloned
+}
+
+func cloneConversationForViewer(conversation *models.Conversation, state *models.UserConversationState) *models.Conversation {
 	if conversation == nil {
 		return nil
 	}
 
 	clonedParticipants := make([]string, len(conversation.Participants))
 	copy(clonedParticipants, conversation.Participants)
+
+	unread := false
+	if state != nil {
+		unread = state.Unread
+	}
 
 	return &models.Conversation{
 		PK:                conversation.PK,
@@ -113,6 +126,7 @@ func cloneConversationForViewer(conversation *models.Conversation, unread bool) 
 		UpdatedAt:         conversation.UpdatedAt,
 		TotalMessageCount: conversation.TotalMessageCount,
 		LastMessageTime:   conversation.LastMessageTime,
+		ViewerState:       cloneUserConversationState(state),
 	}
 }
 
@@ -140,41 +154,6 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 	}
 }
 
-func stateModelFromContract(state *interfaces.UserConversationStateContract) *models.UserConversationState {
-	if state == nil {
-		return nil
-	}
-
-	return &models.UserConversationState{
-		ViewerID:                 state.ViewerID,
-		ConversationID:           state.ConversationID,
-		CounterpartID:            state.CounterpartID,
-		Folder:                   state.Folder,
-		RequestState:             state.RequestState,
-		PreviewStatusID:          state.PreviewStatusID,
-		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
-		SortAt:                   state.SortAt,
-		Unread:                   state.Unread,
-		LastReadAt:               state.LastReadAt,
-		DeletedAt:                state.DeletedAt,
-		RequestedAt:              state.RequestedAt,
-		AcceptedAt:               state.AcceptedAt,
-		DeclinedAt:               state.DeclinedAt,
-		CreatedAt:                state.CreatedAt,
-		UpdatedAt:                state.UpdatedAt,
-	}
-}
-
-func stateModelsFromContracts(items []*interfaces.UserConversationStateContract) []*models.UserConversationState {
-	states := make([]*models.UserConversationState, 0, len(items))
-	for _, item := range items {
-		if state := stateModelFromContract(item); state != nil {
-			states = append(states, state)
-		}
-	}
-	return states
-}
-
 func stateRecordFromModel(state *models.UserConversationState, conversation *models.Conversation) *models.ConversationParticipantRecord {
 	if state == nil {
 		return nil
@@ -200,7 +179,7 @@ func stateRecordFromModel(state *models.UserConversationState, conversation *mod
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
 		UpdatedAt:                state.UpdatedAt,
-		Conversation:             cloneConversationForViewer(conversation, state.Unread),
+		Conversation:             cloneConversationForViewer(conversation, state),
 	}
 	return record
 }
@@ -360,7 +339,7 @@ func (r *ConversationRepository) loadConversationsForStates(ctx context.Context,
 			}
 			return nil, err
 		}
-		conversations = append(conversations, cloneConversationForViewer(conversation, state.Unread))
+		conversations = append(conversations, cloneConversationForViewer(conversation, state))
 	}
 	return conversations, nil
 }
@@ -374,27 +353,6 @@ func folderFromRequestState(requestState models.DmRequestState) models.UserConve
 	default:
 		return models.UserConversationFolderInbox
 	}
-}
-
-func mergeVisibleConversationStatePages(inbox []*models.UserConversationState, requests []*models.UserConversationState, limit int) ([]*models.UserConversationState, string, bool) {
-	merged := make([]*models.UserConversationState, 0, len(inbox)+len(requests))
-	merged = append(merged, inbox...)
-	merged = append(merged, requests...)
-
-	sort.Slice(merged, func(i, j int) bool {
-		if merged[i].SortAt.Equal(merged[j].SortAt) {
-			return merged[i].ConversationID > merged[j].ConversationID
-		}
-		return merged[i].SortAt.After(merged[j].SortAt)
-	})
-
-	hasMore := len(merged) > limit
-	if !hasMore {
-		return merged, "", false
-	}
-
-	merged = merged[:limit]
-	return merged, merged[len(merged)-1].LegacyListCursor(), true
 }
 
 func participantRecordFolder(record *models.ConversationParticipantRecord) models.UserConversationFolder {
@@ -431,16 +389,21 @@ func (r *ConversationRepository) ListUserConversationStatesByFolder(ctx context.
 		items = append(items, stateContractFromModel(state))
 	}
 
+	total := int64(-1)
+	if len(items) == 0 && !hasMore {
+		total = 0
+	}
+
 	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1,
+		Total:      total,
 	}, nil
 }
 
 // ListUnreadUserConversationStates queries the viewer's sparse unread index.
-func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+func (r *ConversationRepository) listUnreadUserConversationStatesModels(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) ([]*models.UserConversationState, string, bool, error) {
 	limit := clampListLimit(opts.Limit, 20, 100)
 	query := r.GetDB().WithContext(ctx).Model(&models.UserConversationState{}).
 		Index("gsi2").
@@ -454,13 +417,9 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Co
 	var states []*models.UserConversationState
 	if err := query.All(&states); err != nil {
 		if errors.IsNotFound(err) {
-			return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
-				Items:   []*interfaces.UserConversationStateContract{},
-				Total:   0,
-				HasMore: false,
-			}, nil
+			return []*models.UserConversationState{}, "", false, nil
 		}
-		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread user conversation states")
+		return nil, "", false, ErrorHandler.HandleQueryError(err, EntityConversation, "unread user conversation states")
 	}
 
 	hasMore := len(states) > limit
@@ -473,16 +432,31 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Co
 		nextCursor = states[len(states)-1].LegacyListCursor()
 	}
 
+	return states, nextCursor, hasMore, nil
+}
+
+// ListUnreadUserConversationStates queries the viewer's sparse unread index.
+func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, viewerID, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]*interfaces.UserConversationStateContract, 0, len(states))
 	for _, state := range states {
 		items = append(items, stateContractFromModel(state))
+	}
+
+	total := int64(-1)
+	if len(items) == 0 && !hasMore {
+		total = 0
 	}
 
 	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1,
+		Total:      total,
 	}, nil
 }
 

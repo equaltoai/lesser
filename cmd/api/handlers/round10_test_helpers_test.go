@@ -282,6 +282,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 	mockQuery.On("IfExists").Return(mockQuery).Maybe()
+	mockQuery.On("BatchGet", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		dest := args.Get(1)
+		switch out := dest.(type) {
+		case *[]*storagemodels.Status:
+			keys, _ := args.Get(0).([]any)
+			results := make([]*storagemodels.Status, 0, len(keys))
+			for _, rawKey := range keys {
+				keyModel, ok := rawKey.(*storagemodels.Status)
+				if !ok {
+					continue
+				}
+				statusID := strings.TrimPrefix(keyModel.PK, "status#")
+				if status, ok := state.statusByID[statusID]; ok {
+					statusCopy := status
+					results = append(results, &statusCopy)
+				}
+			}
+			*out = results
+		}
+	}).Maybe()
 
 	// UpdateBuilder support
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()

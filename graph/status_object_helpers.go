@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -145,8 +146,16 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 		return nil
 	}
 
+	if prefetched := prefetchedConversationAccount(ctx, username); prefetched != nil {
+		return r.convertAccountToActor(prefetched)
+	}
+
 	accountStart := time.Now()
-	result, err := r.Registry.Accounts().GetAccount(ctx, username)
+	var (
+		result *storage.Account
+		err    error
+	)
+	result, err = r.Registry.Accounts().GetAccount(ctx, username)
 	if convertLogger != nil {
 		convertLogger.Info("convertStatusToObject account lookup",
 			zap.String("status_id", status.StatusID),

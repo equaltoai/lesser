@@ -11,12 +11,15 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageModels.Conversation, viewerUsername string) (apimodels.Conversation, error) {
+	return h.convertConversationToAPIWithPrefetch(ctx, conv, viewerUsername, nil)
+}
+
+func (h *Handler) convertConversationToAPIWithPrefetch(ctx context.Context, conv *storageModels.Conversation, viewerUsername string, prefetch *conversationAPIPrefetch) (apimodels.Conversation, error) {
 	if conv == nil {
 		return apimodels.Conversation{}, nil
 	}
@@ -26,29 +29,12 @@ func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageMod
 		Unread: conv.Unread,
 	}
 
-	accounts := make([]apimodels.Account, 0, len(conv.Participants))
-	for _, participant := range conv.Participants {
-		if participant == "" || participant == viewerUsername {
-			continue
-		}
+	apiConversation.Accounts = h.conversationAPIAccounts(ctx, conv, viewerUsername, prefetch)
 
-		actor, err := h.repos.Actor().GetActor(ctx, participant)
-		if err != nil || actor == nil {
-			continue
-		}
-
-		account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-		accounts = append(accounts, account)
-	}
-	apiConversation.Accounts = accounts
-
-	if conv.LastStatusID != "" {
-		status, err := h.repos.Status().GetStatus(ctx, conv.LastStatusID)
-		if err == nil && status != nil {
-			apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
-			if err == nil {
-				apiConversation.LastStatus = apiStatus
-			}
+	if status := h.conversationAPIStatus(ctx, conv, prefetch); status != nil {
+		apiStatus, err := h.convertStorageStatusToAPIWithContext(conversationAPIStatusContext(h, prefetch), status, viewerUsername)
+		if err == nil {
+			apiConversation.LastStatus = apiStatus
 		}
 	}
 
@@ -87,8 +73,9 @@ func (h *Handler) HandleGetConversationsLift(ctx *apptheory.Context) (*apptheory
 	}
 
 	response := make([]apimodels.Conversation, 0, len(result.Conversations.Items))
+	prefetch := h.loadConversationAPIPrefetch(ctx.Context(), result.Conversations.Items, username)
 	for _, conv := range result.Conversations.Items {
-		apiConv, err := h.convertConversationToAPI(ctx.Context(), conv, username)
+		apiConv, err := h.convertConversationToAPIWithPrefetch(ctx.Context(), conv, username, prefetch)
 		if err != nil {
 			continue
 		}

@@ -372,65 +372,16 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 //
 // Legacy note: DM rewrite M5 removes timeline-side DM list reads that hydrate embedded participant snapshots.
 func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
-	limit = clampListLimit(limit, 20, 100)
-
-	fetchFolder := func(folder models.UserConversationFolder) ([]*models.UserConversationState, bool, error) {
-		query := r.db.WithContext(ctx).Model(&models.UserConversationState{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", userConversationFolderIndexPK(username, folder)).
-			OrderBy("gsi1SK", "DESC").
-			Limit(limit + 1)
-		if cursor != "" {
-			query = query.Where("gsi1SK", "<", cursor)
-		}
-
-		var states []*models.UserConversationState
-		if err := query.All(&states); err != nil {
-			return nil, false, err
-		}
-		hasMore := len(states) > limit
-		if hasMore {
-			states = states[:limit]
-		}
-		return states, hasMore, nil
-	}
-
-	inboxStates, inboxHasMore, err := fetchFolder(models.UserConversationFolderInbox)
+	conversationRepo := NewConversationRepository(r.db, r.tableName, r.logger, nil)
+	result, err := conversationRepo.GetUserConversationsByFolder(ctx, username, models.UserConversationFolderInbox, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+	})
 	if err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "user conversation inbox states")
-	}
-	requestStates, requestHasMore, err := fetchFolder(models.UserConversationFolderRequests)
-	if err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "user conversation request states")
+		return nil, "", err
 	}
 
-	mergedStates, nextCursor, hasMore := mergeVisibleConversationStatePages(inboxStates, requestStates, limit)
-	if !hasMore {
-		hasMore = inboxHasMore || requestHasMore
-		if hasMore && nextCursor == "" && len(mergedStates) > 0 {
-			nextCursor = mergedStates[len(mergedStates)-1].LegacyListCursor()
-		}
-	}
-
-	conversations := make([]*models.Conversation, 0, len(mergedStates))
-	for _, state := range mergedStates {
-		if state == nil {
-			continue
-		}
-
-		var conversation models.Conversation
-		err := r.db.WithContext(ctx).Model(&models.Conversation{}).
-			Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", state.ConversationID)).
-			Where("SK", "=", "METADATA").
-			First(&conversation)
-		if err != nil {
-			continue
-		}
-
-		conversations = append(conversations, cloneConversationForViewer(&conversation, state.Unread))
-	}
-
-	return conversations, nextCursor, nil
+	return result.Items, result.NextCursor, nil
 }
 
 // RemoveFromTimelines removes timeline entries for a specific object across all timelines

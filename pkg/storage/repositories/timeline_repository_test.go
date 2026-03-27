@@ -36,9 +36,7 @@ func TestGetConversations(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	expectWithContext(mockDB)
 	inboxQuery := new(mocks.MockQuery)
-	requestQuery := new(mocks.MockQuery)
 	conversationQuery1 := new(mocks.MockQuery)
-	conversationQuery2 := new(mocks.MockQuery)
 	logger := zap.NewNop()
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
@@ -66,12 +64,10 @@ func TestGetConversations(t *testing.T) {
 			SortAt:         testConv1.UpdatedAt,
 			Unread:         true,
 		},
-	}
-	testRequestStates := []*models.UserConversationState{
 		{
 			ViewerID:       username,
 			ConversationID: "conv2",
-			Folder:         models.UserConversationFolderRequests,
+			Folder:         models.UserConversationFolderInbox,
 			SortAt:         testConv2.UpdatedAt,
 			Unread:         false,
 		},
@@ -88,16 +84,6 @@ func TestGetConversations(t *testing.T) {
 		*records = testInboxStates
 	}).Return(nil).Once()
 
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
-	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
-	requestQuery.On("Where", "gsi1PK", "=", fmt.Sprintf("USER_CONVERSATION_FOLDER#%s#REQUESTS", username)).Return(requestQuery).Once()
-	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
-	requestQuery.On("Limit", limit+1).Return(requestQuery).Once()
-	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
-		records := args.Get(0).(*[]*models.UserConversationState)
-		*records = testRequestStates
-	}).Return(nil)
-
 	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery1).Once()
 	conversationQuery1.On("Where", "PK", "=", "CONVERSATION#conv1").Return(conversationQuery1).Once()
 	conversationQuery1.On("Where", "SK", "=", "METADATA").Return(conversationQuery1).Once()
@@ -106,10 +92,10 @@ func TestGetConversations(t *testing.T) {
 		*dest = *testConv1
 	}).Return(nil).Once()
 
-	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery2).Once()
-	conversationQuery2.On("Where", "PK", "=", "CONVERSATION#conv2").Return(conversationQuery2).Once()
-	conversationQuery2.On("Where", "SK", "=", "METADATA").Return(conversationQuery2).Once()
-	conversationQuery2.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery1).Once()
+	conversationQuery1.On("Where", "PK", "=", "CONVERSATION#conv2").Return(conversationQuery1).Once()
+	conversationQuery1.On("Where", "SK", "=", "METADATA").Return(conversationQuery1).Once()
+	conversationQuery1.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*models.Conversation)
 		*dest = *testConv2
 	}).Return(nil).Once()
@@ -126,16 +112,13 @@ func TestGetConversations(t *testing.T) {
 
 	mockDB.AssertExpectations(t)
 	inboxQuery.AssertExpectations(t)
-	requestQuery.AssertExpectations(t)
 	conversationQuery1.AssertExpectations(t)
-	conversationQuery2.AssertExpectations(t)
 }
 
-func TestGetConversations_UsesMergedFolderPaginationCursor(t *testing.T) {
+func TestGetConversations_UsesInboxFolderPaginationCursor(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	expectWithContext(mockDB)
 	inboxQuery := new(mocks.MockQuery)
-	requestQuery := new(mocks.MockQuery)
 	conversationQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
@@ -154,16 +137,6 @@ func TestGetConversations_UsesMergedFolderPaginationCursor(t *testing.T) {
 			{ViewerID: username, ConversationID: "conv1", Folder: models.UserConversationFolderInbox, SortAt: sortAt, Unread: true},
 			{ViewerID: username, ConversationID: "conv0", Folder: models.UserConversationFolderInbox, SortAt: sortAt.Add(-time.Hour)},
 		}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
-	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
-	requestQuery.On("Where", "gsi1PK", "=", fmt.Sprintf("USER_CONVERSATION_FOLDER#%s#REQUESTS", username)).Return(requestQuery).Once()
-	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
-	requestQuery.On("Limit", 2).Return(requestQuery).Once()
-	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.UserConversationState)
-		*dest = []*models.UserConversationState{}
 	}).Return(nil).Once()
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()

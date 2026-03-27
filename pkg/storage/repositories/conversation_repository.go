@@ -21,6 +21,7 @@ import (
 type ConversationRepository struct {
 	*EnhancedBaseRepository[*models.Conversation]
 	logger          *zap.Logger
+	statusRepo      interfaces.StatusRepository
 	transactWriteFn func(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
@@ -67,6 +68,7 @@ func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger,
 	return &ConversationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,
+		statusRepo:             NewStatusRepository(db, tableName, logger, costService),
 		transactWriteFn:        newConversationTransactWriteFn(db),
 	}
 }
@@ -366,43 +368,7 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 // Legacy note: DM rewrite M5 replaces this snapshot-hydrated list path with a keyed folder query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	limit := clampListLimit(opts.Limit, 20, 100)
-
-	inboxStates, _, inboxHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderInbox, interfaces.PaginationOptions{
-		Limit:  limit,
-		Cursor: opts.Cursor,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	requestStates, _, requestHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderRequests, interfaces.PaginationOptions{
-		Limit:  limit,
-		Cursor: opts.Cursor,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	mergedStates, nextCursor, hasMore := mergeVisibleConversationStatePages(inboxStates, requestStates, limit)
-	if !hasMore {
-		hasMore = inboxHasMore || requestHasMore
-		if hasMore && nextCursor == "" && len(mergedStates) > 0 {
-			nextCursor = mergedStates[len(mergedStates)-1].LegacyListCursor()
-		}
-	}
-
-	conversations, err := r.loadConversationsForStates(ctx, mergedStates)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations")
-	}
-
-	return &interfaces.PaginatedResult[*models.Conversation]{
-		Items:      conversations,
-		NextCursor: nextCursor,
-		HasMore:    hasMore,
-		Total:      -1,
-	}, nil
+	return r.GetUserConversationsByFolder(ctx, userID, models.UserConversationFolderInbox, opts)
 }
 
 // GetUserConversationsByRequestState retrieves conversations for a user filtered by the participant
@@ -600,15 +566,15 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 	count := 0
 	cursor := ""
 	for {
-		result, err := r.ListUnreadUserConversationStates(ctx, username, interfaces.PaginationOptions{Limit: 100, Cursor: cursor})
+		states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, username, interfaces.PaginationOptions{Limit: 100, Cursor: cursor})
 		if err != nil {
 			return 0, err
 		}
-		count += len(result.Items)
-		if !result.HasMore || result.NextCursor == "" {
+		count += len(states)
+		if !hasMore || nextCursor == "" {
 			return count, nil
 		}
-		cursor = result.NextCursor
+		cursor = nextCursor
 	}
 }
 
@@ -685,52 +651,42 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 		zap.String("cursor", cursor),
 	)
 
-	// Note: Based on the legacy code, conversation messages/statuses seem to be handled
-	// differently than specified in the instructions. The legacy code doesn't show
-	// STATUS# records under CONVERSATION# keys. This implementation follows the
-	// instructions but may need adjustment based on actual usage.
-
-	query := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
-
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+	if r.statusRepo == nil {
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrDatabaseConnectionFailed, EntityConversation, "statuses")
 	}
 
-	query = query.Limit(limit + 1)
-
-	var messages []models.ConversationMessage
-	err := query.Scan(&messages)
+	thread, err := r.statusRepo.GetConversationThread(ctx, conversationID, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+	})
 	if err != nil {
-		log.Error("failed to query conversation statuses", zap.Error(err))
+		log.Error("failed to query conversation thread", zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "statuses")
 	}
 
-	// Convert to storage.ConversationStatus
-	statuses := make([]*storage.ConversationStatus, 0, len(messages))
-	for _, msg := range messages {
-		// This is a simplified conversion - actual implementation may need adjustment
+	statuses := make([]*storage.ConversationStatus, 0, len(thread.Items))
+	for index, status := range thread.Items {
+		if status == nil {
+			continue
+		}
+		createdAt := status.PublishedAt
+		if createdAt.IsZero() {
+			createdAt = status.CreatedAt
+		}
+		lastReadAt := &createdAt
 		statuses = append(statuses, &storage.ConversationStatus{
-			ConversationID: msg.ConversationID,
-			UserID:         msg.SenderUsername,
+			ConversationID: conversationID,
+			StatusID:       status.StatusID,
+			UserID:         status.AuthorUsername,
+			Position:       index,
 			Unread:         false,
-			LastReadAt:     &msg.CreatedAt,
+			LastReadAt:     lastReadAt,
+			ReplyToID:      status.InReplyToID,
+			CreatedAt:      createdAt,
 		})
 	}
 
-	// Determine next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("statuses", statuses, limit); err != nil {
-		statuses = statuses[:limit]
-		if err := common.ValidateSliceLength("messages", messages, limit); err != nil {
-			if err := common.ValidateSliceNotEmpty("messages", messages); err == nil {
-				lastMsg := messages[limit]
-				nextCursor = lastMsg.SK
-			}
-		}
-	}
-
-	return statuses, nextCursor, nil
+	return statuses, thread.NextCursor, nil
 }
 
 // RemoveStatusFromConversation removes a status from a conversation.
@@ -1106,12 +1062,11 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 // Legacy note: DM rewrite M4/M5 replaces unread list fan-out with a keyed sparse unread query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	stateResult, err := r.ListUnreadUserConversationStates(ctx, userID, opts)
+	states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, userID, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	states := stateModelsFromContracts(stateResult.Items)
 	unreadConversations, err := r.loadConversationsForStates(ctx, states)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread conversations")
@@ -1119,9 +1074,9 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 
 	return &interfaces.PaginatedResult[*models.Conversation]{
 		Items:      unreadConversations,
-		NextCursor: stateResult.NextCursor,
-		HasMore:    stateResult.HasMore,
-		Total:      stateResult.Total,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1,
 	}, nil
 }
 
