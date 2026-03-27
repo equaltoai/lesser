@@ -28,6 +28,7 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 			{},
 			{},
 			{},
+			{},
 			{
 				Items: []map[string]types.AttributeValue{
 					conversationMetadataItem(
@@ -78,10 +79,12 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "canonical_state_rows_upserted: 0")
 	require.Contains(t, output, "lookup_rows_planned: 1")
 	require.Contains(t, output, "lookup_rows_upserted: 0")
+	require.Contains(t, output, "mention_repairs_planned: 0")
+	require.Contains(t, output, "mention_repairs_applied: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
-	require.Len(t, client.scanInputs, 5)
+	require.Len(t, client.scanInputs, 6)
 	require.Len(t, client.queryInputs, 1)
 	require.Equal(
 		t,
@@ -97,6 +100,7 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 
 	client := &fakeUserKeyMigrationClient{
 		scanOutputs: []*dynamodb.ScanOutput{
+			{},
 			{},
 			{},
 			{},
@@ -128,6 +132,8 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Zero(t, summary.CanonicalStateRowsUpserted)
 	require.Equal(t, 1, summary.LookupRowsPlanned)
 	require.Zero(t, summary.LookupRowsUpserted)
+	require.Zero(t, summary.MentionRepairsPlanned)
+	require.Zero(t, summary.MentionRepairsApplied)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -147,6 +153,7 @@ func TestExecuteDirectMessageStateMigration_ValidatesInputsAndQueryErrors(t *tes
 	createdAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
 	_, err = executeDirectMessageStateMigration(context.Background(), &fakeUserKeyMigrationClient{
 		scanOutputs: []*dynamodb.ScanOutput{
+			{},
 			{},
 			{},
 			{},
@@ -202,6 +209,7 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 			}},
 			{},
 			{},
+			{},
 			{Items: []map[string]types.AttributeValue{
 				conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 1, "status-1", lastStatusTime),
 			}},
@@ -219,6 +227,8 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.Equal(t, 2, summary.CanonicalStateRowsUpserted)
 	require.Equal(t, 1, summary.LookupRowsPlanned)
 	require.Equal(t, 1, summary.LookupRowsUpserted)
+	require.Zero(t, summary.MentionRepairsPlanned)
+	require.Zero(t, summary.MentionRepairsApplied)
 	require.Len(t, client.putInputs, 5)
 
 	archState := findPutItem(t, client.putInputs, "USER_CONVERSATION_STATE#arch", "CONVERSATION#conv-1")
@@ -319,4 +329,91 @@ func TestDirectMessageLookupPlanSelection_PrefersNewestThenLexicalID(t *testing.
 	require.True(t, shouldReplaceDirectMessageLookupPlan(older, newer))
 	require.True(t, shouldReplaceDirectMessageLookupPlan(older, tieBreaker))
 	require.False(t, shouldReplaceDirectMessageLookupPlan(newer, older))
+}
+
+func TestBuildDirectMessageMentionRepairItem_RepairsMissingMentionsAndTags(t *testing.T) {
+	publishedAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
+	item := directMessageStatusRepairCandidateItem(
+		"status-1",
+		"https://dev.simulacrum.greater.website/users/arch",
+		"https://dev.simulacrum.greater.website/users/medic",
+		publishedAt,
+	)
+
+	repaired, changed, err := buildDirectMessageMentionRepairItem(item)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	mentions, ok := attributeStringSlice(repaired["mentions"])
+	require.True(t, ok)
+	require.Equal(t, []string{"https://dev.simulacrum.greater.website/users/medic"}, mentions)
+
+	noteValue, ok := repaired["note"].(*types.AttributeValueMemberM)
+	require.True(t, ok)
+	tagValue, ok := noteValue.Value["Tag"].(*types.AttributeValueMemberL)
+	require.True(t, ok)
+	require.Len(t, tagValue.Value, 1)
+	tagMap, ok := tagValue.Value[0].(*types.AttributeValueMemberM)
+	require.True(t, ok)
+	require.Equal(t, "Mention", strAttr(t, tagMap.Value["Type"]))
+	require.Equal(t, "https://dev.simulacrum.greater.website/users/medic", strAttr(t, tagMap.Value["Href"]))
+	require.Equal(t, "@medic", strAttr(t, tagMap.Value["Name"]))
+}
+
+func TestExecuteDirectMessageStateMigration_ApplyRepairsDirectStatusMentions(t *testing.T) {
+	publishedAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
+	client := &fakeUserKeyMigrationClient{
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{},
+			{Items: []map[string]types.AttributeValue{
+				directMessageStatusRepairCandidateItem(
+					"status-1",
+					"https://dev.simulacrum.greater.website/users/arch",
+					"https://dev.simulacrum.greater.website/users/medic",
+					publishedAt,
+				),
+			}},
+			{},
+		},
+	}
+
+	summary, err := executeDirectMessageStateMigration(context.Background(), client, "simulacrum-dev-main-table", true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.MentionRepairsPlanned)
+	require.Equal(t, 1, summary.MentionRepairsApplied)
+	require.Len(t, client.putInputs, 3)
+
+	repaired := findPutItem(t, client.putInputs, "status#status-1", "status#status-1")
+	mentions, ok := attributeStringSlice(repaired["mentions"])
+	require.True(t, ok)
+	require.Equal(t, []string{"https://dev.simulacrum.greater.website/users/medic"}, mentions)
+}
+
+func directMessageStatusRepairCandidateItem(
+	statusID string,
+	authorActorID string,
+	recipientActorID string,
+	publishedAt time.Time,
+) map[string]types.AttributeValue {
+	return map[string]types.AttributeValue{
+		"PK":          sAttr("status#" + statusID),
+		"SK":          sAttr("status#" + statusID),
+		"statusID":    sAttr(statusID),
+		"visibility":  sAttr(models.VisibilityDirect),
+		"authorID":    sAttr(authorActorID),
+		"publishedAt": sAttr(publishedAt.Format(time.RFC3339Nano)),
+		"toRecipients": mustMarshalAttributeValue([]string{
+			recipientActorID,
+		}),
+		"mentions": &types.AttributeValueMemberNULL{Value: true},
+		"note": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+			"AttributedTo": sAttr(authorActorID),
+			"BaseObject": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+				"To": mustMarshalAttributeValue([]string{recipientActorID}),
+			}},
+		}},
+	}
 }

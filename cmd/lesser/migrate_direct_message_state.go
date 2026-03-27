@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -31,6 +33,8 @@ type directMessageStateMigrationSummary struct {
 	CanonicalStateRowsUpserted int
 	LookupRowsPlanned          int
 	LookupRowsUpserted         int
+	MentionRepairsPlanned      int
+	MentionRepairsApplied      int
 	SampleConversationIDs      []string
 }
 
@@ -125,6 +129,8 @@ func printDirectMessageStateMigrationSummary(
 	fmt.Printf("canonical_state_rows_upserted: %d\n", summary.CanonicalStateRowsUpserted)
 	fmt.Printf("lookup_rows_planned: %d\n", summary.LookupRowsPlanned)
 	fmt.Printf("lookup_rows_upserted: %d\n", summary.LookupRowsUpserted)
+	fmt.Printf("mention_repairs_planned: %d\n", summary.MentionRepairsPlanned)
+	fmt.Printf("mention_repairs_applied: %d\n", summary.MentionRepairsApplied)
 	printConversationMigrationSamples(summary.SampleConversationIDs)
 
 	if !apply {
@@ -172,6 +178,10 @@ func executeDirectMessageStateMigration(
 		return summary, err
 	}
 	existingLookupRows, err := loadDirectMessageLookupRows(ctx, client, tableName)
+	if err != nil {
+		return summary, err
+	}
+	directStatusesForRepair, err := loadDirectMessageStatusesForRepair(ctx, client, tableName)
 	if err != nil {
 		return summary, err
 	}
@@ -289,6 +299,29 @@ func executeDirectMessageStateMigration(
 			return summary, fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
 		}
 		summary.LookupRowsUpserted++
+	}
+
+	for _, statusItem := range directStatusesForRepair {
+		repairedItem, changed, err := buildDirectMessageMentionRepairItem(statusItem)
+		if err != nil {
+			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
+			return summary, fmt.Errorf("repair direct-message mentions for %q: %w", statusID, err)
+		}
+		if !changed {
+			continue
+		}
+		summary.MentionRepairsPlanned++
+		if !apply {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      repairedItem,
+		}); err != nil {
+			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
+			return summary, fmt.Errorf("put repaired direct-message status %q: %w", statusID, err)
+		}
+		summary.MentionRepairsApplied++
 	}
 
 	return summary, nil
@@ -518,6 +551,38 @@ func loadDirectMessageLookupRows(
 	}
 }
 
+func loadDirectMessageStatusesForRepair(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) ([]map[string]types.AttributeValue, error) {
+	items := make([]map[string]types.AttributeValue, 0)
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("begins_with(PK, :prefix) AND visibility = :visibility"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":prefix":     &types.AttributeValueMemberS{Value: "status#"},
+			":visibility": &types.AttributeValueMemberS{Value: models.VisibilityDirect},
+		},
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return nil, fmt.Errorf("scan direct statuses for mention repair: %w", err)
+		}
+
+		for _, item := range out.Items {
+			items = append(items, cloneAttributeMap(item))
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return items, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
 func buildDirectMessageLegacyParticipantRow(item map[string]types.AttributeValue) (*directMessageLegacyParticipantRow, bool) {
 	pk, ok := attributeString(item["PK"])
 	if !ok || !strings.HasPrefix(pk, conversationParticipantPartitionPrefix) {
@@ -737,6 +802,184 @@ func buildDirectMessageLookupItem(plan directMessageLookupPlan, original map[str
 	setStringAttribute(item, original, "gsi1PK", plan.PK)
 	setStringAttribute(item, original, conversationLookupConversationIDAttr, plan.ConversationID)
 	return item
+}
+
+func buildDirectMessageMentionRepairItem(item map[string]types.AttributeValue) (map[string]types.AttributeValue, bool, error) {
+	if !strings.EqualFold(firstConversationString(item, "visibility"), models.VisibilityDirect) {
+		return nil, false, nil
+	}
+
+	recipients := directMessageStatusRecipientActorIDs(item)
+	if len(recipients) == 0 {
+		return nil, false, nil
+	}
+
+	authorActorID := firstConversationString(item, "authorID")
+	noteValue, ok := item["note"].(*types.AttributeValueMemberM)
+	if !ok || noteValue == nil {
+		return nil, false, nil
+	}
+
+	desiredMentions := uniqueNonEmptyStrings(recipients)
+	desiredTags := append(directMessageStatusNonMentionTags(noteValue.Value), directMessageMentionTags(desiredMentions, authorActorID)...)
+
+	mentionsValue, err := attributevalue.Marshal(desiredMentions)
+	if err != nil {
+		return nil, false, err
+	}
+	tagsValue, err := attributevalue.Marshal(desiredTags)
+	if err != nil {
+		return nil, false, err
+	}
+
+	repaired := cloneAttributeMap(item)
+	changed := false
+	if !reflect.DeepEqual(repaired["mentions"], mentionsValue) {
+		repaired["mentions"] = mentionsValue
+		changed = true
+	}
+
+	noteMap := cloneAttributeMap(noteValue.Value)
+	if !reflect.DeepEqual(noteMap["Tag"], tagsValue) {
+		noteMap["Tag"] = tagsValue
+		repaired["note"] = &types.AttributeValueMemberM{Value: noteMap}
+		changed = true
+	}
+
+	return repaired, changed, nil
+}
+
+func directMessageStatusRecipientActorIDs(item map[string]types.AttributeValue) []string {
+	if recipients, ok := attributeStringSlice(item["toRecipients"]); ok && len(recipients) > 0 {
+		return recipients
+	}
+	noteValue, ok := item["note"].(*types.AttributeValueMemberM)
+	if !ok || noteValue == nil {
+		return nil
+	}
+	baseObject, ok := noteValue.Value["BaseObject"].(*types.AttributeValueMemberM)
+	if !ok || baseObject == nil {
+		return nil
+	}
+	recipients, _ := attributeStringSlice(baseObject.Value["To"])
+	return recipients
+}
+
+func directMessageStatusNonMentionTags(note map[string]types.AttributeValue) []activitypub.Tag {
+	tagValue, ok := note["Tag"].(*types.AttributeValueMemberL)
+	if !ok || tagValue == nil {
+		return nil
+	}
+
+	tags := make([]activitypub.Tag, 0, len(tagValue.Value))
+	for _, rawTag := range tagValue.Value {
+		tagMap, ok := rawTag.(*types.AttributeValueMemberM)
+		if !ok || tagMap == nil {
+			continue
+		}
+		tag := activitypub.Tag{
+			Type: firstConversationString(tagMap.Value, "Type"),
+			Href: firstConversationString(tagMap.Value, "Href"),
+			Name: firstConversationString(tagMap.Value, "Name"),
+		}
+		if strings.EqualFold(tag.Type, "Mention") {
+			continue
+		}
+		if strings.TrimSpace(tag.Type) == "" && strings.TrimSpace(tag.Name) == "" && strings.TrimSpace(tag.Href) == "" {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+func directMessageMentionTags(actorIDs []string, authorActorID string) []activitypub.Tag {
+	tags := make([]activitypub.Tag, 0, len(actorIDs))
+	for _, actorID := range actorIDs {
+		trimmed := strings.TrimSpace(actorID)
+		if trimmed == "" {
+			continue
+		}
+		tags = append(tags, activitypub.Tag{
+			Type: "Mention",
+			Href: trimmed,
+			Name: directMessageMentionName(trimmed, authorActorID),
+		})
+	}
+	return tags
+}
+
+func directMessageMentionName(actorID, authorActorID string) string {
+	username, host := actorIDUsernameAndHost(actorID)
+	if username == "" {
+		return "@"
+	}
+	_, authorHost := actorIDUsernameAndHost(authorActorID)
+	if host != "" && !strings.EqualFold(host, authorHost) {
+		return "@" + username + "@" + host
+	}
+	return "@" + username
+}
+
+func actorIDUsernameAndHost(actorID string) (string, string) {
+	trimmed := strings.TrimSpace(actorID)
+	if trimmed == "" {
+		return "", ""
+	}
+	if strings.Contains(trimmed, "://") {
+		parts := strings.SplitN(trimmed, "://", 2)
+		rest := parts[1]
+		host := rest
+		path := ""
+		if slash := strings.Index(rest, "/"); slash >= 0 {
+			host = rest[:slash]
+			path = rest[slash:]
+		}
+		path = strings.TrimRight(path, "/")
+		lowerPath := strings.ToLower(path)
+		if idx := strings.LastIndex(lowerPath, "/users/"); idx >= 0 {
+			username := path[idx+len("/users/"):]
+			if username != "" && !strings.Contains(username, "/") {
+				return strings.TrimPrefix(username, "@"), host
+			}
+		}
+		if idx := strings.LastIndex(path, "/@"); idx >= 0 {
+			username := path[idx+2:]
+			if username != "" && !strings.Contains(username, "/") {
+				return strings.TrimPrefix(username, "@"), host
+			}
+		}
+		segments := strings.Split(strings.Trim(path, "/"), "/")
+		for i := len(segments) - 1; i >= 0; i-- {
+			candidate := strings.TrimSpace(strings.TrimPrefix(segments[i], "@"))
+			if candidate != "" {
+				return candidate, host
+			}
+		}
+		return "", host
+	}
+	handle := strings.TrimPrefix(trimmed, "@")
+	if parts := strings.SplitN(handle, "@", 2); len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return handle, ""
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	unique := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		unique = append(unique, trimmed)
+	}
+	return unique
 }
 
 func setOptionalTimeAttribute(item map[string]types.AttributeValue, original map[string]types.AttributeValue, key string, value *time.Time) {
