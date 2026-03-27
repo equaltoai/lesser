@@ -2,9 +2,12 @@ package graph
 
 import (
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,4 +123,43 @@ func TestRound40DirectMessageMutationsValidateEmptyInputs(t *testing.T) {
 		require.ErrorContains(t, err, "failed to send direct message")
 		require.ErrorContains(t, err, "invalid")
 	})
+}
+
+func TestRound40ConvertStatusToObject_PreservesRemoteMentionMetadata(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
+
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	now := time.Now().UTC()
+	status := &storagemodels.Status{
+		StatusID:       "dm-remote",
+		AuthorUsername: "alice",
+		AuthorID:       resolver.Registry.GetConfig().BaseURL + "/users/alice",
+		Visibility:     storagemodels.VisibilityDirect,
+		Content:        "hi remote",
+		Mentions:       []string{"https://remote.example/users/bob"},
+		PublishedAt:    now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ModifiedAt:     now,
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:      resolver.Registry.GetConfig().BaseURL + "/objects/dm-remote",
+				Type:    "Note",
+				To:      []string{"https://remote.example/users/bob"},
+				Context: activitypub.Context,
+			},
+			Content:      "hi remote",
+			AttributedTo: resolver.Registry.GetConfig().BaseURL + "/users/alice",
+		},
+	}
+
+	object := resolver.convertStatusToObject(round12AuthContext("alice"), status)
+	require.NotNil(t, object)
+	require.Len(t, object.Mentions, 1)
+	require.Equal(t, "https://remote.example/users/bob", object.Mentions[0].ID)
+	require.Equal(t, "bob", object.Mentions[0].Username)
+	require.NotNil(t, object.Mentions[0].Domain)
+	require.Equal(t, "remote.example", *object.Mentions[0].Domain)
 }

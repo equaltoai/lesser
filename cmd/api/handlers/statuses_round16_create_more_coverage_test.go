@@ -213,6 +213,62 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.Nil(t, gotCmd.AgentAttribution)
 	})
 
+	t.Run("direct visibility serializes remote mention metadata", func(t *testing.T) {
+		now := time.Now().UTC()
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(_ context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					return &conversations.MessageResult{
+						Message: &storagemodels.Status{
+							StatusID:       "dm-remote",
+							AuthorUsername: cmd.SenderID,
+							AuthorID:       cfg.BaseURL() + "/users/" + cmd.SenderID,
+							Visibility:     VisibilityDirect,
+							Mentions:       []string{"https://remote.example/users/bob"},
+							PublishedAt:    now,
+							CreatedAt:      now,
+							UpdatedAt:      now,
+							ModifiedAt:     now,
+							Version:        1,
+							Note: &activitypub.Note{
+								BaseObject: activitypub.BaseObject{
+									ID: cfg.BaseURL() + "/objects/dm-remote",
+								},
+								Content:      cmd.Content,
+								AttributedTo: cfg.BaseURL() + "/users/" + cmd.SenderID,
+								Tag: []activitypub.Tag{
+									{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob@remote.example"},
+								},
+							},
+						},
+					}, nil
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead, auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob@remote.example hello there",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		mentions, ok := body["mentions"].([]any)
+		require.True(t, ok)
+		require.Len(t, mentions, 1)
+		mention, ok := mentions[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "https://remote.example/users/bob", mention["id"])
+		require.Equal(t, "bob", mention["username"])
+		require.Equal(t, "bob@remote.example", mention["acct"])
+		require.Equal(t, "https://remote.example/users/bob", mention["url"])
+	})
+
 	t.Run("direct visibility without exactly one recipient returns 400", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			ConversationsSvc: &ConversationsServiceStub{},
