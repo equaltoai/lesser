@@ -52,6 +52,7 @@ func TestAgentGovernanceStateBeforeCreateNormalizesAndSetsKeys(t *testing.T) {
 	require.Equal(t, start.UTC(), *state.KeyRotatedAt)
 	require.False(t, state.CreatedAt.IsZero())
 	require.False(t, state.UpdatedAt.IsZero())
+	require.Zero(t, state.Version)
 }
 
 func TestAgentGovernanceStateBeforeUpdatePreservesTimesAndKeys(t *testing.T) {
@@ -64,6 +65,7 @@ func TestAgentGovernanceStateBeforeUpdatePreservesTimesAndKeys(t *testing.T) {
 		SelfScopes:       []string{"follow", "follow"},
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
+		Version:          4,
 		QuarantineStatus: " approved ",
 	}
 
@@ -73,6 +75,7 @@ func TestAgentGovernanceStateBeforeUpdatePreservesTimesAndKeys(t *testing.T) {
 	require.Equal(t, SKAgentGovernance, state.GetSK())
 	require.Equal(t, createdAt.UTC(), state.CreatedAt)
 	require.Equal(t, updatedAt.UTC(), state.UpdatedAt)
+	require.Equal(t, 4, state.Version)
 	require.Equal(t, []string{"read", "write"}, state.DelegatedScopes)
 	require.Equal(t, []string{"follow"}, state.SelfScopes)
 	require.Equal(t, "approved", state.QuarantineStatus)

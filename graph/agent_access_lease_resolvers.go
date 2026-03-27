@@ -471,9 +471,9 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	governance, err := r.loadAgentGovernanceState(ctx, username)
+	governance, err := r.requireAgentGovernanceState(ctx, username)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		return nil, err

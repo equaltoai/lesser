@@ -54,9 +54,9 @@ func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agen
 		return nil, nil
 	}
 
-	governance, err := r.loadAgentGovernanceState(ctx, username)
+	governance, err := r.requireAgentGovernanceState(ctx, username)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 
 	return r.convertStorageUserToAgent(user, governance), nil
@@ -631,19 +631,12 @@ func (r *mutationResolver) persistGraphAgentUpdate(
 	if err := r.Storage.Account().UpdateAccount(ctx, account); err != nil {
 		return apperrors.InternalWithCause(err, "failed to update agent")
 	}
-	if governance == nil {
-		return nil
-	}
-
 	if governance.Username == "" {
 		governance.Username = username
 	}
-	if governance.CreatedAt.IsZero() {
-		governance.CreatedAt = now
-	}
 	governance.UpdatedAt = now
 	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
-		return apperrors.InternalWithCause(err, "failed to update agent governance state")
+		return graphAgentGovernanceWriteError(err, "update")
 	}
 
 	return nil
@@ -752,9 +745,9 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint delegated agent tokens")
 	}
-	governance, err := r.loadAgentGovernanceState(ctx, agentUsername)
+	governance, err := r.requireAgentGovernanceState(ctx, agentUsername)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 
 	return &model.DelegationPayload{
@@ -1071,18 +1064,12 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	governance, err := r.loadAgentGovernanceState(ctx, username)
+	governance, err := r.requireAgentGovernanceState(ctx, username)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 
 	now := time.Now().UTC()
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{
-			Username:  username,
-			CreatedAt: now,
-		}
-	}
 	governance.Verified = true
 	governance.VerifiedAt = cloneGraphAgentTime(&now)
 	governance.VerifiedBy = claims.Username
@@ -1107,7 +1094,7 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 		return nil, apperrors.InternalWithCause(err, "failed to verify agent")
 	}
 	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to verify agent governance state")
+		return nil, graphAgentGovernanceWriteError(err, "verify")
 	}
 
 	return r.convertStorageUserToAgent(account.User, governance), nil
@@ -1136,18 +1123,12 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	governance, err := r.loadAgentGovernanceState(ctx, username)
+	governance, err := r.requireAgentGovernanceState(ctx, username)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 
 	now := time.Now().UTC()
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{
-			Username:  username,
-			CreatedAt: now,
-		}
-	}
 	governance.Verified = false
 	governance.VerifiedAt = nil
 	governance.VerifiedBy = ""
@@ -1168,7 +1149,7 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 		return nil, apperrors.InternalWithCause(err, "failed to unverify agent")
 	}
 	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to unverify agent governance state")
+		return nil, graphAgentGovernanceWriteError(err, "unverify")
 	}
 
 	return r.convertStorageUserToAgent(account.User, governance), nil

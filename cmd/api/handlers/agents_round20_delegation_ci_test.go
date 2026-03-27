@@ -188,6 +188,31 @@ func TestAgentsRound20_ResolveDelegatedAgentAccount_Branches(t *testing.T) {
 		require.Nil(t, account)
 		requireStatus(t, http.StatusForbidden)(resp, respErr)
 	})
+
+	t.Run("missing governance fails closed", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.AllowAgents = true
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					PK:         "USER#agent1",
+					SK:         storagemodels.SKMetadata,
+					Username:   "agent1",
+					Approved:   true,
+					Version:    1,
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
+		require.NoError(t, err)
+
+		account, resp, respErr := h.resolveDelegatedAgentAccount(ctx, &auth.Claims{Username: "owner", Scopes: []string{auth.ScopeWrite}}, "agent1", []string{"read"})
+		require.Nil(t, account)
+		requireStatus(t, http.StatusServiceUnavailable)(resp, respErr)
+	})
 }
 
 func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(t *testing.T) {
@@ -241,6 +266,18 @@ func TestAgentsRound20_HandleUpdateAndDeleteAgentLift_ErrorBranches(t *testing.T
 					Version:    1,
 					IsAgent:    true,
 					AgentOwner: "@owner",
+				},
+			}
+		}
+		if state.agentGovernanceByUsername == nil {
+			state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{
+				"agent1": {
+					PK:        "USER#agent1",
+					SK:        storagemodels.SKAgentGovernance,
+					Username:  "agent1",
+					CreatedAt: time.Now().Add(-24 * time.Hour),
+					UpdatedAt: time.Now().Add(-time.Hour),
+					Version:   1,
 				},
 			}
 		}

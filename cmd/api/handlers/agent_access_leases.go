@@ -679,9 +679,9 @@ func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, 
 	if resp != nil || err != nil {
 		return resp, err
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		return common.RespondForbidden(ctx, err.Error())

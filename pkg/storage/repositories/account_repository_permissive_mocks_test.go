@@ -47,6 +47,8 @@ func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mock
 		mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
 		mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
 		mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+		mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder).Maybe()
+		mockUpdateBuilder.On("ConditionNotExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
 		mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
 		mockUpdateBuilder.On("Execute").Return(nil).Maybe()
 	}

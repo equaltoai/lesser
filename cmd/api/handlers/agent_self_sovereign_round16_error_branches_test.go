@@ -347,6 +347,42 @@ func TestAgentSelfSovereignRound16_RotateKeyLiftErrorBranches(t *testing.T) {
 
 		requireStatus(t, http.StatusUnauthorized)(h.HandleAgentRotateKeyLift(rotateCtx))
 	})
+
+	t.Run("missing governance returns 503", func(t *testing.T) {
+		state := baseState()
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.repos.Account().SetEncryptor(noopEncryptor{})
+
+		readToken := round12SignAgentAccessToken(t, cfg.JWTSecret, "agent", []string{auth.ScopeRead})
+		writeToken := round12SignAgentAccessToken(t, cfg.JWTSecret, "agent", []string{auth.ScopeWrite})
+
+		challengeCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent/rotate_key/challenge", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+		challengeCtx.Params["username"] = "agent"
+
+		challengeResp := requireStatus(t, http.StatusOK)(h.HandleAgentRotateKeyChallengeLift(challengeCtx))
+		var challenge apimodels.AgentKeyChallengeResponse
+		require.NoError(t, json.Unmarshal(challengeResp.Body, &challenge))
+
+		newPub, _, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		rotateSig := ed25519.Sign(priv, []byte(challenge.Message))
+		rotateCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent/rotate_key", map[string]string{
+			"Authorization": "Bearer " + writeToken,
+		}, nil, apimodels.AgentRotateKeyRequest{
+			PublicKey:   base64.StdEncoding.EncodeToString(newPub),
+			KeyType:     "ed25519",
+			ChallengeID: challenge.ID,
+			Signature:   base64.StdEncoding.EncodeToString(rotateSig),
+		})
+		require.NoError(t, err)
+		rotateCtx.Params["username"] = "agent"
+
+		requireStatus(t, http.StatusServiceUnavailable)(h.HandleAgentRotateKeyLift(rotateCtx))
+	})
 }
 
 func TestAgentSelfSovereignRound16_AgentKeyChallengeResponseNil(t *testing.T) {

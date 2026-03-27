@@ -206,9 +206,9 @@ func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username strin
 	if agentUser == nil || !agentUser.IsAgent {
 		return nil, nil
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 
 	limit := agentDefaultMaxFollowsPerHour

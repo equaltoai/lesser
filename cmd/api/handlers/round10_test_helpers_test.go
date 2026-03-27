@@ -314,13 +314,29 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}).Maybe()
 	mockUpdate.On("Add", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Remove", mock.Anything).Return(mockUpdate).Run(func(args mock.Arguments) {
+		if state.sets == nil {
+			state.sets = map[string]any{}
+		}
+		state.sets[args.String(0)] = nil
+	}).Maybe()
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
 	}
 	mockUpdate.On("Execute").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
+		case *storagemodels.AgentGovernanceState:
+			m, _ := state.model.(*storagemodels.AgentGovernanceState)
+			if m == nil {
+				return
+			}
+			if state.agentGovernanceByUsername == nil {
+				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
+			}
+			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.OAuthClient:
 			pk, ok := state.whereString("PK")
 			if !ok || !strings.HasPrefix(pk, "OAUTH_CLIENT#") {

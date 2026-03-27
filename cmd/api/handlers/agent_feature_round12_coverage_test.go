@@ -144,6 +144,9 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		stateNoRegistration := &round10QueryState{
 			agentInstanceConfig: policyNoRegistration,
 			usersByUsername:     state.usersByUsername,
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": state.agentGovernanceByUsername["agent1"],
+			},
 		}
 
 		hNoRegistration, _, _ := round11NewHandler(t, cfgNoRegistration, stateNoRegistration)
@@ -218,6 +221,17 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:        "USER#agent1",
+				SK:        storagemodels.SKAgentGovernance,
+				Username:  "agent1",
+				CreatedAt: now.Add(-24 * time.Hour),
+				UpdatedAt: now.Add(-time.Hour),
+				Version:   1,
+				Verified:  false,
 			},
 		},
 	}

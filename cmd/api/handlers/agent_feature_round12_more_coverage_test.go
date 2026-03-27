@@ -299,6 +299,18 @@ func TestAgentSelfSovereignRound12_ChallengeAuthAndRotateKey(t *testing.T) {
 				},
 			},
 		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent": {
+				PK:            "USER#agent",
+				SK:            storagemodels.SKAgentGovernance,
+				Username:      "agent",
+				SelfScopes:    []string{auth.ScopeRead, auth.ScopeWrite, "follow"},
+				SelfSovereign: true,
+				CreatedAt:     now.Add(-24 * time.Hour),
+				UpdatedAt:     now,
+				Version:       1,
+			},
+		},
 	}
 
 	h, repos, _ := round11NewHandler(t, cfg, state)

@@ -9,7 +9,6 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
@@ -140,18 +139,12 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 
 	now := time.Now().UTC()
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{
-			Username:  username,
-			CreatedAt: now,
-		}
-	}
 	governance.Verified = true
 	governance.VerifiedAt = cloneAgentGovernanceHandlerTime(&now)
 	governance.VerifiedBy = claims.Username
@@ -177,7 +170,7 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 		return common.RespondInternalServerError(ctx)
 	}
 	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceWriteError(ctx, err)
 	}
 
 	h.recordAgentGovernanceEvent(ctx, username, "agent.verified", map[string]any{
@@ -210,18 +203,12 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 
 	now := time.Now().UTC()
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{
-			Username:  username,
-			CreatedAt: now,
-		}
-	}
 	governance.Verified = false
 	governance.VerifiedAt = nil
 	governance.VerifiedBy = ""
@@ -243,7 +230,7 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 		return common.RespondInternalServerError(ctx)
 	}
 	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceWriteError(ctx, err)
 	}
 
 	h.recordAgentGovernanceEvent(ctx, username, "agent.unverified", map[string]any{

@@ -6,10 +6,15 @@ import (
 	"strings"
 	"time"
 
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 )
+
+var errAgentGovernanceUnavailable = errors.New("agent governance state unavailable")
 
 func loadAgentGovernanceState(ctx context.Context, repos core.RepositoryStorage, username string) (*storage.AgentGovernanceState, error) {
 	if repos == nil || repos.Account() == nil {
@@ -37,6 +42,28 @@ func loadAgentGovernanceStates(ctx context.Context, repos core.RepositoryStorage
 		return map[string]*storage.AgentGovernanceState{}, nil
 	}
 	return states, nil
+}
+
+func requireAgentGovernanceState(ctx context.Context, repos core.RepositoryStorage, username string) (*storage.AgentGovernanceState, error) {
+	state, err := loadAgentGovernanceState(ctx, repos, username)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, errAgentGovernanceUnavailable
+	}
+	return state, nil
+}
+
+func respondAgentGovernanceUnavailable(ctx *apptheory.Context) (*apptheory.Response, error) {
+	return common.RespondServiceUnavailable(ctx, "agent governance")
+}
+
+func respondAgentGovernanceWriteError(ctx *apptheory.Context, err error) (*apptheory.Response, error) {
+	if errors.Is(err, storage.ErrVersionConflict) {
+		return common.RespondConflict(ctx, "agent governance state changed concurrently")
+	}
+	return common.RespondInternalServerError(ctx)
 }
 
 func agentVerifiedState(state *storage.AgentGovernanceState) bool {

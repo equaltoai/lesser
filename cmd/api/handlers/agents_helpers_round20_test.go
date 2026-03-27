@@ -188,8 +188,18 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, single)
 
+		required, err := requireAgentGovernanceState(context.Background(), missingHandler.repos, "missing")
+		require.Nil(t, required)
+		require.ErrorIs(t, err, errAgentGovernanceUnavailable)
+
 		batch, err = loadAgentGovernanceStates(context.Background(), missingHandler.repos, []string{"missing"})
 		require.NoError(t, err)
 		require.Empty(t, batch)
+	})
+
+	t.Run("agent governance write errors map version conflicts to 409", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1", nil, nil, nil)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusConflict)(respondAgentGovernanceWriteError(ctx, storage.ErrVersionConflict))
 	})
 }

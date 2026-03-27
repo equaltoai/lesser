@@ -88,23 +88,17 @@ func (r *AgentGovernanceRepository) PutAgentGovernanceState(ctx context.Context,
 	}
 
 	model := storageToModelAgentGovernanceState(state)
-	if err := model.BeforeCreate(); err != nil {
-		return err
-	}
-
-	existing, err := r.GetAgentGovernanceState(ctx, model.Username)
-	switch {
-	case err == nil && existing != nil:
-		model.CreatedAt = existing.CreatedAt
+	if state.Version > 0 {
 		if err := model.BeforeUpdate(); err != nil {
 			return err
 		}
-		return r.base.Update(ctx, model)
-	case err != nil && !errors.Is(err, storage.ErrNotFound):
-		return err
-	default:
-		return r.base.CreateIfNotExists(ctx, model)
+		return r.updateAgentGovernanceState(ctx, state, model)
 	}
+
+	if err := model.BeforeCreate(); err != nil {
+		return err
+	}
+	return r.createOrInitializeAgentGovernanceState(ctx, state, model)
 }
 
 // DeleteAgentGovernanceState removes typed governance state for an agent.
@@ -141,6 +135,7 @@ func modelToStorageAgentGovernanceState(model *models.AgentGovernanceState) *sto
 		KeyRotatedAt:         cloneAgentGovernanceRepoTime(model.KeyRotatedAt),
 		CreatedAt:            model.CreatedAt,
 		UpdatedAt:            model.UpdatedAt,
+		Version:              model.Version,
 	}
 }
 
@@ -169,7 +164,112 @@ func storageToModelAgentGovernanceState(state *storage.AgentGovernanceState) *mo
 		KeyRotatedAt:         cloneAgentGovernanceRepoTime(state.KeyRotatedAt),
 		CreatedAt:            state.CreatedAt,
 		UpdatedAt:            state.UpdatedAt,
+		Version:              state.Version,
 	}
+}
+
+func (r *AgentGovernanceRepository) createOrInitializeAgentGovernanceState(ctx context.Context, state *storage.AgentGovernanceState, model *models.AgentGovernanceState) error {
+	builder := r.governanceUpdateBuilder(ctx, model)
+	r.applyGovernanceStateSets(builder, model, true)
+	builder.ConditionNotExists("Version")
+	builder.Set("Version", 1)
+
+	if err := builder.Execute(); err != nil {
+		if dynamormErrors.IsConditionFailed(err) {
+			return storage.ErrVersionConflict
+		}
+		return ErrorHandler.HandleUpdateError(err, "agent governance state", model.Username)
+	}
+
+	model.Version = 1
+	state.Version = 1
+	state.Username = model.Username
+	state.CreatedAt = model.CreatedAt
+	state.UpdatedAt = model.UpdatedAt
+	return nil
+}
+
+func (r *AgentGovernanceRepository) updateAgentGovernanceState(ctx context.Context, state *storage.AgentGovernanceState, model *models.AgentGovernanceState) error {
+	currentVersion := state.Version
+	nextVersion := currentVersion + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+
+	builder := r.governanceUpdateBuilder(ctx, model)
+	r.applyGovernanceStateSets(builder, model, false)
+	builder.ConditionVersion(int64(currentVersion))
+	builder.Set("Version", nextVersion)
+
+	if err := builder.Execute(); err != nil {
+		if dynamormErrors.IsConditionFailed(err) {
+			return storage.ErrVersionConflict
+		}
+		return ErrorHandler.HandleUpdateError(err, "agent governance state", model.Username)
+	}
+
+	model.Version = nextVersion
+	state.Version = nextVersion
+	state.Username = model.Username
+	state.CreatedAt = model.CreatedAt
+	state.UpdatedAt = model.UpdatedAt
+	return nil
+}
+
+func (r *AgentGovernanceRepository) governanceUpdateBuilder(ctx context.Context, model *models.AgentGovernanceState) core.UpdateBuilder {
+	return r.db.WithContext(ctx).
+		Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		UpdateBuilder()
+}
+
+func (r *AgentGovernanceRepository) applyGovernanceStateSets(builder core.UpdateBuilder, model *models.AgentGovernanceState, includeCreatedAt bool) {
+	builder.Set("Username", model.Username)
+	if includeCreatedAt {
+		builder.Set("CreatedAt", model.CreatedAt)
+	}
+	builder.Set("UpdatedAt", model.UpdatedAt)
+	r.setOrRemoveGovernanceString(builder, "QuarantineStatus", model.QuarantineStatus)
+	r.setOrRemoveGovernanceTime(builder, "QuarantineStart", model.QuarantineStart)
+	r.setOrRemoveGovernanceTime(builder, "QuarantineEnd", model.QuarantineEnd)
+	r.setOrRemoveGovernanceString(builder, "QuarantineApprovedBy", model.QuarantineApprovedBy)
+	r.setOrRemoveGovernanceTime(builder, "QuarantineApprovedAt", model.QuarantineApprovedAt)
+	r.setOrRemoveGovernanceStringSlice(builder, "DelegatedScopes", model.DelegatedScopes)
+	r.setOrRemoveGovernanceStringSlice(builder, "SelfScopes", model.SelfScopes)
+	builder.Set("SelfSovereign", model.SelfSovereign)
+	builder.Set("Verified", model.Verified)
+	r.setOrRemoveGovernanceTime(builder, "VerifiedAt", model.VerifiedAt)
+	r.setOrRemoveGovernanceString(builder, "VerifiedBy", model.VerifiedBy)
+	r.setOrRemoveGovernanceString(builder, "VerifiedReason", model.VerifiedReason)
+	r.setOrRemoveGovernanceTime(builder, "UnverifiedAt", model.UnverifiedAt)
+	r.setOrRemoveGovernanceString(builder, "UnverifiedBy", model.UnverifiedBy)
+	r.setOrRemoveGovernanceString(builder, "UnverifiedReason", model.UnverifiedReason)
+	r.setOrRemoveGovernanceTime(builder, "KeyRotatedAt", model.KeyRotatedAt)
+}
+
+func (r *AgentGovernanceRepository) setOrRemoveGovernanceString(builder core.UpdateBuilder, field string, value string) {
+	if strings.TrimSpace(value) == "" {
+		builder.Remove(field)
+		return
+	}
+	builder.Set(field, value)
+}
+
+func (r *AgentGovernanceRepository) setOrRemoveGovernanceTime(builder core.UpdateBuilder, field string, value *time.Time) {
+	if value == nil || value.IsZero() {
+		builder.Remove(field)
+		return
+	}
+	builder.Set(field, value.UTC())
+}
+
+func (r *AgentGovernanceRepository) setOrRemoveGovernanceStringSlice(builder core.UpdateBuilder, field string, values []string) {
+	if len(values) == 0 {
+		builder.Remove(field)
+		return
+	}
+	builder.Set(field, append([]string(nil), values...))
 }
 
 func cloneAgentGovernanceRepoTime(value *time.Time) *time.Time {

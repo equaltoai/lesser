@@ -40,13 +40,14 @@ var (
 	ErrAuthRequiredForDirect   = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for direct timeline")
 
 	// Service unavailability errors
-	ErrModerationUnavailable   = errors.ServiceUnavailable("moderation service")
-	ErrAIServiceUnavailable    = errors.ServiceNotAvailable("AI service")
-	ErrAnalyticsUnavailable    = errors.ServiceUnavailable("analytics service")
-	ErrMediaServiceUnavailable = errors.ServiceUnavailable("media service")
-	ErrStorageUnavailable      = errors.ServiceUnavailable("storage")
-	ErrFederationUnavailable   = errors.ServiceUnavailable("federation service")
-	ErrCostTrackingUnavailable = errors.ServiceUnavailable("cost tracking")
+	ErrModerationUnavailable      = errors.ServiceUnavailable("moderation service")
+	ErrAIServiceUnavailable       = errors.ServiceNotAvailable("AI service")
+	ErrAnalyticsUnavailable       = errors.ServiceUnavailable("analytics service")
+	ErrMediaServiceUnavailable    = errors.ServiceUnavailable("media service")
+	ErrStorageUnavailable         = errors.ServiceUnavailable("storage")
+	ErrAgentGovernanceUnavailable = errors.ServiceUnavailable("agent governance")
+	ErrFederationUnavailable      = errors.ServiceUnavailable("federation service")
+	ErrCostTrackingUnavailable    = errors.ServiceUnavailable("cost tracking")
 
 	// Repository unavailability errors
 	ErrObjectRepositoryUnavailable     = errors.RepositoryNotAvailable("object")

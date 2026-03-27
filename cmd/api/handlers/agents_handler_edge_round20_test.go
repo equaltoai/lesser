@@ -52,6 +52,16 @@ func TestAgentHandlersRound20_GuardBranches(t *testing.T) {
 					AgentVersion: "v1",
 				},
 			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": {
+					PK:        "USER#agent1",
+					SK:        storagemodels.SKAgentGovernance,
+					Username:  "agent1",
+					CreatedAt: now.Add(-24 * time.Hour),
+					UpdatedAt: now.Add(-time.Hour),
+					Version:   1,
+				},
+			},
 			auditLogsByUser: map[string][]*storagemodels.AuthAuditLog{
 				"agent1": {
 					{EventType: "agent.status.create", Timestamp: now.Add(-time.Minute)},

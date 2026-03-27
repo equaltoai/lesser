@@ -70,6 +70,30 @@ func TestInteractionsRound19_enforceAgentFollowRails_NilSafety(t *testing.T) {
 	require.Nil(t, resp)
 }
 
+func TestInteractionsRound19_enforceAgentFollowRails_MissingGovernanceFailsClosed(t *testing.T) {
+	cfg := round10TestConfig()
+	cfg.AllowAgents = true
+
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"agent": {
+				PK:       "USER#agent",
+				SK:       storagemodels.SKMetadata,
+				Username: "agent",
+				Role:     "user",
+				Approved: true,
+				Version:  1,
+				IsAgent:  true,
+			},
+		},
+	})
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/follow", nil, nil, nil)
+	require.NoError(t, err)
+
+	requireStatus(t, http.StatusServiceUnavailable)(h.enforceAgentFollowRails(ctx, "agent"))
+}
+
 func TestInteractionsRound19_relationshipOperationValidationAndServiceUnavailable(t *testing.T) {
 	cfg := round11TestConfig()
 	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})

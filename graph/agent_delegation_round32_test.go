@@ -224,8 +224,11 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Remove", mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
-	mockUpdate.On("Execute").Return(nil).Maybe()
+	mockUpdate.On("Execute").Run(func(mock.Arguments) {
+		state.storeCreate(currentModel)
+	}).Return(nil).Maybe()
 	if state.createConflictOnce {
 		mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
 	}
@@ -458,6 +461,23 @@ func TestDelegateToAgent_EnforcesStoredAgentScopeEnvelope(t *testing.T) {
 	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
 }
 
+func TestDelegateToAgent_MissingGovernanceFailsClosed(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{"read"})
+	delete(state.governance, "agent1")
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("owner", auth.ScopeRead, auth.ScopeWrite)
+
+	_, err := resolver.Mutation().DelegateToAgent(ctx, model.DelegateToAgentInput{
+		AgentUsername: "agent1",
+		DisplayName:   "",
+		Scopes:        []string{"read"},
+		AgentType:     model.AgentTypeCustom,
+		Version:       "v1",
+	})
+	require.ErrorIs(t, err, ErrAgentGovernanceUnavailable)
+}
+
 func TestAdminUnverifyAgent_ClearsStaleVerificationFields(t *testing.T) {
 	state := newDelegationGraphState("agent1", []string{"read"})
 	verifiedAt := time.Now().UTC().Add(-time.Hour)
@@ -486,6 +506,19 @@ func TestAdminUnverifyAgent_ClearsStaleVerificationFields(t *testing.T) {
 	require.Equal(t, "admin", updated.UnverifiedBy)
 	require.Equal(t, "revoked", updated.UnverifiedReason)
 	require.NotNil(t, updated.UnverifiedAt)
+}
+
+func TestAdminUnverifyAgent_MissingGovernanceFailsClosed(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{"read"})
+	delete(state.governance, "agent1")
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("admin", auth.ScopeAdmin)
+
+	_, err := resolver.Mutation().AdminUnverifyAgent(ctx, "agent1", &model.AdminVerifyAgentInput{
+		Reason: ptrString("revoked"),
+	})
+	require.ErrorIs(t, err, ErrAgentGovernanceUnavailable)
 }
 
 func TestRevokeAgentToken_UsesRuntimeSessionRevocationSemantics(t *testing.T) {

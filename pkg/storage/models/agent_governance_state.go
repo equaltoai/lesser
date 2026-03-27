@@ -43,6 +43,7 @@ type AgentGovernanceState struct {
 
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	Version   int       `theorydb:"version,attr:version" json:"version"`
 }
 
 // TableName returns the backing DynamoDB table for the model.

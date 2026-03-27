@@ -440,9 +440,9 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 		return common.RespondInternalServerError(ctx)
 	}
 
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, req.Username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, req.Username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 	scopes := agentSelfSovereignScopes(governance)
 	userAgent, _ := h.getDeviceInfo(ctx)
@@ -589,15 +589,9 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 	account.User.AgentPublicKey = req.PublicKey
 	account.User.AgentKeyType = strings.ToLower(strings.TrimSpace(req.KeyType))
 	account.User.UpdatedAt = now
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, account.User.Username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, account.User.Username)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
-	}
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{
-			Username:  account.User.Username,
-			CreatedAt: now,
-		}
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 	governance.KeyRotatedAt = cloneAgentGovernanceHandlerTime(&now)
 	governance.UpdatedAt = now
@@ -610,7 +604,7 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 		return common.RespondInternalServerError(ctx)
 	}
 	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceWriteError(ctx, err)
 	}
 
 	h.recordAgentAuditEvent(ctx, claims, "agent.key_rotated", "", map[string]any{

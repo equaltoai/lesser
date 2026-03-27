@@ -32,6 +32,7 @@ func TestAgentGovernanceStateCloneAndCopies(t *testing.T) {
 		KeyRotatedAt:         &start,
 		CreatedAt:            start,
 		UpdatedAt:            verifiedAt,
+		Version:              7,
 	}
 
 	clone := original.Clone()
@@ -49,6 +50,7 @@ func TestAgentGovernanceStateCloneAndCopies(t *testing.T) {
 	require.Equal(t, original.UnverifiedReason, clone.UnverifiedReason)
 	require.Equal(t, original.CreatedAt, clone.CreatedAt)
 	require.Equal(t, original.UpdatedAt, clone.UpdatedAt)
+	require.Equal(t, original.Version, clone.Version)
 	require.Equal(t, start.UTC(), *clone.QuarantineStart)
 	require.Equal(t, end.UTC(), *clone.QuarantineEnd)
 	require.Equal(t, verifiedAt.UTC(), *clone.QuarantineApprovedAt)

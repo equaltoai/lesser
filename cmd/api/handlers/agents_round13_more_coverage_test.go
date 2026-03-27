@@ -68,6 +68,16 @@ func TestAgentsRound13_UpdateAgent_ValidatesDisplayNameAndBio(t *testing.T) {
 				AgentVersion: "v1",
 			},
 		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"alice": {
+				PK:        "USER#alice",
+				SK:        storagemodels.SKAgentGovernance,
+				Username:  "alice",
+				CreatedAt: time.Now().Add(-24 * time.Hour),
+				UpdatedAt: time.Now().Add(-time.Hour),
+				Version:   1,
+			},
+		},
 	}
 
 	h, _, _ := round11NewHandler(t, cfg, state)
@@ -222,6 +232,9 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 			usersByUsername: map[string]storagemodels.User{
 				"owner":  state.usersByUsername["owner"],
 				"agent1": state.usersByUsername["agent1"],
+			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": state.agentGovernanceByUsername["agent1"],
 			},
 			createErrorOnce: dynamormerrors.ErrConditionFailed,
 		}

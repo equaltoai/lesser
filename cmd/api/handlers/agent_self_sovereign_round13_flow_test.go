@@ -98,6 +98,18 @@ func TestAgentSelfSovereignRound13_Flows(t *testing.T) {
 					AgentPublicKey: pubB64,
 				},
 			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent": {
+					PK:            "USER#agent",
+					SK:            storagemodels.SKAgentGovernance,
+					Username:      "agent",
+					SelfScopes:    []string{auth.ScopeRead, auth.ScopeWrite, "follow"},
+					SelfSovereign: true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+					UpdatedAt:     time.Now().Add(-time.Hour),
+					Version:       1,
+				},
+			},
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, state)
@@ -153,6 +165,18 @@ func TestAgentSelfSovereignRound13_Flows(t *testing.T) {
 					AgentType:      agentTypeCustom,
 					AgentKeyType:   "ed25519",
 					AgentPublicKey: pubB64,
+				},
+			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent": {
+					PK:            "USER#agent",
+					SK:            storagemodels.SKAgentGovernance,
+					Username:      "agent",
+					SelfScopes:    []string{auth.ScopeRead, auth.ScopeWrite, "follow"},
+					SelfSovereign: true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+					UpdatedAt:     time.Now().Add(-time.Hour),
+					Version:       1,
 				},
 			},
 		}

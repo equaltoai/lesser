@@ -196,9 +196,9 @@ func (h *Handler) resolveDelegatedAgentAccount(
 		resp, respErr := common.RespondForbidden(ctx, "not authorized to delegate to agent")
 		return nil, resp, respErr
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, agentUsername)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, agentUsername)
 	if err != nil {
-		resp, respErr := common.RespondInternalServerError(ctx)
+		resp, respErr := respondAgentGovernanceUnavailable(ctx)
 		return nil, resp, respErr
 	}
 	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
@@ -498,11 +498,6 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
-	if err != nil {
-		return common.RespondInternalServerError(ctx)
-	}
-
 	if !h.isAgentOwnerOrAdmin(claims, account.User) {
 		return common.RespondForbidden(ctx, "not authorized to modify agent")
 	}
@@ -516,6 +511,11 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return resp, err
 	}
 
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
+	}
+
 	now := time.Now().UTC()
 	governance = h.applyAgentUpdateRequest(ctx, account, governance, username, claims, req, now)
 
@@ -523,7 +523,7 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondInternalServerError(ctx)
 	}
 	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
-		return common.RespondInternalServerError(ctx)
+		return respondAgentGovernanceWriteError(ctx, err)
 	}
 
 	return okJSON(agentFromStorageUser(account.User, governance))
@@ -568,13 +568,7 @@ func (h *Handler) applyAgentUpdateRequest(
 	applyAgentInfoUpdates(account.User, req)
 	h.applyAgentCapabilitiesUpdate(ctx, account.User, governance, req.AgentCapabilities)
 	governance = applyAgentQuarantineExit(governance, claims, req.ExitQuarantine, now)
-	if governance == nil {
-		governance = &storage.AgentGovernanceState{}
-	}
 	governance.Username = username
-	if governance.CreatedAt.IsZero() {
-		governance.CreatedAt = now
-	}
 	governance.UpdatedAt = now
 
 	h.ensureAgentActor(username, account)

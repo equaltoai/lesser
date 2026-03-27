@@ -65,12 +65,9 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 			"error_description": "agent safety rails are only available for agent accounts",
 		})
 	}
-	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, claims.Username)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, claims.Username)
 	if err != nil {
-		return apptheory.JSON(http.StatusServiceUnavailable, map[string]any{
-			"error":             "service_unavailable",
-			"error_description": "agent governance state is unavailable",
-		})
+		return respondAgentGovernanceUnavailable(ctx)
 	}
 
 	if quarantined, until := agentQuarantineActive(governance); quarantined {

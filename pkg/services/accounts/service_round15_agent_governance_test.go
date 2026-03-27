@@ -59,7 +59,7 @@ func TestServiceAgentGovernanceHelpersDelegateToRepository(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	loadQuery := new(mocks.MockQuery)
-	createQuery := new(mocks.MockQuery)
+	updateBuilder := new(mocks.MockUpdateBuilder)
 	now := time.Date(2026, 3, 27, 12, 0, 0, 0, time.UTC)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Times(3)
@@ -79,15 +79,11 @@ func TestServiceAgentGovernanceHelpersDelegateToRepository(t *testing.T) {
 	}).Return(nil).Once()
 	loadQuery.On("First", mock.AnythingOfType("*models.AgentGovernanceState")).Return(dynamormerrors.ErrItemNotFound).Once()
 
-	mockDB.On("Model", mock.MatchedBy(func(record *models.AgentGovernanceState) bool {
-		return record != nil &&
-			record.Username == "agent" &&
-			record.PK == "USER#agent" &&
-			record.SK == models.SKAgentGovernance &&
-			len(record.DelegatedScopes) == 2
-	})).Return(createQuery).Once()
-	createQuery.On("IfNotExists").Return(createQuery).Once()
-	createQuery.On("Create").Return(nil).Once()
+	loadQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+	updateBuilder.On("Set", mock.Anything, mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Remove", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("ConditionNotExists", "Version").Return(updateBuilder).Once()
+	updateBuilder.On("Execute").Return(nil).Once()
 
 	accountRepo := repositories.NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
 	storageImpl := &agentGovernanceServiceStorage{

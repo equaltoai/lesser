@@ -40,6 +40,7 @@ type AgentGovernanceState struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Version   int       `json:"version"`
 }
 
 // Clone returns a deep copy safe for caller mutation.
