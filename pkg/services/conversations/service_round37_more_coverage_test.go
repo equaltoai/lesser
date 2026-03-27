@@ -497,6 +497,25 @@ func TestService_createDirectMessageStatus_KeepsRemoteAudienceAndMentionsConsist
 	}, status.Note.Tag[0])
 }
 
+func TestService_createDirectMessageStatus_RejectsRemoteHandleWithoutActorID(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob@remote.example"},
+		Content:    "hi remote",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		"bob@remote.example": {
+			User: &storage.User{Username: "bob"},
+		},
+	}, "conv123", "bob@remote.example")
+	require.Nil(t, status)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
+}
+
 func TestService_applyDirectMessageSendTransition_PropagatesRepositoryErrors(t *testing.T) {
 	ctx := context.Background()
 
@@ -614,6 +633,32 @@ func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T)
 	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
 	require.Equal(t, status.ToRecipients, status.Note.To)
 	require.Len(t, status.Note.Tag, 1)
+}
+
+func TestService_createSendMessageStatus_RejectsRemoteHandleWithoutActorID(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	status, _, err := service.createSendMessageStatus(
+		ctx,
+		&SendMessageCommand{
+			SenderID: "alice",
+			Content:  "hi again",
+		},
+		&SendDirectMessageCommand{
+			SenderID:   "alice",
+			Recipients: []string{"bob@remote.example"},
+			Content:    "hi again",
+		},
+		createTestAccount("alice", "alice"),
+		&storage.Account{User: &storage.User{Username: "bob"}},
+		"conv123",
+		"bob@remote.example",
+	)
+	require.Nil(t, status)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
 }
 
 func TestService_AcceptAndDeclineMessageRequest_NilCommand(t *testing.T) {

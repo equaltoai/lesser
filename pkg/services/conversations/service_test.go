@@ -862,17 +862,15 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// No existing conversation
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"bob@remote.com", "sender123"}).Return(nil, fmt.Errorf("not found"))
 
-	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).Return(nil).Once()
-
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
 
 	// Assertions
-	require.NoError(t, err)
-	assert.NotNil(t, result)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
 
-	// Verify federation was NOT queued - even for "remote" accounts, if we store them locally
-	// they get processed as local users since we construct URLs with our domain
+	// Verify federation was NOT queued because the send failed closed.
 	activities := federation.GetQueuedActivities()
 	assert.Len(t, activities, 0)
 
@@ -1262,9 +1260,10 @@ func TestService_BuildActivityPubNote(t *testing.T) {
 	}
 
 	// Execute
-	note := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
+	note, err := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
 
 	// Assertions
+	require.NoError(t, err)
 	assert.NotNil(t, note)
 	assert.Equal(t, "Note", note.Type)
 	assert.Equal(t, "Test ActivityPub note", note.Content)

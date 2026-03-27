@@ -126,6 +126,8 @@ const (
 	directMessageSendRetryLimit = 3
 )
 
+var errDirectMessageRemoteRecipientActorRequired = errors.New("remote recipient actor id required")
+
 type apiRateLimitInfoReader interface {
 	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
 }
@@ -574,7 +576,11 @@ func (s *Service) createDirectMessageStatus(_ context.Context, cmd *SendDirectMe
 		UpdatedAt:      now,
 	}
 
-	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversationID, recipientAccounts)
+	var err error
+	status.Note, err = s.buildActivityPubNote(cmd, messageID, sender, conversationID, recipientAccounts)
+	if err != nil {
+		return nil, "", err
+	}
 	status.ToRecipients = append([]string(nil), status.Note.To...)
 	status.SyncTagFieldsFromNote()
 
@@ -1136,9 +1142,13 @@ func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCom
 		UpdatedAt:      now,
 	}
 
-	status.Note = s.buildActivityPubNote(sendCmd, messageID, sender, conversationID, map[string]*storage.Account{
+	var err error
+	status.Note, err = s.buildActivityPubNote(sendCmd, messageID, sender, conversationID, map[string]*storage.Account{
 		recipientID: recipient,
 	})
+	if err != nil {
+		return nil, "", err
+	}
 	status.ToRecipients = append([]string(nil), status.Note.To...)
 	status.SyncTagFieldsFromNote()
 
@@ -1652,9 +1662,12 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 	return nil
 }
 
-func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID string, sender *storage.Account, conversationID string, recipientAccounts map[string]*storage.Account) *activitypub.Note {
+func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID string, sender *storage.Account, conversationID string, recipientAccounts map[string]*storage.Account) (*activitypub.Note, error) {
 	now := time.Now().UTC()
-	recipients, mentionTags := s.buildDirectMessageRecipientAudience(cmd.Recipients, recipientAccounts)
+	recipients, mentionTags, err := s.buildDirectMessageRecipientAudience(cmd.Recipients, recipientAccounts)
+	if err != nil {
+		return nil, err
+	}
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
@@ -1679,10 +1692,10 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 		note.InReplyTo = fmt.Sprintf("https://%s/statuses/%s", s.domainName, cmd.InReplyToID)
 	}
 
-	return note
+	return note, nil
 }
 
-func (s *Service) buildDirectMessageRecipientAudience(recipientIDs []string, recipientAccounts map[string]*storage.Account) ([]string, []activitypub.Tag) {
+func (s *Service) buildDirectMessageRecipientAudience(recipientIDs []string, recipientAccounts map[string]*storage.Account) ([]string, []activitypub.Tag, error) {
 	localDomain := strings.TrimSpace(s.domainName)
 	recipients := make([]string, 0, len(recipientIDs))
 	mentionTags := make([]activitypub.Tag, 0, len(recipientIDs))
@@ -1690,9 +1703,9 @@ func (s *Service) buildDirectMessageRecipientAudience(recipientIDs []string, rec
 
 	for _, recipientID := range recipientIDs {
 		recipient := recipientAccounts[recipientID]
-		actorID, ok := directMessageRecipientActorID(recipientID, recipient, localDomain)
-		if !ok {
-			continue
+		actorID, err := directMessageRecipientActorID(recipientID, recipient, localDomain)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		actorKey := strings.ToLower(strings.TrimSpace(actorID))
@@ -1713,28 +1726,32 @@ func (s *Service) buildDirectMessageRecipientAudience(recipientIDs []string, rec
 		})
 	}
 
-	return recipients, mentionTags
+	return recipients, mentionTags, nil
 }
 
-func directMessageRecipientActorID(recipientID string, account *storage.Account, localDomain string) (string, bool) {
+func directMessageRecipientActorID(recipientID string, account *storage.Account, localDomain string) (string, error) {
 	if account != nil && account.Actor != nil {
 		actorID := strings.TrimSpace(account.Actor.ID)
 		if actorID != "" {
-			return actorID, true
+			return actorID, nil
 		}
 	}
 
 	trimmedRecipientID := strings.TrimSpace(recipientID)
 	if strings.HasPrefix(trimmedRecipientID, "http://") || strings.HasPrefix(trimmedRecipientID, "https://") {
-		return trimmedRecipientID, true
+		return trimmedRecipientID, nil
 	}
 
-	username, _ := normalizeDirectMessageMentionAccount(trimmedRecipientID, account, localDomain)
-	if username == "" || strings.TrimSpace(localDomain) == "" {
-		return "", false
+	username, domain := normalizeDirectMessageMentionAccount(trimmedRecipientID, account, localDomain)
+	normalizedLocalDomain := normalizeDirectMessageMentionDomain(localDomain)
+	if domain != "" && domain != normalizedLocalDomain {
+		return "", errors.Join(ErrInvalidRecipient, errDirectMessageRemoteRecipientActorRequired)
+	}
+	if username == "" || normalizedLocalDomain == "" {
+		return "", ErrInvalidRecipient
 	}
 
-	return fmt.Sprintf("https://%s/users/%s", localDomain, username), true
+	return fmt.Sprintf("https://%s/users/%s", localDomain, username), nil
 }
 
 func normalizeDirectMessageMentionAccount(recipientID string, account *storage.Account, localDomain string) (string, string) {

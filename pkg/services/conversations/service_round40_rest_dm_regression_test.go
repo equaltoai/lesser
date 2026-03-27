@@ -50,8 +50,9 @@ func TestService_BuildActivityPubNote_IncludesSpoilerAndAgentAttribution(t *test
 		"recipient456": createTestAccount("recipient456", "bob"),
 	}
 
-	note := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
+	note, err := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
 
+	require.NoError(t, err)
 	require.Equal(t, "cw", note.Summary)
 	require.Same(t, attr, note.AgentAttribution)
 	require.Equal(t, []string{"https://example.com/users/bob"}, note.To)
@@ -88,8 +89,9 @@ func TestService_BuildActivityPubNote_UsesRemoteActorIDsForMentionAudience(t *te
 		},
 	}
 
-	note := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
+	note, err := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
 
+	require.NoError(t, err)
 	require.Equal(t, []string{"https://remote.example/users/bob"}, note.To)
 	require.Len(t, note.Tag, 1)
 	require.Equal(t, activitypub.Tag{
@@ -97,4 +99,30 @@ func TestService_BuildActivityPubNote_UsesRemoteActorIDsForMentionAudience(t *te
 		Href: "https://remote.example/users/bob",
 		Name: "@bob@remote.example",
 	}, note.Tag[0])
+}
+
+func TestService_BuildActivityPubNote_RejectsRemoteHandleWithoutActorID(t *testing.T) {
+	t.Parallel()
+
+	service, _, _, _, _, _ := createTestService()
+
+	cmd := &SendDirectMessageCommand{
+		SenderID:   "sender123",
+		Recipients: []string{"bob@remote.example"},
+		Content:    "secret hello",
+	}
+	senderAccount := createTestAccount("sender123", "alice")
+	recipientAccounts := map[string]*storage.Account{
+		"bob@remote.example": {
+			User: &storage.User{
+				Username: "bob",
+			},
+		},
+	}
+
+	note, err := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
+
+	require.Nil(t, note)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
 }
