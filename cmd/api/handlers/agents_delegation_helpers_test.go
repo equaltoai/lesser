@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -99,7 +100,10 @@ func TestAgentDelegationHelpersRound20(t *testing.T) {
 		require.Equal(t, "agent1", account.User.Username)
 		require.True(t, account.User.IsAgent)
 		require.Equal(t, "@owner", account.User.AgentOwner)
-		require.Equal(t, "quarantined", account.User.Metadata["agent_quarantine_status"])
+		governance, ok := state.agentGovernanceByUsername["agent1"]
+		require.True(t, ok)
+		require.Equal(t, storage.AgentQuarantineStatusQuarantined, governance.QuarantineStatus)
+		require.Equal(t, []string{"read", "write"}, governance.DelegatedScopes)
 		require.NotEmpty(t, account.PrivateKey)
 		require.NotNil(t, account.Actor)
 	})

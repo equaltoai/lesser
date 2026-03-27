@@ -65,8 +65,15 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 			"error_description": "agent safety rails are only available for agent accounts",
 		})
 	}
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, claims.Username)
+	if err != nil {
+		return apptheory.JSON(http.StatusServiceUnavailable, map[string]any{
+			"error":             "service_unavailable",
+			"error_description": "agent governance state is unavailable",
+		})
+	}
 
-	if quarantined, until := agentQuarantineActive(agentUser); quarantined {
+	if quarantined, until := agentQuarantineActive(governance); quarantined {
 		if strings.TrimSpace(req.Visibility) != VisibilityPrivate {
 			h.imposeAgentLockout(ctx.Context(), claims.Username, "quarantine_violation")
 			return apptheory.JSON(http.StatusForbidden, map[string]any{
@@ -79,7 +86,7 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 
 	if h.repos != nil && h.repos.RateLimit() != nil {
 		// Enforce per-hour posting cap (capability-driven, conservative default).
-		maxPerHour := h.agentMaxPostsPerHourLimit(ctx.Context(), agentUser)
+		maxPerHour := h.agentMaxPostsPerHourLimit(ctx.Context(), agentUser, governance)
 		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_posts_per_hour", maxPerHour, time.Hour); err != nil {
 			return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 				"error":             "too_many_requests",
@@ -112,7 +119,7 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 	return nil, nil
 }
 
-func (h *Handler) agentMaxPostsPerHourLimit(ctx context.Context, user *storage.User) int {
+func (h *Handler) agentMaxPostsPerHourLimit(ctx context.Context, user *storage.User, governance *storage.AgentGovernanceState) int {
 	limit := agentDefaultMaxPostsPerHour
 	verifiedLimit := agentVerifiedDefaultMaxPostsPerHour
 
@@ -128,7 +135,7 @@ func (h *Handler) agentMaxPostsPerHourLimit(ctx context.Context, user *storage.U
 	}
 
 	allowed := limit
-	if agentMetadataBool(user, "agent_verified") {
+	if agentVerifiedState(governance) {
 		allowed = verifiedLimit
 	}
 
@@ -166,45 +173,11 @@ func uniqueHashtags(content string) []string {
 	return out
 }
 
-func agentQuarantineActive(user *storage.User) (bool, time.Time) {
-	if user == nil || !user.IsAgent {
+func agentQuarantineActive(governance *storage.AgentGovernanceState) (bool, time.Time) {
+	if governance == nil {
 		return false, time.Time{}
 	}
-
-	status, _ := agentMetadataString(user, "agent_quarantine_status")
-	if strings.EqualFold(status, "approved") {
-		return false, time.Time{}
-	}
-
-	endStr, ok := agentMetadataString(user, "agent_quarantine_end")
-	if !ok || strings.TrimSpace(endStr) == "" {
-		return false, time.Time{}
-	}
-
-	end, err := time.Parse(time.RFC3339, endStr)
-	if err != nil {
-		return false, time.Time{}
-	}
-
-	if time.Now().Before(end) {
-		return true, end
-	}
-
-	return false, end
-}
-
-func agentMetadataString(user *storage.User, key string) (string, bool) {
-	if user == nil || user.Metadata == nil {
-		return "", false
-	}
-	raw, ok := user.Metadata[key]
-	if !ok || raw == nil {
-		return "", false
-	}
-	if s, ok := raw.(string); ok {
-		return s, true
-	}
-	return "", false
+	return governance.QuarantineActiveAt(time.Now().UTC())
 }
 
 func hashAgentContent(content string) string {

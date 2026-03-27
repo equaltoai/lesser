@@ -30,12 +30,6 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 	policy.AgentMaxPostsPerHour = 50
 	policy.VerifiedAgentMaxPostsPerHour = 200
 
-	aliceMetadata := map[string]any{
-		"agent_delegated_scopes": []any{"read", "write:statuses"},
-		"agent_verified":         "true",
-		"agent_verified_at":      now.Add(-1 * time.Hour).Format(time.RFC3339),
-	}
-
 	state := &round10QueryState{
 		agentInstanceConfig: policy,
 		usersByUsername: map[string]storagemodels.User{
@@ -71,12 +65,25 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata:     aliceMetadata,
 				AgentCapabilities: &agents.Capabilities{
 					CanPost:           true,
 					RestrictedDomains: []string{"example.org"},
 					MaxPostsPerHour:   10,
 				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"alice": {
+				PK:               "USER#alice",
+				SK:               storagemodels.SKAgentGovernance,
+				Username:         "alice",
+				DelegatedScopes:  []string{auth.ScopeRead, "write:statuses"},
+				Verified:         true,
+				VerifiedAt:       ptrTime(now.Add(-1 * time.Hour)),
+				QuarantineStatus: storage.AgentQuarantineStatusQuarantined,
+				QuarantineEnd:    ptrTime(now.Add(24 * time.Hour)),
+				CreatedAt:        now.Add(-24 * time.Hour),
+				UpdatedAt:        now.Add(-1 * time.Hour),
 			},
 		},
 		auditLogsByUser: map[string][]*storagemodels.AuthAuditLog{
@@ -544,9 +551,17 @@ func TestAgentSafetyRailsRound12_ValidationsAndHelpers(t *testing.T) {
 				Version:   1,
 				CreatedAt: now.Add(-24 * time.Hour),
 				IsAgent:   true,
-				Metadata: map[string]any{
-					"agent_quarantine_end": now.Add(24 * time.Hour).Format(time.RFC3339),
-				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent": {
+				PK:              "USER#agent",
+				SK:              storagemodels.SKAgentGovernance,
+				Username:        "agent",
+				QuarantineStart: ptrTime(now.Add(-1 * time.Hour)),
+				QuarantineEnd:   ptrTime(now.Add(24 * time.Hour)),
+				CreatedAt:       now.Add(-24 * time.Hour),
+				UpdatedAt:       now,
 			},
 		},
 	}
@@ -571,13 +586,12 @@ func TestAgentSafetyRailsRound12_ValidationsAndHelpers(t *testing.T) {
 	})
 
 	t.Run("quarantine_active_helper", func(t *testing.T) {
-		user := &storage.User{
-			IsAgent: true,
-			Metadata: map[string]any{
-				"agent_quarantine_end": now.Add(24 * time.Hour).Format(time.RFC3339),
-			},
+		governance := &storage.AgentGovernanceState{
+			Username:        "agent",
+			QuarantineEnd:   ptrTime(now.Add(24 * time.Hour)),
+			QuarantineStart: ptrTime(now.Add(-1 * time.Hour)),
 		}
-		quarantined, until := agentQuarantineActive(user)
+		quarantined, until := agentQuarantineActive(governance)
 		require.True(t, quarantined)
 		require.False(t, until.IsZero())
 	})
@@ -631,13 +645,11 @@ func TestAgentGovernanceRound12_GetPolicy(t *testing.T) {
 }
 
 func TestAgentSelfSovereignScopesRound12_MetadataShapes(t *testing.T) {
-	user := &storage.User{
-		IsAgent: true,
-		Metadata: map[string]any{
-			"agent_self_scopes": "read write:statuses follow admin",
-		},
+	governance := &storage.AgentGovernanceState{
+		Username:   "agent",
+		SelfScopes: []string{"read", "write:statuses", "follow", "admin"},
 	}
-	scopes := agentSelfSovereignScopes(user)
+	scopes := agentSelfSovereignScopes(governance)
 	require.Subset(t, scopes, []string{auth.ScopeRead, auth.ScopeWrite, "follow"})
 }
 

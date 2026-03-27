@@ -56,9 +56,17 @@ func TestAgentManagementHandlersRound20(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata: map[string]any{
-					"agent_quarantine_status": "quarantined",
-				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:               "USER#agent1",
+				SK:               storagemodels.SKAgentGovernance,
+				Username:         "agent1",
+				QuarantineStatus: "quarantined",
+				QuarantineEnd:    ptrTime(now.Add(24 * time.Hour)),
+				CreatedAt:        now.Add(-24 * time.Hour),
+				UpdatedAt:        now.Add(-time.Hour),
 			},
 		},
 		auditLogsByUser: map[string][]*storagemodels.AuthAuditLog{

@@ -168,9 +168,16 @@ func TestAgentsRound20_ResolveDelegatedAgentAccount_Branches(t *testing.T) {
 					Version:    1,
 					IsAgent:    true,
 					AgentOwner: "@owner",
-					Metadata: map[string]any{
-						"agent_delegated_scopes": []any{"read"},
-					},
+				},
+			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": {
+					PK:              "USER#agent1",
+					SK:              storagemodels.SKAgentGovernance,
+					Username:        "agent1",
+					DelegatedScopes: []string{auth.ScopeRead},
+					CreatedAt:       time.Now().Add(-24 * time.Hour),
+					UpdatedAt:       time.Now().Add(-time.Hour),
 				},
 			},
 		})
@@ -206,7 +213,7 @@ func TestAgentsRound20_AgentDelegationEnvelope_EmptyMetadataCases(t *testing.T) 
 	require.False(t, ok)
 	require.Nil(t, scopes)
 
-	scopes, ok = agentDelegationEnvelope(&storage.User{})
+	scopes, ok = agentDelegationEnvelope(&storage.AgentGovernanceState{})
 	require.False(t, ok)
 	require.Nil(t, scopes)
 }
@@ -339,7 +346,7 @@ func TestAgentsRound20_HandleUpdateAndDeleteAgentLift_ErrorBranches(t *testing.T
 	})
 }
 
-func TestAgentsRound20_AgentScopeAndMetadataHelpers(t *testing.T) {
+func TestAgentsRound20_AgentGovernanceHelpers(t *testing.T) {
 	broadCaps := deriveAgentCapabilitiesFromScopes([]string{"write", "follow"})
 	require.True(t, broadCaps.CanPost)
 	require.True(t, broadCaps.CanReply)
@@ -354,20 +361,14 @@ func TestAgentsRound20_AgentScopeAndMetadataHelpers(t *testing.T) {
 	require.True(t, granularCaps.CanDM)
 	require.True(t, granularCaps.CanFollow)
 
-	require.False(t, agentMetadataBool(nil, "agent_verified"))
-	require.False(t, agentMetadataBool(&storage.User{}, "agent_verified"))
-	require.True(t, agentMetadataBool(&storage.User{Metadata: map[string]any{"agent_verified": "TRUE"}}, "agent_verified"))
+	require.False(t, agentVerifiedState(nil))
+	require.False(t, agentVerifiedState(&storage.AgentGovernanceState{}))
+	require.True(t, agentVerifiedState(&storage.AgentGovernanceState{Verified: true}))
 
 	require.Nil(t, agentDelegatedScopes(nil))
-	require.Nil(t, agentDelegatedScopes(&storage.User{}))
-	require.Equal(t, []string{"read", "write"}, agentDelegatedScopes(&storage.User{
-		Metadata: map[string]any{"agent_delegated_scopes": []string{"read", "write"}},
-	}))
-	require.Equal(t, []string{"read", "follow"}, agentDelegatedScopes(&storage.User{
-		Metadata: map[string]any{"agent_delegated_scopes": []any{" read ", 7, "", "follow"}},
-	}))
-	require.Nil(t, agentDelegatedScopes(&storage.User{
-		Metadata: map[string]any{"agent_delegated_scopes": true},
+	require.Nil(t, agentDelegatedScopes(&storage.AgentGovernanceState{}))
+	require.Equal(t, []string{"read", "write"}, agentDelegatedScopes(&storage.AgentGovernanceState{
+		DelegatedScopes: []string{"read", "write"},
 	}))
 }
 
@@ -389,15 +390,14 @@ func TestAgentsRound20_AgentCapabilityAndActorHelpers(t *testing.T) {
 
 	t.Run("applyAgentCapabilitiesUpdate clamps to unverified and verified policy caps", func(t *testing.T) {
 		user := &storage.User{}
-		h.applyAgentCapabilitiesUpdate(ctx, user, &apimodels.AgentCapabilities{
+		h.applyAgentCapabilitiesUpdate(ctx, user, nil, &apimodels.AgentCapabilities{
 			CanPost:         true,
 			MaxPostsPerHour: 99,
 		})
 		require.NotNil(t, user.AgentCapabilities)
 		require.Equal(t, 10, user.AgentCapabilities.MaxPostsPerHour)
 
-		user.Metadata = map[string]any{"agent_verified": true}
-		h.applyAgentCapabilitiesUpdate(ctx, user, &apimodels.AgentCapabilities{
+		h.applyAgentCapabilitiesUpdate(ctx, user, &storage.AgentGovernanceState{Verified: true}, &apimodels.AgentCapabilities{
 			CanPost:         true,
 			MaxPostsPerHour: 99,
 		})

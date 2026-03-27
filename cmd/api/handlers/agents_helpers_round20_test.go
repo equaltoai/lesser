@@ -37,9 +37,6 @@ func TestAgentHelpersRound20(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read", "write:statuses"},
-				},
 			},
 			"human": {
 				PK:        "USER#human",
@@ -49,6 +46,16 @@ func TestAgentHelpersRound20(t *testing.T) {
 				Version:   1,
 				CreatedAt: now.Add(-24 * time.Hour),
 				IsAgent:   false,
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:              "USER#agent1",
+				SK:              storagemodels.SKAgentGovernance,
+				Username:        "agent1",
+				DelegatedScopes: []string{auth.ScopeRead, "write:statuses"},
+				CreatedAt:       now.Add(-24 * time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
 			},
 		},
 	}
@@ -89,22 +96,20 @@ func TestAgentHelpersRound20(t *testing.T) {
 	})
 
 	t.Run("agent envelope helpers", func(t *testing.T) {
-		user := &storage.User{
-			Metadata: map[string]any{
-				"agent_delegated_scopes": []any{"read", "write"},
-			},
+		governance := &storage.AgentGovernanceState{
+			DelegatedScopes: []string{"read", "write:statuses"},
 		}
-		scopes, ok := agentDelegationEnvelope(user)
+		scopes, ok := agentDelegationEnvelope(governance)
 		require.True(t, ok)
-		require.Equal(t, []string{"read", "write"}, scopes)
+		require.Equal(t, []string{"read", "write:statuses"}, scopes)
 
-		scopes, ok = agentDelegationEnvelope(&storage.User{})
+		scopes, ok = agentDelegationEnvelope(&storage.AgentGovernanceState{})
 		require.False(t, ok)
 		require.Nil(t, scopes)
 
-		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"read"}))
-		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"follow"}))
-		require.Error(t, validateDelegationAgainstAgentEnvelope(user, []string{"push"}))
+		require.NoError(t, validateDelegationAgainstAgentEnvelope(governance, []string{"read"}))
+		require.Error(t, validateDelegationAgainstAgentEnvelope(governance, []string{"follow"}))
+		require.Error(t, validateDelegationAgainstAgentEnvelope(governance, []string{"push"}))
 	})
 
 	t.Run("deriveAgentCapabilitiesFromScopes", func(t *testing.T) {

@@ -46,22 +46,17 @@ func TestAgentSelfSovereignRound13_ParseAndScopesHelpers(t *testing.T) {
 		require.Equal(t, "sig", parsed.Signature)
 	})
 
-	t.Run("agentSelfSovereignScopes normalizes metadata variants", func(t *testing.T) {
+	t.Run("agentSelfSovereignScopes normalizes governance variants", func(t *testing.T) {
 		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(nil))
-		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(&storage.User{}))
+		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(&storage.AgentGovernanceState{}))
 
-		user := &storage.User{
-			Metadata: map[string]any{
-				"agent_self_scopes": []string{"read", "write:statuses", "follow"},
-			},
+		governance := &storage.AgentGovernanceState{
+			SelfScopes: []string{"read", "write:statuses", "follow"},
 		}
-		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(user))
+		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(governance))
 
-		user.Metadata["agent_self_scopes"] = []any{"read", "write", "follow", 7}
-		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(user))
-
-		user.Metadata["agent_self_scopes"] = "read write follow"
-		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(user))
+		governance.SelfScopes = []string{"read", "write", "follow", ""}
+		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, agentSelfSovereignScopes(governance))
 	})
 }
 

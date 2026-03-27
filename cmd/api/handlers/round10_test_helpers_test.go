@@ -118,6 +118,7 @@ type round10QueryState struct {
 	agentKeyChallengesByID    map[string]storagemodels.AgentKeyChallenge
 	agentAccessLeasesByKey    map[string]storagemodels.AgentAccessLease
 	agentAccessChallengesByID map[string]storagemodels.AgentAccessLeaseChallenge
+	agentGovernanceByUsername map[string]storagemodels.AgentGovernanceState
 	agentMemoryEventsByAgent  map[string][]storagemodels.AgentMemoryEvent
 	remoteActorsByPK          map[string]storagemodels.RemoteActor
 	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
@@ -358,6 +359,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.AgentGovernanceState:
+			if m == nil {
+				return
+			}
+			if state.agentGovernanceByUsername == nil {
+				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
+			}
+			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.OAuthClient:
 			if m == nil {
 				return
@@ -467,6 +476,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Update", mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.AgentGovernanceState:
+			if m == nil {
+				return
+			}
+			if state.agentGovernanceByUsername == nil {
+				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
+			}
+			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.RefreshToken:
 			if m == nil {
 				return
@@ -693,6 +710,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		return !exactExists
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.AgentGovernanceState); !ok {
+			return false
+		}
+		pk, ok := state.whereString("PK")
+		if !ok || !strings.HasPrefix(pk, "USER#") {
+			return false
+		}
+		sk, ok := state.whereString("SK")
+		if !ok || sk != storagemodels.SKAgentGovernance {
+			return false
+		}
+		if state.agentGovernanceByUsername == nil {
+			return true
+		}
+		username := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(pk, "USER#")))
+		_, exactExists := state.agentGovernanceByUsername[username]
+		return !exactExists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		switch d := dest.(type) {
@@ -721,6 +758,16 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				return
 			}
 			*d = storagemodels.User{Username: username, Role: "user", Approved: true, Version: 1}
+		case *storagemodels.AgentGovernanceState:
+			username := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "USER#") {
+				username = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(pk, "USER#")))
+			}
+			if governance, ok := state.agentGovernanceByUsername[username]; ok {
+				*d = governance
+				return
+			}
+			*d = storagemodels.AgentGovernanceState{Username: username}
 		case *storagemodels.Actor:
 			username := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "ACTOR#") {

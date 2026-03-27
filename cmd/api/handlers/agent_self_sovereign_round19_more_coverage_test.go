@@ -186,7 +186,7 @@ func TestAgentSelfSovereignRound19_CreateSelfSovereignAgentAccount_InternalError
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/register", nil, nil, nil)
 	require.NoError(t, err)
 
-	_, resp, err := h.createSelfSovereignAgentAccount(ctx, user, "agent", "Agent", "", time.Now().UTC())
+	_, resp, err := h.createSelfSovereignAgentAccount(ctx, user, "agent", "Agent", "", []string{auth.ScopeRead, auth.ScopeWrite, "follow"}, time.Now().UTC())
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, http.StatusInternalServerError, resp.Status)

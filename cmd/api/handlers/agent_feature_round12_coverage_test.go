@@ -95,9 +95,16 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read", "write:statuses"},
-				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:              "USER#agent1",
+				SK:              storagemodels.SKAgentGovernance,
+				Username:        "agent1",
+				DelegatedScopes: []string{auth.ScopeRead, "write:statuses"},
+				CreatedAt:       now.Add(-24 * time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
 			},
 		},
 	}
