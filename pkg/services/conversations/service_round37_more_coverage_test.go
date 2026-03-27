@@ -465,6 +465,38 @@ func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.
 	require.Equal(t, status.PublishedAt, status.UpdatedAt)
 }
 
+func TestService_createDirectMessageStatus_KeepsRemoteAudienceAndMentionsConsistent(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	remoteActorID := "https://remote.example/users/bob"
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{remoteActorID},
+		Content:    "hi remote",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		remoteActorID: {
+			User: &storage.User{Username: "bob@remote.example"},
+			Actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: remoteActorID},
+				PreferredUsername: "bob",
+			},
+		},
+	}, "conv123", remoteActorID)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.Equal(t, []string{remoteActorID}, status.ToRecipients)
+	require.Equal(t, []string{remoteActorID}, status.Mentions)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Len(t, status.Note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: remoteActorID,
+		Name: "@bob@remote.example",
+	}, status.Note.Tag[0])
+}
+
 func TestService_applyDirectMessageSendTransition_PropagatesRepositoryErrors(t *testing.T) {
 	ctx := context.Background()
 
