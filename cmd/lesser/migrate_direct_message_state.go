@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ type directMessageStateMigrationSummary struct {
 	ThreadStatusesScanned      int
 	CanonicalStateRowsPlanned  int
 	CanonicalStateRowsUpserted int
+	LookupRowsPlanned          int
+	LookupRowsUpserted         int
 	SampleConversationIDs      []string
 }
 
@@ -73,6 +76,13 @@ type directMessageCanonicalStateRecord struct {
 	Item  map[string]types.AttributeValue
 }
 
+type directMessageLookupPlan struct {
+	PK             string
+	ConversationID string
+	Participants   []string
+	SortTime       time.Time
+}
+
 var newDirectMessageStateMigrationClientFn = func(cfg aws.Config) directMessageStateMigrationClient {
 	return dynamodb.NewFromConfig(cfg)
 }
@@ -113,6 +123,8 @@ func printDirectMessageStateMigrationSummary(
 	fmt.Printf("thread_statuses_scanned: %d\n", summary.ThreadStatusesScanned)
 	fmt.Printf("canonical_state_rows_planned: %d\n", summary.CanonicalStateRowsPlanned)
 	fmt.Printf("canonical_state_rows_upserted: %d\n", summary.CanonicalStateRowsUpserted)
+	fmt.Printf("lookup_rows_planned: %d\n", summary.LookupRowsPlanned)
+	fmt.Printf("lookup_rows_upserted: %d\n", summary.LookupRowsUpserted)
 	printConversationMigrationSamples(summary.SampleConversationIDs)
 
 	if !apply {
@@ -159,6 +171,11 @@ func executeDirectMessageStateMigration(
 	if err != nil {
 		return summary, err
 	}
+	existingLookupRows, err := loadDirectMessageLookupRows(ctx, client, tableName)
+	if err != nil {
+		return summary, err
+	}
+	desiredLookupPlans := map[string]directMessageLookupPlan{}
 
 	scanInput := &dynamodb.ScanInput{
 		TableName:        aws.String(tableName),
@@ -169,7 +186,8 @@ func executeDirectMessageStateMigration(
 		},
 	}
 
-	for {
+	stop := false
+	for !stop {
 		out, err := client.Scan(ctx, scanInput)
 		if err != nil {
 			return summary, fmt.Errorf("scan conversation metadata rows: %w", err)
@@ -234,16 +252,46 @@ func executeDirectMessageStateMigration(
 				summary.CanonicalStateRowsUpserted++
 			}
 
+			lookupPlan := buildDirectMessageLookupPlan(conversation)
+			if current, ok := desiredLookupPlans[lookupPlan.PK]; !ok || shouldReplaceDirectMessageLookupPlan(current, lookupPlan) {
+				desiredLookupPlans[lookupPlan.PK] = lookupPlan
+			}
+
 			if limit > 0 && summary.ActiveConversations >= limit {
-				return summary, nil
+				stop = true
+				break
 			}
 		}
 
-		if len(out.LastEvaluatedKey) == 0 {
-			return summary, nil
+		if stop || len(out.LastEvaluatedKey) == 0 {
+			break
 		}
 		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
 	}
+
+	lookupKeys := make([]string, 0, len(desiredLookupPlans))
+	for key := range desiredLookupPlans {
+		lookupKeys = append(lookupKeys, key)
+	}
+	sort.Strings(lookupKeys)
+	summary.LookupRowsPlanned = len(lookupKeys)
+
+	for _, lookupKey := range lookupKeys {
+		plan := desiredLookupPlans[lookupKey]
+		item := buildDirectMessageLookupItem(plan, existingLookupRows[lookupKey])
+		if !apply || reflect.DeepEqual(item, existingLookupRows[lookupKey]) {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      item,
+		}); err != nil {
+			return summary, fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
+		}
+		summary.LookupRowsUpserted++
+	}
+
+	return summary, nil
 }
 
 func buildDirectMessageMigrationConversation(item map[string]types.AttributeValue) (directMessageMigrationConversation, bool) {
@@ -434,6 +482,42 @@ func loadDirectMessageCanonicalStates(
 	}
 }
 
+func loadDirectMessageLookupRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (map[string]map[string]types.AttributeValue, error) {
+	rows := map[string]map[string]types.AttributeValue{}
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("begins_with(PK, :prefix) AND SK = :sk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: conversationParticipantLookupPrefix},
+			":sk":     &types.AttributeValueMemberS{Value: conversationParticipantLookupSortKey},
+		},
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return nil, fmt.Errorf("scan conversation participant lookup rows: %w", err)
+		}
+
+		for _, item := range out.Items {
+			pk, ok := attributeString(item["PK"])
+			if !ok || strings.TrimSpace(pk) == "" {
+				continue
+			}
+			rows[pk] = cloneAttributeMap(item)
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return rows, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
 func buildDirectMessageLegacyParticipantRow(item map[string]types.AttributeValue) (*directMessageLegacyParticipantRow, bool) {
 	pk, ok := attributeString(item["PK"])
 	if !ok || !strings.HasPrefix(pk, conversationParticipantPartitionPrefix) {
@@ -609,6 +693,49 @@ func buildUserConversationStateItem(state *models.UserConversationState, origina
 	setOptionalTimeAttribute(item, original, "declinedAt", state.DeclinedAt)
 	setTimeAttribute(item, original, "createdAt", state.CreatedAt)
 	setTimeAttribute(item, original, "updatedAt", state.UpdatedAt)
+	return item
+}
+
+func buildDirectMessageLookupPlan(conversation directMessageMigrationConversation) directMessageLookupPlan {
+	pk := conversationParticipantLookupPrefix + strings.Join(models.CanonicalConversationParticipants(conversation.Participants), ",")
+	return directMessageLookupPlan{
+		PK:             pk,
+		ConversationID: conversation.ConversationID,
+		Participants:   append([]string(nil), conversation.Participants...),
+		SortTime:       directMessageLookupPlanSortTime(conversation),
+	}
+}
+
+func shouldReplaceDirectMessageLookupPlan(current directMessageLookupPlan, candidate directMessageLookupPlan) bool {
+	if candidate.SortTime.After(current.SortTime) {
+		return true
+	}
+	if candidate.SortTime.Equal(current.SortTime) && candidate.ConversationID < current.ConversationID {
+		return true
+	}
+	return false
+}
+
+func directMessageLookupPlanSortTime(conversation directMessageMigrationConversation) time.Time {
+	for _, candidate := range []time.Time{
+		conversation.ThreadLastTime,
+		conversation.LastMessageTime,
+		conversation.UpdatedAt,
+		conversation.CreatedAt,
+	} {
+		if !candidate.IsZero() {
+			return candidate.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func buildDirectMessageLookupItem(plan directMessageLookupPlan, original map[string]types.AttributeValue) map[string]types.AttributeValue {
+	item := map[string]types.AttributeValue{}
+	setStringAttribute(item, original, "PK", plan.PK)
+	setStringAttribute(item, original, "SK", conversationParticipantLookupSortKey)
+	setStringAttribute(item, original, "gsi1PK", plan.PK)
+	setStringAttribute(item, original, conversationLookupConversationIDAttr, plan.ConversationID)
 	return item
 }
 

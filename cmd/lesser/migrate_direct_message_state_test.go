@@ -27,6 +27,7 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 			{},
 			{},
 			{},
+			{},
 			{
 				Items: []map[string]types.AttributeValue{
 					conversationMetadataItem(
@@ -75,10 +76,12 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "thread_statuses_scanned: 1")
 	require.Contains(t, output, "canonical_state_rows_planned: 2")
 	require.Contains(t, output, "canonical_state_rows_upserted: 0")
+	require.Contains(t, output, "lookup_rows_planned: 1")
+	require.Contains(t, output, "lookup_rows_upserted: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
-	require.Len(t, client.scanInputs, 4)
+	require.Len(t, client.scanInputs, 5)
 	require.Len(t, client.queryInputs, 1)
 	require.Equal(
 		t,
@@ -94,6 +97,7 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 
 	client := &fakeUserKeyMigrationClient{
 		scanOutputs: []*dynamodb.ScanOutput{
+			{},
 			{},
 			{},
 			{},
@@ -122,6 +126,8 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Equal(t, 2, summary.ThreadStatusesScanned)
 	require.Equal(t, 2, summary.CanonicalStateRowsPlanned)
 	require.Zero(t, summary.CanonicalStateRowsUpserted)
+	require.Equal(t, 1, summary.LookupRowsPlanned)
+	require.Zero(t, summary.LookupRowsUpserted)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -141,6 +147,7 @@ func TestExecuteDirectMessageStateMigration_ValidatesInputsAndQueryErrors(t *tes
 	createdAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
 	_, err = executeDirectMessageStateMigration(context.Background(), &fakeUserKeyMigrationClient{
 		scanOutputs: []*dynamodb.ScanOutput{
+			{},
 			{},
 			{},
 			{},
@@ -194,6 +201,7 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 				conversationStatusRow("conv-1", "scout", true, time.Unix(0, 0).UTC()),
 			}},
 			{},
+			{},
 			{Items: []map[string]types.AttributeValue{
 				conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 1, "status-1", lastStatusTime),
 			}},
@@ -209,7 +217,9 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.NoError(t, err)
 	require.Equal(t, 2, summary.CanonicalStateRowsPlanned)
 	require.Equal(t, 2, summary.CanonicalStateRowsUpserted)
-	require.Len(t, client.putInputs, 4)
+	require.Equal(t, 1, summary.LookupRowsPlanned)
+	require.Equal(t, 1, summary.LookupRowsUpserted)
+	require.Len(t, client.putInputs, 5)
 
 	archState := findPutItem(t, client.putInputs, "USER_CONVERSATION_STATE#arch", "CONVERSATION#conv-1")
 	require.Equal(t, "INBOX", strAttr(t, archState["folder"]))
@@ -224,6 +234,9 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.Equal(t, "USER_CONVERSATION_UNREAD#scout", strAttr(t, scoutState["gsi2PK"]))
 	_, hasLastReadAt := scoutState["lastReadAt"]
 	require.False(t, hasLastReadAt)
+
+	lookupItem := findPutItem(t, client.putInputs, "CONVERSATION_PARTICIPANTS#arch,scout", "LOOKUP")
+	require.Equal(t, "conv-1", strAttr(t, lookupItem[conversationLookupConversationIDAttr]))
 }
 
 func TestBuildDirectMessageMigrationConversation_SkipsInvalidRows(t *testing.T) {
@@ -284,4 +297,26 @@ func TestLoadDirectMessageThreadStatuses_PaginatesAndSkipsInvalidRows(t *testing
 	require.Equal(t, secondStatusTime, lastStatusTime)
 	require.Len(t, client.queryInputs, 2)
 	require.Equal(t, "next", strAttr(t, client.queryInputs[1].ExclusiveStartKey["PK"]))
+}
+
+func TestDirectMessageLookupPlanSelection_PrefersNewestThenLexicalID(t *testing.T) {
+	older := directMessageLookupPlan{
+		PK:             "CONVERSATION_PARTICIPANTS#arch,scout",
+		ConversationID: "conv-b",
+		SortTime:       time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC),
+	}
+	newer := directMessageLookupPlan{
+		PK:             older.PK,
+		ConversationID: "conv-c",
+		SortTime:       older.SortTime.Add(time.Minute),
+	}
+	tieBreaker := directMessageLookupPlan{
+		PK:             older.PK,
+		ConversationID: "conv-a",
+		SortTime:       older.SortTime,
+	}
+
+	require.True(t, shouldReplaceDirectMessageLookupPlan(older, newer))
+	require.True(t, shouldReplaceDirectMessageLookupPlan(older, tieBreaker))
+	require.False(t, shouldReplaceDirectMessageLookupPlan(newer, older))
 }
