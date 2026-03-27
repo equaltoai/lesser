@@ -96,6 +96,20 @@ type directMessageLookupPlan struct {
 	SortTime       time.Time
 }
 
+type directMessageMigrationInputs struct {
+	LegacyParticipantRows  map[string]map[string]*directMessageLegacyParticipantRow
+	LegacyReadStates       map[string]map[string]*directMessageLegacyReadState
+	ExistingCanonicalState map[string]map[string]*directMessageCanonicalStateRecord
+	ExistingLookupRows     map[string]map[string]types.AttributeValue
+	DirectStatuses         []map[string]types.AttributeValue
+}
+
+type directMessageMigrationPlan struct {
+	DesiredLookupPlans       map[string]directMessageLookupPlan
+	ExpectedParticipantCount map[string]int
+	ActualParticipantCount   map[string]int
+}
+
 var newDirectMessageStateMigrationClientFn = func(cfg aws.Config) directMessageStateMigrationClient {
 	return dynamodb.NewFromConfig(cfg)
 }
@@ -165,48 +179,128 @@ func executeDirectMessageStateMigration(
 ) (directMessageStateMigrationSummary, error) {
 	summary := directMessageStateMigrationSummary{}
 
-	if client == nil {
-		return summary, fmt.Errorf("migration client is required")
-	}
-	if strings.TrimSpace(tableName) == "" {
-		return summary, fmt.Errorf("table name is required")
+	if err := validateDirectMessageStateMigrationConfig(client, tableName); err != nil {
+		return summary, err
 	}
 
-	if apply {
-		if err := setDirectMessageMigrationWriteFreeze(ctx, client, tableName, true, "MIGRATING"); err != nil {
-			return summary, fmt.Errorf("freeze direct message writes: %w", err)
-		}
+	cleanup, err := beginDirectMessageStateMigration(ctx, client, tableName, apply)
+	if err != nil {
+		return summary, err
+	}
+	if cleanup != nil {
 		defer func() {
-			if err := setDirectMessageMigrationWriteFreeze(ctx, client, tableName, false, "COMPLETE"); err != nil {
-				panic(fmt.Sprintf("unfreeze direct message writes: %v", err))
+			if cleanupErr := cleanup(); cleanupErr != nil {
+				panic(fmt.Sprintf("unfreeze direct message writes: %v", cleanupErr))
 			}
 		}()
 	}
 
-	legacyParticipantRows, err := loadDirectMessageLegacyParticipantRows(ctx, client, tableName)
+	inputs, err := loadDirectMessageMigrationInputs(ctx, client, tableName)
 	if err != nil {
 		return summary, err
+	}
+
+	plan, err := scanDirectMessageMigrationConversations(ctx, client, tableName, inputs, apply, limit, &summary)
+	if err != nil {
+		return summary, err
+	}
+	recordDirectMessageMigrationValidation(plan, &summary)
+
+	if err := applyDirectMessageLookupPlans(ctx, client, tableName, apply, inputs.ExistingLookupRows, plan.DesiredLookupPlans, &summary); err != nil {
+		return summary, err
+	}
+	if err := repairDirectMessageMentions(ctx, client, tableName, apply, inputs.DirectStatuses, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyMessageRows(ctx, client, tableName, apply, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyParticipantRows(ctx, client, tableName, apply, inputs.LegacyParticipantRows, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyReadStates(ctx, client, tableName, apply, inputs.LegacyReadStates, &summary); err != nil {
+		return summary, err
+	}
+
+	return summary, nil
+}
+
+func validateDirectMessageStateMigrationConfig(client directMessageStateMigrationClient, tableName string) error {
+	if client == nil {
+		return fmt.Errorf("migration client is required")
+	}
+	if strings.TrimSpace(tableName) == "" {
+		return fmt.Errorf("table name is required")
+	}
+	return nil
+}
+
+func beginDirectMessageStateMigration(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+) (func() error, error) {
+	if !apply {
+		return nil, nil
+	}
+	if err := setDirectMessageMigrationWriteFreeze(ctx, client, tableName, true, "MIGRATING"); err != nil {
+		return nil, fmt.Errorf("freeze direct message writes: %w", err)
+	}
+	return func() error {
+		return setDirectMessageMigrationWriteFreeze(ctx, client, tableName, false, "COMPLETE")
+	}, nil
+}
+
+func loadDirectMessageMigrationInputs(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (directMessageMigrationInputs, error) {
+	legacyParticipantRows, err := loadDirectMessageLegacyParticipantRows(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
 	}
 	legacyReadStates, err := loadDirectMessageLegacyReadStates(ctx, client, tableName)
 	if err != nil {
-		return summary, err
+		return directMessageMigrationInputs{}, err
 	}
 	existingCanonicalStates, err := loadDirectMessageCanonicalStates(ctx, client, tableName)
 	if err != nil {
-		return summary, err
+		return directMessageMigrationInputs{}, err
 	}
 	existingLookupRows, err := loadDirectMessageLookupRows(ctx, client, tableName)
 	if err != nil {
-		return summary, err
+		return directMessageMigrationInputs{}, err
 	}
 	directStatusesForRepair, err := loadDirectMessageStatusesForRepair(ctx, client, tableName)
 	if err != nil {
-		return summary, err
+		return directMessageMigrationInputs{}, err
 	}
-	desiredLookupPlans := map[string]directMessageLookupPlan{}
-	expectedParticipantCounts := map[string]int{}
-	actualParticipantCounts := map[string]int{}
 
+	return directMessageMigrationInputs{
+		LegacyParticipantRows:  legacyParticipantRows,
+		LegacyReadStates:       legacyReadStates,
+		ExistingCanonicalState: existingCanonicalStates,
+		ExistingLookupRows:     existingLookupRows,
+		DirectStatuses:         directStatusesForRepair,
+	}, nil
+}
+
+func scanDirectMessageMigrationConversations(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	limit int,
+	summary *directMessageStateMigrationSummary,
+) (directMessageMigrationPlan, error) {
+	plan := directMessageMigrationPlan{
+		DesiredLookupPlans:       map[string]directMessageLookupPlan{},
+		ExpectedParticipantCount: map[string]int{},
+		ActualParticipantCount:   map[string]int{},
+	}
 	scanInput := &dynamodb.ScanInput{
 		TableName:        aws.String(tableName),
 		FilterExpression: aws.String("begins_with(PK, :prefix) AND SK = :sk"),
@@ -216,103 +310,164 @@ func executeDirectMessageStateMigration(
 		},
 	}
 
-	stop := false
-	for !stop {
+	for {
 		out, err := client.Scan(ctx, scanInput)
 		if err != nil {
-			return summary, fmt.Errorf("scan conversation metadata rows: %w", err)
+			return plan, fmt.Errorf("scan conversation metadata rows: %w", err)
 		}
-
-		for _, item := range out.Items {
-			summary.ScannedConversations++
-
-			conversation, ok := buildDirectMessageMigrationConversation(item)
-			if !ok {
-				continue
-			}
-
-			threadStatuses, statusCount, lastStatusID, lastStatusTime, err := loadDirectMessageThreadStatuses(ctx, client, tableName, conversation.ConversationID)
-			if err != nil {
-				return summary, fmt.Errorf("load thread statuses for %q: %w", conversation.ConversationID, err)
-			}
-
-			conversation.ThreadStatusItems = threadStatuses
-			conversation.ThreadStatusCount = statusCount
-			conversation.ThreadLastStatusID = lastStatusID
-			conversation.ThreadLastTime = lastStatusTime
-
-			summary.ActiveConversations++
-			expectedParticipantCounts[conversation.ConversationID] = len(conversation.Participants)
-			if statusCount > 0 {
-				summary.StatusBackedConversations++
-				summary.ThreadStatusesScanned += statusCount
-			}
-			appendConversationMigrationSample(&summary.SampleConversationIDs, conversation.ConversationID)
-
-			existingByViewer := existingCanonicalStates[conversation.ConversationID]
-			legacyParticipantsByViewer := legacyParticipantRows[conversation.ConversationID]
-			legacyReadStatesByViewer := legacyReadStates[conversation.ConversationID]
-
-			for _, viewerID := range conversation.Participants {
-				viewerKey := models.CanonicalConversationParticipantID(viewerID)
-				state, item, changed, err := buildMigratedUserConversationStateItem(
-					conversation,
-					viewerID,
-					existingByViewer[viewerKey],
-					legacyParticipantsByViewer[viewerKey],
-					legacyReadStatesByViewer[viewerKey],
-				)
-				if err != nil {
-					return summary, fmt.Errorf("build canonical user conversation state for %q/%q: %w", conversation.ConversationID, viewerID, err)
-				}
-				if state == nil {
-					continue
-				}
-
-				summary.CanonicalStateRowsPlanned++
-				actualParticipantCounts[conversation.ConversationID]++
-				if !apply || !changed {
-					continue
-				}
-
-				if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
-					TableName: aws.String(tableName),
-					Item:      item,
-				}); err != nil {
-					return summary, fmt.Errorf("put canonical user conversation state %s/%s: %w", state.ViewerID, state.ConversationID, err)
-				}
-				summary.CanonicalStateRowsUpserted++
-			}
-
-			lookupPlan := buildDirectMessageLookupPlan(conversation)
-			if current, ok := desiredLookupPlans[lookupPlan.PK]; !ok || shouldReplaceDirectMessageLookupPlan(current, lookupPlan) {
-				desiredLookupPlans[lookupPlan.PK] = lookupPlan
-			}
-
-			if limit > 0 && summary.ActiveConversations >= limit {
-				stop = true
-				break
-			}
+		stop, err := processDirectMessageMigrationConversationPage(ctx, client, tableName, out.Items, inputs, apply, limit, summary, &plan)
+		if err != nil {
+			return plan, err
 		}
-
 		if stop || len(out.LastEvaluatedKey) == 0 {
-			break
+			return plan, nil
 		}
 		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
 	}
+}
 
-	lookupKeys := make([]string, 0, len(desiredLookupPlans))
-	for key := range desiredLookupPlans {
-		lookupKeys = append(lookupKeys, key)
+func processDirectMessageMigrationConversationPage(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	items []map[string]types.AttributeValue,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	limit int,
+	summary *directMessageStateMigrationSummary,
+	plan *directMessageMigrationPlan,
+) (bool, error) {
+	for _, item := range items {
+		summary.ScannedConversations++
+
+		conversation, ok := buildDirectMessageMigrationConversation(item)
+		if !ok {
+			continue
+		}
+		if err := processDirectMessageMigrationConversation(ctx, client, tableName, conversation, inputs, apply, summary, plan); err != nil {
+			return false, err
+		}
+		if limit > 0 && summary.ActiveConversations >= limit {
+			return true, nil
+		}
 	}
-	sort.Strings(lookupKeys)
-	summary.LookupRowsPlanned = len(lookupKeys)
-	for conversationID, expectedCount := range expectedParticipantCounts {
-		if actualParticipantCounts[conversationID] != expectedCount {
+	return false, nil
+}
+
+func processDirectMessageMigrationConversation(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	conversation directMessageMigrationConversation,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+	plan *directMessageMigrationPlan,
+) error {
+	threadStatuses, statusCount, lastStatusID, lastStatusTime, err := loadDirectMessageThreadStatuses(ctx, client, tableName, conversation.ConversationID)
+	if err != nil {
+		return fmt.Errorf("load thread statuses for %q: %w", conversation.ConversationID, err)
+	}
+
+	conversation.ThreadStatusItems = threadStatuses
+	conversation.ThreadStatusCount = statusCount
+	conversation.ThreadLastStatusID = lastStatusID
+	conversation.ThreadLastTime = lastStatusTime
+
+	summary.ActiveConversations++
+	plan.ExpectedParticipantCount[conversation.ConversationID] = len(conversation.Participants)
+	if statusCount > 0 {
+		summary.StatusBackedConversations++
+		summary.ThreadStatusesScanned += statusCount
+	}
+	appendConversationMigrationSample(&summary.SampleConversationIDs, conversation.ConversationID)
+
+	if err := migrateDirectMessageConversationStates(
+		ctx,
+		client,
+		tableName,
+		conversation,
+		inputs.ExistingCanonicalState[conversation.ConversationID],
+		inputs.LegacyParticipantRows[conversation.ConversationID],
+		inputs.LegacyReadStates[conversation.ConversationID],
+		plan.ActualParticipantCount,
+		apply,
+		summary,
+	); err != nil {
+		return err
+	}
+
+	lookupPlan := buildDirectMessageLookupPlan(conversation)
+	if current, ok := plan.DesiredLookupPlans[lookupPlan.PK]; !ok || shouldReplaceDirectMessageLookupPlan(current, lookupPlan) {
+		plan.DesiredLookupPlans[lookupPlan.PK] = lookupPlan
+	}
+
+	return nil
+}
+
+func migrateDirectMessageConversationStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	conversation directMessageMigrationConversation,
+	existingByViewer map[string]*directMessageCanonicalStateRecord,
+	legacyParticipantsByViewer map[string]*directMessageLegacyParticipantRow,
+	legacyReadStatesByViewer map[string]*directMessageLegacyReadState,
+	actualParticipantCounts map[string]int,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, viewerID := range conversation.Participants {
+		viewerKey := models.CanonicalConversationParticipantID(viewerID)
+		state, item, changed, err := buildMigratedUserConversationStateItem(
+			conversation,
+			viewerID,
+			existingByViewer[viewerKey],
+			legacyParticipantsByViewer[viewerKey],
+			legacyReadStatesByViewer[viewerKey],
+		)
+		if err != nil {
+			return fmt.Errorf("build canonical user conversation state for %q/%q: %w", conversation.ConversationID, viewerID, err)
+		}
+		if state == nil {
+			continue
+		}
+
+		summary.CanonicalStateRowsPlanned++
+		actualParticipantCounts[conversation.ConversationID]++
+		if !apply || !changed {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      item,
+		}); err != nil {
+			return fmt.Errorf("put canonical user conversation state %s/%s: %w", state.ViewerID, state.ConversationID, err)
+		}
+		summary.CanonicalStateRowsUpserted++
+	}
+	return nil
+}
+
+func recordDirectMessageMigrationValidation(plan directMessageMigrationPlan, summary *directMessageStateMigrationSummary) {
+	for conversationID, expectedCount := range plan.ExpectedParticipantCount {
+		if plan.ActualParticipantCount[conversationID] != expectedCount {
 			summary.ValidationErrors++
 		}
 	}
+}
 
+func applyDirectMessageLookupPlans(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	existingLookupRows map[string]map[string]types.AttributeValue,
+	desiredLookupPlans map[string]directMessageLookupPlan,
+	summary *directMessageStateMigrationSummary,
+) error {
+	lookupKeys := sortedDirectMessageLookupKeys(desiredLookupPlans)
+	summary.LookupRowsPlanned = len(lookupKeys)
 	for _, lookupKey := range lookupKeys {
 		plan := desiredLookupPlans[lookupKey]
 		item := buildDirectMessageLookupItem(plan, existingLookupRows[lookupKey])
@@ -323,19 +478,12 @@ func executeDirectMessageStateMigration(
 			TableName: aws.String(tableName),
 			Item:      item,
 		}); err != nil {
-			return summary, fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
+			return fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
 		}
 		summary.LookupRowsUpserted++
 	}
 
-	orphanLookupKeys := make([]string, 0)
-	for lookupKey := range existingLookupRows {
-		if _, ok := desiredLookupPlans[lookupKey]; ok {
-			continue
-		}
-		orphanLookupKeys = append(orphanLookupKeys, lookupKey)
-	}
-	sort.Strings(orphanLookupKeys)
+	orphanLookupKeys := sortedDirectMessageOrphanLookupKeys(existingLookupRows, desiredLookupPlans)
 	summary.OrphanLookupRowsPlanned = len(orphanLookupKeys)
 	for _, lookupKey := range orphanLookupKeys {
 		if !apply {
@@ -345,16 +493,51 @@ func executeDirectMessageStateMigration(
 			TableName: aws.String(tableName),
 			Key:       attributeMapKeyAttributes(existingLookupRows[lookupKey]),
 		}); err != nil {
-			return summary, fmt.Errorf("delete orphan conversation participant lookup %s: %w", lookupKey, err)
+			return fmt.Errorf("delete orphan conversation participant lookup %s: %w", lookupKey, err)
 		}
 		summary.OrphanLookupRowsDeleted++
 	}
 
-	for _, statusItem := range directStatusesForRepair {
+	return nil
+}
+
+func sortedDirectMessageLookupKeys(lookupPlans map[string]directMessageLookupPlan) []string {
+	keys := make([]string, 0, len(lookupPlans))
+	for key := range lookupPlans {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedDirectMessageOrphanLookupKeys(
+	existingLookupRows map[string]map[string]types.AttributeValue,
+	desiredLookupPlans map[string]directMessageLookupPlan,
+) []string {
+	keys := make([]string, 0)
+	for lookupKey := range existingLookupRows {
+		if _, ok := desiredLookupPlans[lookupKey]; ok {
+			continue
+		}
+		keys = append(keys, lookupKey)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func repairDirectMessageMentions(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	statusItems []map[string]types.AttributeValue,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, statusItem := range statusItems {
 		repairedItem, changed, err := buildDirectMessageMentionRepairItem(statusItem)
 		if err != nil {
 			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
-			return summary, fmt.Errorf("repair direct-message mentions for %q: %w", statusID, err)
+			return fmt.Errorf("repair direct-message mentions for %q: %w", statusID, err)
 		}
 		if !changed {
 			continue
@@ -368,14 +551,23 @@ func executeDirectMessageStateMigration(
 			Item:      repairedItem,
 		}); err != nil {
 			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
-			return summary, fmt.Errorf("put repaired direct-message status %q: %w", statusID, err)
+			return fmt.Errorf("put repaired direct-message status %q: %w", statusID, err)
 		}
 		summary.MentionRepairsApplied++
 	}
+	return nil
+}
 
+func deleteDirectMessageLegacyMessageRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+) error {
 	legacyMessageRows, err := loadDirectMessageLegacyMessageRows(ctx, client, tableName)
 	if err != nil {
-		return summary, err
+		return err
 	}
 	for _, messageRow := range legacyMessageRows {
 		summary.LegacyMessageRowsPlanned++
@@ -388,11 +580,21 @@ func executeDirectMessageStateMigration(
 		}); err != nil {
 			pk, _ := attributeString(messageRow["PK"])
 			sk, _ := attributeString(messageRow["SK"])
-			return summary, fmt.Errorf("delete legacy conversation message row %s/%s: %w", pk, sk, err)
+			return fmt.Errorf("delete legacy conversation message row %s/%s: %w", pk, sk, err)
 		}
 		summary.LegacyMessageRowsDeleted++
 	}
+	return nil
+}
 
+func deleteDirectMessageLegacyParticipantRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	legacyParticipantRows map[string]map[string]*directMessageLegacyParticipantRow,
+	summary *directMessageStateMigrationSummary,
+) error {
 	for _, participantRowsByViewer := range legacyParticipantRows {
 		for _, participantRow := range participantRowsByViewer {
 			if participantRow == nil {
@@ -406,12 +608,22 @@ func executeDirectMessageStateMigration(
 				TableName: aws.String(tableName),
 				Key:       attributeMapKeyAttributes(participantRow.Item),
 			}); err != nil {
-				return summary, fmt.Errorf("delete legacy participant row %s/%s: %w", participantRow.ViewerID, participantRow.ConversationID, err)
+				return fmt.Errorf("delete legacy participant row %s/%s: %w", participantRow.ViewerID, participantRow.ConversationID, err)
 			}
 			summary.LegacyParticipantRowsDeleted++
 		}
 	}
+	return nil
+}
 
+func deleteDirectMessageLegacyReadStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	legacyReadStates map[string]map[string]*directMessageLegacyReadState,
+	summary *directMessageStateMigrationSummary,
+) error {
 	for _, readStatesByViewer := range legacyReadStates {
 		for _, readState := range readStatesByViewer {
 			if readState == nil {
@@ -425,13 +637,12 @@ func executeDirectMessageStateMigration(
 				TableName: aws.String(tableName),
 				Key:       attributeMapKeyAttributes(readState.Item),
 			}); err != nil {
-				return summary, fmt.Errorf("delete legacy read-state row %s/%s: %w", readState.ViewerID, readState.ConversationID, err)
+				return fmt.Errorf("delete legacy read-state row %s/%s: %w", readState.ViewerID, readState.ConversationID, err)
 			}
 			summary.LegacyReadStateRowsDeleted++
 		}
 	}
-
-	return summary, nil
+	return nil
 }
 
 func buildDirectMessageMigrationConversation(item map[string]types.AttributeValue) (directMessageMigrationConversation, bool) {
@@ -514,36 +725,31 @@ func loadDirectMessageLegacyParticipantRows(
 	tableName string,
 ) (map[string]map[string]*directMessageLegacyParticipantRow, error) {
 	rows := map[string]map[string]*directMessageLegacyParticipantRow{}
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
 			":prefix": &types.AttributeValueMemberS{Value: conversationParticipantPartitionPrefix},
 		},
+		"scan legacy participant rows",
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan legacy participant rows: %w", err)
+	for _, item := range items {
+		row, ok := buildDirectMessageLegacyParticipantRow(item)
+		if !ok {
+			continue
 		}
-
-		for _, item := range out.Items {
-			row, ok := buildDirectMessageLegacyParticipantRow(item)
-			if !ok {
-				continue
-			}
-			if rows[row.ConversationID] == nil {
-				rows[row.ConversationID] = map[string]*directMessageLegacyParticipantRow{}
-			}
-			rows[row.ConversationID][row.ViewerID] = row
+		if rows[row.ConversationID] == nil {
+			rows[row.ConversationID] = map[string]*directMessageLegacyParticipantRow{}
 		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return rows, nil
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+		rows[row.ConversationID][row.ViewerID] = row
 	}
+	return rows, nil
 }
 
 func loadDirectMessageLegacyReadStates(
@@ -552,36 +758,31 @@ func loadDirectMessageLegacyReadStates(
 	tableName string,
 ) (map[string]map[string]*directMessageLegacyReadState, error) {
 	rows := map[string]map[string]*directMessageLegacyReadState{}
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
 			":prefix": &types.AttributeValueMemberS{Value: conversationStatusPartitionPrefix},
 		},
+		"scan legacy conversation status rows",
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan legacy conversation status rows: %w", err)
+	for _, item := range items {
+		row, ok := buildDirectMessageLegacyReadState(item)
+		if !ok {
+			continue
 		}
-
-		for _, item := range out.Items {
-			row, ok := buildDirectMessageLegacyReadState(item)
-			if !ok {
-				continue
-			}
-			if rows[row.ConversationID] == nil {
-				rows[row.ConversationID] = map[string]*directMessageLegacyReadState{}
-			}
-			rows[row.ConversationID][row.ViewerID] = row
+		if rows[row.ConversationID] == nil {
+			rows[row.ConversationID] = map[string]*directMessageLegacyReadState{}
 		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return rows, nil
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+		rows[row.ConversationID][row.ViewerID] = row
 	}
+	return rows, nil
 }
 
 func loadDirectMessageCanonicalStates(
@@ -590,36 +791,31 @@ func loadDirectMessageCanonicalStates(
 	tableName string,
 ) (map[string]map[string]*directMessageCanonicalStateRecord, error) {
 	rows := map[string]map[string]*directMessageCanonicalStateRecord{}
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
 			":prefix": &types.AttributeValueMemberS{Value: "USER_CONVERSATION_STATE#"},
 		},
+		"scan canonical user conversation state rows",
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan canonical user conversation state rows: %w", err)
+	for _, item := range items {
+		record, ok := buildDirectMessageCanonicalStateRecord(item)
+		if !ok || record.State == nil {
+			continue
 		}
-
-		for _, item := range out.Items {
-			record, ok := buildDirectMessageCanonicalStateRecord(item)
-			if !ok || record.State == nil {
-				continue
-			}
-			if rows[record.State.ConversationID] == nil {
-				rows[record.State.ConversationID] = map[string]*directMessageCanonicalStateRecord{}
-			}
-			rows[record.State.ConversationID][record.State.ViewerID] = record
+		if rows[record.State.ConversationID] == nil {
+			rows[record.State.ConversationID] = map[string]*directMessageCanonicalStateRecord{}
 		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return rows, nil
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+		rows[record.State.ConversationID][record.State.ViewerID] = record
 	}
+	return rows, nil
 }
 
 func loadDirectMessageLookupRows(
@@ -628,34 +824,29 @@ func loadDirectMessageLookupRows(
 	tableName string,
 ) (map[string]map[string]types.AttributeValue, error) {
 	rows := map[string]map[string]types.AttributeValue{}
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix) AND SK = :sk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix) AND SK = :sk",
+		map[string]types.AttributeValue{
 			":prefix": &types.AttributeValueMemberS{Value: conversationParticipantLookupPrefix},
 			":sk":     &types.AttributeValueMemberS{Value: conversationParticipantLookupSortKey},
 		},
+		"scan conversation participant lookup rows",
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan conversation participant lookup rows: %w", err)
+	for _, item := range items {
+		pk, ok := attributeString(item["PK"])
+		if !ok || strings.TrimSpace(pk) == "" {
+			continue
 		}
-
-		for _, item := range out.Items {
-			pk, ok := attributeString(item["PK"])
-			if !ok || strings.TrimSpace(pk) == "" {
-				continue
-			}
-			rows[pk] = cloneAttributeMap(item)
-		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return rows, nil
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+		rows[pk] = cloneAttributeMap(item)
 	}
+	return rows, nil
 }
 
 func loadDirectMessageStatusesForRepair(
@@ -663,31 +854,17 @@ func loadDirectMessageStatusesForRepair(
 	client directMessageStateMigrationClient,
 	tableName string,
 ) ([]map[string]types.AttributeValue, error) {
-	items := make([]map[string]types.AttributeValue, 0)
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :prefix) AND visibility = :visibility"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	return scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix) AND visibility = :visibility",
+		map[string]types.AttributeValue{
 			":prefix":     &types.AttributeValueMemberS{Value: "status#"},
 			":visibility": &types.AttributeValueMemberS{Value: models.VisibilityDirect},
 		},
-	}
-
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return nil, fmt.Errorf("scan direct statuses for mention repair: %w", err)
-		}
-
-		for _, item := range out.Items {
-			items = append(items, cloneAttributeMap(item))
-		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return items, nil
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
-	}
+		"scan direct statuses for mention repair",
+	)
 }
 
 func loadDirectMessageLegacyMessageRows(
@@ -695,20 +872,38 @@ func loadDirectMessageLegacyMessageRows(
 	client directMessageStateMigrationClient,
 	tableName string,
 ) ([]map[string]types.AttributeValue, error) {
-	items := make([]map[string]types.AttributeValue, 0)
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
+	return scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix)",
+		map[string]types.AttributeValue{
 			":pkPrefix": &types.AttributeValueMemberS{Value: conversationMetadataPartitionPrefix},
 			":skPrefix": &types.AttributeValueMemberS{Value: conversationMessageSortKeyPrefix},
 		},
+		"scan legacy conversation message rows",
+	)
+}
+
+func scanDirectMessageItems(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	filterExpression string,
+	expressionValues map[string]types.AttributeValue,
+	errorContext string,
+) ([]map[string]types.AttributeValue, error) {
+	items := make([]map[string]types.AttributeValue, 0)
+	scanInput := &dynamodb.ScanInput{
+		TableName:                 aws.String(tableName),
+		FilterExpression:          aws.String(filterExpression),
+		ExpressionAttributeValues: expressionValues,
 	}
 
 	for {
 		out, err := client.Scan(ctx, scanInput)
 		if err != nil {
-			return nil, fmt.Errorf("scan legacy conversation message rows: %w", err)
+			return nil, fmt.Errorf("%s: %w", errorContext, err)
 		}
 
 		for _, item := range out.Items {

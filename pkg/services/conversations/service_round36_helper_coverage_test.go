@@ -144,6 +144,30 @@ func TestService_DirectMessageInboxPreferenceHelpers(t *testing.T) {
 		userRepo.AssertExpectations(t)
 	})
 
+	t.Run("directMessagesFromPreference_defaults_on_lookup_error", func(t *testing.T) {
+		userRepo := testmocks.NewMockUserRepositoryInterface()
+		userRepo.
+			On("GetUserPreferences", mock.Anything, "alice").
+			Return((*storage.UserPreferences)(nil), errors.New("boom")).
+			Once()
+
+		service := NewService(nil, nil, nil, nil, nil, userRepo, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+		require.Equal(t, "FOLLOWING_ONLY", service.directMessagesFromPreference(ctx, "alice"))
+		userRepo.AssertExpectations(t)
+	})
+
+	t.Run("directMessagesFromPreference_defaults_on_nil_preferences", func(t *testing.T) {
+		userRepo := testmocks.NewMockUserRepositoryInterface()
+		userRepo.
+			On("GetUserPreferences", mock.Anything, "alice").
+			Return((*storage.UserPreferences)(nil), nil).
+			Once()
+
+		service := NewService(nil, nil, nil, nil, nil, userRepo, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+		require.Equal(t, "FOLLOWING_ONLY", service.directMessagesFromPreference(ctx, "alice"))
+		userRepo.AssertExpectations(t)
+	})
+
 	t.Run("shouldDeliverToInbox_returns_true_for_ANYONE_without_relationship_repo", func(t *testing.T) {
 		userRepo := testmocks.NewMockUserRepositoryInterface()
 		userRepo.
@@ -205,6 +229,35 @@ func TestService_DirectMessageInboxPreferenceHelpers(t *testing.T) {
 		userRepo.AssertExpectations(t)
 		relationshipRepo.AssertExpectations(t)
 	})
+}
+
+func TestDirectMessageMentionFormattingHelpers(t *testing.T) {
+	require.Equal(t, "", formatDirectMessageMentionTagName("", "remote.example", "example.com"))
+	require.Equal(t, "@alice", formatDirectMessageMentionTagName("alice", "example.com", "example.com"))
+	require.Equal(t, "@alice@remote.example", formatDirectMessageMentionTagName("alice", "remote.example", "example.com"))
+	require.Equal(t, "remote.example", directMessageMentionActorDomain("https://remote.example/users/alice"))
+}
+
+func TestDirectMessageMentionHandleParts_CoversURLAndHandleForms(t *testing.T) {
+	username, domain := directMessageMentionHandleParts("https://remote.example/users/alice")
+	require.Equal(t, "alice", username)
+	require.Equal(t, "remote.example", domain)
+
+	username, domain = directMessageMentionHandleParts("alice@remote.example")
+	require.Equal(t, "alice", username)
+	require.Equal(t, "remote.example", domain)
+
+	username, domain = directMessageMentionHandleParts("alice")
+	require.Equal(t, "alice", username)
+	require.Empty(t, domain)
+}
+
+func TestDirectMessageMentionHelpers_CoverRootAndInvalidActorURLs(t *testing.T) {
+	username, domain := directMessageMentionHandleParts("https://remote.example/")
+	require.Empty(t, username)
+	require.Equal(t, "remote.example", domain)
+
+	require.Empty(t, directMessageMentionActorDomain("http://[::1"))
 }
 
 func TestService_buildDirectMessageParticipantStatesForSend_CoversRecipientRequestStateCases(t *testing.T) {
