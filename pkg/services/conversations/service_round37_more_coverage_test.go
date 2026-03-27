@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -434,6 +435,14 @@ func TestService_createDirectMessageStatus_BuildsStatusWithoutPersistence(t *tes
 	require.NotNil(t, status)
 	require.Equal(t, "conv123", status.ConversationID)
 	require.Equal(t, []string{"https://example.com/users/bob"}, status.ToRecipients)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
+	require.Len(t, status.Note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: "https://example.com/users/bob",
+		Name: "@bob",
+	}, status.Note.Tag[0])
 }
 
 func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
@@ -454,6 +463,57 @@ func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.
 	require.Equal(t, status.PublishedAt, status.CreatedAt)
 	require.Equal(t, status.PublishedAt, status.ModifiedAt)
 	require.Equal(t, status.PublishedAt, status.UpdatedAt)
+}
+
+func TestService_createDirectMessageStatus_KeepsRemoteAudienceAndMentionsConsistent(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	remoteActorID := "https://remote.example/users/bob"
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{remoteActorID},
+		Content:    "hi remote",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		remoteActorID: {
+			User: &storage.User{Username: "bob@remote.example"},
+			Actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: remoteActorID},
+				PreferredUsername: "bob",
+			},
+		},
+	}, "conv123", remoteActorID)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.Equal(t, []string{remoteActorID}, status.ToRecipients)
+	require.Equal(t, []string{remoteActorID}, status.Mentions)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Len(t, status.Note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: remoteActorID,
+		Name: "@bob@remote.example",
+	}, status.Note.Tag[0])
+}
+
+func TestService_createDirectMessageStatus_RejectsRemoteHandleWithoutActorID(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob@remote.example"},
+		Content:    "hi remote",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		"bob@remote.example": {
+			User: &storage.User{Username: "bob"},
+		},
+	}, "conv123", "bob@remote.example")
+	require.Nil(t, status)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
 }
 
 func TestService_applyDirectMessageSendTransition_PropagatesRepositoryErrors(t *testing.T) {
@@ -569,6 +629,36 @@ func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T)
 	require.Equal(t, status.PublishedAt, status.CreatedAt)
 	require.Equal(t, status.PublishedAt, status.ModifiedAt)
 	require.Equal(t, status.PublishedAt, status.UpdatedAt)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.ToRecipients)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Len(t, status.Note.Tag, 1)
+}
+
+func TestService_createSendMessageStatus_RejectsRemoteHandleWithoutActorID(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	status, _, err := service.createSendMessageStatus(
+		ctx,
+		&SendMessageCommand{
+			SenderID: "alice",
+			Content:  "hi again",
+		},
+		&SendDirectMessageCommand{
+			SenderID:   "alice",
+			Recipients: []string{"bob@remote.example"},
+			Content:    "hi again",
+		},
+		createTestAccount("alice", "alice"),
+		&storage.Account{User: &storage.User{Username: "bob"}},
+		"conv123",
+		"bob@remote.example",
+	)
+	require.Nil(t, status)
+	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.ErrorIs(t, err, errDirectMessageRemoteRecipientActorRequired)
 }
 
 func TestService_AcceptAndDeclineMessageRequest_NilCommand(t *testing.T) {

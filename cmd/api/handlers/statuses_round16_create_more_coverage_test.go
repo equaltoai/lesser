@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -144,6 +145,7 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 							Sensitive:      cmd.Sensitive,
 							Language:       cmd.Language,
 							InReplyToID:    cmd.InReplyToID,
+							Mentions:       []string{"https://example.com/users/bob"},
 							PublishedAt:    now,
 							CreatedAt:      now,
 							UpdatedAt:      now,
@@ -156,6 +158,7 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 								},
 								Content:          cmd.Content,
 								AttributedTo:     cfg.BaseURL() + "/users/" + cmd.SenderID,
+								Tag:              []activitypub.Tag{{Type: "Mention", Href: "https://example.com/users/bob", Name: "@bob@example.com"}},
 								AgentAttribution: cmd.AgentAttribution,
 							},
 						},
@@ -187,6 +190,17 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
 		require.NotEmpty(t, resp.Body)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		mentions, ok := body["mentions"].([]any)
+		require.True(t, ok)
+		require.Len(t, mentions, 1)
+		mention, ok := mentions[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "https://example.com/users/bob", mention["id"])
+		require.Equal(t, "bob", mention["username"])
+		require.Equal(t, "bob", mention["acct"])
+		require.Equal(t, "https://example.com/users/bob", mention["url"])
 
 		require.NotNil(t, gotCmd)
 		require.Equal(t, "alice", gotCmd.SenderID)
@@ -197,6 +211,62 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.Equal(t, req.MediaIDs, gotCmd.MediaIDs)
 		require.Equal(t, req.InReplyToID, gotCmd.InReplyToID)
 		require.Nil(t, gotCmd.AgentAttribution)
+	})
+
+	t.Run("direct visibility serializes remote mention metadata", func(t *testing.T) {
+		now := time.Now().UTC()
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(_ context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					return &conversations.MessageResult{
+						Message: &storagemodels.Status{
+							StatusID:       "dm-remote",
+							AuthorUsername: cmd.SenderID,
+							AuthorID:       cfg.BaseURL() + "/users/" + cmd.SenderID,
+							Visibility:     VisibilityDirect,
+							Mentions:       []string{"https://remote.example/users/bob"},
+							PublishedAt:    now,
+							CreatedAt:      now,
+							UpdatedAt:      now,
+							ModifiedAt:     now,
+							Version:        1,
+							Note: &activitypub.Note{
+								BaseObject: activitypub.BaseObject{
+									ID: cfg.BaseURL() + "/objects/dm-remote",
+								},
+								Content:      cmd.Content,
+								AttributedTo: cfg.BaseURL() + "/users/" + cmd.SenderID,
+								Tag: []activitypub.Tag{
+									{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob@remote.example"},
+								},
+							},
+						},
+					}, nil
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead, auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob@remote.example hello there",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		mentions, ok := body["mentions"].([]any)
+		require.True(t, ok)
+		require.Len(t, mentions, 1)
+		mention, ok := mentions[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "https://remote.example/users/bob", mention["id"])
+		require.Equal(t, "bob", mention["username"])
+		require.Equal(t, "bob@remote.example", mention["acct"])
+		require.Equal(t, "https://remote.example/users/bob", mention["url"])
 	})
 
 	t.Run("direct visibility without exactly one recipient returns 400", func(t *testing.T) {

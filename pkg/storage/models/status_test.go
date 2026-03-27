@@ -580,6 +580,35 @@ func (suite *StatusModelTestSuite) TestExtractTagsFromNote_MixedTags() {
 	assert.Contains(suite.T(), status.Mentions, "https://example.com/users/bob")
 }
 
+func (suite *StatusModelTestSuite) TestSyncTagFieldsFromNote_UsesCanonicalTagExtraction() {
+	publishedAt := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
+	updatedAt := publishedAt.Add(5 * time.Minute)
+
+	status := &Status{
+		StatusID:    "123",
+		PublishedAt: publishedAt,
+		UpdatedAt:   updatedAt,
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID: "https://example.com/users/alice/statuses/123",
+			},
+			Content:      "hi @bob",
+			AttributedTo: "https://example.com/users/alice",
+			Tag: []activitypub.Tag{
+				{Type: "Hashtag", Name: "#Direct"},
+				{Type: "Mention", Href: "https://example.com/users/bob"},
+			},
+		},
+	}
+
+	status.SyncTagFieldsFromNote()
+
+	assert.Equal(suite.T(), []string{"direct"}, status.Hashtags)
+	assert.Equal(suite.T(), []string{"https://example.com/users/bob"}, status.Mentions)
+	assert.Equal(suite.T(), publishedAt, status.PublishedAt)
+	assert.Equal(suite.T(), updatedAt, status.UpdatedAt)
+}
+
 // Test helper functions
 func (suite *StatusModelTestSuite) TestExtractUsernameFromActorID() {
 	testCases := []struct {
