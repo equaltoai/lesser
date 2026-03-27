@@ -2,13 +2,17 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/errors"
 )
+
+var errDirectMessageStatusStageRequired = stdErrors.New("direct message status stage callback required")
 
 type preparedDirectMessageSendTransition struct {
 	conversation              *models.Conversation
@@ -26,7 +30,7 @@ func (r *ConversationRepository) TransactionalDirectMessageSendEnabled() bool {
 }
 
 // ApplyDirectMessageSend writes the canonical DM send transition as one transaction.
-func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
+func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition, stageStatusCreate interfaces.DirectMessageStatusStageFn) error {
 	if transition == nil || transition.Conversation == nil || transition.Status == nil {
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityConversation, "dm send transition")
 	}
@@ -37,6 +41,9 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 	}
 	if r.transactWriteFn == nil {
 		return r.applyDirectMessageSendWithoutTransaction(ctx, prepared.conversation, prepared.status, prepared.participantStates, prepared.createConversation)
+	}
+	if stageStatusCreate == nil {
+		return ErrorHandler.HandleCreateError(errDirectMessageStatusStageRequired, EntityConversation, prepared.conversation.ID)
 	}
 
 	err = r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
@@ -50,8 +57,9 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 			tx.Create(newConversationParticipantLookup(prepared.conversation.ID, prepared.conversation.Participants))
 		} else {
 			tx.UpdateWithBuilder(prepared.expectedConversation, func(update core.UpdateBuilder) error {
-				update.SetIfNotExists("TotalMessageCount", nil, int64(0)).
-					Add("TotalMessageCount", int64(1)).
+				// DynamoDB ADD initializes a missing numeric attribute, so this remains
+				// compatible with legacy rows without generating an overlapping path error.
+				update.Add("TotalMessageCount", int64(1)).
 					Set("LastStatusID", prepared.conversation.LastStatusID).
 					Set("LastMessageTime", prepared.conversation.LastMessageTime).
 					Set("UpdatedAt", prepared.conversation.UpdatedAt)
@@ -66,8 +74,7 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 			}
 		}
 
-		tx.Create(prepared.status)
-		return nil
+		return stageStatusCreate(tx, prepared.status)
 	})
 	if err != nil {
 		if errors.IsConditionFailed(err) {
@@ -123,9 +130,6 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 	}
 
 	status.ConversationID = expectedConversation.ID
-	if err := status.BeforeCreate(); err != nil {
-		return nil, err
-	}
 
 	lastMessageTime := status.PublishedAt.UTC()
 	if lastMessageTime.IsZero() {
@@ -133,6 +137,9 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 	}
 	if lastMessageTime.IsZero() {
 		lastMessageTime = time.Now().UTC()
+	}
+	if status.PublishedAt.IsZero() {
+		status.PublishedAt = lastMessageTime
 	}
 
 	conversation := cloneConversationModel(expectedConversation)

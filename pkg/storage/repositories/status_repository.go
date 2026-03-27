@@ -25,6 +25,8 @@ type StatusRepository struct {
 	bookmarkRepo     *BookmarkRepository
 }
 
+var _ interfaces.CanonicalStatusCreateRepository = (*StatusRepository)(nil)
+
 // NewStatusRepository creates a new status repository with enhanced functionality
 func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StatusRepository {
 	// Create enhanced repository with cost tracking and full service integration
@@ -67,12 +69,40 @@ const (
 
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
+	if err := r.PrepareStatusCreate(status); err != nil {
+		return err
+	}
+
 	// Use enhanced validation and creation with automatic event emission
 	if err := r.ValidateAndCreate(ctx, status); err != nil {
 		return err
 	}
 
 	return r.FinalizeCreatedStatus(ctx, status)
+}
+
+// PrepareStatusCreate materializes the canonical persisted Status shape before either
+// direct CreateStatus calls or transaction-owned StageStatusCreate calls.
+func (r *StatusRepository) PrepareStatusCreate(status *models.Status) error {
+	if status == nil {
+		return fmt.Errorf("status is required")
+	}
+
+	return status.BeforeCreate()
+}
+
+// StageStatusCreate adds a prepared status row to a caller-owned transaction while
+// keeping StatusRepository as the owner of the status-create contract.
+func (r *StatusRepository) StageStatusCreate(tx core.TransactionBuilder, status *models.Status) error {
+	if tx == nil {
+		return fmt.Errorf("transaction builder is required")
+	}
+	if status == nil {
+		return fmt.Errorf("status is required")
+	}
+
+	tx.Create(status)
+	return nil
 }
 
 // FinalizeCreatedStatus runs the best-effort side effects that normally follow a

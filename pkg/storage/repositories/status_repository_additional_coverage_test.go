@@ -921,9 +921,7 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 		repo.SetCachingService(nil)
 		repo.SetEventService(nil)
 
-		assert.Panics(t, func() {
-			_ = repo.CreateStatus(ctx, nil)
-		})
+		assert.Error(t, repo.CreateStatus(ctx, nil))
 	})
 
 	t.Run("CreateStatus_warns_on_index_failures", func(t *testing.T) {

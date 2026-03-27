@@ -35,6 +35,11 @@ type recordingConversationUpdateBuilder struct {
 	removes        []string
 }
 
+func recordStatusStageWithPut(tx core.TransactionBuilder, status *models.Status) error {
+	tx.Put(status)
+	return nil
+}
+
 func (b *recordingConversationTransactionBuilder) Put(model any, _ ...core.TransactCondition) core.TransactionBuilder {
 	b.created = append(b.created, model)
 	b.ops = append(b.ops, "put")
@@ -273,7 +278,7 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_RejectsInvalidTra
 	ctx := context.Background()
 	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
 
-	err := repo.ApplyDirectMessageSend(ctx, nil)
+	err := repo.ApplyDirectMessageSend(ctx, nil, nil)
 	require.Error(t, err)
 
 	err = repo.ApplyDirectMessageSend(ctx, &models.DirectMessageSendTransition{
@@ -285,7 +290,7 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_RejectsInvalidTra
 			Content:        "hello",
 			Visibility:     models.VisibilityDirect,
 		},
-	})
+	}, nil)
 	require.Error(t, err)
 }
 
@@ -475,11 +480,11 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_CreatesNewConvers
 			},
 		},
 		CreateConversation: true,
-	})
+	}, recordStatusStageWithPut)
 	require.NoError(t, err)
 
 	require.Len(t, builder.created, 5)
-	require.Equal(t, []string{"create", "create", "create", "create", "create"}, builder.ops)
+	require.Equal(t, []string{"create", "create", "create", "create", "put"}, builder.ops)
 
 	conversation, ok := builder.created[0].(*models.Conversation)
 	require.True(t, ok)
@@ -585,12 +590,12 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_UpdatesExistingCo
 				UpdatedAt:      publishedAt.Add(-2 * time.Hour),
 			},
 		},
-	})
+	}, recordStatusStageWithPut)
 	require.NoError(t, err)
 
 	require.Len(t, builder.created, 1)
 	require.Len(t, builder.updates, 3)
-	require.Equal(t, []string{"update_builder", "update_builder", "update_builder", "create"}, builder.ops)
+	require.Equal(t, []string{"update_builder", "update_builder", "update_builder", "put"}, builder.ops)
 
 	conversationUpdate := builder.updates[0]
 	conversation, ok := conversationUpdate.model.(*models.Conversation)
@@ -598,6 +603,7 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_UpdatesExistingCo
 	require.EqualValues(t, 5, conversation.TotalMessageCount)
 	require.Equal(t, publishedAt.Add(-time.Hour), conversation.UpdatedAt)
 	require.EqualValues(t, 1, conversationUpdate.builder.adds["TotalMessageCount"])
+	require.Empty(t, conversationUpdate.builder.setIfNotExists)
 	require.Equal(t, "status-existing", conversationUpdate.builder.sets["LastStatusID"])
 	require.Equal(t, publishedAt, conversationUpdate.builder.sets["LastMessageTime"])
 	require.Equal(t, publishedAt, conversationUpdate.builder.sets["UpdatedAt"])
@@ -683,7 +689,7 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_MapsExistingConve
 				UpdatedAt:      publishedAt.Add(-2 * time.Hour),
 			},
 		},
-	})
+	}, recordStatusStageWithPut)
 	require.ErrorIs(t, err, storage.ErrVersionConflict)
 }
 
@@ -723,6 +729,6 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_MapsCreateRaceToA
 			},
 		},
 		CreateConversation: true,
-	})
+	}, recordStatusStageWithPut)
 	require.True(t, errors.Is(err, storage.ErrAlreadyExists))
 }
