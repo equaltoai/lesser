@@ -1,0 +1,1661 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+)
+
+type directMessageStateMigrationClient interface {
+	Scan(context.Context, *dynamodb.ScanInput, ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
+	Query(context.Context, *dynamodb.QueryInput, ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	PutItem(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	DeleteItem(context.Context, *dynamodb.DeleteItemInput, ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
+}
+
+type directMessageStateMigrationSummary struct {
+	ScannedConversations         int
+	ActiveConversations          int
+	StatusBackedConversations    int
+	ThreadStatusesScanned        int
+	CanonicalStateRowsPlanned    int
+	CanonicalStateRowsUpserted   int
+	LookupRowsPlanned            int
+	LookupRowsUpserted           int
+	MentionRepairsPlanned        int
+	MentionRepairsApplied        int
+	LegacyParticipantRowsPlanned int
+	LegacyParticipantRowsDeleted int
+	LegacyReadStateRowsPlanned   int
+	LegacyReadStateRowsDeleted   int
+	LegacyMessageRowsPlanned     int
+	LegacyMessageRowsDeleted     int
+	OrphanLookupRowsPlanned      int
+	OrphanLookupRowsDeleted      int
+	ValidationErrors             int
+	SampleConversationIDs        []string
+}
+
+type directMessageMigrationConversation struct {
+	ConversationID     string
+	Participants       []string
+	MetadataItem       map[string]types.AttributeValue
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	LastStatusID       string
+	LastMessageTime    time.Time
+	TotalMessageCount  int64
+	ThreadStatusItems  []map[string]types.AttributeValue
+	ThreadStatusCount  int
+	ThreadLastStatusID string
+	ThreadLastTime     time.Time
+}
+
+type directMessageLegacyParticipantRow struct {
+	ConversationID string
+	ViewerID       string
+	RequestState   models.DmRequestState
+	Unread         bool
+	LastReadAt     *time.Time
+	DeletedAt      *time.Time
+	RequestedAt    *time.Time
+	AcceptedAt     *time.Time
+	DeclinedAt     *time.Time
+	SortAt         time.Time
+	Item           map[string]types.AttributeValue
+}
+
+type directMessageLegacyReadState struct {
+	ConversationID string
+	ViewerID       string
+	Unread         bool
+	LastReadAt     *time.Time
+	Item           map[string]types.AttributeValue
+}
+
+type directMessageCanonicalStateRecord struct {
+	State *models.UserConversationState
+	Item  map[string]types.AttributeValue
+}
+
+type directMessageLookupPlan struct {
+	PK             string
+	ConversationID string
+	Participants   []string
+	SortTime       time.Time
+}
+
+type directMessageMigrationInputs struct {
+	LegacyParticipantRows  map[string]map[string]*directMessageLegacyParticipantRow
+	LegacyReadStates       map[string]map[string]*directMessageLegacyReadState
+	ExistingCanonicalState map[string]map[string]*directMessageCanonicalStateRecord
+	ExistingLookupRows     map[string]map[string]types.AttributeValue
+	DirectStatuses         []map[string]types.AttributeValue
+}
+
+type directMessageMigrationPlan struct {
+	DesiredLookupPlans       map[string]directMessageLookupPlan
+	ExpectedParticipantCount map[string]int
+	ActualParticipantCount   map[string]int
+}
+
+var newDirectMessageStateMigrationClientFn = func(cfg aws.Config) directMessageStateMigrationClient {
+	return dynamodb.NewFromConfig(cfg)
+}
+
+func runMigrateDirectMessageState(argv []string) error {
+	return runCommonMigrationCLI(
+		argv,
+		"migrate-direct-message-state",
+		"maximum number of DM conversations to process (0 = all)",
+		"rebuild canonical DM state, repair direct-message mentions, and retire legacy DM rows",
+		func(ctx context.Context, awsCfg aws.Config, tableName string, apply bool, limit int) (directMessageStateMigrationSummary, error) {
+			return executeDirectMessageStateMigration(
+				ctx,
+				newDirectMessageStateMigrationClientFn(awsCfg),
+				tableName,
+				apply,
+				limit,
+			)
+		},
+		printDirectMessageStateMigrationSummary,
+	)
+}
+
+func printDirectMessageStateMigrationSummary(
+	summary directMessageStateMigrationSummary,
+	tableName string,
+	resolvedProfile string,
+	apply bool,
+) {
+	fmt.Printf("migrate-direct-message-state %s complete\n", selectedMigrationMode(apply))
+	fmt.Printf("table: %s\n", tableName)
+	if resolvedProfile != "" {
+		fmt.Printf("aws_profile: %s\n", resolvedProfile)
+	}
+	fmt.Printf("scanned_conversations: %d\n", summary.ScannedConversations)
+	fmt.Printf("active_conversations: %d\n", summary.ActiveConversations)
+	fmt.Printf("status_backed_conversations: %d\n", summary.StatusBackedConversations)
+	fmt.Printf("thread_statuses_scanned: %d\n", summary.ThreadStatusesScanned)
+	fmt.Printf("canonical_state_rows_planned: %d\n", summary.CanonicalStateRowsPlanned)
+	fmt.Printf("canonical_state_rows_upserted: %d\n", summary.CanonicalStateRowsUpserted)
+	fmt.Printf("lookup_rows_planned: %d\n", summary.LookupRowsPlanned)
+	fmt.Printf("lookup_rows_upserted: %d\n", summary.LookupRowsUpserted)
+	fmt.Printf("mention_repairs_planned: %d\n", summary.MentionRepairsPlanned)
+	fmt.Printf("mention_repairs_applied: %d\n", summary.MentionRepairsApplied)
+	fmt.Printf("legacy_participant_rows_planned: %d\n", summary.LegacyParticipantRowsPlanned)
+	fmt.Printf("legacy_participant_rows_deleted: %d\n", summary.LegacyParticipantRowsDeleted)
+	fmt.Printf("legacy_read_state_rows_planned: %d\n", summary.LegacyReadStateRowsPlanned)
+	fmt.Printf("legacy_read_state_rows_deleted: %d\n", summary.LegacyReadStateRowsDeleted)
+	fmt.Printf("legacy_message_rows_planned: %d\n", summary.LegacyMessageRowsPlanned)
+	fmt.Printf("legacy_message_rows_deleted: %d\n", summary.LegacyMessageRowsDeleted)
+	fmt.Printf("orphan_lookup_rows_planned: %d\n", summary.OrphanLookupRowsPlanned)
+	fmt.Printf("orphan_lookup_rows_deleted: %d\n", summary.OrphanLookupRowsDeleted)
+	fmt.Printf("validation_errors: %d\n", summary.ValidationErrors)
+	printConversationMigrationSamples(summary.SampleConversationIDs)
+
+	if !apply {
+		fmt.Println("no writes performed; re-run with --apply to backfill canonical DM state, repair missing mentions, and retire legacy DM rows")
+	}
+}
+
+func executeDirectMessageStateMigration(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	limit int,
+) (directMessageStateMigrationSummary, error) {
+	summary := directMessageStateMigrationSummary{}
+
+	if err := validateDirectMessageStateMigrationConfig(client, tableName); err != nil {
+		return summary, err
+	}
+
+	cleanup, err := beginDirectMessageStateMigration(ctx, client, tableName, apply)
+	if err != nil {
+		return summary, err
+	}
+	if cleanup != nil {
+		defer func() {
+			if cleanupErr := cleanup(); cleanupErr != nil {
+				panic(fmt.Sprintf("unfreeze direct message writes: %v", cleanupErr))
+			}
+		}()
+	}
+
+	inputs, err := loadDirectMessageMigrationInputs(ctx, client, tableName)
+	if err != nil {
+		return summary, err
+	}
+
+	plan, err := scanDirectMessageMigrationConversations(ctx, client, tableName, inputs, apply, limit, &summary)
+	if err != nil {
+		return summary, err
+	}
+	recordDirectMessageMigrationValidation(plan, &summary)
+
+	if err := applyDirectMessageLookupPlans(ctx, client, tableName, apply, inputs.ExistingLookupRows, plan.DesiredLookupPlans, &summary); err != nil {
+		return summary, err
+	}
+	if err := repairDirectMessageMentions(ctx, client, tableName, apply, inputs.DirectStatuses, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyMessageRows(ctx, client, tableName, apply, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyParticipantRows(ctx, client, tableName, apply, inputs.LegacyParticipantRows, &summary); err != nil {
+		return summary, err
+	}
+	if err := deleteDirectMessageLegacyReadStates(ctx, client, tableName, apply, inputs.LegacyReadStates, &summary); err != nil {
+		return summary, err
+	}
+
+	return summary, nil
+}
+
+func validateDirectMessageStateMigrationConfig(client directMessageStateMigrationClient, tableName string) error {
+	if client == nil {
+		return fmt.Errorf("migration client is required")
+	}
+	if strings.TrimSpace(tableName) == "" {
+		return fmt.Errorf("table name is required")
+	}
+	return nil
+}
+
+func beginDirectMessageStateMigration(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+) (func() error, error) {
+	if !apply {
+		return nil, nil
+	}
+	if err := setDirectMessageMigrationWriteFreeze(ctx, client, tableName, true, "MIGRATING"); err != nil {
+		return nil, fmt.Errorf("freeze direct message writes: %w", err)
+	}
+	return func() error {
+		return setDirectMessageMigrationWriteFreeze(ctx, client, tableName, false, "COMPLETE")
+	}, nil
+}
+
+func loadDirectMessageMigrationInputs(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (directMessageMigrationInputs, error) {
+	legacyParticipantRows, err := loadDirectMessageLegacyParticipantRows(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
+	}
+	legacyReadStates, err := loadDirectMessageLegacyReadStates(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
+	}
+	existingCanonicalStates, err := loadDirectMessageCanonicalStates(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
+	}
+	existingLookupRows, err := loadDirectMessageLookupRows(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
+	}
+	directStatusesForRepair, err := loadDirectMessageStatusesForRepair(ctx, client, tableName)
+	if err != nil {
+		return directMessageMigrationInputs{}, err
+	}
+
+	return directMessageMigrationInputs{
+		LegacyParticipantRows:  legacyParticipantRows,
+		LegacyReadStates:       legacyReadStates,
+		ExistingCanonicalState: existingCanonicalStates,
+		ExistingLookupRows:     existingLookupRows,
+		DirectStatuses:         directStatusesForRepair,
+	}, nil
+}
+
+func scanDirectMessageMigrationConversations(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	limit int,
+	summary *directMessageStateMigrationSummary,
+) (directMessageMigrationPlan, error) {
+	plan := directMessageMigrationPlan{
+		DesiredLookupPlans:       map[string]directMessageLookupPlan{},
+		ExpectedParticipantCount: map[string]int{},
+		ActualParticipantCount:   map[string]int{},
+	}
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("begins_with(PK, :prefix) AND SK = :sk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: conversationMetadataPartitionPrefix},
+			":sk":     &types.AttributeValueMemberS{Value: conversationMetadataSortKey},
+		},
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return plan, fmt.Errorf("scan conversation metadata rows: %w", err)
+		}
+		stop, err := processDirectMessageMigrationConversationPage(ctx, client, tableName, out.Items, inputs, apply, limit, summary, &plan)
+		if err != nil {
+			return plan, err
+		}
+		if stop || len(out.LastEvaluatedKey) == 0 {
+			return plan, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
+func processDirectMessageMigrationConversationPage(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	items []map[string]types.AttributeValue,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	limit int,
+	summary *directMessageStateMigrationSummary,
+	plan *directMessageMigrationPlan,
+) (bool, error) {
+	for _, item := range items {
+		summary.ScannedConversations++
+
+		conversation, ok := buildDirectMessageMigrationConversation(item)
+		if !ok {
+			continue
+		}
+		if err := processDirectMessageMigrationConversation(ctx, client, tableName, conversation, inputs, apply, summary, plan); err != nil {
+			return false, err
+		}
+		if limit > 0 && summary.ActiveConversations >= limit {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func processDirectMessageMigrationConversation(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	conversation directMessageMigrationConversation,
+	inputs directMessageMigrationInputs,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+	plan *directMessageMigrationPlan,
+) error {
+	threadStatuses, statusCount, lastStatusID, lastStatusTime, err := loadDirectMessageThreadStatuses(ctx, client, tableName, conversation.ConversationID)
+	if err != nil {
+		return fmt.Errorf("load thread statuses for %q: %w", conversation.ConversationID, err)
+	}
+
+	conversation.ThreadStatusItems = threadStatuses
+	conversation.ThreadStatusCount = statusCount
+	conversation.ThreadLastStatusID = lastStatusID
+	conversation.ThreadLastTime = lastStatusTime
+
+	summary.ActiveConversations++
+	plan.ExpectedParticipantCount[conversation.ConversationID] = len(conversation.Participants)
+	if statusCount > 0 {
+		summary.StatusBackedConversations++
+		summary.ThreadStatusesScanned += statusCount
+	}
+	appendConversationMigrationSample(&summary.SampleConversationIDs, conversation.ConversationID)
+
+	if err := migrateDirectMessageConversationStates(
+		ctx,
+		client,
+		tableName,
+		conversation,
+		inputs.ExistingCanonicalState[conversation.ConversationID],
+		inputs.LegacyParticipantRows[conversation.ConversationID],
+		inputs.LegacyReadStates[conversation.ConversationID],
+		plan.ActualParticipantCount,
+		apply,
+		summary,
+	); err != nil {
+		return err
+	}
+
+	lookupPlan := buildDirectMessageLookupPlan(conversation)
+	if current, ok := plan.DesiredLookupPlans[lookupPlan.PK]; !ok || shouldReplaceDirectMessageLookupPlan(current, lookupPlan) {
+		plan.DesiredLookupPlans[lookupPlan.PK] = lookupPlan
+	}
+
+	return nil
+}
+
+func migrateDirectMessageConversationStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	conversation directMessageMigrationConversation,
+	existingByViewer map[string]*directMessageCanonicalStateRecord,
+	legacyParticipantsByViewer map[string]*directMessageLegacyParticipantRow,
+	legacyReadStatesByViewer map[string]*directMessageLegacyReadState,
+	actualParticipantCounts map[string]int,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, viewerID := range conversation.Participants {
+		viewerKey := models.CanonicalConversationParticipantID(viewerID)
+		state, item, changed, err := buildMigratedUserConversationStateItem(
+			conversation,
+			viewerID,
+			existingByViewer[viewerKey],
+			legacyParticipantsByViewer[viewerKey],
+			legacyReadStatesByViewer[viewerKey],
+		)
+		if err != nil {
+			return fmt.Errorf("build canonical user conversation state for %q/%q: %w", conversation.ConversationID, viewerID, err)
+		}
+		if state == nil {
+			continue
+		}
+
+		summary.CanonicalStateRowsPlanned++
+		actualParticipantCounts[conversation.ConversationID]++
+		if !apply || !changed {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      item,
+		}); err != nil {
+			return fmt.Errorf("put canonical user conversation state %s/%s: %w", state.ViewerID, state.ConversationID, err)
+		}
+		summary.CanonicalStateRowsUpserted++
+	}
+	return nil
+}
+
+func recordDirectMessageMigrationValidation(plan directMessageMigrationPlan, summary *directMessageStateMigrationSummary) {
+	for conversationID, expectedCount := range plan.ExpectedParticipantCount {
+		if plan.ActualParticipantCount[conversationID] != expectedCount {
+			summary.ValidationErrors++
+		}
+	}
+}
+
+func applyDirectMessageLookupPlans(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	existingLookupRows map[string]map[string]types.AttributeValue,
+	desiredLookupPlans map[string]directMessageLookupPlan,
+	summary *directMessageStateMigrationSummary,
+) error {
+	lookupKeys := sortedDirectMessageLookupKeys(desiredLookupPlans)
+	summary.LookupRowsPlanned = len(lookupKeys)
+	for _, lookupKey := range lookupKeys {
+		plan := desiredLookupPlans[lookupKey]
+		item := buildDirectMessageLookupItem(plan, existingLookupRows[lookupKey])
+		if !apply || reflect.DeepEqual(item, existingLookupRows[lookupKey]) {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      item,
+		}); err != nil {
+			return fmt.Errorf("put conversation participant lookup %s: %w", lookupKey, err)
+		}
+		summary.LookupRowsUpserted++
+	}
+
+	orphanLookupKeys := sortedDirectMessageOrphanLookupKeys(existingLookupRows, desiredLookupPlans)
+	summary.OrphanLookupRowsPlanned = len(orphanLookupKeys)
+	for _, lookupKey := range orphanLookupKeys {
+		if !apply {
+			continue
+		}
+		if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName: aws.String(tableName),
+			Key:       attributeMapKeyAttributes(existingLookupRows[lookupKey]),
+		}); err != nil {
+			return fmt.Errorf("delete orphan conversation participant lookup %s: %w", lookupKey, err)
+		}
+		summary.OrphanLookupRowsDeleted++
+	}
+
+	return nil
+}
+
+func sortedDirectMessageLookupKeys(lookupPlans map[string]directMessageLookupPlan) []string {
+	keys := make([]string, 0, len(lookupPlans))
+	for key := range lookupPlans {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedDirectMessageOrphanLookupKeys(
+	existingLookupRows map[string]map[string]types.AttributeValue,
+	desiredLookupPlans map[string]directMessageLookupPlan,
+) []string {
+	keys := make([]string, 0)
+	for lookupKey := range existingLookupRows {
+		if _, ok := desiredLookupPlans[lookupKey]; ok {
+			continue
+		}
+		keys = append(keys, lookupKey)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func repairDirectMessageMentions(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	statusItems []map[string]types.AttributeValue,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, statusItem := range statusItems {
+		repairedItem, changed, err := buildDirectMessageMentionRepairItem(statusItem)
+		if err != nil {
+			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
+			return fmt.Errorf("repair direct-message mentions for %q: %w", statusID, err)
+		}
+		if !changed {
+			continue
+		}
+		summary.MentionRepairsPlanned++
+		if !apply {
+			continue
+		}
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item:      repairedItem,
+		}); err != nil {
+			statusID := firstConversationString(statusItem, "statusID", conversationMessageStatusIDAttribute)
+			return fmt.Errorf("put repaired direct-message status %q: %w", statusID, err)
+		}
+		summary.MentionRepairsApplied++
+	}
+	return nil
+}
+
+func deleteDirectMessageLegacyMessageRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	summary *directMessageStateMigrationSummary,
+) error {
+	legacyMessageRows, err := loadDirectMessageLegacyMessageRows(ctx, client, tableName)
+	if err != nil {
+		return err
+	}
+	for _, messageRow := range legacyMessageRows {
+		summary.LegacyMessageRowsPlanned++
+		if !apply {
+			continue
+		}
+		if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName: aws.String(tableName),
+			Key:       attributeMapKeyAttributes(messageRow),
+		}); err != nil {
+			pk, _ := attributeString(messageRow["PK"])
+			sk, _ := attributeString(messageRow["SK"])
+			return fmt.Errorf("delete legacy conversation message row %s/%s: %w", pk, sk, err)
+		}
+		summary.LegacyMessageRowsDeleted++
+	}
+	return nil
+}
+
+func deleteDirectMessageLegacyParticipantRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	legacyParticipantRows map[string]map[string]*directMessageLegacyParticipantRow,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, participantRowsByViewer := range legacyParticipantRows {
+		for _, participantRow := range participantRowsByViewer {
+			if participantRow == nil {
+				continue
+			}
+			summary.LegacyParticipantRowsPlanned++
+			if !apply {
+				continue
+			}
+			if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(tableName),
+				Key:       attributeMapKeyAttributes(participantRow.Item),
+			}); err != nil {
+				return fmt.Errorf("delete legacy participant row %s/%s: %w", participantRow.ViewerID, participantRow.ConversationID, err)
+			}
+			summary.LegacyParticipantRowsDeleted++
+		}
+	}
+	return nil
+}
+
+func deleteDirectMessageLegacyReadStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	apply bool,
+	legacyReadStates map[string]map[string]*directMessageLegacyReadState,
+	summary *directMessageStateMigrationSummary,
+) error {
+	for _, readStatesByViewer := range legacyReadStates {
+		for _, readState := range readStatesByViewer {
+			if readState == nil {
+				continue
+			}
+			summary.LegacyReadStateRowsPlanned++
+			if !apply {
+				continue
+			}
+			if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(tableName),
+				Key:       attributeMapKeyAttributes(readState.Item),
+			}); err != nil {
+				return fmt.Errorf("delete legacy read-state row %s/%s: %w", readState.ViewerID, readState.ConversationID, err)
+			}
+			summary.LegacyReadStateRowsDeleted++
+		}
+	}
+	return nil
+}
+
+func buildDirectMessageMigrationConversation(item map[string]types.AttributeValue) (directMessageMigrationConversation, bool) {
+	conversationID, ok := firstAttributeString(item, "id", "ID")
+	if !ok {
+		pk, _ := attributeString(item["PK"])
+		conversationID = strings.TrimSpace(strings.TrimPrefix(pk, conversationMetadataPartitionPrefix))
+	}
+	participants, ok := attributeStringSlice(item[conversationParticipantsAttribute])
+	if !ok || strings.TrimSpace(conversationID) == "" || len(participants) == 0 {
+		return directMessageMigrationConversation{}, false
+	}
+
+	return directMessageMigrationConversation{
+		ConversationID:    conversationID,
+		Participants:      append([]string(nil), participants...),
+		MetadataItem:      cloneAttributeMap(item),
+		CreatedAt:         firstConversationTime(item, conversationCreatedAtAttribute, "CreatedAt"),
+		UpdatedAt:         firstConversationTime(item, conversationUpdatedAtAttribute, "UpdatedAt"),
+		LastStatusID:      firstConversationString(item, conversationLastStatusIDAttribute, "LastStatusID"),
+		LastMessageTime:   firstConversationTime(item, conversationLastMessageTimeAttribute, "LastMessageTime"),
+		TotalMessageCount: firstConversationInt64(item, conversationTotalMessageCountAttribute, "TotalMessageCount"),
+	}, true
+}
+
+func loadDirectMessageThreadStatuses(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	conversationID string,
+) ([]map[string]types.AttributeValue, int, string, time.Time, error) {
+	statusItems := make([]map[string]types.AttributeValue, 0)
+	statusCount := 0
+	lastStatusID := ""
+	lastStatusTime := time.Time{}
+
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(tableName),
+		IndexName:              aws.String("gsi3"),
+		KeyConditionExpression: aws.String("gsi3PK = :conversation"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":conversation": &types.AttributeValueMemberS{Value: conversationMetadataPartitionPrefix + conversationID},
+		},
+	}
+
+	for {
+		out, err := client.Query(ctx, queryInput)
+		if err != nil {
+			return nil, 0, "", time.Time{}, err
+		}
+
+		for _, item := range out.Items {
+			statusID, ok := firstAttributeString(item, conversationMessageStatusIDAttribute, "statusID")
+			if !ok {
+				continue
+			}
+			publishedAt := firstConversationTime(item, "publishedAt", "PublishedAt")
+			if publishedAt.IsZero() {
+				continue
+			}
+
+			statusItems = append(statusItems, cloneAttributeMap(item))
+			statusCount++
+			if publishedAt.After(lastStatusTime) || (publishedAt.Equal(lastStatusTime) && statusID > lastStatusID) {
+				lastStatusTime = publishedAt.UTC()
+				lastStatusID = statusID
+			}
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return statusItems, statusCount, lastStatusID, lastStatusTime, nil
+		}
+		queryInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
+func loadDirectMessageLegacyParticipantRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (map[string]map[string]*directMessageLegacyParticipantRow, error) {
+	rows := map[string]map[string]*directMessageLegacyParticipantRow{}
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: conversationParticipantPartitionPrefix},
+		},
+		"scan legacy participant rows",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range items {
+		row, ok := buildDirectMessageLegacyParticipantRow(item)
+		if !ok {
+			continue
+		}
+		if rows[row.ConversationID] == nil {
+			rows[row.ConversationID] = map[string]*directMessageLegacyParticipantRow{}
+		}
+		rows[row.ConversationID][row.ViewerID] = row
+	}
+	return rows, nil
+}
+
+func loadDirectMessageLegacyReadStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (map[string]map[string]*directMessageLegacyReadState, error) {
+	rows := map[string]map[string]*directMessageLegacyReadState{}
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: conversationStatusPartitionPrefix},
+		},
+		"scan legacy conversation status rows",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range items {
+		row, ok := buildDirectMessageLegacyReadState(item)
+		if !ok {
+			continue
+		}
+		if rows[row.ConversationID] == nil {
+			rows[row.ConversationID] = map[string]*directMessageLegacyReadState{}
+		}
+		rows[row.ConversationID][row.ViewerID] = row
+	}
+	return rows, nil
+}
+
+func loadDirectMessageCanonicalStates(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (map[string]map[string]*directMessageCanonicalStateRecord, error) {
+	rows := map[string]map[string]*directMessageCanonicalStateRecord{}
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix)",
+		map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: "USER_CONVERSATION_STATE#"},
+		},
+		"scan canonical user conversation state rows",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range items {
+		record, ok := buildDirectMessageCanonicalStateRecord(item)
+		if !ok || record.State == nil {
+			continue
+		}
+		if rows[record.State.ConversationID] == nil {
+			rows[record.State.ConversationID] = map[string]*directMessageCanonicalStateRecord{}
+		}
+		rows[record.State.ConversationID][record.State.ViewerID] = record
+	}
+	return rows, nil
+}
+
+func loadDirectMessageLookupRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) (map[string]map[string]types.AttributeValue, error) {
+	rows := map[string]map[string]types.AttributeValue{}
+	items, err := scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix) AND SK = :sk",
+		map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: conversationParticipantLookupPrefix},
+			":sk":     &types.AttributeValueMemberS{Value: conversationParticipantLookupSortKey},
+		},
+		"scan conversation participant lookup rows",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range items {
+		pk, ok := attributeString(item["PK"])
+		if !ok || strings.TrimSpace(pk) == "" {
+			continue
+		}
+		rows[pk] = cloneAttributeMap(item)
+	}
+	return rows, nil
+}
+
+func loadDirectMessageStatusesForRepair(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) ([]map[string]types.AttributeValue, error) {
+	return scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :prefix) AND visibility = :visibility",
+		map[string]types.AttributeValue{
+			":prefix":     &types.AttributeValueMemberS{Value: "status#"},
+			":visibility": &types.AttributeValueMemberS{Value: models.VisibilityDirect},
+		},
+		"scan direct statuses for mention repair",
+	)
+}
+
+func loadDirectMessageLegacyMessageRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) ([]map[string]types.AttributeValue, error) {
+	return scanDirectMessageItems(
+		ctx,
+		client,
+		tableName,
+		"begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix)",
+		map[string]types.AttributeValue{
+			":pkPrefix": &types.AttributeValueMemberS{Value: conversationMetadataPartitionPrefix},
+			":skPrefix": &types.AttributeValueMemberS{Value: conversationMessageSortKeyPrefix},
+		},
+		"scan legacy conversation message rows",
+	)
+}
+
+func scanDirectMessageItems(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	filterExpression string,
+	expressionValues map[string]types.AttributeValue,
+	errorContext string,
+) ([]map[string]types.AttributeValue, error) {
+	items := make([]map[string]types.AttributeValue, 0)
+	scanInput := &dynamodb.ScanInput{
+		TableName:                 aws.String(tableName),
+		FilterExpression:          aws.String(filterExpression),
+		ExpressionAttributeValues: expressionValues,
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", errorContext, err)
+		}
+
+		for _, item := range out.Items {
+			items = append(items, cloneAttributeMap(item))
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return items, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
+func buildDirectMessageLegacyParticipantRow(item map[string]types.AttributeValue) (*directMessageLegacyParticipantRow, bool) {
+	pk, ok := attributeString(item["PK"])
+	if !ok || !strings.HasPrefix(pk, conversationParticipantPartitionPrefix) {
+		return nil, false
+	}
+	sk, _ := attributeString(item["SK"])
+	conversationID := strings.TrimSpace(conversationIDFromParticipantItem(item, sk))
+	if conversationID == "" {
+		return nil, false
+	}
+
+	row := &directMessageLegacyParticipantRow{
+		ConversationID: conversationID,
+		ViewerID:       models.CanonicalConversationParticipantID(strings.TrimSpace(strings.TrimPrefix(pk, conversationParticipantPartitionPrefix))),
+		RequestState:   models.DmRequestState(firstConversationString(item, conversationRequestStateAttribute)),
+		Unread:         firstConversationBool(item, conversationUnreadAttribute),
+		LastReadAt:     optionalConversationTime(item, conversationLastReadAtAttribute),
+		DeletedAt:      optionalConversationTime(item, "deletedAt"),
+		RequestedAt:    optionalConversationTime(item, "requestedAt"),
+		AcceptedAt:     optionalConversationTime(item, "acceptedAt"),
+		DeclinedAt:     optionalConversationTime(item, "declinedAt"),
+		SortAt:         conversationParticipantSortTime(sk),
+		Item:           cloneAttributeMap(item),
+	}
+
+	return row, row.ViewerID != ""
+}
+
+func buildDirectMessageLegacyReadState(item map[string]types.AttributeValue) (*directMessageLegacyReadState, bool) {
+	pk, ok := attributeString(item["PK"])
+	if !ok || !strings.HasPrefix(pk, conversationStatusPartitionPrefix) {
+		return nil, false
+	}
+	conversationID := strings.TrimSpace(strings.TrimPrefix(pk, conversationStatusPartitionPrefix))
+	viewerID, ok := firstAttributeString(item, conversationUserIDAttribute, "userID")
+	if !ok {
+		sk, _ := attributeString(item["SK"])
+		viewerID = strings.TrimSpace(strings.TrimPrefix(sk, "USER#"))
+	}
+	viewerID = models.CanonicalConversationParticipantID(viewerID)
+	if conversationID == "" || viewerID == "" {
+		return nil, false
+	}
+
+	return &directMessageLegacyReadState{
+		ConversationID: conversationID,
+		ViewerID:       viewerID,
+		Unread:         firstConversationBool(item, conversationUnreadAttribute),
+		LastReadAt:     optionalConversationTime(item, conversationLastReadAtAttribute),
+		Item:           cloneAttributeMap(item),
+	}, true
+}
+
+func buildDirectMessageCanonicalStateRecord(item map[string]types.AttributeValue) (*directMessageCanonicalStateRecord, bool) {
+	viewerID, ok := firstAttributeString(item, "viewerID")
+	if !ok {
+		pk, _ := attributeString(item["PK"])
+		viewerID = strings.TrimSpace(strings.TrimPrefix(pk, "USER_CONVERSATION_STATE#"))
+	}
+	conversationID, ok := firstAttributeString(item, "conversationID")
+	if !ok {
+		sk, _ := attributeString(item["SK"])
+		conversationID = strings.TrimSpace(strings.TrimPrefix(sk, "CONVERSATION#"))
+	}
+	viewerID = models.CanonicalConversationParticipantID(viewerID)
+	if viewerID == "" || conversationID == "" {
+		return nil, false
+	}
+
+	state := &models.UserConversationState{
+		ViewerID:                 viewerID,
+		ConversationID:           conversationID,
+		CounterpartID:            firstConversationString(item, "counterpartID"),
+		Folder:                   models.UserConversationFolder(firstConversationString(item, "folder")),
+		RequestState:             models.DmRequestState(firstConversationString(item, "requestState")),
+		PreviewStatusID:          firstConversationString(item, "previewStatusID"),
+		PreviewStatusPublishedAt: firstConversationTime(item, "previewStatusPublishedAt"),
+		SortAt:                   firstConversationTime(item, "sortAt"),
+		Unread:                   firstConversationBool(item, "unread"),
+		LastReadAt:               optionalConversationTime(item, "lastReadAt"),
+		DeletedAt:                optionalConversationTime(item, "deletedAt"),
+		RequestedAt:              optionalConversationTime(item, "requestedAt"),
+		AcceptedAt:               optionalConversationTime(item, "acceptedAt"),
+		DeclinedAt:               optionalConversationTime(item, "declinedAt"),
+		CreatedAt:                firstConversationTime(item, "createdAt"),
+		UpdatedAt:                firstConversationTime(item, "updatedAt"),
+	}
+
+	return &directMessageCanonicalStateRecord{
+		State: state,
+		Item:  cloneAttributeMap(item),
+	}, true
+}
+
+func buildMigratedUserConversationStateItem(
+	conversation directMessageMigrationConversation,
+	viewerID string,
+	existing *directMessageCanonicalStateRecord,
+	legacyParticipant *directMessageLegacyParticipantRow,
+	legacyReadState *directMessageLegacyReadState,
+) (*models.UserConversationState, map[string]types.AttributeValue, bool, error) {
+	canonicalViewerID := models.CanonicalConversationParticipantID(viewerID)
+	if canonicalViewerID == "" {
+		return nil, nil, false, nil
+	}
+
+	previewStatusID, previewTime := directMessagePreviewForMigration(conversation, existing)
+	state := &models.UserConversationState{
+		ViewerID:                 canonicalViewerID,
+		ConversationID:           conversation.ConversationID,
+		CounterpartID:            directMessageCounterpartIDForMigration(canonicalViewerID, conversation.Participants),
+		PreviewStatusID:          previewStatusID,
+		PreviewStatusPublishedAt: previewTime,
+		SortAt:                   directMessageMigrationSortAt(previewTime, conversation, existing),
+		CreatedAt:                directMessageMigrationCreatedAt(conversation, existing),
+	}
+
+	state.DeletedAt = chooseOptionalConversationTime(existingDeletedAt(existing), legacyParticipantDeletedAt(legacyParticipant))
+	state.RequestedAt = chooseOptionalConversationTime(existingRequestedAt(existing), legacyParticipantRequestedAt(legacyParticipant))
+	state.AcceptedAt = chooseOptionalConversationTime(existingAcceptedAt(existing), legacyParticipantAcceptedAt(legacyParticipant))
+	state.DeclinedAt = chooseOptionalConversationTime(existingDeclinedAt(existing), legacyParticipantDeclinedAt(legacyParticipant))
+	state.RequestState = directMessageMigrationRequestState(existing, legacyParticipant)
+	state.Folder = directMessageMigrationFolder(existing, state.RequestState, state.DeletedAt)
+	if state.RequestState == "" {
+		state.RequestState = directMessageMigrationDefaultRequestState(state.Folder)
+	}
+	state.Unread, state.LastReadAt = directMessageMigrationReadState(existing, legacyReadState, legacyParticipant)
+	state.LastReadAt = normalizeLegacyMigrationLastReadAt(state.LastReadAt, state.Unread)
+	state.UpdatedAt = directMessageMigrationUpdatedAt(state, conversation, existing)
+
+	var err error
+	if existing != nil && existing.State != nil {
+		err = state.BeforeUpdate()
+	} else {
+		err = state.BeforeCreate()
+	}
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	var original map[string]types.AttributeValue
+	if existing != nil {
+		original = existing.Item
+	}
+	item := buildUserConversationStateItem(state, original)
+	changed := existing == nil || !reflect.DeepEqual(item, original)
+	return state, item, changed, nil
+}
+
+func buildUserConversationStateItem(state *models.UserConversationState, original map[string]types.AttributeValue) map[string]types.AttributeValue {
+	item := map[string]types.AttributeValue{}
+	setStringAttribute(item, original, "PK", state.PK)
+	setStringAttribute(item, original, "SK", state.SK)
+	setStringAttribute(item, original, "gsi1PK", state.GSI1PK)
+	setStringAttribute(item, original, "gsi1SK", state.GSI1SK)
+	setOptionalStringAttribute(item, original, "gsi2PK", state.GSI2PK)
+	setOptionalStringAttribute(item, original, "gsi2SK", state.GSI2SK)
+	setStringAttribute(item, original, "gsi3PK", state.GSI3PK)
+	setStringAttribute(item, original, "gsi3SK", state.GSI3SK)
+	setStringAttribute(item, original, "viewerID", state.ViewerID)
+	setStringAttribute(item, original, "conversationID", state.ConversationID)
+	setStringAttribute(item, original, "counterpartID", state.CounterpartID)
+	setStringAttribute(item, original, "folder", string(state.Folder))
+	setOptionalStringAttribute(item, original, "requestState", string(state.RequestState))
+	setOptionalStringAttribute(item, original, "previewStatusID", state.PreviewStatusID)
+	setTimeAttribute(item, original, "previewStatusPublishedAt", state.PreviewStatusPublishedAt)
+	setTimeAttribute(item, original, "sortAt", state.SortAt)
+	setBoolAttribute(item, original, "unread", state.Unread)
+	setOptionalTimeAttribute(item, original, "lastReadAt", state.LastReadAt)
+	setOptionalTimeAttribute(item, original, "deletedAt", state.DeletedAt)
+	setOptionalTimeAttribute(item, original, "requestedAt", state.RequestedAt)
+	setOptionalTimeAttribute(item, original, "acceptedAt", state.AcceptedAt)
+	setOptionalTimeAttribute(item, original, "declinedAt", state.DeclinedAt)
+	setTimeAttribute(item, original, "createdAt", state.CreatedAt)
+	setTimeAttribute(item, original, "updatedAt", state.UpdatedAt)
+	return item
+}
+
+func buildDirectMessageLookupPlan(conversation directMessageMigrationConversation) directMessageLookupPlan {
+	pk := conversationParticipantLookupPrefix + strings.Join(models.CanonicalConversationParticipants(conversation.Participants), ",")
+	return directMessageLookupPlan{
+		PK:             pk,
+		ConversationID: conversation.ConversationID,
+		Participants:   append([]string(nil), conversation.Participants...),
+		SortTime:       directMessageLookupPlanSortTime(conversation),
+	}
+}
+
+func shouldReplaceDirectMessageLookupPlan(current directMessageLookupPlan, candidate directMessageLookupPlan) bool {
+	if candidate.SortTime.After(current.SortTime) {
+		return true
+	}
+	if candidate.SortTime.Equal(current.SortTime) && candidate.ConversationID < current.ConversationID {
+		return true
+	}
+	return false
+}
+
+func directMessageLookupPlanSortTime(conversation directMessageMigrationConversation) time.Time {
+	for _, candidate := range []time.Time{
+		conversation.ThreadLastTime,
+		conversation.LastMessageTime,
+		conversation.UpdatedAt,
+		conversation.CreatedAt,
+	} {
+		if !candidate.IsZero() {
+			return candidate.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func buildDirectMessageLookupItem(plan directMessageLookupPlan, original map[string]types.AttributeValue) map[string]types.AttributeValue {
+	item := map[string]types.AttributeValue{}
+	setStringAttribute(item, original, "PK", plan.PK)
+	setStringAttribute(item, original, "SK", conversationParticipantLookupSortKey)
+	setStringAttribute(item, original, "gsi1PK", plan.PK)
+	setStringAttribute(item, original, conversationLookupConversationIDAttr, plan.ConversationID)
+	return item
+}
+
+func buildDirectMessageMentionRepairItem(item map[string]types.AttributeValue) (map[string]types.AttributeValue, bool, error) {
+	if !strings.EqualFold(firstConversationString(item, "visibility"), models.VisibilityDirect) {
+		return nil, false, nil
+	}
+
+	recipients := directMessageStatusRecipientActorIDs(item)
+	if len(recipients) == 0 {
+		return nil, false, nil
+	}
+
+	authorActorID := firstConversationString(item, "authorID")
+	noteValue, ok := item["note"].(*types.AttributeValueMemberM)
+	if !ok || noteValue == nil {
+		return nil, false, nil
+	}
+
+	desiredMentions := uniqueNonEmptyStrings(recipients)
+	desiredTags := append(directMessageStatusNonMentionTags(noteValue.Value), directMessageMentionTags(desiredMentions, authorActorID)...)
+
+	mentionsValue, err := attributevalue.Marshal(desiredMentions)
+	if err != nil {
+		return nil, false, err
+	}
+	tagsValue, err := attributevalue.Marshal(desiredTags)
+	if err != nil {
+		return nil, false, err
+	}
+
+	repaired := cloneAttributeMap(item)
+	changed := false
+	if !reflect.DeepEqual(repaired["mentions"], mentionsValue) {
+		repaired["mentions"] = mentionsValue
+		changed = true
+	}
+
+	noteMap := cloneAttributeMap(noteValue.Value)
+	if !reflect.DeepEqual(noteMap["Tag"], tagsValue) {
+		noteMap["Tag"] = tagsValue
+		repaired["note"] = &types.AttributeValueMemberM{Value: noteMap}
+		changed = true
+	}
+
+	return repaired, changed, nil
+}
+
+func directMessageStatusRecipientActorIDs(item map[string]types.AttributeValue) []string {
+	if recipients, ok := attributeStringSlice(item["toRecipients"]); ok && len(recipients) > 0 {
+		return recipients
+	}
+	noteValue, ok := item["note"].(*types.AttributeValueMemberM)
+	if !ok || noteValue == nil {
+		return nil
+	}
+	baseObject, ok := noteValue.Value["BaseObject"].(*types.AttributeValueMemberM)
+	if !ok || baseObject == nil {
+		return nil
+	}
+	recipients, _ := attributeStringSlice(baseObject.Value["To"])
+	return recipients
+}
+
+func directMessageStatusNonMentionTags(note map[string]types.AttributeValue) []activitypub.Tag {
+	tagValue, ok := note["Tag"].(*types.AttributeValueMemberL)
+	if !ok || tagValue == nil {
+		return nil
+	}
+
+	tags := make([]activitypub.Tag, 0, len(tagValue.Value))
+	for _, rawTag := range tagValue.Value {
+		tagMap, ok := rawTag.(*types.AttributeValueMemberM)
+		if !ok || tagMap == nil {
+			continue
+		}
+		tag := activitypub.Tag{
+			Type: firstConversationString(tagMap.Value, "Type"),
+			Href: firstConversationString(tagMap.Value, "Href"),
+			Name: firstConversationString(tagMap.Value, "Name"),
+		}
+		if strings.EqualFold(tag.Type, "Mention") {
+			continue
+		}
+		if strings.TrimSpace(tag.Type) == "" && strings.TrimSpace(tag.Name) == "" && strings.TrimSpace(tag.Href) == "" {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+func directMessageMentionTags(actorIDs []string, authorActorID string) []activitypub.Tag {
+	tags := make([]activitypub.Tag, 0, len(actorIDs))
+	for _, actorID := range actorIDs {
+		trimmed := strings.TrimSpace(actorID)
+		if trimmed == "" {
+			continue
+		}
+		tags = append(tags, activitypub.Tag{
+			Type: "Mention",
+			Href: trimmed,
+			Name: directMessageMentionName(trimmed, authorActorID),
+		})
+	}
+	return tags
+}
+
+func directMessageMentionName(actorID, authorActorID string) string {
+	username, host := actorIDUsernameAndHost(actorID)
+	if username == "" {
+		return "@"
+	}
+	_, authorHost := actorIDUsernameAndHost(authorActorID)
+	if host != "" && !strings.EqualFold(host, authorHost) {
+		return "@" + username + "@" + host
+	}
+	return "@" + username
+}
+
+func actorIDUsernameAndHost(actorID string) (string, string) {
+	trimmed := strings.TrimSpace(actorID)
+	if trimmed == "" {
+		return "", ""
+	}
+	if strings.Contains(trimmed, "://") {
+		parts := strings.SplitN(trimmed, "://", 2)
+		rest := parts[1]
+		host := rest
+		path := ""
+		if slash := strings.Index(rest, "/"); slash >= 0 {
+			host = rest[:slash]
+			path = rest[slash:]
+		}
+		path = strings.TrimRight(path, "/")
+		lowerPath := strings.ToLower(path)
+		if idx := strings.LastIndex(lowerPath, "/users/"); idx >= 0 {
+			username := path[idx+len("/users/"):]
+			if username != "" && !strings.Contains(username, "/") {
+				return strings.TrimPrefix(username, "@"), host
+			}
+		}
+		if idx := strings.LastIndex(path, "/@"); idx >= 0 {
+			username := path[idx+2:]
+			if username != "" && !strings.Contains(username, "/") {
+				return strings.TrimPrefix(username, "@"), host
+			}
+		}
+		segments := strings.Split(strings.Trim(path, "/"), "/")
+		for i := len(segments) - 1; i >= 0; i-- {
+			candidate := strings.TrimSpace(strings.TrimPrefix(segments[i], "@"))
+			if candidate != "" {
+				return candidate, host
+			}
+		}
+		return "", host
+	}
+	handle := strings.TrimPrefix(trimmed, "@")
+	if parts := strings.SplitN(handle, "@", 2); len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return handle, ""
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	unique := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		unique = append(unique, trimmed)
+	}
+	return unique
+}
+
+func setOptionalTimeAttribute(item map[string]types.AttributeValue, original map[string]types.AttributeValue, key string, value *time.Time) {
+	if value == nil || value.IsZero() {
+		delete(item, key)
+		return
+	}
+	setTimeAttribute(item, original, key, value.UTC())
+}
+
+func firstConversationString(item map[string]types.AttributeValue, keys ...string) string {
+	value, _ := firstAttributeString(item, keys...)
+	return value
+}
+
+func firstConversationBool(item map[string]types.AttributeValue, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := attributeBool(item[key]); ok {
+			return value
+		}
+	}
+	return false
+}
+
+func firstConversationInt64(item map[string]types.AttributeValue, keys ...string) int64 {
+	for _, key := range keys {
+		if value, ok := attributeInt64(item[key]); ok {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstConversationTime(item map[string]types.AttributeValue, keys ...string) time.Time {
+	for _, key := range keys {
+		if value, ok := attributeTime(item[key]); ok {
+			return value.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func optionalConversationTime(item map[string]types.AttributeValue, key string) *time.Time {
+	value, ok := attributeTime(item[key])
+	if !ok || value.IsZero() {
+		return nil
+	}
+	return conversationTimePtr(value)
+}
+
+func chooseOptionalConversationTime(candidates ...*time.Time) *time.Time {
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.IsZero() {
+			continue
+		}
+		return conversationTimePtr(candidate.UTC())
+	}
+	return nil
+}
+
+func conversationTimePtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	normalized := value.UTC()
+	return &normalized
+}
+
+func existingDeletedAt(existing *directMessageCanonicalStateRecord) *time.Time {
+	if existing == nil || existing.State == nil {
+		return nil
+	}
+	return existing.State.DeletedAt
+}
+
+func existingRequestedAt(existing *directMessageCanonicalStateRecord) *time.Time {
+	if existing == nil || existing.State == nil {
+		return nil
+	}
+	return existing.State.RequestedAt
+}
+
+func existingAcceptedAt(existing *directMessageCanonicalStateRecord) *time.Time {
+	if existing == nil || existing.State == nil {
+		return nil
+	}
+	return existing.State.AcceptedAt
+}
+
+func existingDeclinedAt(existing *directMessageCanonicalStateRecord) *time.Time {
+	if existing == nil || existing.State == nil {
+		return nil
+	}
+	return existing.State.DeclinedAt
+}
+
+func legacyParticipantDeletedAt(participant *directMessageLegacyParticipantRow) *time.Time {
+	if participant == nil {
+		return nil
+	}
+	return participant.DeletedAt
+}
+
+func legacyParticipantRequestedAt(participant *directMessageLegacyParticipantRow) *time.Time {
+	if participant == nil {
+		return nil
+	}
+	return participant.RequestedAt
+}
+
+func legacyParticipantAcceptedAt(participant *directMessageLegacyParticipantRow) *time.Time {
+	if participant == nil {
+		return nil
+	}
+	return participant.AcceptedAt
+}
+
+func legacyParticipantDeclinedAt(participant *directMessageLegacyParticipantRow) *time.Time {
+	if participant == nil {
+		return nil
+	}
+	return participant.DeclinedAt
+}
+
+func directMessagePreviewForMigration(
+	conversation directMessageMigrationConversation,
+	existing *directMessageCanonicalStateRecord,
+) (string, time.Time) {
+	if strings.TrimSpace(conversation.ThreadLastStatusID) != "" {
+		return strings.TrimSpace(conversation.ThreadLastStatusID), conversation.ThreadLastTime.UTC()
+	}
+	if strings.TrimSpace(conversation.LastStatusID) != "" {
+		return strings.TrimSpace(conversation.LastStatusID), conversation.LastMessageTime.UTC()
+	}
+	if existing != nil && existing.State != nil && strings.TrimSpace(existing.State.PreviewStatusID) != "" {
+		return strings.TrimSpace(existing.State.PreviewStatusID), existing.State.PreviewStatusPublishedAt.UTC()
+	}
+	return "", time.Time{}
+}
+
+func directMessageMigrationSortAt(
+	previewTime time.Time,
+	conversation directMessageMigrationConversation,
+	existing *directMessageCanonicalStateRecord,
+) time.Time {
+	if !previewTime.IsZero() {
+		return previewTime.UTC()
+	}
+	if existing != nil && existing.State != nil && !existing.State.SortAt.IsZero() {
+		return existing.State.SortAt.UTC()
+	}
+	for _, candidate := range []time.Time{conversation.LastMessageTime, conversation.UpdatedAt, conversation.CreatedAt} {
+		if !candidate.IsZero() {
+			return candidate.UTC()
+		}
+	}
+	return time.Now().UTC()
+}
+
+func directMessageMigrationCreatedAt(
+	conversation directMessageMigrationConversation,
+	existing *directMessageCanonicalStateRecord,
+) time.Time {
+	if existing != nil && existing.State != nil && !existing.State.CreatedAt.IsZero() {
+		return existing.State.CreatedAt.UTC()
+	}
+	for _, candidate := range []time.Time{conversation.CreatedAt, conversation.UpdatedAt, conversation.LastMessageTime} {
+		if !candidate.IsZero() {
+			return candidate.UTC()
+		}
+	}
+	return time.Now().UTC()
+}
+
+func directMessageMigrationRequestState(
+	existing *directMessageCanonicalStateRecord,
+	participant *directMessageLegacyParticipantRow,
+) models.DmRequestState {
+	if existing != nil && existing.State != nil && existing.State.RequestState != "" {
+		return existing.State.RequestState
+	}
+	if participant != nil && participant.RequestState != "" {
+		return participant.RequestState
+	}
+	return ""
+}
+
+func directMessageMigrationFolder(
+	existing *directMessageCanonicalStateRecord,
+	requestState models.DmRequestState,
+	deletedAt *time.Time,
+) models.UserConversationFolder {
+	if deletedAt != nil && !deletedAt.IsZero() {
+		return models.UserConversationFolderHidden
+	}
+	if existing != nil && existing.State != nil && existing.State.Folder != "" {
+		return existing.State.Folder
+	}
+	switch requestState {
+	case models.DmRequestStatePending:
+		return models.UserConversationFolderRequests
+	case models.DmRequestStateDeclined:
+		return models.UserConversationFolderDeclined
+	default:
+		return models.UserConversationFolderInbox
+	}
+}
+
+func directMessageMigrationDefaultRequestState(folder models.UserConversationFolder) models.DmRequestState {
+	switch folder {
+	case models.UserConversationFolderRequests:
+		return models.DmRequestStatePending
+	case models.UserConversationFolderDeclined:
+		return models.DmRequestStateDeclined
+	default:
+		return models.DmRequestStateAccepted
+	}
+}
+
+func directMessageMigrationReadState(
+	existing *directMessageCanonicalStateRecord,
+	legacyReadState *directMessageLegacyReadState,
+	legacyParticipant *directMessageLegacyParticipantRow,
+) (bool, *time.Time) {
+	if existing != nil && existing.State != nil {
+		return existing.State.Unread, existing.State.LastReadAt
+	}
+	if legacyReadState != nil {
+		return legacyReadState.Unread, legacyReadState.LastReadAt
+	}
+	if legacyParticipant != nil {
+		return legacyParticipant.Unread, legacyParticipant.LastReadAt
+	}
+	return false, nil
+}
+
+func normalizeLegacyMigrationLastReadAt(value *time.Time, unread bool) *time.Time {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	normalized := value.UTC()
+	if normalized.Before(time.Date(1971, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		return nil
+	}
+	if unread && normalized.Equal(time.Unix(0, 0).UTC()) {
+		return nil
+	}
+	return &normalized
+}
+
+func directMessageMigrationUpdatedAt(
+	state *models.UserConversationState,
+	conversation directMessageMigrationConversation,
+	existing *directMessageCanonicalStateRecord,
+) time.Time {
+	candidates := []time.Time{
+		state.CreatedAt,
+		state.SortAt,
+		state.PreviewStatusPublishedAt,
+		conversation.UpdatedAt,
+		conversation.LastMessageTime,
+	}
+	if existing != nil && existing.State != nil && !existing.State.UpdatedAt.IsZero() {
+		candidates = append(candidates, existing.State.UpdatedAt)
+	}
+	for _, candidate := range []*time.Time{
+		state.LastReadAt,
+		state.DeletedAt,
+		state.RequestedAt,
+		state.AcceptedAt,
+		state.DeclinedAt,
+	} {
+		if candidate != nil && !candidate.IsZero() {
+			candidates = append(candidates, candidate.UTC())
+		}
+	}
+
+	latest := time.Time{}
+	for _, candidate := range candidates {
+		if candidate.IsZero() {
+			continue
+		}
+		candidate = candidate.UTC()
+		if candidate.After(latest) {
+			latest = candidate
+		}
+	}
+	if latest.IsZero() {
+		return time.Now().UTC()
+	}
+	return latest
+}
+
+func directMessageCounterpartIDForMigration(viewerID string, participants []string) string {
+	canonicalViewerID := models.CanonicalConversationParticipantID(viewerID)
+	for _, participantID := range participants {
+		if models.CanonicalConversationParticipantID(participantID) == canonicalViewerID {
+			continue
+		}
+		return participantID
+	}
+	return ""
+}
+
+func setDirectMessageMigrationWriteFreeze(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+	writesFrozen bool,
+	phase string,
+) error {
+	out, err := client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: models.DirectMessageMigrationStatePK},
+			"SK": &types.AttributeValueMemberS{Value: models.DirectMessageMigrationStateSK},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	createdAt := firstConversationTime(out.Item, "createdAt")
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+
+	item := map[string]types.AttributeValue{
+		"PK":           &types.AttributeValueMemberS{Value: models.DirectMessageMigrationStatePK},
+		"SK":           &types.AttributeValueMemberS{Value: models.DirectMessageMigrationStateSK},
+		"writesFrozen": &types.AttributeValueMemberBOOL{Value: writesFrozen},
+		"phase":        &types.AttributeValueMemberS{Value: phase},
+		"reason":       &types.AttributeValueMemberS{Value: "lesser migrate-direct-message-state"},
+		"owner":        &types.AttributeValueMemberS{Value: "lesser migrate-direct-message-state"},
+		"createdAt":    &types.AttributeValueMemberS{Value: createdAt.Format(time.RFC3339Nano)},
+		"updatedAt":    &types.AttributeValueMemberS{Value: now.Format(time.RFC3339Nano)},
+	}
+
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      item,
+	})
+	return err
+}
