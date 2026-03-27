@@ -1003,7 +1003,7 @@ func agentFromStorageUser(user *storage.User, governance *storage.AgentGovernanc
 	}
 
 	out.Verified = agentVerifiedState(governance)
-	if governance != nil && governance.VerifiedAt != nil && !governance.VerifiedAt.IsZero() {
+	if out.Verified && governance != nil && governance.VerifiedAt != nil && !governance.VerifiedAt.IsZero() {
 		verifiedAt := governance.VerifiedAt.UTC()
 		out.VerifiedAt = &verifiedAt
 	}

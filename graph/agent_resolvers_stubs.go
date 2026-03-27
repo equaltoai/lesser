@@ -1086,6 +1086,7 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 	governance.Verified = true
 	governance.VerifiedAt = cloneGraphAgentTime(&now)
 	governance.VerifiedBy = claims.Username
+	governance.VerifiedReason = ""
 	governance.UnverifiedAt = nil
 	governance.UnverifiedBy = ""
 	governance.UnverifiedReason = ""
@@ -1148,8 +1149,12 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 		}
 	}
 	governance.Verified = false
+	governance.VerifiedAt = nil
+	governance.VerifiedBy = ""
+	governance.VerifiedReason = ""
 	governance.UnverifiedAt = cloneGraphAgentTime(&now)
 	governance.UnverifiedBy = claims.Username
+	governance.UnverifiedReason = ""
 	if input != nil && strings.TrimSpace(derefString(input.Reason)) != "" {
 		governance.UnverifiedReason = strings.TrimSpace(derefString(input.Reason))
 	}

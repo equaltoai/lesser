@@ -48,6 +48,24 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.True(t, agent.AgentCapabilities.RequiresApproval)
 }
 
+func TestConvertStorageUserToAgent_HidesVerifiedAtWhenAgentIsNotVerified(t *testing.T) {
+	resolver := &Resolver{}
+	user := &storage.User{
+		Username: "lowkey",
+		IsAgent:  true,
+	}
+	governance := &storage.AgentGovernanceState{
+		Username:   "lowkey",
+		Verified:   false,
+		VerifiedAt: ptrGraphTime(time.Date(2026, 2, 13, 13, 56, 1, 0, time.UTC)),
+	}
+
+	agent := resolver.convertStorageUserToAgent(user, governance)
+	require.NotNil(t, agent)
+	require.False(t, agent.Verified)
+	require.Nil(t, agent.VerifiedAt)
+}
+
 func ptrGraphTime(value time.Time) *time.Time {
 	timestamp := value.UTC()
 	return &timestamp

@@ -266,6 +266,7 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 		var verified apimodels.Agent
 		require.NoError(t, json.Unmarshal(verifyResp.Body, &verified))
 		require.True(t, verified.Verified)
+		require.NotNil(t, verified.VerifiedAt)
 
 		unverifyReq := apimodels.AdminVerifyAgentRequest{Reason: "nope"}
 		unverifyCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/agent1/unverify", headers, nil, unverifyReq)
@@ -276,6 +277,12 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 		var unverified apimodels.Agent
 		require.NoError(t, json.Unmarshal(unverifyResp.Body, &unverified))
 		require.False(t, unverified.Verified)
+		require.Nil(t, unverified.VerifiedAt)
+
+		governance := state.agentGovernanceByUsername["agent1"]
+		require.Nil(t, governance.VerifiedAt)
+		require.Empty(t, governance.VerifiedBy)
+		require.Empty(t, governance.VerifiedReason)
 	})
 }
 

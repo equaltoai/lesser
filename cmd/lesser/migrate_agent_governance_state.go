@@ -146,7 +146,7 @@ func processAgentGovernanceMigrationItem(
 	username := agentGovernanceMigrationUsername(userItem)
 	if username == "" {
 		summary.ValidationErrors++
-		return nil
+		return fmt.Errorf("validate agent governance row: missing username")
 	}
 	summary.ScannedAgents++
 
@@ -154,7 +154,7 @@ func processAgentGovernanceMigrationItem(
 	if err != nil {
 		summary.ValidationErrors++
 		recordAgentGovernanceMigrationSample(summary, username)
-		return nil
+		return fmt.Errorf("parse legacy governance row for %s: %w", username, err)
 	}
 	if hasLegacyState {
 		summary.AgentsWithLegacyState++
@@ -168,9 +168,10 @@ func processAgentGovernanceMigrationItem(
 		summary.ExistingTypedRows++
 	}
 
+	legacyDesiredState, hasLegacyDesiredState := desiredAgentGovernanceState(username, userItem, nil, legacyState, hasLegacyState)
 	desiredState, hasDesiredState := desiredAgentGovernanceState(username, userItem, existingState, legacyState, hasLegacyState)
 	if hasLegacyState {
-		if existingState != nil && agentGovernanceStatesEqual(existingState, desiredState) {
+		if existingState != nil && hasLegacyDesiredState && agentGovernanceStatesEqual(existingState, legacyDesiredState) {
 			summary.ParityMatches++
 		} else {
 			summary.ParityMismatches++
@@ -255,7 +256,9 @@ func desiredAgentGovernanceState(
 		desired.Username = username
 	}
 
-	if hasLegacyState && legacyState != nil {
+	// Once the typed row exists it becomes authoritative; reruns should only
+	// seed from legacy metadata when the typed row is still missing.
+	if existingState == nil && hasLegacyState && legacyState != nil {
 		desired.QuarantineStatus = legacyState.QuarantineStatus
 		desired.QuarantineStart = cloneAgentGovernanceMigrationTime(legacyState.QuarantineStart)
 		desired.QuarantineEnd = cloneAgentGovernanceMigrationTime(legacyState.QuarantineEnd)

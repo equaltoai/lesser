@@ -123,7 +123,7 @@ func graphAgentVerifiedState(governance *storage.AgentGovernanceState) bool {
 }
 
 func graphAgentVerifiedAt(governance *storage.AgentGovernanceState) *model.Time {
-	if governance == nil || governance.VerifiedAt == nil || governance.VerifiedAt.IsZero() {
+	if governance == nil || !governance.Verified || governance.VerifiedAt == nil || governance.VerifiedAt.IsZero() {
 		return nil
 	}
 	timestamp := model.Time(governance.VerifiedAt.UTC())

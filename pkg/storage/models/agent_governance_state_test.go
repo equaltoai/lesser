@@ -86,4 +86,9 @@ func TestAgentGovernanceStateValidationHelpers(t *testing.T) {
 	require.Empty(t, nilState.GetPK())
 	require.Empty(t, nilState.GetSK())
 	require.Error(t, nilState.UpdateKeys())
+	require.Error(t, nilState.BeforeCreate())
+	require.Error(t, nilState.BeforeUpdate())
+
+	require.Error(t, (&AgentGovernanceState{Username: " "}).BeforeCreate())
+	require.Error(t, (&AgentGovernanceState{Username: " "}).BeforeUpdate())
 }

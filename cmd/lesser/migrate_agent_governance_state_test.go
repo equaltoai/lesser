@@ -242,7 +242,7 @@ func TestExecuteAgentGovernanceStateMigration_ValidatesInputsAndErrors(t *testin
 	}
 
 	summary, err := executeAgentGovernanceStateMigration(context.Background(), client, "table", false, 0)
-	require.NoError(t, err)
+	require.EqualError(t, err, "parse legacy governance row for agent: agent_verified is not a boolean")
 	require.Equal(t, 1, summary.ScannedAgents)
 	require.Equal(t, 1, summary.ValidationErrors)
 	require.Equal(t, []string{"agent"}, summary.SampleUsernames)
@@ -322,7 +322,7 @@ func TestProcessAgentGovernanceMigrationItem_TracksParityAndWriteErrors(t *testi
 	require.Zero(t, summary.GovernanceRowsPlanned)
 
 	summary = &agentGovernanceStateMigrationSummary{}
-	require.NoError(t, processAgentGovernanceMigrationItem(context.Background(), client, "table", map[string]types.AttributeValue{}, false, summary))
+	require.EqualError(t, processAgentGovernanceMigrationItem(context.Background(), client, "table", map[string]types.AttributeValue{}, false, summary), "validate agent governance row: missing username")
 	require.Equal(t, 1, summary.ValidationErrors)
 
 	client = &fakeAgentGovernanceStateMigrationClient{
@@ -336,6 +336,42 @@ func TestProcessAgentGovernanceMigrationItem_TracksParityAndWriteErrors(t *testi
 	}
 	err = processAgentGovernanceMigrationItem(context.Background(), client, "table", userItem, true, &agentGovernanceStateMigrationSummary{})
 	require.EqualError(t, err, "update user metadata row for agent: cleanup failed")
+}
+
+func TestProcessAgentGovernanceMigrationItem_RerunAfterCleanupFailureKeepsTypedState(t *testing.T) {
+	now := time.Date(2026, 3, 27, 16, 0, 0, 0, time.UTC)
+	userItem := agentGovernanceTestUserItem("agent", now, now, map[string]types.AttributeValue{
+		"agent_verified":         &types.AttributeValueMemberBOOL{Value: true},
+		"agent_delegated_scopes": &types.AttributeValueMemberS{Value: "write read"},
+	})
+	client := &fakeAgentGovernanceStateMigrationClient{
+		putErrs:  []error{nil, errors.New("cleanup failed")},
+		getItems: map[string]map[string]types.AttributeValue{},
+	}
+
+	err := processAgentGovernanceMigrationItem(context.Background(), client, "table", userItem, true, &agentGovernanceStateMigrationSummary{})
+	require.EqualError(t, err, "update user metadata row for agent: cleanup failed")
+	require.Len(t, client.putItems, 1)
+
+	newerTypedState := buildAgentGovernanceStateItem(&storage.AgentGovernanceState{
+		Username:        "agent",
+		Verified:        false,
+		DelegatedScopes: []string{"read"},
+		CreatedAt:       now,
+		UpdatedAt:       now.Add(time.Hour),
+	})
+	client.getItems["USER#agent#"+models.SKAgentGovernance] = newerTypedState
+	client.putItems = nil
+	client.putErrs = nil
+
+	summary := &agentGovernanceStateMigrationSummary{}
+	require.NoError(t, processAgentGovernanceMigrationItem(context.Background(), client, "table", userItem, true, summary))
+	require.Equal(t, 1, summary.ParityMismatches)
+	require.Zero(t, summary.GovernanceRowsPlanned)
+	require.Equal(t, 1, summary.UserRowsUpdated)
+	require.Len(t, client.putItems, 1)
+	require.Equal(t, models.SKMetadata, agentGovernanceTestStringAttr(client.putItems[0]["SK"]))
+	require.Equal(t, []string{"read"}, agentGovernanceMigrationAttributeStringSliceValue(client.getItems["USER#agent#"+models.SKAgentGovernance]["delegatedScopes"]))
 }
 
 func TestDesiredAgentGovernanceState_MergesExistingLegacyAndUserTimestamps(t *testing.T) {
@@ -361,11 +397,19 @@ func TestDesiredAgentGovernanceState_MergesExistingLegacyAndUserTimestamps(t *te
 	desired, ok := desiredAgentGovernanceState("Agent", userItem, existing, legacy, true)
 	require.True(t, ok)
 	require.Equal(t, "agent", desired.Username)
-	require.Equal(t, storage.AgentQuarantineStatusQuarantined, desired.QuarantineStatus)
-	require.Equal(t, []string{"read", "write"}, desired.DelegatedScopes)
-	require.Equal(t, []string{"publish", "read"}, desired.SelfScopes)
+	require.Equal(t, storage.AgentQuarantineStatusApproved, desired.QuarantineStatus)
+	require.Equal(t, []string{"existing"}, desired.DelegatedScopes)
+	require.Nil(t, desired.SelfScopes)
 	require.Equal(t, existingCreatedAt, desired.CreatedAt)
 	require.Equal(t, userUpdatedAt, desired.UpdatedAt)
+
+	seeded, seededOK := desiredAgentGovernanceState("Agent", userItem, nil, legacy, true)
+	require.True(t, seededOK)
+	require.Equal(t, storage.AgentQuarantineStatusQuarantined, seeded.QuarantineStatus)
+	require.Equal(t, []string{"read", "write"}, seeded.DelegatedScopes)
+	require.Equal(t, []string{"publish", "read"}, seeded.SelfScopes)
+	require.Equal(t, userCreatedAt, seeded.CreatedAt)
+	require.Equal(t, userUpdatedAt, seeded.UpdatedAt)
 
 	none, hasState := desiredAgentGovernanceState("agent", userItem, nil, nil, false)
 	require.False(t, hasState)
@@ -543,6 +587,18 @@ func TestAgentGovernanceMigrationHelpers_ParseFallbacksAndNoops(t *testing.T) {
 	item := map[string]types.AttributeValue{}
 	setAgentGovernanceMigrationTimeAttribute(item, "verifiedAt", nil)
 	require.Empty(t, item)
+
+	state, ok, err := extractLegacyAgentGovernanceState(map[string]types.AttributeValue{})
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, state)
+
+	state, ok, err = extractLegacyAgentGovernanceState(map[string]types.AttributeValue{
+		"metadata": &types.AttributeValueMemberS{Value: "not-a-map"},
+	})
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, state)
 }
 
 func agentGovernanceTestUserItem(username string, createdAt, updatedAt time.Time, metadata map[string]types.AttributeValue) map[string]types.AttributeValue {

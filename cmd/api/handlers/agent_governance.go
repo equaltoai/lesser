@@ -155,6 +155,7 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 	governance.Verified = true
 	governance.VerifiedAt = cloneAgentGovernanceHandlerTime(&now)
 	governance.VerifiedBy = claims.Username
+	governance.VerifiedReason = ""
 	governance.UnverifiedAt = nil
 	governance.UnverifiedBy = ""
 	governance.UnverifiedReason = ""
@@ -222,8 +223,12 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 		}
 	}
 	governance.Verified = false
+	governance.VerifiedAt = nil
+	governance.VerifiedBy = ""
+	governance.VerifiedReason = ""
 	governance.UnverifiedAt = cloneAgentGovernanceHandlerTime(&now)
 	governance.UnverifiedBy = claims.Username
+	governance.UnverifiedReason = ""
 	if strings.TrimSpace(req.Reason) != "" {
 		governance.UnverifiedReason = strings.TrimSpace(req.Reason)
 	}

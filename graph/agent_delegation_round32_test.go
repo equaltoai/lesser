@@ -223,6 +223,7 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Remove", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Execute").Return(nil).Maybe()
 	if state.createConflictOnce {
@@ -455,6 +456,36 @@ func TestDelegateToAgent_EnforcesStoredAgentScopeEnvelope(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+}
+
+func TestAdminUnverifyAgent_ClearsStaleVerificationFields(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{"read"})
+	verifiedAt := time.Now().UTC().Add(-time.Hour)
+	governance := state.governanceState("agent1")
+	governance.Verified = true
+	governance.VerifiedAt = &verifiedAt
+	governance.VerifiedBy = "reviewer"
+	governance.VerifiedReason = "approved"
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("admin", auth.ScopeAdmin)
+
+	result, err := resolver.Mutation().AdminUnverifyAgent(ctx, "agent1", &model.AdminVerifyAgentInput{
+		Reason: ptrString("revoked"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Verified)
+	require.Nil(t, result.VerifiedAt)
+
+	updated := state.governanceState("agent1")
+	require.False(t, updated.Verified)
+	require.Nil(t, updated.VerifiedAt)
+	require.Empty(t, updated.VerifiedBy)
+	require.Empty(t, updated.VerifiedReason)
+	require.Equal(t, "admin", updated.UnverifiedBy)
+	require.Equal(t, "revoked", updated.UnverifiedReason)
+	require.NotNil(t, updated.UnverifiedAt)
 }
 
 func TestRevokeAgentToken_UsesRuntimeSessionRevocationSemantics(t *testing.T) {

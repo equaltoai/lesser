@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -119,5 +120,76 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.True(t, caps.CanBoost)
 		require.True(t, caps.CanDM)
 		require.True(t, caps.CanFollow)
+	})
+
+	t.Run("agentFromStorageUser only exposes verifiedAt for verified agents", func(t *testing.T) {
+		createdAt := now.Add(-2 * time.Hour)
+		verifiedAt := now.Add(-30 * time.Minute)
+		user := &storage.User{
+			Username:     "agent1",
+			DisplayName:  "Agent One",
+			Note:         "bio",
+			CreatedAt:    createdAt,
+			AgentOwner:   "@owner",
+			IsAgent:      true,
+			AgentVersion: "",
+			AgentType:    "",
+		}
+
+		unverified := agentFromStorageUser(user, &storage.AgentGovernanceState{
+			Username:        "agent1",
+			Verified:        false,
+			VerifiedAt:      &verifiedAt,
+			DelegatedScopes: []string{"read"},
+		})
+		require.False(t, unverified.Verified)
+		require.Nil(t, unverified.VerifiedAt)
+		require.Equal(t, agentTypeCustom, unverified.AgentType)
+		require.Equal(t, agentVersionUnknown, unverified.AgentVersion)
+		require.Equal(t, []string{"read"}, unverified.DelegatedScopes)
+		require.NotNil(t, unverified.CreatedAt)
+		require.Equal(t, createdAt, *unverified.CreatedAt)
+
+		verified := agentFromStorageUser(user, &storage.AgentGovernanceState{
+			Username:   "agent1",
+			Verified:   true,
+			VerifiedAt: &verifiedAt,
+		})
+		require.True(t, verified.Verified)
+		require.NotNil(t, verified.VerifiedAt)
+		require.Equal(t, verifiedAt.UTC(), *verified.VerifiedAt)
+	})
+
+	t.Run("agent governance state helpers handle nil found and missing rows", func(t *testing.T) {
+		single, err := loadAgentGovernanceState(context.Background(), nil, "agent1")
+		require.NoError(t, err)
+		require.Nil(t, single)
+
+		batch, err := loadAgentGovernanceStates(context.Background(), nil, []string{"agent1"})
+		require.NoError(t, err)
+		require.Empty(t, batch)
+
+		h, _, _ := round11NewHandler(t, cfg, baseState)
+
+		single, err = loadAgentGovernanceState(context.Background(), h.repos, "agent1")
+		require.NoError(t, err)
+		require.NotNil(t, single)
+		require.Equal(t, "agent1", single.Username)
+		require.Equal(t, []string{auth.ScopeRead, "write:statuses"}, single.DelegatedScopes)
+
+		batch, err = loadAgentGovernanceStates(context.Background(), h.repos, []string{"agent1", "missing"})
+		require.NoError(t, err)
+		require.Contains(t, batch, "agent1")
+		require.NotContains(t, batch, "missing")
+
+		missingHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		single, err = loadAgentGovernanceState(context.Background(), missingHandler.repos, "missing")
+		require.NoError(t, err)
+		require.Nil(t, single)
+
+		batch, err = loadAgentGovernanceStates(context.Background(), missingHandler.repos, []string{"missing"})
+		require.NoError(t, err)
+		require.Empty(t, batch)
 	})
 }
