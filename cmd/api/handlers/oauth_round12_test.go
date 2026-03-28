@@ -252,7 +252,26 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.Equal(t, "alice", storedState.PrincipalUsername)
 	})
 
-	t.Run("agent-style authorize requests require canonical mcp resource", func(t *testing.T) {
+	t.Run("legacy agent-style authorize requests no longer bind actor metadata without resource", func(t *testing.T) {
+		var storedState *storage.OAuthState
+		accountsSvc := &AccountsServiceStub{
+			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				return &accounts.GetUserAppConsentResult{}, errors.New("no consent")
+			},
+			StoreOAuthStateFunc: func(_ context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error) {
+				storedState = cmd.OAuthState
+				return &accounts.StoreOAuthStateResult{}, nil
+			},
+			GetOAuthAppFunc: func(_ context.Context, query *accounts.GetOAuthAppQuery) (*accounts.GetOAuthAppResult, error) {
+				return &accounts.GetOAuthAppResult{
+					App: &storage.OAuthApp{
+						ClientID:    query.ClientID,
+						Name:        "Agent Connector",
+						ClientClass: auth.ClientClassAgent,
+					},
+				}, nil
+			},
+		}
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -267,7 +286,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			},
 		}
 
-		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountsSvc})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
 			"response_type": "code",
 			"client_id":     "client-agent",
@@ -276,10 +295,17 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"state":         "state-agent-missing-resource",
 		}, nil)
 		require.NoError(t, err)
+		ctx.Set("username", "owner")
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
 		redirectURL := firstStringValue(resp.Headers, "location")
-		require.Contains(t, redirectURL, "error=invalid_target")
-		require.Contains(t, redirectURL, "resource+is+required+for+remote+MCP+authorization")
+		require.Contains(t, redirectURL, "/auth/consent?")
+		require.NotContains(t, redirectURL, "resource=")
+		require.NotContains(t, redirectURL, "agent_username=")
+		require.NotNil(t, storedState)
+		require.Equal(t, "owner", storedState.Username)
+		require.Equal(t, "owner", storedState.PrincipalUsername)
+		require.Empty(t, storedState.Resource)
+		require.Empty(t, storedState.AgentUsername)
 	})
 
 	t.Run("dynamic public authorize requests require canonical mcp resource", func(t *testing.T) {
@@ -636,6 +662,16 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 
 func TestOAuthTokenLiftRound12(t *testing.T) {
 	cfg := round11TestConfig()
+	newDeviceFlowCLIClient := func() storagemodels.OAuthClient {
+		return storagemodels.OAuthClient{
+			ClientID:     "client-1",
+			Name:         "CLI App",
+			RedirectURIs: []string{"https://example.com/callback"},
+			GrantTypes:   []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+			ClientClass:  auth.ClientClassCLI,
+			CreatedAt:    time.Now().Add(-24 * time.Hour),
+		}
+	}
 
 	t.Run("empty request body", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
@@ -1311,278 +1347,26 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "https://mcp.example/resource", storedRefresh.Resource)
 	})
 
-	t.Run("client_credentials issues access-only agent token with delegated claims", func(t *testing.T) {
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:      "client-agent",
-					ClientSecret:  "secret",
-					Name:          "Agent Connector",
-					RedirectURIs:  []string{"https://example.com/callback"},
-					GrantTypes:    []string{auth.GrantTypeClientCredentials},
-					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					OwnerID:       "owner",
-					Confidential:  true,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentType:  "assistant",
-					AgentOwner: "@owner",
-				},
-			},
-		}
-		h, _, _ := round11NewHandler(t, cfg, state)
-
+	t.Run("client_credentials is unsupported after cutover", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret"))
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-		var body apimodels.OAuthTokenResponse
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.NotEmpty(t, body.AccessToken)
-		require.Empty(t, body.RefreshToken)
-		require.Equal(t, "read write", body.Scope)
-		require.Equal(t, int(auth.AgentAccessTokenTTL(cfg).Seconds()), body.ExpiresIn)
-
-		claims := round12DecodeJWTClaims(t, body.AccessToken)
-		require.Equal(t, "agent1", claims.Username)
-		require.Equal(t, "client-agent", claims.ClientID)
-		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
-		require.True(t, claims.IsAgent)
-		require.Equal(t, "assistant", claims.AgentType)
-		require.Equal(t, "@owner", claims.DelegatedBy)
-		require.NotEmpty(t, claims.SessionID)
-		require.Equal(t, claims.SessionID, claims.AgentSessionID)
-	})
-
-	t.Run("client_credentials resource sets jwt audience", func(t *testing.T) {
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:      "client-agent",
-					ClientSecret:  "secret",
-					Name:          "Agent Connector",
-					RedirectURIs:  []string{"https://example.com/callback"},
-					GrantTypes:    []string{auth.GrantTypeClientCredentials},
-					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					OwnerID:       "owner",
-					Confidential:  true,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentType:  "assistant",
-					AgentOwner: "@owner",
-				},
-			},
-		}
-		h, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret&resource=https%3A%2F%2Fmcp.example%2Fresource"))
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-		var body apimodels.OAuthTokenResponse
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-
-		claims := round12DecodeJWTClaims(t, body.AccessToken)
-		require.Equal(t, []string{"https://mcp.example/resource"}, []string(claims.Audience))
-	})
-
-	t.Run("client_credentials accepts client_secret_basic and prefers it over body credentials", func(t *testing.T) {
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:      "client-agent",
-					ClientSecret:  "secret",
-					Name:          "Agent Connector",
-					RedirectURIs:  []string{"https://example.com/callback"},
-					GrantTypes:    []string{auth.GrantTypeClientCredentials},
-					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					OwnerID:       "owner",
-					Confidential:  true,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentType:  "assistant",
-					AgentOwner: "@owner",
-				},
-			},
-		}
-		h, _, _ := round11NewHandler(t, cfg, state)
-
-		basic := base64.StdEncoding.EncodeToString([]byte("client-agent:secret"))
-		ctx := round10NewLiftContextWithBodyBytes(
-			http.MethodPost,
-			"/oauth/token",
-			map[string]string{"Authorization": "Basic " + basic},
-			nil,
-			[]byte("grant_type=client_credentials&client_id=client-wrong&client_secret=wrong"),
-		)
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-		var body apimodels.OAuthTokenResponse
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.NotEmpty(t, body.AccessToken)
-		require.Empty(t, body.RefreshToken)
-
-		claims := round12DecodeJWTClaims(t, body.AccessToken)
-		require.Equal(t, "client-agent", claims.ClientID)
-		require.Equal(t, "agent1", claims.Username)
-	})
-
-	t.Run("client_credentials accepts previous secret during grace window", func(t *testing.T) {
-		activeHash, err := auth.HashOAuthClientSecret("secret-new")
-		require.NoError(t, err)
-		previousHash, err := auth.HashOAuthClientSecret("secret-old")
-		require.NoError(t, err)
-
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:                           "client-agent",
-					ClientSecret:                       activeHash,
-					PreviousClientSecret:               previousHash,
-					PreviousClientSecretGraceExpiresAt: time.Now().Add(30 * time.Minute),
-					Name:                               "Agent Connector",
-					RedirectURIs:                       []string{"https://example.com/callback"},
-					GrantTypes:                         []string{auth.GrantTypeClientCredentials},
-					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:                        auth.ClientClassAgent,
-					AgentUsername:                      "agent1",
-					OwnerID:                            "owner",
-					Confidential:                       true,
-					CreatedAt:                          time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentOwner: "@owner",
-				},
-			},
-		}
-
-		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret-old"))
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-		var body apimodels.OAuthTokenResponse
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.NotEmpty(t, body.AccessToken)
-		require.Empty(t, body.RefreshToken)
-	})
-
-	t.Run("client_credentials rejects previous secret after grace window", func(t *testing.T) {
-		activeHash, err := auth.HashOAuthClientSecret("secret-new")
-		require.NoError(t, err)
-		previousHash, err := auth.HashOAuthClientSecret("secret-old")
-		require.NoError(t, err)
-
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:                           "client-agent",
-					ClientSecret:                       activeHash,
-					PreviousClientSecret:               previousHash,
-					PreviousClientSecretGraceExpiresAt: time.Now().Add(-1 * time.Minute),
-					Name:                               "Agent Connector",
-					RedirectURIs:                       []string{"https://example.com/callback"},
-					GrantTypes:                         []string{auth.GrantTypeClientCredentials},
-					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:                        auth.ClientClassAgent,
-					AgentUsername:                      "agent1",
-					OwnerID:                            "owner",
-					Confidential:                       true,
-					CreatedAt:                          time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentOwner: "@owner",
-				},
-			},
-		}
-
-		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret-old"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "invalid_client", body["error"])
+		require.Equal(t, "unsupported_grant_type", body["error"])
+		require.Equal(t, "Only authorization_code and refresh_token grant types are supported", body["error_description"])
 	})
 
-	t.Run("client_credentials rejects non-agent clients", func(t *testing.T) {
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-web": {
-					ClientID:     "client-web",
-					ClientSecret: "secret",
-					Name:         "Web App",
-					RedirectURIs: []string{"https://example.com/callback"},
-					GrantTypes:   []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken},
-					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:  auth.ClientClassWeb,
-					Confidential: true,
-					CreatedAt:    time.Now().Add(-24 * time.Hour),
-				},
-			},
-		}
-		h, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-web&client_secret=secret"))
+	t.Run("client_credentials remains unsupported when device flow is enabled", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		h, _, _ := round11NewHandler(t, cfgDevice, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "unauthorized_client", body["error"])
-	})
-
-	t.Run("client_credentials rejects requested scopes outside the client scope set", func(t *testing.T) {
-		state := &round10QueryState{
-			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent": {
-					ClientID:      "client-agent",
-					ClientSecret:  "secret",
-					Name:          "Agent Connector",
-					RedirectURIs:  []string{"https://example.com/callback"},
-					GrantTypes:    []string{auth.GrantTypeClientCredentials},
-					Scopes:        []string{auth.ScopeRead},
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					OwnerID:       "owner",
-					Confidential:  true,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentOwner: "@owner",
-				},
-			},
-		}
-		h, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret&scope=write"))
-		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
-		var body map[string]string
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "invalid_scope", body["error"])
+		require.Equal(t, "unsupported_grant_type", body["error"])
+		require.Equal(t, "Only authorization_code, refresh_token, and device_code grant types are supported", body["error_description"])
 	})
 
 	t.Run("device_code grant disabled returns access_denied", func(t *testing.T) {
@@ -1612,6 +1396,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			notFoundPKs: map[string]bool{
 				"OAUTH_DEVICE#" + deviceHash: true,
 			},
@@ -1631,6 +1418,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:  deviceHash,
@@ -1660,6 +1450,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:  deviceHash,
@@ -1690,6 +1483,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		last := time.Now().UTC()
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:  deviceHash,
@@ -1721,6 +1517,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:  deviceHash,
@@ -1750,6 +1549,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": newDeviceFlowCLIClient(),
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:  deviceHash,
@@ -1780,13 +1582,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-1": {
-					ClientID:     "client-1",
-					Name:         "CLI App",
-					RedirectURIs: []string{"https://example.com/callback"},
-					ClientClass:  auth.ClientClassCLI,
-					CreatedAt:    time.Now().Add(-24 * time.Hour),
-				},
+				"client-1": newDeviceFlowCLIClient(),
 			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
@@ -1844,10 +1640,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, claims1.SessionID, refreshClaims.SessionID)
 	})
 
-	t.Run("device_code approved agent client issues standard refresh session", func(t *testing.T) {
+	t.Run("device_code approved agent client is rejected after cutover", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true
-		cfgDevice.AgentAccessTokenDuration = 12 * time.Hour
 		deviceCode := "agent-approved"
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
@@ -1889,42 +1684,14 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 		h, _, _ := round11NewHandler(t, cfgDevice, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-agent"))
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-
-		var body apimodels.OAuthTokenResponse
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.NotEmpty(t, body.AccessToken)
-		require.NotEmpty(t, body.RefreshToken)
-		require.Equal(t, "read follow", body.Scope)
-		require.Equal(t, int((12 * time.Hour).Seconds()), body.ExpiresIn)
-
-		claims := round12DecodeJWTClaims(t, body.AccessToken)
-		require.Equal(t, "agent1", claims.Username)
-		require.True(t, claims.IsAgent)
-		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
-		require.Equal(t, "assistant", claims.AgentType)
-		require.Equal(t, "@owner", claims.DelegatedBy)
-		require.NotEmpty(t, claims.SessionID)
-		require.Equal(t, claims.SessionID, claims.AgentSessionID)
-
-		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
-		require.True(t, ok)
-		require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
-		require.Equal(t, "agent1", storedRefresh.Username)
-		require.Equal(t, []string{auth.ScopeRead, auth.ScopeFollow}, storedRefresh.Scopes)
-		require.NotEmpty(t, storedRefresh.SessionID)
-		require.Equal(t, claims.SessionID, storedRefresh.SessionID)
-		require.Empty(t, storedRefresh.FamilyID)
-		require.False(t, storedRefresh.Current)
-		require.Zero(t, storedRefresh.Generation)
-		require.Empty(t, storedRefresh.DeviceLabel)
-		require.Zero(t, storedRefresh.AccessTTLSeconds)
-		require.True(t, storedRefresh.SessionCreatedAt.IsZero())
-		require.True(t, storedRefresh.IdleExpiresAt.IsZero())
-		require.True(t, storedRefresh.AbsoluteExpiresAt.IsZero())
+		require.Equal(t, "unauthorized_client", body["error"])
+		require.Equal(t, "device_code is not allowed for this client", body["error_description"])
 	})
 
-	t.Run("device_code approved agent client rejects non-owner approval", func(t *testing.T) {
+	t.Run("device_code agent client is rejected before ownership checks", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true
 		deviceCode := "agent-forbidden"
@@ -1971,7 +1738,8 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "invalid_grant", body["error"])
+		require.Equal(t, "unauthorized_client", body["error"])
+		require.Equal(t, "device_code is not allowed for this client", body["error_description"])
 		require.Empty(t, state.refreshTokensByToken)
 	})
 }

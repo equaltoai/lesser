@@ -1,12 +1,12 @@
 # Device Code For Agent Auth
 
-Lesser supports three OAuth grant families for agent-facing integrations. They solve different operational problems:
+Lesser supports two public OAuth grant families for agent-facing integrations. Dedicated internal runtime clients use a
+separate owned architecture outside this document.
 
 | Grant | User approval | Browser redirect on the agent host | Best fit |
 | --- | --- | --- | --- |
 | `authorization_code` | Yes | Yes | Interactive MCP clients with a browser on the same machine |
 | `urn:ietf:params:oauth:grant-type:device_code` | Yes | No | Headless agents that still need an operator to approve each session |
-| `client_credentials` | No | No | Fully autonomous, pre-approved machine-to-machine agents |
 
 ## When to use device code
 
@@ -16,7 +16,7 @@ Choose `device_code` when:
 - an operator still wants to review the requesting app and scopes before the session starts
 - a browser redirect back to the agent host is inconvenient or impossible
 
-Device flow is the middle ground between browser-based `authorization_code` and fully autonomous `client_credentials`.
+Device flow is the middle ground between browser-based `authorization_code` and a fully headless bootstrap path.
 
 ## Boundary with the public MCP contract
 
@@ -27,8 +27,8 @@ Current device-code flow is outside that canonical actor-URL contract for now. `
 accepts `client_id` and scopes only; it does not accept the actor-scoped `resource` value used by the canonical public
 MCP flow.
 
-Treat device code as a separate, non-canonical compatibility/bootstrap path until a later milestone rewires it around
-the actor-scoped resource contract.
+Treat device code as a separate, non-canonical bootstrap path until a later milestone rewires it around the actor-scoped
+resource contract.
 
 ## Lesser device-flow sequence
 
@@ -46,27 +46,21 @@ the actor-scoped resource contract.
 
 ## Token behavior by client class
 
-Device flow inherits the OAuth client's class rather than forcing one uniform token shape:
+After cutover, device flow is limited to CLI-style public clients rather than connector-era agent-bound clients:
 
 - `client_class=cli`
   - access tokens are minted as CLI tokens
   - CLI automation safety rails apply
   - refresh records keep CLI-style session metadata
 - `client_class=agent`
-  - internal or legacy compatibility runtime path; not provisioned by public registration and not part of the canonical actor-scoped public contract
-  - access tokens are minted for the bound agent identity, not the approving operator principal
-  - tokens carry `client_class`, `is_agent`, `agent_type`, and `delegated_by`
-  - ordinary public or legacy compatibility agent clients now store standard OAuth refresh records
-  - only the dedicated internal runtime client IDs keep runtime-family, device-label, and idle/absolute-expiry session semantics
-  - runtime-session diagnostics and revocation endpoints cover only those dedicated internal runtime client IDs
+  - no longer supported on the public device-flow surface
+  - connector-era agent device sessions are revoked by the cutover migration and must re-enter through the canonical actor-scoped authorization-code flow or a dedicated internal runtime path
 
-For agent clients, the approving operator must own the bound agent. Lesser rejects approvals that no longer satisfy that ownership relationship.
-
-## Choosing between the three grants
+## Choosing between the two grants
 
 - Prefer `authorization_code` when the MCP client can open a browser locally and complete a normal redirect.
 - Prefer `device_code` when the client is headless but you still want a human approval step.
-- Prefer `client_credentials` only for legacy compatibility clients or dedicated internal runtimes that are intentionally pre-approved to act without per-session operator consent.
+- Dedicated internal runtime automation belongs to a separate owned architecture, not to the public device-flow contract in this document.
 
 ## Current approval-page contract
 

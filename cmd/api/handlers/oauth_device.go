@@ -68,10 +68,17 @@ func (h *Handler) HandleOAuthDeviceCodeLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Validate that the client exists (public clients are allowed; secret is not required here).
-	if _, err := h.repos.Account().GetOAuthClient(ctx.Context(), clientID); err != nil {
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context(), clientID)
+	if err != nil || client == nil {
 		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
 			Error:            "invalid_client",
 			ErrorDescription: "unknown client",
+		})
+	}
+	if !oauthClientSupportsGrantType(client, oauthDeviceCodeGrantType) {
+		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
+			Error:            "unauthorized_client",
+			ErrorDescription: "device_code is not allowed for this client",
 		})
 	}
 

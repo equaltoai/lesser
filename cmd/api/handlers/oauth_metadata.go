@@ -42,7 +42,6 @@ func oauthGrantTypesSupported(cfg *config.Config) []string {
 	grantTypes := []string{
 		"authorization_code",
 		"refresh_token",
-		"client_credentials",
 	}
 	if oauthDeviceFlowEnabled(cfg) {
 		grantTypes = append(grantTypes, oauthDeviceCodeGrantType)

@@ -6,7 +6,7 @@ The MCP-facing auth error contract for refresh, re-auth, and scope failures live
 
 Public remote MCP clients should treat the actor-scoped contract in [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md) as canonical.
 Dedicated internal runtime clients such as `lesser-agent-delegation` and `lesser-agent-self-sovereign`, secret-rotation
-flows, and similar owned-client operations are compatibility/runtime surfaces, not the source of truth for public MCP
+flows, and similar owned-client operations are runtime/management surfaces, not the source of truth for public MCP
 access.
 
 ## Simple MCP access panel
@@ -52,17 +52,15 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 ## Supported token flow
 
 - For public MCP authorization, send the actor-scoped MCP URL as the canonical `resource`.
-- For remote MCP authorization, `/oauth/authorize` derives the target actor from that actor-scoped `resource`. Legacy compatibility clients must send it explicitly; Lesser no longer selects the actor from `agent_username`.
+- For remote MCP authorization, send the actor-scoped MCP URL as `resource`; Lesser binds the target actor from that canonical value and does not select the actor from client metadata.
 - Treat `authorization_code` and `refresh_token` state as resource-bound to that MCP URL.
 - Consent redirects and stored OAuth state for that flow carry the canonical `resource` target instead of `agent_username`.
-- Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
+- Do not treat `agent_username` as a supported public token target. Connector-era client rows and sessions that depended on it are retired by the cutover migration.
 - Public MCP refresh-token records use standard OAuth rotation state, not connector-family/device-label runtime metadata.
-- Runtime-session diagnostics and `/api/v1/agents/{username}/runtime-sessions` cover only the dedicated internal runtime client IDs; public or legacy compatibility agent clients do not appear there.
-- Compatibility/runtime only: `POST /oauth/token` supports `client_credentials` for confidential agent clients that already exist outside the public registration contract.
-- Compatibility/runtime only: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
-- `client_credentials` responses are access-token-only.
-- Access tokens inherit Lesser's configured agent access-token TTL.
-- Device-code and client-credentials tokens for agent clients are minted for the bound agent identity and carry `client_class`, `is_agent`, `agent_type`, and `delegated_by` claims.
+- Runtime-session diagnostics and `/api/v1/agents/{username}/runtime-sessions` cover only the dedicated internal runtime client IDs.
+- `POST /oauth/token` supports `authorization_code` and `refresh_token` for the canonical public MCP flow.
+- If device flow is enabled, `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for `client_class=cli` as a separate, non-canonical bootstrap flow.
+- Lesser no longer supports public or connector-era agent `client_credentials` or agent `device_code` flows after cutover.
 
 ## Secret recovery
 
@@ -72,7 +70,7 @@ public remote MCP agent-page contract and should not be presented as the primary
 - Operators can rotate an owned confidential client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
 - Owned public clients do not have a rotatable secret-management path; if they need a different client secret posture, they must register a new client.
 - Existing bearer access tokens remain valid until their normal expiry.
-- Refresh-token and `client_credentials` exchanges continue to accept the previous secret only until the grace window expires.
+- Client-authenticated authorization-code and refresh-token exchanges continue to accept the previous secret only until the grace window expires.
 - Forced invalidation skips the grace window and cuts off new client-authenticated exchanges immediately.
 - Secret rotation does not retroactively revoke already-issued bearer tokens; token revocation remains a separate operator action.
 - The replacement secret is returned once in the rotation response and must be redistributed to the managed client deployment.
@@ -81,7 +79,7 @@ public remote MCP agent-page contract and should not be presented as the primary
 
 Lesser now exposes `POST /oauth/register` and advertises it through RFC 8414 metadata.
 
-The current compatibility story is:
+The current registration contract is:
 
 - native or CLI discovery clients can dynamically register a public client with `token_endpoint_auth_method=none`
 - browser-based public clients can dynamically register a confidential `web` client with `client_secret_post`
