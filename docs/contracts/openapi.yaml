@@ -4022,7 +4022,7 @@ components:
                 refresh_token:
                     type: string
                 resource:
-                    description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
+                    description: Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request.
                     type: string
                 scope:
                     type: string
@@ -18566,7 +18566,7 @@ paths:
                     format: uri
                 - name: resource
                   in: query
-                  description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
+                  description: Canonical target resource URI. Required for remote MCP authorization; must be the actor-scoped MCP URL served by this Lesser instance.
                   schema:
                     type: string
                     format: uri

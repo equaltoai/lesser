@@ -58,6 +58,7 @@ That means:
 - the actor being accessed comes from the MCP URL and its matching `resource` value
 - the OAuth client proves which software is calling Lesser, but it does not choose the actor on behalf of the user
 - authorization must be evaluated against the requested `resource`, not against connector-specific client metadata
+- `/oauth/authorize` must validate that `resource` against the actor-scoped `https://{domain}/mcp/{actor}` form before issuing consent or codes
 
 For public remote MCP access, `client_class`, `agent_username`, or any similar client metadata must not be treated as
 the canonical actor-binding source. If those fields continue to exist for compatibility during the migration, they are
@@ -88,6 +89,7 @@ That contract applies across the normal OAuth flow:
 - the authorization code is issued for that `resource`
 - the token exchange must preserve the same `resource`
 - refresh-token state remains attached to the same canonical resource target
+- consent URLs and stored OAuth state for that flow carry the canonical `resource` target instead of `agent_username`
 
 The public MCP token model is therefore resource-bound, not connector-bound.
 

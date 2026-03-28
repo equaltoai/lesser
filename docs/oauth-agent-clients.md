@@ -28,7 +28,9 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 ## Supported token flow
 
 - For public MCP authorization, send the actor-scoped MCP URL as the canonical `resource`.
+- For remote MCP authorization, `/oauth/authorize` derives the target actor from that actor-scoped `resource`. Legacy compatibility clients must send it explicitly; Lesser no longer selects the actor from `agent_username`.
 - Treat `authorization_code` and `refresh_token` state as resource-bound to that MCP URL.
+- Consent redirects and stored OAuth state for that flow carry the canonical `resource` target instead of `agent_username`.
 - Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
 - Legacy compatibility: `POST /oauth/token` supports `client_credentials` for confidential agent clients.
 - Legacy compatibility: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.

@@ -209,6 +209,13 @@ func applyOAuthAuthorizeOverrides(op *operation) {
 		Schema:      schemaRef{Type: "string", Format: "uri"},
 	})
 	ensureQueryParam(op, parameter{
+		Name:        "resource",
+		In:          "query",
+		Required:    false,
+		Description: "Canonical target resource URI. Required for remote MCP authorization; must be the actor-scoped MCP URL served by this Lesser instance.",
+		Schema:      schemaRef{Type: "string", Format: "uri"},
+	})
+	ensureQueryParam(op, parameter{
 		Name:        "scope",
 		In:          "query",
 		Required:    false,
@@ -398,6 +405,12 @@ func ensureQueryParam(op *operation, p parameter) {
 
 	for _, existing := range op.Parameters {
 		if strings.EqualFold(existing.In, p.In) && strings.EqualFold(existing.Name, p.Name) {
+			for i := range op.Parameters {
+				if strings.EqualFold(op.Parameters[i].In, p.In) && strings.EqualFold(op.Parameters[i].Name, p.Name) {
+					op.Parameters[i] = p
+					return
+				}
+			}
 			return
 		}
 	}

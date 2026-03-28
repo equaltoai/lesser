@@ -136,7 +136,6 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 		Resource:          authState.Resource,
 		Username:          authState.Username,
 		PrincipalUsername: authState.PrincipalUsername,
-		AgentUsername:     authState.AgentUsername,
 		CodeChallenge:     authState.CodeChallenge,
 		ExpiresAt:         time.Now().Add(10 * time.Minute),
 		Scopes:            authState.Scopes,

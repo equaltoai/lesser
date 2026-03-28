@@ -39,8 +39,8 @@ func TestAuthorizationCodeExchangeTokenContext(t *testing.T) {
 		ClientClass:   auth.ClientClassAgent,
 		AgentUsername: "agent-1",
 	}, &storage.AuthorizationCode{
-		Username:      "agent-1",
-		AgentUsername: "agent-1",
+		Username: "agent-1",
+		Resource: "https://example.com/mcp/agent-1",
 	})
 	require.NoError(t, err)
 	require.Equal(t, auth.ClientClassAgent, clientClass)
@@ -51,8 +51,7 @@ func TestAuthorizationCodeExchangeTokenContext(t *testing.T) {
 		ClientClass:   auth.ClientClassAgent,
 		AgentUsername: "agent-2",
 	}, &storage.AuthorizationCode{
-		Username:      "agent-1",
-		AgentUsername: "agent-1",
+		Username: "agent-1",
 	})
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }

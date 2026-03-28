@@ -41,7 +41,7 @@ func overrideOAuthClientSchemas(schemas map[string]any) {
 	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "agent_username", "Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.", true)
 	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "client_class", "Deprecated connector-era MCP compatibility field.", true)
 	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "agent_username", "Deprecated connector-era MCP compatibility field.", true)
-	overrideSchemaProperty(schemas, "OAuthTokenRequest", "resource", "Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.", false)
+	overrideSchemaProperty(schemas, "OAuthTokenRequest", "resource", "Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request.", false)
 }
 
 func overrideSchemaProperty(schemas map[string]any, schemaName, propertyName, description string, deprecated bool) {
