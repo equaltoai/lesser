@@ -306,10 +306,6 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 			if v, ok := value.(string); ok {
 				existing.Website = v
 			}
-		case "agent_username":
-			if v, ok := value.(string); ok {
-				existing.AgentUsername = v
-			}
 		case "confidential":
 			if v, ok := value.(bool); ok {
 				existing.Confidential = v

@@ -41,9 +41,11 @@ func TestApplyInMemoryOAuthClientUpdate_Round21(t *testing.T) {
 	client := &storage.OAuthClient{}
 	applyInMemoryOAuthClientUpdate(client, "registration_source", "dynamic")
 	applyInMemoryOAuthClientUpdate(client, "website", "https://example.com/client")
+	applyInMemoryOAuthClientUpdate(client, "agent_username", "agent-1")
 
 	require.Equal(t, "dynamic", client.RegistrationSource)
 	require.Equal(t, "https://example.com/client", client.Website)
+	require.Empty(t, client.AgentUsername)
 }
 
 func TestOAuthRepository_RotateOAuthClientSecret_PersistsRotationState(t *testing.T) {

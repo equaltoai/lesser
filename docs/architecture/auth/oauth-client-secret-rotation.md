@@ -1,7 +1,7 @@
 # OAuth Client Secret Rotation
 
-Lesser supports in-place OAuth client secret rotation for owned compatibility/runtime clients without changing the
-`client_id`.
+Lesser supports in-place OAuth client secret rotation for owned confidential OAuth clients, including compatibility and
+runtime-managed clients, without changing the `client_id`.
 
 This is not part of the canonical public actor-scoped MCP contract. Public remote MCP access must not depend on
 owned-client secret rotation or other compatibility/runtime management workflows.
@@ -31,9 +31,7 @@ Secret rotation emits explicit auth-audit events:
 Both events are intentionally secret-free. The stored metadata contract is:
 
 - `client_id`
-- `client_class`
 - `client_auth_method`
-- `agent_username` when the client is agent-bound
 - `forced_invalidation`
 - `grace_period_seconds`
 - `previous_secret_valid_until` when a grace window exists
@@ -49,7 +47,7 @@ Plaintext `client_secret` values must never appear in audit metadata or logs.
 
 ## Management handoff
 
-Connector-management surfaces such as Simulacrum should treat the following as the canonical rotation-status fields:
+Owned-client management surfaces should treat the following as the canonical rotation-status fields:
 
 - `rotated_at`
 - `forced_invalidation`
@@ -57,8 +55,3 @@ Connector-management surfaces such as Simulacrum should treat the following as t
 - `previous_secret_valid_until`
 
 Those fields are available from Lesser's rotation response and persisted client state without exposing secret material.
-
-Downstream UI tracking:
-
-- Simulacrum `#54`: broader connector-management UX
-- Simulacrum `#55`: rotation-specific status surfacing

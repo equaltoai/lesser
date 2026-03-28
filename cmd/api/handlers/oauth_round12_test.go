@@ -354,11 +354,10 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			GetOAuthAppFunc: func(_ context.Context, query *accounts.GetOAuthAppQuery) (*accounts.GetOAuthAppResult, error) {
 				return &accounts.GetOAuthAppResult{
 					App: &storage.OAuthApp{
-						ClientID:      query.ClientID,
-						Name:          "Agent Connector",
-						Website:       "https://connector.example",
-						ClientClass:   auth.ClientClassAgent,
-						AgentUsername: "agent1",
+						ClientID:    query.ClientID,
+						Name:        "Agent Connector",
+						Website:     "https://connector.example",
+						ClientClass: auth.ClientClassAgent,
 					},
 				}, nil
 			},

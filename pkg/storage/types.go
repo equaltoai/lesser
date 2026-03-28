@@ -428,7 +428,6 @@ type OAuthApp struct {
 	ResponseTypes      []string  `json:"response_types,omitempty"`
 	Scopes             []string  `json:"scopes,omitempty"`
 	ClientClass        string    `json:"client_class,omitempty"`
-	AgentUsername      string    `json:"agent_username,omitempty"`
 	SoftwareID         string    `json:"software_id,omitempty"`
 	SoftwareVersion    string    `json:"software_version,omitempty"`
 	RegistrationSource string    `json:"registration_source,omitempty"`

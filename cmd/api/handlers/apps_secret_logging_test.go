@@ -68,23 +68,14 @@ func TestHandleAppRotateSecretLift_DoesNotLogClientSecret(t *testing.T) {
 	state := &round10QueryState{
 		oauthClientsByID: map[string]storagemodels.OAuthClient{
 			"client-1": {
-				ClientID:      "client-1",
-				ClientSecret:  "secret",
-				Name:          "Agent Connector",
-				RedirectURIs:  []string{"https://example.com/callback"},
-				Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
-				ClientClass:   auth.ClientClassAgent,
-				AgentUsername: "agent1",
-				OwnerID:       "owner",
-				Confidential:  true,
-				CreatedAt:     time.Now().Add(-24 * time.Hour),
-			},
-		},
-		usersByUsername: map[string]storagemodels.User{
-			"agent1": {
-				Username:   "agent1",
-				IsAgent:    true,
-				AgentOwner: "@owner",
+				ClientID:     "client-1",
+				ClientSecret: "secret",
+				Name:         "Owned Client",
+				RedirectURIs: []string{"https://example.com/callback"},
+				Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+				OwnerID:      "owner",
+				Confidential: true,
+				CreatedAt:    time.Now().Add(-24 * time.Hour),
 			},
 		},
 	}

@@ -437,23 +437,14 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-1": {
-					ClientID:      "client-1",
-					ClientSecret:  "secret",
-					Name:          "Agent Connector",
-					RedirectURIs:  []string{"https://example.com/callback"},
-					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					OwnerID:       "owner",
-					Confidential:  true,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentOwner: "@owner",
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Owned Client",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					OwnerID:      "owner",
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
 				},
 			},
 		}
@@ -616,13 +607,13 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.Equal(t, "Agent Connector", body.Name)
 	})
 
-	t.Run("agent ownership drift returns forbidden", func(t *testing.T) {
+	t.Run("agent-bound client rotation no longer depends on live agent ownership lookup", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-1": {
 					ClientID:      "client-1",
 					ClientSecret:  "secret",
-					Name:          "Agent Connector",
+					Name:          "Legacy Agent Client",
 					RedirectURIs:  []string{"https://example.com/callback"},
 					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
 					ClientClass:   auth.ClientClassAgent,
@@ -630,13 +621,6 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 					OwnerID:       "owner",
 					Confidential:  true,
 					CreatedAt:     time.Now().Add(-24 * time.Hour),
-				},
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {
-					Username:   "agent1",
-					IsAgent:    true,
-					AgentOwner: "@someone-else",
 				},
 			},
 		}
@@ -649,7 +633,7 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "client-1"
 
-		requireStatus(t, http.StatusForbidden)(handler.HandleAppRotateSecretLift(ctx))
+		requireStatus(t, http.StatusOK)(handler.HandleAppRotateSecretLift(ctx))
 	})
 
 	t.Run("update failure returns internal server error", func(t *testing.T) {
@@ -776,6 +760,8 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.Equal(t, float64(86400), metadata["grace_period_seconds"])
 		require.Equal(t, "client_secret_post", metadata["client_auth_method"])
 		require.NotEmpty(t, metadata["previous_secret_valid_until"])
+		require.NotContains(t, metadata, "client_class")
+		require.NotContains(t, metadata, "agent_username")
 	})
 
 	t.Run("rotation emits failure audit metadata", func(t *testing.T) {
@@ -807,6 +793,11 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.Equal(t, string(auth.AuditOAuthClientSecretRotationFailed), entry.EventType)
 		require.False(t, entry.Success)
 		require.Contains(t, entry.FailureReason, "not authorized")
+
+		var metadata map[string]any
+		require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &metadata))
+		require.NotContains(t, metadata, "client_class")
+		require.NotContains(t, metadata, "agent_username")
 	})
 
 	t.Run("generate oauth client secret helper returns value", func(t *testing.T) {
