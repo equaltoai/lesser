@@ -15,11 +15,10 @@ import (
 
 // OAuth field constants
 const (
-	FieldName          = "name"
-	FieldWebsite       = "website"
-	FieldRedirectURIs  = "redirect_uris"
-	FieldScopes        = "scopes"
-	FieldAgentUsername = "agent_username"
+	FieldName         = "name"
+	FieldWebsite      = "website"
+	FieldRedirectURIs = "redirect_uris"
+	FieldScopes       = "scopes"
 )
 
 const (
@@ -534,11 +533,10 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	// Only allow specific fields to be updated
 	allowedFields := map[string]bool{
-		FieldName:          true,
-		FieldWebsite:       true,
-		FieldRedirectURIs:  true,
-		FieldScopes:        true,
-		FieldAgentUsername: true,
+		FieldName:         true,
+		FieldWebsite:      true,
+		FieldRedirectURIs: true,
+		FieldScopes:       true,
 	}
 
 	// Apply updates to the model
@@ -593,10 +591,6 @@ func applyOAuthClientModelUpdate(client *models.OAuthClient, key string, value a
 	case FieldScopes:
 		if v, ok := value.([]string); ok {
 			client.Scopes = v
-		}
-	case FieldAgentUsername:
-		if v, ok := value.(string); ok {
-			client.AgentUsername = v
 		}
 	}
 }
@@ -749,7 +743,6 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 		ResponseTypes:      client.ResponseTypes,
 		Scopes:             client.Scopes,
 		ClientClass:        client.ClientClass,
-		AgentUsername:      client.AgentUsername,
 		RegistrationSource: client.RegistrationSource,
 		Confidential:       client.Confidential,
 		CreatedAt:          client.CreatedAt,

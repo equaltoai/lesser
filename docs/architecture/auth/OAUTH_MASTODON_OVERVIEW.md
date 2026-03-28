@@ -47,13 +47,15 @@ This document provides a comprehensive overview of how OAuth works specifically 
 
 ### Endpoint Structure
 
-Mastodon servers expose OAuth endpoints at the following paths:
+Mastodon servers commonly expose OAuth endpoints at the following paths:
 
 - **App Registration**: `POST /api/v1/apps`
-- **App Verification**: `GET /api/v1/apps/verify_credentials`
 - **Authorization**: `GET /oauth/authorize`
 - **Token Exchange**: `POST /oauth/token`
 - **Token Verification**: `GET /api/v1/accounts/verify_credentials`
+
+Lesser keeps the registration compatibility endpoint, but it does not currently publish a public
+`GET /api/v1/apps/verify_credentials` route.
 
 ### Mastodon-Specific Rules
 
@@ -131,7 +133,7 @@ Content-Type: application/json
 - **Client Secret Storage**: The `client_secret` must be stored securely and never exposed in client-side code (web apps, mobile apps with extractable code).
 - **Public Clients**: For public clients (mobile apps, single-page apps), PKCE must be used instead of client secrets.
 - **Redirect URI Validation**: Only registered redirect URIs can be used - exact matching is enforced.
-- **Lesser implementation**: Lesser stores OAuth client secrets **hashed at rest** (bcrypt) and does not return secrets after initial registration; `/api/v1/apps/verify_credentials` never returns `client_secret`. Legacy plaintext-at-rest secrets auto-migrate (best-effort) on first successful client authentication.
+- **Lesser implementation**: Lesser stores OAuth client secrets **hashed at rest** (bcrypt), returns them only at registration or explicit owned-client rotation time, and supports owned confidential-client rotation at `POST /api/v1/apps/{id}/rotate_secret`. Legacy plaintext-at-rest secrets auto-migrate (best-effort) on first successful client authentication.
 
 ---
 

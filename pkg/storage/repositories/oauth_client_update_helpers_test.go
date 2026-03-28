@@ -18,14 +18,14 @@ func TestApplyOAuthClientModelUpdate(t *testing.T) {
 	applyOAuthClientModelUpdate(client, FieldWebsite, "https://example.com")
 	applyOAuthClientModelUpdate(client, FieldRedirectURIs, []string{"https://example.com/callback"})
 	applyOAuthClientModelUpdate(client, FieldScopes, []string{"read", "write"})
-	applyOAuthClientModelUpdate(client, FieldAgentUsername, "agent-1")
+	applyOAuthClientModelUpdate(client, "agent_username", "agent-1")
 	applyOAuthClientModelUpdate(client, "unsupported", "ignored")
 
 	require.Equal(t, "Example", client.Name)
 	require.Equal(t, "https://example.com", client.Website)
 	require.Equal(t, []string{"https://example.com/callback"}, client.RedirectURIs)
 	require.Equal(t, []string{"read", "write"}, client.Scopes)
-	require.Equal(t, "agent-1", client.AgentUsername)
+	require.Empty(t, client.AgentUsername)
 }
 
 func TestApplyOAuthClientStorageUpdate(t *testing.T) {
@@ -40,7 +40,7 @@ func TestApplyOAuthClientStorageUpdate(t *testing.T) {
 	applyOAuthClientStorageUpdate(client, "grant_types", []string{"authorization_code"})
 	applyOAuthClientStorageUpdate(client, FieldScopes, []string{"read"})
 	applyOAuthClientStorageUpdate(client, FieldWebsite, "https://example.com")
-	applyOAuthClientStorageUpdate(client, FieldAgentUsername, "agent-1")
+	applyOAuthClientStorageUpdate(client, "agent_username", "agent-1")
 	applyOAuthClientStorageUpdate(client, "confidential", true)
 	applyOAuthClientStorageUpdate(client, "unsupported", "ignored")
 
@@ -50,6 +50,6 @@ func TestApplyOAuthClientStorageUpdate(t *testing.T) {
 	require.Equal(t, []string{"authorization_code"}, client.GrantTypes)
 	require.Equal(t, []string{"read"}, client.Scopes)
 	require.Equal(t, "https://example.com", client.Website)
-	require.Equal(t, "agent-1", client.AgentUsername)
+	require.Empty(t, client.AgentUsername)
 	require.True(t, client.Confidential)
 }

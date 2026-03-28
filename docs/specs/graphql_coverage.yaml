@@ -1,7 +1,7 @@
 version: 2
 exemptions:
     - id: oauth_oidc
-      reason: OAuth/OIDC flows are REST-only (authorize/token/discovery/redirects/client registration).
+      reason: OAuth/OIDC and owned-client OAuth management flows are REST-only (authorize/token/discovery/redirects/client registration/secret rotation).
       match:
         exact:
             - /api/v1/apps

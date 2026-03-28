@@ -347,10 +347,6 @@ func applyOAuthClientStorageUpdate(client *storage.OAuthClient, key string, valu
 		if v, ok := value.(string); ok {
 			client.Website = v
 		}
-	case FieldAgentUsername:
-		if v, ok := value.(string); ok {
-			client.AgentUsername = v
-		}
 	case "confidential":
 		if v, ok := value.(bool); ok {
 			client.Confidential = v

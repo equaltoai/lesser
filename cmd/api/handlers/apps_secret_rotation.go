@@ -52,12 +52,10 @@ func (h *Handler) HandleAppRotateSecretLift(ctx *apptheory.Context) (*apptheory.
 		h.logOAuthClientSecretRotation(ctx, claims.Username, oauthClientSecretRotationAuditMetadata(clientID, client, req, gracePeriod, time.Time{}), false, errors.New("not authorized to rotate this client"))
 		return h.respondForbidden(ctx, "not authorized to rotate this client")
 	}
-
-	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
-		if _, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), client, claims.Username); agentErr != nil {
-			h.logOAuthClientSecretRotation(ctx, claims.Username, oauthClientSecretRotationAuditMetadata(clientID, client, req, gracePeriod, time.Time{}), false, agentErr)
-			return h.respondForbidden(ctx, "not authorized to rotate this client")
-		}
+	if !client.Confidential {
+		err = errors.New("client secret rotation is only supported for confidential clients")
+		h.logOAuthClientSecretRotation(ctx, claims.Username, oauthClientSecretRotationAuditMetadata(clientID, client, req, gracePeriod, time.Time{}), false, err)
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
 	newSecret, err := generateOAuthClientSecret()
@@ -104,7 +102,6 @@ func (h *Handler) HandleAppRotateSecretLift(ctx *apptheory.Context) (*apptheory.
 	h.logger.Info("rotated OAuth client secret",
 		zap.String("client_id", clientID),
 		zap.String("owner_id", claims.Username),
-		zap.String("client_class", client.ClientClass),
 		zap.Bool("forced_invalidation", req.ForceInvalidate),
 		zap.Duration("grace_period", gracePeriod))
 
@@ -221,11 +218,7 @@ func oauthClientSecretRotationAuditMetadata(clientID string, client *storage.OAu
 		"grace_period_seconds": int(gracePeriod.Seconds()),
 	}
 	if client != nil {
-		metadata["client_class"] = strings.TrimSpace(client.ClientClass)
 		metadata["client_auth_method"] = oauthClientTokenEndpointAuthMethod(client)
-		if agentUsername := strings.TrimSpace(client.AgentUsername); agentUsername != "" {
-			metadata["agent_username"] = agentUsername
-		}
 	}
 	if !previousSecretValidUntil.IsZero() {
 		metadata["previous_secret_valid_until"] = previousSecretValidUntil.Format(time.RFC3339)

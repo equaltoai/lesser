@@ -66,15 +66,16 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 
 ## Secret recovery
 
-This is a compatibility/runtime concern for owned legacy clients. It is not part of the normal public remote MCP
-agent-page contract and should not be presented as the primary access path for new public clients.
+This is an owned-client management concern for confidential compatibility/runtime clients. It is not part of the normal
+public remote MCP agent-page contract and should not be presented as the primary access path for new public clients.
 
-- Operators can rotate an owned legacy compatibility client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
+- Operators can rotate an owned confidential client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
+- Owned public clients do not have a rotatable secret-management path; if they need a different client secret posture, they must register a new client.
 - Existing bearer access tokens remain valid until their normal expiry.
 - Refresh-token and `client_credentials` exchanges continue to accept the previous secret only until the grace window expires.
 - Forced invalidation skips the grace window and cuts off new client-authenticated exchanges immediately.
 - Secret rotation does not retroactively revoke already-issued bearer tokens; token revocation remains a separate operator action.
-- The replacement secret is returned once in the rotation response and must be redistributed to the connector.
+- The replacement secret is returned once in the rotation response and must be redistributed to the managed client deployment.
 
 ## RFC 7591 dynamic registration
 
