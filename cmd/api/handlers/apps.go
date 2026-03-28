@@ -461,7 +461,14 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	h.logger.Info("returning app registration response",
 		zap.String("client_id", resp.ClientID))
 
-	return okJSON(resp)
+	response, err := okJSON(resp)
+	if err != nil {
+		return nil, err
+	}
+	if usesDeprecatedMCPConnectorSemantics(clientClass, agentUsername) {
+		addDeprecatedMCPConnectorHeaders(response)
+	}
+	return response, nil
 }
 
 // parseScopes parses the scopes string into a slice

@@ -18,6 +18,14 @@ Choose `device_code` when:
 
 Device flow is the middle ground between browser-based `authorization_code` and fully autonomous `client_credentials`.
 
+## Boundary with the public MCP contract
+
+For public remote MCP access, the canonical contract is still the actor-scoped, resource-bound OAuth flow described in
+[docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md).
+
+Device code can remain part of that public client toolbox when enabled, but the older agent-bound runtime session
+semantics described below are compatibility behavior rather than the canonical public MCP contract.
+
 ## Lesser device-flow sequence
 
 1. The agent calls `POST /oauth/device/code` with its `client_id` and requested scopes.
@@ -40,6 +48,7 @@ Device flow inherits the OAuth client's class rather than forcing one uniform to
   - CLI automation safety rails apply
   - refresh records keep CLI-style session metadata
 - `client_class=agent`
+  - legacy compatibility path for public MCP; not the canonical actor-scoped contract
   - access tokens are minted for the bound agent identity, not the approving operator principal
   - tokens carry `client_class`, `is_agent`, `agent_type`, and `delegated_by`
   - refresh records use the same agent runtime family semantics as other delegated agent OAuth flows
@@ -50,7 +59,7 @@ For agent clients, the approving operator must own the bound agent. Lesser rejec
 
 - Prefer `authorization_code` when the MCP client can open a browser locally and complete a normal redirect.
 - Prefer `device_code` when the client is headless but you still want a human approval step.
-- Prefer `client_credentials` only for connectors that are intentionally pre-approved to act without per-session operator consent.
+- Prefer `client_credentials` only for legacy compatibility clients or dedicated internal runtimes that are intentionally pre-approved to act without per-session operator consent.
 
 ## Current approval-page contract
 

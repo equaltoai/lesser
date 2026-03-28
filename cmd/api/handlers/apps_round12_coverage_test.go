@@ -238,7 +238,9 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 			GrantTypes:              auth.GrantTypeClientCredentials + " " + auth.GrantTypeAuthorizationCode,
 			TokenEndpointAuthMethod: "client_secret_post",
 		}
-		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		require.Equal(t, "true", firstStringValue(resp.Headers, "deprecation"))
+		require.Contains(t, firstStringValue(resp.Headers, "warning"), "deprecated for public MCP access")
 
 		require.Len(t, state.oauthClientsByID, 1)
 		for _, client := range state.oauthClientsByID {

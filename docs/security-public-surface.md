@@ -14,6 +14,7 @@ Policy:
 Related:
 - Gaps inventory: `docs/security-gaps.md`
 - Remediation plan: `docs/security-remediation-roadmap.md`
+- MCP auth contract: `docs/specs/mcp-actor-url-auth-contract.md`
 
 Legend:
 - **Public:** no auth required (but may still enforce content visibility)
@@ -29,6 +30,7 @@ Legend:
 - **Public** `GET /.well-known/nodeinfo` (service: `cmd/api`)
 - **Public** `GET /.well-known/lesser-soul-agent` (service: `cmd/api`)
 - **Public** `GET /.well-known/mcp.json` (service: `lesser-body` MCP Lambda)
+- **Public** `GET /.well-known/oauth-protected-resource/mcp/{actor}` (service: `lesser-body` MCP Lambda)
 - **Public** `GET /nodeinfo/2.0` (service: `cmd/api`)
 - **Public** `GET /users/:username` (service: `cmd/actor`)
   - Content negotiation:
@@ -42,6 +44,13 @@ Legend:
 Notes:
 - “Authorized fetch” (private object delivery to authenticated remote servers) is handled by ActivityPub-level
   authentication and is tracked separately from this Mastodon/GraphQL policy.
+
+---
+
+## MCP (`lesser-body`)
+
+- **Auth** `GET/POST/DELETE /mcp/{actor}` (canonical remote MCP endpoint; actor-scoped form)
+- **Auth** `GET/POST/DELETE /mcp` (legacy compatibility path; not the canonical actor-scoped form for new remote clients)
 
 ---
 

@@ -1,6 +1,10 @@
 # OAuth Client Secret Rotation
 
-Lesser supports in-place OAuth client secret rotation for owned connectors without changing the `client_id`.
+Lesser supports in-place OAuth client secret rotation for owned compatibility/runtime clients without changing the
+`client_id`.
+
+This is not part of the canonical public actor-scoped MCP contract. Public remote MCP access must not depend on
+connector-style secret rotation or other owned-runtime management workflows.
 
 ## Continuity contract
 

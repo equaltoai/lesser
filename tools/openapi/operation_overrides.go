@@ -71,6 +71,8 @@ func applyOAuthOverrides(op *operation, route routeDef) {
 		applyOAuthDeviceConsentOverrides(op)
 	case route.Method == methodPOST && route.Path == "/oauth/consent":
 		applyOAuthConsentOverrides(op)
+	case route.Method == methodPOST && route.Path == "/oauth/register":
+		applyOAuthDynamicRegistrationOverrides(op)
 	case route.Method == methodGET && route.Path == "/oauth/authorize":
 		applyOAuthAuthorizeOverrides(op)
 	case route.Method == methodGET && route.Path == "/oauth/login":
@@ -161,6 +163,23 @@ func applyOAuthConsentOverrides(op *operation) {
 	}
 
 	ensureJSONResponseSchema(op, "200", "OAuthConsentResponse")
+}
+
+func applyOAuthDynamicRegistrationOverrides(op *operation) {
+	if op == nil {
+		return
+	}
+
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"application/json": {
+				Schema: schemaRef{Ref: "#/components/schemas/OAuthDynamicClientRegistrationRequest"},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "201", "OAuthDynamicClientRegistrationResponse")
 }
 
 func applyOAuthAuthorizeOverrides(op *operation) {

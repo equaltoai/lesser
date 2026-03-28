@@ -83,6 +83,8 @@ The corresponding lesser-body implementation work is tracked separately, but thi
 
 ## MCP discovery contract for lesser-body
 
+The actor-binding rule for those discovery surfaces lives in [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md).
+
 `/.well-known/mcp.json` must advertise only scopes that Lesser's OAuth server will actually honor for public clients:
 
 - `read`

@@ -16,7 +16,7 @@ type OAuthDynamicClientRegistrationRequest struct {
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 
-	// Lesser extensions used to keep dynamic registration aligned with existing connector policy.
+	// Deprecated compatibility fields from the connector-era MCP model.
 	ClientClass   string `json:"client_class,omitempty"`
 	AgentUsername string `json:"agent_username,omitempty"`
 }
@@ -41,7 +41,7 @@ type OAuthDynamicClientRegistrationResponse struct {
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 
-	// Lesser extensions that make dynamic clients manageable through the existing connector model.
+	// Deprecated compatibility fields from the connector-era MCP model.
 	ClientClass        string `json:"client_class,omitempty"`
 	AgentUsername      string `json:"agent_username,omitempty"`
 	RegistrationSource string `json:"registration_source,omitempty"`
