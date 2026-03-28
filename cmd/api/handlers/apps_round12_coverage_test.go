@@ -664,7 +664,7 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleAppRotateSecretLift(ctx))
 	})
 
-	t.Run("public client rotation reports none auth method", func(t *testing.T) {
+	t.Run("public client rotation is rejected", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-1": {
@@ -688,10 +688,8 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "client-1"
 
-		resp := requireStatus(t, http.StatusOK)(handler.HandleAppRotateSecretLift(ctx))
-		var body apimodels.AppSecretRotationResponse
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "none", body.TokenEndpointAuthMethod)
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleAppRotateSecretLift(ctx))
+		require.Contains(t, string(resp.Body), "only supported for confidential clients")
 	})
 
 	t.Run("invalid rotation request returns bad request", func(t *testing.T) {

@@ -52,6 +52,11 @@ func (h *Handler) HandleAppRotateSecretLift(ctx *apptheory.Context) (*apptheory.
 		h.logOAuthClientSecretRotation(ctx, claims.Username, oauthClientSecretRotationAuditMetadata(clientID, client, req, gracePeriod, time.Time{}), false, errors.New("not authorized to rotate this client"))
 		return h.respondForbidden(ctx, "not authorized to rotate this client")
 	}
+	if !client.Confidential {
+		err = errors.New("client secret rotation is only supported for confidential clients")
+		h.logOAuthClientSecretRotation(ctx, claims.Username, oauthClientSecretRotationAuditMetadata(clientID, client, req, gracePeriod, time.Time{}), false, err)
+		return h.respondUnprocessableEntity(ctx, err.Error())
+	}
 
 	newSecret, err := generateOAuthClientSecret()
 	if err != nil {

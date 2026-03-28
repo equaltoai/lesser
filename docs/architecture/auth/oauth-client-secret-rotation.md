@@ -6,6 +6,9 @@ runtime-managed clients, without changing the `client_id`.
 This is not part of the canonical public actor-scoped MCP contract. Public remote MCP access must not depend on
 owned-client secret rotation or other compatibility/runtime management workflows.
 
+Owned public clients are outside this surface. Lesser rejects rotation attempts for non-confidential clients instead of
+minting a replacement secret for them.
+
 ## Continuity contract
 
 Routine rotation is intentionally no-downtime:

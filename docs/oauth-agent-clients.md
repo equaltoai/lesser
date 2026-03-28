@@ -70,6 +70,7 @@ This is an owned-client management concern for confidential compatibility/runtim
 public remote MCP agent-page contract and should not be presented as the primary access path for new public clients.
 
 - Operators can rotate an owned confidential client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
+- Owned public clients do not have a rotatable secret-management path; if they need a different client secret posture, they must register a new client.
 - Existing bearer access tokens remain valid until their normal expiry.
 - Refresh-token and `client_credentials` exchanges continue to accept the previous secret only until the grace window expires.
 - Forced invalidation skips the grace window and cuts off new client-authenticated exchanges immediately.
