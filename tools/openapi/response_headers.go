@@ -53,6 +53,17 @@ func ensureStandardResponseHeaders(op *operation, route routeDef) {
 		})
 	}
 
+	if route.Path == "/api/v1/apps" || route.Path == "/oauth/register" {
+		ensureHeader(resp.Headers, "Deprecation", responseHeader{
+			Description: "Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.",
+			Schema:      schemaRef{Type: "string"},
+		})
+		ensureHeader(resp.Headers, "Warning", responseHeader{
+			Description: "HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.",
+			Schema:      schemaRef{Type: "string"},
+		})
+	}
+
 	op.Responses[respKey] = resp
 }
 

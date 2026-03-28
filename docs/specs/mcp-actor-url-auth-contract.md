@@ -75,7 +75,7 @@ That means:
 - any published public-client profile is derived from the RFC 7591 contract and must not replace it as the source of
   truth
 
-`POST /api/v1/apps` may continue to exist as an operator-controlled compatibility path, but it is not the canonical
+`POST /api/v1/apps` may continue to exist as a non-canonical public compatibility path, but it is not the canonical
 remote MCP contract for new public clients.
 
 ## Token model for public MCP access
