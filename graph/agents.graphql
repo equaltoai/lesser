@@ -20,6 +20,15 @@ type AgentCapabilities {
   restrictedDomains: [String!]
 }
 
+type AgentMCPAccess {
+  mcpURL: String!
+  protectedResourceURL: String!
+  authorizationServerURL: String!
+  registrationURL: String!
+  scopes: [String!]!
+  guidance: [String!]!
+}
+
 type Agent {
   id: ID!
   username: String!
@@ -32,6 +41,7 @@ type Agent {
   agentCapabilities: AgentCapabilities!
   agentOwner: String
   delegatedScopes: [String!]!
+  mcpAccess: AgentMCPAccess!
   verified: Boolean!
   verifiedAt: Time
   ownerActor: Actor

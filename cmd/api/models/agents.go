@@ -16,6 +16,17 @@ type AgentCapabilities struct {
 	RequiresApproval  bool     `json:"requires_approval"`
 }
 
+// AgentMCPAccess describes the client-neutral actor-scoped MCP access surface
+// for an agent page.
+type AgentMCPAccess struct {
+	MCPURL                 string   `json:"mcp_url"`
+	ProtectedResourceURL   string   `json:"protected_resource_url"`
+	AuthorizationServerURL string   `json:"authorization_server_url"`
+	RegistrationURL        string   `json:"registration_url"`
+	Scopes                 []string `json:"scopes"`
+	Guidance               []string `json:"guidance"`
+}
+
 // Agent is the REST representation of a local agent account.
 type Agent struct {
 	Username          string            `json:"username"`
@@ -29,6 +40,7 @@ type Agent struct {
 	AgentOwner        string            `json:"agent_owner,omitempty"`
 	DelegatedScopes   []string          `json:"delegated_scopes,omitempty"`
 	AgentCapabilities AgentCapabilities `json:"agent_capabilities"`
+	MCPAccess         AgentMCPAccess    `json:"mcp_access"`
 }
 
 // AgentDelegationRequest is the request payload for POST /api/v1/agents/delegate.

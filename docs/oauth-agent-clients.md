@@ -9,6 +9,30 @@ Dedicated internal runtime clients such as `lesser-agent-delegation` and `lesser
 flows, and similar owned-client operations are compatibility/runtime surfaces, not the source of truth for public MCP
 access.
 
+## Simple MCP access panel
+
+The intended agent-page experience for public remote MCP access is a simple, actor-scoped access panel.
+
+That panel should surface:
+
+- the actor-scoped MCP URL
+- the actor-scoped protected-resource metadata URL
+- the shared OAuth authorization-server metadata URL
+- the canonical RFC 7591 registration URL
+- the supported public scope catalog
+- short client-neutral guidance for how to use those URLs together
+
+That panel should not depend on:
+
+- connector registration forms
+- pasted or copied client-secret recovery flows
+- browser-local connector inventories or cached connector metadata
+- connector session grouping or connector-specific transport packaging
+
+The panel contract is intentionally client-neutral. Lesser publishes the actor-scoped MCP access bundle; client-specific
+UI, local persistence, and onboarding affordances belong to the consuming product rather than to Lesser's canonical
+public MCP surface.
+
 ## Supported registration flow
 
 - Prefer `POST /oauth/register` as the canonical public registration path.
@@ -41,6 +65,9 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 - Device-code and client-credentials tokens for agent clients are minted for the bound agent identity and carry `client_class`, `is_agent`, `agent_type`, and `delegated_by` claims.
 
 ## Secret recovery
+
+This is a compatibility/runtime concern for owned legacy clients. It is not part of the normal public remote MCP
+agent-page contract and should not be presented as the primary access path for new public clients.
 
 - Operators can rotate an owned legacy compatibility client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
 - Existing bearer access tokens remain valid until their normal expiry.

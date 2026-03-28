@@ -545,6 +545,7 @@ type ComplexityRoot struct {
 		DelegatedScopes   func(childComplexity int) int
 		DisplayName       func(childComplexity int) int
 		ID                func(childComplexity int) int
+		McpAccess         func(childComplexity int) int
 		Owner             func(childComplexity int) int
 		OwnerActor        func(childComplexity int) int
 		Type              func(childComplexity int) int
@@ -552,6 +553,15 @@ type ComplexityRoot struct {
 		Verified          func(childComplexity int) int
 		VerifiedAt        func(childComplexity int) int
 		Version           func(childComplexity int) int
+	}
+
+	AgentMCPAccess struct {
+		AuthorizationServerURL func(childComplexity int) int
+		Guidance               func(childComplexity int) int
+		McpURL                 func(childComplexity int) int
+		ProtectedResourceURL   func(childComplexity int) int
+		RegistrationURL        func(childComplexity int) int
+		Scopes                 func(childComplexity int) int
 	}
 
 	AgentAccessLease struct {
@@ -5623,6 +5633,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Agent.ID(childComplexity), true
 
+	case "Agent.mcpAccess":
+		if e.complexity.Agent.McpAccess == nil {
+			break
+		}
+
+		return e.complexity.Agent.McpAccess(childComplexity), true
+
 	case "Agent.owner":
 		if e.complexity.Agent.Owner == nil {
 			break
@@ -5671,6 +5688,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.Version(childComplexity), true
+
+	case "AgentMCPAccess.authorizationServerURL":
+		if e.complexity.AgentMCPAccess.AuthorizationServerURL == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.AuthorizationServerURL(childComplexity), true
+
+	case "AgentMCPAccess.guidance":
+		if e.complexity.AgentMCPAccess.Guidance == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.Guidance(childComplexity), true
+
+	case "AgentMCPAccess.mcpURL":
+		if e.complexity.AgentMCPAccess.McpURL == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.McpURL(childComplexity), true
+
+	case "AgentMCPAccess.protectedResourceURL":
+		if e.complexity.AgentMCPAccess.ProtectedResourceURL == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.ProtectedResourceURL(childComplexity), true
+
+	case "AgentMCPAccess.registrationURL":
+		if e.complexity.AgentMCPAccess.RegistrationURL == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.RegistrationURL(childComplexity), true
+
+	case "AgentMCPAccess.scopes":
+		if e.complexity.AgentMCPAccess.Scopes == nil {
+			break
+		}
+
+		return e.complexity.AgentMCPAccess.Scopes(childComplexity), true
 
 	case "AgentAccessLease.absoluteExpiresAt":
 		if e.complexity.AgentAccessLease.AbsoluteExpiresAt == nil {
@@ -27838,6 +27897,8 @@ func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, fiel
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "mcpAccess":
+				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
@@ -38488,6 +38549,64 @@ func (ec *executionContext) fieldContext_Agent_delegatedScopes(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_mcpAccess(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_mcpAccess(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.McpAccess, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentMCPAccess)
+	fc.Result = res
+	return ec.marshalNAgentMCPAccess(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_mcpAccess(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mcpURL":
+				return ec.fieldContext_AgentMCPAccess_mcpURL(ctx, field)
+			case "protectedResourceURL":
+				return ec.fieldContext_AgentMCPAccess_protectedResourceURL(ctx, field)
+			case "authorizationServerURL":
+				return ec.fieldContext_AgentMCPAccess_authorizationServerURL(ctx, field)
+			case "registrationURL":
+				return ec.fieldContext_AgentMCPAccess_registrationURL(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentMCPAccess_scopes(ctx, field)
+			case "guidance":
+				return ec.fieldContext_AgentMCPAccess_guidance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentMCPAccess", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_verified(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_verified(ctx, field)
 	if err != nil {
@@ -38980,6 +39099,270 @@ func (ec *executionContext) fieldContext_Agent_activityCount(_ context.Context, 
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_mcpURL(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_mcpURL(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.McpURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_mcpURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_protectedResourceURL(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_protectedResourceURL(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.ProtectedResourceURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_protectedResourceURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_authorizationServerURL(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_authorizationServerURL(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.AuthorizationServerURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_authorizationServerURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_registrationURL(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_registrationURL(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.RegistrationURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_registrationURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_scopes(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_scopes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.Scopes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_scopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentMCPAccess_guidance(ctx context.Context, field graphql.CollectedField, obj *model.AgentMCPAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentMCPAccess_guidance(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx
+		return obj.Guidance, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentMCPAccess_guidance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentMCPAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -140472,6 +140855,11 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "mcpAccess":
+			out.Values[i] = ec._Agent_mcpAccess(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "verified":
 			out.Values[i] = ec._Agent_verified(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -140963,6 +141351,70 @@ func (ec *executionContext) _AgentActivityEvent(ctx context.Context, sel ast.Sel
 			out.Values[i] = ec._AgentActivityEvent_metadataJson(ctx, field, obj)
 		case "timestamp":
 			out.Values[i] = ec._AgentActivityEvent_timestamp(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentMCPAccessImplementors = []string{"AgentMCPAccess"}
+
+func (ec *executionContext) _AgentMCPAccess(ctx context.Context, sel ast.SelectionSet, obj *model.AgentMCPAccess) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentMCPAccessImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentMCPAccess")
+		case "mcpURL":
+			out.Values[i] = ec._AgentMCPAccess_mcpURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "protectedResourceURL":
+			out.Values[i] = ec._AgentMCPAccess_protectedResourceURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "authorizationServerURL":
+			out.Values[i] = ec._AgentMCPAccess_authorizationServerURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationURL":
+			out.Values[i] = ec._AgentMCPAccess_registrationURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scopes":
+			out.Values[i] = ec._AgentMCPAccess_scopes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "guidance":
+			out.Values[i] = ec._AgentMCPAccess_guidance(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -162841,6 +163293,16 @@ func (ec *executionContext) marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return ec._Agent(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAgentMCPAccess(ctx context.Context, sel ast.SelectionSet, v *model.AgentMCPAccess) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentMCPAccess(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNAgentAccessLease2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx context.Context, sel ast.SelectionSet, v model.AgentAccessLease) graphql.Marshaler {

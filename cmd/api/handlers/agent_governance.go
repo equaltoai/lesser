@@ -178,7 +178,7 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 		"reason":      strings.TrimSpace(req.Reason),
 	})
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 // HandleAdminUnverifyAgentLift handles POST /api/v1/admin/agents/:username/unverify.
@@ -238,7 +238,7 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 		"reason":        strings.TrimSpace(req.Reason),
 	})
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 // HandleAdminUnlockAgentLift handles POST /api/v1/admin/agents/:username/unlock.
