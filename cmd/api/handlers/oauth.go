@@ -1161,9 +1161,8 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 	}
 
 	oauthRefreshToken := buildAuthorizationCodeRefreshToken(now, refreshTokenOut, clientID, client, &storage.AuthorizationCode{
-		Username:      tokenUsername,
-		AgentUsername: tokenUsername,
-		Scopes:        session.Scopes,
+		Username: tokenUsername,
+		Scopes:   session.Scopes,
 	}, clientClass, sessionID, accessTTL)
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
 		h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
@@ -1399,7 +1398,7 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 		SessionID:         sessionID,
 		LastAuthSuccessAt: now,
 	}
-	if clientClass != auth.ClientClassAgent {
+	if !auth.IsAgentRuntimeClientID(clientID) {
 		return oauthRefreshToken
 	}
 
@@ -1413,7 +1412,11 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 	oauthRefreshToken.FamilyID = common.GenerateSessionIDULID()
 	oauthRefreshToken.Generation = 1
 	oauthRefreshToken.Current = true
-	oauthRefreshToken.DeviceLabel = auth.CoalesceAgentRuntimeLabel(client.Name, authCode.AgentUsername)
+	labelPrimary := ""
+	if client != nil {
+		labelPrimary = client.Name
+	}
+	oauthRefreshToken.DeviceLabel = auth.CoalesceAgentRuntimeLabel(labelPrimary, "")
 	oauthRefreshToken.LastUsedAt = now
 	oauthRefreshToken.IdleExpiresAt = idleExpiry
 	oauthRefreshToken.AbsoluteExpiresAt = absoluteExpiry
@@ -1422,24 +1425,22 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 	return oauthRefreshToken
 }
 
-func isAgentOAuthClient(client *storage.OAuthClient) bool {
-	return client != nil && strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent)
-}
-
 func (h *Handler) validateRefreshGrantClient(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (*storage.OAuthClient, error) {
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil || client == nil {
-		h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
+		if auth.IsAgentRuntimeClientID(clientID) {
+			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
+		}
 		return nil, auth.ErrInvalidClient
 	}
 	if !oauthClientSupportsGrantType(client, oauthGrantTypeRefreshToken) {
-		if isAgentOAuthClient(client) {
+		if auth.IsAgentRuntimeClientID(clientID) {
 			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "unauthorized_client", "refresh_token is not allowed for this client")
 		}
 		return nil, auth.ErrUnauthorizedClient
 	}
 	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
-		if isAgentOAuthClient(client) {
+		if auth.IsAgentRuntimeClientID(clientID) {
 			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
 		}
 		return nil, err
@@ -1467,12 +1468,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
-	client, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
+	_, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
 	if err != nil {
 		return "", "", nil, err
-	}
-	if isAgentOAuthClient(client) {
-		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
 	// Get refresh token from storage

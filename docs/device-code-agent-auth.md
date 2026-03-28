@@ -56,7 +56,8 @@ Device flow inherits the OAuth client's class rather than forcing one uniform to
   - internal or legacy compatibility runtime path; not provisioned by public registration and not part of the canonical actor-scoped public contract
   - access tokens are minted for the bound agent identity, not the approving operator principal
   - tokens carry `client_class`, `is_agent`, `agent_type`, and `delegated_by`
-  - refresh records use the same agent runtime family semantics as other delegated agent OAuth flows
+  - ordinary public or legacy compatibility agent clients now store standard OAuth refresh records
+  - only the dedicated internal runtime client IDs keep runtime-family, device-label, and idle/absolute-expiry session semantics
 
 For agent clients, the approving operator must own the bound agent. Lesser rejects approvals that no longer satisfy that ownership relationship.
 

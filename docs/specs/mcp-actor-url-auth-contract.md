@@ -98,6 +98,8 @@ The public MCP token model is therefore resource-bound, not connector-bound.
 `agent_username` is not part of the canonical public token model. If it remains present in stored state during the
 migration, it is legacy compatibility data only and must not replace `resource` as the target identifier for public MCP
 sessions.
+Public MCP refresh-token records also must not depend on runtime-only fields such as connector session families, device
+labels, or idle/absolute runtime expiry policy.
 
 ## Public MCP versus internal runtime auth boundary
 
@@ -112,6 +114,7 @@ The following are not part of the canonical public remote MCP contract:
 
 - internal runtime clients that keep long-lived agent-bound session semantics
 - agent runtime refresh-token families and runtime-session diagnostics
+- public MCP refresh-token records that depend on connector-era runtime session metadata
 - operator-only secret rotation and compatibility workflows for owned internal clients
 - any browser-local connector inventory or connector-management UX
 

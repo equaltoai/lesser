@@ -75,18 +75,17 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{GrantTypes: []string{auth.GrantTypeRefreshToken}}, auth.GrantTypeAuthorizationCode))
 	})
 
-	t.Run("agent refresh validation rejects missing confidential secret and records diagnostics", func(t *testing.T) {
+	t.Run("internal runtime refresh validation rejects missing confidential secret and records diagnostics", func(t *testing.T) {
 		now := time.Now().UTC()
-		token := buildRuntimeRefreshToken(t, "rt-agent-1", "agent1", "client-agent-1", "sid-agent-1", "family-agent-1", "connector-app", 1, true, false, now)
+		token := buildRuntimeRefreshToken(t, "rt-agent-1", "agent1", delegatedAgentClientID, "sid-agent-1", "family-agent-1", "connector-app", 1, true, false, now)
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent-1": {
-					ClientID:      "client-agent-1",
-					ClientSecret:  "secret",
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					Confidential:  true,
-					GrantTypes:    []string{auth.GrantTypeRefreshToken},
+				delegatedAgentClientID: {
+					ClientID:     delegatedAgentClientID,
+					ClientSecret: "secret",
+					ClientClass:  auth.ClientClassAgent,
+					Confidential: true,
+					GrantTypes:   []string{auth.GrantTypeRefreshToken},
 				},
 			},
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
@@ -97,7 +96,7 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		h.repos.Account().SetEncryptor(noopEncryptor{})
 		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
 
-		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-1", "client-agent-1", "")
+		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-1", delegatedAgentClientID, "")
 		require.ErrorIs(t, err, auth.ErrInvalidClient)
 
 		updated := state.refreshTokensByToken["rt-agent-1"]
@@ -105,17 +104,16 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		require.Equal(t, "Invalid client credentials", updated.LastAuthFailureMsg)
 	})
 
-	t.Run("agent refresh validation rejects unsupported grant and records diagnostics", func(t *testing.T) {
+	t.Run("internal runtime refresh validation rejects unsupported grant and records diagnostics", func(t *testing.T) {
 		now := time.Now().UTC()
-		token := buildRuntimeRefreshToken(t, "rt-agent-2", "agent1", "client-agent-2", "sid-agent-2", "family-agent-2", "connector-app", 1, true, false, now)
+		token := buildRuntimeRefreshToken(t, "rt-agent-2", "agent1", delegatedAgentClientID, "sid-agent-2", "family-agent-2", "connector-app", 1, true, false, now)
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
-				"client-agent-2": {
-					ClientID:      "client-agent-2",
-					ClientSecret:  "secret",
-					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
-					GrantTypes:    []string{auth.GrantTypeAuthorizationCode},
+				delegatedAgentClientID: {
+					ClientID:     delegatedAgentClientID,
+					ClientSecret: "secret",
+					ClientClass:  auth.ClientClassAgent,
+					GrantTypes:   []string{auth.GrantTypeAuthorizationCode},
 				},
 			},
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
@@ -126,18 +124,12 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		h.repos.Account().SetEncryptor(noopEncryptor{})
 		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
 
-		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-2", "client-agent-2", "secret")
+		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-2", delegatedAgentClientID, "secret")
 		require.ErrorIs(t, err, auth.ErrUnauthorizedClient)
 
 		updated := state.refreshTokensByToken["rt-agent-2"]
 		require.Equal(t, "unauthorized_client", updated.LastAuthFailureCode)
 		require.Equal(t, "refresh_token is not allowed for this client", updated.LastAuthFailureMsg)
-	})
-
-	t.Run("agent oauth client helper recognizes agent class", func(t *testing.T) {
-		require.True(t, isAgentOAuthClient(&storagepkg.OAuthClient{ClientClass: " agent "}))
-		require.False(t, isAgentOAuthClient(&storagepkg.OAuthClient{ClientClass: auth.ClientClassWeb}))
-		require.False(t, isAgentOAuthClient(nil))
 	})
 
 	t.Run("refresh grant secret validation helper handles public and valid confidential clients", func(t *testing.T) {

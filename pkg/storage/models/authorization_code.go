@@ -19,7 +19,6 @@ type AuthorizationCode struct {
 	Resource          string    `theorydb:"attr:resource,omitempty" json:"Resource,omitempty"`
 	Username          string    `theorydb:"attr:username" json:"Username"`
 	PrincipalUsername string    `theorydb:"attr:principalUsername,omitempty" json:"PrincipalUsername,omitempty"`
-	AgentUsername     string    `theorydb:"attr:agentUsername,omitempty" json:"AgentUsername,omitempty"`
 	CodeChallenge     string    `theorydb:"attr:codeChallenge" json:"CodeChallenge"`
 	ExpiresAt         time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
 	Scopes            []string  `theorydb:"attr:scopes" json:"Scopes"`
