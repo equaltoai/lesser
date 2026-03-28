@@ -16,7 +16,7 @@ contract.
 - Prefer `POST /oauth/register` as the canonical public registration path.
 - Use standard RFC 7591 metadata as the source of truth for public clients.
 - Treat any published client profile, starter snippet, or copied example as derived guidance rather than a separate contract.
-- `POST /api/v1/apps` remains available as an operator-controlled compatibility path.
+- `POST /api/v1/apps` remains available as a non-canonical public compatibility path.
 - Request canonical scopes from the public catalog: `read`, `write`, `follow`, `push`.
 - Do not request `admin`; it is internal-only and rejected on public OAuth surfaces.
 - Store the returned `client_secret` because it is only shown once.
@@ -56,5 +56,5 @@ The current compatibility story is:
 - if device flow is enabled, dynamic `cli` clients also receive `device_code`
 - legacy agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
 
-Manual `POST /api/v1/apps` registration remains available as an operator-controlled compatibility path, but RFC 7591 is
+Manual `POST /api/v1/apps` registration remains available as a non-canonical public compatibility path, but RFC 7591 is
 the canonical remote MCP path.

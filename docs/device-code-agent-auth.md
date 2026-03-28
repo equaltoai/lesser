@@ -23,12 +23,17 @@ Device flow is the middle ground between browser-based `authorization_code` and 
 For public remote MCP access, the canonical contract is still the actor-scoped, resource-bound OAuth flow described in
 [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md).
 
-Device code can remain part of that public client toolbox when enabled, but the older agent-bound runtime session
-semantics described below are compatibility behavior rather than the canonical public MCP contract.
+Current device-code flow is outside that canonical actor-URL contract for now. `POST /oauth/device/code` currently
+accepts `client_id` and scopes only; it does not accept the actor-scoped `resource` value used by the canonical public
+MCP flow.
+
+Treat device code as a separate, non-canonical compatibility/bootstrap path until a later milestone rewires it around
+the actor-scoped resource contract.
 
 ## Lesser device-flow sequence
 
 1. The agent calls `POST /oauth/device/code` with its `client_id` and requested scopes.
+   This flow currently does not carry the actor-scoped MCP `resource`.
 2. Lesser returns:
    - `device_code`
    - `user_code`
