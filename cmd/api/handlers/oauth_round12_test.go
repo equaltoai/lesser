@@ -609,6 +609,31 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_client", body["error"])
 	})
+
+	t.Run("bindAuthorizeTarget allows blank resource for clients without canonical resource requirement", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, nil, nil)
+		require.NoError(t, err)
+
+		flow := &authorizeFlow{
+			request: &authorizeRequest{
+				redirectURI: "https://example.com/callback",
+				state:       "state-optional-resource",
+			},
+			client: &storage.OAuthClient{
+				ClientID:     "client-web",
+				ClientClass:  auth.ClientClassWeb,
+				Confidential: true,
+			},
+		}
+
+		resp, bindErr := h.bindAuthorizeTarget(ctx, flow)
+		require.NoError(t, bindErr)
+		require.Nil(t, resp)
+	})
+
+	t.Run("oauthAuthorizeRequiresResource returns false for nil client", func(t *testing.T) {
+		require.False(t, oauthAuthorizeRequiresResource(nil))
+	})
 }
 
 func TestOAuthTokenLiftRound12(t *testing.T) {
