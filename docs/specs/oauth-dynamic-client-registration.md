@@ -2,6 +2,10 @@
 
 Lesser now exposes `POST /oauth/register` as its RFC 7591 dynamic client registration endpoint for OAuth discovery clients.
 
+For public remote MCP clients, that RFC 7591 endpoint is the canonical registration contract. Published client examples
+or prefilled public-client profiles are convenience material only; they are derived from `POST /oauth/register` rather
+than replacing it.
+
 ## Registration authorization model
 
 Dynamic registration is open by default. Lesser does not currently require an RFC 7591 initial access token.
@@ -90,7 +94,7 @@ Lesser persists dynamic-registration provenance on the shared OAuth client recor
 - `software_version`
 - existing `confidential`, `client_class`, `agent_username`, and `owner_id`
 
-That is the Lesser-side contract for Simulacrum management views:
+That is the Lesser-side contract for storage and management views:
 
 - manual and dynamic clients must be distinguishable by `registration_source`
 - public and confidential clients must be distinguishable by `confidential`

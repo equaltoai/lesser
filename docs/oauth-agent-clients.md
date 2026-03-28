@@ -6,15 +6,16 @@ The MCP-facing auth error contract for refresh, re-auth, and scope failures live
 
 ## Supported registration flow
 
-- Register a client with `POST /api/v1/apps`.
-- Use `client_class=agent` for agent-bound connectors.
-- Use `grant_types=client_credentials authorization_code refresh_token` for dual browser + machine flows, or narrow the list to the grants you intend to allow.
-- Use `token_endpoint_auth_method=client_secret_post` for confidential agent connectors.
+- Prefer `POST /oauth/register` as the canonical public registration path.
+- Use standard RFC 7591 metadata as the source of truth for public clients.
+- Treat any published client profile, starter snippet, or copied example as derived guidance rather than a separate contract.
+- `POST /api/v1/apps` remains available as an operator-controlled compatibility path.
 - Request canonical scopes from the public catalog: `read`, `write`, `follow`, `push`.
 - Do not request `admin`; it is internal-only and rejected on public OAuth surfaces.
 - Store the returned `client_secret` because it is only shown once.
 
-The app-registration response echoes the persisted `grant_types` and `token_endpoint_auth_method` so operators can confirm the connector shape that Lesser stored.
+Registration responses echo the persisted `grant_types` and `token_endpoint_auth_method` so operators can confirm the
+client shape that Lesser stored.
 Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for compatibility, but new clients should prefer the canonical catalog.
 
 ## Supported token flow
@@ -45,4 +46,5 @@ The current compatibility story is:
 - if device flow is enabled, dynamic `cli` clients also receive `device_code`
 - agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
 
-Manual `POST /api/v1/apps` registration remains available as an operator-controlled alternative.
+Manual `POST /api/v1/apps` registration remains available as an operator-controlled compatibility path, but RFC 7591 is
+the canonical remote MCP path.

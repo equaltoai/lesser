@@ -53,3 +53,18 @@ That means:
 For public remote MCP access, `client_class`, `agent_username`, or any similar client metadata must not be treated as
 the canonical actor-binding source. If those fields continue to exist for compatibility during the migration, they are
 secondary legacy signals and must not override the actor-scoped resource URL.
+
+## Canonical public client registration path
+
+For normal remote MCP consumers, Lesser's canonical client-registration path is standard RFC 7591 dynamic client
+registration at `POST /oauth/register`.
+
+That means:
+
+- OAuth discovery clients should register through `POST /oauth/register`
+- published example client profiles, snippets, or starter metadata are convenience material only
+- any published public-client profile is derived from the RFC 7591 contract and must not replace it as the source of
+  truth
+
+`POST /api/v1/apps` may continue to exist as an operator-controlled compatibility path, but it is not the canonical
+remote MCP contract for new public clients.
