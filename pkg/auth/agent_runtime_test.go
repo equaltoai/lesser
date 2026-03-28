@@ -51,6 +51,7 @@ func TestAgentRuntimeHelpers(t *testing.T) {
 	require.True(t, IsAgentRuntimeClientID(" lesser-agent-delegation "))
 	require.True(t, IsAgentRuntimeClientID("lesser-agent-self-sovereign"))
 	require.False(t, IsAgentRuntimeClientID("web-client"))
+	require.Equal(t, []string{DelegatedAgentRuntimeClientID, SelfSovereignAgentRuntimeClientID}, AgentRuntimeClientIDs())
 
 	require.Equal(t, "runtime-a", CoalesceAgentRuntimeLabel(" runtime-a ", "fallback"))
 	require.Equal(t, "fallback", CoalesceAgentRuntimeLabel(" ", " fallback "))
@@ -90,6 +91,8 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
 		SessionID:   "sess-1",
+		ClientID:    DelegatedAgentRuntimeClientID,
+		FamilyID:    "fam-1",
 		Current:     true,
 		Generation:  1,
 		DeviceLabel: "first",
@@ -98,6 +101,8 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
 		SessionID:   "sess-1",
+		ClientID:    DelegatedAgentRuntimeClientID,
+		FamilyID:    "fam-1",
 		Current:     true,
 		Generation:  0,
 		DeviceLabel: "older",
@@ -106,11 +111,23 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
 		SessionID:   "sess-1",
+		ClientID:    DelegatedAgentRuntimeClientID,
+		FamilyID:    "fam-1",
 		Current:     true,
 		Generation:  2,
 		DeviceLabel: "newer",
 	})
 	require.Equal(t, "newer", currentBySessionID["sess-1"].DeviceLabel)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-public",
+		ClientID:    "legacy-agent-client",
+		FamilyID:    "fam-public",
+		Current:     true,
+		Generation:  1,
+		DeviceLabel: "compat",
+	})
+	require.NotContains(t, currentBySessionID, "sess-public")
 }
 
 func TestIssueAgentRuntimeTokens(t *testing.T) {
@@ -196,6 +213,7 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 					{Token: "new", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 2, LastUsedAt: baseTime.Add(-1 * time.Hour), DeviceLabel: "desktop", Version: 1},
 					{Token: "skip-noncurrent", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-2", Current: false, Generation: 1, LastUsedAt: baseTime, Version: 1},
 					{Token: "skip-blank", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: " ", Current: true, Generation: 1, LastUsedAt: baseTime, Version: 1},
+					{Token: "skip-public", ClientID: "legacy-agent-client", Username: "alice", SessionID: "sid-public", FamilyID: "fam-public", Current: true, Generation: 1, LastUsedAt: baseTime.Add(30 * time.Minute), DeviceLabel: "compat", Version: 1},
 				}
 			case 2:
 				*target = []models.RefreshToken{
@@ -462,14 +480,14 @@ func TestAgentRuntimeAuthDiagnostics(t *testing.T) {
 		})
 		query.On("Update", mock.Anything).Return(nil).Times(3)
 
-		familyToken := &storage.RefreshToken{Token: "rt-1", FamilyID: "fam-1"}
+		familyToken := &storage.RefreshToken{Token: "rt-1", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1"}
 		failureAt := time.Date(2026, time.March, 20, 16, 5, 0, 0, time.UTC)
 		err := RecordAgentRuntimeAuthFailure(context.Background(), agentRuntimeRepos{account: repo}, familyToken, "invalid_client", "Invalid client credentials", failureAt)
 		require.NoError(t, err)
 		require.Equal(t, "invalid_client", familyToken.LastAuthFailureCode)
 		require.Equal(t, failureAt, familyToken.LastAuthFailureAt)
 
-		sessionToken := &storage.RefreshToken{Token: "rt-session", SessionID: "sid-1"}
+		sessionToken := &storage.RefreshToken{Token: "rt-session", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1"}
 		successAt := failureAt.Add(2 * time.Minute)
 		err = RecordAgentRuntimeAuthSuccess(context.Background(), agentRuntimeRepos{account: repo}, sessionToken, successAt)
 		require.NoError(t, err)
@@ -480,5 +498,23 @@ func TestAgentRuntimeAuthDiagnostics(t *testing.T) {
 		require.Equal(t, "Invalid client credentials", updated[0].LastAuthFailureMsg)
 		require.Equal(t, failureAt, updated[1].LastAuthFailureAt)
 		require.Equal(t, successAt, updated[2].LastAuthSuccessAt)
+	})
+
+	t.Run("non-runtime tokens do not fan out through runtime diagnostics", func(t *testing.T) {
+		repo, _, _ := newAgentRuntimeAccountRepo()
+
+		failureAt := time.Date(2026, time.March, 20, 17, 0, 0, 0, time.UTC)
+		token := &storage.RefreshToken{
+			Token:     "rt-public",
+			ClientID:  "legacy-agent-client",
+			SessionID: "sid-public",
+			FamilyID:  "fam-public",
+		}
+
+		err := RecordAgentRuntimeAuthFailure(context.Background(), agentRuntimeRepos{account: repo}, token, "invalid_client", "Invalid client credentials", failureAt)
+		require.NoError(t, err)
+		require.Equal(t, "invalid_client", token.LastAuthFailureCode)
+		require.Equal(t, "Invalid client credentials", token.LastAuthFailureMsg)
+		require.Equal(t, failureAt, token.LastAuthFailureAt)
 	})
 }

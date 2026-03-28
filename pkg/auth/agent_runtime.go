@@ -14,6 +14,12 @@ import (
 // DefaultAgentRuntimeDeviceLabel is used when a runtime does not provide its own label.
 const DefaultAgentRuntimeDeviceLabel = "local-agent"
 
+// Dedicated internal runtime client IDs. These are not part of the canonical public MCP client contract.
+const (
+	DelegatedAgentRuntimeClientID     = "lesser-agent-delegation"
+	SelfSovereignAgentRuntimeClientID = "lesser-agent-self-sovereign"
+)
+
 // AgentRuntimeRefreshIdleTTL is the sliding inactivity window for agent runtime refresh sessions.
 const AgentRuntimeRefreshIdleTTL = RefreshTokenDuration
 
@@ -59,10 +65,19 @@ type AgentRuntimeTokenBundle struct {
 // IsAgentRuntimeClientID reports whether a client ID belongs to Lesser's long-lived agent runtime flows.
 func IsAgentRuntimeClientID(clientID string) bool {
 	switch strings.TrimSpace(clientID) {
-	case "lesser-agent-delegation", "lesser-agent-self-sovereign":
+	case DelegatedAgentRuntimeClientID, SelfSovereignAgentRuntimeClientID:
 		return true
 	default:
 		return false
+	}
+}
+
+// AgentRuntimeClientIDs returns the dedicated internal runtime client IDs that participate in
+// runtime-session diagnostics and family rotation.
+func AgentRuntimeClientIDs() []string {
+	return []string{
+		DelegatedAgentRuntimeClientID,
+		SelfSovereignAgentRuntimeClientID,
 	}
 }
 
@@ -150,6 +165,31 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 	}, nil
 }
 
+// IsAgentRuntimeRefreshToken reports whether a stored refresh token belongs to the dedicated
+// internal runtime session model rather than ordinary public or compatibility OAuth rotation.
+func IsAgentRuntimeRefreshToken(token *storage.RefreshToken) bool {
+	if token == nil || !IsAgentRuntimeClientID(token.ClientID) || strings.TrimSpace(token.SessionID) == "" {
+		return false
+	}
+
+	return strings.TrimSpace(token.FamilyID) != "" ||
+		token.Generation > 0 ||
+		token.Current ||
+		token.DeviceLabel != "" ||
+		!token.LastUsedAt.IsZero() ||
+		!token.IdleExpiresAt.IsZero() ||
+		!token.AbsoluteExpiresAt.IsZero() ||
+		!token.SessionCreatedAt.IsZero() ||
+		token.AccessTTLSeconds > 0 ||
+		!token.ReuseDetectedAt.IsZero() ||
+		token.ReuseDetectedFromIP != "" ||
+		token.ReuseDetectedFromUA != "" ||
+		!token.LastAuthFailureAt.IsZero() ||
+		token.LastAuthFailureCode != "" ||
+		token.LastAuthFailureMsg != "" ||
+		!token.LastAuthSuccessAt.IsZero()
+}
+
 // ListAgentRuntimeSessions returns the current runtime refresh session records for an agent.
 func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, username string) ([]storage.RefreshToken, error) {
 	if repos == nil || repos.Account() == nil {
@@ -158,7 +198,7 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 
 	currentBySessionID := map[string]storage.RefreshToken{}
 
-	for _, clientID := range []string{"lesser-agent-delegation", "lesser-agent-self-sovereign"} {
+	for _, clientID := range AgentRuntimeClientIDs() {
 		if err := collectCurrentAgentSessionsForClient(ctx, repos, username, clientID, currentBySessionID); err != nil {
 			return nil, err
 		}
@@ -175,7 +215,7 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 }
 
 func recordCurrentAgentSession(currentBySessionID map[string]storage.RefreshToken, token storage.RefreshToken) {
-	if strings.TrimSpace(token.SessionID) == "" || !token.Current {
+	if !token.Current || !IsAgentRuntimeRefreshToken(&token) {
 		return
 	}
 	existing, ok := currentBySessionID[token.SessionID]
@@ -239,6 +279,17 @@ func recordAgentRuntimeAuthEvent(ctx context.Context, repos StorageProvider, tok
 	if eventAt.IsZero() {
 		eventAt = time.Now().UTC()
 	}
+	if !IsAgentRuntimeRefreshToken(token) {
+		if success {
+			token.LastAuthSuccessAt = eventAt
+			return nil
+		}
+
+		token.LastAuthFailureCode = strings.TrimSpace(code)
+		token.LastAuthFailureMsg = strings.TrimSpace(message)
+		token.LastAuthFailureAt = eventAt
+		return nil
+	}
 
 	targets, err := listAgentRuntimeEventTargets(ctx, repos, token)
 	if err != nil {
@@ -274,6 +325,9 @@ func recordAgentRuntimeAuthEvent(ctx context.Context, repos StorageProvider, tok
 }
 
 func listAgentRuntimeEventTargets(ctx context.Context, repos StorageProvider, token *storage.RefreshToken) ([]storage.RefreshToken, error) {
+	if !IsAgentRuntimeRefreshToken(token) {
+		return nil, nil
+	}
 	switch {
 	case token == nil:
 		return nil, nil

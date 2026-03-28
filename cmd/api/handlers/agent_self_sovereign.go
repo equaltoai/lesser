@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	selfSovereignAgentClientID = "lesser-agent-self-sovereign"
+	selfSovereignAgentClientID = auth.SelfSovereignAgentRuntimeClientID
 
 	agentKeyChallengeTTL = 5 * time.Minute
 

@@ -94,4 +94,4 @@ That is the Lesser-side contract for storage and management views:
 - public and confidential clients must be distinguishable by `confidential`
 - generic public client shape remains visible through `client_class` and `owner_id`
 
-This keeps manual and dynamic connectors in one coherent storage model so downstream management can list, revoke, rotate, or delete them uniformly.
+This keeps manual and dynamic clients in one coherent storage model so downstream management can list, revoke, rotate, or delete them uniformly.

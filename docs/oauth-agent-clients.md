@@ -5,8 +5,9 @@ The grant-selection guidance for browser, headless-approved, and fully autonomou
 The MCP-facing auth error contract for refresh, re-auth, and scope failures lives in [docs/architecture/auth/auth-error-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/architecture/auth/auth-error-contract.md).
 
 Public remote MCP clients should treat the actor-scoped contract in [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md) as canonical.
-Agent-bound runtime sessions, secret-rotation flows, and similar owned-client operations are compatibility/runtime
-surfaces, not the source of truth for public MCP access.
+Dedicated internal runtime clients such as `lesser-agent-delegation` and `lesser-agent-self-sovereign`, secret-rotation
+flows, and similar owned-client operations are compatibility/runtime surfaces, not the source of truth for public MCP
+access.
 
 ## Supported registration flow
 
@@ -32,6 +33,7 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 - Consent redirects and stored OAuth state for that flow carry the canonical `resource` target instead of `agent_username`.
 - Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
 - Public MCP refresh-token records use standard OAuth rotation state, not connector-family/device-label runtime metadata.
+- Runtime-session diagnostics and `/api/v1/agents/{username}/runtime-sessions` cover only the dedicated internal runtime client IDs; public or legacy compatibility agent clients do not appear there.
 - Compatibility/runtime only: `POST /oauth/token` supports `client_credentials` for confidential agent clients that already exist outside the public registration contract.
 - Compatibility/runtime only: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
 - `client_credentials` responses are access-token-only.
@@ -58,6 +60,7 @@ The current compatibility story is:
 - dynamically registered public clients use PKCE for the authorization-code flow
 - if device flow is enabled, dynamic `cli` clients also receive `device_code`
 - agent-bound runtime clients are not provisioned through public RFC 7591 registration
+- the dedicated internal runtime client IDs remain operator-managed implementation details rather than public MCP registration targets
 
 Manual `POST /api/v1/apps` registration remains available as a non-canonical public compatibility path, but RFC 7591 is
 the canonical remote MCP path.

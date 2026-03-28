@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	delegatedAgentClientID = "lesser-agent-delegation"
+	delegatedAgentClientID = auth.DelegatedAgentRuntimeClientID
 
 	agentTypeCustom     = "CUSTOM"
 	agentVersionUnknown = "unknown"

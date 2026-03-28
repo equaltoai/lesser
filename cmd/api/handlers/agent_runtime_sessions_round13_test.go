@@ -301,6 +301,37 @@ func TestOAuthPublicAgentRefreshGrant_InvalidClientDoesNotPersistRuntimeDiagnost
 	require.True(t, updated.LastAuthFailureAt.IsZero())
 }
 
+func TestOAuthRuntimeRefreshGrant_NonRuntimeRecordForRuntimeClientReturnsInvalidGrant(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := storagemodels.RefreshToken{
+		Token:       "rt-agent-nonruntime",
+		ClientID:    delegatedAgentClientID,
+		Username:    "agent1",
+		Scopes:      []string{auth.ScopeRead},
+		CreatedAt:   now.Add(-30 * time.Minute),
+		ExpiresAt:   now.Add(24 * time.Hour),
+		ClientClass: auth.ClientClassAgent,
+	}
+	require.NoError(t, token.BeforeCreate())
+
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+token.Token+"&client_id="+delegatedAgentClientID))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "invalid_grant", body["error"])
+}
+
 func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
@@ -315,6 +346,7 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 		AgentOwner: "@owner",
 	}
 	runtimeToken := buildRuntimeRefreshToken(t, "rt-runtime-1", "agent1", delegatedAgentClientID, "sid-runtime-1", "family-runtime-1", "sim-runtime", 1, true, false, now)
+	publicAgentToken := buildRuntimeRefreshToken(t, "rt-public-compat", "agent1", "legacy-agent-client", "sid-public-compat", "family-public-compat", "compat-app", 1, true, false, now)
 	state := &round10QueryState{
 		agentInstanceConfig: &storagemodels.AgentInstanceConfig{
 			AllowAgents:            true,
@@ -337,7 +369,8 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 			},
 		},
 		refreshTokensByToken: map[string]storagemodels.RefreshToken{
-			runtimeToken.Token: runtimeToken,
+			runtimeToken.Token:     runtimeToken,
+			publicAgentToken.Token: publicAgentToken,
 		},
 	}
 

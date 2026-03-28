@@ -95,8 +95,7 @@ func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshTok
 		return
 	}
 	if storedToken.ClientID != clientID ||
-		!auth.IsAgentRuntimeClientID(storedToken.ClientID) ||
-		!strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassAgent) {
+		!auth.IsAgentRuntimeRefreshToken(storedToken) {
 		return
 	}
 	if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, failureCode, failureMessage, time.Now().UTC()); err != nil {
@@ -110,6 +109,9 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		return "", "", nil, auth.ErrInvalidToken
 	}
 	if storedToken.ClientID != clientID {
+		return "", "", nil, auth.ErrInvalidToken
+	}
+	if !auth.IsAgentRuntimeRefreshToken(storedToken) {
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
@@ -200,7 +202,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 	return accessToken, newRefreshToken, storedToken.Scopes, nil
 }
 
-// HandleListAgentRuntimeSessionsLift lists first-class runtime refresh sessions for an agent.
+// HandleListAgentRuntimeSessionsLift lists dedicated internal runtime refresh sessions for an agent.
 func (h *Handler) HandleListAgentRuntimeSessionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err
@@ -236,7 +238,7 @@ func (h *Handler) HandleListAgentRuntimeSessionsLift(ctx *apptheory.Context) (*a
 	return okJSON(out)
 }
 
-// HandleRevokeAgentRuntimeSessionLift revokes one runtime refresh session family for an agent.
+// HandleRevokeAgentRuntimeSessionLift revokes one dedicated internal runtime session family for an agent.
 func (h *Handler) HandleRevokeAgentRuntimeSessionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err

@@ -23,7 +23,7 @@ import (
 
 var errAgentSupportNotImplemented = apperrors.Internal("agent support is not implemented")
 
-const delegatedAgentClientID = "lesser-agent-delegation"
+const delegatedAgentClientID = auth.DelegatedAgentRuntimeClientID
 
 const (
 	oauthScopeAdmin  = "admin"
