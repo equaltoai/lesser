@@ -12,6 +12,7 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 	out.LesserHostURL = strings.TrimRight(strings.TrimSpace(firstNonEmpty(args.LesserHostURL, os.Getenv("LESSER_HOST_URL"))), "/")
 	out.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(firstNonEmpty(args.LesserHostAttestationsURL, os.Getenv("LESSER_HOST_ATTESTATIONS_URL"))), "/")
 	out.LesserHostInstanceKeyARN = strings.TrimSpace(firstNonEmpty(args.LesserHostInstanceKeyARN, os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")))
+	out.BodyEnabled = resolveOptionalBoolEnv("BODY_ENABLED", true)
 
 	if args.TranslationEnabled != nil {
 		out.TranslationEnabled = args.TranslationEnabled
@@ -47,6 +48,7 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 	if out.LesserHostURL == "" &&
 		out.LesserHostAttestationsURL == "" &&
 		out.LesserHostInstanceKeyARN == "" &&
+		out.BodyEnabled == nil &&
 		out.TranslationEnabled == nil &&
 		out.TipEnabled == nil &&
 		out.TipChainID == nil &&
@@ -60,6 +62,17 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		return nil
 	}
 	return out
+}
+
+func resolveOptionalBoolEnv(key string, defaultValue bool) *bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		value := defaultValue
+		return &value
+	}
+
+	enabled := raw == flagTrue || raw == "1" || raw == flagYes
+	return &enabled
 }
 
 func firstNonEmpty(values ...string) string {

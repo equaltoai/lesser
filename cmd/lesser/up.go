@@ -294,6 +294,9 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	}
 
 	contexts := map[string]string{}
+	if receipt.Integration != nil && receipt.Integration.BodyEnabled != nil {
+		contexts["bodyEnabled"] = strconv.FormatBool(*receipt.Integration.BodyEnabled)
+	}
 	if v := strings.TrimSpace(e.args.LesserHostURL); v != "" {
 		contexts["lesserHostUrl"] = v
 	}

@@ -4,15 +4,20 @@ import (
 	localconstructs "cdk/constructs"
 	"cdk/inventory"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
@@ -46,7 +51,10 @@ type LesserApiStack struct {
 	MediaDistribution      awscloudfront.Distribution
 	FrontendDistribution   awscloudfront.Distribution
 	ClientBucket           awss3.Bucket
+	ClientArtifactBucket   awss3.Bucket
 	AuthUIBucket           awss3.Bucket
+	ClientSSRFunction      awslambda.Function
+	ClientSSRFunctionURL   awslambda.FunctionUrl
 	Queues                 map[string]localconstructs.QueuePair
 	PrivateKey             awssecretsmanager.ISecret
 	JwtSecret              awssecretsmanager.ISecret
@@ -243,6 +251,7 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	apiOrigin := fmt.Sprintf("api.%s", domain)
 	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
+	clientArtifactBucket := naming.S3BucketName(s.AppName, stage, "client-artifacts", s.AccountID, s.Region)
 	authBucket := naming.S3BucketName(s.AppName, stage, "auth-ui", s.AccountID, s.Region)
 
 	clientAssetsBucket := awss3.NewBucket(s.Stack, jsii.String("ClientBucket"), &awss3.BucketProps{
@@ -254,6 +263,16 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		AutoDeleteObjects: jsii.Bool(!isProd),
 	})
 
+	clientArtifactsBucket := awss3.NewBucket(s.Stack, jsii.String("ClientArtifactBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(clientArtifactBucket),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		EnforceSSL:        jsii.Bool(true),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+		Versioned:         jsii.Bool(true),
+	})
+
 	authAssetsBucket := awss3.NewBucket(s.Stack, jsii.String("AuthBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(authBucket),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
@@ -263,66 +282,146 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		AutoDeleteObjects: jsii.Bool(!isProd),
 	})
 
-	staticPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(s.Stack, jsii.String(domain))
+	authPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(s.Stack, jsii.String(domain))
+	clientPolicy := localconstructs.NewClientSSRResponseHeadersPolicy(s.Stack)
+	rewriteFn := newClientFrontendRewriteFunction(s.Stack)
 
-	frontend := apptheorycdk.NewAppTheoryPathRoutedFrontend(s.Stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
-		ApiOriginUrl: jsii.String(apiOrigin),
-		// Forward all query strings to the API origin (required for OAuth /oauth/authorize PKCE params).
-		// Exclude Host to avoid origin domain mismatch issues.
-		ApiOriginRequestPolicy: awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
-			DomainName:       jsii.String(domain),
-			Certificate:      s.CDNCertificate,
-			HostedZone:       s.HostedZone,
-			CreateAAAARecord: jsii.Bool(true),
+	clientSSRFn := awslambda.NewFunction(s.Stack, jsii.String("ClientSSRHostFunction"), &awslambda.FunctionProps{
+		Runtime:      awslambda.Runtime_NODEJS_22_X(),
+		Handler:      jsii.String("index.handler"),
+		Code:         awslambda.Code_FromAsset(jsii.String(clientSSRHostAssetPath()), nil),
+		Architecture: awslambda.Architecture_ARM_64(),
+		Timeout:      awscdk.Duration_Seconds(jsii.Number(30)),
+		MemorySize:   jsii.Number(512),
+		Environment: &map[string]*string{
+			"LESSER_CLIENT_ARTIFACT_BUCKET":  clientArtifactsBucket.BucketName(),
+			"LESSER_CLIENT_INSTALL_KEY":      jsii.String("install/current.json"),
+			"LESSER_STAGE_DOMAIN":            jsii.String(domain),
+			"LESSER_CLIENT_BASE_PATH":        jsii.String("/l"),
+			"LESSER_CLIENT_MANIFEST_POLL_MS": jsii.String("1000"),
 		},
-		ApiBypassPaths: &[]*apptheorycdk.ApiBypassConfig{
-			{PathPattern: jsii.String("/auth/wallet/*")},
-		},
-		SpaOrigins: &[]*apptheorycdk.SpaOriginConfig{
-			{
-				Bucket:                  clientAssetsBucket,
-				PathPattern:             jsii.String("/l/*"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-			},
-			{
-				Bucket:                  authAssetsBucket,
-				PathPattern:             jsii.String("/auth/*"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-			},
-			// Exact prefix paths (no wildcard) for behavior-scoped CSP parity with Lift.
-			{
-				Bucket:                  clientAssetsBucket,
-				PathPattern:             jsii.String("/l"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-			},
-			{
-				Bucket:                  authAssetsBucket,
-				PathPattern:             jsii.String("/auth"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-			},
-		},
-		SpaResponseHeadersPolicy: staticPolicy,
-		RemovalPolicy:            getRemovalPolicy(isProd),
-		AutoDeleteObjects:        jsii.Bool(!isProd),
-		PriceClass:               awscloudfront.PriceClass_PRICE_CLASS_100,
+	})
+	clientArtifactsBucket.GrantRead(clientSSRFn, jsii.String("*"))
+
+	clientSSRFunctionURL := clientSSRFn.AddFunctionUrl(&awslambda.FunctionUrlOptions{
+		AuthType: awslambda.FunctionUrlAuthType_AWS_IAM,
 	})
 
-	overridePathRoutedFrontendRewriteFunction(frontend)
+	apiOriginTarget := awscloudfrontorigins.NewHttpOrigin(jsii.String(apiOrigin), nil)
 
-	dist := frontend.Distribution()
+	dist := awscloudfront.NewDistribution(s.Stack, jsii.String("ClientFrontend"), &awscloudfront.DistributionProps{
+		DefaultBehavior: &awscloudfront.BehaviorOptions{
+			Origin:               apiOriginTarget,
+			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
+			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+		},
+		DomainNames: &[]*string{jsii.String(domain)},
+		Certificate: s.CDNCertificate,
+		PriceClass:  awscloudfront.PriceClass_PRICE_CLASS_100,
+	})
+
+	authOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(authAssetsBucket, nil)
+	clientAssetOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(clientAssetsBucket, nil)
+	clientSSROrigin := awscloudfrontorigins.FunctionUrlOrigin_WithOriginAccessControl(clientSSRFunctionURL, &awscloudfrontorigins.FunctionUrlOriginWithOACProps{
+		ReadTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
+	})
+	functionAssociations := &[]*awscloudfront.FunctionAssociation{
+		{
+			EventType: awscloudfront.FunctionEventType_VIEWER_REQUEST,
+			Function:  rewriteFn,
+		},
+	}
+
+	dist.AddBehavior(jsii.String("/auth/wallet/*"), apiOriginTarget, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+	})
+	dist.AddBehavior(jsii.String("/auth"), authOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		ResponseHeadersPolicy: authPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/auth/*"), authOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		ResponseHeadersPolicy: authPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l/*"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+
+	recordName := relativeRecordName(domain, s.HostedZone)
+	target := awsroute53targets.NewCloudFrontTarget(dist)
+	awsroute53.NewARecord(s.Stack, jsii.String("FrontendAliasARecord"), &awsroute53.ARecordProps{
+		Zone:       s.HostedZone,
+		RecordName: recordName,
+		Target:     awsroute53.RecordTarget_FromAlias(target),
+	})
+	awsroute53.NewAaaaRecord(s.Stack, jsii.String("FrontendAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+		Zone:       s.HostedZone,
+		RecordName: recordName,
+		Target:     awsroute53.RecordTarget_FromAlias(target),
+	})
 
 	s.FrontendDistribution = dist
 	s.ClientBucket = clientAssetsBucket
+	s.ClientArtifactBucket = clientArtifactsBucket
 	s.AuthUIBucket = authAssetsBucket
+	s.ClientSSRFunction = clientSSRFn
+	s.ClientSSRFunctionURL = clientSSRFunctionURL
+}
+
+func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
+	if zone == nil {
+		return jsii.String(domain)
+	}
+
+	zoneNamePtr := zone.ZoneName()
+	if zoneNamePtr == nil {
+		return jsii.String(domain)
+	}
+
+	zoneName := strings.TrimSuffix(*zoneNamePtr, ".")
+	if domain == "" || domain == zoneName {
+		return jsii.String("")
+	}
+
+	if strings.HasSuffix(domain, "."+zoneName) {
+		return jsii.String(strings.TrimSuffix(domain, "."+zoneName))
+	}
+
+	return jsii.String(domain)
+}
+
+func clientSSRHostAssetPath() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return filepath.Join("assets", "client_ssr_host")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "assets", "client_ssr_host"))
 }
 
 func (s *LesserApiStack) bodyEnabled() bool {
@@ -358,90 +457,45 @@ func isTruthyConfigValue(value interface{}) bool {
 	}
 }
 
-func overridePathRoutedFrontendRewriteFunction(frontend apptheorycdk.AppTheoryPathRoutedFrontend) {
-	if frontend == nil {
-		return
-	}
-
-	// The upstream rewrite function doesn't handle exact-prefix paths (e.g. "/l" and "/auth") and doesn't
-	// support directory-index semantics for multi-page static sites (e.g. "/auth/login" → "/auth/login/index.html").
-	// We override the function code so:
-	// - "/l" redirects/rewrites consistently with "/l/" and extensionless routes fall back to "/l/index.html" (SPA)
-	// - "/auth" serves "/auth/index.html" and extensionless routes map to "/auth/<path>/index.html" (directory index)
-	rewriteFn := frontend.SpaRewriteFunction()
-	if rewriteFn == nil {
-		return
-	}
-
-	raw := rewriteFn.Node().DefaultChild()
-	cfnFn, ok := raw.(awscloudfront.CfnFunction)
-	if !ok || cfnFn == nil {
-		return
-	}
-
-	// NOTE: Keep this function CSP-safe: it only rewrites the request URI at CloudFront and does not inject content.
-	cfnFn.SetFunctionCode(jsii.String(strings.TrimSpace(`
+func newClientFrontendRewriteFunction(scope constructs.Construct) awscloudfront.Function {
+	return awscloudfront.NewFunction(scope, jsii.String("FrontendPathRewriteFunction"), &awscloudfront.FunctionProps{
+		Runtime: awscloudfront.FunctionRuntime_JS_2_0(),
+		Code: awscloudfront.FunctionCode_FromInline(jsii.String(strings.TrimSpace(`
 function handler(event) {
   var request = event.request;
   var uri = request.uri;
 
-  var prefixes = [
-    { cleanPrefix: '/auth', prefix: '/auth/', rewriteMode: 'dir', stripPrefixBeforeOrigin: true, indexPath: '/auth/index.html' },
-    { cleanPrefix: '/l', prefix: '/l/', rewriteMode: 'spa', stripPrefixBeforeOrigin: true, indexPath: '/l/index.html' }
-  ];
-
-  for (var i = 0; i < prefixes.length; i++) {
-    var cfg = prefixes[i];
-
-    // Normalize "/prefix" → "/prefix/" so the rest of the logic can treat it uniformly.
-    if (uri === cfg.cleanPrefix) {
-      uri = cfg.prefix;
-    }
-
-    if (uri.indexOf(cfg.prefix) !== 0) {
-      continue;
-    }
-
-    var uriWithoutPrefix = uri.substring(cfg.prefix.length);
-    var lastSlash = uriWithoutPrefix.lastIndexOf('/');
-    var lastSegment = lastSlash >= 0 ? uriWithoutPrefix.substring(lastSlash + 1) : uriWithoutPrefix;
-
-    if (cfg.rewriteMode === 'spa') {
-      // SPA behavior: any extensionless route falls back to the SPA index.
-      if (lastSegment.indexOf('.') === -1) {
-        request.uri = cfg.indexPath;
-      } else {
-        request.uri = uri;
-      }
-    } else {
-      // Directory-index behavior (multi-page static site):
-      // - "/auth" or "/auth/" → "/auth/index.html"
-      // - "/auth/login" → "/auth/login/index.html"
-      // - "/auth/login/" → "/auth/login/index.html"
-      if (uriWithoutPrefix === '') {
-        request.uri = cfg.indexPath;
-      } else if (lastSegment === '') {
-        request.uri = uri + 'index.html';
-      } else if (lastSegment.indexOf('.') === -1) {
-        request.uri = uri + '/index.html';
-      } else {
-        request.uri = uri;
-      }
-    }
-
-    if (cfg.stripPrefixBeforeOrigin) {
-      var cleanPrefixWithSlash = cfg.cleanPrefix + '/';
-      if (request.uri.indexOf(cleanPrefixWithSlash) === 0) {
-        request.uri = request.uri.substring(cfg.cleanPrefix.length);
-      }
-    }
-
-    break;
+  if (uri === '/l') {
+    request.uri = '/l/';
+    return request;
   }
 
+  if (uri === '/auth') {
+    uri = '/auth/';
+  }
+
+  if (uri.indexOf('/auth/') === 0) {
+    var suffix = uri.substring('/auth/'.length);
+    var lastSlash = suffix.lastIndexOf('/');
+    var lastSegment = lastSlash >= 0 ? suffix.substring(lastSlash + 1) : suffix;
+
+    if (suffix === '') {
+      request.uri = '/auth/index.html';
+    } else if (lastSegment === '') {
+      request.uri = uri + 'index.html';
+    } else if (lastSegment.indexOf('.') === -1) {
+      request.uri = uri + '/index.html';
+    } else {
+      request.uri = uri;
+    }
+    return request;
+  }
+
+  request.uri = uri;
   return request;
 }
-`)))
+`))),
+	})
 }
 
 func (s *LesserApiStack) createSharedResources() {
@@ -992,7 +1046,18 @@ func (s *LesserApiStack) createOutputs() {
 	if s.ClientBucket != nil {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientBucketName"), &awscdk.CfnOutputProps{
 			Value:       s.ClientBucket.BucketName(),
-			Description: jsii.String("S3 bucket for the client UI (served under /l/*)"),
+			Description: jsii.String("S3 bucket for immutable client assets served under /l/_assets/*"),
+		})
+	}
+
+	if s.ClientArtifactBucket != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientArtifactBucketName"), &awscdk.CfnOutputProps{
+			Value:       s.ClientArtifactBucket.BucketName(),
+			Description: jsii.String("Private S3 bucket for FaceTheory SSR server bundles and install manifests"),
+		})
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientInstallManifestKey"), &awscdk.CfnOutputProps{
+			Value:       jsii.String("install/current.json"),
+			Description: jsii.String("S3 key for the active SSR client install manifest"),
 		})
 	}
 
@@ -1000,6 +1065,13 @@ func (s *LesserApiStack) createOutputs() {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("AuthUIBucketName"), &awscdk.CfnOutputProps{
 			Value:       s.AuthUIBucket.BucketName(),
 			Description: jsii.String("S3 bucket for the auth UI (served under /auth/*)"),
+		})
+	}
+
+	if s.ClientSSRFunctionURL != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientSSRFunctionUrl"), &awscdk.CfnOutputProps{
+			Value:       s.ClientSSRFunctionURL.Url(),
+			Description: jsii.String("Function URL backing same-domain /l/* SSR delivery"),
 		})
 	}
 
@@ -1035,6 +1107,31 @@ func (s *LesserApiStack) publishStageExportsToSSM() {
 			Tier:          awsssm.ParameterTier_STANDARD,
 		})
 	}
+
+	if s.ClientBucket != nil {
+		awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageClientAssetsBucketNameParam"), &awsssm.StringParameterProps{
+			ParameterName: jsii.String(fmt.Sprintf("%s/client_assets_bucket_name", paramPrefix)),
+			StringValue:   s.ClientBucket.BucketName(),
+			Description:   jsii.String("Lesser stage SSR client assets bucket name"),
+			Tier:          awsssm.ParameterTier_STANDARD,
+		})
+	}
+
+	if s.ClientArtifactBucket != nil {
+		awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageClientArtifactBucketNameParam"), &awsssm.StringParameterProps{
+			ParameterName: jsii.String(fmt.Sprintf("%s/client_artifact_bucket_name", paramPrefix)),
+			StringValue:   s.ClientArtifactBucket.BucketName(),
+			Description:   jsii.String("Lesser stage SSR client artifact bucket name"),
+			Tier:          awsssm.ParameterTier_STANDARD,
+		})
+	}
+
+	awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageClientInstallManifestKeyParam"), &awsssm.StringParameterProps{
+		ParameterName: jsii.String(fmt.Sprintf("%s/client_install_manifest_key", paramPrefix)),
+		StringValue:   jsii.String("install/current.json"),
+		Description:   jsii.String("Lesser stage SSR client install manifest key"),
+		Tier:          awsssm.ParameterTier_STANDARD,
+	})
 
 	awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageDomainParam"), &awsssm.StringParameterProps{
 		ParameterName: jsii.String(fmt.Sprintf("%s/domain", paramPrefix)),

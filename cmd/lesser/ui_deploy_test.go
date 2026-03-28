@@ -8,7 +8,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/stretchr/testify/require"
 )
@@ -117,15 +116,11 @@ func TestBuildAuthUI_ErrorBranches(t *testing.T) {
 }
 
 func TestDeployUIAssets_WiresStagesAndCallsDeps(t *testing.T) {
-	previousReplace := replaceBucketWithDirFn
-	previousS3Exists := s3ObjectExistsFn
-	previousPlaceholder := uploadClientPlaceholderFn
+	previousReplace := replaceBucketWithDirPrefixFn
 	previousInvalidate := invalidateFrontendFn
 	previousBuildAuth := buildAuthUIFn
 	t.Cleanup(func() {
-		replaceBucketWithDirFn = previousReplace
-		s3ObjectExistsFn = previousS3Exists
-		uploadClientPlaceholderFn = previousPlaceholder
+		replaceBucketWithDirPrefixFn = previousReplace
 		invalidateFrontendFn = previousInvalidate
 		buildAuthUIFn = previousBuildAuth
 	})
@@ -133,19 +128,10 @@ func TestDeployUIAssets_WiresStagesAndCallsDeps(t *testing.T) {
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
 
 	var replaced int
-	replaceBucketWithDirFn = func(_ context.Context, _ s3BucketUploaderAPI, bucket string, _ string) error {
+	replaceBucketWithDirPrefixFn = func(_ context.Context, _ s3BucketUploaderAPI, bucket string, prefix string, _ string) error {
 		require.NotEmpty(t, bucket)
+		require.Equal(t, "auth", prefix)
 		replaced++
-		return nil
-	}
-
-	s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) {
-		return false, nil
-	}
-
-	var placeholders int
-	uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error {
-		placeholders++
 		return nil
 	}
 
@@ -173,20 +159,15 @@ func TestDeployUIAssets_WiresStagesAndCallsDeps(t *testing.T) {
 
 	require.NoError(t, env.deployUIAssets(context.Background(), receipt))
 	require.Equal(t, 1, replaced)
-	require.Equal(t, 1, placeholders)
 	require.Equal(t, 1, invalidations)
 }
 
 func TestDeployUIAssets_ErrorAndSkipBranches(t *testing.T) {
-	previousReplace := replaceBucketWithDirFn
-	previousS3Exists := s3ObjectExistsFn
-	previousPlaceholder := uploadClientPlaceholderFn
+	previousReplace := replaceBucketWithDirPrefixFn
 	previousInvalidate := invalidateFrontendFn
 	previousBuildAuth := buildAuthUIFn
 	t.Cleanup(func() {
-		replaceBucketWithDirFn = previousReplace
-		s3ObjectExistsFn = previousS3Exists
-		uploadClientPlaceholderFn = previousPlaceholder
+		replaceBucketWithDirPrefixFn = previousReplace
 		invalidateFrontendFn = previousInvalidate
 		buildAuthUIFn = previousBuildAuth
 	})
@@ -219,9 +200,7 @@ func TestDeployUIAssets_ErrorAndSkipBranches(t *testing.T) {
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
 
 	t.Run("upload auth UI error is wrapped", func(t *testing.T) {
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return errSentinel }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return nil }
+		replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return errSentinel }
 		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
 
 		err := env.deployUIAssets(context.Background(), receipt)
@@ -229,32 +208,8 @@ func TestDeployUIAssets_ErrorAndSkipBranches(t *testing.T) {
 		require.Contains(t, err.Error(), "upload auth UI")
 	})
 
-	t.Run("inspect client bucket error is wrapped", func(t *testing.T) {
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return false, errSentinel }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return nil }
-		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
-
-		err := env.deployUIAssets(context.Background(), receipt)
-		require.ErrorIs(t, err, errSentinel)
-		require.Contains(t, err.Error(), "inspect client bucket")
-	})
-
-	t.Run("placeholder upload error is wrapped", func(t *testing.T) {
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return false, nil }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return errSentinel }
-		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
-
-		err := env.deployUIAssets(context.Background(), receipt)
-		require.ErrorIs(t, err, errSentinel)
-		require.Contains(t, err.Error(), "upload client placeholder")
-	})
-
-	t.Run("skips placeholder when index exists and wraps invalidation errors", func(t *testing.T) {
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return nil }
+	t.Run("wraps invalidation errors", func(t *testing.T) {
+		replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
 		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return errSentinel }
 
 		err := env.deployUIAssets(context.Background(), receipt)
@@ -263,9 +218,7 @@ func TestDeployUIAssets_ErrorAndSkipBranches(t *testing.T) {
 	})
 
 	t.Run("skips stages missing receipts", func(t *testing.T) {
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return nil }
+		replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
 		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
 
 		require.NoError(t, env.deployUIAssets(context.Background(), receipt))
@@ -273,9 +226,7 @@ func TestDeployUIAssets_ErrorAndSkipBranches(t *testing.T) {
 
 	t.Run("skips invalidation when distribution id missing", func(t *testing.T) {
 		receipt.Stages["dev"].StackOutputs = map[string]string{}
-		replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-		s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
-		uploadClientPlaceholderFn = func(context.Context, *s3.Client, string, string) error { return nil }
+		replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
 		invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
 
 		require.NoError(t, env.deployUIAssets(context.Background(), receipt))
@@ -295,24 +246,4 @@ func TestInvalidateFunctions_UseInjectedCreateInvalidation(t *testing.T) {
 	require.NoError(t, invalidateFrontend(context.Background(), &cloudfront.Client{}, "DIST"))
 	require.NoError(t, invalidateClientPaths(context.Background(), &cloudfront.Client{}, "DIST"))
 	require.Equal(t, 2, called)
-}
-
-func TestUploadClientPlaceholder_UsesInjectedPutObject(t *testing.T) {
-	previous := putObjectStringFn
-	t.Cleanup(func() { putObjectStringFn = previous })
-
-	var gotBucket string
-	var gotKey string
-	putObjectStringFn = func(_ context.Context, _ s3PutObjectAPI, bucket, key, content, contentType, cacheControl string) error {
-		gotBucket = bucket
-		gotKey = key
-		require.Contains(t, content, "Lesser is deployed")
-		require.Equal(t, "text/html; charset=utf-8", contentType)
-		require.Equal(t, "public, max-age=60", cacheControl)
-		return nil
-	}
-
-	require.NoError(t, uploadClientPlaceholder(context.Background(), &s3.Client{}, "bucket", "dev.example.com"))
-	require.Equal(t, "bucket", gotBucket)
-	require.Equal(t, "index.html", gotKey)
 }

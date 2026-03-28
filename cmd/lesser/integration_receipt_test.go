@@ -6,22 +6,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveIntegrationReceipt_ReturnsNilWhenEmpty(t *testing.T) {
+func TestResolveIntegrationReceipt_DefaultsBodyEnabledWhenOtherwiseEmpty(t *testing.T) {
 	t.Setenv("LESSER_HOST_URL", "")
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", "")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "")
+	t.Setenv("BODY_ENABLED", "")
 	t.Setenv("TRANSLATION_ENABLED", "")
 	t.Setenv("TIP_ENABLED", "")
 	t.Setenv("TIP_CHAIN_ID", "")
 	t.Setenv("TIP_CONTRACT_ADDRESS", "")
 
-	require.Nil(t, resolveIntegrationReceipt(upArgs{}))
+	out := resolveIntegrationReceipt(upArgs{})
+	require.NotNil(t, out)
+	require.NotNil(t, out.BodyEnabled)
+	require.True(t, *out.BodyEnabled)
 }
 
 func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	t.Setenv("LESSER_HOST_URL", " https://env.example/ ")
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", " https://env-attest.example/ ")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", " arn:aws:secretsmanager:us-east-1:123:secret:abc ")
+	t.Setenv("BODY_ENABLED", "false")
 	t.Setenv("TRANSLATION_ENABLED", "yes")
 	t.Setenv("TIP_ENABLED", "1")
 	t.Setenv("TIP_CHAIN_ID", "10")
@@ -40,6 +45,8 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	require.Equal(t, "https://args.example", out.LesserHostURL)
 	require.Equal(t, "https://env-attest.example", out.LesserHostAttestationsURL)
 	require.Equal(t, "arn:aws:secretsmanager:us-east-1:123:secret:abc", out.LesserHostInstanceKeyARN)
+	require.NotNil(t, out.BodyEnabled)
+	require.False(t, *out.BodyEnabled)
 
 	require.NotNil(t, out.TranslationEnabled)
 	require.False(t, *out.TranslationEnabled)

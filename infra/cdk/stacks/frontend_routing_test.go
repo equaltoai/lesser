@@ -11,96 +11,14 @@ import (
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/jsii-runtime-go"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *testing.T) {
-	outdir := t.TempDir()
-	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
-	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
-		Env: &awscdk.Environment{
-			Account: jsii.String("123456789012"),
-			Region:  jsii.String("us-east-1"),
-		},
-	})
-
-	hostedZone := awsroute53.NewHostedZone(stack, jsii.String("HostedZone"), &awsroute53.HostedZoneProps{
-		ZoneName: jsii.String("example.com"),
-	})
-
-	staticPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(stack, jsii.String("dev.example.com"))
-
-	clientBucket := awss3.NewBucket(stack, jsii.String("ClientBucket"), &awss3.BucketProps{
-		BucketName: jsii.String("test-dev-client-123456789012-us-east-1"),
-	})
-	authBucket := awss3.NewBucket(stack, jsii.String("AuthBucket"), &awss3.BucketProps{
-		BucketName: jsii.String("test-dev-auth-ui-123456789012-us-east-1"),
-	})
-
-	frontend := apptheorycdk.NewAppTheoryPathRoutedFrontend(stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
-		ApiOriginUrl: jsii.String("api.dev.example.com"),
-		// Forward all query strings to the API origin (required for OAuth /oauth/authorize PKCE params).
-		ApiOriginRequestPolicy: awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
-			HostedZone:       hostedZone,
-			DomainName:       jsii.String("dev.example.com"),
-			CreateAAAARecord: jsii.Bool(true),
-		},
-		ApiBypassPaths: &[]*apptheorycdk.ApiBypassConfig{
-			{PathPattern: jsii.String("/auth/wallet/*")},
-		},
-		SpaOrigins: &[]*apptheorycdk.SpaOriginConfig{
-			{
-				Bucket:                  clientBucket,
-				PathPattern:             jsii.String("/l/*"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-			},
-			{
-				Bucket:                  authBucket,
-				PathPattern:             jsii.String("/auth/*"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-			},
-			{
-				Bucket:                  clientBucket,
-				PathPattern:             jsii.String("/l"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-			},
-			{
-				Bucket:                  authBucket,
-				PathPattern:             jsii.String("/auth"),
-				ResponseHeadersPolicy:   staticPolicy,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-			},
-		},
-		SpaResponseHeadersPolicy: staticPolicy,
-	})
-
-	overridePathRoutedFrontendRewriteFunction(frontend)
-
-	app.Synth(nil)
-
-	templatePath := filepath.Join(outdir, "TestStack.template.json")
-	data, err := os.ReadFile(templatePath)
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-
-	var tpl map[string]any
-	if err := json.Unmarshal(data, &tpl); err != nil {
-		t.Fatalf("unmarshal template: %v", err)
-	}
-
-	resources := mustResources(t, tpl)
+	resources := synthClientFrontendResources(t)
 
 	// Issue #53: API origin must forward query strings (CloudFront OriginRequestPolicy).
 	dist := findSingleCloudFrontDistribution(t, resources)
@@ -115,35 +33,157 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	}
 
 	cacheBehaviors := extractCacheBehaviors(t, dist)
-	var foundBypass bool
-	for _, behavior := range cacheBehaviors {
-		pathPattern, _ := behavior["PathPattern"].(string)
-		if pathPattern != "/auth/wallet/*" {
-			continue
-		}
-		foundBypass = true
-		got, ok := behavior["OriginRequestPolicyId"].(string)
-		if !ok || strings.TrimSpace(got) == "" {
-			t.Fatalf("behavior %q missing OriginRequestPolicyId", pathPattern)
-		}
-		if wantPolicyID != nil && got != *wantPolicyID {
-			t.Fatalf("behavior %q unexpected OriginRequestPolicyId: got %q want %q", pathPattern, got, *wantPolicyID)
-		}
+	bypass := findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth/wallet/*")
+	got, ok := bypass["OriginRequestPolicyId"].(string)
+	if !ok || strings.TrimSpace(got) == "" {
+		t.Fatalf("behavior %q missing OriginRequestPolicyId", "/auth/wallet/*")
 	}
-	if !foundBypass {
-		t.Fatalf("expected API bypass behavior for /auth/wallet/*")
+	if wantPolicyID != nil && got != *wantPolicyID {
+		t.Fatalf("behavior %q unexpected OriginRequestPolicyId: got %q want %q", "/auth/wallet/*", got, *wantPolicyID)
+	}
+	if _, has := bypass["FunctionAssociations"]; has {
+		t.Fatalf("behavior %q must not attach the rewrite function", "/auth/wallet/*")
 	}
 
-	// Issue #54: rewrite function must handle exact-prefix paths and directory-index semantics for auth-ui routes.
+	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth")
+	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth/*")
+	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l")
+	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l/*")
+	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l/_assets/*")
+
+	// Issue #54/#587: rewrite function must normalize /l and preserve directory-index semantics for auth-ui routes.
 	fn := findSingleCloudFrontFunction(t, resources)
 	code := extractCloudFrontFunctionCode(t, fn)
 	requireContainsAll(t, code, []string{
-		"cleanPrefix: '/auth'",
-		"cleanPrefix: '/l'",
-		"uri === cfg.cleanPrefix",
-		"uri.indexOf(cfg.prefix) !== 0",
+		"if (uri === '/l')",
+		"request.uri = '/l/';",
+		"if (uri === '/auth')",
+		"if (uri.indexOf('/auth/') === 0)",
+		"request.uri = '/auth/index.html';",
 		"uri + '/index.html'",
 	})
+}
+
+func synthClientFrontendResources(t *testing.T) map[string]any {
+	t.Helper()
+
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
+	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Account: jsii.String("123456789012"),
+			Region:  jsii.String("us-east-1"),
+		},
+	})
+
+	authPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(stack, jsii.String("dev.example.com"))
+	clientPolicy := localconstructs.NewClientSSRResponseHeadersPolicy(stack)
+	rewriteFn := newClientFrontendRewriteFunction(stack)
+
+	clientBucket := awss3.NewBucket(stack, jsii.String("ClientBucket"), &awss3.BucketProps{
+		BucketName: jsii.String("test-dev-client-123456789012-us-east-1"),
+	})
+	authBucket := awss3.NewBucket(stack, jsii.String("AuthBucket"), &awss3.BucketProps{
+		BucketName: jsii.String("test-dev-auth-ui-123456789012-us-east-1"),
+	})
+
+	clientSSRFn := awslambda.NewFunction(stack, jsii.String("ClientSSRHostFunction"), &awslambda.FunctionProps{
+		Runtime: awslambda.Runtime_NODEJS_22_X(),
+		Handler: jsii.String("index.handler"),
+		Code:    awslambda.Code_FromInline(jsii.String("exports.handler = async () => ({ statusCode: 200, body: 'ok' });")),
+	})
+	clientSSRURL := clientSSRFn.AddFunctionUrl(&awslambda.FunctionUrlOptions{
+		AuthType: awslambda.FunctionUrlAuthType_AWS_IAM,
+	})
+
+	apiOriginTarget := awscloudfrontorigins.NewHttpOrigin(jsii.String("api.dev.example.com"), nil)
+	authOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(authBucket, nil)
+	clientAssetOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(clientBucket, nil)
+	clientSSROrigin := awscloudfrontorigins.FunctionUrlOrigin_WithOriginAccessControl(clientSSRURL, &awscloudfrontorigins.FunctionUrlOriginWithOACProps{
+		ReadTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
+	})
+	functionAssociations := &[]*awscloudfront.FunctionAssociation{
+		{
+			EventType: awscloudfront.FunctionEventType_VIEWER_REQUEST,
+			Function:  rewriteFn,
+		},
+	}
+
+	dist := awscloudfront.NewDistribution(stack, jsii.String("ClientFrontend"), &awscloudfront.DistributionProps{
+		DefaultBehavior: &awscloudfront.BehaviorOptions{
+			Origin:               apiOriginTarget,
+			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
+			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+		},
+		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100,
+	})
+	dist.AddBehavior(jsii.String("/auth/wallet/*"), apiOriginTarget, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+	})
+	dist.AddBehavior(jsii.String("/auth"), authOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		ResponseHeadersPolicy: authPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/auth/*"), authOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		ResponseHeadersPolicy: authPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l/*"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
+		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
+
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(data, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+
+	return mustResources(t, tpl)
+}
+
+func findCacheBehaviorByPathPattern(t *testing.T, behaviors []map[string]any, pathPattern string) map[string]any {
+	t.Helper()
+	for _, behavior := range behaviors {
+		got, _ := behavior["PathPattern"].(string)
+		if got == pathPattern {
+			return behavior
+		}
+	}
+	t.Fatalf("expected cache behavior for %q", pathPattern)
+	return nil
 }
 
 func findSingleCloudFrontFunction(t *testing.T, resources map[string]any) map[string]any {
