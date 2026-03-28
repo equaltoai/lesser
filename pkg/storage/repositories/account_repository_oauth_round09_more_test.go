@@ -131,7 +131,7 @@ func TestRound09_AccountRepository_OAuth_AuthorizationCodesRefreshTokensAndConse
 		CreatedAt: time.Now(),
 	}
 	require.NoError(t, repo.SaveUserAppConsent(ctx, consent))
-	_, _ = repo.GetUserAppConsent(ctx, consent.UserID, consent.AppID)
+	_, _ = repo.GetUserAppConsent(ctx, consent.UserID, consent.AppID, "")
 }
 
 func TestRound09_AccountRepository_OAuth_ListOAuthClientsQueryErrorAndStartKey(t *testing.T) {

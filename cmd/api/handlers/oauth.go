@@ -138,6 +138,10 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 			return nil, resp, respErr
 		}
 	}
+	if strings.TrimSpace(req.resource) == "" && oauthAuthorizeRequiresResource(client) {
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_target", "resource is required for remote MCP authorization", req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
 
 	principalUsername, resp, err := h.resolveAuthorizeUser(ctx, req)
 	if resp != nil || err != nil {
@@ -301,7 +305,7 @@ func (h *Handler) bindAuthorizeTarget(ctx *apptheory.Context, flow *authorizeFlo
 
 	req := flow.request
 	if strings.TrimSpace(req.resource) == "" {
-		if usesDeprecatedMCPConnectorSemantics(flow.client.ClientClass, flow.client.AgentUsername) {
+		if oauthAuthorizeRequiresResource(flow.client) {
 			return h.oauthErrorLift(ctx, "invalid_target", "resource is required for remote MCP authorization", req.redirectURI, req.state)
 		}
 		return nil, nil
@@ -383,7 +387,7 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.scopes) {
+	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.request.resource, flow.scopes) {
 		return nil, nil
 	}
 
@@ -550,10 +554,11 @@ func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage
 }
 
 // hasUserConsentedToApp checks if user has consented to the app with required scopes
-func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
+func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID, resource string, scopes []string) bool {
 	result, err := h.registry.Accounts().GetUserAppConsent(ctx, &accounts.GetUserAppConsentQuery{
 		Username: username,
 		ClientID: clientID,
+		Resource: resource,
 	})
 	if err != nil || result == nil || result.Consent == nil {
 		return false
@@ -1340,6 +1345,14 @@ func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
 	return client != nil &&
 		!client.Confidential &&
 		strings.EqualFold(strings.TrimSpace(client.RegistrationSource), oauthRegistrationSourceDynamic)
+}
+
+func oauthAuthorizeRequiresResource(client *storage.OAuthClient) bool {
+	if client == nil {
+		return false
+	}
+	return usesDeprecatedMCPConnectorSemantics(client.ClientClass, client.AgentUsername) ||
+		oauthClientRequiresPKCE(client)
 }
 
 func requireOAuthPKCE(codeChallenge, codeChallengeMethod string) error {

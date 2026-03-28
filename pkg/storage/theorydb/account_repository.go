@@ -102,7 +102,7 @@ type AccountRepository interface {
 	ListOAuthClients(ctx context.Context, limit int, cursor string) ([]*storage.OAuthClient, string, error)
 	GetOAuthApp(ctx context.Context, clientID string) (*storage.OAuthApp, error)
 	SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error
-	GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error)
+	GetUserAppConsent(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error)
 
 	// ===== WebAuthn Operations =====
 	CreateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error

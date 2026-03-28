@@ -448,6 +448,11 @@ func TestUserAppConsent_ScopesAndRevocation(t *testing.T) {
 	assert.False(t, c.Active)
 	require.NotNil(t, c.RevokedAt)
 	assert.False(t, c.IsValid())
+
+	c.Resource = "https://example.com/mcp/agent-1"
+	require.NoError(t, c.UpdateKeys())
+	assert.Equal(t, "CONSENT#app1#RESOURCE#https://example.com/mcp/agent-1", c.SK)
+	assert.Equal(t, "USER#u1#RESOURCE#https://example.com/mcp/agent-1", c.GSI1SK)
 	assert.Equal(t, MainTableName, c.TableName())
 }
 

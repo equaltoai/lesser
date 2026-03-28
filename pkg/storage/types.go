@@ -444,6 +444,7 @@ type UserAppConsent struct {
 	UserID    string    `json:"user_id"`
 	ClientID  string    `json:"client_id"`
 	AppID     string    `json:"app_id"`
+	Resource  string    `json:"resource,omitempty"`
 	Scopes    []string  `json:"scopes"`
 	GrantedAt time.Time `json:"granted_at"`
 	CreatedAt time.Time `json:"created_at"`

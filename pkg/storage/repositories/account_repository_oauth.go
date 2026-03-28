@@ -763,7 +763,7 @@ func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *sto
 }
 
 // GetUserAppConsent retrieves user consent for an OAuth app
-func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error) {
 	helper := NewOAuthHelper(r.db, r.logger)
-	return helper.GetUserAppConsentGeneric(ctx, userID, appID)
+	return helper.GetUserAppConsentGeneric(ctx, userID, appID, resource)
 }

@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type UserAppConsent struct {
 	// Consent data
 	UserID    string     `theorydb:"attr:userID" json:"user_id"`
 	AppID     string     `theorydb:"attr:appID" json:"app_id"` // OAuth app client ID
+	Resource  string     `theorydb:"attr:resource,omitempty" json:"resource,omitempty"`
 	Scopes    []string   `theorydb:"attr:scopes" json:"scopes"`
 	CreatedAt time.Time  `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
@@ -41,12 +43,28 @@ func (c *UserAppConsent) GetSK() string {
 func (c *UserAppConsent) UpdateKeys() error {
 	// Primary key - for user's consent list
 	c.PK = fmt.Sprintf("USER#%s", c.UserID)
-	c.SK = fmt.Sprintf("CONSENT#%s", c.AppID)
+	c.SK = userAppConsentSortKey(c.AppID, c.Resource)
 
 	// GSI - for app's authorized users list
 	c.GSI1PK = fmt.Sprintf("APP#%s", c.AppID)
-	c.GSI1SK = fmt.Sprintf("USER#%s", c.UserID)
+	c.GSI1SK = userAppConsentUserIndexSortKey(c.UserID, c.Resource)
 	return nil
+}
+
+func userAppConsentSortKey(appID, resource string) string {
+	resource = strings.TrimSpace(resource)
+	if resource == "" {
+		return fmt.Sprintf("CONSENT#%s", appID)
+	}
+	return fmt.Sprintf("CONSENT#%s#RESOURCE#%s", appID, resource)
+}
+
+func userAppConsentUserIndexSortKey(userID, resource string) string {
+	resource = strings.TrimSpace(resource)
+	if resource == "" {
+		return fmt.Sprintf("USER#%s", userID)
+	}
+	return fmt.Sprintf("USER#%s#RESOURCE#%s", userID, resource)
 }
 
 // HasScope checks if the consent includes a specific scope

@@ -67,7 +67,7 @@ func TestRound09_OAuthHelpers_UserAppConsentBranches(t *testing.T) {
 	helperHappy := NewOAuthHelper(mockDBHappy, zap.NewNop())
 	require.NoError(t, helperHappy.SaveUserAppConsentGeneric(ctx, consent))
 
-	got, err := helperHappy.GetUserAppConsentGeneric(ctx, consent.UserID, consent.AppID)
+	got, err := helperHappy.GetUserAppConsentGeneric(ctx, consent.UserID, consent.AppID, "")
 	require.NoError(t, err)
 	require.Equal(t, consent.UserID, got.UserID)
 
@@ -100,7 +100,7 @@ func TestRound09_OAuthHelpers_UserAppConsentBranches(t *testing.T) {
 	mockQueryGetNotFound.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	setupPermissiveRound08Mocks(mockDBGetNotFound, mockQueryGetNotFound, nil, time.Now().UTC())
 	helperGetNotFound := NewOAuthHelper(mockDBGetNotFound, zap.NewNop())
-	_, err = helperGetNotFound.GetUserAppConsentGeneric(ctx, "missing", "client-1")
+	_, err = helperGetNotFound.GetUserAppConsentGeneric(ctx, "missing", "client-1", "")
 	require.Error(t, err)
 
 	mockDBUpdateErr := new(mocks.MockDB)

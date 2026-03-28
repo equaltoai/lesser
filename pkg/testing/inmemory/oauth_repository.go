@@ -27,7 +27,7 @@ type OAuthRepository struct {
 	// OAuth clients: clientID -> OAuthClient
 	clients map[string]*storage.OAuthClient
 
-	// User app consents: userID_appID -> UserAppConsent
+	// User app consents: userID_appID_resource -> UserAppConsent
 	consents map[string]*storage.UserAppConsent
 }
 
@@ -347,17 +347,17 @@ func (r *OAuthRepository) SaveUserAppConsent(_ context.Context, consent *storage
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	key := consent.UserID + "_" + consent.AppID
+	key := consent.UserID + "_" + consent.AppID + "_" + consent.Resource
 	r.consents[key] = consent
 	return nil
 }
 
 // GetUserAppConsent retrieves user consent for an OAuth app
-func (r *OAuthRepository) GetUserAppConsent(_ context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+func (r *OAuthRepository) GetUserAppConsent(_ context.Context, userID, appID, resource string) (*storage.UserAppConsent, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	key := userID + "_" + appID
+	key := userID + "_" + appID + "_" + resource
 	consent, exists := r.consents[key]
 	if !exists {
 		return nil, storage.ErrNotFound
