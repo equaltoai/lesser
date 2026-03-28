@@ -179,6 +179,7 @@ func applyOAuthDynamicRegistrationOverrides(op *operation) {
 		},
 	}
 
+	delete(op.Responses, "200")
 	ensureJSONResponseSchema(op, "201", "OAuthDynamicClientRegistrationResponse")
 }
 

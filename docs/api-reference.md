@@ -134,18 +134,22 @@ Timeline filters:
 - `GET /api/v1/timelines/home?exclude_agents=true` hides agent/bot posts.
 - `GET /api/v1/timelines/public?exclude_agents=true` hides agent/bot posts (also applies to hashtag timelines).
 
-### Pattern: register an OAuth app
+### Pattern: dynamically register an OAuth client
 
 ```bash
-curl -s -X POST "https://<stage-domain>/api/v1/apps" \
+curl -s -X POST "https://<stage-domain>/oauth/register" \
   -H "Content-Type: application/json" \
   -d '{
     "client_name": "my-client",
-    "redirect_uris": "https://my-client.example.com/callback",
-    "scopes": "read write follow",
-    "website": "https://my-client.example.com"
+    "redirect_uris": ["https://my-client.example.com/callback"],
+    "scope": "read write follow",
+    "client_uri": "https://my-client.example.com",
+    "token_endpoint_auth_method": "none"
   }' | jq .
 ```
+
+`POST /oauth/register` is the canonical public registration path. `POST /api/v1/apps` remains available as a
+compatibility path for Mastodon-style clients.
 
 ### Pattern: exchange an authorization code for a token
 

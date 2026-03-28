@@ -18,12 +18,6 @@ Instead, Lesser constrains the public surface with:
 - public-client vs confidential-client validation
 - dedicated `/oauth/register` rate limiting
 
-Legacy agent-bound registration is more restrictive:
-
-- `client_class=agent` requires an authenticated owner principal
-- the owner must already satisfy the same ownership check used by manual connector creation in `cmd/api/handlers/oauth_agent_binding.go`
-- a dynamic registration request cannot bind an agent it does not own
-
 ## Supported metadata subset
 
 Lesser currently accepts this RFC 7591 subset:
@@ -39,13 +33,12 @@ Lesser currently accepts this RFC 7591 subset:
 
 Lesser extensions:
 
-- `client_class` (deprecated compatibility field for connector-era MCP clients)
-- `agent_username` (deprecated compatibility field for connector-era MCP clients)
+- `client_class` (optional Lesser client classification for generic public clients; accepts `cli` or `web`)
 
 Unsupported metadata is rejected with `invalid_client_metadata` rather than silently ignored.
 
-New public MCP clients should not rely on those Lesser extensions. They remain accepted only as migration-era
-compatibility fields while connector-specific MCP semantics are being removed.
+`agent_username` and public `client_class=agent` registration semantics are not part of the public RFC 7591 contract.
+Internal agent-runtime specialization is handled outside public dynamic registration.
 
 ## Redirect URI policy
 
@@ -70,8 +63,8 @@ Lesser supports both:
 
 When `token_endpoint_auth_method` is omitted, Lesser infers:
 
-- legacy `client_class=agent` -> confidential `client_secret_post`
-- otherwise -> `none` implies `cli`, and confidential defaults imply `web`
+- `none` implies `cli`
+- confidential defaults imply `web`
 
 Dynamically registered public clients are expected to use PKCE for the authorization-code flow. Lesser enforces that requirement for dynamically registered public clients on `/oauth/authorize`.
 
@@ -81,11 +74,9 @@ Lesser assigns or constrains grants server-side:
 
 - dynamic `cli` clients default to `authorization_code refresh_token`
 - if device flow is enabled, dynamic `cli` clients also receive `urn:ietf:params:oauth:grant-type:device_code`
-- legacy dynamic confidential `agent` clients default to `authorization_code refresh_token client_credentials`
-- legacy dynamic public `agent` clients default to `authorization_code refresh_token`
 - requested `grant_types` must be a subset of Lesser's allowed default set for that client shape
 
-This keeps dynamic registration aligned with the broader agent-auth grant policy and prevents arbitrary clients from self-assigning `client_credentials`.
+This keeps public dynamic registration aligned with the actor-scoped MCP contract and prevents arbitrary clients from self-assigning `client_credentials`.
 
 ## Provenance and management
 
@@ -95,12 +86,12 @@ Lesser persists dynamic-registration provenance on the shared OAuth client recor
 - `client_uri`
 - `software_id`
 - `software_version`
-- existing `confidential`, `client_class`, `agent_username`, and `owner_id`
+- existing `confidential`, `client_class`, and `owner_id`
 
 That is the Lesser-side contract for storage and management views:
 
 - manual and dynamic clients must be distinguishable by `registration_source`
 - public and confidential clients must be distinguishable by `confidential`
-- agent binding remains visible through `client_class`, `agent_username`, and `owner_id`
+- generic public client shape remains visible through `client_class` and `owner_id`
 
 This keeps manual and dynamic connectors in one coherent storage model so downstream management can list, revoke, rotate, or delete them uniformly.

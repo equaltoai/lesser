@@ -53,7 +53,7 @@ Device flow inherits the OAuth client's class rather than forcing one uniform to
   - CLI automation safety rails apply
   - refresh records keep CLI-style session metadata
 - `client_class=agent`
-  - legacy compatibility path for public MCP; not the canonical actor-scoped contract
+  - internal or legacy compatibility runtime path; not provisioned by public registration and not part of the canonical actor-scoped public contract
   - access tokens are minted for the bound agent identity, not the approving operator principal
   - tokens carry `client_class`, `is_agent`, `agent_type`, and `delegated_by`
   - refresh records use the same agent runtime family semantics as other delegated agent OAuth flows

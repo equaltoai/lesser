@@ -6,7 +6,6 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
-	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,15 +95,14 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
-	t.Run("rejects non agent agent_username", func(t *testing.T) {
+	t.Run("rejects public agent client class", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
 
 		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
-			ClientName:              "CLI Client",
-			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
-			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
-			AgentUsername:           "agent1",
+			ClientName:   "CLI Client",
+			RedirectURIs: []string{"http://127.0.0.1:8787/callback"},
+			ClientClass:  auth.ClientClassAgent,
 		})
 		require.Nil(t, normalized)
 		require.NoError(t, err)
@@ -172,28 +170,25 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
-	t.Run("rejects owner mismatch for agent registration", func(t *testing.T) {
-		state := &round10QueryState{
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@other-owner"},
-			},
-		}
-		handler, _, _ := round11NewHandler(t, cfg, state)
+	t.Run("captures optional owner for generic confidential registration", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", map[string]string{
 			"Authorization": "Bearer " + ownerToken,
 		}, nil, nil)
 
 		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
-			ClientName:    "Agent Connector",
-			RedirectURIs:  []string{"https://example.com/callback"},
-			ClientClass:   auth.ClientClassAgent,
-			AgentUsername: "agent1",
+			ClientName:              "Web Client",
+			RedirectURIs:            []string{"https://example.com/callback"},
+			ClientClass:             auth.ClientClassWeb,
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodClientSecretPost,
 		})
-		require.Nil(t, normalized)
 		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.Equal(t, http.StatusForbidden, resp.Status)
+		require.Nil(t, resp)
+		require.Equal(t, auth.ClientClassWeb, normalized.clientClass)
+		require.Equal(t, oauthTokenEndpointAuthMethodClientSecretPost, normalized.tokenEndpointAuthMethod)
+		require.True(t, normalized.confidential)
+		require.Equal(t, "owner", normalized.ownerID)
 	})
 
 	t.Run("normalizes public cli defaults", func(t *testing.T) {
@@ -294,9 +289,8 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, auth.ClientClassWeb, clientClass)
 
-		clientClass, err = normalizeDynamicRegistrationClientClass(auth.ClientClassAgent, oauthTokenEndpointAuthMethodClientSecretPost)
-		require.NoError(t, err)
-		require.Equal(t, auth.ClientClassAgent, clientClass)
+		_, err = normalizeDynamicRegistrationClientClass(auth.ClientClassAgent, oauthTokenEndpointAuthMethodClientSecretPost)
+		require.ErrorContains(t, err, "client_class=agent is not supported for public registration")
 	})
 
 	t.Run("grant type normalization enforces dynamic policy", func(t *testing.T) {
@@ -314,8 +308,8 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 		_, err = normalizeDynamicRegistrationGrantTypes([]string{oauthDeviceCodeGrantType}, auth.ClientClassCLI, oauthTokenEndpointAuthMethodNone, false)
 		require.ErrorContains(t, err, "device_code grant is disabled")
 
-		_, err = normalizeDynamicRegistrationGrantTypes([]string{auth.GrantTypeClientCredentials}, auth.ClientClassAgent, oauthTokenEndpointAuthMethodNone, false)
-		require.ErrorContains(t, err, "exceed Lesser's dynamic registration policy")
+		_, err = normalizeDynamicRegistrationGrantTypes([]string{auth.GrantTypeClientCredentials}, auth.ClientClassWeb, oauthTokenEndpointAuthMethodClientSecretPost, false)
+		require.ErrorContains(t, err, "client_credentials is only allowed for agent clients")
 	})
 
 	t.Run("response type normalization defaults to code and rejects unsupported values", func(t *testing.T) {
@@ -358,12 +352,8 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 
 	t.Run("dynamic registration defaults vary by client class", func(t *testing.T) {
 		require.Equal(t,
-			[]string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken, auth.GrantTypeClientCredentials},
-			dynamicRegistrationDefaultGrantTypes(auth.ClientClassAgent, oauthTokenEndpointAuthMethodClientSecretPost, false),
-		)
-		require.Equal(t,
 			[]string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken},
-			dynamicRegistrationDefaultGrantTypes(auth.ClientClassAgent, oauthTokenEndpointAuthMethodNone, false),
+			dynamicRegistrationDefaultGrantTypes(auth.ClientClassCLI, oauthTokenEndpointAuthMethodNone, false),
 		)
 		require.Equal(t,
 			[]string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken, oauthDeviceCodeGrantType},

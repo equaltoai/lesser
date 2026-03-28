@@ -31,7 +31,6 @@ type dynamicRegistrationNormalizedRequest struct {
 	responseTypes           []string
 	tokenEndpointAuthMethod string
 	clientClass             string
-	agentUsername           string
 	clientURI               string
 	logoURI                 string
 	contacts                []string
@@ -70,7 +69,6 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		ResponseTypes:      normalized.responseTypes,
 		Scopes:             normalized.scopes,
 		ClientClass:        normalized.clientClass,
-		AgentUsername:      normalized.agentUsername,
 		OwnerID:            normalized.ownerID,
 		RegistrationSource: oauthRegistrationSourceDynamic,
 		Confidential:       normalized.confidential,
@@ -99,21 +97,13 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		SoftwareID:              client.SoftwareID,
 		SoftwareVersion:         client.SoftwareVersion,
 		ClientClass:             client.ClientClass,
-		AgentUsername:           client.AgentUsername,
 		RegistrationSource:      client.RegistrationSource,
 	}
 	if normalized.confidential {
 		respBody.ClientSecret = client.ClientSecret
 	}
 
-	response, err := apptheory.JSON(http.StatusCreated, respBody)
-	if err != nil {
-		return nil, err
-	}
-	if usesDeprecatedMCPConnectorSemantics(client.ClientClass, client.AgentUsername) {
-		addDeprecatedMCPConnectorHeaders(response)
-	}
-	return response, nil
+	return apptheory.JSON(http.StatusCreated, respBody)
 }
 
 func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Context) (*models.OAuthDynamicClientRegistrationRequest, *apptheory.Response, error) {
@@ -237,38 +227,6 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 	}
 
 	ownerID := h.getOptionalAuthenticatedUser(ctx)
-	agentUsername := strings.TrimSpace(req.AgentUsername)
-	if clientClass == auth.ClientClassAgent {
-		if ownerID == "" {
-			resp, respErr := h.oauthDynamicRegistrationError(http.StatusUnauthorized, "access_denied", "agent client registration requires an authenticated owner")
-			return nil, resp, respErr
-		}
-
-		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), &storage.OAuthClient{
-			ClientClass:   clientClass,
-			AgentUsername: agentUsername,
-		}, ownerID)
-		switch agentErr {
-		case nil:
-			agentUsername = agentUser.Username
-		case errOAuthAgentUsernameRequired:
-			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", agentErr.Error())
-			return nil, resp, respErr
-		case errOAuthAgentNotFound:
-			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", agentErr.Error())
-			return nil, resp, respErr
-		case errOAuthAgentForbidden:
-			resp, respErr := h.oauthDynamicRegistrationError(http.StatusForbidden, "access_denied", agentErr.Error())
-			return nil, resp, respErr
-		default:
-			h.logger.Error("failed to resolve agent binding during dynamic client registration", zap.Error(agentErr))
-			resp, respErr := h.oauthDynamicRegistrationError(http.StatusInternalServerError, "server_error", "failed to resolve agent binding")
-			return nil, resp, respErr
-		}
-	} else if agentUsername != "" {
-		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "agent_username is only supported for agent clients")
-		return nil, resp, respErr
-	}
 
 	return &dynamicRegistrationNormalizedRequest{
 		clientName:              clientName,
@@ -278,7 +236,6 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		responseTypes:           responseTypes,
 		tokenEndpointAuthMethod: tokenEndpointAuthMethod,
 		clientClass:             clientClass,
-		agentUsername:           agentUsername,
 		clientURI:               clientURI,
 		logoURI:                 logoURI,
 		contacts:                contacts,
@@ -415,7 +372,7 @@ func normalizeDynamicRegistrationClientClass(value, tokenEndpointAuthMethod stri
 		}
 		return auth.ClientClassWeb, nil
 	}
-	return normalizeOAuthClientClass(value)
+	return normalizePublicOAuthClientClass(value)
 }
 
 func normalizeDynamicRegistrationGrantTypes(requested []string, clientClass, tokenEndpointAuthMethod string, allowDeviceFlow bool) ([]string, error) {
@@ -464,20 +421,6 @@ func grantTypeSubsetAllowed(allowed, requested []string) bool {
 
 func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod string, allowDeviceFlow bool) []string {
 	switch clientClass {
-	case auth.ClientClassAgent:
-		tokenEndpointAuthMethod = strings.TrimSpace(tokenEndpointAuthMethod)
-		if strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretPost) ||
-			strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretBasic) {
-			return []string{
-				auth.GrantTypeAuthorizationCode,
-				auth.GrantTypeRefreshToken,
-				auth.GrantTypeClientCredentials,
-			}
-		}
-		return []string{
-			auth.GrantTypeAuthorizationCode,
-			auth.GrantTypeRefreshToken,
-		}
 	case auth.ClientClassCLI:
 		grants := []string{
 			auth.GrantTypeAuthorizationCode,

@@ -59,9 +59,8 @@ type AppRegistrationRequest struct {
 	RedirectURIs string `json:"redirect_uris"`
 	Scopes       string `json:"scopes"`
 	Website      string `json:"website,omitempty"`
-	// Deprecated compatibility fields from the connector-era MCP model.
+	// Lesser extension for generic client classification. Public registration accepts `cli` and `web`.
 	ClientClass             string `json:"client_class,omitempty"`
-	AgentUsername           string `json:"agent_username,omitempty"`
 	GrantTypes              string `json:"grant_types,omitempty"`
 	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
 }

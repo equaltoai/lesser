@@ -16,9 +16,8 @@ type OAuthDynamicClientRegistrationRequest struct {
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 
-	// Deprecated compatibility fields from the connector-era MCP model.
-	ClientClass   string `json:"client_class,omitempty"`
-	AgentUsername string `json:"agent_username,omitempty"`
+	// Lesser extension for generic client classification. Public registration accepts `cli` and `web`.
+	ClientClass string `json:"client_class,omitempty"`
 }
 
 // OAuthDynamicClientRegistrationResponse represents RFC 7591 registration output.
@@ -41,8 +40,6 @@ type OAuthDynamicClientRegistrationResponse struct {
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 
-	// Deprecated compatibility fields from the connector-era MCP model.
 	ClientClass        string `json:"client_class,omitempty"`
-	AgentUsername      string `json:"agent_username,omitempty"`
 	RegistrationSource string `json:"registration_source,omitempty"`
 }

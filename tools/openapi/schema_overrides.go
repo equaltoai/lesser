@@ -35,12 +35,9 @@ func overrideCreateStatusRequest(schemas map[string]any) {
 }
 
 func overrideOAuthClientSchemas(schemas map[string]any) {
-	overrideSchemaProperty(schemas, "AppRegistrationRequest", "client_class", "Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.", true)
-	overrideSchemaProperty(schemas, "AppRegistrationRequest", "agent_username", "Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.", true)
-	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "client_class", "Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.", true)
-	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "agent_username", "Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.", true)
-	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "client_class", "Deprecated connector-era MCP compatibility field.", true)
-	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "agent_username", "Deprecated connector-era MCP compatibility field.", true)
+	overrideSchemaProperty(schemas, "AppRegistrationRequest", "client_class", "Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.", false)
+	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "client_class", "Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.", false)
+	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "client_class", "Lesser client classification persisted for the registered public client.", false)
 	overrideSchemaProperty(schemas, "OAuthTokenRequest", "resource", "Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request.", false)
 }
 
