@@ -8,21 +8,20 @@ Public remote MCP clients should treat the actor-scoped contract in [docs/specs/
 Agent-bound runtime sessions, secret-rotation flows, and similar owned-client operations are compatibility/runtime
 surfaces, not the source of truth for public MCP access.
 
-Legacy `client_class=agent` and `agent_username` registration semantics are deprecated for removal from the public MCP
-contract.
-
 ## Supported registration flow
 
 - Prefer `POST /oauth/register` as the canonical public registration path.
 - Use standard RFC 7591 metadata as the source of truth for public clients.
 - Treat any published client profile, starter snippet, or copied example as derived guidance rather than a separate contract.
 - `POST /api/v1/apps` remains available as a non-canonical public compatibility path.
+- Public registration accepts generic OAuth client shapes only: `client_class=cli` or `client_class=web`.
+- Public registration does not accept `client_class=agent` or `agent_username`.
 - Request canonical scopes from the public catalog: `read`, `write`, `follow`, `push`.
 - Do not request `admin`; it is internal-only and rejected on public OAuth surfaces.
 - Store the returned `client_secret` because it is only shown once.
 
 Registration responses echo the persisted `grant_types` and `token_endpoint_auth_method` so operators can confirm the
-client shape that Lesser stored.
+generic client shape that Lesser stored.
 Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for compatibility, but new clients should prefer the canonical catalog.
 
 ## Supported token flow
@@ -32,8 +31,8 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 - Treat `authorization_code` and `refresh_token` state as resource-bound to that MCP URL.
 - Consent redirects and stored OAuth state for that flow carry the canonical `resource` target instead of `agent_username`.
 - Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
-- Legacy compatibility: `POST /oauth/token` supports `client_credentials` for confidential agent clients.
-- Legacy compatibility: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
+- Compatibility/runtime only: `POST /oauth/token` supports `client_credentials` for confidential agent clients that already exist outside the public registration contract.
+- Compatibility/runtime only: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
 - `client_credentials` responses are access-token-only.
 - Access tokens inherit Lesser's configured agent access-token TTL.
 - Device-code and client-credentials tokens for agent clients are minted for the bound agent identity and carry `client_class`, `is_agent`, `agent_type`, and `delegated_by` claims.
@@ -54,9 +53,10 @@ Lesser now exposes `POST /oauth/register` and advertises it through RFC 8414 met
 The current compatibility story is:
 
 - native or CLI discovery clients can dynamically register a public client with `token_endpoint_auth_method=none`
+- browser-based public clients can dynamically register a confidential `web` client with `client_secret_post`
 - dynamically registered public clients use PKCE for the authorization-code flow
 - if device flow is enabled, dynamic `cli` clients also receive `device_code`
-- legacy agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
+- agent-bound runtime clients are not provisioned through public RFC 7591 registration
 
 Manual `POST /api/v1/apps` registration remains available as a non-canonical public compatibility path, but RFC 7591 is
 the canonical remote MCP path.

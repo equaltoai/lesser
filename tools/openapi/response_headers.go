@@ -16,6 +16,10 @@ func ensureStandardResponseHeaders(op *operation, route routeDef) {
 		return
 	}
 
+	if route.Path == "/api/v1/apps" || route.Path == "/oauth/register" {
+		removeHeadersFromSuccessResponses(op, "Deprecation", "Warning")
+	}
+
 	status := primarySuccessStatus(route)
 	if status == 0 {
 		return
@@ -53,18 +57,26 @@ func ensureStandardResponseHeaders(op *operation, route routeDef) {
 		})
 	}
 
-	if route.Path == "/api/v1/apps" || route.Path == "/oauth/register" {
-		ensureHeader(resp.Headers, "Deprecation", responseHeader{
-			Description: "Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.",
-			Schema:      schemaRef{Type: "string"},
-		})
-		ensureHeader(resp.Headers, "Warning", responseHeader{
-			Description: "HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.",
-			Schema:      schemaRef{Type: "string"},
-		})
+	op.Responses[respKey] = resp
+}
+
+func removeHeadersFromSuccessResponses(op *operation, names ...string) {
+	if op == nil || op.Responses == nil || len(names) == 0 {
+		return
 	}
 
-	op.Responses[respKey] = resp
+	for statusCode, resp := range op.Responses {
+		if resp.Ref != "" || len(statusCode) == 0 || statusCode[0] != '2' || resp.Headers == nil {
+			continue
+		}
+		for _, name := range names {
+			delete(resp.Headers, strings.TrimSpace(name))
+		}
+		if len(resp.Headers) == 0 {
+			resp.Headers = nil
+		}
+		op.Responses[statusCode] = resp
+	}
 }
 
 func ensureHeader(headers map[string]responseHeader, name string, header responseHeader) {

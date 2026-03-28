@@ -75,6 +75,8 @@ That means:
 - published example client profiles, snippets, or starter metadata are convenience material only
 - any published public-client profile is derived from the RFC 7591 contract and must not replace it as the source of
   truth
+- public registration produces generic OAuth clients; it must not provision actor-bound or agent-bound client identities
+- public registration responses must not depend on MCP-specific agent-binding fields such as `agent_username`
 
 `POST /api/v1/apps` may continue to exist as a non-canonical public compatibility path, but it is not the canonical
 remote MCP contract for new public clients.
@@ -123,7 +125,7 @@ The following public-facing MCP-era surfaces are deprecated for removal:
 
 - Simulacrum connector registration flows that create or manage public MCP connector records
 - browser-local connector inventory, pasted-secret flows, and similar connector-management UX
-- public `client_class=agent` and `agent_username` semantics on registration and token-related MCP guidance
+- public registration semantics that depended on `client_class=agent` or `agent_username`
 
 They may continue to exist temporarily as compatibility aids, but new public MCP clients, examples, and docs must not
 use them as the canonical integration path.

@@ -167,7 +167,7 @@ func (h *Handler) parseAppRegistrationRequest(ctx *apptheory.Context) (models.Ap
 	if strings.Contains(contentTypeLower, "application/json") {
 		// Parse as JSON
 		var req models.AppRegistrationRequest
-		if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		if err := common.ParseRequestStrict(ctx, &req); err != nil {
 			h.logger.Error("failed to parse JSON request", zap.Error(err), zap.String("body", body))
 			return models.AppRegistrationRequest{}, err
 		}
@@ -223,7 +223,7 @@ func (h *Handler) parseFallbackRequest(ctx *apptheory.Context, body string) (mod
 
 	// Try JSON as last resort
 	var req models.AppRegistrationRequest
-	if jsonErr := common.ParseRequestWithFallback(ctx, &req); jsonErr == nil && req.ClientName != "" {
+	if jsonErr := common.ParseRequestStrict(ctx, &req); jsonErr == nil && req.ClientName != "" {
 		h.logger.Info("parsed as JSON (fallback)",
 			zap.String("detected_content_type", "application/json"))
 		return req, nil
@@ -238,6 +238,9 @@ func (h *Handler) parseFallbackRequest(ctx *apptheory.Context, body string) (mod
 
 // buildRequestFromParams builds AppRegistrationRequest from parsed parameters
 func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRegistrationRequest, error) {
+	if err := validatePublicAppRegistrationParams(params); err != nil {
+		return models.AppRegistrationRequest{}, err
+	}
 	if err := common.ValidateApplicationName(params["client_name"]); err != nil {
 		return models.AppRegistrationRequest{}, err
 	}
@@ -251,12 +254,39 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 		Scopes:                  params["scopes"],
 		Website:                 params["website"],
 		ClientClass:             params["client_class"],
-		AgentUsername:           params["agent_username"],
 		GrantTypes:              params["grant_types"],
 		TokenEndpointAuthMethod: params["token_endpoint_auth_method"],
 	}
 
 	return req, nil
+}
+
+func validatePublicAppRegistrationParams(params map[string]string) error {
+	allowed := map[string]struct{}{
+		"client_name":                {},
+		"redirect_uris":              {},
+		"scopes":                     {},
+		"website":                    {},
+		"client_class":               {},
+		"grant_types":                {},
+		"token_endpoint_auth_method": {},
+	}
+
+	for key := range params {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := allowed[key]; ok {
+			continue
+		}
+		if key == "agent_username" {
+			return errors.New("agent_username is not supported for public registration")
+		}
+		return errors.New("unsupported app registration parameter: " + key)
+	}
+
+	return nil
 }
 
 // validateAppRegistrationParams validates the parsed request parameters
@@ -367,7 +397,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	if err := auth.ValidatePublicOAuthScopes(scopes); err != nil {
 		return h.respondUnprocessableEntity(ctx, "invalid scopes")
 	}
-	clientClass, err := normalizeOAuthClientClass(req.ClientClass)
+	clientClass, err := normalizePublicOAuthClientClass(req.ClientClass)
 	if err != nil {
 		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
@@ -392,30 +422,6 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	// Try to extract authenticated user (optional - public registration allowed for initial OAuth flow)
 	// But if authenticated, set OwnerID for security and proper ownership
 	ownerID := h.getOptionalAuthenticatedUser(ctx)
-	agentUsername := strings.TrimSpace(req.AgentUsername)
-
-	if clientClass == auth.ClientClassAgent {
-		if strings.TrimSpace(ownerID) == "" {
-			return h.respondUnauthorized(ctx)
-		}
-		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), &storage.OAuthClient{
-			ClientClass:   clientClass,
-			AgentUsername: agentUsername,
-		}, ownerID)
-		switch agentErr {
-		case nil:
-			agentUsername = agentUser.Username
-		case errOAuthAgentUsernameRequired:
-			return h.respondUnprocessableEntity(ctx, agentErr.Error())
-		case errOAuthAgentNotFound:
-			return h.respondUnprocessableEntity(ctx, agentErr.Error())
-		case errOAuthAgentForbidden:
-			return h.respondForbidden(ctx, agentErr.Error())
-		default:
-			h.logger.Error("failed to resolve agent binding for oauth client", zap.Error(agentErr))
-			return common.RespondInternalServerError(ctx)
-		}
-	}
 
 	// Create OAuth client
 	client := &storage.OAuthClient{
@@ -425,7 +431,6 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 		GrantTypes:         grantTypes,
 		Scopes:             scopes,
 		ClientClass:        clientClass,
-		AgentUsername:      agentUsername,
 		OwnerID:            ownerID, // Set owner if authenticated
 		RegistrationSource: oauthRegistrationSourceManual,
 		Confidential:       confidential,
@@ -461,14 +466,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	h.logger.Info("returning app registration response",
 		zap.String("client_id", resp.ClientID))
 
-	response, err := okJSON(resp)
-	if err != nil {
-		return nil, err
-	}
-	if usesDeprecatedMCPConnectorSemantics(clientClass, agentUsername) {
-		addDeprecatedMCPConnectorHeaders(response)
-	}
-	return response, nil
+	return okJSON(resp)
 }
 
 // parseScopes parses the scopes string into a slice
@@ -491,6 +489,17 @@ func normalizeOAuthClientClass(value string) (string, error) {
 	default:
 		return "", errors.New("invalid client_class")
 	}
+}
+
+func normalizePublicOAuthClientClass(value string) (string, error) {
+	clientClass, err := normalizeOAuthClientClass(value)
+	if err != nil {
+		return "", err
+	}
+	if clientClass == auth.ClientClassAgent {
+		return "", errors.New("client_class=agent is not supported for public registration")
+	}
+	return clientClass, nil
 }
 
 func splitOAuthSpaceDelimited(value string) []string {

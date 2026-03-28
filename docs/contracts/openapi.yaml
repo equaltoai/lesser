@@ -1579,13 +1579,8 @@ components:
         AppRegistrationRequest:
             additionalProperties: false
             properties:
-                agent_username:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
-                    type: string
                 client_class:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
+                    description: Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.
                     type: string
                 client_name:
                     type: string
@@ -3871,13 +3866,8 @@ components:
         OAuthDynamicClientRegistrationRequest:
             additionalProperties: false
             properties:
-                agent_username:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
-                    type: string
                 client_class:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
+                    description: Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.
                     type: string
                 client_name:
                     type: string
@@ -3917,13 +3907,8 @@ components:
         OAuthDynamicClientRegistrationResponse:
             additionalProperties: false
             properties:
-                agent_username:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field.
-                    type: string
                 client_class:
-                    deprecated: true
-                    description: Deprecated connector-era MCP compatibility field.
+                    description: Lesser client classification persisted for the registered public client.
                     type: string
                 client_id:
                     type: string
@@ -11978,15 +11963,6 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AppRegistrationResponse'
-                    headers:
-                        Deprecation:
-                            description: Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.
-                            schema:
-                                type: string
-                        Warning:
-                            description: HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.
-                            schema:
-                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -18832,17 +18808,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/OAuthDynamicClientRegistrationRequest'
             responses:
-                "200":
-                    description: OK
-                    headers:
-                        Deprecation:
-                            description: Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.
-                            schema:
-                                type: string
-                        Warning:
-                            description: HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.
-                            schema:
-                                type: string
                 "201":
                     description: Created
                     content:

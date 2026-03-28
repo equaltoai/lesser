@@ -29,6 +29,23 @@ func TestNormalizeOAuthClientClass(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNormalizePublicOAuthClientClass(t *testing.T) {
+	out, err := normalizePublicOAuthClientClass("")
+	require.NoError(t, err)
+	require.Equal(t, "", out)
+
+	out, err = normalizePublicOAuthClientClass(" cli ")
+	require.NoError(t, err)
+	require.Equal(t, auth.ClientClassCLI, out)
+
+	out, err = normalizePublicOAuthClientClass("web")
+	require.NoError(t, err)
+	require.Equal(t, auth.ClientClassWeb, out)
+
+	_, err = normalizePublicOAuthClientClass(auth.ClientClassAgent)
+	require.ErrorContains(t, err, "client_class=agent is not supported for public registration")
+}
+
 func TestNormalizeOAuthClientGrantTypes(t *testing.T) {
 	out, err := normalizeOAuthClientGrantTypes("", auth.ClientClassAgent, true)
 	require.NoError(t, err)

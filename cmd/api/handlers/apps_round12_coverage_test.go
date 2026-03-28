@@ -40,6 +40,13 @@ func TestApps_Round12_ParseAppRegistrationRequest_Coverage(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("json_rejects_removed_agent_username", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/json"}, nil, []byte(`{"client_name":"Test App","redirect_uris":"https://example.com/callback","scopes":"read","agent_username":"agent1"}`))
+
+		_, err := handler.parseAppRegistrationRequest(ctx)
+		require.Error(t, err)
+	})
+
 	t.Run("form_urlencoded_ok", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil,
 			[]byte("client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read&website=https%3A%2F%2Fexample.com"))
@@ -51,6 +58,14 @@ func TestApps_Round12_ParseAppRegistrationRequest_Coverage(t *testing.T) {
 
 	t.Run("form_urlencoded_parse_error", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil, []byte("%"))
+
+		_, err := handler.parseAppRegistrationRequest(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("form_urlencoded_rejects_removed_agent_username", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil,
+			[]byte("client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read&agent_username=agent1"))
 
 		_, err := handler.parseAppRegistrationRequest(ctx)
 		require.Error(t, err)
@@ -175,78 +190,73 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
-	t.Run("agent_client_requires_authenticated_owner", func(t *testing.T) {
+	t.Run("public_registration_rejects_agent_client_class", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
 
 		req := &apimodels.AppRegistrationRequest{
-			ClientName:    "Agent Connector",
-			RedirectURIs:  "https://example.com/callback",
-			Scopes:        "read write",
-			ClientClass:   auth.ClientClassAgent,
-			AgentUsername: "agent1",
+			ClientName:   "Agent Connector",
+			RedirectURIs: "https://example.com/callback",
+			Scopes:       "read write",
+			ClientClass:  auth.ClientClassAgent,
 		}
-		requireStatus(t, http.StatusUnauthorized)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
-	t.Run("agent_client_rejects_unowned_agent", func(t *testing.T) {
-		state := &round10QueryState{
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@someone-else"},
-			},
-		}
+	t.Run("confidential_public_web_client_does_not_require_authenticated_owner", func(t *testing.T) {
+		state := &round10QueryState{}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
-		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{
-			"Authorization": "Bearer " + ownerToken,
-		}, nil, nil)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
 
 		req := &apimodels.AppRegistrationRequest{
-			ClientName:    "Agent Connector",
-			RedirectURIs:  "https://example.com/callback",
-			Scopes:        "read write",
-			ClientClass:   auth.ClientClassAgent,
-			AgentUsername: "agent1",
-		}
-		requireStatus(t, http.StatusForbidden)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
-	})
-
-	t.Run("agent_client_stores_bound_agent_username", func(t *testing.T) {
-		state := &round10QueryState{
-			usersByUsername: map[string]storagemodels.User{
-				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
-			},
-		}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-
-		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{
-			"Authorization": "Bearer " + ownerToken,
-		}, nil, nil)
-		require.NoError(t, err)
-
-		req := &apimodels.AppRegistrationRequest{
-			ClientName:              "Agent Connector",
+			ClientName:              "Confidential Web App",
 			RedirectURIs:            "https://example.com/callback",
 			Scopes:                  "read write",
-			ClientClass:             auth.ClientClassAgent,
-			AgentUsername:           "agent1",
-			GrantTypes:              auth.GrantTypeClientCredentials + " " + auth.GrantTypeAuthorizationCode,
+			ClientClass:             auth.ClientClassWeb,
 			TokenEndpointAuthMethod: "client_secret_post",
 		}
 		resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
-		require.Equal(t, "true", firstStringValue(resp.Headers, "deprecation"))
-		require.Contains(t, firstStringValue(resp.Headers, "warning"), "deprecated for public MCP access")
+		require.Empty(t, firstStringValue(resp.Headers, "deprecation"))
+		require.Empty(t, firstStringValue(resp.Headers, "warning"))
 
 		require.Len(t, state.oauthClientsByID, 1)
 		for _, client := range state.oauthClientsByID {
-			require.Equal(t, auth.ClientClassAgent, client.ClientClass)
-			require.Equal(t, "agent1", client.AgentUsername)
-			require.Equal(t, []string{auth.GrantTypeClientCredentials, auth.GrantTypeAuthorizationCode}, client.GrantTypes)
+			require.Equal(t, auth.ClientClassWeb, client.ClientClass)
+			require.Empty(t, client.AgentUsername)
+			require.Empty(t, client.OwnerID)
+			require.True(t, client.Confidential)
+		}
+	})
+
+	t.Run("public_registration_response_omits_agent_binding_fields", func(t *testing.T) {
+		state := &round10QueryState{}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:              "Web App",
+			RedirectURIs:            "https://example.com/callback",
+			Scopes:                  "read write",
+			ClientClass:             auth.ClientClassWeb,
+			GrantTypes:              auth.GrantTypeAuthorizationCode + " " + auth.GrantTypeRefreshToken,
+			TokenEndpointAuthMethod: "client_secret_post",
+		}
+		resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotContains(t, body, "agent_username")
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.Equal(t, auth.ClientClassWeb, client.ClientClass)
+			require.Empty(t, client.AgentUsername)
+			require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, client.GrantTypes)
 			require.True(t, client.Confidential)
 		}
 	})
@@ -258,11 +268,10 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &apimodels.AppRegistrationRequest{
-			ClientName:              "Public Agent Connector",
+			ClientName:              "Public Web App",
 			RedirectURIs:            "https://example.com/callback",
 			Scopes:                  "read write",
-			ClientClass:             auth.ClientClassAgent,
-			AgentUsername:           "agent1",
+			ClientClass:             auth.ClientClassWeb,
 			GrantTypes:              auth.GrantTypeClientCredentials,
 			TokenEndpointAuthMethod: "none",
 		}
