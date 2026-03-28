@@ -39,8 +39,8 @@ Write-path verification checks:
 
 - dynamic registration can mint a generic public client without a client secret
 - public dynamic registration does not return connector-bound metadata such as `agent_username`
-- dynamic registration rejects `client_credentials` on the public surface
-- `POST /api/v1/apps` rejects the removed public `agent_username` input
+- dynamic registration rejects `client_credentials` on the public surface with `400 invalid_client_metadata`
+- `POST /api/v1/apps` rejects the removed public `agent_username` input with a `422` validation error
 
 ## Manual client checks after deployment
 

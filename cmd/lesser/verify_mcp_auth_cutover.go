@@ -38,6 +38,12 @@ type verifyMCPAuthCutoverSummary struct {
 	WriteChecks          bool
 }
 
+type verifyMCPAuthCutoverErrorResponse struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+	Code             string `json:"code"`
+}
+
 func runVerifyMCPAuthCutover(argv []string) error {
 	fs := flag.NewFlagSet("lesser verify mcp-auth-cutover", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -233,8 +239,8 @@ func executeVerifyMCPAuthCutoverWriteChecks(ctx context.Context, client *http.Cl
 	if err != nil {
 		return fmt.Errorf("reject public client_credentials registration: %w", err)
 	}
-	if status < http.StatusBadRequest {
-		return fmt.Errorf("public dynamic registration still accepted client_credentials (%d): %s", status, strings.TrimSpace(string(body)))
+	if err := verifyMCPAuthCutoverExpectClientCredentialsRejection(status, body); err != nil {
+		return fmt.Errorf("reject public client_credentials registration: %w", err)
 	}
 
 	form := url.Values{}
@@ -247,8 +253,55 @@ func executeVerifyMCPAuthCutoverWriteChecks(ctx context.Context, client *http.Cl
 	if err != nil {
 		return fmt.Errorf("reject /api/v1/apps agent_username input: %w", err)
 	}
-	if status < http.StatusBadRequest {
-		return fmt.Errorf("/api/v1/apps still accepted removed agent_username input (%d): %s", status, strings.TrimSpace(string(body)))
+	if err := verifyMCPAuthCutoverExpectRemovedAgentUsernameRejection(status, body); err != nil {
+		return fmt.Errorf("reject /api/v1/apps agent_username input: %w", err)
+	}
+
+	return nil
+}
+
+func verifyMCPAuthCutoverExpectClientCredentialsRejection(status int, body []byte) error {
+	trimmedBody := strings.TrimSpace(string(body))
+	if status == http.StatusCreated {
+		return fmt.Errorf("still accepted client_credentials (%d): %s", status, trimmedBody)
+	}
+	if status != http.StatusBadRequest {
+		return fmt.Errorf("expected 400 invalid_client_metadata, got %d (%s)", status, trimmedBody)
+	}
+
+	var resp verifyMCPAuthCutoverErrorResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("expected JSON invalid_client_metadata error, got %q", trimmedBody)
+	}
+	if !strings.EqualFold(strings.TrimSpace(resp.Error), "invalid_client_metadata") {
+		return fmt.Errorf("expected error=invalid_client_metadata, got %q", strings.TrimSpace(resp.Error))
+	}
+
+	description := strings.ToLower(strings.TrimSpace(resp.ErrorDescription))
+	if !strings.Contains(description, "grant_types") && !strings.Contains(description, auth.GrantTypeClientCredentials) {
+		return fmt.Errorf("expected invalid_client_metadata description to mention grant_types or client_credentials, got %q", strings.TrimSpace(resp.ErrorDescription))
+	}
+
+	return nil
+}
+
+func verifyMCPAuthCutoverExpectRemovedAgentUsernameRejection(status int, body []byte) error {
+	trimmedBody := strings.TrimSpace(string(body))
+	if status == http.StatusOK || status == http.StatusCreated {
+		return fmt.Errorf("still accepted removed agent_username input (%d): %s", status, trimmedBody)
+	}
+	if status != http.StatusUnprocessableEntity {
+		return fmt.Errorf("expected 422 validation error, got %d (%s)", status, trimmedBody)
+	}
+
+	var resp verifyMCPAuthCutoverErrorResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("expected JSON validation error, got %q", trimmedBody)
+	}
+
+	message := strings.ToLower(strings.TrimSpace(resp.Error))
+	if !strings.Contains(message, "agent_username") || !strings.Contains(message, "not supported for public registration") {
+		return fmt.Errorf("expected validation error mentioning removed agent_username input, got %q", strings.TrimSpace(resp.Error))
 	}
 
 	return nil

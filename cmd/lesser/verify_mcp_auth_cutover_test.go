@@ -353,7 +353,8 @@ func TestExecuteVerifyMCPAuthCutoverWriteChecks_Errors(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"error": "invalid_client_metadata",
+					"error":             "invalid_client_metadata",
+					"error_description": "invalid grant_types",
 				})
 			case "/api/v1/apps":
 				w.WriteHeader(http.StatusOK)
@@ -366,6 +367,69 @@ func TestExecuteVerifyMCPAuthCutoverWriteChecks_Errors(t *testing.T) {
 
 		err := executeVerifyMCPAuthCutoverWriteChecks(context.Background(), server.Client(), server.URL, server.URL+"/oauth/register", "agent-a")
 		require.ErrorContains(t, err, "still accepted removed agent_username input")
+	})
+
+	t.Run("client credentials rejection requires expected oauth error", func(t *testing.T) {
+		registerCalls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/oauth/register":
+				registerCalls++
+				if registerCalls == 1 {
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"client_id":                  "client-public",
+						"client_class":               "cli",
+						"grant_types":                []string{"authorization_code", "refresh_token"},
+						"token_endpoint_auth_method": "none",
+					})
+					return
+				}
+				http.Error(w, "upstream boom", http.StatusTooManyRequests)
+			case "/api/v1/apps":
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"error":"agent_username is not supported for public registration","code":"unprocessable_entity"}`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		err := executeVerifyMCPAuthCutoverWriteChecks(context.Background(), server.Client(), server.URL, server.URL+"/oauth/register", "agent-a")
+		require.ErrorContains(t, err, "expected 400 invalid_client_metadata")
+	})
+
+	t.Run("agent username rejection requires expected validation error", func(t *testing.T) {
+		registerCalls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/oauth/register":
+				registerCalls++
+				if registerCalls == 1 {
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"client_id":                  "client-public",
+						"client_class":               "cli",
+						"grant_types":                []string{"authorization_code", "refresh_token"},
+						"token_endpoint_auth_method": "none",
+					})
+					return
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":             "invalid_client_metadata",
+					"error_description": "client_credentials is not supported for public registration",
+				})
+			case "/api/v1/apps":
+				http.Error(w, "upstream boom", http.StatusInternalServerError)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		err := executeVerifyMCPAuthCutoverWriteChecks(context.Background(), server.Client(), server.URL, server.URL+"/oauth/register", "agent-a")
+		require.ErrorContains(t, err, "expected 422 validation error")
 	})
 }
 
@@ -383,6 +447,28 @@ func TestVerifyMCPAuthCutoverHTTPHelpers_Errors(t *testing.T) {
 	var out map[string]any
 	err = verifyMCPAuthCutoverGetJSON(context.Background(), server.Client(), server.URL, &out)
 	require.ErrorContains(t, err, "returned 500")
+}
+
+func TestVerifyMCPAuthCutoverRejectionHelpers(t *testing.T) {
+	t.Run("client credentials rejection accepts expected oauth error", func(t *testing.T) {
+		err := verifyMCPAuthCutoverExpectClientCredentialsRejection(http.StatusBadRequest, []byte(`{"error":"invalid_client_metadata","error_description":"client_credentials is not supported for public registration"}`))
+		require.NoError(t, err)
+	})
+
+	t.Run("client credentials rejection fails for malformed oauth error", func(t *testing.T) {
+		err := verifyMCPAuthCutoverExpectClientCredentialsRejection(http.StatusBadRequest, []byte(`{"error":"invalid_client_metadata","error_description":"client_name is required"}`))
+		require.ErrorContains(t, err, "mention grant_types or client_credentials")
+	})
+
+	t.Run("agent username rejection accepts expected validation error", func(t *testing.T) {
+		err := verifyMCPAuthCutoverExpectRemovedAgentUsernameRejection(http.StatusUnprocessableEntity, []byte(`{"error":"agent_username is not supported for public registration","code":"unprocessable_entity"}`))
+		require.NoError(t, err)
+	})
+
+	t.Run("agent username rejection fails for non-json body", func(t *testing.T) {
+		err := verifyMCPAuthCutoverExpectRemovedAgentUsernameRejection(http.StatusUnprocessableEntity, []byte(`upstream boom`))
+		require.ErrorContains(t, err, "expected JSON validation error")
+	})
 }
 
 func serverURLFromRequest(r *http.Request) string {
