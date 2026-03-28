@@ -288,7 +288,7 @@ func applyOAuthLoginOverrides(op *operation) {
 }
 
 func applyAppRegistrationOverrides(op *operation, route routeDef) {
-	if route.Method != methodPOST || route.Path != "/api/v1/apps" {
+	if route.Method != methodPOST || route.Path != pathApps {
 		return
 	}
 

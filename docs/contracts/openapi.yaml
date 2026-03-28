@@ -11971,9 +11971,6 @@ paths:
             operationId: post_api_v1_apps
             tags:
                 - apps
-            security:
-                - {}
-                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -12007,13 +12004,13 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/apps/{id}/rotate_secret:
         post:
             operationId: post_api_v1_apps_by_id_rotate_secret
             tags:
                 - apps
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -12043,6 +12040,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/auth/webauthn/credentials:
         get:
             operationId: get_api_v1_auth_webauthn_credentials
@@ -15137,6 +15136,10 @@ paths:
                                 $ref: '#/components/schemas/SoulsMineResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleGetMySoulsLift

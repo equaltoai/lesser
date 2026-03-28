@@ -16,7 +16,7 @@ func ensureStandardResponseHeaders(op *operation, route routeDef) {
 		return
 	}
 
-	if route.Path == "/api/v1/apps" || route.Path == "/oauth/register" {
+	if route.Path == pathApps || route.Path == "/oauth/register" {
 		removeHeadersFromSuccessResponses(op, "Deprecation", "Warning")
 	}
 
