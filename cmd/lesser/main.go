@@ -13,6 +13,7 @@ func main() {
 var (
 	runUpFn                                      = runUp
 	runDownFn                                    = runDown
+	runClientInstallFn                           = runClientInstall
 	runClientDeployFn                            = runClientDeploy
 	runInitAdminFn                               = runInitAdmin
 	runBuildFn                                   = runBuild
@@ -129,6 +130,8 @@ func handleClientCommand(args []string, stderr io.Writer) int {
 	}
 
 	switch args[2] {
+	case "install":
+		return exitCodeFromErr(runClientInstallFn(args[3:]), stderr)
 	case "deploy":
 		return exitCodeFromErr(runClientDeployFn(args[3:]), stderr)
 	case helpFlagShort, helpFlagLong, helpCommand:
@@ -151,7 +154,8 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> [--aws-profile <profile>] [--stage dev|staging|live] [--provisioning-input <path>] [--bootstrap-wallet-address <0x...>] [--with-staging] [--out <path>] [--rebuild-lambdas]")
 	_, _ = fmt.Fprintln(w, "  lesser init-admin --app <slug> --base-domain <example.com> [--aws-profile <profile>] --stage dev|staging|live [--provisioning-input <path>] --wallet-address <0x...> --signature <0x...> [--message <string> | --message-file <path>] [--username <username>] [--chain-id <n>]")
 	_, _ = fmt.Fprintln(w, "  lesser down --app <slug> --base-domain <example.com> --aws-profile <profile> [--state <path>] [--purge-artifacts]")
-	_, _ = fmt.Fprintln(w, "  lesser client deploy --app <slug> --base-domain <example.com> --aws-profile <profile> --dist <dir> [--stage dev|live|staging|both|all] [--state <path>]")
+	_, _ = fmt.Fprintln(w, "  lesser client install --app <slug> --base-domain <example.com> --aws-profile <profile> [--stage dev|live|staging|both|all] [--state <path>] [--config <path>] [--skip-build]")
+	_, _ = fmt.Fprintln(w, "  lesser client deploy ...                                  # deprecated; use `lesser client install`")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "  lesser build [--rebuild-lambdas]                # rebuild deployment artifacts (lambdas, auth-ui, go build)")
 	_, _ = fmt.Fprintln(w, "  lesser build lambdas [--rebuild]               # (re)build bin/*.zip")

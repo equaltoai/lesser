@@ -54,17 +54,25 @@ Key outputs:
 - Sensitive bootstrap material: `~/.lesser/<app>/<base-domain>/bootstrap.json` (0600)
 - Non-secret receipt: `~/.lesser/<app>/<base-domain>/state.json`
 
-### Deploy a standalone client UI
+### Install a FaceTheory client release
 
-If you build a Greater-based UI to `./dist`, deploy it into the per-stage client buckets:
+Run this from the FaceTheory app repo after `lesser up` has already provisioned the shared `/l/` host resources:
 
 ```bash
-./lesser client deploy \
+./lesser client install \
   --app my-lesser \
   --base-domain example.com \
   --aws-profile Penny \
-  --dist ./dist
+  --config ./facetheory.lesser.json
 ```
+
+Notes:
+
+- `lesser client install` uploads SSR server artifacts to the stage artifact bucket, uploads public assets to `/l/_assets/`,
+  flips the active install manifest, and invalidates CloudFront.
+- Use `--stage dev|staging|live|both|all` to target specific stages.
+- Use `--skip-build` if the FaceTheory app is already built.
+- `lesser client deploy` is retired for SSR-first `/l/` hosting.
 
 ## Development workflows
 

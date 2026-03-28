@@ -222,6 +222,14 @@ func receiptArtifactBuckets(receipt *upReceipt, stages []naming.Stage) []string 
 			unique[clientBucket] = struct{}{}
 		}
 
+		clientArtifactBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientArtifactBucketName"])
+		if clientArtifactBucket == "" && strings.TrimSpace(receipt.AccountID) != "" && strings.TrimSpace(receipt.Region) != "" {
+			clientArtifactBucket = naming.S3BucketName(receipt.App, stage, "client-artifacts", receipt.AccountID, receipt.Region)
+		}
+		if clientArtifactBucket != "" {
+			unique[clientArtifactBucket] = struct{}{}
+		}
+
 		authBucket := strings.TrimSpace(stageReceipt.StackOutputs["AuthUIBucketName"])
 		if authBucket == "" && strings.TrimSpace(receipt.AccountID) != "" && strings.TrimSpace(receipt.Region) != "" {
 			authBucket = naming.S3BucketName(receipt.App, stage, "auth-ui", receipt.AccountID, receipt.Region)

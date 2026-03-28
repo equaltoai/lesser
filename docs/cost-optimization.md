@@ -45,5 +45,6 @@ Common causes:
 
 Quick checks:
 
-- verify CloudFront cache behaviors are correct for static assets (`/l/*`, `/auth/*`)
+- verify CloudFront cache behaviors are correct for the split client path:
+  `/l` and `/l/*` should stay dynamic/SSR, while `/l/_assets/*` and `/auth/*` should remain cache-friendly static paths
 - look for high 4xx/5xx or unusual geographic traffic patterns in CloudFront metrics

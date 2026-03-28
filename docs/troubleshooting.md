@@ -36,8 +36,13 @@ curl -s "https://dev.example.com/setup/status" | jq .
 curl -s -o /dev/null -w "%{http_code}\n" "https://dev.example.com/api/v1/instance"
 ```
 
-If you recently changed routing (client UI, `/l/*`, `/auth/*`), confirm those behaviors didn’t swallow `/api/*` or
-`/.well-known/*`.
+If you recently changed routing, confirm:
+
+- `/l` and `/l/*` still point at the FaceTheory SSR host
+- `/l/_assets/*` still points at the client asset bucket
+- `/auth` and `/auth/*` still point at the auth UI bucket
+- `/auth/wallet/*` still bypasses the auth bucket and reaches the API origin
+- `/.well-known/*` and `/api/*` still fall through to the API origin
 
 ## GraphQL issues
 

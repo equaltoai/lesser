@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
-const receiptSchemaVersion = 1
+const receiptSchemaVersion = 2
 
 type upReceipt struct {
 	Version       int                      `json:"version"`
@@ -32,6 +32,7 @@ type integrationReceipt struct {
 	LesserHostURL             string `json:"lesser_host_url,omitempty"`
 	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
+	BodyEnabled               *bool  `json:"body_enabled,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
 
 	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
@@ -60,7 +61,19 @@ type stageReceipt struct {
 	Locked           bool              `json:"locked"`
 	URLs             map[string]string `json:"urls"`
 	StackOutputs     map[string]string `json:"stack_outputs,omitempty"`
+	ClientInstall    *clientInstallReceipt `json:"client_install,omitempty"`
 	BootstrappedAt   time.Time         `json:"bootstrapped_at"`
+}
+
+type clientInstallReceipt struct {
+	AppName     string    `json:"app_name,omitempty"`
+	DisplayName string    `json:"display_name,omitempty"`
+	Version     string    `json:"version,omitempty"`
+	InstallID   string    `json:"install_id,omitempty"`
+	ManifestKey string    `json:"manifest_key,omitempty"`
+	ServerRoot  string    `json:"server_root,omitempty"`
+	AssetsRoot  string    `json:"assets_root,omitempty"`
+	InstalledAt time.Time `json:"installed_at,omitempty"`
 }
 
 var writeReceiptFn = writeReceipt
