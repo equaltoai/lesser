@@ -561,6 +561,8 @@ type Agent struct {
 	Username          string                         `json:"username"`
 	DisplayName       string                         `json:"displayName"`
 	Bio               *string                        `json:"bio,omitempty"`
+	IdentitySemantics *AgentIdentitySemantics        `json:"identitySemantics"`
+	Workflow          *AgentWorkflowSurface          `json:"workflow,omitempty"`
 	AgentType         AgentType                      `json:"agentType"`
 	AgentVersion      string                         `json:"agentVersion"`
 	AgentCapabilities *activitypub.AgentCapabilities `json:"agentCapabilities"`
@@ -576,15 +578,6 @@ type Agent struct {
 	Owner             *activitypub.Actor             `json:"owner,omitempty"`
 	CreatedAt         Time                           `json:"createdAt"`
 	ActivityCount     int                            `json:"activityCount"`
-}
-
-type AgentMCPAccess struct {
-	McpURL                 string   `json:"mcpURL"`
-	ProtectedResourceURL   string   `json:"protectedResourceURL"`
-	AuthorizationServerURL string   `json:"authorizationServerURL"`
-	RegistrationURL        string   `json:"registrationURL"`
-	Scopes                 []string `json:"scopes"`
-	Guidance               []string `json:"guidance"`
 }
 
 type AgentActivityConnection struct {
@@ -629,6 +622,50 @@ type AgentEdge struct {
 	Cursor Cursor `json:"cursor"`
 }
 
+type AgentIdentityCard struct {
+	ID           string                `json:"id"`
+	Name         string                `json:"name"`
+	Handle       *string               `json:"handle,omitempty"`
+	Summary      string                `json:"summary"`
+	CurrentPhase string                `json:"currentPhase"`
+	CurrentState *string               `json:"currentState,omitempty"`
+	Steward      *AgentSurfaceActor    `json:"steward,omitempty"`
+	Tags         []string              `json:"tags,omitempty"`
+	Metrics      []*AgentSurfaceMetric `json:"metrics,omitempty"`
+}
+
+type AgentIdentitySemantics struct {
+	IdentityState             string           `json:"identityState"`
+	IdentityLabel             string           `json:"identityLabel"`
+	LifecycleState            string           `json:"lifecycleState"`
+	SoulBindingState          SoulBindingState `json:"soulBindingState"`
+	SoulAgentID               *string          `json:"soulAgentId,omitempty"`
+	ContinuityState           string           `json:"continuityState"`
+	ContinuitySummary         string           `json:"continuitySummary"`
+	BodyIdentityPreserved     bool             `json:"bodyIdentityPreserved"`
+	TimelinePresencePreserved bool             `json:"timelinePresencePreserved"`
+	MemoryReferencesPreserved bool             `json:"memoryReferencesPreserved"`
+	AttributionLabel          string           `json:"attributionLabel"`
+	ModerationLabel           string           `json:"moderationLabel"`
+}
+
+type AgentLifecycleStep struct {
+	Phase   string  `json:"phase"`
+	Title   *string `json:"title,omitempty"`
+	Summary *string `json:"summary,omitempty"`
+	State   *string `json:"state,omitempty"`
+	Status  string  `json:"status"`
+}
+
+type AgentMCPAccess struct {
+	McpURL                 string   `json:"mcpURL"`
+	ProtectedResourceURL   string   `json:"protectedResourceURL"`
+	AuthorizationServerURL string   `json:"authorizationServerURL"`
+	RegistrationURL        string   `json:"registrationURL"`
+	Scopes                 []string `json:"scopes"`
+	Guidance               []string `json:"guidance"`
+}
+
 type AgentPostAttributionInput struct {
 	TriggerType     *string  `json:"triggerType,omitempty"`
 	TriggerDetails  *string  `json:"triggerDetails,omitempty"`
@@ -662,6 +699,64 @@ type AgentRuntimeSessionAuthDiagnostic struct {
 	FailureMessage *string                       `json:"failureMessage,omitempty"`
 	FailureAt      *Time                         `json:"failureAt,omitempty"`
 	LastSuccessAt  *Time                         `json:"lastSuccessAt,omitempty"`
+}
+
+type AgentSurfaceActor struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Role        string  `json:"role"`
+	Handle      *string `json:"handle,omitempty"`
+	AvatarLabel *string `json:"avatarLabel,omitempty"`
+	StatusLabel *string `json:"statusLabel,omitempty"`
+}
+
+type AgentSurfaceArtifact struct {
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+	Href        *string `json:"href,omitempty"`
+	Emphasis    *string `json:"emphasis,omitempty"`
+}
+
+type AgentSurfaceArtifactInput struct {
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+	Href        *string `json:"href,omitempty"`
+	Emphasis    *string `json:"emphasis,omitempty"`
+}
+
+type AgentSurfaceMetric struct {
+	Label  string  `json:"label"`
+	Value  string  `json:"value"`
+	Detail *string `json:"detail,omitempty"`
+}
+
+type AgentWorkflowConversationState struct {
+	ConversationID  string  `json:"conversationId"`
+	Folder          string  `json:"folder"`
+	RequestState    *string `json:"requestState,omitempty"`
+	Unread          bool    `json:"unread"`
+	PreviewStatusID *string `json:"previewStatusId,omitempty"`
+	RequestedAt     *Time   `json:"requestedAt,omitempty"`
+	AcceptedAt      *Time   `json:"acceptedAt,omitempty"`
+	DeclinedAt      *Time   `json:"declinedAt,omitempty"`
+	UpdatedAt       Time    `json:"updatedAt"`
+}
+
+type AgentWorkflowSurface struct {
+	Username          string                          `json:"username"`
+	CurrentPhase      string                          `json:"currentPhase"`
+	CurrentState      string                          `json:"currentState"`
+	Identity          *AgentIdentityCard              `json:"identity"`
+	Request           *SoulRequestCard                `json:"request,omitempty"`
+	Review            *ReviewDecisionCard             `json:"review,omitempty"`
+	Declaration       *DeclarationPreviewCard         `json:"declaration,omitempty"`
+	Checkpoint        *SignatureCheckpointCard        `json:"checkpoint,omitempty"`
+	Graduation        *GraduationSummaryCard          `json:"graduation,omitempty"`
+	Continuity        *ContinuityPanel                `json:"continuity,omitempty"`
+	Lifecycle         []*AgentLifecycleStep           `json:"lifecycle"`
+	Conversation      *AgentWorkflowConversationState `json:"conversation,omitempty"`
+	IdentitySemantics *AgentIdentitySemantics         `json:"identitySemantics"`
 }
 
 type Announcement struct {
@@ -803,6 +898,24 @@ type ContentMap struct {
 type ContentMapInput struct {
 	Language string `json:"language"`
 	Content  string `json:"content"`
+}
+
+type ContinuityFollowUp struct {
+	ID      string             `json:"id"`
+	Title   string             `json:"title"`
+	Summary string             `json:"summary"`
+	Owner   *AgentSurfaceActor `json:"owner"`
+	Cadence *string            `json:"cadence,omitempty"`
+}
+
+type ContinuityPanel struct {
+	ID           string                `json:"id"`
+	Title        string                `json:"title"`
+	Objective    string                `json:"objective"`
+	Owner        *AgentSurfaceActor    `json:"owner"`
+	FeedbackLoop string                `json:"feedbackLoop"`
+	Metrics      []*AgentSurfaceMetric `json:"metrics,omitempty"`
+	FollowUps    []*ContinuityFollowUp `json:"followUps,omitempty"`
 }
 
 type Conversation struct {
@@ -987,6 +1100,17 @@ type DateRangeInput struct {
 	End   Time `json:"end"`
 }
 
+type DeclarationPreviewCard struct {
+	ID                  string                  `json:"id"`
+	Title               string                  `json:"title"`
+	Statement           string                  `json:"statement"`
+	Confidence          string                  `json:"confidence"`
+	Owner               *AgentSurfaceActor      `json:"owner,omitempty"`
+	DeclaredScope       []string                `json:"declaredScope"`
+	Risks               []string                `json:"risks,omitempty"`
+	SupportingArtifacts []*AgentSurfaceArtifact `json:"supportingArtifacts,omitempty"`
+}
+
 type DelegateToAgentInput struct {
 	AgentUsername string    `json:"agentUsername"`
 	DisplayName   string    `json:"displayName"`
@@ -1025,6 +1149,11 @@ type DomainBlockPage struct {
 	Domains    []string `json:"domains"`
 	NextCursor *Cursor  `json:"nextCursor,omitempty"`
 	TotalCount int      `json:"totalCount"`
+}
+
+type DroneWorkflowMutationPayload struct {
+	Agent    *Agent                `json:"agent"`
+	Workflow *AgentWorkflowSurface `json:"workflow"`
 }
 
 type Entity struct {
@@ -1195,6 +1324,25 @@ type FilterTestResult struct {
 	FilterTitle  string   `json:"filterTitle"`
 }
 
+type FinalizeSoulPromotionInput struct {
+	Username               string                       `json:"username"`
+	SoulAgentID            *string                      `json:"soulAgentId,omitempty"`
+	DeclarationTitle       *string                      `json:"declarationTitle,omitempty"`
+	DeclarationStatement   string                       `json:"declarationStatement"`
+	DeclarationConfidence  string                       `json:"declarationConfidence"`
+	DeclaredScope          []string                     `json:"declaredScope"`
+	DeclarationRisks       []string                     `json:"declarationRisks,omitempty"`
+	SupportingArtifacts    []*AgentSurfaceArtifactInput `json:"supportingArtifacts,omitempty"`
+	Readiness              string                       `json:"readiness"`
+	Summary                string                       `json:"summary"`
+	CompletedMilestones    []string                     `json:"completedMilestones,omitempty"`
+	ExitCriteria           []string                     `json:"exitCriteria,omitempty"`
+	NextStep               *string                      `json:"nextStep,omitempty"`
+	ContinuityObjective    *string                      `json:"continuityObjective,omitempty"`
+	ContinuityFeedbackLoop *string                      `json:"continuityFeedbackLoop,omitempty"`
+	ConversationID         *string                      `json:"conversationId,omitempty"`
+}
+
 type FlagInput struct {
 	ObjectID string   `json:"objectId"`
 	Reason   string   `json:"reason"`
@@ -1217,6 +1365,18 @@ type FlowNode struct {
 type FocusInput struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+}
+
+type GraduationSummaryCard struct {
+	ID                  string                `json:"id"`
+	Title               string                `json:"title"`
+	Readiness           string                `json:"readiness"`
+	Summary             string                `json:"summary"`
+	LaunchOwner         *AgentSurfaceActor    `json:"launchOwner,omitempty"`
+	CompletedMilestones []string              `json:"completedMilestones,omitempty"`
+	ExitCriteria        []string              `json:"exitCriteria,omitempty"`
+	NextStep            *string               `json:"nextStep,omitempty"`
+	Metrics             []*AgentSurfaceMetric `json:"metrics,omitempty"`
 }
 
 type GroupedNotificationGroup struct {
@@ -2282,6 +2442,49 @@ type ReputationVerificationResult struct {
 	Error          *string `json:"error,omitempty"`
 }
 
+type RequestSoulPromotionInput struct {
+	Username       string                       `json:"username"`
+	Title          string                       `json:"title"`
+	Summary        string                       `json:"summary"`
+	Constraints    []string                     `json:"constraints,omitempty"`
+	Artifacts      []*AgentSurfaceArtifactInput `json:"artifacts,omitempty"`
+	RouteDecision  *string                      `json:"routeDecision,omitempty"`
+	ConversationID *string                      `json:"conversationId,omitempty"`
+}
+
+type ReviewDecisionCard struct {
+	ID              string                  `json:"id"`
+	Title           string                  `json:"title"`
+	Decision        string                  `json:"decision"`
+	Reviewer        *AgentSurfaceActor      `json:"reviewer"`
+	DecisionSummary string                  `json:"decisionSummary"`
+	Findings        []*ReviewFinding        `json:"findings,omitempty"`
+	Evidence        []*AgentSurfaceArtifact `json:"evidence,omitempty"`
+}
+
+type ReviewFinding struct {
+	ID       string  `json:"id"`
+	Title    string  `json:"title"`
+	Detail   string  `json:"detail"`
+	Severity *string `json:"severity,omitempty"`
+}
+
+type ReviewFindingInput struct {
+	Title    string  `json:"title"`
+	Detail   string  `json:"detail"`
+	Severity *string `json:"severity,omitempty"`
+}
+
+type ReviewSoulPromotionInput struct {
+	Username        string                       `json:"username"`
+	Title           *string                      `json:"title,omitempty"`
+	Decision        string                       `json:"decision"`
+	DecisionSummary string                       `json:"decisionSummary"`
+	Findings        []*ReviewFindingInput        `json:"findings,omitempty"`
+	Evidence        []*AgentSurfaceArtifactInput `json:"evidence,omitempty"`
+	ConversationID  *string                      `json:"conversationId,omitempty"`
+}
+
 type SaveMarkerInput struct {
 	Timeline   MarkerTimeline `json:"timeline"`
 	LastReadID string         `json:"lastReadId"`
@@ -2364,6 +2567,23 @@ type SeveredRelationshipEdge struct {
 	Cursor Cursor               `json:"cursor"`
 }
 
+type SignatureCheckpointCard struct {
+	ID             string                       `json:"id"`
+	Title          string                       `json:"title"`
+	ReadinessLabel string                       `json:"readinessLabel"`
+	ApprovalMemo   *string                      `json:"approvalMemo,omitempty"`
+	DueAt          *Time                        `json:"dueAt,omitempty"`
+	Signers        []*SignatureCheckpointSigner `json:"signers"`
+}
+
+type SignatureCheckpointSigner struct {
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Role   string  `json:"role"`
+	Status string  `json:"status"`
+	Note   *string `json:"note,omitempty"`
+}
+
 type SoulAgentBinding struct {
 	AgentUsername    string  `json:"agentUsername"`
 	PrincipalAddress *string `json:"principalAddress,omitempty"`
@@ -2392,6 +2612,18 @@ type SoulInventoryItem struct {
 	BindingState              SoulBindingState   `json:"bindingState"`
 	AvailableForIncorporation bool               `json:"availableForIncorporation"`
 	Binding                   *SoulAgentBinding  `json:"binding,omitempty"`
+}
+
+type SoulRequestCard struct {
+	ID            string                  `json:"id"`
+	Title         string                  `json:"title"`
+	Summary       string                  `json:"summary"`
+	RequestedBy   *AgentSurfaceActor      `json:"requestedBy"`
+	SubmittedAt   *Time                   `json:"submittedAt,omitempty"`
+	Constraints   []string                `json:"constraints,omitempty"`
+	Artifacts     []*AgentSurfaceArtifact `json:"artifacts,omitempty"`
+	RouteDecision *string                 `json:"routeDecision,omitempty"`
+	CurrentState  *string                 `json:"currentState,omitempty"`
 }
 
 type SpamAnalysis struct {

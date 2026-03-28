@@ -27,20 +27,37 @@ type AgentMCPAccess struct {
 	Guidance               []string `json:"guidance"`
 }
 
+// AgentIdentitySemantics captures the public drone/graduating/souled semantics for an agent.
+type AgentIdentitySemantics struct {
+	IdentityState             string `json:"identity_state"`
+	IdentityLabel             string `json:"identity_label"`
+	LifecycleState            string `json:"lifecycle_state"`
+	SoulBindingState          string `json:"soul_binding_state"`
+	SoulAgentID               string `json:"soul_agent_id,omitempty"`
+	ContinuityState           string `json:"continuity_state"`
+	ContinuitySummary         string `json:"continuity_summary"`
+	BodyIdentityPreserved     bool   `json:"body_identity_preserved"`
+	TimelinePresencePreserved bool   `json:"timeline_presence_preserved"`
+	MemoryReferencesPreserved bool   `json:"memory_references_preserved"`
+	AttributionLabel          string `json:"attribution_label"`
+	ModerationLabel           string `json:"moderation_label"`
+}
+
 // Agent is the REST representation of a local agent account.
 type Agent struct {
-	Username          string            `json:"username"`
-	DisplayName       string            `json:"display_name"`
-	Bio               string            `json:"bio,omitempty"`
-	CreatedAt         *time.Time        `json:"created_at,omitempty"`
-	Verified          bool              `json:"verified"`
-	VerifiedAt        *time.Time        `json:"verified_at,omitempty"`
-	AgentType         string            `json:"agent_type"`
-	AgentVersion      string            `json:"agent_version"`
-	AgentOwner        string            `json:"agent_owner,omitempty"`
-	DelegatedScopes   []string          `json:"delegated_scopes,omitempty"`
-	AgentCapabilities AgentCapabilities `json:"agent_capabilities"`
-	MCPAccess         AgentMCPAccess    `json:"mcp_access"`
+	Username          string                 `json:"username"`
+	DisplayName       string                 `json:"display_name"`
+	Bio               string                 `json:"bio,omitempty"`
+	CreatedAt         *time.Time             `json:"created_at,omitempty"`
+	Verified          bool                   `json:"verified"`
+	VerifiedAt        *time.Time             `json:"verified_at,omitempty"`
+	AgentType         string                 `json:"agent_type"`
+	AgentVersion      string                 `json:"agent_version"`
+	AgentOwner        string                 `json:"agent_owner,omitempty"`
+	DelegatedScopes   []string               `json:"delegated_scopes,omitempty"`
+	AgentCapabilities AgentCapabilities      `json:"agent_capabilities"`
+	MCPAccess         AgentMCPAccess         `json:"mcp_access"`
+	IdentitySemantics AgentIdentitySemantics `json:"identity_semantics"`
 }
 
 // AgentDelegationRequest is the request payload for POST /api/v1/agents/delegate.

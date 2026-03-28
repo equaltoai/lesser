@@ -262,5 +262,48 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 		require.Equal(t, activitypub.AgentAttributionSchemaVersion, attribution.SchemaVersion)
 		require.Equal(t, agentVersionUnknown, attribution.ModelID)
 		require.Equal(t, []string{"write:statuses"}, attribution.Scopes)
+		require.Equal(t, agents.DroneIdentityStateDrone, attribution.IdentityState)
+		require.Equal(t, "Drone", attribution.IdentityLabel)
+		require.Equal(t, agents.DroneContinuityStatePlanned, attribution.ContinuityState)
+		require.Equal(t, "Drone", attribution.ModerationLabel)
+	})
+
+	t.Run("includes souled identity metadata when present", func(t *testing.T) {
+		metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
+			CurrentPhase: agents.DroneWorkflowPhaseContinuity,
+			CurrentState: agents.DroneWorkflowStateContinuityStable,
+			SoulAgentID:  "0xagent-soul",
+		})
+		require.NoError(t, err)
+
+		state := makeAgentState()
+		agentUser := state.usersByUsername["agent"]
+		agentUser.Metadata = metadata
+		state.usersByUsername["agent"] = agentUser
+		state.soulBodyBindingsByAgentID = map[string]storagemodels.InstanceSoulBodyBinding{
+			"0xagent-soul": *storagemodels.NewInstanceSoulBodyBinding("0xagent-soul", "agent", "0xprincipal"),
+		}
+		state.soulBodyBindingUsernames = map[string]storagemodels.InstanceSoulBodyBindingUsername{
+			"agent": *storagemodels.NewInstanceSoulBodyBindingUsername("agent", "0xagent-soul"),
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", nil, nil, nil)
+		require.NoError(t, err)
+
+		claims := &auth.Claims{
+			Username: "agent",
+			Scopes:   []string{"write:statuses"},
+			IsAgent:  true,
+		}
+		attribution, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, &apimodels.CreateStatusRequest{})
+		require.NoError(t, respErr)
+		require.Nil(t, resp)
+		require.NotNil(t, attribution)
+		require.Equal(t, agents.DroneIdentityStateSouled, attribution.IdentityState)
+		require.Equal(t, "Souled", attribution.IdentityLabel)
+		require.Equal(t, agents.DroneContinuityStateStable, attribution.ContinuityState)
+		require.Equal(t, "0xagent-soul", attribution.SoulAgentID)
+		require.Equal(t, "Souled", attribution.ModerationLabel)
 	})
 }

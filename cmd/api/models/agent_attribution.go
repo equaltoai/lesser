@@ -13,7 +13,13 @@ type AgentPostAttribution struct {
 	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
 	Scopes         []string `json:"scopes,omitempty"`
 
-	Constraints   []string `json:"constraints,omitempty"`
-	SchemaVersion string   `json:"schema_version,omitempty"`
-	ModelID       string   `json:"model_id,omitempty"`
+	Constraints       []string `json:"constraints,omitempty"`
+	SchemaVersion     string   `json:"schema_version,omitempty"`
+	ModelID           string   `json:"model_id,omitempty"`
+	IdentityState     string   `json:"identity_state,omitempty"`
+	IdentityLabel     string   `json:"identity_label,omitempty"`
+	ContinuityState   string   `json:"continuity_state,omitempty"`
+	ContinuitySummary string   `json:"continuity_summary,omitempty"`
+	SoulAgentID       string   `json:"soul_agent_id,omitempty"`
+	ModerationLabel   string   `json:"moderation_label,omitempty"`
 }

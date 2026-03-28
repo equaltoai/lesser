@@ -198,15 +198,36 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 		modelID = agentAttributionUnknownModelID
 	}
 
+	workflowState, err := r.loadDroneWorkflowState(agentUser)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to decode drone workflow metadata")
+	}
+	binding, err := r.lookupDroneSoulBinding(ctx, agentUser.Username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load soul body binding")
+	}
+	soulBound := binding != nil
+	soulAgentID := ""
+	if binding != nil {
+		soulAgentID = binding.AgentID
+	}
+	droneIdentity := agents.DeriveDroneIdentitySemantics(agentUser.Username, workflowState, soulBound, soulAgentID)
+
 	return &activitypub.AgentPostAttribution{
-		TriggerType:     triggerType,
-		TriggerDetails:  triggerDetails,
-		MemoryCitations: memoryCitations,
-		DelegatedBy:     delegatedBy,
-		Scopes:          append([]string(nil), claims.Scopes...),
-		Constraints:     buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
-		SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
-		ModelID:         modelID,
+		TriggerType:       triggerType,
+		TriggerDetails:    triggerDetails,
+		MemoryCitations:   memoryCitations,
+		DelegatedBy:       delegatedBy,
+		Scopes:            append([]string(nil), claims.Scopes...),
+		Constraints:       buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
+		SchemaVersion:     activitypub.AgentAttributionSchemaVersion,
+		ModelID:           modelID,
+		IdentityState:     droneIdentity.IdentityState,
+		IdentityLabel:     droneIdentity.IdentityLabel,
+		ContinuityState:   droneIdentity.ContinuityState,
+		ContinuitySummary: droneIdentity.ContinuitySummary,
+		SoulAgentID:       droneIdentity.SoulAgentID,
+		ModerationLabel:   droneIdentity.ModerationLabel,
 	}, nil
 }
 

@@ -889,6 +889,8 @@ components:
                     type: array
                 display_name:
                     type: string
+                identity_semantics:
+                    $ref: '#/components/schemas/AgentIdentitySemantics'
                 mcp_access:
                     $ref: '#/components/schemas/AgentMCPAccess'
                 username:
@@ -904,6 +906,7 @@ components:
                 - agent_type
                 - agent_version
                 - display_name
+                - identity_semantics
                 - mcp_access
                 - username
                 - verified
@@ -1183,6 +1186,46 @@ components:
                 - account
                 - token
             type: object
+        AgentIdentitySemantics:
+            additionalProperties: false
+            properties:
+                attribution_label:
+                    type: string
+                body_identity_preserved:
+                    type: boolean
+                continuity_state:
+                    type: string
+                continuity_summary:
+                    type: string
+                identity_label:
+                    type: string
+                identity_state:
+                    type: string
+                lifecycle_state:
+                    type: string
+                memory_references_preserved:
+                    type: boolean
+                moderation_label:
+                    type: string
+                soul_agent_id:
+                    type: string
+                soul_binding_state:
+                    type: string
+                timeline_presence_preserved:
+                    type: boolean
+            required:
+                - attribution_label
+                - body_identity_preserved
+                - continuity_state
+                - continuity_summary
+                - identity_label
+                - identity_state
+                - lifecycle_state
+                - memory_references_preserved
+                - moderation_label
+                - soul_binding_state
+                - timeline_presence_preserved
+            type: object
         AgentKeyChallengeRequest:
             additionalProperties: false
             properties:
@@ -1341,9 +1384,17 @@ components:
                     items:
                         type: string
                     type: array
+                continuity_state:
+                    type: string
+                continuity_summary:
+                    type: string
                 delegated_by:
                     type: string
                 delegated_by_did:
+                    type: string
+                identity_label:
+                    type: string
+                identity_state:
                     type: string
                 memory_citations:
                     items:
@@ -1351,12 +1402,16 @@ components:
                     type: array
                 model_id:
                     type: string
+                moderation_label:
+                    type: string
                 schema_version:
                     type: string
                 scopes:
                     items:
                         type: string
                     type: array
+                soul_agent_id:
+                    type: string
                 trigger_details:
                     type: string
                 trigger_type:
@@ -6549,9 +6604,17 @@ components:
                                             items:
                                                 type: string
                                             type: array
+                                        continuity_state:
+                                            type: string
+                                        continuity_summary:
+                                            type: string
                                         delegated_by:
                                             type: string
                                         delegated_by_did:
+                                            type: string
+                                        identity_label:
+                                            type: string
+                                        identity_state:
                                             type: string
                                         memory_citations:
                                             items:
@@ -6559,12 +6622,16 @@ components:
                                             type: array
                                         model_id:
                                             type: string
+                                        moderation_label:
+                                            type: string
                                         schema_version:
                                             type: string
                                         scopes:
                                             items:
                                                 type: string
                                             type: array
+                                        soul_agent_id:
+                                            type: string
                                         trigger_details:
                                             type: string
                                         trigger_type:

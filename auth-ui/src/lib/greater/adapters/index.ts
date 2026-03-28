@@ -56,6 +56,12 @@ export type {
 	UploadMediaMutationVariables,
 	UploadMediaMutation,
 	UploadMediaPayload,
+	DroneAgentState,
+	AgentWorkflowSurface,
+	DroneWorkflowMutationPayload,
+	RequestSoulPromotionInput,
+	ReviewSoulPromotionInput,
+	FinalizeSoulPromotionInput,
 } from './graphql';
 
 // Soul inventory (Lesser REST)

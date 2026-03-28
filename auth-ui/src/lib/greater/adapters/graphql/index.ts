@@ -21,6 +21,7 @@ export type {
 } from './LesserGraphQLAdapter.js';
 
 export * from './generated/types.js';
+export * from './droneWorkflow.js';
 export { typePolicies, cacheConfig, evictStaleCache, limitCacheSize } from './cache.js';
 
 export * as optimistic from './optimistic.js';

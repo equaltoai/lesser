@@ -71,6 +71,12 @@ models:
   ExchangeAgentAccessLeaseTokenInput:
     model:
       - github.com/equaltoai/lesser/graph/model.ExchangeAgentAccessLeaseTokenInput
+  Agent:
+    fields:
+      identitySemantics:
+        resolver: true
+      workflow:
+        resolver: true
   Duration:
     model:
       - github.com/equaltoai/lesser/graph/model.Duration
