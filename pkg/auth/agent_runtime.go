@@ -172,22 +172,13 @@ func IsAgentRuntimeRefreshToken(token *storage.RefreshToken) bool {
 		return false
 	}
 
-	return strings.TrimSpace(token.FamilyID) != "" ||
-		token.Generation > 0 ||
-		token.Current ||
-		token.DeviceLabel != "" ||
-		!token.LastUsedAt.IsZero() ||
-		!token.IdleExpiresAt.IsZero() ||
-		!token.AbsoluteExpiresAt.IsZero() ||
-		!token.SessionCreatedAt.IsZero() ||
-		token.AccessTTLSeconds > 0 ||
-		!token.ReuseDetectedAt.IsZero() ||
-		token.ReuseDetectedFromIP != "" ||
-		token.ReuseDetectedFromUA != "" ||
-		!token.LastAuthFailureAt.IsZero() ||
-		token.LastAuthFailureCode != "" ||
-		token.LastAuthFailureMsg != "" ||
-		!token.LastAuthSuccessAt.IsZero()
+	return strings.TrimSpace(token.FamilyID) != "" &&
+		token.Generation > 0 &&
+		!token.LastUsedAt.IsZero() &&
+		!token.IdleExpiresAt.IsZero() &&
+		!token.AbsoluteExpiresAt.IsZero() &&
+		!token.SessionCreatedAt.IsZero() &&
+		token.AccessTTLSeconds > 0
 }
 
 // ListAgentRuntimeSessions returns the current runtime refresh session records for an agent.

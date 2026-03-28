@@ -142,7 +142,7 @@ func TestOAuthRuntimeRefreshGrant_ConcurrentRefreshConflictReturnsInvalidGrant(t
 	require.False(t, updatedChild.LastAuthFailureAt.IsZero())
 }
 
-func TestOAuthRuntimeRefreshGrant_ZeroIdleExpiryDoesNotRevokeFamily(t *testing.T) {
+func TestOAuthRuntimeRefreshGrant_ZeroIdleExpiryRejectsPartialRuntimeRecord(t *testing.T) {
 	cfg := round10TestConfig()
 	now := time.Now().UTC()
 	token := buildRuntimeRefreshToken(t, "rt-agent-zero-idle", "agent1", delegatedAgentClientID, "sid-agent-zero-idle", "family-agent-zero-idle", "local-agent", 1, true, false, now)
@@ -157,23 +157,18 @@ func TestOAuthRuntimeRefreshGrant_ZeroIdleExpiryDoesNotRevokeFamily(t *testing.T
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-zero-idle&client_id="+delegatedAgentClientID))
-	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 
-	var body apimodels.OAuthTokenResponse
+	var body map[string]string
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	require.NotEmpty(t, body.RefreshToken)
+	require.Equal(t, "invalid_grant", body["error"])
 
 	oldToken := state.refreshTokensByToken["rt-agent-zero-idle"]
-	require.True(t, oldToken.Revoked)
-	require.Equal(t, "rotated", oldToken.RevokedReason)
-
-	newToken, ok := state.refreshTokensByToken[body.RefreshToken]
-	require.True(t, ok)
-	require.False(t, newToken.Revoked)
-	require.Equal(t, token.AbsoluteExpiresAt, newToken.AbsoluteExpiresAt)
+	require.False(t, oldToken.Revoked)
+	require.Empty(t, oldToken.RevokedReason)
 }
 
-func TestOAuthRuntimeRefreshGrant_ZeroAbsoluteExpiryDoesNotRevokeFamily(t *testing.T) {
+func TestOAuthRuntimeRefreshGrant_ZeroAbsoluteExpiryRejectsPartialRuntimeRecord(t *testing.T) {
 	cfg := round10TestConfig()
 	now := time.Now().UTC()
 	token := buildRuntimeRefreshToken(t, "rt-agent-zero-absolute", "agent1", delegatedAgentClientID, "sid-agent-zero-absolute", "family-agent-zero-absolute", "local-agent", 1, true, false, now)
@@ -188,20 +183,15 @@ func TestOAuthRuntimeRefreshGrant_ZeroAbsoluteExpiryDoesNotRevokeFamily(t *testi
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-zero-absolute&client_id="+delegatedAgentClientID))
-	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 
-	var body apimodels.OAuthTokenResponse
+	var body map[string]string
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	require.NotEmpty(t, body.RefreshToken)
+	require.Equal(t, "invalid_grant", body["error"])
 
 	oldToken := state.refreshTokensByToken["rt-agent-zero-absolute"]
-	require.True(t, oldToken.Revoked)
-	require.Equal(t, "rotated", oldToken.RevokedReason)
-
-	newToken, ok := state.refreshTokensByToken[body.RefreshToken]
-	require.True(t, ok)
-	require.False(t, newToken.Revoked)
-	require.False(t, newToken.AbsoluteExpiresAt.IsZero())
+	require.False(t, oldToken.Revoked)
+	require.Empty(t, oldToken.RevokedReason)
 }
 
 func TestOAuthRuntimeRefreshGrant_ExpiredBoundsStillRevokeFamily(t *testing.T) {
@@ -305,13 +295,14 @@ func TestOAuthRuntimeRefreshGrant_NonRuntimeRecordForRuntimeClientReturnsInvalid
 	cfg := round10TestConfig()
 	now := time.Now().UTC()
 	token := storagemodels.RefreshToken{
-		Token:       "rt-agent-nonruntime",
-		ClientID:    delegatedAgentClientID,
-		Username:    "agent1",
-		Scopes:      []string{auth.ScopeRead},
-		CreatedAt:   now.Add(-30 * time.Minute),
-		ExpiresAt:   now.Add(24 * time.Hour),
-		ClientClass: auth.ClientClassAgent,
+		Token:             "rt-agent-nonruntime",
+		ClientID:          delegatedAgentClientID,
+		Username:          "agent1",
+		Scopes:            []string{auth.ScopeRead},
+		CreatedAt:         now.Add(-30 * time.Minute),
+		ExpiresAt:         now.Add(24 * time.Hour),
+		ClientClass:       auth.ClientClassAgent,
+		LastAuthSuccessAt: now,
 	}
 	require.NoError(t, token.BeforeCreate())
 

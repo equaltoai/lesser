@@ -81,6 +81,7 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 	t.Parallel()
 
 	currentBySessionID := map[string]storage.RefreshToken{}
+	now := time.Now().UTC()
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{})
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
@@ -90,32 +91,47 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 	require.Empty(t, currentBySessionID)
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
-		SessionID:   "sess-1",
-		ClientID:    DelegatedAgentRuntimeClientID,
-		FamilyID:    "fam-1",
-		Current:     true,
-		Generation:  1,
-		DeviceLabel: "first",
+		SessionID:         "sess-1",
+		ClientID:          DelegatedAgentRuntimeClientID,
+		FamilyID:          "fam-1",
+		Current:           true,
+		Generation:        1,
+		DeviceLabel:       "first",
+		LastUsedAt:        now,
+		IdleExpiresAt:     now.Add(1 * time.Hour),
+		AbsoluteExpiresAt: now.Add(2 * time.Hour),
+		SessionCreatedAt:  now.Add(-1 * time.Hour),
+		AccessTTLSeconds:  1800,
 	})
 	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
-		SessionID:   "sess-1",
-		ClientID:    DelegatedAgentRuntimeClientID,
-		FamilyID:    "fam-1",
-		Current:     true,
-		Generation:  0,
-		DeviceLabel: "older",
+		SessionID:         "sess-1",
+		ClientID:          DelegatedAgentRuntimeClientID,
+		FamilyID:          "fam-1",
+		Current:           true,
+		Generation:        0,
+		DeviceLabel:       "older",
+		LastUsedAt:        now,
+		IdleExpiresAt:     now.Add(1 * time.Hour),
+		AbsoluteExpiresAt: now.Add(2 * time.Hour),
+		SessionCreatedAt:  now.Add(-1 * time.Hour),
+		AccessTTLSeconds:  1800,
 	})
 	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
 
 	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
-		SessionID:   "sess-1",
-		ClientID:    DelegatedAgentRuntimeClientID,
-		FamilyID:    "fam-1",
-		Current:     true,
-		Generation:  2,
-		DeviceLabel: "newer",
+		SessionID:         "sess-1",
+		ClientID:          DelegatedAgentRuntimeClientID,
+		FamilyID:          "fam-1",
+		Current:           true,
+		Generation:        2,
+		DeviceLabel:       "newer",
+		LastUsedAt:        now,
+		IdleExpiresAt:     now.Add(1 * time.Hour),
+		AbsoluteExpiresAt: now.Add(2 * time.Hour),
+		SessionCreatedAt:  now.Add(-1 * time.Hour),
+		AccessTTLSeconds:  1800,
 	})
 	require.Equal(t, "newer", currentBySessionID["sess-1"].DeviceLabel)
 
@@ -128,6 +144,12 @@ func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
 		DeviceLabel: "compat",
 	})
 	require.NotContains(t, currentBySessionID, "sess-public")
+
+	require.False(t, IsAgentRuntimeRefreshToken(&storage.RefreshToken{
+		ClientID:          DelegatedAgentRuntimeClientID,
+		SessionID:         "sess-partial",
+		LastAuthSuccessAt: time.Now().UTC(),
+	}))
 }
 
 func TestIssueAgentRuntimeTokens(t *testing.T) {
@@ -209,15 +231,15 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 			switch allCalls {
 			case 1:
 				*target = []models.RefreshToken{
-					{Token: "old", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 1, LastUsedAt: baseTime.Add(-2 * time.Hour), Version: 1},
-					{Token: "new", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 2, LastUsedAt: baseTime.Add(-1 * time.Hour), DeviceLabel: "desktop", Version: 1},
-					{Token: "skip-noncurrent", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-2", Current: false, Generation: 1, LastUsedAt: baseTime, Version: 1},
-					{Token: "skip-blank", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: " ", Current: true, Generation: 1, LastUsedAt: baseTime, Version: 1},
+					{Token: "old", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", FamilyID: "fam-1", Current: true, Generation: 1, LastUsedAt: baseTime.Add(-2 * time.Hour), IdleExpiresAt: baseTime.Add(1 * time.Hour), AbsoluteExpiresAt: baseTime.Add(2 * time.Hour), SessionCreatedAt: baseTime.Add(-4 * time.Hour), AccessTTLSeconds: 1800, Version: 1},
+					{Token: "new", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", FamilyID: "fam-1", Current: true, Generation: 2, LastUsedAt: baseTime.Add(-1 * time.Hour), IdleExpiresAt: baseTime.Add(1 * time.Hour), AbsoluteExpiresAt: baseTime.Add(2 * time.Hour), SessionCreatedAt: baseTime.Add(-4 * time.Hour), AccessTTLSeconds: 1800, DeviceLabel: "desktop", Version: 1},
+					{Token: "skip-noncurrent", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-2", FamilyID: "fam-2", Current: false, Generation: 1, LastUsedAt: baseTime, IdleExpiresAt: baseTime.Add(1 * time.Hour), AbsoluteExpiresAt: baseTime.Add(2 * time.Hour), SessionCreatedAt: baseTime.Add(-4 * time.Hour), AccessTTLSeconds: 1800, Version: 1},
+					{Token: "skip-blank", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: " ", FamilyID: "fam-blank", Current: true, Generation: 1, LastUsedAt: baseTime, IdleExpiresAt: baseTime.Add(1 * time.Hour), AbsoluteExpiresAt: baseTime.Add(2 * time.Hour), SessionCreatedAt: baseTime.Add(-4 * time.Hour), AccessTTLSeconds: 1800, Version: 1},
 					{Token: "skip-public", ClientID: "legacy-agent-client", Username: "alice", SessionID: "sid-public", FamilyID: "fam-public", Current: true, Generation: 1, LastUsedAt: baseTime.Add(30 * time.Minute), DeviceLabel: "compat", Version: 1},
 				}
 			case 2:
 				*target = []models.RefreshToken{
-					{Token: "other", ClientID: "lesser-agent-self-sovereign", Username: "alice", SessionID: "sid-3", Current: true, Generation: 1, LastUsedAt: baseTime, DeviceLabel: "cloud", Version: 1},
+					{Token: "other", ClientID: "lesser-agent-self-sovereign", Username: "alice", SessionID: "sid-3", FamilyID: "fam-3", Current: true, Generation: 1, LastUsedAt: baseTime, IdleExpiresAt: baseTime.Add(1 * time.Hour), AbsoluteExpiresAt: baseTime.Add(2 * time.Hour), SessionCreatedAt: baseTime.Add(-4 * time.Hour), AccessTTLSeconds: 1800, DeviceLabel: "cloud", Version: 1},
 				}
 			}
 		}
@@ -322,13 +344,13 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 				switch allCalls {
 				case 1:
 					*target = []models.RefreshToken{
-						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				case 2:
 					*target = []models.RefreshToken{}
 				case 3:
 					*target = []models.RefreshToken{
-						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				}
 			}
@@ -369,19 +391,19 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 				switch allCalls {
 				case 1:
 					*target = []models.RefreshToken{
-						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				case 2:
 					*target = []models.RefreshToken{
-						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().Add(-1 * time.Minute).UTC(), Version: 1},
+						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().Add(-1 * time.Minute).UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				case 3:
 					*target = []models.RefreshToken{
-						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				case 4:
 					*target = []models.RefreshToken{
-						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, Version: 1},
+						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				}
 			}
@@ -402,13 +424,13 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 				switch allCalls {
 				case 1:
 					*target = []models.RefreshToken{
-						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				case 2:
 					*target = []models.RefreshToken{}
 				case 3:
 					*target = []models.RefreshToken{
-						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				}
 			}
@@ -480,14 +502,14 @@ func TestAgentRuntimeAuthDiagnostics(t *testing.T) {
 		})
 		query.On("Update", mock.Anything).Return(nil).Times(3)
 
-		familyToken := &storage.RefreshToken{Token: "rt-1", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1"}
 		failureAt := time.Date(2026, time.March, 20, 16, 5, 0, 0, time.UTC)
+		familyToken := &storage.RefreshToken{Token: "rt-1", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1", Generation: 1, LastUsedAt: failureAt, IdleExpiresAt: failureAt.Add(1 * time.Hour), AbsoluteExpiresAt: failureAt.Add(2 * time.Hour), SessionCreatedAt: failureAt.Add(-1 * time.Hour), AccessTTLSeconds: 1800}
 		err := RecordAgentRuntimeAuthFailure(context.Background(), agentRuntimeRepos{account: repo}, familyToken, "invalid_client", "Invalid client credentials", failureAt)
 		require.NoError(t, err)
 		require.Equal(t, "invalid_client", familyToken.LastAuthFailureCode)
 		require.Equal(t, failureAt, familyToken.LastAuthFailureAt)
 
-		sessionToken := &storage.RefreshToken{Token: "rt-session", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1"}
+		sessionToken := &storage.RefreshToken{Token: "rt-session", ClientID: DelegatedAgentRuntimeClientID, SessionID: "sid-1", FamilyID: "fam-1", Generation: 1, LastUsedAt: failureAt, IdleExpiresAt: failureAt.Add(1 * time.Hour), AbsoluteExpiresAt: failureAt.Add(2 * time.Hour), SessionCreatedAt: failureAt.Add(-1 * time.Hour), AccessTTLSeconds: 1800}
 		successAt := failureAt.Add(2 * time.Minute)
 		err = RecordAgentRuntimeAuthSuccess(context.Background(), agentRuntimeRepos{account: repo}, sessionToken, successAt)
 		require.NoError(t, err)
