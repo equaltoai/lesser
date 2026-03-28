@@ -33,7 +33,8 @@ type RefreshToken struct {
 	SessionID   string    `theorydb:"attr:sessionID" json:"SessionID,omitempty"`
 
 	// Runtime session metadata. These fields are optional for regular OAuth clients and used
-	// by long-lived agent runtimes for safe rotation and operator-visible session management.
+	// only by the dedicated internal agent runtime clients for safe rotation and operator-visible
+	// session management.
 	FamilyID            string    `theorydb:"attr:familyID,omitempty" json:"FamilyID,omitempty"`
 	Generation          int       `theorydb:"attr:generation,omitempty" json:"Generation,omitempty"`
 	Current             bool      `theorydb:"attr:current" json:"Current"`

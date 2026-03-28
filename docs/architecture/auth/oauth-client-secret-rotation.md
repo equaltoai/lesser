@@ -4,7 +4,7 @@ Lesser supports in-place OAuth client secret rotation for owned compatibility/ru
 `client_id`.
 
 This is not part of the canonical public actor-scoped MCP contract. Public remote MCP access must not depend on
-connector-style secret rotation or other owned-runtime management workflows.
+owned-client secret rotation or other compatibility/runtime management workflows.
 
 ## Continuity contract
 
@@ -41,7 +41,7 @@ Both events are intentionally secret-free. The stored metadata contract is:
 The audit trail answers:
 
 - who initiated the rotation
-- which connector changed
+- which owned client changed
 - whether the rotation kept a grace window or used immediate invalidation
 - when the previous secret stops being accepted
 
@@ -56,7 +56,7 @@ Connector-management surfaces such as Simulacrum should treat the following as t
 - `grace_period_seconds`
 - `previous_secret_valid_until`
 
-Those fields are available from Lesser's rotation response and persisted connector state without exposing secret material.
+Those fields are available from Lesser's rotation response and persisted client state without exposing secret material.
 
 Downstream UI tracking:
 

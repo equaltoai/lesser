@@ -112,8 +112,10 @@ The canonical public MCP contract is the actor-scoped, resource-bound flow descr
 
 The following are not part of the canonical public remote MCP contract:
 
-- internal runtime clients that keep long-lived agent-bound session semantics
+- internal runtime clients such as `lesser-agent-delegation` and `lesser-agent-self-sovereign` that keep long-lived
+  agent-bound session semantics
 - agent runtime refresh-token families and runtime-session diagnostics
+- runtime-session listing or revocation endpoints that only manage those dedicated internal runtime clients
 - public MCP refresh-token records that depend on connector-era runtime session metadata
 - operator-only secret rotation and compatibility workflows for owned internal clients
 - any browser-local connector inventory or connector-management UX

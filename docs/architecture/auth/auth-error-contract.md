@@ -26,7 +26,7 @@ Authenticated `/api/*` routes use the bearer-token contract introduced by `#249`
 | --- | --- |
 | `refresh` | Try silent token refresh if the client has a refresh token or equivalent session state. |
 | `reauth` | Start an interactive login / consent flow again. |
-| `reconfigure` | Operator or connector configuration must change before retrying. |
+| `reconfigure` | Operator or client configuration must change before retrying. |
 | `backoff` | Wait and retry later. |
 | `retry` | Retry the same request because the failure is transient server-side. |
 | `fail` | Surface the error without automatic retry. |

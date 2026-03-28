@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// AgentRuntimeSession represents a long-lived bearer + refresh runtime session for an agent.
+// AgentRuntimeSession represents a long-lived bearer + refresh session for a dedicated internal agent runtime.
 type AgentRuntimeSession struct {
 	SessionID         string     `json:"session_id"`
 	ClientID          string     `json:"client_id"`
@@ -17,7 +17,7 @@ type AgentRuntimeSession struct {
 	RevokedReason     string     `json:"revoked_reason,omitempty"`
 }
 
-// RevokeAgentRuntimeSessionRequest revokes one runtime session without affecting unrelated sessions.
+// RevokeAgentRuntimeSessionRequest revokes one dedicated internal runtime session without affecting unrelated sessions.
 type RevokeAgentRuntimeSessionRequest struct {
 	Reason string `json:"reason,omitempty"`
 }

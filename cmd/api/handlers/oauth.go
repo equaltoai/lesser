@@ -877,7 +877,7 @@ func (h *Handler) handleOAuthClientCredentialsGrant(ctx context.Context, oauthSv
 		h.logger.Error("failed to resolve OAuth agent client_credentials binding", zap.Error(agentErr))
 		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
 			"error":             "server_error",
-			"error_description": "Failed to resolve agent connector",
+			"error_description": "Failed to resolve bound agent",
 		})
 	}
 
