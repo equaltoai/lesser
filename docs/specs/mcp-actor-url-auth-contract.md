@@ -32,3 +32,24 @@ The intended discovery chain for remote MCP access is:
 
 The actor path segment is part of the resource identity. Clients must not expect a second public registration or
 connector identifier to tell Lesser which actor is being accessed.
+
+## Binding rule for actor URL, OAuth client, and access decision
+
+Lesser's public MCP auth contract separates three concerns:
+
+- actor identity:
+  owned by the actor-scoped MCP resource URL, `https://{domain}/mcp/{actor}`
+- OAuth client identity:
+  owned by the registered OAuth client and the client authentication method used on OAuth endpoints
+- access decision:
+  owned by the requested resource and the consent/session state issued for that resource
+
+That means:
+
+- the actor being accessed comes from the MCP URL and its matching `resource` value
+- the OAuth client proves which software is calling Lesser, but it does not choose the actor on behalf of the user
+- authorization must be evaluated against the requested `resource`, not against connector-specific client metadata
+
+For public remote MCP access, `client_class`, `agent_username`, or any similar client metadata must not be treated as
+the canonical actor-binding source. If those fields continue to exist for compatibility during the migration, they are
+secondary legacy signals and must not override the actor-scoped resource URL.
