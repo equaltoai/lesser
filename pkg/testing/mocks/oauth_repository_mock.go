@@ -144,8 +144,8 @@ func (m *MockOAuthRepository) SaveUserAppConsent(ctx context.Context, consent *s
 }
 
 // GetUserAppConsent mocks the GetUserAppConsent method
-func (m *MockOAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
-	args := m.Called(ctx, userID, appID)
+func (m *MockOAuthRepository) GetUserAppConsent(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error) {
+	args := m.Called(ctx, userID, appID, resource)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

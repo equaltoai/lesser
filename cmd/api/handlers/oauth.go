@@ -38,7 +38,6 @@ type authorizeFlow struct {
 	client            *storage.OAuthClient
 	principalUsername string
 	username          string
-	agentUsername     string
 	scopes            []string
 }
 
@@ -54,6 +53,18 @@ const (
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
+
+type oauthAuthorizeTargetError struct {
+	code        string
+	description string
+}
+
+func (e *oauthAuthorizeTargetError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.description
+}
 
 func (h *Handler) isOAuthAuthorizeUIMode(ctx *apptheory.Context) bool {
 	if strings.EqualFold(queryValue(ctx, "mode"), "ui") {
@@ -127,6 +138,10 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 			return nil, resp, respErr
 		}
 	}
+	if strings.TrimSpace(req.resource) == "" && oauthAuthorizeRequiresResource(client) {
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_target", "resource is required for remote MCP authorization", req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
 
 	principalUsername, resp, err := h.resolveAuthorizeUser(ctx, req)
 	if resp != nil || err != nil {
@@ -135,26 +150,8 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 	flow.principalUsername = principalUsername
 	flow.username = principalUsername
 
-	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
-		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), client, principalUsername)
-		switch agentErr {
-		case nil:
-			flow.username = agentUser.Username
-			flow.agentUsername = agentUser.Username
-		case errOAuthAgentUsernameRequired:
-			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
-			return nil, resp, respErr
-		case errOAuthAgentNotFound:
-			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
-			return nil, resp, respErr
-		case errOAuthAgentForbidden:
-			resp, respErr := h.oauthErrorLift(ctx, "access_denied", "Principal is not authorized for this agent connector", req.redirectURI, req.state)
-			return nil, resp, respErr
-		default:
-			h.logger.Error("failed to resolve OAuth agent connector binding", zap.Error(agentErr))
-			resp, respErr := h.oauthErrorLift(ctx, "server_error", "Failed to resolve agent connector", req.redirectURI, req.state)
-			return nil, resp, respErr
-		}
+	if resp, err := h.bindAuthorizeTarget(ctx, flow); resp != nil || err != nil {
+		return nil, resp, err
 	}
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
@@ -291,11 +288,97 @@ func normalizeOAuthResourceIndicator(resource string) (string, error) {
 	if !strings.EqualFold(parsed.Scheme, "https") {
 		return "", errors.New("resource must use https")
 	}
+	if parsed.RawQuery != "" {
+		return "", errors.New("resource must not include a query string")
+	}
 	if parsed.Fragment != "" {
 		return "", errors.New("resource must not include a fragment")
 	}
 
 	return resource, nil
+}
+
+func (h *Handler) bindAuthorizeTarget(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
+	if flow == nil || flow.request == nil {
+		return nil, nil
+	}
+
+	req := flow.request
+	if strings.TrimSpace(req.resource) == "" {
+		if oauthAuthorizeRequiresResource(flow.client) {
+			return h.oauthErrorLift(ctx, "invalid_target", "resource is required for remote MCP authorization", req.redirectURI, req.state)
+		}
+		return nil, nil
+	}
+
+	targetUsername, canonicalResource, err := h.resolveAuthorizeTargetActorFromResource(ctx.Context(), req.resource, flow.principalUsername)
+	if err == nil {
+		flow.username = targetUsername
+		flow.request.resource = canonicalResource
+		return nil, nil
+	}
+
+	var targetErr *oauthAuthorizeTargetError
+	if errors.As(err, &targetErr) {
+		return h.oauthErrorLift(ctx, targetErr.code, targetErr.description, req.redirectURI, req.state)
+	}
+
+	h.logger.Error("failed to resolve OAuth resource target", zap.Error(err))
+	return h.oauthErrorLift(ctx, "server_error", "Failed to resolve requested resource", req.redirectURI, req.state)
+}
+
+func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, resource, principalUsername string) (string, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(resource))
+	if err != nil || parsed == nil {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must be the actor-scoped MCP URL for this server",
+		}
+	}
+
+	baseURL, baseErr := url.Parse(h.cfg.BaseURL())
+	if baseErr != nil || baseURL == nil {
+		return "", "", errors.New("authorization server base URL is invalid")
+	}
+	if !strings.EqualFold(parsed.Hostname(), baseURL.Hostname()) {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must be the actor-scoped MCP URL for this server",
+		}
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) != 2 || segments[0] != "mcp" || strings.TrimSpace(segments[1]) == "" {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must be the actor-scoped MCP URL for this server",
+		}
+	}
+
+	actorUsername := strings.TrimSpace(segments[1])
+	if err := common.ValidateUsernameParamID(actorUsername); err != nil {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must reference a valid local MCP actor",
+		}
+	}
+
+	actorUser, err := h.repos.Account().GetUser(ctx, actorUsername)
+	if err != nil || actorUser == nil || !actorUser.IsAgent {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must reference an existing local MCP actor",
+		}
+	}
+	if !h.agentOwnedByPrincipal(actorUser, principalUsername) {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "access_denied",
+			description: "principal is not authorized for requested MCP resource",
+		}
+	}
+
+	canonicalResource := strings.TrimRight(baseURL.String(), "/") + "/mcp/" + actorUsername
+	return actorUsername, canonicalResource, nil
 }
 
 func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
@@ -304,7 +387,7 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.scopes) {
+	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.request.resource, flow.scopes) {
 		return nil, nil
 	}
 
@@ -313,7 +396,6 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		ClientID:            flow.request.clientID,
 		Username:            flow.username,
 		PrincipalUsername:   flow.principalUsername,
-		AgentUsername:       flow.agentUsername,
 		Scopes:              flow.scopes,
 		RedirectURI:         flow.request.redirectURI,
 		Resource:            flow.request.resource,
@@ -351,7 +433,6 @@ func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *author
 		Resource:          flow.request.resource,
 		Username:          flow.username,
 		PrincipalUsername: flow.principalUsername,
-		AgentUsername:     flow.agentUsername,
 		CodeChallenge:     flow.request.codeChallenge,
 		ExpiresAt:         time.Now().Add(10 * time.Minute),
 		Scopes:            flow.scopes,
@@ -469,18 +550,15 @@ func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage
 	if strings.TrimSpace(authState.Resource) != "" {
 		consentURL += "&resource=" + url.QueryEscape(authState.Resource)
 	}
-	if strings.TrimSpace(authState.AgentUsername) != "" {
-		consentURL += "&agent_username=" + url.QueryEscape(authState.AgentUsername)
-		consentURL += "&principal_username=" + url.QueryEscape(authState.PrincipalUsername)
-	}
 	return h.writeOAuthAuthorizeRedirect(ctx, consentURL)
 }
 
 // hasUserConsentedToApp checks if user has consented to the app with required scopes
-func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
+func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID, resource string, scopes []string) bool {
 	result, err := h.registry.Accounts().GetUserAppConsent(ctx, &accounts.GetUserAppConsentQuery{
 		Username: username,
 		ClientID: clientID,
+		Resource: resource,
 	})
 	if err != nil || result == nil || result.Consent == nil {
 		return false
@@ -1269,6 +1347,14 @@ func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
 		strings.EqualFold(strings.TrimSpace(client.RegistrationSource), oauthRegistrationSourceDynamic)
 }
 
+func oauthAuthorizeRequiresResource(client *storage.OAuthClient) bool {
+	if client == nil {
+		return false
+	}
+	return usesDeprecatedMCPConnectorSemantics(client.ClientClass, client.AgentUsername) ||
+		oauthClientRequiresPKCE(client)
+}
+
 func requireOAuthPKCE(codeChallenge, codeChallengeMethod string) error {
 	codeChallenge = strings.TrimSpace(codeChallenge)
 	codeChallengeMethod = strings.TrimSpace(codeChallengeMethod)
@@ -1291,7 +1377,10 @@ func authorizationCodeExchangeTokenContext(cfg *config.Config, client *storage.O
 	if clientClass != auth.ClientClassAgent {
 		return clientClass, sessionID, accessTTL, nil
 	}
-	if authCode.AgentUsername == "" || authCode.AgentUsername != authCode.Username || authCode.AgentUsername != client.AgentUsername {
+	if strings.TrimSpace(authCode.Username) == "" {
+		return "", "", 0, auth.ErrInvalidGrant
+	}
+	if strings.TrimSpace(authCode.Resource) == "" {
 		return "", "", 0, auth.ErrInvalidGrant
 	}
 	return clientClass, sessionID, auth.AgentAccessTokenTTL(cfg), nil

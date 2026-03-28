@@ -963,8 +963,8 @@ func (m *MockStorage) GetTrendingStatuses(ctx context.Context, since time.Time, 
 }
 
 // GetUserAppConsent mocks the GetUserAppConsent method
-func (m *MockStorage) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
-	args := m.Called(ctx, userID, appID)
+func (m *MockStorage) GetUserAppConsent(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error) {
+	args := m.Called(ctx, userID, appID, resource)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

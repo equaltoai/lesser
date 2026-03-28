@@ -952,10 +952,21 @@ func (h *OAuthHelper) DeleteRevokedAccessTokenGeneric(ctx context.Context, jti s
 
 // SaveUserAppConsentGeneric saves user consent for an OAuth app
 func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *storage.UserAppConsent) error {
+	userID := strings.TrimSpace(consent.UserID)
+	if userID == "" {
+		userID = strings.TrimSpace(consent.Username)
+	}
+	appID := strings.TrimSpace(consent.AppID)
+	if appID == "" {
+		appID = strings.TrimSpace(consent.ClientID)
+	}
+	resource := strings.TrimSpace(consent.Resource)
+
 	// Create DynamORM model
 	model := &models.UserAppConsent{
-		UserID:    consent.UserID,
-		AppID:     consent.AppID,
+		UserID:    userID,
+		AppID:     appID,
+		Resource:  resource,
 		Scopes:    consent.Scopes,
 		CreatedAt: consent.CreatedAt,
 		UpdatedAt: time.Now(),
@@ -964,7 +975,11 @@ func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *st
 
 	// Set default timestamps if not provided
 	if model.CreatedAt.IsZero() {
-		model.CreatedAt = time.Now()
+		if !consent.GrantedAt.IsZero() {
+			model.CreatedAt = consent.GrantedAt
+		} else {
+			model.CreatedAt = time.Now()
+		}
 	}
 
 	// Update keys
@@ -982,53 +997,63 @@ func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *st
 			err = h.db.WithContext(ctx).Model(model).Create()
 			if err != nil {
 				h.logger.Error("failed to create user app consent", zap.Error(err))
-				return ErrorHandler.HandleCreateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", consent.UserID, consent.AppID))
+				return ErrorHandler.HandleCreateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s:%s", userID, appID, resource))
 			}
 		} else {
 			h.logger.Error("failed to update user app consent", zap.Error(err))
-			return ErrorHandler.HandleUpdateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", consent.UserID, consent.AppID))
+			return ErrorHandler.HandleUpdateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s:%s", userID, appID, resource))
 		}
 	}
 
 	h.logger.Debug("saved user app consent",
-		zap.String("user_id", consent.UserID),
-		zap.String("app_id", consent.AppID))
+		zap.String("user_id", userID),
+		zap.String("app_id", appID),
+		zap.String("resource", resource))
 
 	return nil
 }
 
 // GetUserAppConsentGeneric retrieves user consent for an OAuth app
-func (h *OAuthHelper) GetUserAppConsentGeneric(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
-	// Construct the key using the model's pattern
-	pk := fmt.Sprintf("USER#%s", userID)
-	sk := fmt.Sprintf("CONSENT#%s", appID)
+func (h *OAuthHelper) GetUserAppConsentGeneric(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error) {
+	lookup := &models.UserAppConsent{
+		UserID:   strings.TrimSpace(userID),
+		AppID:    strings.TrimSpace(appID),
+		Resource: strings.TrimSpace(resource),
+	}
+	_ = lookup.UpdateKeys()
 
 	// Query for the item
 	var model models.UserAppConsent
 	err := h.db.WithContext(ctx).Model(&models.UserAppConsent{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
+		Where("PK", "=", lookup.PK).
+		Where("SK", "=", lookup.SK).
 		First(&model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthConsent, fmt.Sprintf("%s:%s", userID, appID))
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthConsent, fmt.Sprintf("%s:%s:%s", userID, appID, lookup.Resource))
 		}
 		h.logger.Error("failed to get user app consent", zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", userID, appID))
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s:%s", userID, appID, lookup.Resource))
 	}
 
 	// Convert to storage model
 	result := &storage.UserAppConsent{
+		Username:  model.UserID,
 		UserID:    model.UserID,
+		ClientID:  model.AppID,
 		AppID:     model.AppID,
+		Resource:  model.Resource,
 		Scopes:    model.Scopes,
+		GrantedAt: model.CreatedAt,
 		CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
 	}
 
 	h.logger.Debug("retrieved user app consent",
 		zap.String("user_id", userID),
-		zap.String("app_id", appID))
+		zap.String("app_id", appID),
+		zap.String("resource", lookup.Resource))
 
 	return result, nil
 }

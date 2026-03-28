@@ -77,3 +77,39 @@ func TestOAuthRepository_RotateOAuthClientSecret_PersistsRotationState(t *testin
 	require.Equal(t, rotatedAt, client.SecretRotatedAt)
 	require.Equal(t, "owner", client.SecretRotatedBy)
 }
+
+func TestOAuthRepository_UserAppConsent_IsResourceBound(t *testing.T) {
+	t.Parallel()
+
+	repo := NewOAuthRepository()
+	ctx := context.Background()
+
+	consentA := &storage.UserAppConsent{
+		UserID:   "owner",
+		AppID:    "client-1",
+		Resource: "https://example.com/mcp/agent-a",
+		Scopes:   []string{"read"},
+	}
+	consentB := &storage.UserAppConsent{
+		UserID:   "owner",
+		AppID:    "client-1",
+		Resource: "https://example.com/mcp/agent-b",
+		Scopes:   []string{"read", "write"},
+	}
+
+	require.NoError(t, repo.SaveUserAppConsent(ctx, consentA))
+	require.NoError(t, repo.SaveUserAppConsent(ctx, consentB))
+
+	gotA, err := repo.GetUserAppConsent(ctx, consentA.UserID, consentA.AppID, consentA.Resource)
+	require.NoError(t, err)
+	require.Equal(t, consentA.Resource, gotA.Resource)
+	require.Equal(t, consentA.Scopes, gotA.Scopes)
+
+	gotB, err := repo.GetUserAppConsent(ctx, consentB.UserID, consentB.AppID, consentB.Resource)
+	require.NoError(t, err)
+	require.Equal(t, consentB.Resource, gotB.Resource)
+	require.Equal(t, consentB.Scopes, gotB.Scopes)
+
+	_, err = repo.GetUserAppConsent(ctx, consentA.UserID, consentA.AppID, "")
+	require.ErrorIs(t, err, storage.ErrNotFound)
+}

@@ -203,9 +203,11 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 	})
 
 	t.Run("missing consent stores state and redirects to consent UI", func(t *testing.T) {
+		var consentQuery *accounts.GetUserAppConsentQuery
 		var storedState *storage.OAuthState
 		accountsSvc := &AccountsServiceStub{
-			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+			GetUserAppConsentFunc: func(_ context.Context, query *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				consentQuery = query
 				return &accounts.GetUserAppConsentResult{}, errors.New("no consent")
 			},
 			StoreOAuthStateFunc: func(_ context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error) {
@@ -223,12 +225,16 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			},
 		}
 
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountsSvc})
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@alice"},
+			},
+		}, &RegistryStub{AccountsSvc: accountsSvc})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
 			"response_type": "code",
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://mcp.example/resource",
+			"resource":      "https://example.com/mcp/agent1",
 			"scope":         "read write",
 			"state":         "state-6",
 		}, nil)
@@ -237,12 +243,105 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
 		require.Contains(t, firstStringValue(resp.Headers, "location"), "/auth/consent?")
-		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fmcp.example%2Fresource")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1")
 		require.NotNil(t, storedState)
-		require.Equal(t, "https://mcp.example/resource", storedState.Resource)
+		require.NotNil(t, consentQuery)
+		require.Equal(t, "https://example.com/mcp/agent1", consentQuery.Resource)
+		require.Equal(t, "https://example.com/mcp/agent1", storedState.Resource)
+		require.Equal(t, "agent1", storedState.Username)
+		require.Equal(t, "alice", storedState.PrincipalUsername)
 	})
 
-	t.Run("agent connector consent stores principal and agent identities", func(t *testing.T) {
+	t.Run("agent-style authorize requests require canonical mcp resource", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-agent",
+			"redirect_uri":  "https://example.com/callback",
+			"scope":         "read write",
+			"state":         "state-agent-missing-resource",
+		}, nil)
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.Contains(t, redirectURL, "error=invalid_target")
+		require.Contains(t, redirectURL, "resource+is+required+for+remote+MCP+authorization")
+	})
+
+	t.Run("dynamic public authorize requests require canonical mcp resource", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-public-dynamic": {
+					ClientID:           "client-public-dynamic",
+					Name:               "Dynamic CLI",
+					RedirectURIs:       []string{"https://example.com/callback"},
+					Scopes:             []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:        auth.ClientClassCLI,
+					RegistrationSource: oauthRegistrationSourceDynamic,
+					Confidential:       false,
+					CreatedAt:          time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type":         "code",
+			"client_id":             "client-public-dynamic",
+			"redirect_uri":          "https://example.com/callback",
+			"scope":                 "read write",
+			"state":                 "state-dynamic-missing-resource",
+			"code_challenge":        "challenge",
+			"code_challenge_method": "S256",
+		}, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.Contains(t, redirectURL, "error=invalid_target")
+		require.Contains(t, redirectURL, "resource+is+required+for+remote+MCP+authorization")
+	})
+
+	t.Run("resource-bound authorize denies principals that do not own the requested actor", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-1",
+			"redirect_uri":  "https://example.com/callback",
+			"resource":      "https://example.com/mcp/agent1",
+			"scope":         "read write",
+			"state":         "state-agent-forbidden",
+		}, nil)
+		require.NoError(t, err)
+		ctx.Set("username", "intruder")
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.Contains(t, redirectURL, "error=access_denied")
+		require.Contains(t, redirectURL, "principal+is+not+authorized+for+requested+MCP+resource")
+	})
+
+	t.Run("resource-bound consent stores target actor without agent binding metadata", func(t *testing.T) {
 		var storedState *storage.OAuthState
 		accountsSvc := &AccountsServiceStub{
 			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
@@ -286,6 +385,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"response_type": "code",
 			"client_id":     "client-agent",
 			"redirect_uri":  "https://example.com/callback",
+			"resource":      "https://example.com/mcp/agent1",
 			"scope":         "read write",
 			"state":         "state-agent-consent",
 		}, nil)
@@ -293,18 +393,76 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		ctx.Set("username", "owner")
 
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
-		require.Contains(t, firstStringValue(resp.Headers, "location"), "agent_username=agent1")
-		require.Contains(t, firstStringValue(resp.Headers, "location"), "principal_username=owner")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1")
+		require.NotContains(t, firstStringValue(resp.Headers, "location"), "agent_username=")
+		require.NotContains(t, firstStringValue(resp.Headers, "location"), "principal_username=")
 		require.NotNil(t, storedState)
 		require.Equal(t, "agent1", storedState.Username)
 		require.Equal(t, "owner", storedState.PrincipalUsername)
-		require.Equal(t, "agent1", storedState.AgentUsername)
+		require.Empty(t, storedState.AgentUsername)
+	})
+
+	t.Run("resource-bound consent lookup does not reuse consent across actors", func(t *testing.T) {
+		var consentQuery *accounts.GetUserAppConsentQuery
+		var storedState *storage.OAuthState
+		accountsSvc := &AccountsServiceStub{
+			GetUserAppConsentFunc: func(_ context.Context, query *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				consentQuery = query
+				if query.Username == "alice" && query.ClientID == "client-1" &&
+					(query.Resource == "" || query.Resource == "https://example.com/mcp/agent1") {
+					return &accounts.GetUserAppConsentResult{
+						Consent: &storage.UserAppConsent{Scopes: []string{"read", "write"}},
+					}, nil
+				}
+				return &accounts.GetUserAppConsentResult{}, errors.New("no consent")
+			},
+			StoreOAuthStateFunc: func(_ context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error) {
+				storedState = cmd.OAuthState
+				return &accounts.StoreOAuthStateResult{}, nil
+			},
+			GetOAuthAppFunc: func(_ context.Context, query *accounts.GetOAuthAppQuery) (*accounts.GetOAuthAppResult, error) {
+				return &accounts.GetOAuthAppResult{
+					App: &storage.OAuthApp{
+						ClientID: query.ClientID,
+						Name:     "Test App",
+						Website:  "https://app.example",
+					},
+				}, nil
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@alice"},
+				"agent2": {Username: "agent2", IsAgent: true, AgentOwner: "@alice"},
+			},
+		}, &RegistryStub{AccountsSvc: accountsSvc})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-1",
+			"redirect_uri":  "https://example.com/callback",
+			"resource":      "https://example.com/mcp/agent2",
+			"scope":         "read write",
+			"state":         "state-resource-bound-consent",
+		}, nil)
+		require.NoError(t, err)
+		ctx.Set("username", "alice")
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.Contains(t, redirectURL, "/auth/consent?")
+		require.NotNil(t, consentQuery)
+		require.Equal(t, "https://example.com/mcp/agent2", consentQuery.Resource)
+		require.NotNil(t, storedState)
+		require.Equal(t, "https://example.com/mcp/agent2", storedState.Resource)
+		require.Equal(t, "agent2", storedState.Username)
 	})
 
 	t.Run("consent already granted issues authorization code and redirects", func(t *testing.T) {
+		var consentQuery *accounts.GetUserAppConsentQuery
 		var issuedAuthCode *storage.AuthorizationCode
 		accountsSvc := &AccountsServiceStub{
-			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+			GetUserAppConsentFunc: func(_ context.Context, query *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				consentQuery = query
 				return &accounts.GetUserAppConsentResult{Consent: &storage.UserAppConsent{Scopes: []string{"read", "write"}}}, nil
 			},
 			CreateAuthorizationCodeFunc: func(_ context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error) {
@@ -312,12 +470,16 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 				return &accounts.CreateAuthorizationCodeResult{}, nil
 			},
 		}
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountsSvc})
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@alice"},
+			},
+		}, &RegistryStub{AccountsSvc: accountsSvc})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
 			"response_type": "code",
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://mcp.example/resource",
+			"resource":      "https://example.com/mcp/agent1",
 			"state":         "state-7",
 		}, nil)
 		require.NoError(t, err)
@@ -331,9 +493,13 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, parseErr)
 		require.NotEmpty(t, parsed.Query().Get("code"))
 		require.Equal(t, "state-7", parsed.Query().Get("state"))
+		require.NotNil(t, consentQuery)
+		require.Equal(t, "https://example.com/mcp/agent1", consentQuery.Resource)
 		require.NotNil(t, issuedAuthCode)
 		require.NotEmpty(t, issuedAuthCode.Code)
-		require.Equal(t, "https://mcp.example/resource", issuedAuthCode.Resource)
+		require.Equal(t, "https://example.com/mcp/agent1", issuedAuthCode.Resource)
+		require.Equal(t, "agent1", issuedAuthCode.Username)
+		require.Empty(t, issuedAuthCode.AgentUsername)
 	})
 
 	t.Run("store OAuth state failure returns server_error redirect (handled)", func(t *testing.T) {
@@ -442,6 +608,31 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_client", body["error"])
+	})
+
+	t.Run("bindAuthorizeTarget allows blank resource for clients without canonical resource requirement", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, nil, nil)
+		require.NoError(t, err)
+
+		flow := &authorizeFlow{
+			request: &authorizeRequest{
+				redirectURI: "https://example.com/callback",
+				state:       "state-optional-resource",
+			},
+			client: &storage.OAuthClient{
+				ClientID:     "client-web",
+				ClientClass:  auth.ClientClassWeb,
+				Confidential: true,
+			},
+		}
+
+		resp, bindErr := h.bindAuthorizeTarget(ctx, flow)
+		require.NoError(t, bindErr)
+		require.Nil(t, resp)
+	})
+
+	t.Run("oauthAuthorizeRequiresResource returns false for nil client", func(t *testing.T) {
+		require.False(t, oauthAuthorizeRequiresResource(nil))
 	})
 }
 
@@ -723,7 +914,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, claims.SessionID)
 	})
 
-	t.Run("authorization_code agent client issues agent runtime-style session", func(t *testing.T) {
+	t.Run("authorization_code agent client issues agent runtime-style session from resource-bound code", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -733,7 +924,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 					RedirectURIs:  []string{"https://example.com/callback"},
 					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
 					ClientClass:   auth.ClientClassAgent,
-					AgentUsername: "agent1",
+					AgentUsername: "legacy-agent-binding",
 					CreatedAt:     time.Now().Add(-24 * time.Hour),
 				},
 			},
@@ -742,9 +933,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 					Code:              "agent-code",
 					ClientID:          "client-agent",
 					RedirectURI:       "https://example.com/callback",
+					Resource:          "https://example.com/mcp/agent1",
 					Username:          "agent1",
 					PrincipalUsername: "owner",
-					AgentUsername:     "agent1",
 					ExpiresAt:         time.Now().Add(5 * time.Minute),
 					Scopes:            []string{auth.ScopeRead, auth.ScopeWrite},
 				},
@@ -755,7 +946,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=agent-code&client_id=client-agent&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=agent-code&client_id=client-agent&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -773,6 +964,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
 		require.Equal(t, "agent1", storedRefresh.Username)
+		require.Equal(t, "https://example.com/mcp/agent1", storedRefresh.Resource)
 		require.NotEmpty(t, storedRefresh.SessionID)
 		require.NotEmpty(t, storedRefresh.FamilyID)
 		require.True(t, storedRefresh.Current)

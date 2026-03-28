@@ -71,5 +71,5 @@ type OAuthRepository interface {
 	SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error
 
 	// GetUserAppConsent retrieves user consent for an OAuth app
-	GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error)
+	GetUserAppConsent(ctx context.Context, userID, appID, resource string) (*storage.UserAppConsent, error)
 }

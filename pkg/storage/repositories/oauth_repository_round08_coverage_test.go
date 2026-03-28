@@ -192,7 +192,7 @@ func TestRound08_OAuthRepository_WrappersAndClientCRUD(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = repo.GetUserAppConsent(ctx, "user-1", "client-1")
+		_, err = repo.GetUserAppConsent(ctx, "user-1", "client-1", "")
 		require.NoError(t, err)
 	})
 }

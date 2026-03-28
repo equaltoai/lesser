@@ -102,14 +102,21 @@ func (h *Handler) handleConsentDenial(ctx *apptheory.Context, authState *storage
 // handleConsentApproval handles when the user approves consent
 func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *storage.OAuthState) (*apptheory.Response, error) {
 	// Store user consent for future requests
-	consent := &storage.UserAppConsent{
-		Username:  authState.Username,
-		ClientID:  authState.ClientID,
-		Scopes:    authState.Scopes,
-		GrantedAt: time.Now(),
-	}
+	grantedAt := time.Now()
+	consentUsername := authState.Username
 	if strings.TrimSpace(authState.PrincipalUsername) != "" {
-		consent.Username = authState.PrincipalUsername
+		consentUsername = authState.PrincipalUsername
+	}
+	consent := &storage.UserAppConsent{
+		Username:  consentUsername,
+		UserID:    consentUsername,
+		ClientID:  authState.ClientID,
+		AppID:     authState.ClientID,
+		Resource:  strings.TrimSpace(authState.Resource),
+		Scopes:    authState.Scopes,
+		GrantedAt: grantedAt,
+		CreatedAt: grantedAt,
+		UpdatedAt: grantedAt,
 	}
 
 	if err := h.repos.OAuth().SaveUserAppConsent(ctx.Context(), consent); err != nil {
@@ -136,7 +143,6 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 		Resource:          authState.Resource,
 		Username:          authState.Username,
 		PrincipalUsername: authState.PrincipalUsername,
-		AgentUsername:     authState.AgentUsername,
 		CodeChallenge:     authState.CodeChallenge,
 		ExpiresAt:         time.Now().Add(10 * time.Minute),
 		Scopes:            authState.Scopes,

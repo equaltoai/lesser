@@ -2301,6 +2301,7 @@ func (s *Service) GetOAuthApp(ctx context.Context, query *GetOAuthAppQuery) (*Ge
 type GetUserAppConsentQuery struct {
 	Username string
 	ClientID string
+	Resource string
 }
 
 // GetUserAppConsentResult contains the result of checking user consent
@@ -2318,7 +2319,7 @@ func (s *Service) GetUserAppConsent(ctx context.Context, query *GetUserAppConsen
 		return nil, &ValidationError{Field: "client_id", Message: "required"}
 	}
 
-	consent, err := s.storage.Account().GetUserAppConsent(ctx, query.Username, query.ClientID)
+	consent, err := s.storage.Account().GetUserAppConsent(ctx, query.Username, query.ClientID, query.Resource)
 	if err != nil {
 		// Not found is not an error for consent check
 		if err.Error() == "consent not found" {
@@ -2330,6 +2331,7 @@ func (s *Service) GetUserAppConsent(ctx context.Context, query *GetUserAppConsen
 		s.logger.Error("failed to get user app consent",
 			zap.String("username", query.Username),
 			zap.String("client_id", query.ClientID),
+			zap.String("resource", query.Resource),
 			zap.Error(err))
 		return nil, err
 	}
