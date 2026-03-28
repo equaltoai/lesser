@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory"
@@ -23,8 +22,6 @@ import (
 type atomicLimiter interface {
 	CheckAndIncrement(ctx context.Context, key apptheoryLimited.RateLimitKey) (*apptheoryLimited.LimitDecision, error)
 }
-
-const oauthGrantTypeClientCredentials = "client_credentials"
 
 var (
 	dbOnce sync.Once
@@ -103,68 +100,9 @@ func ApplyRateLimit(handler apptheory.Handler, limit int, window time.Duration, 
 	}
 }
 
-// ApplyOAuthTokenRateLimit wraps /oauth/token with the standard path/IP limiter plus a
-// client-ID keyed limiter for automated client_credentials traffic.
+// ApplyOAuthTokenRateLimit wraps /oauth/token with the standard path/IP limiter.
 func ApplyOAuthTokenRateLimit(handler apptheory.Handler, limit int, window time.Duration, logger *zap.Logger) apptheory.Handler {
-	if handler == nil {
-		return handler
-	}
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	region := rateLimitRegion()
-	baseLimiter, err := newLimiterFunc(region, limit, window, logger)
-	if err != nil || baseLimiter == nil {
-		logger.Error("failed to create base oauth token rate limiter - allowing request",
-			zap.Error(err),
-			zap.Int("limit", limit),
-			zap.Duration("window", window),
-			zap.String("region", region),
-		)
-		return handler
-	}
-
-	clientCredentialsLimiter, clientLimiterErr := newLimiterFunc(region, 30, time.Minute, logger)
-	if clientLimiterErr != nil || clientCredentialsLimiter == nil {
-		logger.Error("failed to create client_credentials limiter - continuing with base oauth token limiter",
-			zap.Error(clientLimiterErr),
-			zap.String("region", region),
-		)
-		clientCredentialsLimiter = nil
-	}
-
-	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
-		resp, allowed := enforceRateLimit(ctx, baseLimiter, rateLimitKey(ctx), logger, nil)
-		if !allowed {
-			return resp, nil
-		}
-
-		if clientCredentialsLimiter != nil {
-			if key, ok := oauthClientCredentialsRateLimitKey(ctx); ok {
-				resp, allowed = enforceRateLimit(ctx, clientCredentialsLimiter, key, logger, func(decision *apptheoryLimited.LimitDecision) map[string]any {
-					retryAfter := retryAfterSeconds(decision)
-					return map[string]any{
-						"error":             "slow_down",
-						"error_description": "Too many client_credentials token requests",
-						"grant_type":        oauthGrantTypeClientCredentials,
-						"client_id":         key.Metadata["client_id"],
-						"limit":             decision.Limit,
-						"remaining":         maxInt(0, decision.Limit-decision.CurrentCount),
-						"reset_at":          decision.ResetsAt.Unix(),
-						"retry_after":       retryAfter,
-					}
-				})
-				if !allowed {
-					return resp, nil
-				}
-			}
-		}
-
-		resp, err := handler(ctx)
-		attachStoredRateLimitHeaders(ctx, resp)
-		return resp, err
-	}
+	return ApplyRateLimit(handler, limit, window, logger)
 }
 
 // ApplyOAuthRegistrationRateLimit wraps /oauth/register with a tighter unauthenticated limit and
@@ -256,32 +194,6 @@ func enforceRateLimit(
 	}
 
 	return nil, true
-}
-
-func oauthClientCredentialsRateLimitKey(ctx *apptheory.Context) (apptheoryLimited.RateLimitKey, bool) {
-	key := apptheoryLimited.RateLimitKey{
-		Resource:  "/oauth/token",
-		Operation: http.MethodPost,
-		Metadata:  map[string]string{},
-	}
-	if ctx == nil || ctx.Request.Path != "/oauth/token" || ctx.Request.Method != http.MethodPost {
-		return key, false
-	}
-	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
-	if err != nil {
-		return key, false
-	}
-	if !strings.EqualFold(strings.TrimSpace(params["grant_type"]), oauthGrantTypeClientCredentials) {
-		return key, false
-	}
-	clientID := strings.TrimSpace(params["client_id"])
-	if clientID == "" {
-		return key, false
-	}
-	key.Identifier = "oauth-client:" + clientID
-	key.Metadata["client_id"] = clientID
-	key.Metadata["grant_type"] = oauthGrantTypeClientCredentials
-	return key, true
 }
 
 func rateLimitedResponse(headers map[string][]string, decision *apptheoryLimited.LimitDecision, bodyBuilder func(decision *apptheoryLimited.LimitDecision) map[string]any) *apptheory.Response {

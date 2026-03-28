@@ -261,7 +261,7 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		}
 	})
 
-	t.Run("client_credentials_requires_confidential_auth_method", func(t *testing.T) {
+	t.Run("public_registration_rejects_client_credentials", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
@@ -275,7 +275,8 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 			GrantTypes:              auth.GrantTypeClientCredentials,
 			TokenEndpointAuthMethod: "none",
 		}
-		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		require.Contains(t, string(resp.Body), "invalid grant_types")
 	})
 
 	t.Run("registration_rejects_internal_admin_scope", func(t *testing.T) {

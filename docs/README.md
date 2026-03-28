@@ -81,11 +81,13 @@ internal/CI-only (except for building the `lesser` CLI itself).
 ### Client teams
 
 - API usage patterns: `docs/api-reference.md`
+- Remote MCP quickstart: `docs/mcp-remote-access.md`
 - Contracts: `docs/contracts/README.md`
 - Client app integration: `docs/guides/CLIENT_APP_GUIDE.md`
 - Agent OAuth grant selection: `docs/device-code-agent-auth.md`
 - Auth error contract: `docs/architecture/auth/auth-error-contract.md`
 - Secret rotation contract: `docs/architecture/auth/oauth-client-secret-rotation.md`
+- MCP cutover verification runbook: `docs/architecture/auth/mcp-auth-cutover-verification.md`
 
 For long-lived local-agent access, prefer the wallet-backed agent lease contract over delegated refresh-token flows.
 The current published REST, GraphQL, and GraphQL-coverage contracts all include that path.

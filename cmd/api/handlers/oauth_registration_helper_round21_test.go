@@ -303,13 +303,13 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 		require.Equal(t, []string{auth.GrantTypeAuthorizationCode}, grants)
 
 		_, err = normalizeDynamicRegistrationGrantTypes([]string{auth.GrantTypeClientCredentials}, auth.ClientClassCLI, oauthTokenEndpointAuthMethodNone, false)
-		require.ErrorContains(t, err, "client_credentials is only allowed for agent clients")
+		require.ErrorContains(t, err, "invalid grant_types")
 
 		_, err = normalizeDynamicRegistrationGrantTypes([]string{oauthDeviceCodeGrantType}, auth.ClientClassCLI, oauthTokenEndpointAuthMethodNone, false)
 		require.ErrorContains(t, err, "device_code grant is disabled")
 
 		_, err = normalizeDynamicRegistrationGrantTypes([]string{auth.GrantTypeClientCredentials}, auth.ClientClassWeb, oauthTokenEndpointAuthMethodClientSecretPost, false)
-		require.ErrorContains(t, err, "client_credentials is only allowed for agent clients")
+		require.ErrorContains(t, err, "invalid grant_types")
 	})
 
 	t.Run("response type normalization defaults to code and rejects unsupported values", func(t *testing.T) {

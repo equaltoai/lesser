@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -409,9 +408,6 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	if err != nil {
 		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
-	if slices.Contains(grantTypes, auth.GrantTypeClientCredentials) && !confidential {
-		return h.respondUnprocessableEntity(ctx, "client_credentials requires token_endpoint_auth_method=client_secret_post")
-	}
 	if clientClass == auth.ClientClassCLI && (h.cfg == nil || !h.cfg.AllowDeviceFlow) {
 		return apptheory.JSON(http.StatusForbidden, map[string]string{
 			"error":             "access_denied",
@@ -484,22 +480,17 @@ func normalizeOAuthClientClass(value string) (string, error) {
 	}
 
 	switch value {
-	case auth.ClientClassCLI, auth.ClientClassWeb, auth.ClientClassAgent:
+	case auth.ClientClassCLI, auth.ClientClassWeb:
 		return value, nil
+	case auth.ClientClassAgent:
+		return "", errors.New("client_class=agent is not supported for public registration")
 	default:
 		return "", errors.New("invalid client_class")
 	}
 }
 
 func normalizePublicOAuthClientClass(value string) (string, error) {
-	clientClass, err := normalizeOAuthClientClass(value)
-	if err != nil {
-		return "", err
-	}
-	if clientClass == auth.ClientClassAgent {
-		return "", errors.New("client_class=agent is not supported for public registration")
-	}
-	return clientClass, nil
+	return normalizeOAuthClientClass(value)
 }
 
 func splitOAuthSpaceDelimited(value string) []string {
@@ -521,12 +512,6 @@ func normalizeOAuthClientGrantTypes(value, clientClass string, allowDeviceFlow b
 	grantTypes := splitOAuthSpaceDelimited(value)
 	if len(grantTypes) == 0 {
 		switch clientClass {
-		case auth.ClientClassAgent:
-			return []string{
-				auth.GrantTypeAuthorizationCode,
-				auth.GrantTypeRefreshToken,
-				auth.GrantTypeClientCredentials,
-			}, nil
 		case auth.ClientClassCLI:
 			if allowDeviceFlow {
 				return []string{
@@ -550,7 +535,6 @@ func normalizeOAuthClientGrantTypes(value, clientClass string, allowDeviceFlow b
 	allowed := map[string]struct{}{
 		auth.GrantTypeAuthorizationCode: {},
 		auth.GrantTypeRefreshToken:      {},
-		auth.GrantTypeClientCredentials: {},
 		oauthDeviceCodeGrantType:        {},
 	}
 	seen := map[string]struct{}{}
@@ -559,9 +543,6 @@ func normalizeOAuthClientGrantTypes(value, clientClass string, allowDeviceFlow b
 		grantType = strings.ToLower(strings.TrimSpace(grantType))
 		if _, ok := allowed[grantType]; !ok {
 			return nil, errors.New("invalid grant_types")
-		}
-		if grantType == auth.GrantTypeClientCredentials && clientClass != auth.ClientClassAgent {
-			return nil, errors.New("client_credentials is only allowed for agent clients")
 		}
 		if grantType == oauthDeviceCodeGrantType && !allowDeviceFlow {
 			return nil, errors.New("device_code grant is disabled")
@@ -575,12 +556,9 @@ func normalizeOAuthClientGrantTypes(value, clientClass string, allowDeviceFlow b
 	return out, nil
 }
 
-func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, bool, error) {
+func normalizeOAuthTokenEndpointAuthMethod(value, _ string) (string, bool, error) {
 	method := strings.ToLower(strings.TrimSpace(value))
 	if method == "" {
-		if clientClass == auth.ClientClassAgent {
-			return oauthTokenEndpointAuthMethodClientSecretPost, true, nil
-		}
 		return oauthTokenEndpointAuthMethodNone, false, nil
 	}
 

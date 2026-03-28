@@ -66,6 +66,24 @@ If you’re writing a client, treat setup tokens as high-privilege and short-liv
 The OpenAPI spec includes `x-oauth-scopes` metadata on operations. If you generate clients, you can surface scopes in
 developer UX (for example, warn when calling an endpoint that requires `admin:read`).
 
+## Remote MCP access
+
+The canonical public MCP contract is actor-scoped and resource-bound.
+
+Start from [docs/mcp-remote-access.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/mcp-remote-access.md)
+for the full quickstart. In short:
+
+- actor-scoped MCP URL: `https://<stage-domain>/mcp/<actor>`
+- actor-scoped protected-resource metadata:
+  `https://<stage-domain>/.well-known/oauth-protected-resource/mcp/<actor>`
+- shared authorization-server metadata:
+  `https://<stage-domain>/.well-known/oauth-authorization-server`
+- canonical public registration:
+  `POST https://<stage-domain>/oauth/register`
+
+Client-specific profiles and snippets are derived examples only. They should not replace the actor-scoped MCP URL plus
+OAuth discovery chain as the source of truth.
+
 ## REST API (Mastodon-compatible)
 
 REST is served from the stage apex domain (`https://<stage-domain>`).
@@ -149,7 +167,22 @@ curl -s -X POST "https://<stage-domain>/oauth/register" \
 ```
 
 `POST /oauth/register` is the canonical public registration path. `POST /api/v1/apps` remains available as a
-compatibility path for Mastodon-style clients.
+compatibility path for Mastodon-style clients, but new remote MCP integrations should treat RFC 7591 registration as
+canonical.
+
+### Pattern: discover the actor-scoped protected resource
+
+```bash
+curl -sS "https://<stage-domain>/.well-known/oauth-protected-resource/mcp/<actor>" | jq .
+```
+
+### Pattern: use the actor-scoped MCP URL as the OAuth resource
+
+When a remote MCP client starts authorization, the canonical `resource` is the actor-scoped MCP URL itself:
+
+```text
+https://<stage-domain>/mcp/<actor>
+```
 
 ### Pattern: exchange an authorization code for a token
 

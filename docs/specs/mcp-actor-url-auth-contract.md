@@ -2,6 +2,9 @@
 
 This document freezes the client-consumable remote MCP access form owned by Lesser for issue `#492`.
 
+The practical quickstart built from this contract lives in
+[docs/mcp-remote-access.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/mcp-remote-access.md).
+
 It is the single written contract for M0 and covers:
 
 - the canonical actor-scoped MCP access form
