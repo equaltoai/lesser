@@ -75,8 +75,52 @@ func (r *Resolver) canViewDroneWorkflow(ctx context.Context, claims *auth.Claims
 	return err == nil && authz.IsModeratorOrAdmin(role)
 }
 
-func (r *Resolver) canReviewDroneWorkflow(ctx context.Context, claims *auth.Claims, agentUser *storage.User) bool {
+func (r *Resolver) canAccessDroneReviewWorkflow(ctx context.Context, claims *auth.Claims, agentUser *storage.User, workflowState *workflow.DroneWorkflowState) bool {
+	if r.canViewDroneWorkflow(ctx, claims, agentUser) {
+		return true
+	}
+	return droneWorkflowReviewerMatches(claims, workflowState)
+}
+
+func (r *Resolver) canReviewDroneWorkflow(ctx context.Context, claims *auth.Claims, agentUser *storage.User, workflowState *workflow.DroneWorkflowState) bool {
+	if claims == nil || agentUser == nil {
+		return false
+	}
+	role, err := r.normalizedRole(ctx, claims.Username)
+	if err == nil && authz.IsModeratorOrAdmin(role) {
+		return true
+	}
+	if droneWorkflowReviewerMatches(claims, workflowState) {
+		return true
+	}
+	if workflowHasExplicitReviewer(workflowState) {
+		return false
+	}
 	return r.canViewDroneWorkflow(ctx, claims, agentUser)
+}
+
+func workflowHasExplicitReviewer(workflowState *workflow.DroneWorkflowState) bool {
+	if workflowState == nil || workflowState.Review == nil {
+		return false
+	}
+	return normalizedDroneWorkflowActorID(workflowState.Review.Reviewer.ID) != "" ||
+		normalizedDroneWorkflowActorID(workflowState.Review.Reviewer.Handle) != ""
+}
+
+func droneWorkflowReviewerMatches(claims *auth.Claims, workflowState *workflow.DroneWorkflowState) bool {
+	if claims == nil || workflowState == nil || workflowState.Review == nil {
+		return false
+	}
+	viewerUsername := normalizedDroneWorkflowActorID(claims.Username)
+	if viewerUsername == "" {
+		return false
+	}
+	return viewerUsername == normalizedDroneWorkflowActorID(workflowState.Review.Reviewer.ID) ||
+		viewerUsername == normalizedDroneWorkflowActorID(workflowState.Review.Reviewer.Handle)
+}
+
+func normalizedDroneWorkflowActorID(value string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 }
 
 func (r *Resolver) lookupDroneSoulBinding(ctx context.Context, username string) (*storagemodels.InstanceSoulBodyBinding, error) {
@@ -142,7 +186,9 @@ func (r *Resolver) buildDroneWorkflowSurface(
 	}
 	if identity.IdentityState == workflow.DroneIdentityStateSouled {
 		currentPhase = workflow.DroneWorkflowPhaseContinuity
-		currentState = workflow.DroneWorkflowStateContinuityStable
+		if !strings.HasPrefix(strings.TrimSpace(currentState), workflow.DroneWorkflowPhaseContinuity+".") {
+			currentState = workflow.DroneWorkflowStateContinuityStable
+		}
 	}
 
 	return &model.AgentWorkflowSurface{

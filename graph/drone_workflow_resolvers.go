@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	workflow "github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/auth"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/security/authz"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -43,7 +44,11 @@ func (r *agentResolver) Workflow(ctx context.Context, obj *model.Agent) (*model.
 	if err != nil {
 		return nil, err
 	}
-	if !r.canViewDroneWorkflow(ctx, claims, agentUser) {
+	workflowState, err := r.loadDroneWorkflowState(agentUser)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to decode drone workflow metadata")
+	}
+	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
 		return nil, nil
 	}
 	surface, _, err := r.buildDroneWorkflowSurface(ctx, claims.Username, agentUser, governance)
@@ -104,8 +109,7 @@ func (r *queryResolver) MyDroneReviews(ctx context.Context) ([]*model.ReviewDeci
 		if err != nil || workflowState == nil || workflowState.Review == nil {
 			continue
 		}
-		reviewerID := strings.TrimSpace(workflowState.Review.Reviewer.ID)
-		if reviewerID != "" && !strings.EqualFold(reviewerID, claims.Username) && !authz.IsModeratorOrAdmin(role) {
+		if !authz.IsModeratorOrAdmin(role) && !droneWorkflowReviewerMatches(claims, workflowState) {
 			continue
 		}
 		card := graphDroneReviewCardModel(workflowState)
@@ -129,7 +133,11 @@ func (r *queryResolver) DroneWorkflow(ctx context.Context, username string) (*mo
 	if err != nil {
 		return nil, err
 	}
-	if !r.canViewDroneWorkflow(ctx, claims, agentUser) {
+	workflowState, err := r.loadDroneWorkflowState(agentUser)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to decode drone workflow metadata")
+	}
+	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
 		return nil, apperrors.Forbidden("not authorized to view drone workflow")
 	}
 	surface, _, err := r.buildDroneWorkflowSurface(ctx, claims.Username, agentUser, governance)
@@ -210,13 +218,12 @@ func (r *mutationResolver) ReviewSoulPromotion(ctx context.Context, input model.
 	if err != nil {
 		return nil, err
 	}
-	if !r.canReviewDroneWorkflow(ctx, claims, agentUser) {
-		return nil, apperrors.Forbidden("not authorized to review soul promotion")
-	}
-
 	workflowState, err := r.loadDroneWorkflowState(agentUser)
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to decode drone workflow metadata")
+	}
+	if !r.canReviewDroneWorkflow(ctx, claims, agentUser, workflowState) {
+		return nil, apperrors.Forbidden("not authorized to review soul promotion")
 	}
 	workflowState = workflow.NormalizeDroneWorkflow(workflowState)
 
@@ -470,7 +477,25 @@ func (r *Resolver) listCandidateDroneReviewAgents(ctx context.Context, username 
 	if includeAll {
 		return r.listAllDroneAgents(ctx)
 	}
-	return r.listOwnedDroneAgents(ctx, username)
+	allAgents, err := r.listAllDroneAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*storage.User, 0, len(allAgents))
+	claims := &auth.Claims{Username: username}
+	for _, agentUser := range allAgents {
+		if agentUser == nil {
+			continue
+		}
+		workflowState, err := r.loadDroneWorkflowState(agentUser)
+		if err != nil || workflowState == nil || workflowState.Review == nil {
+			continue
+		}
+		if droneWorkflowReviewerMatches(claims, workflowState) {
+			out = append(out, agentUser)
+		}
+	}
+	return out, nil
 }
 
 func (r *Resolver) listAllDroneAgents(ctx context.Context) ([]*storage.User, error) {

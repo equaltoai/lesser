@@ -237,6 +237,154 @@ func TestRound13DroneWorkflowMutationsPersistWorkflowState(t *testing.T) {
 	require.Equal(t, workflow.DroneIdentityStateSouled, identity.IdentityState)
 }
 
+func TestRound13DroneWorkflowAssignedReviewerAccess(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 3, 28, 12, 30, 0, 0, time.UTC)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-72 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "reviewer",
+		DisplayName: "Reviewer",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		CurrentPhase: workflow.DroneWorkflowPhaseReview,
+		CurrentState: workflow.DroneWorkflowStateReviewQueued,
+		Request: &workflow.DroneRequestCard{
+			ID:      "drone-gamma:request",
+			Title:   "Graduation request",
+			Summary: "Queue a reviewer-led graduation review.",
+			RequestedBy: workflow.DroneActor{
+				ID:     "owner",
+				Name:   "Owner",
+				Role:   "requester",
+				Handle: "@owner",
+			},
+			SubmittedAt: &now,
+		},
+		Review: &workflow.DroneReviewCard{
+			ID:              "drone-gamma:review",
+			Title:           "Assigned review",
+			Decision:        workflow.DroneReviewDecisionQueued,
+			Reviewer:        workflow.DroneActor{ID: "reviewer", Name: "Reviewer", Role: "reviewer", Handle: "@reviewer"},
+			DecisionSummary: "Awaiting reviewer input.",
+		},
+		UpdatedAt: &now,
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-gamma",
+		DisplayName: "Drone Gamma",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+		Metadata:    metadata,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-gamma",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	reviews, err := (&queryResolver{resolver}).MyDroneReviews(round13DroneAuthContext("reviewer", auth.ScopeRead))
+	require.NoError(t, err)
+	require.Len(t, reviews, 1)
+	require.Equal(t, "Assigned review", reviews[0].Title)
+
+	ownerReviews, err := (&queryResolver{resolver}).MyDroneReviews(round13DroneAuthContext("owner", auth.ScopeRead))
+	require.NoError(t, err)
+	require.Empty(t, ownerReviews)
+
+	reviewerWorkflow, err := (&queryResolver{resolver}).DroneWorkflow(round13DroneAuthContext("reviewer", auth.ScopeRead), "drone-gamma")
+	require.NoError(t, err)
+	require.NotNil(t, reviewerWorkflow)
+	require.Equal(t, workflow.DroneWorkflowStateReviewQueued, reviewerWorkflow.CurrentState)
+
+	_, err = (&mutationResolver{resolver}).ReviewSoulPromotion(round13DroneAuthContext("owner", auth.ScopeWrite), model.ReviewSoulPromotionInput{
+		Username:        "drone-gamma",
+		Decision:        workflow.DroneReviewDecisionApproved,
+		DecisionSummary: "Owner should not hijack an assigned review.",
+	})
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+
+	reviewPayload, err := (&mutationResolver{resolver}).ReviewSoulPromotion(round13DroneAuthContext("reviewer", auth.ScopeWrite), model.ReviewSoulPromotionInput{
+		Username:        "drone-gamma",
+		Decision:        workflow.DroneReviewDecisionApproved,
+		DecisionSummary: "Assigned reviewer approved the workflow.",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, reviewPayload)
+	require.NotNil(t, reviewPayload.Workflow)
+	require.Equal(t, workflow.DroneWorkflowStateReviewApproved, reviewPayload.Workflow.CurrentState)
+	require.NotNil(t, reviewPayload.Workflow.Review)
+	require.Equal(t, "reviewer", reviewPayload.Workflow.Review.Reviewer.ID)
+}
+
+func TestRound13DroneWorkflowSouledContinuityStatePreserved(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 3, 28, 13, 0, 0, 0, time.UTC)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		CurrentPhase: workflow.DroneWorkflowPhaseContinuity,
+		CurrentState: workflow.DroneWorkflowStateContinuityMonitoring,
+		SoulAgentID:  "0xsoul",
+		Continuity: &workflow.DroneContinuityPanel{
+			ID:           "drone-delta:continuity",
+			Title:        "Continuity monitor",
+			Objective:    "Preserve identity with active monitoring.",
+			Owner:        workflow.DroneActor{ID: "owner", Name: "Owner", Role: "steward", Handle: "@owner"},
+			FeedbackLoop: "Check continuity after launch.",
+		},
+		UpdatedAt: &now,
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-delta",
+		DisplayName: "Drone Delta",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+		Metadata:    metadata,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-delta",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	surface, err := (&queryResolver{resolver}).DroneWorkflow(round13DroneAuthContext("owner", auth.ScopeRead), "drone-delta")
+	require.NoError(t, err)
+	require.NotNil(t, surface)
+	require.Equal(t, workflow.DroneWorkflowPhaseContinuity, surface.CurrentPhase)
+	require.Equal(t, workflow.DroneWorkflowStateContinuityMonitoring, surface.CurrentState)
+	require.NotNil(t, surface.IdentitySemantics)
+	require.Equal(t, workflow.DroneIdentityStateSouled, surface.IdentitySemantics.IdentityState)
+	require.Equal(t, workflow.DroneContinuityStateMonitoring, surface.IdentitySemantics.ContinuityState)
+	require.Equal(t, workflow.DroneWorkflowStateContinuityMonitoring, surface.IdentitySemantics.LifecycleState)
+	require.NotEmpty(t, surface.Lifecycle)
+	require.Equal(t, workflow.DroneWorkflowStateContinuityMonitoring, derefString(surface.Lifecycle[len(surface.Lifecycle)-1].State))
+}
+
 func round13SeedGraphUser(t *testing.T, storageRepo *round12GraphStorage, user *storage.User, governance *storage.AgentGovernanceState) {
 	t.Helper()
 

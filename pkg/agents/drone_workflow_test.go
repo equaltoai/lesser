@@ -82,6 +82,26 @@ func TestDeriveDroneIdentitySemantics_DerivesDroneGraduatingAndSouledStates(t *t
 		require.Equal(t, DroneContinuityStateStable, identity.ContinuityState)
 		require.Contains(t, identity.ContinuitySummary, "preserved")
 	})
+
+	t.Run("souled monitoring and escalated states stay typed", func(t *testing.T) {
+		monitoring := DeriveDroneIdentitySemantics("scout", &DroneWorkflowState{
+			CurrentPhase: DroneWorkflowPhaseContinuity,
+			CurrentState: DroneWorkflowStateContinuityMonitoring,
+			SoulAgentID:  "0xsoul",
+		}, true, "")
+		require.Equal(t, DroneWorkflowStateContinuityMonitoring, monitoring.LifecycleState)
+		require.Equal(t, DroneContinuityStateMonitoring, monitoring.ContinuityState)
+		require.Contains(t, monitoring.ContinuitySummary, "active monitoring")
+
+		escalated := DeriveDroneIdentitySemantics("scout", &DroneWorkflowState{
+			CurrentPhase: DroneWorkflowPhaseContinuity,
+			CurrentState: DroneWorkflowStateContinuityEscalated,
+			SoulAgentID:  "0xsoul",
+		}, true, "")
+		require.Equal(t, DroneWorkflowStateContinuityEscalated, escalated.LifecycleState)
+		require.Equal(t, DroneContinuityStateEscalated, escalated.ContinuityState)
+		require.Contains(t, escalated.ContinuitySummary, "escalated")
+	})
 }
 
 func TestParseDroneWorkflowMetadata_CoversMetadataShapesAndErrors(t *testing.T) {

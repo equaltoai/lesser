@@ -61,6 +61,10 @@ const (
 	DroneContinuityStatePlanned = "planned"
 	// DroneContinuityStateStable marks stable continuity semantics.
 	DroneContinuityStateStable = "stable"
+	// DroneContinuityStateMonitoring marks monitored continuity semantics.
+	DroneContinuityStateMonitoring = "monitoring"
+	// DroneContinuityStateEscalated marks escalated continuity semantics.
+	DroneContinuityStateEscalated = "escalated"
 	// DroneLifecycleStatusUpcoming marks an upcoming lifecycle step.
 	DroneLifecycleStatusUpcoming = "upcoming"
 	// DroneLifecycleStatusActive marks an active lifecycle step.
@@ -418,8 +422,8 @@ func DeriveDroneIdentitySemantics(username string, workflow *DroneWorkflowState,
 		if lifecycleState == "" || !strings.HasPrefix(lifecycleState, DroneWorkflowPhaseContinuity+".") {
 			lifecycleState = DroneWorkflowStateContinuityStable
 		}
-		continuityState = DroneContinuityStateStable
-		continuitySummary = "Graduation preserved the existing body identity, timeline presence, and memory references."
+		continuityState = droneContinuityStateFromLifecycleState(lifecycleState)
+		continuitySummary = droneContinuitySummaryFromLifecycleState(lifecycleState)
 	} else if workflow != nil && workflow.CurrentState != "" && workflow.CurrentState != DroneWorkflowStateRequestDraft {
 		state = DroneIdentityStateGraduating
 		label = "Graduating"
@@ -619,4 +623,26 @@ func continuitySummaryForUsername(username, summary string) string {
 		return summary
 	}
 	return strings.ReplaceAll(summary, "the existing body identity", "@"+username+" body identity")
+}
+
+func droneContinuityStateFromLifecycleState(lifecycleState string) string {
+	switch strings.TrimSpace(lifecycleState) {
+	case DroneWorkflowStateContinuityMonitoring:
+		return DroneContinuityStateMonitoring
+	case DroneWorkflowStateContinuityEscalated:
+		return DroneContinuityStateEscalated
+	default:
+		return DroneContinuityStateStable
+	}
+}
+
+func droneContinuitySummaryFromLifecycleState(lifecycleState string) string {
+	switch strings.TrimSpace(lifecycleState) {
+	case DroneWorkflowStateContinuityMonitoring:
+		return "Graduation preserved the existing body identity, timeline presence, and memory references while continuity is under active monitoring."
+	case DroneWorkflowStateContinuityEscalated:
+		return "Graduation preserved the existing body identity, timeline presence, and memory references while continuity follow-up is escalated."
+	default:
+		return "Graduation preserved the existing body identity, timeline presence, and memory references."
+	}
 }
