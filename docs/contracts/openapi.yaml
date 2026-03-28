@@ -889,6 +889,8 @@ components:
                     type: array
                 display_name:
                     type: string
+                mcp_access:
+                    $ref: '#/components/schemas/AgentMCPAccess'
                 username:
                     type: string
                 verified:
@@ -902,6 +904,7 @@ components:
                 - agent_type
                 - agent_version
                 - display_name
+                - mcp_access
                 - username
                 - verified
             type: object
@@ -1215,6 +1218,33 @@ components:
             items:
                 $ref: '#/components/schemas/Agent'
             type: array
+        AgentMCPAccess:
+            additionalProperties: false
+            properties:
+                authorization_server_url:
+                    type: string
+                guidance:
+                    items:
+                        type: string
+                    type: array
+                mcp_url:
+                    type: string
+                protected_resource_url:
+                    type: string
+                registration_url:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - authorization_server_url
+                - guidance
+                - mcp_url
+                - protected_resource_url
+                - registration_url
+                - scopes
+            type: object
         AgentMemoryEventRequest:
             additionalProperties: false
             properties:

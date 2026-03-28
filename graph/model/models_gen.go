@@ -566,6 +566,7 @@ type Agent struct {
 	AgentCapabilities *activitypub.AgentCapabilities `json:"agentCapabilities"`
 	AgentOwner        *string                        `json:"agentOwner,omitempty"`
 	DelegatedScopes   []string                       `json:"delegatedScopes"`
+	McpAccess         *AgentMCPAccess                `json:"mcpAccess"`
 	Verified          bool                           `json:"verified"`
 	VerifiedAt        *Time                          `json:"verifiedAt,omitempty"`
 	OwnerActor        *activitypub.Actor             `json:"ownerActor,omitempty"`
@@ -575,6 +576,15 @@ type Agent struct {
 	Owner             *activitypub.Actor             `json:"owner,omitempty"`
 	CreatedAt         Time                           `json:"createdAt"`
 	ActivityCount     int                            `json:"activityCount"`
+}
+
+type AgentMCPAccess struct {
+	McpURL                 string   `json:"mcpURL"`
+	ProtectedResourceURL   string   `json:"protectedResourceURL"`
+	AuthorizationServerURL string   `json:"authorizationServerURL"`
+	RegistrationURL        string   `json:"registrationURL"`
+	Scopes                 []string `json:"scopes"`
+	Guidance               []string `json:"guidance"`
 }
 
 type AgentActivityConnection struct {

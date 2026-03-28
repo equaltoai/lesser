@@ -7,6 +7,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
@@ -23,8 +24,10 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 	}
 
 	id := username
+	baseURL := ""
 	if r != nil && r.Config != nil {
 		id = r.Config.ActorURL(username)
+		baseURL = r.Config.BaseURL()
 	}
 
 	displayName := strings.TrimSpace(user.DisplayName)
@@ -72,6 +75,7 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		AgentCapabilities: capabilities,
 		AgentOwner:        agentOwner,
 		DelegatedScopes:   delegatedScopes,
+		McpAccess:         graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
 		Verified:          verified,
 		VerifiedAt:        verifiedAt,
 		OwnerActor:        nil,
@@ -81,6 +85,17 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		Owner:             nil,
 		CreatedAt:         model.Time(createdAt),
 		ActivityCount:     0,
+	}
+}
+
+func graphAgentMCPAccessModel(bundle auth.PublicMCPAccessBundle) *model.AgentMCPAccess {
+	return &model.AgentMCPAccess{
+		McpURL:                 bundle.MCPURL,
+		ProtectedResourceURL:   bundle.ProtectedResourceURL,
+		AuthorizationServerURL: bundle.AuthorizationServerURL,
+		RegistrationURL:        bundle.RegistrationURL,
+		Scopes:                 append([]string(nil), bundle.SupportedScopes...),
+		Guidance:               append([]string(nil), bundle.Guidance...),
 	}
 }
 

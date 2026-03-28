@@ -89,6 +89,11 @@ func TestAgentManagementHandlersRound20(t *testing.T) {
 		var out apimodels.Agent
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Equal(t, "agent1", out.Username)
+		require.Equal(t, cfg.BaseURL()+"/mcp/agent1", out.MCPAccess.MCPURL)
+		require.Equal(t, cfg.BaseURL()+"/.well-known/oauth-protected-resource/mcp/agent1", out.MCPAccess.ProtectedResourceURL)
+		require.Equal(t, cfg.BaseURL()+"/.well-known/oauth-authorization-server", out.MCPAccess.AuthorizationServerURL)
+		require.Equal(t, cfg.BaseURL()+"/oauth/register", out.MCPAccess.RegistrationURL)
+		require.Len(t, out.MCPAccess.Guidance, 4)
 	})
 
 	t.Run("update agent success", func(t *testing.T) {

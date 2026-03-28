@@ -611,7 +611,7 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 		"key_type": account.User.AgentKeyType,
 	})
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 func (h *Handler) createAgentKeyChallenge(ctx *apptheory.Context, username string, action string, ttl time.Duration) (*storageModels.AgentKeyChallenge, error) {

@@ -438,6 +438,7 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
+	baseURL := handlerBaseURL(h)
 	for _, user := range users {
 		if user == nil || !user.IsAgent {
 			continue
@@ -445,7 +446,7 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 		if user.Suspended {
 			continue
 		}
-		agentsOut = append(agentsOut, agentFromStorageUser(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]))
+		agentsOut = append(agentsOut, agentFromStorageUserWithBaseURL(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))], baseURL))
 	}
 
 	return okJSON(agentsOut)
@@ -473,7 +474,7 @@ func (h *Handler) HandleGetAgentLift(ctx *apptheory.Context) (*apptheory.Respons
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUser(user, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(user, governance, handlerBaseURL(h)))
 }
 
 // HandleUpdateAgentLift handles PATCH /api/v1/agents/:username.
@@ -526,7 +527,7 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return respondAgentGovernanceWriteError(ctx, err)
 	}
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 func parseUpdateAgentRequest(ctx *apptheory.Context) (*apimodels.UpdateAgentRequest, *apptheory.Response, error) {
@@ -700,7 +701,7 @@ func (h *Handler) HandleDeleteAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 // HandleGetAgentActivityLift handles GET /api/v1/agents/:username/activity.
@@ -826,7 +827,7 @@ func (h *Handler) HandleSuspendAgentLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUser(account.User, governance))
+	return okJSON(agentFromStorageUserWithBaseURL(account.User, governance, handlerBaseURL(h)))
 }
 
 func (h *Handler) authenticateAgentOwner(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
@@ -981,7 +982,12 @@ func validateAgentAccessTokenTTLWithConfig(ctx *apptheory.Context, cfg *config.C
 	return time.Duration(expiresIn) * time.Second, nil, nil
 }
 
+//nolint:unused // Retained as the config-free helper for focused tests that only validate shape defaults.
 func agentFromStorageUser(user *storage.User, governance *storage.AgentGovernanceState) apimodels.Agent {
+	return agentFromStorageUserWithBaseURL(user, governance, "")
+}
+
+func agentFromStorageUserWithBaseURL(user *storage.User, governance *storage.AgentGovernanceState, baseURL string) apimodels.Agent {
 	out := apimodels.Agent{
 		Username:     user.Username,
 		DisplayName:  user.DisplayName,
@@ -1010,6 +1016,7 @@ func agentFromStorageUser(user *storage.User, governance *storage.AgentGovernanc
 	if strings.TrimSpace(out.AgentVersion) == "" {
 		out.AgentVersion = agentVersionUnknown
 	}
+	out.MCPAccess = apiAgentMCPAccess(auth.BuildPublicMCPAccessBundle(baseURL, out.Username))
 
 	return out
 }
@@ -1044,6 +1051,17 @@ func apiAgentCapabilitiesFromStorage(caps *agents.Capabilities) apimodels.AgentC
 		RestrictedDomains: append([]string(nil), caps.RestrictedDomains...),
 		MaxPostsPerHour:   caps.MaxPostsPerHour,
 		RequiresApproval:  caps.RequiresApproval,
+	}
+}
+
+func apiAgentMCPAccess(bundle auth.PublicMCPAccessBundle) apimodels.AgentMCPAccess {
+	return apimodels.AgentMCPAccess{
+		MCPURL:                 bundle.MCPURL,
+		ProtectedResourceURL:   bundle.ProtectedResourceURL,
+		AuthorizationServerURL: bundle.AuthorizationServerURL,
+		RegistrationURL:        bundle.RegistrationURL,
+		Scopes:                 append([]string(nil), bundle.SupportedScopes...),
+		Guidance:               append([]string(nil), bundle.Guidance...),
 	}
 }
 

@@ -149,15 +149,22 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.Equal(t, []string{"read"}, unverified.DelegatedScopes)
 		require.NotNil(t, unverified.CreatedAt)
 		require.Equal(t, createdAt, *unverified.CreatedAt)
+		require.Empty(t, unverified.MCPAccess.MCPURL)
+		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeFollow, auth.ScopePush}, unverified.MCPAccess.Scopes)
 
-		verified := agentFromStorageUser(user, &storage.AgentGovernanceState{
+		verified := agentFromStorageUserWithBaseURL(user, &storage.AgentGovernanceState{
 			Username:   "agent1",
 			Verified:   true,
 			VerifiedAt: &verifiedAt,
-		})
+		}, "https://example.com/")
 		require.True(t, verified.Verified)
 		require.NotNil(t, verified.VerifiedAt)
 		require.Equal(t, verifiedAt.UTC(), *verified.VerifiedAt)
+		require.Equal(t, "https://example.com/mcp/agent1", verified.MCPAccess.MCPURL)
+		require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/agent1", verified.MCPAccess.ProtectedResourceURL)
+		require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", verified.MCPAccess.AuthorizationServerURL)
+		require.Equal(t, "https://example.com/oauth/register", verified.MCPAccess.RegistrationURL)
+		require.Len(t, verified.MCPAccess.Guidance, 4)
 	})
 
 	t.Run("agent governance state helpers handle nil found and missing rows", func(t *testing.T) {

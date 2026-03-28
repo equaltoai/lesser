@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
 
 func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T) {
-	resolver := &Resolver{}
+	resolver := &Resolver{Config: &config.Config{Domain: "example.com"}}
 	createdAt := time.Date(2026, 2, 13, 12, 42, 10, 0, time.UTC)
 
 	user := &storage.User{
@@ -46,6 +47,12 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.True(t, agent.AgentCapabilities.CanDM)
 	require.Equal(t, 0, agent.AgentCapabilities.MaxPostsPerHour)
 	require.True(t, agent.AgentCapabilities.RequiresApproval)
+	require.NotNil(t, agent.McpAccess)
+	require.Equal(t, "https://example.com/mcp/lowkey", agent.McpAccess.McpURL)
+	require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/lowkey", agent.McpAccess.ProtectedResourceURL)
+	require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", agent.McpAccess.AuthorizationServerURL)
+	require.Equal(t, "https://example.com/oauth/register", agent.McpAccess.RegistrationURL)
+	require.Len(t, agent.McpAccess.Guidance, 4)
 }
 
 func TestConvertStorageUserToAgent_HidesVerifiedAtWhenAgentIsNotVerified(t *testing.T) {

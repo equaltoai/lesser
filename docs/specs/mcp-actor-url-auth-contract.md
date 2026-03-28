@@ -5,6 +5,7 @@ This document freezes the client-consumable remote MCP access form owned by Less
 It is the single written contract for M0 and covers:
 
 - the canonical actor-scoped MCP access form
+- the simple access-panel shape that surfaces that form to users
 - the binding rule between actor URL, OAuth client, and access decision
 - the canonical public registration path
 - the resource-bound token model for public MCP access
@@ -27,6 +28,33 @@ New remote clients should treat that actor-scoped form as canonical.
 `/.well-known/mcp.json` remains part of public discovery, but it does not replace the actor-scoped protected-resource
 metadata. The MCP server URL a client ultimately connects to is the actor-specific resource URL, not a separate
 connector-specific endpoint.
+
+## Simple access-panel contract
+
+When Lesser surfaces public MCP access for an actor in its own UI, the canonical shape is a simple actor-scoped access
+bundle:
+
+- MCP URL:
+  `https://{domain}/mcp/{actor}`
+- protected-resource metadata URL:
+  `https://{domain}/.well-known/oauth-protected-resource/mcp/{actor}`
+- authorization-server metadata URL:
+  `https://{domain}/.well-known/oauth-authorization-server`
+- registration URL:
+  `https://{domain}/oauth/register`
+- supported scopes:
+  `read`, `write`, `follow`, `push`
+- client-neutral guidance that tells a consumer to use the actor-scoped MCP URL as the OAuth `resource` and to discover
+  OAuth metadata from the actor-scoped protected-resource document
+
+That access bundle is the intended public agent-page contract.
+
+The normal panel UX must not depend on:
+
+- connector registration forms
+- copied client secrets as the primary onboarding path
+- browser-local connector inventories or browser-local connector metadata
+- connector grouping, connector session management, or connector-specific transport packaging
 
 ## Discovery sequence
 
