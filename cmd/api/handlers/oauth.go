@@ -703,14 +703,16 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
 	case oauthGrantTypeRefreshToken:
 		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req)
-	case oauthGrantTypeClientCredentials:
-		return h.handleOAuthClientCredentialsGrant(ctx.Context(), oauthSvc, req)
 	case oauthDeviceCodeGrantType:
 		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
 	default:
+		description := "Only authorization_code and refresh_token grant types are supported"
+		if oauthDeviceFlowEnabled(h.cfg) {
+			description = "Only authorization_code, refresh_token, and device_code grant types are supported"
+		}
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "unsupported_grant_type",
-			"error_description": "Only authorization_code, refresh_token, client_credentials, and device_code grant types are supported",
+			"error_description": description,
 		})
 	}
 }
@@ -823,101 +825,6 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 	})
 }
 
-func (h *Handler) handleOAuthClientCredentialsGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
-	if err := common.ValidateMultipleRequiredParams(map[string]string{
-		"client_id":     req.clientID,
-		"client_secret": req.clientSecret,
-	}); err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_request",
-			"error_description": err.Error(),
-		})
-	}
-
-	client, err := h.repos.Account().GetOAuthClient(ctx, strings.TrimSpace(req.clientID))
-	if err != nil || client == nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_client",
-			"error_description": "Invalid client credentials",
-		})
-	}
-	if err := oauthSvc.ValidateClient(ctx, req.clientID, req.clientSecret); err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_client",
-			"error_description": "Invalid client credentials",
-		})
-	}
-	if !oauthClientSupportsGrantType(client, oauthGrantTypeClientCredentials) {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "unauthorized_client",
-			"error_description": "client_credentials is not allowed for this client",
-		})
-	}
-	if !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "unauthorized_client",
-			"error_description": "Only agent clients may use client_credentials",
-		})
-	}
-
-	agentUser, agentErr := h.getAgentUserForOAuthClient(ctx, client, client.OwnerID)
-	switch agentErr {
-	case nil:
-	case errOAuthAgentUsernameRequired, errOAuthAgentNotFound:
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_client",
-			"error_description": agentErr.Error(),
-		})
-	case errOAuthAgentForbidden:
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_client",
-			"error_description": "Client ownership no longer matches the bound agent",
-		})
-	default:
-		h.logger.Error("failed to resolve OAuth agent client_credentials binding", zap.Error(agentErr))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
-			"error":             "server_error",
-			"error_description": "Failed to resolve bound agent",
-		})
-	}
-
-	scopes, err := resolveOAuthClientRequestedScopes(client, req.scope)
-	if err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "invalid_scope",
-			"error_description": "requested scopes exceed the client scope set",
-		})
-	}
-
-	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
-	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(
-		ctx,
-		agentUser.Username,
-		client.ClientID,
-		"",
-		scopes,
-		accessTTL,
-		auth.ClientClassAgent,
-		common.GenerateSessionIDULID(),
-		req.resource,
-	)
-	if err != nil {
-		h.logger.Error("failed to generate client_credentials access token", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
-			"error":             "server_error",
-			"error_description": "Failed to generate tokens",
-		})
-	}
-
-	return okJSON(apimodels.OAuthTokenResponse{
-		AccessToken: accessToken,
-		TokenType:   oauthTokenTypeBearer,
-		Scope:       strings.Join(scopes, " "),
-		CreatedAt:   time.Now().Unix(),
-		ExpiresIn:   int(accessTTL.Seconds()),
-	})
-}
-
 func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
 	if h.cfg == nil || !h.cfg.AllowDeviceFlow {
 		return apptheory.JSON(http.StatusForbidden, map[string]string{
@@ -987,12 +894,20 @@ func oauthClientSupportsGrantType(client *storage.OAuthClient, grantType string)
 	if client == nil {
 		return false
 	}
+	normalizedGrantType := strings.ToLower(strings.TrimSpace(grantType))
+	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
+	if normalizedGrantType == oauthGrantTypeClientCredentials {
+		return false
+	}
+	if normalizedGrantType == oauthDeviceCodeGrantType && clientClass == auth.ClientClassAgent {
+		return false
+	}
 	if len(client.GrantTypes) == 0 {
-		switch strings.ToLower(strings.TrimSpace(grantType)) {
-		case oauthGrantTypeAuthorizationCode, oauthGrantTypeRefreshToken, oauthDeviceCodeGrantType:
+		switch normalizedGrantType {
+		case oauthGrantTypeAuthorizationCode, oauthGrantTypeRefreshToken:
 			return true
-		case oauthGrantTypeClientCredentials:
-			return strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent)
+		case oauthDeviceCodeGrantType:
+			return clientClass == auth.ClientClassCLI
 		default:
 			return false
 		}
@@ -1003,28 +918,6 @@ func oauthClientSupportsGrantType(client *storage.OAuthClient, grantType string)
 		}
 	}
 	return false
-}
-
-func resolveOAuthClientRequestedScopes(client *storage.OAuthClient, requestedScope string) ([]string, error) {
-	requested := splitOAuthSpaceDelimited(requestedScope)
-	if len(requested) == 0 {
-		if len(client.Scopes) > 0 {
-			requested = append([]string(nil), client.Scopes...)
-		} else {
-			requested = auth.DefaultScopes()
-		}
-	}
-	if err := auth.ValidatePublicOAuthScopes(requested); err != nil {
-		return nil, err
-	}
-	if len(client.Scopes) == 0 {
-		return requested, nil
-	}
-
-	if !auth.ScopeSetAllows(client.Scopes, requested) {
-		return nil, auth.ErrInvalidScope
-	}
-	return requested, nil
 }
 
 func (h *Handler) loadOAuthDeviceSessionForTokenGrant(ctx context.Context, deviceCode, clientID string) (*storage.OAuthDeviceSession, *apptheory.Response, error) {
@@ -1184,29 +1077,23 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 	})
 }
 
-func (h *Handler) oauthDeviceApprovedTokenContext(ctx context.Context, client *storage.OAuthClient, approvedUsername string) (string, string, string, time.Duration, error) {
+func (h *Handler) oauthDeviceApprovedTokenContext(_ context.Context, client *storage.OAuthClient, approvedUsername string) (string, string, string, time.Duration, error) {
 	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
 	if clientClass == "" {
 		clientClass = auth.ClientClassCLI
+	}
+	if clientClass == auth.ClientClassAgent {
+		return "", "", "", 0, auth.ErrInvalidGrant
 	}
 
 	tokenUsername := strings.TrimSpace(approvedUsername)
 	sessionID := ""
 	accessTTL := auth.AccessTokenDuration
-	if clientClass == auth.ClientClassCLI || clientClass == auth.ClientClassAgent {
+	if clientClass == auth.ClientClassCLI {
 		sessionID = common.GenerateSessionIDULID()
 	}
 
-	if clientClass != auth.ClientClassAgent {
-		return tokenUsername, clientClass, sessionID, accessTTL, nil
-	}
-
-	agentUser, err := h.getAgentUserForOAuthClient(ctx, client, approvedUsername)
-	if err != nil || agentUser == nil {
-		return "", "", "", 0, auth.ErrInvalidGrant
-	}
-
-	return agentUser.Username, clientClass, sessionID, auth.AgentAccessTokenTTL(h.cfg), nil
+	return tokenUsername, clientClass, sessionID, accessTTL, nil
 }
 
 func (h *Handler) oauthDeviceApprovedTokenContextErrorResponse(err error) (*apptheory.Response, error) {
@@ -1347,11 +1234,7 @@ func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
 }
 
 func oauthAuthorizeRequiresResource(client *storage.OAuthClient) bool {
-	if client == nil {
-		return false
-	}
-	return usesDeprecatedMCPConnectorSemantics(client.ClientClass, client.AgentUsername) ||
-		oauthClientRequiresPKCE(client)
+	return oauthClientRequiresPKCE(client)
 }
 
 func requireOAuthPKCE(codeChallenge, codeChallengeMethod string) error {

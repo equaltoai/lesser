@@ -5,8 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,6 +30,14 @@ func TestOAuthDeviceCodeLiftRound12(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:    "client-1",
+					ClientClass: auth.ClientClassCLI,
+					GrantTypes:  []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+					CreatedAt:   time.Now().Add(-1 * time.Hour),
+				},
+			},
 			createErrorOnce: errors.New("boom"),
 		}
 		h, _, _ := round11NewHandler(t, cfgDevice, state)
@@ -41,7 +52,16 @@ func TestOAuthDeviceCodeLiftRound12(t *testing.T) {
 	t.Run("success returns device and user codes", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true
-		h, _, _ := round11NewHandler(t, cfgDevice, &round10QueryState{})
+		h, _, _ := round11NewHandler(t, cfgDevice, &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:    "client-1",
+					ClientClass: auth.ClientClassCLI,
+					GrantTypes:  []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+					CreatedAt:   time.Now().Add(-1 * time.Hour),
+				},
+			},
+		})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/code", nil, nil, []byte("client_id=client-1&scope=read%20write"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthDeviceCodeLift(ctx))
 
@@ -53,5 +73,29 @@ func TestOAuthDeviceCodeLiftRound12(t *testing.T) {
 		require.NotEmpty(t, body.VerificationURIComplete)
 		require.Equal(t, oauthDeviceCodeTTLSeconds, body.ExpiresIn)
 		require.Equal(t, oauthDevicePollIntervalSeconds, body.Interval)
+	})
+
+	t.Run("connector-era agent clients are rejected", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		h, _, _ := round11NewHandler(t, cfgDevice, &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					GrantTypes:    []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+					CreatedAt:     time.Now().Add(-1 * time.Hour),
+				},
+			},
+		})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/code", nil, nil, []byte("client_id=client-agent"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthDeviceCodeLift(ctx))
+
+		var body apimodels.OAuthErrorResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "unauthorized_client", body.Error)
+		require.Equal(t, "device_code is not allowed for this client", body.ErrorDescription)
 	})
 }

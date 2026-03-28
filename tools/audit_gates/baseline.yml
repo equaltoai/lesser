@@ -29,6 +29,7 @@ goDynamoDBQueryScan:
   cmd/lesser/migrate_conversation_metadata.go: 1
   cmd/lesser/migrate_conversation_participant_snapshots.go: 1
   cmd/lesser/migrate_conversations.go: 1
+  cmd/lesser/migrate_mcp_auth_cutover.go: 1
   cmd/lesser/migrate_numeric_ids.go: 1
   cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1

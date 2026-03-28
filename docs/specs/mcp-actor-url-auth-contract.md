@@ -10,7 +10,7 @@ It is the single written contract for M0 and covers:
 - the canonical public registration path
 - the resource-bound token model for public MCP access
 - the public MCP versus internal runtime auth boundary
-- the deprecated connector-era surfaces scheduled for removal
+- the connector-era surfaces retired by cutover
 
 ## Canonical remote MCP access form
 
@@ -89,8 +89,8 @@ That means:
 - `/oauth/authorize` must validate that `resource` against the actor-scoped `https://{domain}/mcp/{actor}` form before issuing consent or codes
 
 For public remote MCP access, `client_class`, `agent_username`, or any similar client metadata must not be treated as
-the canonical actor-binding source. If those fields continue to exist for compatibility during the migration, they are
-secondary legacy signals and must not override the actor-scoped resource URL.
+the canonical actor-binding source. Connector-era rows that still contain those fields are legacy data only and must
+not override the actor-scoped resource URL.
 
 ## Canonical public client registration path
 
@@ -123,9 +123,8 @@ That contract applies across the normal OAuth flow:
 
 The public MCP token model is therefore resource-bound, not connector-bound.
 
-`agent_username` is not part of the canonical public token model. If it remains present in stored state during the
-migration, it is legacy compatibility data only and must not replace `resource` as the target identifier for public MCP
-sessions.
+`agent_username` is not part of the canonical public token model. If it appears in stale pre-cutover rows, it is legacy
+data only and must not replace `resource` as the target identifier for public MCP sessions.
 Public MCP refresh-token records also must not depend on runtime-only fields such as connector session families, device
 labels, or idle/absolute runtime expiry policy.
 
@@ -145,20 +144,20 @@ The following are not part of the canonical public remote MCP contract:
 - agent runtime refresh-token families and runtime-session diagnostics
 - runtime-session listing or revocation endpoints that only manage those dedicated internal runtime clients
 - public MCP refresh-token records that depend on connector-era runtime session metadata
-- operator-only secret rotation and compatibility workflows for owned internal clients
+- operator-only secret rotation and owned runtime-management workflows
 - any browser-local connector inventory or connector-management UX
 
-Those compatibility/runtime mechanisms may continue to exist temporarily for operational reasons, but public MCP
-support must not depend on them. Public remote clients should be implementable from the actor-scoped resource contract
-alone.
+Those runtime-management mechanisms remain separate from the public MCP contract. Public remote clients should be
+implementable from the actor-scoped resource contract alone.
 
-## Deprecated connector-era MCP surfaces
+## Retired connector-era MCP surfaces
 
-The following public-facing MCP-era surfaces are deprecated for removal:
+The following public-facing MCP-era surfaces are outside the supported contract after cutover:
 
 - Simulacrum connector registration flows that create or manage public MCP connector records
 - browser-local connector inventory, pasted-secret flows, and similar connector-management UX
 - public registration semantics that depended on `client_class=agent` or `agent_username`
 
-They may continue to exist temporarily as compatibility aids, but new public MCP clients, examples, and docs must not
-use them as the canonical integration path.
+The cutover migration retires persisted connector client records, connector-bound refresh sessions, and other
+connector-era grant/session artifacts. New public MCP clients, examples, and docs must not use the retired surfaces as
+the integration path.

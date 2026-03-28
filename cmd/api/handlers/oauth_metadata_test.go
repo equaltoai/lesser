@@ -30,7 +30,7 @@ func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {
 		require.Equal(t, "https://example.com/oauth/device/code", body["device_authorization_endpoint"])
 		require.Equal(t, false, body["client_id_metadata_document_supported"])
 		require.ElementsMatch(t, []any{"code"}, body["response_types_supported"].([]any))
-		require.ElementsMatch(t, []any{"authorization_code", "refresh_token", "client_credentials", oauthDeviceCodeGrantType}, body["grant_types_supported"].([]any))
+		require.ElementsMatch(t, []any{"authorization_code", "refresh_token", oauthDeviceCodeGrantType}, body["grant_types_supported"].([]any))
 		require.ElementsMatch(t, []any{"client_secret_basic", "client_secret_post", "none"}, body["token_endpoint_auth_methods_supported"].([]any))
 		require.ElementsMatch(t, []any{"S256"}, body["code_challenge_methods_supported"].([]any))
 		require.ElementsMatch(t, []any{auth.ScopeRead, auth.ScopeWrite, auth.ScopeFollow, auth.ScopePush}, body["scopes_supported"].([]any))
@@ -50,6 +50,6 @@ func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, false, body["client_id_metadata_document_supported"])
 		require.NotContains(t, body, "device_authorization_endpoint")
-		require.ElementsMatch(t, []any{"authorization_code", "refresh_token", "client_credentials"}, body["grant_types_supported"].([]any))
+		require.ElementsMatch(t, []any{"authorization_code", "refresh_token"}, body["grant_types_supported"].([]any))
 	})
 }

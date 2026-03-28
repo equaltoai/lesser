@@ -126,15 +126,11 @@ func TestOAuthDeviceApprovedTokenContext(t *testing.T) {
 	require.NotEmpty(t, sessionID)
 	require.Equal(t, auth.AccessTokenDuration, accessTTL)
 
-	username, clientClass, sessionID, accessTTL, err = handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
+	_, _, _, _, err = handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
 		ClientClass:   auth.ClientClassAgent,
 		AgentUsername: "agent-1",
 	}, "owner")
-	require.NoError(t, err)
-	require.Equal(t, "agent-1", username)
-	require.Equal(t, auth.ClientClassAgent, clientClass)
-	require.NotEmpty(t, sessionID)
-	require.Equal(t, auth.AgentAccessTokenTTL(cfg), accessTTL)
+	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
 	_, _, _, _, err = handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
 		ClientClass:   auth.ClientClassAgent,

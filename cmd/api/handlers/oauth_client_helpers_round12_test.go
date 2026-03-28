@@ -69,8 +69,9 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 	t.Run("oauth client supports grant type defaults and explicit lists", func(t *testing.T) {
 		require.False(t, oauthClientSupportsGrantType(nil, auth.GrantTypeAuthorizationCode))
 		require.True(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{}, auth.GrantTypeAuthorizationCode))
-		require.True(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassAgent}, auth.GrantTypeClientCredentials))
-		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassWeb}, auth.GrantTypeClientCredentials))
+		require.True(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassCLI}, oauthDeviceCodeGrantType))
+		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassAgent}, oauthDeviceCodeGrantType))
+		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassAgent}, auth.GrantTypeClientCredentials))
 		require.True(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{GrantTypes: []string{auth.GrantTypeRefreshToken}}, auth.GrantTypeRefreshToken))
 		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{GrantTypes: []string{auth.GrantTypeRefreshToken}}, auth.GrantTypeAuthorizationCode))
 	})
