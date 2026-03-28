@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/mail"
@@ -122,7 +123,12 @@ func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Cont
 
 	var req models.OAuthDynamicClientRegistrationRequest
 	decoder := json.NewDecoder(bytes.NewReader(ctx.Request.Body))
+	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "unsupported or malformed client metadata")
+		return nil, resp, respErr
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "unsupported or malformed client metadata")
 		return nil, resp, respErr
 	}
@@ -419,7 +425,7 @@ func grantTypeSubsetAllowed(allowed, requested []string) bool {
 	return true
 }
 
-func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod string, allowDeviceFlow bool) []string {
+func dynamicRegistrationDefaultGrantTypes(clientClass, _ string, allowDeviceFlow bool) []string {
 	switch clientClass {
 	case auth.ClientClassCLI:
 		grants := []string{

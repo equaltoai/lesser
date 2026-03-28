@@ -40,6 +40,13 @@ func TestApps_Round12_ParseAppRegistrationRequest_Coverage(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("json_rejects_removed_agent_username", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/json"}, nil, []byte(`{"client_name":"Test App","redirect_uris":"https://example.com/callback","scopes":"read","agent_username":"agent1"}`))
+
+		_, err := handler.parseAppRegistrationRequest(ctx)
+		require.Error(t, err)
+	})
+
 	t.Run("form_urlencoded_ok", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil,
 			[]byte("client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read&website=https%3A%2F%2Fexample.com"))
@@ -51,6 +58,14 @@ func TestApps_Round12_ParseAppRegistrationRequest_Coverage(t *testing.T) {
 
 	t.Run("form_urlencoded_parse_error", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil, []byte("%"))
+
+		_, err := handler.parseAppRegistrationRequest(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("form_urlencoded_rejects_removed_agent_username", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, nil,
+			[]byte("client_name=Test+App&redirect_uris=https%3A%2F%2Fexample.com%2Fcallback&scopes=read&agent_username=agent1"))
 
 		_, err := handler.parseAppRegistrationRequest(ctx)
 		require.Error(t, err)

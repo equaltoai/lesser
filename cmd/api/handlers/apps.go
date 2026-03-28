@@ -167,7 +167,7 @@ func (h *Handler) parseAppRegistrationRequest(ctx *apptheory.Context) (models.Ap
 	if strings.Contains(contentTypeLower, "application/json") {
 		// Parse as JSON
 		var req models.AppRegistrationRequest
-		if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		if err := common.ParseRequestStrict(ctx, &req); err != nil {
 			h.logger.Error("failed to parse JSON request", zap.Error(err), zap.String("body", body))
 			return models.AppRegistrationRequest{}, err
 		}
@@ -223,7 +223,7 @@ func (h *Handler) parseFallbackRequest(ctx *apptheory.Context, body string) (mod
 
 	// Try JSON as last resort
 	var req models.AppRegistrationRequest
-	if jsonErr := common.ParseRequestWithFallback(ctx, &req); jsonErr == nil && req.ClientName != "" {
+	if jsonErr := common.ParseRequestStrict(ctx, &req); jsonErr == nil && req.ClientName != "" {
 		h.logger.Info("parsed as JSON (fallback)",
 			zap.String("detected_content_type", "application/json"))
 		return req, nil
@@ -238,6 +238,9 @@ func (h *Handler) parseFallbackRequest(ctx *apptheory.Context, body string) (mod
 
 // buildRequestFromParams builds AppRegistrationRequest from parsed parameters
 func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRegistrationRequest, error) {
+	if err := validatePublicAppRegistrationParams(params); err != nil {
+		return models.AppRegistrationRequest{}, err
+	}
 	if err := common.ValidateApplicationName(params["client_name"]); err != nil {
 		return models.AppRegistrationRequest{}, err
 	}
@@ -256,6 +259,34 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 	}
 
 	return req, nil
+}
+
+func validatePublicAppRegistrationParams(params map[string]string) error {
+	allowed := map[string]struct{}{
+		"client_name":                {},
+		"redirect_uris":              {},
+		"scopes":                     {},
+		"website":                    {},
+		"client_class":               {},
+		"grant_types":                {},
+		"token_endpoint_auth_method": {},
+	}
+
+	for key := range params {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := allowed[key]; ok {
+			continue
+		}
+		if key == "agent_username" {
+			return errors.New("agent_username is not supported for public registration")
+		}
+		return errors.New("unsupported app registration parameter: " + key)
+	}
+
+	return nil
 }
 
 // validateAppRegistrationParams validates the parsed request parameters

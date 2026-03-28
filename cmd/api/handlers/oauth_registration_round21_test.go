@@ -203,19 +203,26 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Contains(t, string(resp.Body), "\"error\":\"invalid_redirect_uri\"")
 	})
 
-	t.Run("accepts unknown metadata fields and drops them from the response", func(t *testing.T) {
+	t.Run("rejects removed agent_username field", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, []byte(`{"client_name":"Unknown","redirect_uris":["https://example.com/callback"],"agent_username":"agent1"}`))
+
+		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		require.Contains(t, string(resp.Body), "\"error\":\"invalid_client_metadata\"")
+	})
+
+	t.Run("rejects unknown metadata fields", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", map[string]string{
 			"Content-Type": "application/json",
 		}, nil, []byte(`{"client_name":"Unknown","redirect_uris":["https://example.com/callback"],"jwks_uri":"https://example.com/jwks"}`))
 
-		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
-
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "Unknown", body["client_name"])
-		require.NotContains(t, body, "jwks_uri")
+		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		require.Contains(t, string(resp.Body), "\"error\":\"invalid_client_metadata\"")
 	})
 
 	t.Run("returns server error when client persistence fails", func(t *testing.T) {
