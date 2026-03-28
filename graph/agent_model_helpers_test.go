@@ -52,7 +52,7 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/lowkey", agent.McpAccess.ProtectedResourceURL)
 	require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", agent.McpAccess.AuthorizationServerURL)
 	require.Equal(t, "https://example.com/oauth/register", agent.McpAccess.RegistrationURL)
-	require.Len(t, agent.McpAccess.Guidance, 4)
+	require.Len(t, agent.McpAccess.Guidance, 5)
 }
 
 func TestConvertStorageUserToAgent_HidesVerifiedAtWhenAgentIsNotVerified(t *testing.T) {

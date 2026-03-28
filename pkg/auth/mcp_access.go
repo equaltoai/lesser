@@ -22,10 +22,11 @@ func BuildPublicMCPAccessBundle(baseURL, actorUsername string) PublicMCPAccessBu
 	bundle := PublicMCPAccessBundle{
 		SupportedScopes: []string{ScopeRead, ScopeWrite, ScopeFollow, ScopePush},
 		Guidance: []string{
-			"Start from the actor-specific MCP URL.",
-			"Use that same MCP URL as the OAuth resource parameter.",
+			"Start from the actor-scoped MCP URL.",
+			"Use that same MCP URL as the OAuth resource value.",
 			"Discover OAuth metadata through the actor-scoped protected-resource document.",
 			"Register a generic OAuth client with /oauth/register when your client needs registration.",
+			"Do not rely on client_credentials or agent-bound connector metadata on the public surface.",
 		},
 	}
 	if baseURL == "" || actorUsername == "" {

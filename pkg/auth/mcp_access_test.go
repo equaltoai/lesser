@@ -15,8 +15,9 @@ func TestBuildPublicMCPAccessBundle(t *testing.T) {
 		require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", bundle.AuthorizationServerURL)
 		require.Equal(t, "https://example.com/oauth/register", bundle.RegistrationURL)
 		require.Equal(t, []string{ScopeRead, ScopeWrite, ScopeFollow, ScopePush}, bundle.SupportedScopes)
-		require.Len(t, bundle.Guidance, 4)
+		require.Len(t, bundle.Guidance, 5)
 		require.Contains(t, bundle.Guidance[1], "OAuth resource")
+		require.Contains(t, bundle.Guidance[4], "client_credentials")
 	})
 
 	t.Run("preserves client neutral guidance without runtime base url", func(t *testing.T) {
@@ -27,6 +28,6 @@ func TestBuildPublicMCPAccessBundle(t *testing.T) {
 		require.Empty(t, bundle.AuthorizationServerURL)
 		require.Empty(t, bundle.RegistrationURL)
 		require.Equal(t, []string{ScopeRead, ScopeWrite, ScopeFollow, ScopePush}, bundle.SupportedScopes)
-		require.Len(t, bundle.Guidance, 4)
+		require.Len(t, bundle.Guidance, 5)
 	})
 }

@@ -49,11 +49,13 @@ This document provides a comprehensive overview of how OAuth works specifically 
 
 Mastodon servers commonly expose OAuth endpoints at the following paths:
 
-- **App Registration**: `POST /api/v1/apps`
+- **App Registration**: `POST /oauth/register` (canonical RFC 7591) and `POST /api/v1/apps` (compatibility)
 - **Authorization**: `GET /oauth/authorize`
 - **Token Exchange**: `POST /oauth/token`
 - **Token Verification**: `GET /api/v1/accounts/verify_credentials`
 
+For actor-scoped remote MCP access, the canonical quickstart is documented in
+[docs/mcp-remote-access.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/mcp-remote-access.md).
 Lesser keeps the registration compatibility endpoint, but it does not currently publish a public
 `GET /api/v1/apps/verify_credentials` route.
 

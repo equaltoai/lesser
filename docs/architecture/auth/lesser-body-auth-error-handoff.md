@@ -20,7 +20,7 @@ The source-of-truth client-visible contract lives in [auth-error-contract.md](/h
 | `401` + `error=invalid_token` on `/api/*` | MCP clients treat this as the refresh bucket. |
 | `403` + `error=insufficient_scope` on `/api/*` | MCP clients must not downgrade this into a refreshable error. |
 | `400` + `error=invalid_grant` on `/oauth/token` | Signals refresh exhaustion or stale auth artifacts. |
-| `401` + `error=invalid_client` on `/oauth/token` | Signals connector secret/configuration failure. |
+| `401` + `error=invalid_client` on `/oauth/token` | Signals public client-auth configuration failure. |
 | `429` + `error=slow_down` | Preserves backoff semantics and `Retry-After`. |
 
 ### Allowed wrapping rules
@@ -75,7 +75,7 @@ Status: `400`
 
 Expected MCP action: `reauth`
 
-### Client secret mismatch
+### Client authentication mismatch
 
 Status: `401`
 
@@ -95,7 +95,7 @@ Status: `429`
 ```json
 {
   "error": "slow_down",
-  "error_description": "Too many client_credentials token requests"
+  "error_description": "Too many dynamic client registration requests"
 }
 ```
 

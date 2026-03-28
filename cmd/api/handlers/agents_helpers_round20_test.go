@@ -164,7 +164,7 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/agent1", verified.MCPAccess.ProtectedResourceURL)
 		require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", verified.MCPAccess.AuthorizationServerURL)
 		require.Equal(t, "https://example.com/oauth/register", verified.MCPAccess.RegistrationURL)
-		require.Len(t, verified.MCPAccess.Guidance, 4)
+		require.Len(t, verified.MCPAccess.Guidance, 5)
 	})
 
 	t.Run("agent governance state helpers handle nil found and missing rows", func(t *testing.T) {

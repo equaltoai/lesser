@@ -53,6 +53,8 @@ func runVerify(argv []string) error {
 		return runVerifyGraphQLCoverage(argv[1:])
 	case "openapi":
 		return runVerifyOpenAPI(argv[1:])
+	case "mcp-auth-cutover":
+		return runVerifyMCPAuthCutover(argv[1:])
 	case "account-hydration":
 		return runVerifyAccountHydration(argv[1:])
 	case "status-contract":
