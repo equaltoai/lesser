@@ -10,6 +10,7 @@ type OAuthTokenRequest struct {
 	ClientSecret string `json:"client_secret,omitempty"`
 	CodeVerifier string `json:"code_verifier,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	Resource     string `json:"resource,omitempty"`
 	Scope        string `json:"scope,omitempty"`
 }
 

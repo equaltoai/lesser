@@ -20,6 +20,9 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 
 ## Supported token flow
 
+- For public MCP authorization, send the actor-scoped MCP URL as the canonical `resource`.
+- Treat `authorization_code` and `refresh_token` state as resource-bound to that MCP URL.
+- Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
 - `POST /oauth/token` supports `client_credentials` for confidential agent clients.
 - `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
 - `client_credentials` responses are access-token-only.

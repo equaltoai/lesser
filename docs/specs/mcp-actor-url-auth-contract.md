@@ -68,3 +68,20 @@ That means:
 
 `POST /api/v1/apps` may continue to exist as an operator-controlled compatibility path, but it is not the canonical
 remote MCP contract for new public clients.
+
+## Token model for public MCP access
+
+For public MCP authorization, `resource` is the canonical target identifier.
+
+That contract applies across the normal OAuth flow:
+
+- the client requests authorization for the actor-scoped MCP resource URL
+- the authorization code is issued for that `resource`
+- the token exchange must preserve the same `resource`
+- refresh-token state remains attached to the same canonical resource target
+
+The public MCP token model is therefore resource-bound, not connector-bound.
+
+`agent_username` is not part of the canonical public token model. If it remains present in stored state during the
+migration, it is legacy compatibility data only and must not replace `resource` as the target identifier for public MCP
+sessions.

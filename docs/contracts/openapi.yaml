@@ -4005,6 +4005,9 @@ components:
                     type: string
                 grant_type:
                     type: string
+                resource:
+                    description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
+                    type: string
                 redirect_uri:
                     type: string
                 refresh_token:
@@ -18540,6 +18543,12 @@ paths:
                   schema:
                     type: string
                     format: uri
+                - name: resource
+                  in: query
+                  description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
+                  schema:
+                    type: string
+                    format: uri
                 - name: response_type
                   in: query
                   required: true
@@ -19392,4 +19401,3 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
-
