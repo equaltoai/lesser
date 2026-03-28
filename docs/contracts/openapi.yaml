@@ -2206,6 +2206,12 @@ components:
                 status:
                     type: string
                 visibility:
+                    description: Status visibility. `direct` messages must mention exactly one recipient using an @mention in the status content.
+                    enum:
+                        - public
+                        - unlisted
+                        - private
+                        - direct
                     type: string
             required:
                 - sensitive
@@ -4017,12 +4023,12 @@ components:
                     type: string
                 grant_type:
                     type: string
-                resource:
-                    description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
-                    type: string
                 redirect_uri:
                     type: string
                 refresh_token:
+                    type: string
+                resource:
+                    description: Canonical target resource URI. For remote MCP access this is the actor-scoped MCP URL.
                     type: string
                 scope:
                     type: string
@@ -18821,37 +18827,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            type: object
-                            properties:
-                                agent_username:
-                                    deprecated: true
-                                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
-                                    type: string
-                                client_class:
-                                    deprecated: true
-                                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
-                                    type: string
-                                client_name:
-                                    type: string
-                                client_uri:
-                                    type: string
-                                    format: uri
-                                grant_types:
-                                    type: array
-                                redirect_uris:
-                                    type: array
-                                scope:
-                                    type: string
-                                software_id:
-                                    type: string
-                                software_version:
-                                    type: string
-                                token_endpoint_auth_method:
-                                    type: string
-                            required:
-                                - client_name
-                                - redirect_uris
-                            additionalProperties: false
+                            $ref: '#/components/schemas/OAuthDynamicClientRegistrationRequest'
             responses:
                 "200":
                     description: OK
@@ -18860,50 +18836,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
-                                properties:
-                                    agent_username:
-                                        deprecated: true
-                                        description: Deprecated connector-era MCP compatibility field.
-                                        type: string
-                                    client_class:
-                                        deprecated: true
-                                        description: Deprecated connector-era MCP compatibility field.
-                                        type: string
-                                    client_id:
-                                        type: string
-                                    client_id_issued_at:
-                                        type: integer
-                                        format: int64
-                                    client_name:
-                                        type: string
-                                    client_secret:
-                                        type: string
-                                    client_secret_expires_at:
-                                        type: integer
-                                        format: int64
-                                    client_uri:
-                                        type: string
-                                        format: uri
-                                    grant_types:
-                                        type: array
-                                    redirect_uris:
-                                        type: array
-                                    registration_source:
-                                        type: string
-                                    scope:
-                                        type: string
-                                    software_id:
-                                        type: string
-                                    software_version:
-                                        type: string
-                                    token_endpoint_auth_method:
-                                        type: string
-                                required:
-                                    - client_id
-                                    - client_id_issued_at
-                                    - client_secret_expires_at
-                                additionalProperties: false
+                                $ref: '#/components/schemas/OAuthDynamicClientRegistrationResponse'
                     headers:
                         X-RateLimit-Limit:
                             description: Request limit per window.
@@ -19421,3 +19354,4 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
+
