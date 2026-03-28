@@ -228,6 +228,43 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 		require.Equal(t, activitypub.AgentAttributionSchemaVersion, out.SchemaVersion)
 		require.Equal(t, "user-v2", out.ModelID)
 	})
+
+	t.Run("agent fills identity semantics from workflow metadata and soul binding", func(t *testing.T) {
+		metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
+			CurrentPhase: agents.DroneWorkflowPhaseContinuity,
+			CurrentState: agents.DroneWorkflowStateContinuityStable,
+			SoulAgentID:  "0xagent-soul",
+		})
+		require.NoError(t, err)
+
+		state := &round10QueryState{
+			soulBodyBindingsByAgentID: map[string]storagemodels.InstanceSoulBodyBinding{
+				"0xagent-soul": *storagemodels.NewInstanceSoulBodyBinding("0xagent-soul", "bot", "0xprincipal"),
+			},
+			soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
+				"bot": *storagemodels.NewInstanceSoulBodyBindingUsername("bot", "0xagent-soul"),
+			},
+		}
+
+		hIdentity, _, _ := round11NewHandler(t, cfg, state)
+		account := &storage.Account{
+			User: &storage.User{
+				Username:     "bot",
+				IsAgent:      true,
+				AgentOwner:   "@owner",
+				AgentVersion: "v3",
+				Metadata:     metadata,
+			},
+		}
+
+		out := hIdentity.buildStatusAgentAttribution(context.Background(), account, &storagemodels.Status{Note: &activitypub.Note{}})
+		require.NotNil(t, out)
+		require.Equal(t, agents.DroneIdentityStateSouled, out.IdentityState)
+		require.Equal(t, "Souled", out.IdentityLabel)
+		require.Equal(t, agents.DroneContinuityStateStable, out.ContinuityState)
+		require.Equal(t, "0xagent-soul", out.SoulAgentID)
+		require.Equal(t, "Souled", out.ModerationLabel)
+	})
 }
 
 func TestHelpersRound18_StatusAccountUsesActorData(t *testing.T) {

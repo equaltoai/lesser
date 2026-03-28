@@ -25,6 +25,13 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 	cfg.AllowAgents = true
 
 	now := time.Now().UTC()
+	workflowMetadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
+		CurrentPhase: agents.DroneWorkflowPhaseContinuity,
+		CurrentState: agents.DroneWorkflowStateContinuityStable,
+		SoulAgentID:  "0xalice-soul",
+	})
+	require.NoError(t, err)
+
 	policy := storagemodels.NewAgentInstanceConfig()
 	policy.AllowAgents = true
 	policy.AgentMaxPostsPerHour = 50
@@ -65,6 +72,7 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
+				Metadata:     workflowMetadata,
 				AgentCapabilities: &agents.Capabilities{
 					CanPost:           true,
 					RestrictedDomains: []string{"example.org"},
@@ -109,6 +117,12 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 				},
 			},
 		},
+		soulBodyBindingsByAgentID: map[string]storagemodels.InstanceSoulBodyBinding{
+			"0xalice-soul": *storagemodels.NewInstanceSoulBodyBinding("0xalice-soul", "alice", "0xprincipal"),
+		},
+		soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
+			"alice": *storagemodels.NewInstanceSoulBodyBindingUsername("alice", "0xalice-soul"),
+		},
 	}
 
 	h, repos, _ := round11NewHandler(t, cfg, state)
@@ -124,6 +138,8 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		require.Len(t, out, 1)
 		require.Equal(t, "alice", out[0].Username)
 		require.Equal(t, 10, out[0].AgentCapabilities.MaxPostsPerHour)
+		require.Equal(t, agents.DroneIdentityStateSouled, out[0].IdentitySemantics.IdentityState)
+		require.Equal(t, "0xalice-soul", out[0].IdentitySemantics.SoulAgentID)
 	})
 
 	t.Run("gets_agent_by_username", func(t *testing.T) {
@@ -136,6 +152,8 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Equal(t, "alice", out.Username)
 		require.True(t, out.Verified)
+		require.Equal(t, agents.DroneIdentityStateSouled, out.IdentitySemantics.IdentityState)
+		require.Equal(t, "0xalice-soul", out.IdentitySemantics.SoulAgentID)
 	})
 
 	t.Run("updates_agent_as_owner", func(t *testing.T) {

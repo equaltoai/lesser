@@ -291,6 +291,10 @@ func (r *AccountRepository) UpdateUser(_ context.Context, username string, updat
 			if v, ok := value.(string); ok {
 				account.User.Role = v
 			}
+		case "metadata":
+			if v, ok := value.(map[string]interface{}); ok {
+				account.User.Metadata = copyMetadata(v)
+			}
 		}
 	}
 
@@ -1513,7 +1517,19 @@ func copyUser(user *storage.User) *storage.User {
 		return nil
 	}
 	userCopy := *user
+	userCopy.Metadata = copyMetadata(user.Metadata)
 	return &userCopy
+}
+
+func copyMetadata(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func copyActor(actor *activitypub.Actor) *activitypub.Actor {

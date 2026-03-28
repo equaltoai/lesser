@@ -446,7 +446,9 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 		if user.Suspended {
 			continue
 		}
-		agentsOut = append(agentsOut, agentFromStorageUserWithBaseURL(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))], baseURL))
+		agentOut := agentFromStorageUserWithBaseURL(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))], baseURL)
+		agentOut.IdentitySemantics = apiAgentIdentitySemantics(h.agentIdentitySemantics(ctx.Context(), user))
+		agentsOut = append(agentsOut, agentOut)
 	}
 
 	return okJSON(agentsOut)
@@ -474,7 +476,9 @@ func (h *Handler) HandleGetAgentLift(ctx *apptheory.Context) (*apptheory.Respons
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUserWithBaseURL(user, governance, handlerBaseURL(h)))
+	agentOut := agentFromStorageUserWithBaseURL(user, governance, handlerBaseURL(h))
+	agentOut.IdentitySemantics = apiAgentIdentitySemantics(h.agentIdentitySemantics(ctx.Context(), user))
+	return okJSON(agentOut)
 }
 
 // HandleUpdateAgentLift handles PATCH /api/v1/agents/:username.
@@ -1017,6 +1021,8 @@ func agentFromStorageUserWithBaseURL(user *storage.User, governance *storage.Age
 		out.AgentVersion = agentVersionUnknown
 	}
 	out.MCPAccess = apiAgentMCPAccess(auth.BuildPublicMCPAccessBundle(baseURL, out.Username))
+	workflowState, _ := agents.ParseDroneWorkflowMetadata(user.Metadata)
+	out.IdentitySemantics = apiAgentIdentitySemantics(agents.DeriveDroneIdentitySemantics(user.Username, workflowState, false, ""))
 
 	return out
 }
@@ -1062,6 +1068,23 @@ func apiAgentMCPAccess(bundle auth.PublicMCPAccessBundle) apimodels.AgentMCPAcce
 		RegistrationURL:        bundle.RegistrationURL,
 		Scopes:                 append([]string(nil), bundle.SupportedScopes...),
 		Guidance:               append([]string(nil), bundle.Guidance...),
+	}
+}
+
+func apiAgentIdentitySemantics(identity agents.DroneIdentitySemantics) apimodels.AgentIdentitySemantics {
+	return apimodels.AgentIdentitySemantics{
+		IdentityState:             identity.IdentityState,
+		IdentityLabel:             identity.IdentityLabel,
+		LifecycleState:            identity.LifecycleState,
+		SoulBindingState:          identity.SoulBindingState,
+		SoulAgentID:               identity.SoulAgentID,
+		ContinuityState:           identity.ContinuityState,
+		ContinuitySummary:         identity.ContinuitySummary,
+		BodyIdentityPreserved:     identity.BodyIdentityPreserved,
+		TimelinePresencePreserved: identity.TimelinePresencePreserved,
+		MemoryReferencesPreserved: identity.MemoryReferencesPreserved,
+		AttributionLabel:          identity.AttributionLabel,
+		ModerationLabel:           identity.ModerationLabel,
 	}
 }
 

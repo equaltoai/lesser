@@ -160,6 +160,12 @@ type AgentPostAttribution {
   constraints: [String!]
   schemaVersion: String
   modelId: String
+  identityState: String
+  identityLabel: String
+  continuityState: String
+  continuitySummary: String
+  soulAgentId: String
+  moderationLabel: String
 }
 
 input AgentPostAttributionInput {

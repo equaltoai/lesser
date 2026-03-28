@@ -163,6 +163,12 @@ type AgentPostAttribution {
   constraints: [String!]
   schemaVersion: String
   modelId: String
+  identityState: String
+  identityLabel: String
+  continuityState: String
+  continuitySummary: String
+  soulAgentId: String
+  moderationLabel: String
 }
 
 input AgentPostAttributionInput {
@@ -4157,6 +4163,8 @@ type Agent {
   username: String!
   displayName: String!
   bio: String
+  identitySemantics: AgentIdentitySemantics!
+  workflow: AgentWorkflowSurface
 
   # REST/OpenAPI parity fields (preferred)
   agentType: AgentType!
@@ -4466,6 +4474,236 @@ type SoulInventoryItem {
   binding: SoulAgentBinding
 }
 
+type AgentIdentitySemantics {
+  identityState: String!
+  identityLabel: String!
+  lifecycleState: String!
+  soulBindingState: SoulBindingState!
+  soulAgentId: String
+  continuityState: String!
+  continuitySummary: String!
+  bodyIdentityPreserved: Boolean!
+  timelinePresencePreserved: Boolean!
+  memoryReferencesPreserved: Boolean!
+  attributionLabel: String!
+  moderationLabel: String!
+}
+
+type AgentSurfaceMetric {
+  label: String!
+  value: String!
+  detail: String
+}
+
+type AgentSurfaceActor {
+  id: ID!
+  name: String!
+  role: String!
+  handle: String
+  avatarLabel: String
+  statusLabel: String
+}
+
+type AgentSurfaceArtifact {
+  id: ID!
+  title: String!
+  description: String
+  href: String
+  emphasis: String
+}
+
+type AgentIdentityCard {
+  id: ID!
+  name: String!
+  handle: String
+  summary: String!
+  currentPhase: String!
+  currentState: String
+  steward: AgentSurfaceActor
+  tags: [String!]
+  metrics: [AgentSurfaceMetric!]
+}
+
+type SoulRequestCard {
+  id: ID!
+  title: String!
+  summary: String!
+  requestedBy: AgentSurfaceActor!
+  submittedAt: Time
+  constraints: [String!]
+  artifacts: [AgentSurfaceArtifact!]
+  routeDecision: String
+  currentState: String
+}
+
+type AgentLifecycleStep {
+  phase: String!
+  title: String
+  summary: String
+  state: String
+  status: String!
+}
+
+type ReviewFinding {
+  id: ID!
+  title: String!
+  detail: String!
+  severity: String
+}
+
+type ReviewDecisionCard {
+  id: ID!
+  title: String!
+  decision: String!
+  reviewer: AgentSurfaceActor!
+  decisionSummary: String!
+  findings: [ReviewFinding!]
+  evidence: [AgentSurfaceArtifact!]
+}
+
+type DeclarationPreviewCard {
+  id: ID!
+  title: String!
+  statement: String!
+  confidence: String!
+  owner: AgentSurfaceActor
+  declaredScope: [String!]!
+  risks: [String!]
+  supportingArtifacts: [AgentSurfaceArtifact!]
+}
+
+type SignatureCheckpointSigner {
+  id: ID!
+  name: String!
+  role: String!
+  status: String!
+  note: String
+}
+
+type SignatureCheckpointCard {
+  id: ID!
+  title: String!
+  readinessLabel: String!
+  approvalMemo: String
+  dueAt: Time
+  signers: [SignatureCheckpointSigner!]!
+}
+
+type ContinuityFollowUp {
+  id: ID!
+  title: String!
+  summary: String!
+  owner: AgentSurfaceActor!
+  cadence: String
+}
+
+type ContinuityPanel {
+  id: ID!
+  title: String!
+  objective: String!
+  owner: AgentSurfaceActor!
+  feedbackLoop: String!
+  metrics: [AgentSurfaceMetric!]
+  followUps: [ContinuityFollowUp!]
+}
+
+type GraduationSummaryCard {
+  id: ID!
+  title: String!
+  readiness: String!
+  summary: String!
+  launchOwner: AgentSurfaceActor
+  completedMilestones: [String!]
+  exitCriteria: [String!]
+  nextStep: String
+  metrics: [AgentSurfaceMetric!]
+}
+
+type AgentWorkflowConversationState {
+  conversationId: ID!
+  folder: String!
+  requestState: String
+  unread: Boolean!
+  previewStatusId: String
+  requestedAt: Time
+  acceptedAt: Time
+  declinedAt: Time
+  updatedAt: Time!
+}
+
+type AgentWorkflowSurface {
+  username: String!
+  currentPhase: String!
+  currentState: String!
+  identity: AgentIdentityCard!
+  request: SoulRequestCard
+  review: ReviewDecisionCard
+  declaration: DeclarationPreviewCard
+  checkpoint: SignatureCheckpointCard
+  graduation: GraduationSummaryCard
+  continuity: ContinuityPanel
+  lifecycle: [AgentLifecycleStep!]!
+  conversation: AgentWorkflowConversationState
+  identitySemantics: AgentIdentitySemantics!
+}
+
+input AgentSurfaceArtifactInput {
+  title: String!
+  description: String
+  href: String
+  emphasis: String
+}
+
+input ReviewFindingInput {
+  title: String!
+  detail: String!
+  severity: String
+}
+
+input RequestSoulPromotionInput {
+  username: String!
+  title: String!
+  summary: String!
+  constraints: [String!]
+  artifacts: [AgentSurfaceArtifactInput!]
+  routeDecision: String
+  conversationId: ID
+}
+
+input ReviewSoulPromotionInput {
+  username: String!
+  title: String
+  decision: String!
+  decisionSummary: String!
+  findings: [ReviewFindingInput!]
+  evidence: [AgentSurfaceArtifactInput!]
+  conversationId: ID
+}
+
+input FinalizeSoulPromotionInput {
+  username: String!
+  soulAgentId: ID
+  declarationTitle: String
+  declarationStatement: String!
+  declarationConfidence: String!
+  declaredScope: [String!]!
+  declarationRisks: [String!]
+  supportingArtifacts: [AgentSurfaceArtifactInput!]
+  readiness: String!
+  summary: String!
+  completedMilestones: [String!]
+  exitCriteria: [String!]
+  nextStep: String
+  continuityObjective: String
+  continuityFeedbackLoop: String
+  conversationId: ID
+}
+
+type DroneWorkflowMutationPayload {
+  agent: Agent!
+  workflow: AgentWorkflowSurface!
+}
+
 extend type Query {
   agent(username: String!): Agent
   agents(first: Int = 20, after: Cursor, type: AgentType, query: String, verified: Boolean, ownerUsername: String): AgentConnection!
@@ -4476,6 +4714,9 @@ extend type Query {
   adminAgentPolicy: AdminAgentPolicy!
   agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
   mySouls: [SoulInventoryItem!]!
+  myDroneRequests: [SoulRequestCard!]!
+  myDroneReviews: [ReviewDecisionCard!]!
+  droneWorkflow(username: String!): AgentWorkflowSurface
 }
 
 extend type Mutation {
@@ -4500,6 +4741,9 @@ extend type Mutation {
   adminUnverifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
   adminSuspendAgent(username: String!): Agent!
   incorporateSoul(agentId: ID!, targetAgentUsername: String!): SoulInventoryItem!
+  requestSoulPromotion(input: RequestSoulPromotionInput!): DroneWorkflowMutationPayload!
+  reviewSoulPromotion(input: ReviewSoulPromotionInput!): DroneWorkflowMutationPayload!
+  finalizeSoulPromotion(input: FinalizeSoulPromotionInput!): DroneWorkflowMutationPayload!
 }
 
 extend type Subscription {

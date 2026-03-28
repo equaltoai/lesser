@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	workflow "github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -828,32 +829,61 @@ func (h *Handler) buildStatusAgentAttribution(ctx context.Context, authorAccount
 		return nil
 	}
 
-	var noteAttr *activitypub.AgentPostAttribution
-	if status != nil && status.Note != nil {
-		noteAttr = status.Note.AgentAttribution
-	}
+	out := statusAgentAttributionFromNote(h.statusNoteAgentAttribution(status))
+	h.fillStatusAgentDelegationDefaults(ctx, out, authorAccount)
+	h.fillStatusAgentModelID(out, authorAccount)
+	h.fillStatusAgentIdentityDefaults(ctx, out, authorAccount.User)
+	return out
+}
 
+func (h *Handler) statusNoteAgentAttribution(status *storageModels.Status) *activitypub.AgentPostAttribution {
+	if status == nil || status.Note == nil {
+		return nil
+	}
+	return status.Note.AgentAttribution
+}
+
+func statusAgentAttributionFromNote(noteAttr *activitypub.AgentPostAttribution) *models.AgentPostAttribution {
 	out := &models.AgentPostAttribution{
 		SchemaVersion: activitypub.AgentAttributionSchemaVersion,
 		ModelID:       agentVersionUnknown,
 	}
-
-	if noteAttr != nil {
-		out.TriggerType = strings.TrimSpace(noteAttr.TriggerType)
-		out.TriggerDetails = strings.TrimSpace(noteAttr.TriggerDetails)
-		out.MemoryCitations = append([]string(nil), noteAttr.MemoryCitations...)
-		out.DelegatedBy = h.normalizeDelegatedByActorURI(noteAttr.DelegatedBy)
-		out.DelegatedByDID = strings.TrimSpace(noteAttr.DelegatedByDID)
-		out.Scopes = append([]string(nil), noteAttr.Scopes...)
-		out.Constraints = append([]string(nil), noteAttr.Constraints...)
-		if v := strings.TrimSpace(noteAttr.SchemaVersion); v != "" {
-			out.SchemaVersion = v
-		}
-		if v := strings.TrimSpace(noteAttr.ModelID); v != "" {
-			out.ModelID = v
-		}
+	if noteAttr == nil {
+		return out
 	}
 
+	out.TriggerType = strings.TrimSpace(noteAttr.TriggerType)
+	out.TriggerDetails = strings.TrimSpace(noteAttr.TriggerDetails)
+	out.MemoryCitations = append([]string(nil), noteAttr.MemoryCitations...)
+	out.DelegatedBy = strings.TrimSpace(noteAttr.DelegatedBy)
+	out.DelegatedByDID = strings.TrimSpace(noteAttr.DelegatedByDID)
+	out.Scopes = append([]string(nil), noteAttr.Scopes...)
+	out.Constraints = append([]string(nil), noteAttr.Constraints...)
+	out.IdentityState = strings.TrimSpace(noteAttr.IdentityState)
+	out.IdentityLabel = strings.TrimSpace(noteAttr.IdentityLabel)
+	out.ContinuityState = strings.TrimSpace(noteAttr.ContinuityState)
+	out.ContinuitySummary = strings.TrimSpace(noteAttr.ContinuitySummary)
+	out.SoulAgentID = strings.TrimSpace(noteAttr.SoulAgentID)
+	out.ModerationLabel = strings.TrimSpace(noteAttr.ModerationLabel)
+	if v := strings.TrimSpace(noteAttr.SchemaVersion); v != "" {
+		out.SchemaVersion = v
+	}
+	if v := strings.TrimSpace(noteAttr.ModelID); v != "" {
+		out.ModelID = v
+	}
+	return out
+}
+
+func (h *Handler) fillStatusAgentDelegationDefaults(
+	ctx context.Context,
+	out *models.AgentPostAttribution,
+	authorAccount *storage.Account,
+) {
+	if out == nil || authorAccount == nil || authorAccount.User == nil {
+		return
+	}
+
+	out.DelegatedBy = h.normalizeDelegatedByActorURI(out.DelegatedBy)
 	if out.DelegatedBy == "" {
 		out.DelegatedBy = h.normalizeDelegatedByActorURI(authorAccount.User.AgentOwner)
 		if out.DelegatedBy == "" && authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
@@ -871,18 +901,68 @@ func (h *Handler) buildStatusAgentAttribution(ctx context.Context, authorAccount
 	if len(out.Constraints) == 0 {
 		out.Constraints = buildAgentCapabilityConstraints(authorAccount.User.AgentCapabilities)
 	}
+}
 
-	if out.ModelID == agentVersionUnknown {
-		if v := strings.TrimSpace(authorAccount.User.AgentVersion); v != "" {
+func (h *Handler) fillStatusAgentModelID(out *models.AgentPostAttribution, authorAccount *storage.Account) {
+	if out == nil || authorAccount == nil || authorAccount.User == nil || out.ModelID != agentVersionUnknown {
+		return
+	}
+	if v := strings.TrimSpace(authorAccount.User.AgentVersion); v != "" {
+		out.ModelID = v
+		return
+	}
+	if authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
+		if v := strings.TrimSpace(authorAccount.Actor.AgentManifest.Version); v != "" {
 			out.ModelID = v
-		} else if authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
-			if v := strings.TrimSpace(authorAccount.Actor.AgentManifest.Version); v != "" {
-				out.ModelID = v
-			}
+		}
+	}
+}
+
+func (h *Handler) fillStatusAgentIdentityDefaults(
+	ctx context.Context,
+	out *models.AgentPostAttribution,
+	agentUser *storage.User,
+) {
+	if out == nil || agentUser == nil {
+		return
+	}
+	identity := h.agentIdentitySemantics(ctx, agentUser)
+	if out.IdentityState == "" {
+		out.IdentityState = identity.IdentityState
+	}
+	if out.IdentityLabel == "" {
+		out.IdentityLabel = identity.IdentityLabel
+	}
+	if out.ContinuityState == "" {
+		out.ContinuityState = identity.ContinuityState
+	}
+	if out.ContinuitySummary == "" {
+		out.ContinuitySummary = identity.ContinuitySummary
+	}
+	if out.SoulAgentID == "" {
+		out.SoulAgentID = identity.SoulAgentID
+	}
+	if out.ModerationLabel == "" {
+		out.ModerationLabel = identity.ModerationLabel
+	}
+}
+
+func (h *Handler) agentIdentitySemantics(ctx context.Context, agentUser *storage.User) workflow.DroneIdentitySemantics {
+	if agentUser == nil {
+		return workflow.DroneIdentitySemantics{}
+	}
+
+	workflowState, _ := workflow.ParseDroneWorkflowMetadata(agentUser.Metadata)
+	soulBound := false
+	soulAgentID := ""
+	if h != nil && h.repos != nil && h.repos.Instance() != nil {
+		if binding, err := h.repos.Instance().GetSoulBodyBindingByUsername(ctx, agentUser.Username); err == nil && binding != nil {
+			soulBound = true
+			soulAgentID = binding.AgentID
 		}
 	}
 
-	return out
+	return workflow.DeriveDroneIdentitySemantics(agentUser.Username, workflowState, soulBound, soulAgentID)
 }
 
 // createOAuthService creates an OAuth service with proper audit logger setup

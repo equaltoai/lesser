@@ -180,6 +180,13 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 		SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
 		ModelID:         modelID,
 	}
+	identity := h.agentIdentitySemantics(ctx.Context(), agentUser)
+	attribution.IdentityState = identity.IdentityState
+	attribution.IdentityLabel = identity.IdentityLabel
+	attribution.ContinuityState = identity.ContinuityState
+	attribution.ContinuitySummary = identity.ContinuitySummary
+	attribution.SoulAgentID = identity.SoulAgentID
+	attribution.ModerationLabel = identity.ModerationLabel
 
 	return attribution, nil, nil
 }

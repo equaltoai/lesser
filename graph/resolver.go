@@ -75,6 +75,9 @@ func (r *Resolver) Activity() ActivityResolver { return &activityResolver{r} }
 // Actor returns the ActorResolver implementation
 func (r *Resolver) Actor() ActorResolver { return &actorResolver{r} }
 
+// Agent returns the AgentResolver implementation.
+func (r *Resolver) Agent() AgentResolver { return &agentResolver{r} }
+
 // Attachment returns the AttachmentResolver implementation
 func (r *Resolver) Attachment() AttachmentResolver { return &attachmentResolver{r} }
 

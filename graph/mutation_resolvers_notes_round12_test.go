@@ -109,12 +109,19 @@ func TestRound12MutationResolvers_Notes_CreateDeleteAndSchedule(t *testing.T) {
 }
 
 func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) {
+	metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
+		CurrentPhase: agents.DroneWorkflowPhaseReview,
+		CurrentState: agents.DroneWorkflowStateReviewQueued,
+	})
+	require.NoError(t, err)
+
 	mockUserRepo := mocks.NewMockUserRepositoryInterface()
 	mockUserRepo.On("GetUser", mock.Anything, "agent").Return(&storage.User{
 		Username:     "agent",
 		IsAgent:      true,
 		AgentOwner:   "owner",
 		AgentVersion: "claude-3",
+		Metadata:     metadata,
 		AgentCapabilities: &agents.Capabilities{
 			RequiresApproval: true,
 		},
@@ -147,5 +154,10 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 	require.Equal(t, "claude-3", got.ModelID)
 	require.Equal(t, []string{"write"}, got.Scopes)
 	require.Contains(t, got.Constraints, "requires_approval")
+	require.Equal(t, agents.DroneIdentityStateGraduating, got.IdentityState)
+	require.Equal(t, "Graduating", got.IdentityLabel)
+	require.Equal(t, agents.DroneContinuityStatePlanned, got.ContinuityState)
+	require.Contains(t, got.ContinuitySummary, "@agent")
+	require.Equal(t, "Graduating", got.ModerationLabel)
 	mockUserRepo.AssertExpectations(t)
 }
