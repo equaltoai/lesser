@@ -4,6 +4,10 @@ The canonical scope contract for that flow lives in [docs/specs/oauth-scope-mode
 The grant-selection guidance for browser, headless-approved, and fully autonomous agents lives in [docs/device-code-agent-auth.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/device-code-agent-auth.md).
 The MCP-facing auth error contract for refresh, re-auth, and scope failures lives in [docs/architecture/auth/auth-error-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/architecture/auth/auth-error-contract.md).
 
+Public remote MCP clients should treat the actor-scoped contract in [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md) as canonical.
+Agent-bound runtime sessions, secret-rotation flows, and similar owned-client operations are compatibility/runtime
+surfaces, not the source of truth for public MCP access.
+
 ## Supported registration flow
 
 - Prefer `POST /oauth/register` as the canonical public registration path.

@@ -85,3 +85,23 @@ The public MCP token model is therefore resource-bound, not connector-bound.
 `agent_username` is not part of the canonical public token model. If it remains present in stored state during the
 migration, it is legacy compatibility data only and must not replace `resource` as the target identifier for public MCP
 sessions.
+
+## Public MCP versus internal runtime auth boundary
+
+The canonical public MCP contract is the actor-scoped, resource-bound flow described in this document:
+
+- actor-scoped MCP resource URL
+- actor-scoped protected-resource metadata
+- standard OAuth metadata and RFC 7591 registration
+- resource-bound authorization, token exchange, and refresh behavior
+
+The following are not part of the canonical public remote MCP contract:
+
+- internal runtime clients that keep long-lived agent-bound session semantics
+- agent runtime refresh-token families and runtime-session diagnostics
+- operator-only secret rotation and compatibility workflows for owned internal clients
+- any browser-local connector inventory or connector-management UX
+
+Those compatibility/runtime mechanisms may continue to exist temporarily for operational reasons, but public MCP
+support must not depend on them. Public remote clients should be implementable from the actor-scoped resource contract
+alone.
