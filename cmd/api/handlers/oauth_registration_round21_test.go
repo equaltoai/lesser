@@ -152,6 +152,8 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
 		var body apimodels.OAuthDynamicClientRegistrationResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "true", firstStringValue(resp.Headers, "deprecation"))
+		require.Contains(t, firstStringValue(resp.Headers, "warning"), "deprecated for public MCP access")
 		require.NotEmpty(t, body.ClientSecret)
 		require.Equal(t, oauthTokenEndpointAuthMethodClientSecretPost, body.TokenEndpointAuthMethod)
 		require.Equal(t, auth.ClientClassAgent, body.ClientClass)

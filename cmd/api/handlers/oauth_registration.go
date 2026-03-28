@@ -106,7 +106,14 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		respBody.ClientSecret = client.ClientSecret
 	}
 
-	return apptheory.JSON(http.StatusCreated, respBody)
+	response, err := apptheory.JSON(http.StatusCreated, respBody)
+	if err != nil {
+		return nil, err
+	}
+	if usesDeprecatedMCPConnectorSemantics(client.ClientClass, client.AgentUsername) {
+		addDeprecatedMCPConnectorHeaders(response)
+	}
+	return response, nil
 }
 
 func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Context) (*models.OAuthDynamicClientRegistrationRequest, *apptheory.Response, error) {

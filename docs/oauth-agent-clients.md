@@ -8,6 +8,9 @@ Public remote MCP clients should treat the actor-scoped contract in [docs/specs/
 Agent-bound runtime sessions, secret-rotation flows, and similar owned-client operations are compatibility/runtime
 surfaces, not the source of truth for public MCP access.
 
+Legacy `client_class=agent` and `agent_username` registration semantics are deprecated for removal from the public MCP
+contract.
+
 ## Supported registration flow
 
 - Prefer `POST /oauth/register` as the canonical public registration path.
@@ -27,15 +30,15 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 - For public MCP authorization, send the actor-scoped MCP URL as the canonical `resource`.
 - Treat `authorization_code` and `refresh_token` state as resource-bound to that MCP URL.
 - Do not treat `agent_username` as the canonical public token target; it is legacy compatibility state during the migration.
-- `POST /oauth/token` supports `client_credentials` for confidential agent clients.
-- `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
+- Legacy compatibility: `POST /oauth/token` supports `client_credentials` for confidential agent clients.
+- Legacy compatibility: `POST /oauth/token` also supports `urn:ietf:params:oauth:grant-type:device_code` for agent clients that request operator approval without a redirect-capable browser.
 - `client_credentials` responses are access-token-only.
 - Access tokens inherit Lesser's configured agent access-token TTL.
 - Device-code and client-credentials tokens for agent clients are minted for the bound agent identity and carry `client_class`, `is_agent`, `agent_type`, and `delegated_by` claims.
 
 ## Secret recovery
 
-- Operators can rotate an owned client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
+- Operators can rotate an owned legacy compatibility client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
 - Existing bearer access tokens remain valid until their normal expiry.
 - Refresh-token and `client_credentials` exchanges continue to accept the previous secret only until the grace window expires.
 - Forced invalidation skips the grace window and cuts off new client-authenticated exchanges immediately.
@@ -51,7 +54,7 @@ The current compatibility story is:
 - native or CLI discovery clients can dynamically register a public client with `token_endpoint_auth_method=none`
 - dynamically registered public clients use PKCE for the authorization-code flow
 - if device flow is enabled, dynamic `cli` clients also receive `device_code`
-- agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
+- legacy agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
 
 Manual `POST /api/v1/apps` registration remains available as an operator-controlled compatibility path, but RFC 7591 is
 the canonical remote MCP path.

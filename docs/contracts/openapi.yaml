@@ -1580,8 +1580,12 @@ components:
             additionalProperties: false
             properties:
                 agent_username:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                     type: string
                 client_class:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                     type: string
                 client_name:
                     type: string
@@ -3868,8 +3872,12 @@ components:
             additionalProperties: false
             properties:
                 agent_username:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                     type: string
                 client_class:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                     type: string
                 client_name:
                     type: string
@@ -3910,8 +3918,12 @@ components:
             additionalProperties: false
             properties:
                 agent_username:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field.
                     type: string
                 client_class:
+                    deprecated: true
+                    description: Deprecated connector-era MCP compatibility field.
                     type: string
                 client_id:
                     type: string
@@ -18812,8 +18824,12 @@ paths:
                             type: object
                             properties:
                                 agent_username:
+                                    deprecated: true
+                                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                                     type: string
                                 client_class:
+                                    deprecated: true
+                                    description: Deprecated connector-era MCP compatibility field. New public MCP clients should not send this.
                                     type: string
                                 client_name:
                                     type: string
@@ -18847,8 +18863,12 @@ paths:
                                 type: object
                                 properties:
                                     agent_username:
+                                        deprecated: true
+                                        description: Deprecated connector-era MCP compatibility field.
                                         type: string
                                     client_class:
+                                        deprecated: true
+                                        description: Deprecated connector-era MCP compatibility field.
                                         type: string
                                     client_id:
                                         type: string

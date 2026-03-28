@@ -48,6 +48,7 @@ Device flow inherits the OAuth client's class rather than forcing one uniform to
   - CLI automation safety rails apply
   - refresh records keep CLI-style session metadata
 - `client_class=agent`
+  - legacy compatibility path for public MCP; not the canonical actor-scoped contract
   - access tokens are minted for the bound agent identity, not the approving operator principal
   - tokens carry `client_class`, `is_agent`, `agent_type`, and `delegated_by`
   - refresh records use the same agent runtime family semantics as other delegated agent OAuth flows
@@ -58,7 +59,7 @@ For agent clients, the approving operator must own the bound agent. Lesser rejec
 
 - Prefer `authorization_code` when the MCP client can open a browser locally and complete a normal redirect.
 - Prefer `device_code` when the client is headless but you still want a human approval step.
-- Prefer `client_credentials` only for connectors that are intentionally pre-approved to act without per-session operator consent.
+- Prefer `client_credentials` only for legacy compatibility clients or dedicated internal runtimes that are intentionally pre-approved to act without per-session operator consent.
 
 ## Current approval-page contract
 

@@ -55,10 +55,11 @@ type VerifyCredentialsResponse struct {
 
 // AppRegistrationRequest represents a Mastodon-compatible client registration request
 type AppRegistrationRequest struct {
-	ClientName              string `json:"client_name"`
-	RedirectURIs            string `json:"redirect_uris"`
-	Scopes                  string `json:"scopes"`
-	Website                 string `json:"website,omitempty"`
+	ClientName   string `json:"client_name"`
+	RedirectURIs string `json:"redirect_uris"`
+	Scopes       string `json:"scopes"`
+	Website      string `json:"website,omitempty"`
+	// Deprecated compatibility fields from the connector-era MCP model.
 	ClientClass             string `json:"client_class,omitempty"`
 	AgentUsername           string `json:"agent_username,omitempty"`
 	GrantTypes              string `json:"grant_types,omitempty"`

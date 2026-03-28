@@ -105,3 +105,14 @@ The following are not part of the canonical public remote MCP contract:
 Those compatibility/runtime mechanisms may continue to exist temporarily for operational reasons, but public MCP
 support must not depend on them. Public remote clients should be implementable from the actor-scoped resource contract
 alone.
+
+## Deprecated connector-era MCP surfaces
+
+The following public-facing MCP-era surfaces are deprecated for removal:
+
+- Simulacrum connector registration flows that create or manage public MCP connector records
+- browser-local connector inventory, pasted-secret flows, and similar connector-management UX
+- public `client_class=agent` and `agent_username` semantics on registration and token-related MCP guidance
+
+They may continue to exist temporarily as compatibility aids, but new public MCP clients, examples, and docs must not
+use them as the canonical integration path.
