@@ -86,7 +86,7 @@ func nextRuntimeIdleExpiry(now, absoluteExpiry time.Time) time.Time {
 func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshToken, clientID, failureCode, failureMessage string) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	clientID = strings.TrimSpace(clientID)
-	if refreshToken == "" || clientID == "" {
+	if refreshToken == "" || clientID == "" || !auth.IsAgentRuntimeClientID(clientID) {
 		return
 	}
 
@@ -94,7 +94,9 @@ func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshTok
 	if err != nil || storedToken == nil {
 		return
 	}
-	if storedToken.ClientID != clientID || !strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassAgent) {
+	if storedToken.ClientID != clientID ||
+		!auth.IsAgentRuntimeClientID(storedToken.ClientID) ||
+		!strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassAgent) {
 		return
 	}
 	if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, failureCode, failureMessage, time.Now().UTC()); err != nil {

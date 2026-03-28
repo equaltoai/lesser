@@ -131,7 +131,7 @@ func TestOAuthDeviceFlowAgentEndToEndRound21(t *testing.T) {
 	require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
 	require.Equal(t, "agent1", storedRefresh.Username)
 	require.Equal(t, []string{auth.ScopeRead, auth.ScopeFollow}, storedRefresh.Scopes)
-	require.NotEmpty(t, storedRefresh.FamilyID)
-	require.True(t, storedRefresh.Current)
-	require.Equal(t, int((8 * time.Hour).Seconds()), storedRefresh.AccessTTLSeconds)
+	require.Empty(t, storedRefresh.FamilyID)
+	require.False(t, storedRefresh.Current)
+	require.Zero(t, storedRefresh.AccessTTLSeconds)
 }

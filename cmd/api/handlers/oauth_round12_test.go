@@ -499,7 +499,6 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NotEmpty(t, issuedAuthCode.Code)
 		require.Equal(t, "https://example.com/mcp/agent1", issuedAuthCode.Resource)
 		require.Equal(t, "agent1", issuedAuthCode.Username)
-		require.Empty(t, issuedAuthCode.AgentUsername)
 	})
 
 	t.Run("store OAuth state failure returns server_error redirect (handled)", func(t *testing.T) {
@@ -914,7 +913,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, claims.SessionID)
 	})
 
-	t.Run("authorization_code agent client issues agent runtime-style session from resource-bound code", func(t *testing.T) {
+	t.Run("authorization_code public agent client issues standard resource-bound refresh session", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -959,6 +958,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
 		require.Equal(t, "@owner", claims.DelegatedBy)
 		require.NotEmpty(t, claims.SessionID)
+		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
 
 		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
@@ -966,15 +966,21 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "agent1", storedRefresh.Username)
 		require.Equal(t, "https://example.com/mcp/agent1", storedRefresh.Resource)
 		require.NotEmpty(t, storedRefresh.SessionID)
-		require.NotEmpty(t, storedRefresh.FamilyID)
-		require.True(t, storedRefresh.Current)
-		require.Equal(t, 1, storedRefresh.Generation)
-		require.Equal(t, "Connector App", storedRefresh.DeviceLabel)
-		require.Equal(t, int(auth.AgentAccessTokenTTL(cfg).Seconds()), storedRefresh.AccessTTLSeconds)
+		require.Equal(t, claims.SessionID, storedRefresh.SessionID)
+		require.Empty(t, storedRefresh.FamilyID)
+		require.False(t, storedRefresh.Current)
+		require.Zero(t, storedRefresh.Generation)
+		require.Empty(t, storedRefresh.DeviceLabel)
+		require.Zero(t, storedRefresh.AccessTTLSeconds)
+		require.True(t, storedRefresh.SessionCreatedAt.IsZero())
+		require.True(t, storedRefresh.IdleExpiresAt.IsZero())
+		require.True(t, storedRefresh.AbsoluteExpiresAt.IsZero())
 	})
 
-	t.Run("refresh_token agent client uses runtime rotation", func(t *testing.T) {
+	t.Run("refresh_token public agent client rotates legacy runtime state into standard refresh state", func(t *testing.T) {
 		now := time.Now().UTC()
+		token := buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now)
+		token.Resource = "https://example.com/mcp/agent1"
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -989,7 +995,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 				},
 			},
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
-				"rt-agent-connector": buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now),
+				token.Token: token,
 			},
 			usersByUsername: map[string]storagemodels.User{
 				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
@@ -1004,22 +1010,33 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, body.RefreshToken)
 		require.NotEqual(t, "rt-agent-connector", body.RefreshToken)
 
-		oldToken := state.refreshTokensByToken["rt-agent-connector"]
-		require.True(t, oldToken.Revoked)
-		require.False(t, oldToken.Current)
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
+		require.Equal(t, token.SessionID, claims.SessionID)
+		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
+
+		_, ok := state.refreshTokensByToken["rt-agent-connector"]
+		require.False(t, ok)
 
 		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
-		require.Equal(t, oldToken.SessionID, newToken.SessionID)
-		require.Equal(t, oldToken.FamilyID, newToken.FamilyID)
-		require.Equal(t, oldToken.Generation+1, newToken.Generation)
-		require.True(t, newToken.Current)
+		require.Equal(t, token.SessionID, newToken.SessionID)
+		require.Equal(t, "https://example.com/mcp/agent1", newToken.Resource)
+		require.Empty(t, newToken.FamilyID)
+		require.Zero(t, newToken.Generation)
+		require.False(t, newToken.Current)
+		require.Empty(t, newToken.DeviceLabel)
+		require.Zero(t, newToken.AccessTTLSeconds)
+		require.True(t, newToken.SessionCreatedAt.IsZero())
+		require.True(t, newToken.IdleExpiresAt.IsZero())
+		require.True(t, newToken.AbsoluteExpiresAt.IsZero())
 	})
 
-	t.Run("refresh_token agent client survives long-lived session age", func(t *testing.T) {
+	t.Run("refresh_token public agent client ignores legacy runtime session bounds", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-aged", "agent1", "client-agent", "sid-agent-aged", "family-agent-aged", "Connector App", 1, true, false, now)
+		token.Resource = "https://example.com/mcp/agent1"
 		token.SessionCreatedAt = now.Add(-72 * time.Hour)
 		token.LastUsedAt = now.Add(-2 * time.Hour)
 		token.IdleExpiresAt = now.Add(36 * time.Hour)
@@ -1059,19 +1076,23 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		claims := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
 		require.Equal(t, "sid-agent-aged", claims.SessionID)
+		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
 		require.NotNil(t, claims.IssuedAt)
 		require.NotNil(t, claims.ExpiresAt)
-		require.Greater(t, claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time), 24*time.Hour)
+		require.InDelta(t, auth.AgentAccessTokenTTL(cfg).Seconds(), claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time).Seconds(), 5)
 
-		oldToken := state.refreshTokensByToken["rt-agent-aged"]
-		require.True(t, oldToken.Revoked)
-		require.Equal(t, "rotated", oldToken.RevokedReason)
+		_, ok := state.refreshTokensByToken["rt-agent-aged"]
+		require.False(t, ok)
 
 		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
-		require.Equal(t, token.FamilyID, newToken.FamilyID)
-		require.Equal(t, token.Generation+1, newToken.Generation)
 		require.Equal(t, token.SessionID, newToken.SessionID)
+		require.Equal(t, token.Resource, newToken.Resource)
+		require.Empty(t, newToken.FamilyID)
+		require.Zero(t, newToken.Generation)
+		require.False(t, newToken.Current)
+		require.Empty(t, newToken.DeviceLabel)
+		require.Zero(t, newToken.AccessTTLSeconds)
 	})
 
 	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
@@ -1824,7 +1845,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, claims1.SessionID, refreshClaims.SessionID)
 	})
 
-	t.Run("device_code approved agent client issues agent runtime-style session", func(t *testing.T) {
+	t.Run("device_code approved agent client issues standard refresh session", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true
 		cfgDevice.AgentAccessTokenDuration = 12 * time.Hour
@@ -1893,11 +1914,15 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "agent1", storedRefresh.Username)
 		require.Equal(t, []string{auth.ScopeRead, auth.ScopeFollow}, storedRefresh.Scopes)
 		require.NotEmpty(t, storedRefresh.SessionID)
-		require.NotEmpty(t, storedRefresh.FamilyID)
-		require.True(t, storedRefresh.Current)
-		require.Equal(t, 1, storedRefresh.Generation)
-		require.Equal(t, "Agent Device Connector", storedRefresh.DeviceLabel)
-		require.Equal(t, int((12 * time.Hour).Seconds()), storedRefresh.AccessTTLSeconds)
+		require.Equal(t, claims.SessionID, storedRefresh.SessionID)
+		require.Empty(t, storedRefresh.FamilyID)
+		require.False(t, storedRefresh.Current)
+		require.Zero(t, storedRefresh.Generation)
+		require.Empty(t, storedRefresh.DeviceLabel)
+		require.Zero(t, storedRefresh.AccessTTLSeconds)
+		require.True(t, storedRefresh.SessionCreatedAt.IsZero())
+		require.True(t, storedRefresh.IdleExpiresAt.IsZero())
+		require.True(t, storedRefresh.AbsoluteExpiresAt.IsZero())
 	})
 
 	t.Run("device_code approved agent client rejects non-owner approval", func(t *testing.T) {

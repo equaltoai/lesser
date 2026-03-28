@@ -36,8 +36,7 @@ func TestAuthorizationCodeExchangeTokenContext(t *testing.T) {
 	require.Equal(t, auth.AccessTokenDuration, accessTTL)
 
 	clientClass, sessionID, accessTTL, err = authorizationCodeExchangeTokenContext(&config.Config{}, &storage.OAuthClient{
-		ClientClass:   auth.ClientClassAgent,
-		AgentUsername: "agent-1",
+		ClientClass: auth.ClientClassAgent,
 	}, &storage.AuthorizationCode{
 		Username: "agent-1",
 		Resource: "https://example.com/mcp/agent-1",
@@ -48,8 +47,7 @@ func TestAuthorizationCodeExchangeTokenContext(t *testing.T) {
 	require.Equal(t, auth.AgentAccessTokenTTL(&config.Config{}), accessTTL)
 
 	_, _, _, err = authorizationCodeExchangeTokenContext(&config.Config{}, &storage.OAuthClient{
-		ClientClass:   auth.ClientClassAgent,
-		AgentUsername: "agent-2",
+		ClientClass: auth.ClientClassAgent,
 	}, &storage.AuthorizationCode{
 		Username: "agent-1",
 	})
@@ -73,24 +71,36 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	require.Empty(t, base.FamilyID)
 	require.False(t, base.Current)
 
-	agentToken := buildAuthorizationCodeRefreshToken(now, "refresh-2", "client-2", &storage.OAuthClient{
-		Name:          "agent-app",
-		AgentUsername: "agent-1",
+	agentToken := buildAuthorizationCodeRefreshToken(now, "refresh-2", "client-agent", &storage.OAuthClient{
+		Name: "agent-app",
 	}, &storage.AuthorizationCode{
-		Username:      "agent-1",
-		AgentUsername: "agent-1",
-		Scopes:        []string{"read", "write"},
+		Username: "agent-1",
+		Scopes:   []string{"read", "write"},
 	}, auth.ClientClassAgent, "sess-1", 45*time.Minute)
 	require.Equal(t, auth.ClientClassAgent, agentToken.ClientClass)
 	require.Equal(t, "sess-1", agentToken.SessionID)
-	require.True(t, agentToken.Current)
-	require.Equal(t, 1, agentToken.Generation)
-	require.NotEmpty(t, agentToken.FamilyID)
-	require.Equal(t, "agent-app", agentToken.DeviceLabel)
-	require.Equal(t, int((45 * time.Minute).Seconds()), agentToken.AccessTTLSeconds)
-	require.WithinDuration(t, now, agentToken.SessionCreatedAt, time.Second)
-	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshAbsoluteTTL), agentToken.AbsoluteExpiresAt, time.Second)
-	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshIdleTTL), agentToken.IdleExpiresAt, time.Second)
+	require.Empty(t, agentToken.FamilyID)
+	require.False(t, agentToken.Current)
+	require.Empty(t, agentToken.DeviceLabel)
+	require.Zero(t, agentToken.AccessTTLSeconds)
+	require.True(t, agentToken.SessionCreatedAt.IsZero())
+	require.True(t, agentToken.AbsoluteExpiresAt.IsZero())
+	require.True(t, agentToken.IdleExpiresAt.IsZero())
+
+	runtimeToken := buildAuthorizationCodeRefreshToken(now, "refresh-3", delegatedAgentClientID, &storage.OAuthClient{
+		Name: "runtime-app",
+	}, &storage.AuthorizationCode{
+		Username: "agent-1",
+		Scopes:   []string{"read"},
+	}, auth.ClientClassAgent, "sess-runtime", 45*time.Minute)
+	require.True(t, runtimeToken.Current)
+	require.Equal(t, 1, runtimeToken.Generation)
+	require.NotEmpty(t, runtimeToken.FamilyID)
+	require.Equal(t, "runtime-app", runtimeToken.DeviceLabel)
+	require.Equal(t, int((45 * time.Minute).Seconds()), runtimeToken.AccessTTLSeconds)
+	require.WithinDuration(t, now, runtimeToken.SessionCreatedAt, time.Second)
+	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshAbsoluteTTL), runtimeToken.AbsoluteExpiresAt, time.Second)
+	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshIdleTTL), runtimeToken.IdleExpiresAt, time.Second)
 }
 
 func TestOAuthDeviceApprovedTokenContext(t *testing.T) {

@@ -77,23 +77,25 @@ func (r *RefreshToken) BeforeCreate() error {
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now()
 	}
-	if r.SessionCreatedAt.IsZero() {
-		r.SessionCreatedAt = r.CreatedAt
-	}
-	if r.LastUsedAt.IsZero() {
-		r.LastUsedAt = r.CreatedAt
-	}
-	if r.IdleExpiresAt.IsZero() {
-		r.IdleExpiresAt = r.ExpiresAt
-	}
-	if r.AbsoluteExpiresAt.IsZero() {
-		r.AbsoluteExpiresAt = r.ExpiresAt
-	}
-	if r.Generation == 0 {
-		r.Generation = 1
-	}
-	if !r.Revoked && !r.Current {
-		r.Current = true
+	if r.carriesRuntimeSessionState() {
+		if r.SessionCreatedAt.IsZero() {
+			r.SessionCreatedAt = r.CreatedAt
+		}
+		if r.LastUsedAt.IsZero() {
+			r.LastUsedAt = r.CreatedAt
+		}
+		if r.IdleExpiresAt.IsZero() {
+			r.IdleExpiresAt = r.ExpiresAt
+		}
+		if r.AbsoluteExpiresAt.IsZero() {
+			r.AbsoluteExpiresAt = r.ExpiresAt
+		}
+		if r.Generation == 0 {
+			r.Generation = 1
+		}
+		if !r.Revoked && !r.Current {
+			r.Current = true
+		}
 	}
 
 	// Set TTL if not already set
@@ -132,6 +134,10 @@ func (r *RefreshToken) updateRuntimeIndexes() {
 	r.GSI3PK = ""
 	r.GSI3SK = ""
 
+	if !r.carriesRuntimeSessionState() {
+		return
+	}
+
 	if r.Username != "" && r.ClientID != "" {
 		r.GSI1PK = fmt.Sprintf("RUNTIME_USER#%s#%s", r.Username, r.ClientID)
 		r.GSI1SK = fmt.Sprintf("%d#%s#%08d", r.SessionCreatedAt.Unix(), r.SessionID, r.Generation)
@@ -144,4 +150,19 @@ func (r *RefreshToken) updateRuntimeIndexes() {
 		r.GSI3PK = "RUNTIME_SESSION#" + r.SessionID
 		r.GSI3SK = fmt.Sprintf("%08d", r.Generation)
 	}
+}
+
+func (r *RefreshToken) carriesRuntimeSessionState() bool {
+	return r.FamilyID != "" ||
+		r.Generation > 0 ||
+		r.Current ||
+		r.DeviceLabel != "" ||
+		!r.LastUsedAt.IsZero() ||
+		!r.IdleExpiresAt.IsZero() ||
+		!r.AbsoluteExpiresAt.IsZero() ||
+		!r.SessionCreatedAt.IsZero() ||
+		r.AccessTTLSeconds > 0 ||
+		!r.ReuseDetectedAt.IsZero() ||
+		r.ReuseDetectedFromIP != "" ||
+		r.ReuseDetectedFromUA != ""
 }

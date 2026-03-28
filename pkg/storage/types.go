@@ -255,7 +255,6 @@ type AuthorizationCode struct {
 	Resource          string    `json:"resource,omitempty"`
 	Username          string    `json:"username"`
 	PrincipalUsername string    `json:"principal_username,omitempty"`
-	AgentUsername     string    `json:"agent_username,omitempty"`
 	CodeChallenge     string    `json:"code_challenge"`
 	ExpiresAt         time.Time `json:"expires_at"`
 	Scopes            []string  `json:"scopes"`

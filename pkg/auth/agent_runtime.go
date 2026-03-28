@@ -164,10 +164,6 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 		}
 	}
 
-	if err := collectCurrentAgentConnectorSessions(ctx, repos, username, currentBySessionID); err != nil {
-		return nil, err
-	}
-
 	out := make([]storage.RefreshToken, 0, len(currentBySessionID))
 	for _, token := range currentBySessionID {
 		out = append(out, token)
@@ -197,38 +193,6 @@ func collectCurrentAgentSessionsForClient(ctx context.Context, repos StorageProv
 		recordCurrentAgentSession(currentBySessionID, token)
 	}
 	return nil
-}
-
-func collectCurrentAgentConnectorSessions(ctx context.Context, repos StorageProvider, username string, currentBySessionID map[string]storage.RefreshToken) error {
-	cursor := ""
-	for {
-		clients, nextCursor, err := repos.Account().ListOAuthClients(ctx, 100, cursor)
-		if err != nil {
-			return err
-		}
-		for _, client := range clients {
-			if !isAgentConnectorClientForUsername(client, username) {
-				continue
-			}
-			if err := collectCurrentAgentSessionsForClient(ctx, repos, username, client.ClientID, currentBySessionID); err != nil {
-				return err
-			}
-		}
-		if strings.TrimSpace(nextCursor) == "" {
-			return nil
-		}
-		cursor = nextCursor
-	}
-}
-
-func isAgentConnectorClientForUsername(client *storage.OAuthClient, username string) bool {
-	if client == nil {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(client.ClientClass), ClientClassAgent) {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(client.AgentUsername), username)
 }
 
 // RuntimeSessionAuthDiagnostic builds the operator-facing auth diagnostic for a runtime session.
