@@ -2,6 +2,15 @@
 
 This document freezes the client-consumable remote MCP access form owned by Lesser for issue `#492`.
 
+It is the single written contract for M0 and covers:
+
+- the canonical actor-scoped MCP access form
+- the binding rule between actor URL, OAuth client, and access decision
+- the canonical public registration path
+- the resource-bound token model for public MCP access
+- the public MCP versus internal runtime auth boundary
+- the deprecated connector-era surfaces scheduled for removal
+
 ## Canonical remote MCP access form
 
 For a remote MCP consumer targeting actor `{actor}` on Lesser domain `{domain}`, the canonical public contract is:
