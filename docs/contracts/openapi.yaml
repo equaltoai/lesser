@@ -2206,12 +2206,6 @@ components:
                 status:
                     type: string
                 visibility:
-                    description: Status visibility. `direct` messages must mention exactly one recipient using an @mention in the status content.
-                    enum:
-                        - public
-                        - unlisted
-                        - private
-                        - direct
                     type: string
             required:
                 - sensitive
@@ -11984,6 +11978,15 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AppRegistrationResponse'
+                    headers:
+                        Deprecation:
+                            description: Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.
+                            schema:
+                                type: string
+                        Warning:
+                            description: HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -18831,6 +18834,15 @@ paths:
             responses:
                 "200":
                     description: OK
+                    headers:
+                        Deprecation:
+                            description: Present when legacy connector-era MCP registration semantics are used. Runtime value is `true`.
+                            schema:
+                                type: string
+                        Warning:
+                            description: HTTP warning emitted when legacy `client_class=agent` or `agent_username` registration semantics are used.
+                            schema:
+                                type: string
                 "201":
                     description: Created
                     content:
