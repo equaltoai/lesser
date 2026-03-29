@@ -309,7 +309,12 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	apiOriginTarget := awscloudfrontorigins.NewHttpOrigin(jsii.String(apiOrigin), nil)
 
-	dist := awscloudfront.NewDistribution(s.Stack, jsii.String("ClientFrontend"), &awscloudfront.DistributionProps{
+	// Treat these logical IDs as part of the deployed stack contract. Pre-SSR environments already own
+	// ClientFrontend/Distribution and ClientFrontend/AliasRecord*, so the SSR routing changes must stay
+	// under that construct path to update in place instead of triggering replacement.
+	clientFrontend := constructs.NewConstruct(s.Stack, jsii.String("ClientFrontend"))
+
+	dist := awscloudfront.NewDistribution(clientFrontend, jsii.String("Distribution"), &awscloudfront.DistributionProps{
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			Origin:               apiOriginTarget,
 			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
@@ -375,12 +380,12 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	recordName := relativeRecordName(domain, s.HostedZone)
 	target := awsroute53targets.NewCloudFrontTarget(dist)
-	awsroute53.NewARecord(s.Stack, jsii.String("FrontendAliasARecord"), &awsroute53.ARecordProps{
+	awsroute53.NewARecord(clientFrontend, jsii.String("AliasRecord"), &awsroute53.ARecordProps{
 		Zone:       s.HostedZone,
 		RecordName: recordName,
 		Target:     awsroute53.RecordTarget_FromAlias(target),
 	})
-	awsroute53.NewAaaaRecord(s.Stack, jsii.String("FrontendAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+	awsroute53.NewAaaaRecord(clientFrontend, jsii.String("AliasRecordAAAA"), &awsroute53.AaaaRecordProps{
 		Zone:       s.HostedZone,
 		RecordName: recordName,
 		Target:     awsroute53.RecordTarget_FromAlias(target),
