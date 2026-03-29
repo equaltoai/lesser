@@ -202,3 +202,14 @@ It does not mean:
 - CDK execution is detached from repo-local infrastructure source
 - deploys can run without AWS account, domain, or per-instance configuration context
 - managed runners no longer need to provide provisioning input or retain their own higher-level receipts
+
+### Current repo-local source assumptions that remain canonical
+
+Artifact-driven Lambda deployment is now supported, but `lesser up` still requires a Lesser checkout with these
+repo-local source inputs present:
+
+- `infra/cdk/cdk.json` and the surrounding `infra/cdk/` app, because CDK synthesis and deploy still run from source
+- `auth-ui/package.json` and the surrounding `auth-ui/` app, because auth UI upload is still built at deploy time
+
+The CLI now validates those two source inputs up front so artifact mode fails with an explicit missing-source error
+instead of drifting into later `cdk` or `pnpm` failures.

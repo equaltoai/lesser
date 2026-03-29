@@ -210,7 +210,7 @@ func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
 		determineBootstrapWalletFn = previousWallet
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	home := t.TempDir()
 	userHomeDirFn = func() (string, error) { return home, nil }
 
@@ -248,7 +248,7 @@ func TestPrepareUpEnv_UsesProvidedBootstrapWalletAddress(t *testing.T) {
 		determineBootstrapWalletFn = previousWallet
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
 	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
@@ -290,7 +290,7 @@ func TestPrepareUpEnv_NormalizesReleaseDir(t *testing.T) {
 		inspectBootstrapRequirementsFn = previousInspect
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
 	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
@@ -335,7 +335,7 @@ func TestPrepareUpEnv_RejectsInvalidReleaseDir(t *testing.T) {
 		inspectBootstrapRequirementsFn = previousInspect
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
 	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
@@ -388,7 +388,7 @@ func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
 		inspectBootstrapRequirementsFn = previousInspect
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
 	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
@@ -447,7 +447,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 		invalidateFrontendFn = previousInvalidate
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 
 	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
@@ -662,7 +662,7 @@ func TestPrepareUpEnv_OutPathLoadsLocalBootstrapMaterial(t *testing.T) {
 		readBootstrapKeyMaterialFn = previousRead
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	home := t.TempDir()
 	userHomeDirFn = func() (string, error) { return home, nil }
 	mkdirAllFn = os.MkdirAll
@@ -746,7 +746,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		determineBootstrapWalletFn = previousWallet
 	})
 
-	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
 	mkdirAllFn = os.MkdirAll
 
@@ -765,7 +765,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		findRepoRootFn = func() (string, error) { return "", errSentinel }
 		_, err := prepareUpEnv(context.Background(), base)
 		require.ErrorIs(t, err, errSentinel)
-		findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+		findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 	})
 
 	t.Run("invalid app name", func(t *testing.T) {
@@ -965,9 +965,20 @@ func TestRunUp_Errors(t *testing.T) {
 	t.Run("prepare env error", func(t *testing.T) {
 		previousRepoRoot := findRepoRootFn
 		t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
-		findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+		findRepoRootFn = func() (string, error) { return testUpRepoRoot(t), nil }
 
 		err := runUp([]string{"--app", "app", "--base-domain", "example.com/", "--aws-profile", "profile"})
 		require.Error(t, err)
 	})
+}
+
+func testUpRepoRoot(t *testing.T) string {
+	t.Helper()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{\n  \"app\": \"go run main.go\"\n}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "package.json"), []byte("{\n  \"name\": \"auth-ui\"\n}\n"), 0o644))
+	return repoRoot
 }

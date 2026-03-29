@@ -83,6 +83,9 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDeploySourceInputsFn(repoRoot); err != nil {
+		return nil, err
+	}
 
 	app, err := naming.NormalizeAppName(args.App)
 	if err != nil {
