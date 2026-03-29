@@ -79,9 +79,4 @@ go run ./tools/release_assets \
   --cdk-major "${CDK_MAJOR}" \
   --receipt-schema-version "${RECEIPT_SCHEMA_VERSION}"
 
-(
-  cd "${OUT_DIR}"
-  sha256sum lesser-* > checksums.txt
-)
-
 echo "Wrote release assets to ${OUT_DIR}"

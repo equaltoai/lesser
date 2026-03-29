@@ -126,6 +126,29 @@ func TestWriteLambdaBundleManifest_ErrorsWhenBundleMissing(t *testing.T) {
 	require.Contains(t, err.Error(), "hash lambda bundle")
 }
 
+func TestWriteLambdaBundle_RejectsUnexpectedExtraZip(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "bin", "mystery.zip"), []byte("oops"), 0o644))
+
+	_, err := WriteLambdaBundle(repoRoot, t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected zip artifact")
+}
+
+func TestWriteLambdaBundle_AllowsCloudfrontKeygenZip(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":               "api zip",
+		"inbox":             "inbox zip",
+		"cloudfront-keygen": "helper zip",
+	})
+
+	_, err := WriteLambdaBundle(repoRoot, t.TempDir())
+	require.NoError(t, err)
+}
+
 func TestWriteLambdaBundle_MissingArtifactErrors(t *testing.T) {
 	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
 		"api": "api zip",

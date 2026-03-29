@@ -60,6 +60,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+	if err := releaseassets.WriteChecksums(outDir); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	fmt.Printf("wrote %s with %d Lambda artifacts\n", filepath.Join(outDir, releaseassets.LambdaBundleArchiveName), len(files))
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,9 @@ const LambdaBundleManifestSchemaVersion = 1
 const LambdaInventoryKind = "lesser.lambda_inventory"
 
 var deterministicArchiveTime = time.Unix(0, 0).UTC()
+var allowedExtraZipArtifacts = map[string]struct{}{
+	"cloudfront-keygen": {},
+}
 
 type BundleFile struct {
 	Lambda     string
@@ -66,6 +70,10 @@ type LambdaBundleManifestFile struct {
 func CollectBundleFiles(repoRoot string) ([]BundleFile, error) {
 	lambdaNames, err := CanonicalLambdaNames(repoRoot)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := verifyLocalLambdaZipSet(repoRoot, lambdaNames); err != nil {
 		return nil, err
 	}
 
@@ -247,4 +255,38 @@ func fileSHA256(path string) (string, error) {
 
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func verifyLocalLambdaZipSet(repoRoot string, expected []string) error {
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, name := range expected {
+		expectedSet[name] = struct{}{}
+	}
+
+	present := map[string]struct{}{}
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "bin", "*.zip"))
+	if err != nil {
+		return fmt.Errorf("scan lambda zip artifacts: %w", err)
+	}
+
+	for _, match := range matches {
+		name := strings.TrimSuffix(filepath.Base(match), ".zip")
+		if _, ok := expectedSet[name]; ok {
+			present[name] = struct{}{}
+			continue
+		}
+		if _, ok := allowedExtraZipArtifacts[name]; ok {
+			continue
+		}
+		return fmt.Errorf("unexpected zip artifact outside canonical Lambda inventory: %s", match)
+	}
+
+	for _, name := range expected {
+		if _, ok := present[name]; ok {
+			continue
+		}
+		return fmt.Errorf("missing canonical Lambda artifact %s", filepath.Join(repoRoot, "bin", name+".zip"))
+	}
+
+	return nil
 }
