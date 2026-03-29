@@ -79,6 +79,36 @@ func TestClientFrontendLogicalIDsRemainStable(t *testing.T) {
 	requireResourceLogicalIDPrefixAbsent(t, resources, "FrontendAliasAAAARecord")
 }
 
+func TestClientSSRFunctionURLOriginPermissions(t *testing.T) {
+	resources := synthClientFrontendResources(t)
+
+	invokeURLPermission := findLambdaPermissionByAction(t, resources, "lambda:InvokeFunctionUrl")
+	invokeURLProps := extractLambdaPermissionProperties(t, invokeURLPermission)
+	if got, _ := invokeURLProps["Principal"].(string); got != "cloudfront.amazonaws.com" {
+		t.Fatalf("InvokeFunctionUrl permission principal = %q, want cloudfront.amazonaws.com", got)
+	}
+	requireContainsAll(t, mustJSON(t, invokeURLProps["SourceArn"]), []string{
+		"cloudfront",
+		"distribution",
+		"ClientFrontendDistribution015B354C",
+	})
+
+	invokePermission := findLambdaPermissionByAction(t, resources, "lambda:InvokeFunction")
+	invokeProps := extractLambdaPermissionProperties(t, invokePermission)
+	if got, _ := invokeProps["Principal"].(string); got != "cloudfront.amazonaws.com" {
+		t.Fatalf("InvokeFunction permission principal = %q, want cloudfront.amazonaws.com", got)
+	}
+	invokedViaURL, ok := invokeProps["InvokedViaFunctionUrl"].(bool)
+	if !ok || !invokedViaURL {
+		t.Fatalf("InvokeFunction permission must set InvokedViaFunctionUrl=true")
+	}
+	requireContainsAll(t, mustJSON(t, invokeProps["SourceArn"]), []string{
+		"cloudfront",
+		"distribution",
+		"ClientFrontendDistribution015B354C",
+	})
+}
+
 func synthClientFrontendResources(t *testing.T) map[string]any {
 	t.Helper()
 
@@ -138,6 +168,7 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 		},
 		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100,
 	})
+	grantCloudFrontFunctionURLInvokePermission(clientSSRFn, dist)
 	dist.AddBehavior(jsii.String("/auth/wallet/*"), apiOriginTarget, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
@@ -226,6 +257,48 @@ func requireResourceLogicalIDPrefixAbsent(t *testing.T, resources map[string]any
 			t.Fatalf("expected no logical IDs with prefix %q, found %q", prefix, logicalID)
 		}
 	}
+}
+
+func findLambdaPermissionByAction(t *testing.T, resources map[string]any, action string) map[string]any {
+	t.Helper()
+	var permission map[string]any
+	for _, raw := range resources {
+		typed, ok := raw.(map[string]any)
+		if !ok || typed["Type"] != "AWS::Lambda::Permission" {
+			continue
+		}
+		props := extractLambdaPermissionProperties(t, typed)
+		got, _ := props["Action"].(string)
+		if got != action {
+			continue
+		}
+		if permission != nil {
+			t.Fatalf("expected one Lambda permission for %q, found multiple", action)
+		}
+		permission = typed
+	}
+	if permission == nil {
+		t.Fatalf("expected Lambda permission for %q", action)
+	}
+	return permission
+}
+
+func extractLambdaPermissionProperties(t *testing.T, permission map[string]any) map[string]any {
+	t.Helper()
+	props, ok := permission["Properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Lambda Permission Properties missing or wrong type")
+	}
+	return props
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal value: %v", err)
+	}
+	return string(data)
 }
 
 func findCacheBehaviorByPathPattern(t *testing.T, behaviors []map[string]any, pathPattern string) map[string]any {
