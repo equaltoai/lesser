@@ -51,6 +51,17 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0x2222222222222222222222222222222222222222", args.BootstrapWalletAddress)
 	})
 
+	t.Run("accepts release-dir", func(t *testing.T) {
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--release-dir", "./dist/release",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "./dist/release", args.ReleaseDir)
+	})
+
 	t.Run("flag overrides env", func(t *testing.T) {
 		t.Setenv("LESSER_BOOTSTRAP_WALLET_ADDRESS", "0x2222222222222222222222222222222222222222")
 		args, err := parseUpArgs([]string{
@@ -261,6 +272,104 @@ func TestPrepareUpEnv_UsesProvidedBootstrapWalletAddress(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "0x1111111111111111111111111111111111111111", env.bootstrap.Address)
 	require.Empty(t, env.bootstrap.Mnemonic)
+}
+
+func TestPrepareUpEnv_NormalizesReleaseDir(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	require.NoError(t, os.MkdirAll(releaseDir, 0o755))
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(filepath.Dir(releaseDir)))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(wd)) })
+
+	env, err := prepareUpEnv(context.Background(), upArgs{
+		App:        "app",
+		BaseDomain: "example.com",
+		AWSProfile: "profile",
+		ReleaseDir: filepath.Base(releaseDir),
+	})
+	require.NoError(t, err)
+	require.Equal(t, releaseDir, env.args.ReleaseDir)
+}
+
+func TestPrepareUpEnv_RejectsInvalidReleaseDir(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	t.Run("missing directory", func(t *testing.T) {
+		_, err := prepareUpEnv(context.Background(), upArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ReleaseDir: filepath.Join(t.TempDir(), "missing"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "stat --release-dir")
+	})
+
+	t.Run("file path", func(t *testing.T) {
+		filePath := filepath.Join(t.TempDir(), "release.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte("x"), 0o644))
+
+		_, err := prepareUpEnv(context.Background(), upArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ReleaseDir: filePath,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--release-dir must be a directory")
+	})
 }
 
 func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
