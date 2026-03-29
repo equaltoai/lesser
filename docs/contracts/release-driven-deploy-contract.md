@@ -120,3 +120,53 @@ The illustrative example is:
   match.
 - The manifest must enumerate the exact stage-stack Lambda zip set and exclude non-deploy extras such as
   `cloudfront-keygen.zip`.
+
+## M0.4 Artifact Selection Rules For `lesser up`
+
+Milestone-0 chooses one canonical artifact-driven input surface for `lesser up`:
+
+- `--release-dir <path>`
+
+Phase one does not define a separate `--lambda-bundle <path>` flag. Operators and managed runners should stage the
+trusted release assets into a directory and hand that directory to `lesser up`.
+
+### Why `--release-dir` is canonical
+
+- Operators naturally download or mirror whole release assets.
+- Managed runners can materialize the same directory layout in ephemeral storage.
+- The CLI can verify release metadata, top-level checksums, and the Lambda bundle from one trust root.
+- A bundle-only flag would fragment trust, because the CLI would still need a second way to discover release metadata
+  and integrity expectations.
+
+### Required contents of `--release-dir`
+
+Artifact mode requires these files in the release directory:
+
+- `checksums.txt`
+- `lesser-release.json`
+- `lesser-lambda-bundle.tar.gz`
+- `lesser-lambda-bundle.json`
+
+Future milestones may add more files to the release directory, but first-phase Lambda deploy consumption only depends on
+the four files above.
+
+### Selection and verification behavior
+
+When `--release-dir` is set, the future artifact-driven `lesser up` path must:
+
+1. Fail fast if any required release file is missing.
+2. Verify `checksums.txt` for `lesser-release.json`, `lesser-lambda-bundle.tar.gz`, and `lesser-lambda-bundle.json`.
+3. Read `lesser-release.json` to confirm the release is a Lesser release and to discover deploy-artifact metadata once
+   milestone M1 extends that file.
+4. Validate `lesser-lambda-bundle.json` against schema version `1`.
+5. Verify the bundle archive checksum from the manifest.
+6. Extract the archive deterministically into the exact `bin/*.zip` layout current CDK deploys consume.
+7. Verify every extracted `bin/<lambda>.zip` against the manifest before using it.
+8. Skip source-based Lambda compilation once verified assets are present.
+
+### Override rules
+
+- `--rebuild-lambdas` remains the explicit source-build override path.
+- Without `--release-dir`, `lesser up` continues to use the current source-based build path.
+- Invalid or incomplete release assets are hard errors in artifact mode; the CLI must not silently fall back to an
+  unrequested source build.
