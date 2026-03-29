@@ -21,6 +21,15 @@ func TestPrepareLambdaAssetRoot_DeterministicAndClean(t *testing.T) {
 	require.DirExists(t, filepath.Join(assetRoot, "bin"))
 }
 
+func TestPrepareLambdaAssetRoot_ErrorsWhenWorkspaceBlocked(t *testing.T) {
+	stateDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "deploy"), []byte("blocked"), 0o644))
+
+	_, err := prepareLambdaAssetRoot(stateDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "reset lambda asset root")
+}
+
 func TestStageLocalLambdaAssets(t *testing.T) {
 	repoRoot := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
@@ -39,4 +48,17 @@ func TestStageLocalLambdaAssets(t *testing.T) {
 	apiBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "api.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "api zip", string(apiBytes))
+}
+
+func TestStageLocalLambdaAssets_MissingZipReturnsError(t *testing.T) {
+	repoRoot := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api": "api zip",
+	})
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
+	require.NoError(t, os.MkdirAll(filepath.Join(assetRoot, "bin"), 0o755))
+
+	files, err := stageLocalLambdaAssets(repoRoot, assetRoot)
+	require.Nil(t, files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stage lambda asset inbox")
 }

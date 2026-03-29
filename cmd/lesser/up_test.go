@@ -622,6 +622,122 @@ func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
 	require.Contains(t, string(data), `"mode": "source"`)
 }
 
+func TestUpEnv_PrepareLambdaArtifacts_PropagatesAssetRootError(t *testing.T) {
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	t.Cleanup(func() {
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+	})
+
+	prepareLambdaAssetRootFn = func(string) (string, error) { return "", errSentinel }
+
+	env := &upEnv{
+		args:     upArgs{},
+		stateDir: t.TempDir(),
+	}
+
+	require.ErrorIs(t, env.prepareLambdaArtifacts(), errSentinel)
+}
+
+func TestUpEnv_PrepareLambdaArtifacts_PropagatesBuildError(t *testing.T) {
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousBuildZips := buildLambdaZipsFn
+	t.Cleanup(func() {
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		buildLambdaZipsFn = previousBuildZips
+	})
+
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
+	buildLambdaZipsFn = func(string, bool) error { return errSentinel }
+
+	env := &upEnv{
+		args:     upArgs{},
+		repoRoot: t.TempDir(),
+		stateDir: t.TempDir(),
+	}
+
+	require.ErrorIs(t, env.prepareLambdaArtifacts(), errSentinel)
+}
+
+func TestUpEnv_PrepareLambdaArtifacts_PropagatesStageLocalError(t *testing.T) {
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousBuildZips := buildLambdaZipsFn
+	previousStageLocalAssets := stageLocalLambdaAssetsFn
+	t.Cleanup(func() {
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		buildLambdaZipsFn = previousBuildZips
+		stageLocalLambdaAssetsFn = previousStageLocalAssets
+	})
+
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
+	buildLambdaZipsFn = func(string, bool) error { return nil }
+	stageLocalLambdaAssetsFn = func(string, string) ([]string, error) { return nil, errSentinel }
+
+	env := &upEnv{
+		args:     upArgs{},
+		repoRoot: t.TempDir(),
+		stateDir: t.TempDir(),
+	}
+
+	require.ErrorIs(t, env.prepareLambdaArtifacts(), errSentinel)
+}
+
+func TestUpEnv_PrepareLambdaArtifacts_PropagatesReleaseRelativePathError(t *testing.T) {
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
+	t.Cleanup(func() {
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		installReleaseLambdaAssetsFn = previousInstallRelease
+	})
+
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
+	prepareLambdaAssetRootFn = func(string) (string, error) { return assetRoot, nil }
+	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
+		return releaseLambdaInstallResult{
+			Version: "v1.2.3",
+			Files:   []string{filepath.Join(t.TempDir(), "outside.zip")},
+		}, nil
+	}
+
+	env := &upEnv{
+		args:     upArgs{ReleaseDir: "/tmp/release"},
+		repoRoot: t.TempDir(),
+		stateDir: t.TempDir(),
+	}
+
+	err := env.prepareLambdaArtifacts()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes asset root")
+}
+
+func TestUpEnv_PrepareLambdaArtifacts_PropagatesReleaseMetadataWriteError(t *testing.T) {
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
+	t.Cleanup(func() {
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		installReleaseLambdaAssetsFn = previousInstallRelease
+	})
+
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
+	require.NoError(t, os.MkdirAll(filepath.Join(assetRoot, lambdaAssetMetadataFileName), 0o755))
+	prepareLambdaAssetRootFn = func(string) (string, error) { return assetRoot, nil }
+	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
+		return releaseLambdaInstallResult{
+			Version: "v1.2.3",
+			Files:   []string{filepath.Join(assetRoot, "bin", "api.zip")},
+		}, nil
+	}
+
+	env := &upEnv{
+		args:     upArgs{ReleaseDir: "/tmp/release"},
+		repoRoot: t.TempDir(),
+		stateDir: t.TempDir(),
+	}
+
+	err := env.prepareLambdaArtifacts()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write lambda asset metadata")
+}
+
 func TestUpEnv_HandleBootstrapOutput_WritesWhenConfigured(t *testing.T) {
 	previous := writeBootstrapKeyMaterialFn
 	t.Cleanup(func() { writeBootstrapKeyMaterialFn = previous })
