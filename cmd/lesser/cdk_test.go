@@ -84,18 +84,20 @@ func TestCdkDeployWithOutputs_IncludesStageAndStagingFlags(t *testing.T) {
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
-		StackName:    "demo",
-		App:          "app",
-		BaseDomain:   "example.com",
-		HostedZoneID: "Z1",
-		Region:       "us-east-1",
-		StageFilter:  "DEV",
-		WithStaging:  true,
+		StackName:       "demo",
+		App:             "app",
+		BaseDomain:      "example.com",
+		HostedZoneID:    "Z1",
+		Region:          "us-east-1",
+		LambdaAssetRoot: "/tmp/lambda-assets",
+		StageFilter:     "DEV",
+		WithStaging:     true,
 	})
 	require.NoError(t, err)
 	require.Contains(t, gotArgs, "--context")
 	require.Contains(t, gotArgs, "stage=dev")
 	require.Contains(t, gotArgs, "withStaging=true")
+	require.Contains(t, gotArgs, "lambdaAssetRoot=/tmp/lambda-assets")
 }
 
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {

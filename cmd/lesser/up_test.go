@@ -419,6 +419,8 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousStageLocalAssets := stageLocalLambdaAssetsFn
 	previousBootstrap := ensureStageBootstrapStateFn
 	previousCdkBootstrap := cdkBootstrapFn
 	previousCdkDeploy := cdkDeployWithOutputsFn
@@ -437,6 +439,8 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseLambdaAssetsFn = previousInstallRelease
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		stageLocalLambdaAssetsFn = previousStageLocalAssets
 		ensureStageBootstrapStateFn = previousBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
 		cdkDeployWithOutputsFn = previousCdkDeploy
@@ -461,6 +465,8 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 
 	ensureToolsAvailableFn = func() error { return nil }
 	buildLambdaZipsFn = func(string, bool) error { return nil }
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
+	stageLocalLambdaAssetsFn = func(string, string) ([]string, error) { return nil, nil }
 	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
 	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
 
@@ -495,6 +501,7 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
 	previousBootstrap := ensureStageBootstrapStateFn
 	previousCdkBootstrap := cdkBootstrapFn
@@ -508,6 +515,7 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseLambdaAssetsFn = previousInstallRelease
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap
 		ensureStageBootstrapStateFn = previousBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
@@ -535,14 +543,16 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	}
 
 	ensureToolsAvailableFn = func() error { return nil }
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
 	buildLambdaZipsFn = func(string, bool) error {
 		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
 		return nil
 	}
-	installReleaseLambdaAssetsFn = func(repoRoot string, releaseDir string) (releaseLambdaInstallResult, error) {
+	installReleaseLambdaAssetsFn = func(repoRoot string, releaseDir string, assetRoot string) (releaseLambdaInstallResult, error) {
 		require.Equal(t, env.repoRoot, repoRoot)
 		require.Equal(t, "/tmp/release", releaseDir)
-		return releaseLambdaInstallResult{Version: "v1.2.3", Files: []string{"bin/api.zip"}}, nil
+		require.NotEmpty(t, assetRoot)
+		return releaseLambdaInstallResult{Version: "v1.2.3", Files: []string{filepath.Join(assetRoot, "bin", "api.zip")}}, nil
 	}
 	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
 	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
@@ -564,9 +574,13 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousStageLocalAssets := stageLocalLambdaAssetsFn
 	t.Cleanup(func() {
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseLambdaAssetsFn = previousInstallRelease
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		stageLocalLambdaAssetsFn = previousStageLocalAssets
 	})
 
 	env := &upEnv{
@@ -584,7 +598,13 @@ func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
 		require.True(t, force)
 		return nil
 	}
-	installReleaseLambdaAssetsFn = func(string, string) (releaseLambdaInstallResult, error) {
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
+	stageLocalLambdaAssetsFn = func(repoRoot string, assetRoot string) ([]string, error) {
+		require.Equal(t, env.repoRoot, repoRoot)
+		require.NotEmpty(t, assetRoot)
+		return []string{filepath.Join(assetRoot, "bin", "api.zip")}, nil
+	}
+	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
 		t.Fatal("release asset installer should not run when --rebuild-lambdas is set")
 		return releaseLambdaInstallResult{}, nil
 	}
@@ -836,6 +856,8 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousPrepareAssetRoot := prepareLambdaAssetRootFn
+	previousStageLocalAssets := stageLocalLambdaAssetsFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
 	previousCdkBootstrap := cdkBootstrapFn
 	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
@@ -845,6 +867,8 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseLambdaAssetsFn = previousInstallRelease
+		prepareLambdaAssetRootFn = previousPrepareAssetRoot
+		stageLocalLambdaAssetsFn = previousStageLocalAssets
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
 		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
@@ -866,6 +890,9 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 			stateDir:   t.TempDir(),
 		}
 	}
+
+	prepareLambdaAssetRootFn = func(string) (string, error) { return filepath.Join(t.TempDir(), "lambda-assets"), nil }
+	stageLocalLambdaAssetsFn = func(string, string) ([]string, error) { return nil, nil }
 
 	t.Run("tools error", func(t *testing.T) {
 		env := baseEnv()
@@ -889,7 +916,7 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 			t.Fatal("buildLambdaZips should not run when release assets are requested")
 			return nil
 		}
-		installReleaseLambdaAssetsFn = func(string, string) (releaseLambdaInstallResult, error) {
+		installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
 			return releaseLambdaInstallResult{}, errSentinel
 		}
 		require.ErrorIs(t, env.run(context.Background()), errSentinel)

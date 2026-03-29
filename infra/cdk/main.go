@@ -111,6 +111,7 @@ func main() {
 		}
 		// Optional per-deployment config (passed via CDK context).
 		for _, key := range []string{
+			"lambdaAssetRoot",
 			"lesserHostUrl",
 			"lesserHostInstanceKeyArn",
 			"lesserHostAttestationsUrl",

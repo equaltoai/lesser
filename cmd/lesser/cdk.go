@@ -11,14 +11,15 @@ import (
 )
 
 type cdkDeployRequest struct {
-	StackName    string
-	App          string
-	BaseDomain   string
-	HostedZoneID string
-	Region       string
-	StageFilter  string
-	WithStaging  bool
-	Contexts     map[string]string
+	StackName       string
+	App             string
+	BaseDomain      string
+	HostedZoneID    string
+	Region          string
+	LambdaAssetRoot string
+	StageFilter     string
+	WithStaging     bool
+	Contexts        map[string]string
 }
 
 type cdkDestroyRequest struct {
@@ -133,6 +134,9 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 
 	if err := rejectLambdaFunctionURLHost(contexts["lesserHostUrl"]); err != nil {
 		return cdkDeployResult{}, err
+	}
+	if v := strings.TrimSpace(req.LambdaAssetRoot); v != "" {
+		contexts["lambdaAssetRoot"] = v
 	}
 
 	keys := make([]string, 0, len(contexts))

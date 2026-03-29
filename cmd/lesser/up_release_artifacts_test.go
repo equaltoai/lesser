@@ -29,6 +29,11 @@ func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
 		buildCalled = true
 		return nil
 	}
+	var lambdaAssetRoot string
+	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+		lambdaAssetRoot = req.LambdaAssetRoot
+		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+	}
 
 	require.NoError(t, runUp([]string{
 		"--app", "app",
@@ -37,12 +42,13 @@ func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
 		"--release-dir", releaseDir,
 	}))
 	require.False(t, buildCalled)
+	require.NotEmpty(t, lambdaAssetRoot)
 
-	apiBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "api.zip"))
+	apiBytes, err := os.ReadFile(filepath.Join(lambdaAssetRoot, "bin", "api.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "api zip", string(apiBytes))
 
-	inboxBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "inbox.zip"))
+	inboxBytes, err := os.ReadFile(filepath.Join(lambdaAssetRoot, "bin", "inbox.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "inbox zip", string(inboxBytes))
 }

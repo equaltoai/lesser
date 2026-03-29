@@ -33,7 +33,7 @@ type releaseFileSet struct {
 	bundleManifestPath  string
 }
 
-func installReleaseLambdaAssets(repoRoot string, releaseDir string) (releaseLambdaInstallResult, error) {
+func installReleaseLambdaAssets(repoRoot string, releaseDir string, assetRoot string) (releaseLambdaInstallResult, error) {
 	files, err := requiredReleaseFiles(releaseDir)
 	if err != nil {
 		return releaseLambdaInstallResult{}, err
@@ -80,7 +80,7 @@ func installReleaseLambdaAssets(repoRoot string, releaseDir string) (releaseLamb
 		return releaseLambdaInstallResult{}, err
 	}
 
-	installedFiles, err := installExtractedBundleFiles(repoRoot, stagingDir, bundleManifest.Files)
+	installedFiles, err := installExtractedBundleFiles(assetRoot, stagingDir, bundleManifest.Files)
 	if err != nil {
 		return releaseLambdaInstallResult{}, err
 	}
@@ -439,8 +439,8 @@ func writeVerifiedExtractedFile(targetPath string, reader io.Reader, manifestFil
 	return nil
 }
 
-func installExtractedBundleFiles(repoRoot string, stagingDir string, files []releaseassets.LambdaBundleManifestFile) ([]string, error) {
-	binDir := filepath.Join(repoRoot, "bin")
+func installExtractedBundleFiles(assetRoot string, stagingDir string, files []releaseassets.LambdaBundleManifestFile) ([]string, error) {
+	binDir := filepath.Join(assetRoot, "bin")
 	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create bin dir: %w", err)
 	}
@@ -448,7 +448,7 @@ func installExtractedBundleFiles(repoRoot string, stagingDir string, files []rel
 	installed := make([]string, 0, len(files))
 	for _, file := range files {
 		sourcePath := filepath.Join(stagingDir, filepath.FromSlash(file.Path))
-		targetPath := filepath.Join(repoRoot, filepath.FromSlash(file.Path))
+		targetPath := filepath.Join(assetRoot, filepath.FromSlash(file.Path))
 		if err := copyFile(targetPath, sourcePath); err != nil {
 			return nil, err
 		}

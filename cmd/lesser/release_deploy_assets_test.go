@@ -21,21 +21,22 @@ func TestInstallReleaseLambdaAssets(t *testing.T) {
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
 	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
 
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.3", result.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
 	require.Equal(t, []string{
-		filepath.Join(targetRepo, "bin", "api.zip"),
-		filepath.Join(targetRepo, "bin", "inbox.zip"),
+		filepath.Join(assetRoot, "bin", "api.zip"),
+		filepath.Join(assetRoot, "bin", "inbox.zip"),
 	}, result.Files)
 
-	apiBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "api.zip"))
+	apiBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "api.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "api zip", string(apiBytes))
 
-	inboxBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "inbox.zip"))
+	inboxBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "inbox.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "inbox zip", string(inboxBytes))
 }
@@ -50,7 +51,7 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) 
 
 	require.NoError(t, os.Remove(filepath.Join(releaseDir, releaseassets.ChecksumsFileName)))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "required release file checksums.txt")
 }
@@ -65,7 +66,7 @@ func TestInstallReleaseLambdaAssets_ErrorsOnChecksumMismatch(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName), []byte("{}\n"), 0o644))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "lesser-lambda-bundle.json checksum mismatch")
 }
@@ -78,7 +79,7 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenInventoryDoesNotMatch(t *testing.T
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
 	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "graphql"})
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not match canonical inventory")
 }

@@ -65,6 +65,7 @@ func runUp(argv []string) error {
 type upEnv struct {
 	args              upArgs
 	repoRoot          string
+	lambdaAssetRoot   string
 	app               string
 	baseDomain        string
 	awsProfile        string
@@ -274,18 +275,32 @@ func (e *upEnv) run(ctx context.Context) error {
 }
 
 func (e *upEnv) prepareLambdaArtifacts() error {
+	assetRoot, err := prepareLambdaAssetRootFn(e.stateDir)
+	if err != nil {
+		return err
+	}
+	e.lambdaAssetRoot = assetRoot
+
 	if e.args.RebuildLambdas {
 		if strings.TrimSpace(e.args.ReleaseDir) != "" {
 			fmt.Println("Rebuilding Lambda artifacts from source because --rebuild-lambdas overrides --release-dir.")
 		}
-		return buildLambdaZipsFn(e.repoRoot, true)
+		if err := buildLambdaZipsFn(e.repoRoot, true); err != nil {
+			return err
+		}
+		_, err = stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		return err
 	}
 
 	if strings.TrimSpace(e.args.ReleaseDir) == "" {
-		return buildLambdaZipsFn(e.repoRoot, false)
+		if err := buildLambdaZipsFn(e.repoRoot, false); err != nil {
+			return err
+		}
+		_, err = stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		return err
 	}
 
-	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir)
+	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir, e.lambdaAssetRoot)
 	if err != nil {
 		return err
 	}
@@ -357,14 +372,15 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	sharedStack := naming.SharedStackName(e.app)
 	fmt.Println("\nDeploying shared stack:", sharedStack)
 	sharedResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
-		StackName:    sharedStack,
-		App:          e.app,
-		BaseDomain:   e.baseDomain,
-		HostedZoneID: e.hostedZone.ID,
-		Region:       e.awsCfg.Region,
-		StageFilter:  string(naming.StageShared),
-		WithStaging:  e.args.WithStaging,
-		Contexts:     contexts,
+		StackName:       sharedStack,
+		App:             e.app,
+		BaseDomain:      e.baseDomain,
+		HostedZoneID:    e.hostedZone.ID,
+		Region:          e.awsCfg.Region,
+		LambdaAssetRoot: e.lambdaAssetRoot,
+		StageFilter:     string(naming.StageShared),
+		WithStaging:     e.args.WithStaging,
+		Contexts:        contexts,
 	})
 	if err != nil {
 		return nil, err
@@ -375,14 +391,15 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 		stack := naming.StageStackName(e.app, stage)
 		fmt.Println("\nDeploying stage stack:", stack)
 		stageResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
-			StackName:    stack,
-			App:          e.app,
-			BaseDomain:   e.baseDomain,
-			HostedZoneID: e.hostedZone.ID,
-			Region:       e.awsCfg.Region,
-			StageFilter:  string(stage),
-			WithStaging:  e.args.WithStaging,
-			Contexts:     contexts,
+			StackName:       stack,
+			App:             e.app,
+			BaseDomain:      e.baseDomain,
+			HostedZoneID:    e.hostedZone.ID,
+			Region:          e.awsCfg.Region,
+			LambdaAssetRoot: e.lambdaAssetRoot,
+			StageFilter:     string(stage),
+			WithStaging:     e.args.WithStaging,
+			Contexts:        contexts,
 		})
 		if err != nil {
 			return nil, err
