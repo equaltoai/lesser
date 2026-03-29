@@ -11,6 +11,7 @@ OUT_DIR="${2:-dist/release}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
+export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
 
 if [[ -z "${VERSION}" ]]; then
   echo "version is required" >&2
@@ -58,6 +59,9 @@ TARGETS=(
   "darwin arm64"
 )
 
+echo "Building canonical Lambda zip artifacts"
+go run ./cmd/lesser build lambdas --rebuild
+
 for target in "${TARGETS[@]}"; do
   read -r GOOS GOARCH <<< "${target}"
   OUTPUT_PATH="${OUT_DIR}/lesser-${GOOS}-${GOARCH}"
@@ -65,6 +69,8 @@ for target in "${TARGETS[@]}"; do
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
     go build -trimpath -ldflags="-s -w" -o "${OUTPUT_PATH}" ./cmd/lesser
 done
+
+go run ./tools/release_assets --repo-root "${ROOT_DIR}" --out-dir "${OUT_DIR}"
 
 (
   cd "${OUT_DIR}"

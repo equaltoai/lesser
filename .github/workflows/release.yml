@@ -82,6 +82,7 @@ jobs:
             dist/release/lesser-linux-arm64
             dist/release/lesser-darwin-amd64
             dist/release/lesser-darwin-arm64
+            dist/release/lesser-lambda-bundle.tar.gz
             dist/release/checksums.txt
             dist/release/lesser-release.json
           )
