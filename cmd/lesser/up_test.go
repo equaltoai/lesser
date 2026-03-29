@@ -51,6 +51,17 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0x2222222222222222222222222222222222222222", args.BootstrapWalletAddress)
 	})
 
+	t.Run("accepts release-dir", func(t *testing.T) {
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--release-dir", "./dist/release",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "./dist/release", args.ReleaseDir)
+	})
+
 	t.Run("flag overrides env", func(t *testing.T) {
 		t.Setenv("LESSER_BOOTSTRAP_WALLET_ADDRESS", "0x2222222222222222222222222222222222222222")
 		args, err := parseUpArgs([]string{
@@ -263,6 +274,104 @@ func TestPrepareUpEnv_UsesProvidedBootstrapWalletAddress(t *testing.T) {
 	require.Empty(t, env.bootstrap.Mnemonic)
 }
 
+func TestPrepareUpEnv_NormalizesReleaseDir(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	require.NoError(t, os.MkdirAll(releaseDir, 0o755))
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(filepath.Dir(releaseDir)))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(wd)) })
+
+	env, err := prepareUpEnv(context.Background(), upArgs{
+		App:        "app",
+		BaseDomain: "example.com",
+		AWSProfile: "profile",
+		ReleaseDir: filepath.Base(releaseDir),
+	})
+	require.NoError(t, err)
+	require.Equal(t, releaseDir, env.args.ReleaseDir)
+}
+
+func TestPrepareUpEnv_RejectsInvalidReleaseDir(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	t.Run("missing directory", func(t *testing.T) {
+		_, err := prepareUpEnv(context.Background(), upArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ReleaseDir: filepath.Join(t.TempDir(), "missing"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "stat --release-dir")
+	})
+
+	t.Run("file path", func(t *testing.T) {
+		filePath := filepath.Join(t.TempDir(), "release.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte("x"), 0o644))
+
+		_, err := prepareUpEnv(context.Background(), upArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ReleaseDir: filePath,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--release-dir must be a directory")
+	})
+}
+
 func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousHome := userHomeDirFn
@@ -309,6 +418,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	previousInspect := inspectBootstrapRequirementsFn
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
 	previousBootstrap := ensureStageBootstrapStateFn
 	previousCdkBootstrap := cdkBootstrapFn
 	previousCdkDeploy := cdkDeployWithOutputsFn
@@ -326,6 +436,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 		inspectBootstrapRequirementsFn = previousInspect
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
+		installReleaseLambdaAssetsFn = previousInstallRelease
 		ensureStageBootstrapStateFn = previousBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
 		cdkDeployWithOutputsFn = previousCdkDeploy
@@ -378,6 +489,108 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	require.NotNil(t, wroteReceipt)
 	require.Contains(t, wrotePath, filepath.Join(".lesser", "app", "example.com", "state.json"))
 	require.Contains(t, wroteReceipt.Stages, "dev")
+}
+
+func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
+	previousTools := ensureToolsAvailableFn
+	previousBuildZips := buildLambdaZipsFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousWriteBootstrap := writeBootstrapKeyMaterialFn
+	previousBootstrap := ensureStageBootstrapStateFn
+	previousCdkBootstrap := cdkBootstrapFn
+	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
+	previousCdkDeploy := cdkDeployWithOutputsFn
+	previousBuildAuthUI := buildAuthUIFn
+	previousReplaceBucket := replaceBucketWithDirPrefixFn
+	previousInvalidate := invalidateFrontendFn
+	previousWriteReceipt := writeReceiptFn
+	t.Cleanup(func() {
+		ensureToolsAvailableFn = previousTools
+		buildLambdaZipsFn = previousBuildZips
+		installReleaseLambdaAssetsFn = previousInstallRelease
+		writeBootstrapKeyMaterialFn = previousWriteBootstrap
+		ensureStageBootstrapStateFn = previousBootstrap
+		cdkBootstrapFn = previousCdkBootstrap
+		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
+		cdkDeployWithOutputsFn = previousCdkDeploy
+		buildAuthUIFn = previousBuildAuthUI
+		replaceBucketWithDirPrefixFn = previousReplaceBucket
+		invalidateFrontendFn = previousInvalidate
+		writeReceiptFn = previousWriteReceipt
+	})
+
+	env := &upEnv{
+		args: upArgs{
+			ReleaseDir: "/tmp/release",
+		},
+		repoRoot:   t.TempDir(),
+		app:        "app",
+		baseDomain: "example.com",
+		awsProfile: "profile",
+		awsCfg:     aws.Config{Region: "us-east-1"},
+		accountID:  "123456789012",
+		hostedZone: hostedZone{ID: "Z1", Name: "example.com"},
+		stages:     []naming.Stage{naming.StageDev},
+		stateDir:   t.TempDir(),
+	}
+
+	ensureToolsAvailableFn = func() error { return nil }
+	buildLambdaZipsFn = func(string, bool) error {
+		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
+		return nil
+	}
+	installReleaseLambdaAssetsFn = func(repoRoot string, releaseDir string) (releaseLambdaInstallResult, error) {
+		require.Equal(t, env.repoRoot, repoRoot)
+		require.Equal(t, "/tmp/release", releaseDir)
+		return releaseLambdaInstallResult{Version: "v1.2.3", Files: []string{"bin/api.zip"}}, nil
+	}
+	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
+	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
+	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
+	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+	}
+	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
+	replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
+	invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
+	writeReceiptFn = func(string, *upReceipt) error { return nil }
+	ensureStageBootstrapStateFn = func(context.Context, bootstrapDBFactory, string, naming.Stage, string) (stageBootstrapState, error) {
+		return stageBootstrapState{Locked: true, Address: "0xabc"}, nil
+	}
+
+	require.NoError(t, env.run(context.Background()))
+}
+
+func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
+	previousBuildZips := buildLambdaZipsFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
+	t.Cleanup(func() {
+		buildLambdaZipsFn = previousBuildZips
+		installReleaseLambdaAssetsFn = previousInstallRelease
+	})
+
+	env := &upEnv{
+		args: upArgs{
+			ReleaseDir:     "/tmp/release",
+			RebuildLambdas: true,
+		},
+		repoRoot: t.TempDir(),
+	}
+
+	buildCalled := false
+	buildLambdaZipsFn = func(repoRoot string, force bool) error {
+		buildCalled = true
+		require.Equal(t, env.repoRoot, repoRoot)
+		require.True(t, force)
+		return nil
+	}
+	installReleaseLambdaAssetsFn = func(string, string) (releaseLambdaInstallResult, error) {
+		t.Fatal("release asset installer should not run when --rebuild-lambdas is set")
+		return releaseLambdaInstallResult{}, nil
+	}
+
+	require.NoError(t, env.prepareLambdaArtifacts())
+	require.True(t, buildCalled)
 }
 
 func TestUpEnv_HandleBootstrapOutput_WritesWhenConfigured(t *testing.T) {
@@ -622,6 +835,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
 	previousCdkBootstrap := cdkBootstrapFn
 	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
@@ -630,6 +844,7 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	t.Cleanup(func() {
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
+		installReleaseLambdaAssetsFn = previousInstallRelease
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
 		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
@@ -663,6 +878,20 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 		env := baseEnv()
 		ensureToolsAvailableFn = func() error { return nil }
 		buildLambdaZipsFn = func(string, bool) error { return errSentinel }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("release asset install error", func(t *testing.T) {
+		env := baseEnv()
+		env.args.ReleaseDir = "/tmp/release"
+		ensureToolsAvailableFn = func() error { return nil }
+		buildLambdaZipsFn = func(string, bool) error {
+			t.Fatal("buildLambdaZips should not run when release assets are requested")
+			return nil
+		}
+		installReleaseLambdaAssetsFn = func(string, string) (releaseLambdaInstallResult, error) {
+			return releaseLambdaInstallResult{}, errSentinel
+		}
 		require.ErrorIs(t, env.run(context.Background()), errSentinel)
 	})
 

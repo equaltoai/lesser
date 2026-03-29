@@ -25,6 +25,7 @@ type upArgs struct {
 	AWSProfile             string
 	Stage                  string
 	ProvisioningInputPath  string
+	ReleaseDir             string
 	BootstrapWalletAddress string
 	WithStaging            bool
 	OutPath                string
@@ -89,6 +90,11 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	}
 
 	baseDomain, err := normalizeBaseDomain(args.BaseDomain)
+	if err != nil {
+		return nil, err
+	}
+
+	args.ReleaseDir, err = resolveUpReleaseDir(args.ReleaseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +227,7 @@ func (e *upEnv) run(ctx context.Context) error {
 	if err := ensureToolsAvailableFn(); err != nil {
 		return err
 	}
-	if err := buildLambdaZipsFn(e.repoRoot, e.args.RebuildLambdas); err != nil {
+	if err := e.prepareLambdaArtifacts(); err != nil {
 		return err
 	}
 	if err := e.handleBootstrapOutput(); err != nil {
@@ -261,6 +267,27 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	e.printSummary(statePath)
+	return nil
+}
+
+func (e *upEnv) prepareLambdaArtifacts() error {
+	if e.args.RebuildLambdas {
+		if strings.TrimSpace(e.args.ReleaseDir) != "" {
+			fmt.Println("Rebuilding Lambda artifacts from source because --rebuild-lambdas overrides --release-dir.")
+		}
+		return buildLambdaZipsFn(e.repoRoot, true)
+	}
+
+	if strings.TrimSpace(e.args.ReleaseDir) == "" {
+		return buildLambdaZipsFn(e.repoRoot, false)
+	}
+
+	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s\n", len(result.Files), result.Version)
 	return nil
 }
 
@@ -412,6 +439,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.AWSProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
 	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1|2)")
+	fs.StringVar(&args.ReleaseDir, "release-dir", "", "directory containing release deploy assets (checksums.txt, lesser-release.json, lesser-lambda-bundle.tar.gz, lesser-lambda-bundle.json)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
@@ -447,6 +475,32 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	}
 
 	return args, nil
+}
+
+func normalizeReleaseDir(input string) (string, error) {
+	releaseDir := strings.TrimSpace(input)
+	if releaseDir == "" {
+		return "", nil
+	}
+
+	absReleaseDir, err := filepath.Abs(releaseDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve --release-dir %q: %w", input, err)
+	}
+
+	info, err := os.Stat(absReleaseDir)
+	if err != nil {
+		return "", fmt.Errorf("stat --release-dir %s: %w", absReleaseDir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("--release-dir must be a directory: %s", absReleaseDir)
+	}
+
+	return absReleaseDir, nil
+}
+
+func resolveUpReleaseDir(input string) (string, error) {
+	return normalizeReleaseDir(input)
 }
 
 func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput) {

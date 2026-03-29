@@ -7,8 +7,8 @@ CLI.
 
 Current state:
 
-- `lesser up` is still a source-based deploy path.
-- It currently builds Lambda zip artifacts and `auth-ui/` from the repo checkout before deploying.
+- `lesser up` still deploys CDK and builds `auth-ui/` from the repo checkout.
+- Lambda zip artifacts can now come from either local source builds or a verified published release directory.
 - Releases now publish immutable Lambda deploy assets (`lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, and
   `lesser-release.json` deploy-artifact metadata) for release-driven deploys and managed consumers.
 - The published contract for that release path lives in `docs/contracts/release-driven-deploy-contract.md`.
@@ -26,7 +26,7 @@ Current state:
 
 At a high level, `./lesser up`:
 
-- Builds Lambda zip artifacts (into `bin/`)
+- Builds Lambda zip artifacts locally, or installs them from `--release-dir` after verification
 - Ensures CDK bootstrap exists for the target account/region
 - Deploys the shared stack (`<app>-shared`)
 - Deploys stage stacks (`<app>-dev`, `<app>-live`, optional `<app>-staging`)
@@ -48,6 +48,17 @@ Deploy **dev + live** (and optionally **staging**):
   --app my-lesser \
   --base-domain example.com \
   --aws-profile Penny \
+  --out ~/.lesser/my-lesser/example.com/bootstrap.json
+```
+
+Deploy with published Lambda assets:
+
+```bash
+./lesser up \
+  --app my-lesser \
+  --base-domain example.com \
+  --aws-profile Penny \
+  --release-dir /tmp/lesser-release \
   --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 
@@ -84,15 +95,18 @@ Bootstrap state:
 
 Important scope note:
 
-- Prebuilt Lambda release assets now exist, but they are not yet the current `lesser up` default.
-- Even after Lambda prebuilds land, deploy-time responsibilities such as CDK execution, auth UI upload, hosted-zone
-  resolution, and receipt/bootstrap writes remain instance-specific.
+- Prebuilt Lambda release assets are now supported through `--release-dir`, but source builds remain the default when
+  that flag is absent.
+- Even in artifact mode, deploy-time responsibilities such as CDK execution, auth UI upload, hosted-zone resolution,
+  and receipt/bootstrap writes remain instance-specific.
 
 If you changed Lambda code and want to force refresh zip artifacts:
 
 ```bash
 ./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --rebuild-lambdas
 ```
+
+`--rebuild-lambdas` is the explicit source-build override and takes precedence over `--release-dir`.
 
 ## Verify “locked but reachable”
 

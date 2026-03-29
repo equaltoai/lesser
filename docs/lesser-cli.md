@@ -43,17 +43,27 @@ Common commands:
 
 Current behavior:
 
-- `lesser up` is still source-based and builds Lambda artifacts locally.
-- Releases now publish immutable Lambda deploy assets for release-driven and managed consumers.
-- The artifact-driven input surface is still reserved as `--release-dir`; that contract is documented in
-  `docs/contracts/release-driven-deploy-contract.md`.
-- `--rebuild-lambdas` remains the explicit source-build override path once artifact mode exists.
+- `lesser up` still uses the repo checkout for CDK and `auth-ui/`, but Lambda artifacts now have two explicit modes.
+- Default mode builds Lambda artifacts locally from source.
+- `--release-dir <path>` verifies published release assets and installs the Lambda bundle into `bin/` instead of rebuilding.
+- `--rebuild-lambdas` remains the explicit source-build override path and wins even if `--release-dir` is also set.
 
 ```bash
 ./lesser up \
   --app my-lesser \
   --base-domain example.com \
   --aws-profile Penny \
+  --out ~/.lesser/my-lesser/example.com/bootstrap.json
+```
+
+Deploy with published Lambda assets instead of rebuilding:
+
+```bash
+./lesser up \
+  --app my-lesser \
+  --base-domain example.com \
+  --aws-profile Penny \
+  --release-dir /tmp/lesser-release \
   --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 

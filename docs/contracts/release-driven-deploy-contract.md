@@ -10,7 +10,7 @@ contract instead of reinventing new names or trust boundaries.
 
 - Current default deploy path: source-based `./lesser up`
 - First-phase Lambda release assets are now published as release artifacts
-- `lesser up` artifact consumption remains a later milestone; the current operator path is still source-based
+- `lesser up` now supports artifact consumption through `--release-dir`, while source builds remain the default when that flag is absent
 - Explicit non-goal for milestone 0: claiming deploy execution is already fully immutable
 - Current operator truth: deploys still depend on repo-local CDK source, auth UI source, and deploy-time AWS state
 
@@ -67,8 +67,8 @@ Milestone-0 freezes four artifact categories. These names are part of the contra
 | Category ID | Canonical assets | Purpose | Primary consumers | Status |
 | --- | --- | --- | --- | --- |
 | `operator_cli` | `lesser-<os>-<arch>` | Human- or runner-invoked CLI executable | Operators, CI, `lesser-host` runner | Already published |
-| `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, future artifact mode in `lesser up` | Already published |
-| `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | First-phase immutable deploy asset containing the canonical `bin/*.zip` set plus its manifest | Future artifact mode in `lesser up`, managed runners | Published |
+| `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, artifact mode in `lesser up` | Already published |
+| `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | First-phase immutable deploy asset containing the canonical `bin/*.zip` set plus its manifest | Artifact mode in `lesser up`, managed runners | Published |
 | `deploy_assembly` | Reserved future category | Later deploy package that may include more than prebuilt Lambdas | Future thin deploy executor / managed runners | Explicitly out of scope for the first phase |
 
 ### Taxonomy rules
@@ -154,7 +154,7 @@ the four files above.
 
 ### Selection and verification behavior
 
-When `--release-dir` is set, the future artifact-driven `lesser up` path must:
+When `--release-dir` is set, `lesser up` must:
 
 1. Fail fast if any required release file is missing.
 2. Verify `checksums.txt` for `lesser-release.json`, `lesser-lambda-bundle.tar.gz`, and `lesser-lambda-bundle.json`.
@@ -169,6 +169,7 @@ When `--release-dir` is set, the future artifact-driven `lesser up` path must:
 ### Override rules
 
 - `--rebuild-lambdas` remains the explicit source-build override path.
+- If both `--release-dir` and `--rebuild-lambdas` are set, `--rebuild-lambdas` wins and `lesser up` rebuilds Lambdas from source.
 - Without `--release-dir`, `lesser up` continues to use the current source-based build path.
 - Invalid or incomplete release assets are hard errors in artifact mode; the CLI must not silently fall back to an
   unrequested source build.
@@ -193,7 +194,7 @@ responsibilities remain deployment-specific even after first-phase Lambda bundle
 The first-phase immutable deploy contract means:
 
 - Lesser releases can publish trusted Lambda deploy assets.
-- `lesser up` can eventually consume those assets instead of recompiling handlers.
+- `lesser up` can consume those assets through `--release-dir` instead of recompiling handlers.
 
 It does not mean:
 
