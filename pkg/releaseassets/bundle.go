@@ -4,6 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +16,10 @@ import (
 )
 
 const LambdaBundleArchiveName = "lesser-lambda-bundle.tar.gz"
+const LambdaBundleManifestName = "lesser-lambda-bundle.json"
+const LambdaBundleManifestKind = "lesser.lambda_bundle_manifest"
+const LambdaBundleManifestSchemaVersion = 1
+const LambdaInventoryKind = "lesser.lambda_inventory"
 
 var deterministicArchiveTime = time.Unix(0, 0).UTC()
 
@@ -21,6 +28,39 @@ type BundleFile struct {
 	SourcePath string
 	Path       string
 	SizeBytes  int64
+}
+
+type LambdaBundleManifest struct {
+	Kind            string                      `json:"kind"`
+	SchemaVersion   int                         `json:"schema_version"`
+	Release         LambdaBundleRelease         `json:"release"`
+	Bundle          LambdaBundleAsset           `json:"bundle"`
+	InventorySource LambdaBundleInventorySource `json:"inventory_source"`
+	Files           []LambdaBundleManifestFile  `json:"files"`
+}
+
+type LambdaBundleRelease struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	GitSHA  string `json:"git_sha"`
+}
+
+type LambdaBundleAsset struct {
+	Path   string `json:"path"`
+	Format string `json:"format"`
+	SHA256 string `json:"sha256"`
+}
+
+type LambdaBundleInventorySource struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+type LambdaBundleManifestFile struct {
+	Path      string `json:"path"`
+	Lambda    string `json:"lambda"`
+	SHA256    string `json:"sha256"`
+	SizeBytes int64  `json:"size_bytes"`
 }
 
 func CollectBundleFiles(repoRoot string) ([]BundleFile, error) {
@@ -111,6 +151,68 @@ func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 	return files, nil
 }
 
+func WriteLambdaBundleManifest(repoRoot string, outDir string, version string, gitSHA string, files []BundleFile) (LambdaBundleManifest, error) {
+	if version == "" {
+		return LambdaBundleManifest{}, fmt.Errorf("release version is required")
+	}
+	if gitSHA == "" {
+		return LambdaBundleManifest{}, fmt.Errorf("release git SHA is required")
+	}
+
+	bundlePath := filepath.Join(outDir, LambdaBundleArchiveName)
+	bundleSHA, err := fileSHA256(bundlePath)
+	if err != nil {
+		return LambdaBundleManifest{}, fmt.Errorf("hash lambda bundle: %w", err)
+	}
+
+	manifestFiles := make([]LambdaBundleManifestFile, 0, len(files))
+	for _, file := range files {
+		fileSHA, err := fileSHA256(file.SourcePath)
+		if err != nil {
+			return LambdaBundleManifest{}, fmt.Errorf("hash lambda artifact %s: %w", file.SourcePath, err)
+		}
+		manifestFiles = append(manifestFiles, LambdaBundleManifestFile{
+			Path:      file.Path,
+			Lambda:    file.Lambda,
+			SHA256:    fileSHA,
+			SizeBytes: file.SizeBytes,
+		})
+	}
+
+	manifest := LambdaBundleManifest{
+		Kind:          LambdaBundleManifestKind,
+		SchemaVersion: LambdaBundleManifestSchemaVersion,
+		Release: LambdaBundleRelease{
+			Name:    "lesser",
+			Version: version,
+			GitSHA:  gitSHA,
+		},
+		Bundle: LambdaBundleAsset{
+			Path:   LambdaBundleArchiveName,
+			Format: "tar.gz",
+			SHA256: bundleSHA,
+		},
+		InventorySource: LambdaBundleInventorySource{
+			Path: LambdaInventoryPath,
+			Kind: LambdaInventoryKind,
+		},
+		Files: manifestFiles,
+	}
+
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return LambdaBundleManifest{}, fmt.Errorf("marshal lambda bundle manifest: %w", err)
+	}
+	data = append(data, '\n')
+
+	manifestPath := filepath.Join(outDir, LambdaBundleManifestName)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		return LambdaBundleManifest{}, fmt.Errorf("write lambda bundle manifest: %w", err)
+	}
+
+	return manifest, nil
+}
+
 func writeBundleFile(tw *tar.Writer, file BundleFile) error {
 	content, err := os.ReadFile(file.SourcePath) // #nosec G304 -- bundle file path is derived from the canonical repo layout
 	if err != nil {
@@ -135,4 +237,14 @@ func writeBundleFile(tw *tar.Writer, file BundleFile) error {
 
 func bytesReader(content []byte) io.Reader {
 	return bytes.NewReader(content)
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller passes a validated file path under repo or release output roots
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }

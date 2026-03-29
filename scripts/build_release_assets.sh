@@ -70,7 +70,7 @@ for target in "${TARGETS[@]}"; do
     go build -trimpath -ldflags="-s -w" -o "${OUTPUT_PATH}" ./cmd/lesser
 done
 
-go run ./tools/release_assets --repo-root "${ROOT_DIR}" --out-dir "${OUT_DIR}"
+go run ./tools/release_assets --repo-root "${ROOT_DIR}" --out-dir "${OUT_DIR}" --version "${VERSION}" --git-sha "${GIT_SHA}"
 
 (
   cd "${OUT_DIR}"

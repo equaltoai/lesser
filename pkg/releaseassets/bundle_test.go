@@ -3,6 +3,8 @@ package releaseassets
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -70,6 +72,60 @@ func TestWriteLambdaBundle_IsDeterministic(t *testing.T) {
 	require.Equal(t, firstBytes, secondBytes)
 }
 
+func TestWriteLambdaBundleManifest(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	outDir := t.TempDir()
+
+	files, err := WriteLambdaBundle(repoRoot, outDir)
+	require.NoError(t, err)
+
+	manifest, err := WriteLambdaBundleManifest(repoRoot, outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	require.NoError(t, err)
+	require.Equal(t, LambdaBundleManifestKind, manifest.Kind)
+	require.Equal(t, LambdaBundleManifestSchemaVersion, manifest.SchemaVersion)
+	require.Equal(t, "lesser", manifest.Release.Name)
+	require.Equal(t, "v1.2.3", manifest.Release.Version)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", manifest.Release.GitSHA)
+	require.Equal(t, LambdaBundleArchiveName, manifest.Bundle.Path)
+	require.Equal(t, "tar.gz", manifest.Bundle.Format)
+	require.Len(t, manifest.Files, 2)
+	require.Equal(t, []LambdaBundleManifestFile{
+		{
+			Path:      "bin/api.zip",
+			Lambda:    "api",
+			SHA256:    sha256Hex([]byte("api zip")),
+			SizeBytes: 7,
+		},
+		{
+			Path:      "bin/inbox.zip",
+			Lambda:    "inbox",
+			SHA256:    sha256Hex([]byte("inbox zip")),
+			SizeBytes: 9,
+		},
+	}, manifest.Files)
+
+	data, err := os.ReadFile(filepath.Join(outDir, LambdaBundleManifestName))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"kind": "lesser.lambda_bundle_manifest"`)
+}
+
+func TestWriteLambdaBundleManifest_ErrorsWhenBundleMissing(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+
+	files, err := CollectBundleFiles(repoRoot)
+	require.NoError(t, err)
+
+	_, err = WriteLambdaBundleManifest(repoRoot, t.TempDir(), "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "hash lambda bundle")
+}
+
 func TestWriteLambdaBundle_MissingArtifactErrors(t *testing.T) {
 	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
 		"api": "api zip",
@@ -134,4 +190,9 @@ var LambdaInventory = []struct{ Name string }{
 	}
 
 	return repoRoot
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
