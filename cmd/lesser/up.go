@@ -94,11 +94,9 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
-	if strings.TrimSpace(args.ReleaseDir) != "" {
-		args.ReleaseDir, err = normalizeReleaseDir(args.ReleaseDir)
-		if err != nil {
-			return nil, err
-		}
+	args.ReleaseDir, err = resolveUpReleaseDir(args.ReleaseDir)
+	if err != nil {
+		return nil, err
 	}
 
 	awsCfg, awsProfile, err := loadAWSConfigForCLIFn(ctx, args.AWSProfile)
@@ -499,6 +497,10 @@ func normalizeReleaseDir(input string) (string, error) {
 	}
 
 	return absReleaseDir, nil
+}
+
+func resolveUpReleaseDir(input string) (string, error) {
+	return normalizeReleaseDir(input)
 }
 
 func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput) {
