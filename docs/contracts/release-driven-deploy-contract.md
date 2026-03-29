@@ -57,3 +57,25 @@ The current path mixes deterministic build work with truly deploy-time work. Mil
 - Still inherently deploy-time:
   CDK bootstrap, CloudFormation deploys, hosted-zone resolution, auth UI upload, bootstrap/admin state writes, and
   local receipt generation
+
+## M0.2 Deploy Artifact Taxonomy
+
+Milestone-0 freezes four artifact categories. These names are part of the contract.
+
+| Category ID | Canonical assets | Purpose | Primary consumers | Status |
+| --- | --- | --- | --- | --- |
+| `operator_cli` | `lesser-<os>-<arch>` | Human- or runner-invoked CLI executable | Operators, CI, `lesser-host` runner | Already published |
+| `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, future artifact mode in `lesser up` | Already published |
+| `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | First-phase immutable deploy asset containing the canonical `bin/*.zip` set plus its manifest | Future artifact mode in `lesser up`, managed runners | Reserved in M0, published in M1 |
+| `deploy_assembly` | Reserved future category | Later deploy package that may include more than prebuilt Lambdas | Future thin deploy executor / managed runners | Explicitly out of scope for the first phase |
+
+### Taxonomy rules
+
+- Operator CLI binaries are not deploy assets. They execute deploy workflows but are not themselves the payload being
+  deployed.
+- First-phase immutable deploy work targets only the `lambda_bundle` category.
+- `deploy_assembly` is a separate future category and must not be backfilled into the first-phase Lambda bundle.
+- Deploy receipts, bootstrap key material, provisioning input JSON, and other instance-local files are runtime inputs
+  or outputs, not release artifacts.
+- CDK source, auth UI source, and repo-local helper scripts remain source inputs until a later milestone explicitly
+  publishes them as release artifacts.

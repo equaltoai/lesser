@@ -1,14 +1,20 @@
-# API Contracts (File-Only)
+# Published Contracts (File-Only)
 
-<!-- AI Training: How Lesser publishes contracts for client teams -->
+<!-- AI Training: How Lesser publishes contracts for client teams and deploy consumers -->
 
-This directory contains **generated, file-only API contracts** that client teams consume at build time.
+This directory contains **published, file-only contracts** that external consumers can review, diff, and automate
+against.
 
-These files are:
+These files are either:
+
+- generated API contracts that client teams consume at build time, or
+- authored deploy contracts that release and managed-deploy tooling consume.
+
+Published contracts are:
 
 - not served from deployed instances (they live in-repo),
 - generated from code/schema sources of truth, and
-- verified in `./lesser verify` to prevent drift.
+- reviewed and versioned in the repo so later milestones do not silently change their meaning.
 
 ## Why contracts live here (not “in the server”)
 
@@ -18,6 +24,11 @@ running environment.
 ✅ CORRECT: treat `docs/contracts/*` as the published “client contract”.
 
 ❌ INCORRECT: copy/paste ad-hoc response examples from production logs into client code.
+
+## Deploy And Release Contracts
+
+- Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
+- Future Lambda bundle schema/example files live alongside that contract.
 
 ## REST (OpenAPI)
 
