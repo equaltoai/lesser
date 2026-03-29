@@ -273,8 +273,15 @@ func (e *upEnv) run(ctx context.Context) error {
 }
 
 func (e *upEnv) prepareLambdaArtifacts() error {
+	if e.args.RebuildLambdas {
+		if strings.TrimSpace(e.args.ReleaseDir) != "" {
+			fmt.Println("Rebuilding Lambda artifacts from source because --rebuild-lambdas overrides --release-dir.")
+		}
+		return buildLambdaZipsFn(e.repoRoot, true)
+	}
+
 	if strings.TrimSpace(e.args.ReleaseDir) == "" {
-		return buildLambdaZipsFn(e.repoRoot, e.args.RebuildLambdas)
+		return buildLambdaZipsFn(e.repoRoot, false)
 	}
 
 	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir)

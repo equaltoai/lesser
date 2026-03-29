@@ -561,6 +561,38 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	require.NoError(t, env.run(context.Background()))
 }
 
+func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
+	previousBuildZips := buildLambdaZipsFn
+	previousInstallRelease := installReleaseLambdaAssetsFn
+	t.Cleanup(func() {
+		buildLambdaZipsFn = previousBuildZips
+		installReleaseLambdaAssetsFn = previousInstallRelease
+	})
+
+	env := &upEnv{
+		args: upArgs{
+			ReleaseDir:     "/tmp/release",
+			RebuildLambdas: true,
+		},
+		repoRoot: t.TempDir(),
+	}
+
+	buildCalled := false
+	buildLambdaZipsFn = func(repoRoot string, force bool) error {
+		buildCalled = true
+		require.Equal(t, env.repoRoot, repoRoot)
+		require.True(t, force)
+		return nil
+	}
+	installReleaseLambdaAssetsFn = func(string, string) (releaseLambdaInstallResult, error) {
+		t.Fatal("release asset installer should not run when --rebuild-lambdas is set")
+		return releaseLambdaInstallResult{}, nil
+	}
+
+	require.NoError(t, env.prepareLambdaArtifacts())
+	require.True(t, buildCalled)
+}
+
 func TestUpEnv_HandleBootstrapOutput_WritesWhenConfigured(t *testing.T) {
 	previous := writeBootstrapKeyMaterialFn
 	t.Cleanup(func() { writeBootstrapKeyMaterialFn = previous })
