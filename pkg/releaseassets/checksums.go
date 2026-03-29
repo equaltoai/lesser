@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// ChecksumsFileName is the published checksum manifest for release assets.
 const ChecksumsFileName = "checksums.txt"
 
 var publishedReleaseAssets = []string{
@@ -19,6 +20,7 @@ var publishedReleaseAssets = []string{
 	ReleaseManifestName,
 }
 
+// WriteChecksums writes checksums.txt for the full published release asset set.
 func WriteChecksums(outDir string) error {
 	lines := make([]string, 0, len(publishedReleaseAssets))
 	for _, assetName := range publishedReleaseAssets {

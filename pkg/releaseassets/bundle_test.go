@@ -82,7 +82,7 @@ func TestWriteLambdaBundleManifest(t *testing.T) {
 	files, err := WriteLambdaBundle(repoRoot, outDir)
 	require.NoError(t, err)
 
-	manifest, err := WriteLambdaBundleManifest(repoRoot, outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	manifest, err := WriteLambdaBundleManifest(outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
 	require.NoError(t, err)
 	require.Equal(t, LambdaBundleManifestKind, manifest.Kind)
 	require.Equal(t, LambdaBundleManifestSchemaVersion, manifest.SchemaVersion)
@@ -121,7 +121,7 @@ func TestWriteLambdaBundleManifest_ErrorsWhenBundleMissing(t *testing.T) {
 	files, err := CollectBundleFiles(repoRoot)
 	require.NoError(t, err)
 
-	_, err = WriteLambdaBundleManifest(repoRoot, t.TempDir(), "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	_, err = WriteLambdaBundleManifest(t.TempDir(), "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "hash lambda bundle")
 }

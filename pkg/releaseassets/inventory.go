@@ -9,10 +9,14 @@ import (
 	"strings"
 )
 
+// LambdaInventoryPath is the canonical lambda inventory source used to define
+// the published bundle contents.
 const LambdaInventoryPath = "infra/cdk/inventory/lambdas.go"
 
 var lambdaInventoryNamePattern = regexp.MustCompile(`\bName:\s*"([^"]+)"`)
 
+// CanonicalLambdaNames returns the sorted canonical Lambda names declared in
+// the CDK inventory.
 func CanonicalLambdaNames(repoRoot string) ([]string, error) {
 	path := filepath.Join(repoRoot, LambdaInventoryPath)
 	data, err := os.ReadFile(path) // #nosec G304 -- file path is derived from repo root

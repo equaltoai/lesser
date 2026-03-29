@@ -1,3 +1,5 @@
+// Command release_assets builds the immutable release asset set published for
+// Lesser releases.
 package main
 
 import (
@@ -46,7 +48,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if _, err := releaseassets.WriteLambdaBundleManifest(absRepoRoot, outDir, version, gitSHA, files); err != nil {
+	if _, err := releaseassets.WriteLambdaBundleManifest(outDir, version, gitSHA, files); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

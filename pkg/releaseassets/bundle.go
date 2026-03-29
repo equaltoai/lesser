@@ -1,3 +1,5 @@
+// Package releaseassets builds the immutable release artifacts published for
+// Lesser deployments.
 package releaseassets
 
 import (
@@ -16,10 +18,22 @@ import (
 	"time"
 )
 
+// LambdaBundleArchiveName is the published tarball that contains the Lambda
+// zip artifacts for a release.
 const LambdaBundleArchiveName = "lesser-lambda-bundle.tar.gz"
+
+// LambdaBundleManifestName is the published manifest that describes the Lambda
+// bundle contents.
 const LambdaBundleManifestName = "lesser-lambda-bundle.json"
+
+// LambdaBundleManifestKind identifies Lesser Lambda bundle manifest documents.
 const LambdaBundleManifestKind = "lesser.lambda_bundle_manifest"
+
+// LambdaBundleManifestSchemaVersion is the current schema version for Lambda
+// bundle manifests.
 const LambdaBundleManifestSchemaVersion = 1
+
+// LambdaInventoryKind identifies the lambda inventory source document kind.
 const LambdaInventoryKind = "lesser.lambda_inventory"
 
 var deterministicArchiveTime = time.Unix(0, 0).UTC()
@@ -27,6 +41,7 @@ var allowedExtraZipArtifacts = map[string]struct{}{
 	"cloudfront-keygen": {},
 }
 
+// BundleFile describes one Lambda zip file included in the release bundle.
 type BundleFile struct {
 	Lambda     string
 	SourcePath string
@@ -34,6 +49,8 @@ type BundleFile struct {
 	SizeBytes  int64
 }
 
+// LambdaBundleManifest describes the published Lambda bundle asset and its
+// contents.
 type LambdaBundleManifest struct {
 	Kind            string                      `json:"kind"`
 	SchemaVersion   int                         `json:"schema_version"`
@@ -43,23 +60,28 @@ type LambdaBundleManifest struct {
 	Files           []LambdaBundleManifestFile  `json:"files"`
 }
 
+// LambdaBundleRelease identifies the release that produced a Lambda bundle.
 type LambdaBundleRelease struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	GitSHA  string `json:"git_sha"`
 }
 
+// LambdaBundleAsset describes the published Lambda bundle archive.
 type LambdaBundleAsset struct {
 	Path   string `json:"path"`
 	Format string `json:"format"`
 	SHA256 string `json:"sha256"`
 }
 
+// LambdaBundleInventorySource identifies the canonical inventory that defined
+// the expected Lambda set.
 type LambdaBundleInventorySource struct {
 	Path string `json:"path"`
 	Kind string `json:"kind"`
 }
 
+// LambdaBundleManifestFile records metadata for one Lambda zip in the bundle.
 type LambdaBundleManifestFile struct {
 	Path      string `json:"path"`
 	Lambda    string `json:"lambda"`
@@ -67,6 +89,8 @@ type LambdaBundleManifestFile struct {
 	SizeBytes int64  `json:"size_bytes"`
 }
 
+// CollectBundleFiles resolves the canonical Lambda zip files that must be
+// included in the published release bundle.
 func CollectBundleFiles(repoRoot string) ([]BundleFile, error) {
 	lambdaNames, err := CanonicalLambdaNames(repoRoot)
 	if err != nil {
@@ -103,6 +127,8 @@ func CollectBundleFiles(repoRoot string) ([]BundleFile, error) {
 	return files, nil
 }
 
+// WriteLambdaBundle writes the deterministic Lambda bundle archive into outDir
+// and returns the files that were included.
 func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 	files, err := CollectBundleFiles(repoRoot)
 	if err != nil {
@@ -127,8 +153,8 @@ func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("create gzip writer: %w", err)
 	}
-	gz.Header.ModTime = deterministicArchiveTime
-	gz.Header.OS = 255
+	gz.ModTime = deterministicArchiveTime
+	gz.OS = 255
 
 	tw := tar.NewWriter(gz)
 	for _, file := range files {
@@ -159,7 +185,9 @@ func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 	return files, nil
 }
 
-func WriteLambdaBundleManifest(repoRoot string, outDir string, version string, gitSHA string, files []BundleFile) (LambdaBundleManifest, error) {
+// WriteLambdaBundleManifest writes the published metadata document that
+// describes the Lambda bundle archive and each bundled Lambda zip.
+func WriteLambdaBundleManifest(outDir string, version string, gitSHA string, files []BundleFile) (LambdaBundleManifest, error) {
 	if version == "" {
 		return LambdaBundleManifest{}, fmt.Errorf("release version is required")
 	}

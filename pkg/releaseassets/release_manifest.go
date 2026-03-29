@@ -7,9 +7,14 @@ import (
 	"path/filepath"
 )
 
+// ReleaseManifestName is the published top-level release manifest filename.
 const ReleaseManifestName = "lesser-release.json"
+
+// ReleaseDeployArtifactsSchemaVersion is the current schema version for the
+// deploy artifact section in the top-level release manifest.
 const ReleaseDeployArtifactsSchemaVersion = 1
 
+// ReleaseManifest describes the full published release metadata.
 type ReleaseManifest struct {
 	Schema    int              `json:"schema"`
 	Name      string           `json:"name"`
@@ -20,20 +25,24 @@ type ReleaseManifest struct {
 	Artifacts ReleaseArtifacts `json:"artifacts"`
 }
 
+// ReleaseCDK records CDK compatibility metadata for the release.
 type ReleaseCDK struct {
 	Major int `json:"major"`
 }
 
+// ReleaseArtifacts groups the published release assets metadata.
 type ReleaseArtifacts struct {
 	ReceiptSchemaVersion int                    `json:"receipt_schema_version"`
 	DeployArtifacts      ReleaseDeployArtifacts `json:"deploy_artifacts"`
 }
 
+// ReleaseDeployArtifacts describes artifacts consumed during deployment.
 type ReleaseDeployArtifacts struct {
 	SchemaVersion int                    `json:"schema_version"`
 	LambdaBundle  ReleaseLambdaBundleRef `json:"lambda_bundle"`
 }
 
+// ReleaseLambdaBundleRef points at the published Lambda bundle assets.
 type ReleaseLambdaBundleRef struct {
 	Path                  string `json:"path"`
 	ManifestPath          string `json:"manifest_path"`
@@ -41,6 +50,8 @@ type ReleaseLambdaBundleRef struct {
 	ManifestSchemaVersion int    `json:"manifest_schema_version"`
 }
 
+// ReleaseManifestInput supplies the values required to write the release
+// manifest.
 type ReleaseManifestInput struct {
 	Version              string
 	GitSHA               string
@@ -49,6 +60,7 @@ type ReleaseManifestInput struct {
 	ReceiptSchemaVersion int
 }
 
+// WriteReleaseManifest writes the top-level release manifest into outDir.
 func WriteReleaseManifest(outDir string, input ReleaseManifestInput) (ReleaseManifest, error) {
 	manifest := ReleaseManifest{
 		Schema:    1,
