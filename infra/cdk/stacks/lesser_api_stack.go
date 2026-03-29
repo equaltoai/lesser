@@ -326,6 +326,7 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		Certificate: s.CDNCertificate,
 		PriceClass:  awscloudfront.PriceClass_PRICE_CLASS_100,
 	})
+	grantCloudFrontFunctionURLInvokePermission(clientSSRFn, dist)
 
 	authOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(authAssetsBucket, nil)
 	clientAssetOrigin := awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(clientAssetsBucket, nil)
@@ -419,6 +420,21 @@ func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
 	}
 
 	return jsii.String(domain)
+}
+
+func grantCloudFrontFunctionURLInvokePermission(fn awslambda.Function, dist awscloudfront.Distribution) {
+	if fn == nil || dist == nil {
+		return
+	}
+
+	// CloudFront OAC for an AWS_IAM Lambda Function URL needs lambda:InvokeFunction in addition to
+	// the lambda:InvokeFunctionUrl permission synthesized by the FunctionUrl origin helper.
+	fn.AddPermission(jsii.String("AllowCloudFrontInvokeViaFunctionUrl"), &awslambda.Permission{
+		Action:                jsii.String("lambda:InvokeFunction"),
+		Principal:             awsiam.NewServicePrincipal(jsii.String("cloudfront.amazonaws.com"), nil),
+		SourceArn:             dist.DistributionArn(),
+		InvokedViaFunctionUrl: jsii.Bool(true),
+	})
 }
 
 func clientSSRHostAssetPath() string {
