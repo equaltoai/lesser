@@ -17,6 +17,10 @@ var deploySourceRequirements = []deploySourceRequirement{
 		Description:  "CDK application source",
 	},
 	{
+		RelativePath: filepath.Join("infra", "cdk", "inventory", "lambdas.go"),
+		Description:  "canonical lambda inventory source",
+	},
+	{
 		RelativePath: filepath.Join("auth-ui", "package.json"),
 		Description:  "auth-ui source",
 	},

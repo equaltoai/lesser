@@ -41,6 +41,25 @@ func TestInstallReleaseLambdaAssets(t *testing.T) {
 	require.Equal(t, "inbox zip", string(inboxBytes))
 }
 
+func TestInstallReleaseLambdaAssets_DoesNotStageUnderRepoRootTmp(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+	require.NoError(t, os.WriteFile(filepath.Join(targetRepo, "tmp"), []byte("blocked"), 0o644))
+
+	assetRoot := filepath.Join(t.TempDir(), "deploy", "lambda-assets")
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		filepath.Join(assetRoot, "bin", "api.zip"),
+		filepath.Join(assetRoot, "bin", "inbox.zip"),
+	}, result.Files)
+	require.NoDirExists(t, filepath.Join(targetRepo, "tmp", "release-lambda-assets"))
+}
+
 func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",

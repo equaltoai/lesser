@@ -70,7 +70,7 @@ func installReleaseLambdaAssets(repoRoot string, releaseDir string, assetRoot st
 		return releaseLambdaInstallResult{}, err
 	}
 
-	stagingDir, err := ensureReleaseStagingDir(repoRoot)
+	stagingDir, err := ensureReleaseStagingDir(assetRoot)
 	if err != nil {
 		return releaseLambdaInstallResult{}, err
 	}
@@ -293,13 +293,13 @@ func validateBundleAgainstInventory(repoRoot string, bundle releaseassets.Lambda
 	return nil
 }
 
-func ensureReleaseStagingDir(repoRoot string) (string, error) {
-	tmpRoot := filepath.Join(repoRoot, "tmp")
-	if err := os.MkdirAll(tmpRoot, 0o750); err != nil {
-		return "", fmt.Errorf("create temp dir root: %w", err)
+func ensureReleaseStagingDir(assetRoot string) (string, error) {
+	workspaceRoot := filepath.Dir(assetRoot)
+	if err := os.MkdirAll(workspaceRoot, 0o750); err != nil {
+		return "", fmt.Errorf("create release workspace root: %w", err)
 	}
 
-	stagingDir, err := os.MkdirTemp(tmpRoot, "release-lambda-assets.")
+	stagingDir, err := os.MkdirTemp(workspaceRoot, "release-lambda-assets.")
 	if err != nil {
 		return "", fmt.Errorf("create release staging dir: %w", err)
 	}

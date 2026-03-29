@@ -1128,9 +1128,10 @@ func testUpRepoRoot(t *testing.T) string {
 	t.Helper()
 
 	repoRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk", "inventory"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{\n  \"app\": \"go run main.go\"\n}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "inventory", "lambdas.go"), []byte("package inventory\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "package.json"), []byte("{\n  \"name\": \"auth-ui\"\n}\n"), 0o644))
 	return repoRoot
 }

@@ -10,17 +10,19 @@ import (
 
 func TestValidateDeploySourceInputs(t *testing.T) {
 	repoRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk", "inventory"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "inventory", "lambdas.go"), []byte("package inventory\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "package.json"), []byte("{}\n"), 0o644))
 
 	require.NoError(t, validateDeploySourceInputs(repoRoot))
 
 	t.Run("missing requirement", func(t *testing.T) {
 		missingRoot := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(missingRoot, "infra", "cdk"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(missingRoot, "infra", "cdk", "inventory"), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(missingRoot, "infra", "cdk", "cdk.json"), []byte("{}\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(missingRoot, "infra", "cdk", "inventory", "lambdas.go"), []byte("package inventory\n"), 0o644))
 
 		err := validateDeploySourceInputs(missingRoot)
 		require.Error(t, err)
@@ -28,10 +30,25 @@ func TestValidateDeploySourceInputs(t *testing.T) {
 		require.Contains(t, err.Error(), filepath.Join(missingRoot, "auth-ui", "package.json"))
 	})
 
+	t.Run("missing inventory", func(t *testing.T) {
+		missingRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(missingRoot, "infra", "cdk"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(missingRoot, "auth-ui"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(missingRoot, "infra", "cdk", "cdk.json"), []byte("{}\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(missingRoot, "auth-ui", "package.json"), []byte("{}\n"), 0o644))
+
+		err := validateDeploySourceInputs(missingRoot)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "deploy requires repo-local canonical lambda inventory source")
+		require.Contains(t, err.Error(), filepath.Join(missingRoot, "infra", "cdk", "inventory", "lambdas.go"))
+	})
+
 	t.Run("directory instead of file", func(t *testing.T) {
 		directoryRoot := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(directoryRoot, "infra", "cdk", "cdk.json"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(directoryRoot, "infra", "cdk", "inventory"), 0o755))
 		require.NoError(t, os.MkdirAll(filepath.Join(directoryRoot, "auth-ui"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(directoryRoot, "infra", "cdk", "inventory", "lambdas.go"), []byte("package inventory\n"), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(directoryRoot, "auth-ui", "package.json"), []byte("{}\n"), 0o644))
 
 		err := validateDeploySourceInputs(directoryRoot)

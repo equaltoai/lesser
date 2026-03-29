@@ -209,9 +209,10 @@ Artifact-driven Lambda deployment is now supported, but `lesser up` still requir
 repo-local source inputs present:
 
 - `infra/cdk/cdk.json` and the surrounding `infra/cdk/` app, because CDK synthesis and deploy still run from source
+- `infra/cdk/inventory/lambdas.go`, because artifact mode validates the release bundle against the checkout's canonical Lambda inventory
 - `auth-ui/package.json` and the surrounding `auth-ui/` app, because auth UI upload is still built at deploy time
 
-The CLI now validates those two source inputs up front so artifact mode fails with an explicit missing-source error
+The CLI now validates those repo-local source inputs up front so artifact mode fails with an explicit missing-source error
 instead of drifting into later `cdk` or `pnpm` failures.
 
 ## M3 Managed-Runner Consumption Path
@@ -223,7 +224,11 @@ Managed runners should treat artifact-driven deploy execution as a two-input mod
 
 The minimal managed-runner input contract is:
 
-- a Lesser checkout with `infra/cdk/cdk.json` and `auth-ui/package.json`
+- a Lesser checkout with:
+  - `infra/cdk/cdk.json`
+  - `infra/cdk/inventory/lambdas.go`
+  - `auth-ui/package.json`
+- a checkout version whose canonical Lambda inventory matches the selected release bundle
 - a `lesser` CLI binary from that checkout
 - a release directory containing:
   - `checksums.txt`
@@ -234,6 +239,7 @@ The minimal managed-runner input contract is:
 
 When artifact mode runs successfully, the local Lesser state dir becomes the canonical execution workspace:
 
+- transient release extraction workspace: `~/.lesser/<app>/<base-domain>/deploy/release-lambda-assets.*`
 - staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 - staged Lambda provenance metadata: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
 - per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
@@ -243,4 +249,5 @@ This keeps the managed-runner contract explicit:
 
 - release assets are external deploy inputs, not mutable repo byproducts
 - repo-local CDK/auth-ui source still remains an execution prerequisite
+- the checkout must stay version-aligned with the release bundle because bundle validation uses the checkout's canonical Lambda inventory
 - receipt/output behavior stays in the same Lesser-owned state dir the operator path already uses
