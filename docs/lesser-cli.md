@@ -44,7 +44,8 @@ Common commands:
 Current behavior:
 
 - `lesser up` is still source-based and builds Lambda artifacts locally.
-- The future artifact-driven input surface is reserved as `--release-dir`; that contract is documented in
+- Releases now publish immutable Lambda deploy assets for release-driven and managed consumers.
+- The artifact-driven input surface is still reserved as `--release-dir`; that contract is documented in
   `docs/contracts/release-driven-deploy-contract.md`.
 - `--rebuild-lambdas` remains the explicit source-build override path once artifact mode exists.
 

@@ -41,8 +41,8 @@ Stage stacks reference zip artifacts in `bin/*.zip`.
 
 - `lesser up` builds these automatically.
 - If you run `cdk` directly, ensure `bin/*.zip` exists first (for example: `./lesser build lambdas`).
-- The release-driven deploy contract freezes a future Lambda bundle that must extract back into this exact `bin/*.zip`
-  layout; CDK still consumes the extracted files, not the release archive directly.
+- Releases now publish a Lambda bundle that must extract back into this exact `bin/*.zip` layout; CDK still consumes
+  the extracted files, not the release archive directly.
 
 ## CDK Commands (Infra Contributors)
 
