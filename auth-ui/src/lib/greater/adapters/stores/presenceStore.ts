@@ -9,6 +9,10 @@ import type {
 	UserPresence,
 	SessionInfo,
 	PresenceConfig,
+	PresenceActivitySource,
+	PresenceLocationSource,
+	BrowserPresenceActivitySourceOptions,
+	BrowserPresenceLocationSourceOptions,
 } from './types';
 import { mapLesserAccount } from '../mappers/lesser/mappers.js';
 import type { LesserAccountFragment } from '../mappers/lesser/types.js';
@@ -334,10 +338,7 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 			isOnline: true,
 			lastSeen: Date.now(),
 			status: 'active',
-			location:
-				config.enableLocationTracking && typeof window !== 'undefined'
-					? { page: window.location.pathname }
-					: undefined,
+			location: config.initialLocation,
 			connection: {
 				sessionId: generateSessionId(),
 				transportType: 'unknown',
@@ -362,9 +363,7 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 
 	// Connection health monitoring
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-	let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
 	let updateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	let lastActivity = Date.now();
 
 	// Transport event handlers
 	let streamingUnsubscribers: (() => void)[] = [];
@@ -714,20 +713,18 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 		}
 	}
 
-	function startInactivityMonitoring(): void {
+	function attachActivitySource(source: PresenceActivitySource): () => void {
 		const threshold = config.inactivityThreshold || 300000; // 5 minutes
+		let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
 
 		function resetInactivityTimer(): void {
-			const now = Date.now();
-			lastActivity = now;
-
 			if (inactivityTimer) {
 				clearTimeout(inactivityTimer);
 			}
 
 			// Update last activity in presence
 			if (state.value.currentUser) {
-				updatePresence({ lastSeen: lastActivity });
+				updatePresence({ lastSeen: Date.now() });
 			}
 
 			// Set user to active if currently idle
@@ -742,51 +739,42 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 			}, threshold);
 		}
 
-		// Listen for user activity
-		if (typeof window !== 'undefined') {
-			const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-
-			const handleActivity = () => resetInactivityTimer();
-
-			activityEvents.forEach((event) => {
-				window.addEventListener(event, handleActivity, { passive: true });
-			});
-
-			// Store cleanup function
-			const cleanup = () => {
-				activityEvents.forEach((event) => {
-					window.removeEventListener(event, handleActivity);
-				});
-			};
-
-			streamingUnsubscribers.push(cleanup);
-		}
+		const unsubscribe = source.subscribe(() => resetInactivityTimer());
 
 		// Initialize timer
 		resetInactivityTimer();
-	}
 
-	function trackLocationChanges(): void {
-		if (!config.enableLocationTracking || typeof window === 'undefined') return;
-
-		// Listen for navigation changes
-		const handleLocationChange = () => {
-			if (state.value.currentUser) {
-				updateLocation({
-					page: window.location.pathname,
-					section: window.location.hash ? window.location.hash.slice(1) : undefined,
-				});
+		return () => {
+			unsubscribe();
+			if (inactivityTimer) {
+				clearTimeout(inactivityTimer);
+				inactivityTimer = null;
 			}
 		};
+	}
 
-		window.addEventListener('popstate', handleLocationChange);
-		window.addEventListener('hashchange', handleLocationChange);
+	function attachLocationSource(source: PresenceLocationSource): () => void {
+		updateLocation(source.getLocation());
 
-		// Store cleanup function
-		streamingUnsubscribers.push(() => {
-			window.removeEventListener('popstate', handleLocationChange);
-			window.removeEventListener('hashchange', handleLocationChange);
+		if (!source.subscribe) {
+			return () => {};
+		}
+
+		return source.subscribe((location) => {
+			updateLocation(location);
 		});
+	}
+
+	function getLocationSourceForMonitoring(): PresenceLocationSource | null {
+		if (config.locationSource) {
+			return config.locationSource;
+		}
+
+		if (config.enableLocationTracking) {
+			return createBrowserPresenceLocationSource();
+		}
+
+		return null;
 	}
 
 	// Store methods
@@ -955,8 +943,16 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 
 		// Start monitoring systems
 		startHeartbeat();
-		startInactivityMonitoring();
-		trackLocationChanges();
+
+		if (config.activitySource) {
+			streamingUnsubscribers.push(attachActivitySource(config.activitySource));
+		}
+
+		const locationSource = getLocationSourceForMonitoring();
+
+		if (locationSource) {
+			streamingUnsubscribers.push(attachLocationSource(locationSource));
+		}
 
 		// Start the transport connection
 		try {
@@ -981,11 +977,6 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 		// Stop monitoring systems
 		stopHeartbeat();
 
-		if (inactivityTimer) {
-			clearTimeout(inactivityTimer);
-			inactivityTimer = null;
-		}
-
 		if (updateDebounceTimer) {
 			clearTimeout(updateDebounceTimer);
 			updateDebounceTimer = null;
@@ -997,6 +988,12 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 
 		// Clear pending updates
 		pendingPresenceUpdates.clear();
+
+		try {
+			config.transportManager.disconnect();
+		} catch (error) {
+			console.warn('[PresenceStore] Failed to disconnect transport manager', error);
+		}
 	}
 
 	function subscribe(callback: (value: PresenceState) => void): () => void {
@@ -1061,5 +1058,84 @@ export function createPresenceStore(config: PresenceConfig): PresenceStore {
 		getActiveSessions,
 		startMonitoring,
 		stopMonitoring,
+	};
+}
+
+const DEFAULT_BROWSER_ACTIVITY_EVENTS = [
+	'mousedown',
+	'mousemove',
+	'keypress',
+	'scroll',
+	'touchstart',
+];
+
+export function createBrowserPresenceActivitySource(
+	options: BrowserPresenceActivitySourceOptions = {}
+): PresenceActivitySource {
+	const target = options.target ?? (typeof window !== 'undefined' ? window : null);
+	const events = options.events ?? DEFAULT_BROWSER_ACTIVITY_EVENTS;
+	const listenerOptions = options.listenerOptions ?? { passive: true };
+
+	return {
+		subscribe(onActivity) {
+			if (!target) {
+				return () => {};
+			}
+
+			events.forEach((eventName) => {
+				target.addEventListener(eventName, onActivity, listenerOptions);
+			});
+
+			return () => {
+				events.forEach((eventName) => {
+					target.removeEventListener(eventName, onActivity, listenerOptions);
+				});
+			};
+		},
+	};
+}
+
+export function createBrowserPresenceLocationSource(
+	options: BrowserPresenceLocationSourceOptions = {}
+): PresenceLocationSource {
+	const target = options.target ?? (typeof window !== 'undefined' ? window : null);
+
+	const getLocation = (): UserPresence['location'] => {
+		if (!target) {
+			return undefined;
+		}
+
+		const page = target.location.pathname || undefined;
+		const section = target.location.hash ? target.location.hash.slice(1) : undefined;
+
+		if (!page && !section) {
+			return undefined;
+		}
+
+		return {
+			page,
+			section,
+		};
+	};
+
+	return {
+		getLocation,
+		subscribe(onLocationChange) {
+			if (!target) {
+				return () => {};
+			}
+
+			const handleLocationChange = () => {
+				onLocationChange(getLocation());
+			};
+
+			target.addEventListener('popstate', handleLocationChange);
+			target.addEventListener('hashchange', handleLocationChange);
+
+			return () => {
+				target.removeEventListener('popstate', handleLocationChange);
+				target.removeEventListener('hashchange', handleLocationChange);
+			};
+		},
 	};
 }

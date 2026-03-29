@@ -696,6 +696,8 @@ export type Agent = {
   readonly delegatedScopes: ReadonlyArray<Scalars['String']['output']>;
   readonly displayName: Scalars['String']['output'];
   readonly id: Scalars['ID']['output'];
+  readonly identitySemantics: AgentIdentitySemantics;
+  readonly mcpAccess: AgentMcpAccess;
   /** @deprecated Use ownerActor / agentOwner */
   readonly owner?: Maybe<Actor>;
   readonly ownerActor?: Maybe<Actor>;
@@ -706,6 +708,7 @@ export type Agent = {
   readonly verifiedAt?: Maybe<Scalars['Time']['output']>;
   /** @deprecated Use agentVersion */
   readonly version: Scalars['String']['output'];
+  readonly workflow?: Maybe<AgentWorkflowSurface>;
 };
 
 export type AgentAccessLease = {
@@ -842,15 +845,69 @@ export type AgentEdge = {
   readonly node: Agent;
 };
 
+export type AgentIdentityCard = {
+  readonly __typename: 'AgentIdentityCard';
+  readonly currentPhase: Scalars['String']['output'];
+  readonly currentState?: Maybe<Scalars['String']['output']>;
+  readonly handle?: Maybe<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly metrics?: Maybe<ReadonlyArray<AgentSurfaceMetric>>;
+  readonly name: Scalars['String']['output'];
+  readonly steward?: Maybe<AgentSurfaceActor>;
+  readonly summary: Scalars['String']['output'];
+  readonly tags?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+};
+
+export type AgentIdentitySemantics = {
+  readonly __typename: 'AgentIdentitySemantics';
+  readonly attributionLabel: Scalars['String']['output'];
+  readonly bodyIdentityPreserved: Scalars['Boolean']['output'];
+  readonly continuityState: Scalars['String']['output'];
+  readonly continuitySummary: Scalars['String']['output'];
+  readonly identityLabel: Scalars['String']['output'];
+  readonly identityState: Scalars['String']['output'];
+  readonly lifecycleState: Scalars['String']['output'];
+  readonly memoryReferencesPreserved: Scalars['Boolean']['output'];
+  readonly moderationLabel: Scalars['String']['output'];
+  readonly soulAgentId?: Maybe<Scalars['String']['output']>;
+  readonly soulBindingState: SoulBindingState;
+  readonly timelinePresencePreserved: Scalars['Boolean']['output'];
+};
+
+export type AgentLifecycleStep = {
+  readonly __typename: 'AgentLifecycleStep';
+  readonly phase: Scalars['String']['output'];
+  readonly state?: Maybe<Scalars['String']['output']>;
+  readonly status: Scalars['String']['output'];
+  readonly summary?: Maybe<Scalars['String']['output']>;
+  readonly title?: Maybe<Scalars['String']['output']>;
+};
+
+export type AgentMcpAccess = {
+  readonly __typename: 'AgentMCPAccess';
+  readonly authorizationServerURL: Scalars['String']['output'];
+  readonly guidance: ReadonlyArray<Scalars['String']['output']>;
+  readonly mcpURL: Scalars['String']['output'];
+  readonly protectedResourceURL: Scalars['String']['output'];
+  readonly registrationURL: Scalars['String']['output'];
+  readonly scopes: ReadonlyArray<Scalars['String']['output']>;
+};
+
 export type AgentPostAttribution = {
   readonly __typename: 'AgentPostAttribution';
   readonly constraints?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly continuityState?: Maybe<Scalars['String']['output']>;
+  readonly continuitySummary?: Maybe<Scalars['String']['output']>;
   readonly delegatedBy?: Maybe<Scalars['String']['output']>;
   readonly delegatedByDid?: Maybe<Scalars['String']['output']>;
+  readonly identityLabel?: Maybe<Scalars['String']['output']>;
+  readonly identityState?: Maybe<Scalars['String']['output']>;
   readonly memoryCitations?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
   readonly modelId?: Maybe<Scalars['String']['output']>;
+  readonly moderationLabel?: Maybe<Scalars['String']['output']>;
   readonly schemaVersion?: Maybe<Scalars['String']['output']>;
   readonly scopes?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly soulAgentId?: Maybe<Scalars['String']['output']>;
   readonly triggerDetails?: Maybe<Scalars['String']['output']>;
   readonly triggerType?: Maybe<Scalars['String']['output']>;
 };
@@ -867,6 +924,70 @@ export type AgentPostAttributionInput = {
   readonly triggerType?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type AgentRuntimeSession = {
+  readonly __typename: 'AgentRuntimeSession';
+  readonly absoluteExpiresAt: Scalars['Time']['output'];
+  readonly authDiagnostic: AgentRuntimeSessionAuthDiagnostic;
+  readonly clientID: Scalars['String']['output'];
+  readonly createdAt: Scalars['Time']['output'];
+  readonly deviceLabel: Scalars['String']['output'];
+  readonly idleExpiresAt: Scalars['Time']['output'];
+  readonly lastUsedAt: Scalars['Time']['output'];
+  readonly revoked: Scalars['Boolean']['output'];
+  readonly revokedAt?: Maybe<Scalars['Time']['output']>;
+  readonly revokedReason?: Maybe<Scalars['String']['output']>;
+  readonly scope: Scalars['String']['output'];
+  readonly sessionID: Scalars['ID']['output'];
+};
+
+export type AgentRuntimeSessionAuthDiagnostic = {
+  readonly __typename: 'AgentRuntimeSessionAuthDiagnostic';
+  readonly failureAt?: Maybe<Scalars['Time']['output']>;
+  readonly failureCode?: Maybe<Scalars['String']['output']>;
+  readonly failureMessage?: Maybe<Scalars['String']['output']>;
+  readonly lastSuccessAt?: Maybe<Scalars['Time']['output']>;
+  readonly status: AgentRuntimeSessionAuthStatus;
+};
+
+export type AgentRuntimeSessionAuthStatus =
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'HEALTHY'
+  | 'REVOKED';
+
+export type AgentSurfaceActor = {
+  readonly __typename: 'AgentSurfaceActor';
+  readonly avatarLabel?: Maybe<Scalars['String']['output']>;
+  readonly handle?: Maybe<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly name: Scalars['String']['output'];
+  readonly role: Scalars['String']['output'];
+  readonly statusLabel?: Maybe<Scalars['String']['output']>;
+};
+
+export type AgentSurfaceArtifact = {
+  readonly __typename: 'AgentSurfaceArtifact';
+  readonly description?: Maybe<Scalars['String']['output']>;
+  readonly emphasis?: Maybe<Scalars['String']['output']>;
+  readonly href?: Maybe<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly title: Scalars['String']['output'];
+};
+
+export type AgentSurfaceArtifactInput = {
+  readonly description?: InputMaybe<Scalars['String']['input']>;
+  readonly emphasis?: InputMaybe<Scalars['String']['input']>;
+  readonly href?: InputMaybe<Scalars['String']['input']>;
+  readonly title: Scalars['String']['input'];
+};
+
+export type AgentSurfaceMetric = {
+  readonly __typename: 'AgentSurfaceMetric';
+  readonly detail?: Maybe<Scalars['String']['output']>;
+  readonly label: Scalars['String']['output'];
+  readonly value: Scalars['String']['output'];
+};
+
 export type AgentType =
   | 'ASSISTANT'
   | 'BRIDGE'
@@ -874,6 +995,36 @@ export type AgentType =
   | 'CUSTOM'
   | 'MODERATOR'
   | 'RESEARCHER';
+
+export type AgentWorkflowConversationState = {
+  readonly __typename: 'AgentWorkflowConversationState';
+  readonly acceptedAt?: Maybe<Scalars['Time']['output']>;
+  readonly conversationId: Scalars['ID']['output'];
+  readonly declinedAt?: Maybe<Scalars['Time']['output']>;
+  readonly folder: Scalars['String']['output'];
+  readonly previewStatusId?: Maybe<Scalars['String']['output']>;
+  readonly requestState?: Maybe<Scalars['String']['output']>;
+  readonly requestedAt?: Maybe<Scalars['Time']['output']>;
+  readonly unread: Scalars['Boolean']['output'];
+  readonly updatedAt: Scalars['Time']['output'];
+};
+
+export type AgentWorkflowSurface = {
+  readonly __typename: 'AgentWorkflowSurface';
+  readonly checkpoint?: Maybe<SignatureCheckpointCard>;
+  readonly continuity?: Maybe<ContinuityPanel>;
+  readonly conversation?: Maybe<AgentWorkflowConversationState>;
+  readonly currentPhase: Scalars['String']['output'];
+  readonly currentState: Scalars['String']['output'];
+  readonly declaration?: Maybe<DeclarationPreviewCard>;
+  readonly graduation?: Maybe<GraduationSummaryCard>;
+  readonly identity: AgentIdentityCard;
+  readonly identitySemantics: AgentIdentitySemantics;
+  readonly lifecycle: ReadonlyArray<AgentLifecycleStep>;
+  readonly request?: Maybe<SoulRequestCard>;
+  readonly review?: Maybe<ReviewDecisionCard>;
+  readonly username: Scalars['String']['output'];
+};
 
 export type AlertLevel =
   | 'CRITICAL'
@@ -1132,6 +1283,26 @@ export type ContentMap = {
 export type ContentMapInput = {
   readonly content: Scalars['String']['input'];
   readonly language: Scalars['String']['input'];
+};
+
+export type ContinuityFollowUp = {
+  readonly __typename: 'ContinuityFollowUp';
+  readonly cadence?: Maybe<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly owner: AgentSurfaceActor;
+  readonly summary: Scalars['String']['output'];
+  readonly title: Scalars['String']['output'];
+};
+
+export type ContinuityPanel = {
+  readonly __typename: 'ContinuityPanel';
+  readonly feedbackLoop: Scalars['String']['output'];
+  readonly followUps?: Maybe<ReadonlyArray<ContinuityFollowUp>>;
+  readonly id: Scalars['ID']['output'];
+  readonly metrics?: Maybe<ReadonlyArray<AgentSurfaceMetric>>;
+  readonly objective: Scalars['String']['output'];
+  readonly owner: AgentSurfaceActor;
+  readonly title: Scalars['String']['output'];
 };
 
 export type Conversation = {
@@ -1401,6 +1572,18 @@ export type DateRangeInput = {
   readonly start: Scalars['Time']['input'];
 };
 
+export type DeclarationPreviewCard = {
+  readonly __typename: 'DeclarationPreviewCard';
+  readonly confidence: Scalars['String']['output'];
+  readonly declaredScope: ReadonlyArray<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly owner?: Maybe<AgentSurfaceActor>;
+  readonly risks?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly statement: Scalars['String']['output'];
+  readonly supportingArtifacts?: Maybe<ReadonlyArray<AgentSurfaceArtifact>>;
+  readonly title: Scalars['String']['output'];
+};
+
 export type DelegateToAgentInput = {
   readonly agentType: AgentType;
   readonly agentUsername: Scalars['String']['input'];
@@ -1508,6 +1691,12 @@ export type Driver = {
   readonly percentOfTotal: Scalars['Float']['output'];
   readonly trend: Trend;
   readonly type: Scalars['String']['output'];
+};
+
+export type DroneWorkflowMutationPayload = {
+  readonly __typename: 'DroneWorkflowMutationPayload';
+  readonly agent: Agent;
+  readonly workflow: AgentWorkflowSurface;
 };
 
 export type Entity = {
@@ -1757,6 +1946,25 @@ export type FilterTestResult = {
   readonly severity: Scalars['String']['output'];
 };
 
+export type FinalizeSoulPromotionInput = {
+  readonly completedMilestones?: InputMaybe<ReadonlyArray<Scalars['String']['input']>>;
+  readonly continuityFeedbackLoop?: InputMaybe<Scalars['String']['input']>;
+  readonly continuityObjective?: InputMaybe<Scalars['String']['input']>;
+  readonly conversationId?: InputMaybe<Scalars['ID']['input']>;
+  readonly declarationConfidence: Scalars['String']['input'];
+  readonly declarationRisks?: InputMaybe<ReadonlyArray<Scalars['String']['input']>>;
+  readonly declarationStatement: Scalars['String']['input'];
+  readonly declarationTitle?: InputMaybe<Scalars['String']['input']>;
+  readonly declaredScope: ReadonlyArray<Scalars['String']['input']>;
+  readonly exitCriteria?: InputMaybe<ReadonlyArray<Scalars['String']['input']>>;
+  readonly nextStep?: InputMaybe<Scalars['String']['input']>;
+  readonly readiness: Scalars['String']['input'];
+  readonly soulAgentId?: InputMaybe<Scalars['ID']['input']>;
+  readonly summary: Scalars['String']['input'];
+  readonly supportingArtifacts?: InputMaybe<ReadonlyArray<AgentSurfaceArtifactInput>>;
+  readonly username: Scalars['String']['input'];
+};
+
 export type FlagInput = {
   readonly evidence?: InputMaybe<ReadonlyArray<Scalars['String']['input']>>;
   readonly objectId: Scalars['ID']['input'];
@@ -1781,6 +1989,19 @@ export type FlowNode = {
 export type FocusInput = {
   readonly x: Scalars['Float']['input'];
   readonly y: Scalars['Float']['input'];
+};
+
+export type GraduationSummaryCard = {
+  readonly __typename: 'GraduationSummaryCard';
+  readonly completedMilestones?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly exitCriteria?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly id: Scalars['ID']['output'];
+  readonly launchOwner?: Maybe<AgentSurfaceActor>;
+  readonly metrics?: Maybe<ReadonlyArray<AgentSurfaceMetric>>;
+  readonly nextStep?: Maybe<Scalars['String']['output']>;
+  readonly readiness: Scalars['String']['output'];
+  readonly summary: Scalars['String']['output'];
+  readonly title: Scalars['String']['output'];
 };
 
 export type GroupedNotificationGroup = {
@@ -2671,6 +2892,7 @@ export type Mutation = {
   readonly dismissNotification: Scalars['Boolean']['output'];
   readonly exchangeAgentAccessLeaseToken: AgentAccessLeaseTokenPayload;
   readonly exportReputation: PortableReputation;
+  readonly finalizeSoulPromotion: DroneWorkflowMutationPayload;
   readonly flagObject: FlagPayload;
   readonly followActor: Activity;
   readonly followHashtag: HashtagFollowPayload;
@@ -2701,10 +2923,13 @@ export type Mutation = {
   readonly reorderSeriesArticles: Series;
   readonly reportStreamingQuality: StreamingQualityReport;
   readonly requestAIAnalysis: AiAnalysisRequest;
+  readonly requestSoulPromotion: DroneWorkflowMutationPayload;
   readonly requestStreamingUrl: MediaStream;
   readonly restoreRevision: Article;
   readonly resumeFederation: FederationManagementStatus;
+  readonly reviewSoulPromotion: DroneWorkflowMutationPayload;
   readonly revokeAgentAccessLease: AgentAccessLease;
+  readonly revokeAgentRuntimeSession: AgentRuntimeSession;
   readonly revokeAgentToken: Scalars['Boolean']['output'];
   readonly revokeVouch: Scalars['Boolean']['output'];
   readonly saveMarkers: MarkerSet;
@@ -3187,6 +3412,11 @@ export type MutationExchangeAgentAccessLeaseTokenArgs = {
 };
 
 
+export type MutationFinalizeSoulPromotionArgs = {
+  input: FinalizeSoulPromotionInput;
+};
+
+
 export type MutationFlagObjectArgs = {
   input: FlagInput;
 };
@@ -3354,6 +3584,11 @@ export type MutationRequestAiAnalysisArgs = {
 };
 
 
+export type MutationRequestSoulPromotionArgs = {
+  input: RequestSoulPromotionInput;
+};
+
+
 export type MutationRequestStreamingUrlArgs = {
   mediaId: Scalars['ID']['input'];
   quality?: InputMaybe<StreamQuality>;
@@ -3371,9 +3606,21 @@ export type MutationResumeFederationArgs = {
 };
 
 
+export type MutationReviewSoulPromotionArgs = {
+  input: ReviewSoulPromotionInput;
+};
+
+
 export type MutationRevokeAgentAccessLeaseArgs = {
   input?: InputMaybe<RevokeAgentAccessLeaseInput>;
   leaseID: Scalars['ID']['input'];
+  username: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeAgentRuntimeSessionArgs = {
+  reason?: InputMaybe<Scalars['String']['input']>;
+  sessionID: Scalars['ID']['input'];
   username: Scalars['String']['input'];
 };
 
@@ -3405,16 +3652,26 @@ export type MutationScheduleStatusArgs = {
 
 
 export type MutationSendDirectMessageArgs = {
+  agentAttribution?: InputMaybe<AgentPostAttributionInput>;
   content: Scalars['String']['input'];
+  inReplyToId?: InputMaybe<Scalars['ID']['input']>;
+  language?: InputMaybe<Scalars['String']['input']>;
   mediaIds?: InputMaybe<ReadonlyArray<Scalars['ID']['input']>>;
+  sensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  spoilerText?: InputMaybe<Scalars['String']['input']>;
   to: Scalars['ID']['input'];
 };
 
 
 export type MutationSendMessageArgs = {
+  agentAttribution?: InputMaybe<AgentPostAttributionInput>;
   content: Scalars['String']['input'];
   conversationId: Scalars['ID']['input'];
+  inReplyToId?: InputMaybe<Scalars['ID']['input']>;
+  language?: InputMaybe<Scalars['String']['input']>;
   mediaIds?: InputMaybe<ReadonlyArray<Scalars['ID']['input']>>;
+  sensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  spoilerText?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -4091,6 +4348,7 @@ export type Query = {
   readonly agentAccessLeases: ReadonlyArray<AgentAccessLease>;
   readonly agentActivity: AgentActivityConnection;
   readonly agentMemorySearch: ObjectConnection;
+  readonly agentRuntimeSessions: ReadonlyArray<AgentRuntimeSession>;
   readonly agents: AgentConnection;
   readonly aiAnalysis?: Maybe<AiAnalysis>;
   readonly aiCapabilities: AiCapabilities;
@@ -4115,6 +4373,7 @@ export type Query = {
   readonly customEmojis: ReadonlyArray<CustomEmoji>;
   readonly domainBlocks: DomainBlockPage;
   readonly draft?: Maybe<Draft>;
+  readonly droneWorkflow?: Maybe<AgentWorkflowSurface>;
   readonly endorsements: ReadonlyArray<Actor>;
   readonly explainObject: ObjectExplanation;
   readonly export?: Maybe<ExportJob>;
@@ -4166,6 +4425,8 @@ export type Query = {
   readonly mutes: ActorListPage;
   readonly myAgents: ReadonlyArray<Agent>;
   readonly myDrafts: DraftConnection;
+  readonly myDroneRequests: ReadonlyArray<SoulRequestCard>;
+  readonly myDroneReviews: ReadonlyArray<ReviewDecisionCard>;
   readonly myPublications: ReadonlyArray<Publication>;
   readonly mySouls: ReadonlyArray<SoulInventoryItem>;
   readonly notification?: Maybe<Notification>;
@@ -4344,6 +4605,11 @@ export type QueryAgentMemorySearchArgs = {
 };
 
 
+export type QueryAgentRuntimeSessionsArgs = {
+  username: Scalars['String']['input'];
+};
+
+
 export type QueryAgentsArgs = {
   after?: InputMaybe<Scalars['Cursor']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -4466,6 +4732,11 @@ export type QueryDomainBlocksArgs = {
 
 export type QueryDraftArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryDroneWorkflowArgs = {
+  username: Scalars['String']['input'];
 };
 
 
@@ -5164,6 +5435,51 @@ export type ReputationVerificationResult = {
   readonly valid: Scalars['Boolean']['output'];
 };
 
+export type RequestSoulPromotionInput = {
+  readonly artifacts?: InputMaybe<ReadonlyArray<AgentSurfaceArtifactInput>>;
+  readonly constraints?: InputMaybe<ReadonlyArray<Scalars['String']['input']>>;
+  readonly conversationId?: InputMaybe<Scalars['ID']['input']>;
+  readonly routeDecision?: InputMaybe<Scalars['String']['input']>;
+  readonly summary: Scalars['String']['input'];
+  readonly title: Scalars['String']['input'];
+  readonly username: Scalars['String']['input'];
+};
+
+export type ReviewDecisionCard = {
+  readonly __typename: 'ReviewDecisionCard';
+  readonly decision: Scalars['String']['output'];
+  readonly decisionSummary: Scalars['String']['output'];
+  readonly evidence?: Maybe<ReadonlyArray<AgentSurfaceArtifact>>;
+  readonly findings?: Maybe<ReadonlyArray<ReviewFinding>>;
+  readonly id: Scalars['ID']['output'];
+  readonly reviewer: AgentSurfaceActor;
+  readonly title: Scalars['String']['output'];
+};
+
+export type ReviewFinding = {
+  readonly __typename: 'ReviewFinding';
+  readonly detail: Scalars['String']['output'];
+  readonly id: Scalars['ID']['output'];
+  readonly severity?: Maybe<Scalars['String']['output']>;
+  readonly title: Scalars['String']['output'];
+};
+
+export type ReviewFindingInput = {
+  readonly detail: Scalars['String']['input'];
+  readonly severity?: InputMaybe<Scalars['String']['input']>;
+  readonly title: Scalars['String']['input'];
+};
+
+export type ReviewSoulPromotionInput = {
+  readonly conversationId?: InputMaybe<Scalars['ID']['input']>;
+  readonly decision: Scalars['String']['input'];
+  readonly decisionSummary: Scalars['String']['input'];
+  readonly evidence?: InputMaybe<ReadonlyArray<AgentSurfaceArtifactInput>>;
+  readonly findings?: InputMaybe<ReadonlyArray<ReviewFindingInput>>;
+  readonly title?: InputMaybe<Scalars['String']['input']>;
+  readonly username: Scalars['String']['input'];
+};
+
 export type Revision = {
   readonly __typename: 'Revision';
   readonly changeSummary?: Maybe<Scalars['String']['output']>;
@@ -5333,6 +5649,25 @@ export type SeveredRelationshipEdge = {
   readonly node: SeveredRelationship;
 };
 
+export type SignatureCheckpointCard = {
+  readonly __typename: 'SignatureCheckpointCard';
+  readonly approvalMemo?: Maybe<Scalars['String']['output']>;
+  readonly dueAt?: Maybe<Scalars['Time']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly readinessLabel: Scalars['String']['output'];
+  readonly signers: ReadonlyArray<SignatureCheckpointSigner>;
+  readonly title: Scalars['String']['output'];
+};
+
+export type SignatureCheckpointSigner = {
+  readonly __typename: 'SignatureCheckpointSigner';
+  readonly id: Scalars['ID']['output'];
+  readonly name: Scalars['String']['output'];
+  readonly note?: Maybe<Scalars['String']['output']>;
+  readonly role: Scalars['String']['output'];
+  readonly status: Scalars['String']['output'];
+};
+
 export type SoulAgentBinding = {
   readonly __typename: 'SoulAgentBinding';
   readonly agentUsername: Scalars['String']['output'];
@@ -5368,6 +5703,19 @@ export type SoulInventoryItem = {
   readonly availableForIncorporation: Scalars['Boolean']['output'];
   readonly binding?: Maybe<SoulAgentBinding>;
   readonly bindingState: SoulBindingState;
+};
+
+export type SoulRequestCard = {
+  readonly __typename: 'SoulRequestCard';
+  readonly artifacts?: Maybe<ReadonlyArray<AgentSurfaceArtifact>>;
+  readonly constraints?: Maybe<ReadonlyArray<Scalars['String']['output']>>;
+  readonly currentState?: Maybe<Scalars['String']['output']>;
+  readonly id: Scalars['ID']['output'];
+  readonly requestedBy: AgentSurfaceActor;
+  readonly routeDecision?: Maybe<Scalars['String']['output']>;
+  readonly submittedAt?: Maybe<Scalars['Time']['output']>;
+  readonly summary: Scalars['String']['output'];
+  readonly title: Scalars['String']['output'];
 };
 
 export type SpamAnalysis = {

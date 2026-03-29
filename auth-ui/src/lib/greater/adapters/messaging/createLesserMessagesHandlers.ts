@@ -196,8 +196,13 @@ export function createLesserMessagesHandlers(
 				throw new Error('DM v1 only supports 1:1 conversations');
 			}
 
+			const participantId = participantIds[0];
+			if (participantId === undefined) {
+				throw new Error('participantId is required for DM conversation creation');
+			}
+
 			const data = await adapter.mutate(CreateConversationDocument, {
-				participantId: participantIds[0]!,
+				participantId,
 			});
 
 			return mapConversationToUiConversation(

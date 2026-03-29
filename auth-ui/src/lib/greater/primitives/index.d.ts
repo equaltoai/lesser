@@ -195,7 +195,19 @@ export interface SelectOption {
 	label: string;
 	disabled?: boolean;
 }
-export { preferencesStore, getPreferences, getPreferenceState } from './stores/preferences';
+export {
+	preferencesStore,
+	getPreferences,
+	getPreferenceState,
+	parsePreferencesCookie,
+	createThemeBootstrapSnapshot,
+	getThemeBootstrapState,
+	getThemeDocumentAttributes,
+	applyThemeDocumentAttributes,
+	readThemeBootstrapSnapshotFromDocument,
+	PREFERENCES_KEY,
+	PREFERENCES_COOKIE,
+} from './stores/preferences';
 export type {
 	ColorScheme,
 	Density,
@@ -204,6 +216,9 @@ export type {
 	ThemeColors,
 	UserPreferences,
 	PreferencesState,
+	ThemeBootstrapSnapshot,
+	ThemeBootstrapOptions,
+	ThemeDocumentAttributes,
 } from './stores/preferences';
 export {
 	fadeUp,

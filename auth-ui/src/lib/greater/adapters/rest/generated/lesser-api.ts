@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/oauth-authorization-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_well_known_oauth_authorization_server"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/.well-known/reputation-keys": {
         parameters: {
             query?: never;
@@ -1316,6 +1332,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{username}/runtime-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_agents_by_username_runtime_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_agents_by_username_runtime_sessions_by_sessionID_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{username}/suspend": {
         parameters: {
             query?: never;
@@ -1486,6 +1534,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_api_v1_apps"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/{id}/rotate_secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_apps_by_id_rotate_secret"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3748,6 +3812,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_auth_device"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/wallet/challenge": {
         parameters: {
             query?: never;
@@ -4014,6 +4094,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_oauth_device_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_oauth_register"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4553,6 +4649,8 @@ export interface components {
             created_at?: components["schemas"]["RFC3339DateTime"] | null;
             delegated_scopes?: string[];
             display_name: string;
+            identity_semantics: components["schemas"]["AgentIdentitySemantics"];
+            mcp_access: components["schemas"]["AgentMCPAccess"];
             username: string;
             verified: boolean;
             verified_at?: components["schemas"]["RFC3339DateTime"] | null;
@@ -4645,6 +4743,7 @@ export interface components {
             agent_info?: unknown;
             agent_username: string;
             bio?: string;
+            device_label?: string;
             display_name: string;
             expires_in?: number;
             scopes: string[];
@@ -4652,6 +4751,20 @@ export interface components {
         AgentDelegationResponse: {
             account: components["schemas"]["Account"];
             token: components["schemas"]["OAuthTokenResponse"];
+        };
+        AgentIdentitySemantics: {
+            attribution_label: string;
+            body_identity_preserved: boolean;
+            continuity_state: string;
+            continuity_summary: string;
+            identity_label: string;
+            identity_state: string;
+            lifecycle_state: string;
+            memory_references_preserved: boolean;
+            moderation_label: string;
+            soul_agent_id?: string;
+            soul_binding_state: string;
+            timeline_presence_preserved: boolean;
         };
         AgentKeyChallengeRequest: {
             username: string;
@@ -4665,6 +4778,14 @@ export interface components {
             username: string;
         };
         AgentList: components["schemas"]["Agent"][];
+        AgentMCPAccess: {
+            authorization_server_url: string;
+            guidance: string[];
+            mcp_url: string;
+            protected_resource_url: string;
+            registration_url: string;
+            scopes: string[];
+        };
         AgentMemoryEventRequest: {
             event_type?: string;
             original_id?: string;
@@ -4702,12 +4823,18 @@ export interface components {
         };
         AgentPostAttribution: {
             constraints?: string[];
+            continuity_state?: string;
+            continuity_summary?: string;
             delegated_by?: string;
             delegated_by_did?: string;
+            identity_label?: string;
+            identity_state?: string;
             memory_citations?: string[];
             model_id?: string;
+            moderation_label?: string;
             schema_version?: string;
             scopes?: string[];
+            soul_agent_id?: string;
             trigger_details?: string;
             trigger_type?: string;
         };
@@ -4717,8 +4844,23 @@ export interface components {
             public_key: string;
             signature: string;
         };
+        AgentRuntimeSession: {
+            absolute_expires_at: components["schemas"]["RFC3339DateTime"];
+            client_id: string;
+            created_at: components["schemas"]["RFC3339DateTime"];
+            device_label: string;
+            idle_expires_at: components["schemas"]["RFC3339DateTime"];
+            last_used_at: components["schemas"]["RFC3339DateTime"];
+            revoked: boolean;
+            revoked_at?: components["schemas"]["RFC3339DateTime"] | null;
+            revoked_reason?: string;
+            scope: string;
+            session_id: string;
+        };
+        AgentRuntimeSessionList: components["schemas"]["AgentRuntimeSession"][];
         AgentSelfAuthTokenRequest: {
             challenge_id: string;
+            device_label?: string;
             signature: string;
             username: string;
         };
@@ -4726,6 +4868,7 @@ export interface components {
             agent_info?: unknown;
             bio?: string;
             challenge_id: string;
+            device_label?: string;
             display_name: string;
             key_type: string;
             public_key: string;
@@ -4780,20 +4923,38 @@ export interface components {
             [key: string]: unknown;
         };
         AppRegistrationRequest: {
+            /** @description Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces. */
             client_class?: string;
             client_name: string;
+            grant_types?: string;
             redirect_uris: string;
             scopes: string;
+            token_endpoint_auth_method?: string;
             website?: string;
         };
         AppRegistrationResponse: {
             client_id: string;
             client_secret?: string;
+            grant_types?: string[];
             id: string;
             name: string;
             redirect_uri: string;
+            token_endpoint_auth_method?: string;
             vapid_key?: string;
             website?: string;
+        };
+        AppSecretRotationRequest: {
+            force_invalidate?: boolean;
+            grace_period_seconds?: number;
+        };
+        AppSecretRotationResponse: {
+            client_id: string;
+            client_secret: string;
+            forced_invalidation?: boolean;
+            grace_period_seconds?: number;
+            previous_secret_valid_until?: string;
+            rotated_at?: string;
+            token_endpoint_auth_method?: string;
         };
         AuthAuthResponse: {
             access_token: string;
@@ -5514,11 +5675,13 @@ export interface components {
         NotificationDeliveryFrom: {
             address: string;
             displayName: string;
+            number?: string;
             soulAgentId?: string | null;
         };
         NotificationDeliveryRequest: {
             attachments?: components["schemas"]["NotificationDeliveryAttachment"][];
             body: string;
+            bodyMimeType?: string;
             channel: string;
             from: components["schemas"]["NotificationDeliveryFrom"];
             inReplyTo?: string | null;
@@ -5530,6 +5693,7 @@ export interface components {
         };
         NotificationDeliveryTo: {
             address: string;
+            number?: string;
         };
         NotificationFilter: {
             AccountID: string;
@@ -5585,6 +5749,45 @@ export interface components {
             status: string;
             user_code: string;
         };
+        OAuthDynamicClientRegistrationRequest: {
+            /** @description Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces. */
+            client_class?: string;
+            client_name?: string;
+            client_uri?: string;
+            contacts?: string[];
+            grant_types?: string[];
+            logo_uri?: string;
+            policy_uri?: string;
+            redirect_uris?: string[];
+            response_types?: string[];
+            scope?: string;
+            software_id?: string;
+            software_version?: string;
+            token_endpoint_auth_method?: string;
+            tos_uri?: string;
+        };
+        OAuthDynamicClientRegistrationResponse: {
+            /** @description Lesser client classification persisted for the registered public client. */
+            client_class?: string;
+            client_id: string;
+            client_id_issued_at: number;
+            client_name?: string;
+            client_secret?: string;
+            client_secret_expires_at: number;
+            client_uri?: string;
+            contacts?: string[];
+            grant_types?: string[];
+            logo_uri?: string;
+            policy_uri?: string;
+            redirect_uris?: string[];
+            registration_source?: string;
+            response_types?: string[];
+            scope?: string;
+            software_id?: string;
+            software_version?: string;
+            token_endpoint_auth_method?: string;
+            tos_uri?: string;
+        };
         OAuthErrorResponse: {
             error: string;
             error_description?: string;
@@ -5605,6 +5808,8 @@ export interface components {
             grant_type: string;
             redirect_uri?: string;
             refresh_token?: string;
+            /** @description Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request. */
+            resource?: string;
             scope?: string;
         };
         OAuthTokenResponse: {
@@ -5892,6 +6097,9 @@ export interface components {
             severity: number;
         };
         RevokeAgentAccessLeaseRequest: {
+            reason?: string;
+        };
+        RevokeAgentRuntimeSessionRequest: {
             reason?: string;
         };
         Role: {
@@ -6465,12 +6673,18 @@ export interface components {
                 };
                 agentAttribution?: {
                     constraints?: string[];
+                    continuity_state?: string;
+                    continuity_summary?: string;
                     delegated_by?: string;
                     delegated_by_did?: string;
+                    identity_label?: string;
+                    identity_state?: string;
                     memory_citations?: string[];
                     model_id?: string;
+                    moderation_label?: string;
                     schema_version?: string;
                     scopes?: string[];
+                    soul_agent_id?: string;
                     trigger_details?: string;
                     trigger_type?: string;
                 } | null;
@@ -6623,6 +6837,7 @@ export interface components {
             issued_at: components["schemas"]["RFC3339DateTime"];
             message: string;
             nonce: string;
+            registration_completed?: boolean;
             spent: boolean;
             used: boolean;
             username: string;
@@ -7111,6 +7326,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeInfoWellKnown"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_well_known_oauth_authorization_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Map7d31df2b"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -9791,6 +10028,62 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_api_v1_agents_by_username_runtime_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeSessionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_agents_by_username_runtime_sessions_by_sessionID_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RevokeAgentRuntimeSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     post_api_v1_agents_by_username_suspend: {
         parameters: {
             query?: never;
@@ -10145,6 +10438,34 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_apps_by_id_rotate_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSecretRotationResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
@@ -12593,6 +12914,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -14983,6 +15306,26 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_auth_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     post_auth_wallet_challenge: {
         parameters: {
             query?: never;
@@ -15307,6 +15650,8 @@ export interface operations {
                 mode?: string;
                 /** @description OAuth redirect URI (must match registered redirect URI). */
                 redirect_uri: string;
+                /** @description Canonical target resource URI. Required for remote MCP authorization; must be the actor-scoped MCP URL served by this Lesser instance. */
+                resource?: string;
                 /** @description OAuth response type (must be `code`). */
                 response_type: string;
                 /** @description Space-delimited OAuth scope list. */
@@ -15482,6 +15827,49 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_oauth_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthDynamicClientRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthDynamicClientRegistrationResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Unsupported media type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalServerError"];
