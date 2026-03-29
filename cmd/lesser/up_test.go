@@ -315,8 +315,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
 	previousWriteReceipt := writeReceiptFn
 	previousBuildAuthUI := buildAuthUIFn
-	previousReplaceBucket := replaceBucketWithDirFn
-	previousS3Exists := s3ObjectExistsFn
+	previousReplaceBucket := replaceBucketWithDirPrefixFn
 	previousInvalidate := invalidateFrontendFn
 	t.Cleanup(func() {
 		findRepoRootFn = previousRepoRoot
@@ -333,8 +332,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
 		writeReceiptFn = previousWriteReceipt
 		buildAuthUIFn = previousBuildAuthUI
-		replaceBucketWithDirFn = previousReplaceBucket
-		s3ObjectExistsFn = previousS3Exists
+		replaceBucketWithDirPrefixFn = previousReplaceBucket
 		invalidateFrontendFn = previousInvalidate
 	})
 
@@ -364,8 +362,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	}
 
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
-	replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
-	s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
+	replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
 	invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
 
 	var wrotePath string

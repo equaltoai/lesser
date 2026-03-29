@@ -259,18 +259,6 @@ import {
 	IncorporateSoulDocument,
 	AgentActivityUpdatesDocument,
 } from './generated/types.js';
-import {
-	DroneAgentStateDocument,
-	DroneWorkflowDocument,
-	FinalizeSoulPromotionDocument,
-	MyDroneRequestsDocument,
-	MyDroneReviewsDocument,
-	RequestSoulPromotionDocument,
-	ReviewSoulPromotionDocument,
-	type FinalizeSoulPromotionInput,
-	type RequestSoulPromotionInput,
-	type ReviewSoulPromotionInput,
-} from './droneWorkflow.js';
 
 export type ViewerQuery = { viewer: Actor };
 
@@ -519,7 +507,7 @@ export class LesserGraphQLAdapter {
 	}
 
 	public async query<
-		TData extends object,
+		TData extends Record<string, unknown>,
 		TVariables extends OperationVariables = OperationVariables,
 	>(
 		document: TypedDocumentNode<TData, TVariables>,
@@ -561,7 +549,7 @@ export class LesserGraphQLAdapter {
 	}
 
 	public async mutate<
-		TData extends object,
+		TData extends Record<string, unknown>,
 		TVariables extends OperationVariables = OperationVariables,
 	>(document: TypedDocumentNode<TData, TVariables>, variables?: TVariables): Promise<TData> {
 		const options = {
@@ -773,26 +761,6 @@ export class LesserGraphQLAdapter {
 		return data.mySouls;
 	}
 
-	async getDroneAgentState(username: string) {
-		const data = await this.query(DroneAgentStateDocument, { username });
-		return data.agent;
-	}
-
-	async getDroneWorkflow(username: string) {
-		const data = await this.query(DroneWorkflowDocument, { username });
-		return data.droneWorkflow;
-	}
-
-	async getMyDroneRequests() {
-		const data = await this.query(MyDroneRequestsDocument);
-		return data.myDroneRequests;
-	}
-
-	async getMyDroneReviews() {
-		const data = await this.query(MyDroneReviewsDocument);
-		return data.myDroneReviews;
-	}
-
 	async getAgentActivity(variables: AgentActivityQueryVariables) {
 		const data = await this.query(AgentActivityDocument, variables);
 		return data.agentActivity;
@@ -963,21 +931,6 @@ export class LesserGraphQLAdapter {
 			targetAgentUsername: targetUsername,
 		});
 		return data.incorporateSoul;
-	}
-
-	async requestSoulPromotion(input: RequestSoulPromotionInput) {
-		const data = await this.mutate(RequestSoulPromotionDocument, { input });
-		return data.requestSoulPromotion;
-	}
-
-	async reviewSoulPromotion(input: ReviewSoulPromotionInput) {
-		const data = await this.mutate(ReviewSoulPromotionDocument, { input });
-		return data.reviewSoulPromotion;
-	}
-
-	async finalizeSoulPromotion(input: FinalizeSoulPromotionInput) {
-		const data = await this.mutate(FinalizeSoulPromotionDocument, { input });
-		return data.finalizeSoulPromotion;
 	}
 
 	async search(variables: SearchQueryVariables) {

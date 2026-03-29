@@ -1,251 +1,187 @@
-# Lesser Client App (Greater) Guide
+# Lesser FaceTheory Client Guide
 
-This guide describes how to build and deploy a standalone “Greater” web client for a Lesser instance while keeping all
-system endpoints on the same stage apex domain and serving the client UI under `/l/`.
+This guide describes the authoritative client path for Lesser-managed deployments:
 
-## Summary (recommended approach)
+- Lesser owns the stage apex domain and `/l/` routing.
+- FaceTheory owns the app contract and SSR behavior.
+- Normal client updates use `lesser client install`, not `lesser up`.
 
-- **UI**: a static web app built with **Greater Components** (vendored) + your framework of choice (SvelteKit or Vite).
-- **Infra**: use **Lift CDK** (already used by Lesser) to provision, per stage:
-  - `CloudFront` distribution on the **stage apex domain**
-  - an `S3` bucket for the client UI
-  - path routing so `/<prefix>/…` is served from S3 while API routes continue to hit the API origin
-- **Deploy**: build the client, then run `lesser client deploy` to upload artifacts into the stage client bucket and invalidate `CloudFront`.
+## Summary
 
-## Domain + path requirements
+`lesser up` is now responsible for one-time provisioning of the shared client host resources for each stage:
 
-Lesser deployments always include at least two stages:
+- CloudFront routing on the stage apex domain
+- `/l` and `/l/*` routed to the Lesser-managed SSR host
+- `/l/_assets/*` routed to the public client asset bucket
+- `/auth` and `/auth/*` routed to the auth UI bucket
+- `/auth/wallet/*` routed back to the API origin
+- a private, versioned client artifact bucket that stores install history
+- an active install manifest key (`install/current.json`) that tells the SSR host which release is live
 
-- **dev**: `dev.<base-domain>`
-- **live**: `<base-domain>`
+After that, ordinary client releases should use `lesser client install` from the FaceTheory app repo. That flow updates
+artifacts and the active manifest only. It does not require re-running the Lesser stack or re-provisioning lesser-body.
 
-The client UI must be reachable at:
+## Routing model
 
-- `https://dev.<base-domain>/l/…`
-- `https://<base-domain>/l/…`
+Lesser stage stacks reserve the following top-level paths:
 
-The stage apex root must redirect to the client:
+- `/api/*`, `/.well-known/*`, `/setup/*`, `/media/*`: API/system traffic
+- `/auth` and `/auth/*`: static auth UI
+- `/auth/wallet/*`: API bypass route for wallet flows
+- `/l` and `/l/*`: FaceTheory SSR host
+- `/l/_assets/*`: static client assets
 
-- `GET https://dev.<base-domain>/` → `302 Location: /l/`
-- `GET https://<base-domain>/` → `302 Location: /l/`
+Important behavior details:
 
-Top-level paths are reserved for system endpoints (examples):
+- `GET /` is still handled by the API and redirects to `/l/`.
+- CloudFront no longer performs SPA fallback for `/l/*`.
+- The CloudFront rewrite function only normalizes `/l` to `/l/` and applies directory-index semantics for `/auth/*`.
+- CSP for the FaceTheory app should come from the origin response. CloudFront adds baseline security headers but does
+  not inject a competing CSP on `/l` routes.
 
-- `/api/*`, `/api/v1/*`, `/api/v2/*` (Mastodon-compatible API)
-- `/.well-known/*` (WebFinger / NodeInfo discovery)
-- `/auth/*` (auth UI)
-- `/setup/*` (bootstrap endpoints)
-- `/media/*` (media CDN/origin)
-- `/l/*` (client UI)
+## FaceTheory install contract
 
-## How the stage apex domain works today (CDK)
+Every FaceTheory app repo that will be published through Lesser should include a `facetheory.lesser.json` file at the
+repo root (or pass it explicitly via `--config`).
 
-Lesser stage stacks provision a single distribution for the stage apex domain via CDK:
+Example:
 
-- Construct: `apptheorycdk.NewAppTheoryPathRoutedFrontend(...)` (see `infra/cdk/stacks/lesser_api_stack.go`)
-- Default origin: API origin (typically `api.<stage-domain>`)
-- Additional behaviors:
-  - `/l` and `/l/*` → client S3 bucket
-  - `/auth` and `/auth/*` → auth S3 bucket
-  - `/auth/wallet/*` → API origin (bypass auth UI routing)
-- API origin request policy: forwards **query strings** (required for OAuth+PKCE)
-
-### Important: how `/l/` is served from S3
-
-The distribution attaches a CloudFront Function that rewrites request paths:
-
-- `GET /l` or `GET /l/` → S3 key `/index.html`
-- `GET /l/_assets/app.js` → S3 key `/_assets/app.js` (prefix is stripped)
-- `GET /l/some/route` (extensionless) → S3 key `/index.html` (SPA fallback)
-
-This means your client build output must be rooted at:
-
+```json
+{
+  "schema_version": 1,
+  "app_name": "my-client",
+  "display_name": "My Client",
+  "version": "0.1.0",
+  "build": {
+    "command": ["pnpm", "build"]
+  },
+  "server": {
+    "dir": "build/server",
+    "entry": "handler.mjs",
+    "export": "handler"
+  },
+  "assets": {
+    "dir": "build/client"
+  }
+}
 ```
-dist/
-  index.html
-  _assets/...
-  ...other static files...
-```
 
-…and the browser must request all client assets under `/l/…` so those requests hit the client bucket behavior.
+Contract requirements:
 
-### Important: how `/auth/*` is served from S3 (multi-page static)
+- `schema_version` must currently be `1`.
+- `package.json` must include `@theory-cloud/facetheory`.
+- `server.dir` must contain the built SSR bundle.
+- `server.entry` must point at a file inside `server.dir`.
+- `server.export` defaults to `handler` when omitted.
+- `assets.dir` must contain the public browser assets.
+- Asset URLs must resolve under `/l/_assets/...`.
 
-`auth-ui/` is a **multi-page** static site (e.g. `login/index.html`), not a SPA.
+The Lesser SSR host imports the installed server bundle in-process and invokes the configured export. The exported
+handler may return a standard `Response` or a Lambda-style response object.
 
-The distribution rewrites extensionless auth routes using **directory-index semantics** so deep links work:
+## Install workflow
 
-- `GET /auth` or `GET /auth/` → S3 key `/index.html` (auth-ui root)
-- `GET /auth/login` or `GET /auth/login/` → S3 key `/login/index.html`
-- `GET /auth/static/app.js` → S3 key `/static/app.js` (prefix is stripped)
+Prerequisites:
 
-If you provision your own distribution, implement equivalent rewrites (CloudFront Function or Lambda@Edge) or deep links
-like `/auth/login` will return 403 from S3.
+- `lesser up` has already been run for the app and base domain.
+- The local deployment receipt exists at `~/.lesser/<app>/<base-domain>/state.json` or is passed with `--state`.
+- The FaceTheory app is checked out locally.
 
-## Root redirect (`/` → `/l/`)
-
-Because the stage apex distribution’s default behavior routes to the API origin, Lesser implements the redirect in the
-**Lesser API**:
-
-- `GET /` returns `302` with `Location: /l/`
-- Ensure your API Gateway routing includes an explicit `GET /` and `HEAD /` integration to the API Lambda (the proxy
-  route `/{proxy+}` does not match the empty path). See `infra/cdk/constructs/api_routes.go`.
-
-## OAuth behind CloudFront: query strings are required
-
-OAuth+PKCE authorization depends on query string parameters (example: `client_id`, `redirect_uri`, `response_type=code`,
-`code_challenge`, `state`, …).
-
-If CloudFront sits in front of your API origin, the behavior(s) that route `/oauth/*` (or the default API behavior)
-must **forward query strings** to the origin via an Origin Request Policy. Otherwise `/oauth/authorize` will fail.
-
-If you move ownership of the stage apex distribution into the client project, you can instead implement the redirect at
-CloudFront (viewer-request function) so the request never reaches the origin.
-
-## Client application requirements
-
-### 1) Base path: `/l`
-
-The client must be built with a base path of `/l/` (or use relative asset URLs) so that:
-
-- All static assets load from `/l/_assets/...` (not `/_assets/...`)
-- All internal routes render under `/l/...`
-- Refreshing a deep link (e.g. `/l/@alice`) loads the SPA successfully
-
-### 2) No API secrets in the client
-
-The client must be “public config only”. It should derive API URLs from the current origin and should not embed secrets.
-
-Recommended defaults (no env vars required):
-
-- API: `window.location.origin` (same domain)
-- Auth: `window.location.origin + "/auth"`
-- WebSocket (GraphQL subscriptions): `wss://ws.${window.location.host}`
-- WebSocket streaming (optional): `wss://ws.${window.location.host}/stream`
-
-### 3) Compatible with stage isolation
-
-Dev and live are separate deployments. The client must not hardcode a domain; it should behave correctly on whichever
-stage apex it’s served from.
-
-### 4) Greater Components (vendored)
-
-Use the Greater CLI vendored mode so the client app is self-contained:
-
-- `greater add primitives icons utils`
-- commit `components.json` + `src/lib/greater/**` + `src/lib/styles/greater/**`
-
-This matches how `auth-ui/` is set up today.
-
-### 5) CSP compatibility (no inline scripts/styles)
-
-The stage apex CloudFront distribution serves `/l/*` (client UI) and `/auth/*` (auth UI) from S3 and enforces a strict
-Content Security Policy (CSP) at the CDN layer.
-
-- Inline `<script>` and `<style>` blocks are blocked by default. Build your client so HTML only references external
-  JS/CSS files (e.g., `<script src="...">`, `<link rel="stylesheet" ...>`).
-- If you intentionally add inline scripts/styles, you must add hash allow-list entries to the deployed CDN policy and
-  redeploy the stage stacks. See `infra/cdk/constructs/frontend_response_headers.go`.
-
-## Recommended implementation: SvelteKit (static)
-
-SvelteKit gives you routing + data loading ergonomics while still producing a static build.
-
-### Key config items
-
-- Set base path to `/l`:
-  - `kit.paths.base = '/l'`
-- Use adapter-static (or equivalent).
-- Ensure client-side routing works under `/l/*` (SPA fallback is handled by CloudFront).
-
-## Alternative implementation: Vite + Svelte (SPA)
-
-If you’re using Vite directly:
-
-- Set `base: '/l/'` in `vite.config.ts`.
-- Build output to `dist/` with `index.html` at the root of `dist/`.
-
-## Deploying the client to dev + live
-
-### Prerequisites
-
-- A Lesser deployment already exists for the app + base domain (stage stacks create the buckets + distribution).
-- AWS access via the deployer’s `AWS_PROFILE`.
-- `lesser up` uploads a placeholder `index.html` into the client bucket so `/l/` is reachable even before the real client is deployed.
-
-### Recommended: deploy via the Lesser CLI
-
-After your client builds to `dist/`:
+Recommended command:
 
 ```bash
-./lesser client deploy \
+./lesser client install \
   --app <slug> \
   --base-domain <example.com> \
   --aws-profile <profile> \
-  --dist ./dist
+  --config ./facetheory.lesser.json
 ```
 
-Notes:
+Useful flags:
 
-- Defaults to deploying **both** `dev` and `live` (`--stage both`).
-- Use `--stage dev|staging|live|all` to target specific stages.
-- The CLI reads the deployment receipt from `~/.lesser/<app>/<base-domain>/state.json` (or `--state <path>`).
+- `--stage dev|staging|live|both|all`
+- `--skip-build`
+- `--state <path>`
 
-### Locate the per-stage bucket + distribution
+What the command does:
 
-From the Lesser deployment receipt (recommended):
+1. Validates the FaceTheory app contract.
+2. Installs app dependencies if needed and runs the configured build command unless `--skip-build` is set.
+3. Uploads the SSR server bundle to the private artifact bucket under `installs/<install-id>/server/...`.
+4. Uploads browser assets to the public client bucket under `l/_assets/...`.
+5. Writes an immutable history manifest at `installs/<install-id>/manifest.json`.
+6. Flips the active manifest key (normally `install/current.json`) to the new manifest.
+7. Invalidates CloudFront for `/l` and `/l/*`.
+8. Records the active install in the local Lesser receipt.
 
-- `~/.lesser/<app>/<base-domain>/state.json`
-  - `stages.dev.stack_outputs.ClientBucketName`
-  - `stages.dev.stack_outputs.FrontendDistributionId`
-  - `stages.live.stack_outputs.ClientBucketName`
-  - `stages.live.stack_outputs.FrontendDistributionId`
+## Receipt and stack outputs
 
-Bucket names are also deterministic:
+The stage receipt now carries the values the install flow needs:
 
-- `<app>-dev-client-<accountId>-<region>`
-- `<app>-live-client-<accountId>-<region>`
+- `ClientBucketName`
+- `ClientArtifactBucketName`
+- `ClientInstallManifestKey`
+- `FrontendDistributionId`
 
-### Manual deploy (fallback)
+After an install, Lesser also records the active release under:
 
-Upload the client build output (the contents of `dist/`) to each stage bucket root.
+- `stages.<stage>.client_install.app_name`
+- `stages.<stage>.client_install.version`
+- `stages.<stage>.client_install.install_id`
+- `stages.<stage>.client_install.manifest_key`
+- `stages.<stage>.client_install.server_root`
+- `stages.<stage>.client_install.assets_root`
 
-Caching guidance:
+## Verification checklist
 
-- `index.html`: short TTL (or no-cache)
-- hashed assets (e.g. `_assets/*.js`): long TTL (`immutable`)
+Verify a release after `lesser client install`:
 
-### Invalidate CloudFront
+- `GET https://dev.<base-domain>/l/` returns SSR HTML from the new build.
+- Deep routes such as `https://dev.<base-domain>/l/@alice` render successfully without SPA fallback assumptions.
+- Browser assets load from `/l/_assets/...`.
+- `GET https://dev.<base-domain>/auth/login` still resolves through auth directory-index routing.
+- `/auth/wallet/*` traffic still reaches the API origin instead of the auth bucket.
+- The active manifest in the artifact bucket references the expected `install_id`.
 
-Invalidate at least:
+Useful checks:
 
-- `/l`
-- `/l/*`
+```bash
+curl -i https://dev.<base-domain>/l/
+curl -i https://dev.<base-domain>/l/_assets/<asset-name>
+curl -i https://dev.<base-domain>/auth/login
+AWS_PROFILE=<profile> aws s3 cp \
+  s3://<artifact-bucket>/install/current.json -
+```
 
-This ensures the new `index.html` is picked up immediately.
+## Rollback
 
-### Verification checklist
+Preferred rollback:
 
-- `GET https://dev.<base-domain>/l/` returns HTML
-- Browser loads JS/CSS from `/l/_assets/...` (not from `/_assets/...`)
-- Deep link refresh works: `GET https://dev.<base-domain>/l/<any-route>` loads the SPA
+- Check out the last known good FaceTheory app revision.
+- Re-run `lesser client install` from that revision.
 
-## If you want the client repo to own infra (optional)
+Hot rollback using the existing artifact history:
 
-If you prefer the client project to provision the stage apex distribution itself (instead of Lesser doing it), use Lift
-CDK’s `PathRoutedFrontendDistribution` with:
+1. Identify the previous good install ID in the artifact bucket under `installs/<install-id>/manifest.json`.
+2. Copy that manifest back to the active manifest key.
+3. Invalidate `/l` and `/l/*` on the stage CloudFront distribution.
 
-- `DomainName`: stage apex domain (`dev.<base-domain>` / `<base-domain>`)
-- `HostedZone`: existing Route53 hosted zone for `<base-domain>`
-- `ApiOriginDomainName`: `api.<stage-domain>`
-- `ClientPathPrefix`: `l`
-- `ClientSinglePageApp`: `true`
+Example:
 
-This is only recommended if you’re also moving ownership of the stage apex distribution out of Lesser, since two stacks
-cannot both “own” the same apex alias + CloudFront distribution cleanly.
+```bash
+AWS_PROFILE=<profile> aws s3 cp \
+  s3://<artifact-bucket>/installs/<install-id>/manifest.json \
+  s3://<artifact-bucket>/install/current.json \
+  --content-type 'application/json; charset=utf-8' \
+  --cache-control 'no-store'
+```
 
-## Decisions
+## Operational invariants
 
-- Rendering: SPA-only for v1 (static build).
-- Root redirect: `/` 302 redirects to `/l/`.
-- Caching: HTML short TTL (or no-cache); hashed assets long TTL (`immutable`).
+These are the important rules to preserve:
+
+- Do not run `lesser up` for ordinary client releases.
+- Do not depend on SPA fallback behavior under `/l/*`.
+- Do not publish client browser assets to the bucket root; they belong under `l/_assets/`.
+- Do not delete install history during routine client updates.
+- Keep lesser-body provisioned by the stack; client releases should not have to toggle or recreate it.

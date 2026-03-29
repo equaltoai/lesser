@@ -17,7 +17,7 @@ import (
 
 var (
 	invalidateFrontendFn      = invalidateFrontend
-	uploadClientPlaceholderFn = uploadClientPlaceholder
+	replaceBucketWithDirPrefixFn = replaceBucketWithDirPrefix
 )
 
 func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
@@ -40,11 +40,6 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 			continue
 		}
 
-		clientBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientBucketName"])
-		if clientBucket == "" {
-			clientBucket = naming.S3BucketName(e.app, stage, "client", e.accountID, e.awsCfg.Region)
-		}
-
 		authBucket := strings.TrimSpace(stageReceipt.StackOutputs["AuthUIBucketName"])
 		if authBucket == "" {
 			authBucket = naming.S3BucketName(e.app, stage, "auth-ui", e.accountID, e.awsCfg.Region)
@@ -52,20 +47,9 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 
 		fmt.Printf("\nUploading UI assets (%s):\n", stageKey)
 		fmt.Printf("  auth_ui:  s3://%s/\n", authBucket)
-		fmt.Printf("  client:   s3://%s/\n", clientBucket)
 
-		if err := replaceBucketWithDirFn(ctx, s3Client, authBucket, authUIDist); err != nil {
+		if err := replaceBucketWithDirPrefixFn(ctx, s3Client, authBucket, "auth", authUIDist); err != nil {
 			return fmt.Errorf("upload auth UI (%s): %w", stageKey, err)
-		}
-
-		hasIndex, err := s3ObjectExistsFn(ctx, s3Client, clientBucket, "index.html")
-		if err != nil {
-			return fmt.Errorf("inspect client bucket (%s): %w", stageKey, err)
-		}
-		if !hasIndex {
-			if err := uploadClientPlaceholderFn(ctx, s3Client, clientBucket, stageReceipt.Domain); err != nil {
-				return fmt.Errorf("upload client placeholder (%s): %w", stageKey, err)
-			}
 		}
 
 		distID := strings.TrimSpace(stageReceipt.StackOutputs["FrontendDistributionId"])
@@ -107,7 +91,7 @@ func buildAuthUI(repoRoot string) (string, error) {
 }
 
 func invalidateFrontend(ctx context.Context, client *cloudfront.Client, distributionID string) error {
-	paths := []string{"/auth", "/auth/*", "/l", "/l/*"}
+	paths := []string{"/auth", "/auth/*"}
 	quantity := int32(len(paths)) // #nosec G115 -- len(paths) is bounded by static slice
 
 	_, err := createCloudfrontInvalidationFn(ctx, client, &cloudfront.CreateInvalidationInput{
@@ -125,25 +109,4 @@ func invalidateFrontend(ctx context.Context, client *cloudfront.Client, distribu
 	}
 	fmt.Println("  cloudfront: invalidation created")
 	return nil
-}
-
-func uploadClientPlaceholder(ctx context.Context, client *s3.Client, bucket string, stageDomain string) error {
-	content := fmt.Sprintf(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lesser</title>
-  </head>
-  <body>
-    <h1>Lesser is deployed</h1>
-    <p>The client UI has not been deployed yet.</p>
-    <p>Auth UI: <a href="https://%s/auth">https://%s/auth</a></p>
-    <p>API: <a href="https://%s/">https://%s/</a></p>
-    <p>Setup status: <code>GET /setup/status</code></p>
-  </body>
-</html>
-`, stageDomain, stageDomain, stageDomain, stageDomain)
-
-	return putObjectStringFn(ctx, client, bucket, "index.html", content, "text/html; charset=utf-8", "public, max-age=60")
 }

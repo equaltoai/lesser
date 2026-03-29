@@ -20,8 +20,8 @@ github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kk
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/aws/aws-lambda-go v1.53.0 h1:uAMv6W/vCP/L494BAUSxe+8KVBIPK+SGPyapFt3FuMk=
-github.com/aws/aws-lambda-go v1.53.0/go.mod h1:dpMpZgvWx5vuQJfBt0zqBha60q7Dd7RfgJv23DymV8A=
+github.com/aws/aws-lambda-go v1.54.0 h1:EGYpdyRGF88xszqlGcBewz811mJeRS+maNlLZXFheII=
+github.com/aws/aws-lambda-go v1.54.0/go.mod h1:dpMpZgvWx5vuQJfBt0zqBha60q7Dd7RfgJv23DymV8A=
 github.com/aws/aws-sdk-go-v2 v1.41.4 h1:10f50G7WyU02T56ox1wWXq+zTX9I1zxG46HYuG1hH/k=
 github.com/aws/aws-sdk-go-v2 v1.41.4/go.mod h1:mwsPRE8ceUUpiTgF7QmQIJ7lgsKUPQOUl3o72QBrE1o=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.7 h1:3kGOqnh1pPeddVa/E37XNTaWJ8W6vrbYV9lJEkCnhuY=
@@ -48,8 +48,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.21 h1:SwGMTMLIlvDNyhMteQ6r8IJSBPl
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.21/go.mod h1:UUxgWxofmOdAMuqEsSppbDtGKLfR04HGsD0HXzvhI1k=
 github.com/aws/aws-sdk-go-v2/service/apigateway v1.39.0 h1:FQ0FLNsNkhwHcpv6rkAZaR+Royay19A+M88mtOOSg7w=
 github.com/aws/aws-sdk-go-v2/service/apigateway v1.39.0/go.mod h1:xnkbxhrdrHvrz8qrNVvMAlARU/6suQoKtIjlaciWr3I=
-github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.11 h1:Pj+4wCQ96F+E08rCzWgxB1YV02nAJlqWgzjEqxdJit8=
-github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.11/go.mod h1:g0NyD5zE90Q+JuoRjm6woilYpH1qKVtTF708E9jOlMA=
+github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.13 h1:357Yo8n9E3WKIpei+mWQYVsIXMUM+c81J0LMYWjIGVc=
+github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.13/go.mod h1:u566wm1nu9AsBqipqf9R1Cseeoouj1t2LVwn5/cEJ+4=
 github.com/aws/aws-sdk-go-v2/service/bedrock v1.56.1 h1:0peImwbahEWbssTHbT2b3Kr20BLVx81zpqcZq8VCxt8=
 github.com/aws/aws-sdk-go-v2/service/bedrock v1.56.1/go.mod h1:C/1NPMi8p0/I4HKgDqXYl7WdcQvWrKBq5PqwGQjMz8U=
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.50.2 h1:x0eGAWpd1B5I/vMtrB4Q4Zuc3CXWI8wjHfPPqBSrKmM=
@@ -251,10 +251,10 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/supranational/blst v0.3.16 h1:bTDadT+3fK497EvLdWRQEjiGnUtzJ7jjIUMF0jqwYhE=
 github.com/supranational/blst v0.3.16/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
-github.com/theory-cloud/apptheory v0.18.1 h1:Dzx3gGn67elumKcqcnuisyQFwyhN5hF28Kr26FurmDM=
-github.com/theory-cloud/apptheory v0.18.1/go.mod h1:Qsn3OrjFjaJB9Z5sGx38BSGe+k59UJfamn5vmqnknQ8=
-github.com/theory-cloud/tabletheory v1.4.2 h1:ytFmtGEZwbt9QAmQdtUgsRCug2DvWZoPFufqg96NABU=
-github.com/theory-cloud/tabletheory v1.4.2/go.mod h1:L/ofefJDQQRU6ZMv57KfCoIlmB0Q5uZYUXLXrtYs+BE=
+github.com/theory-cloud/apptheory v0.19.1 h1:R8PVbgTMJ5IcRxhKwBDGss0hQnnASkPdnwErp/0qoAw=
+github.com/theory-cloud/apptheory v0.19.1/go.mod h1:VMmZLk5YSHB7NWj7OL8FgrWeI6+idTJGqYjaosn5nQc=
+github.com/theory-cloud/tabletheory v1.5.1 h1:2AQpln+cKQ8XCawL3cRsF4lDGkBkTEzEM18Nxbcv6r8=
+github.com/theory-cloud/tabletheory v1.5.1/go.mod h1:SvW/SkYjgmUFp051IrtKmp5T9KTyHfKJIYCtSgzSLEo=
 github.com/tklauser/go-sysconf v0.3.16 h1:frioLaCQSsF5Cy1jgRBrzr6t502KIIwQ0MArYICU0nA=
 github.com/tklauser/go-sysconf v0.3.16/go.mod h1:/qNL9xxDhc7tx3HSRsLWNnuzbVfh3e7gh/BmM179nYI=
 github.com/tklauser/numcpus v0.11.0 h1:nSTwhKH5e1dMNsCdVBukSZrURJRoHbSEQjdEbY+9RXw=

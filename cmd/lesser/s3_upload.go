@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -13,12 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 )
-
-type s3HeadObjectAPI interface {
-	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
-}
 
 type s3PutObjectAPI interface {
 	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
@@ -35,35 +29,11 @@ type s3BucketUploaderAPI interface {
 }
 
 var (
-	s3ObjectExistsFn  = s3ObjectExists
-	putObjectStringFn = putObjectString
+	putObjectStringFn     = putObjectString
+	uploadDirWithPrefixFn = uploadDirWithPrefix
 )
 
-func s3ObjectExists(ctx context.Context, client s3HeadObjectAPI, bucket string, key string) (bool, error) {
-	_, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
-	if err == nil {
-		return true, nil
-	}
-
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFound", "NoSuchKey":
-			return false, nil
-		}
-	}
-
-	if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "NoSuchKey") {
-		return false, nil
-	}
-
-	return false, err
-}
-
-func replaceBucketWithDir(ctx context.Context, client s3BucketUploaderAPI, bucket string, dir string) error {
+func replaceBucketWithDirPrefix(ctx context.Context, client s3BucketUploaderAPI, bucket string, prefix string, dir string) error {
 	if strings.TrimSpace(bucket) == "" {
 		return fmt.Errorf("bucket is empty")
 	}
@@ -76,39 +46,11 @@ func replaceBucketWithDir(ctx context.Context, client s3BucketUploaderAPI, bucke
 		return fmt.Errorf("path %s is not a directory", dir)
 	}
 
-	if err := deleteAllObjects(ctx, client, bucket); err != nil {
+	if err := deleteBucketPrefix(ctx, client, bucket, prefix); err != nil {
 		return err
 	}
 
-	files, err := listFiles(dir)
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		key := filepath.ToSlash(file.RelativePath)
-		contentType := contentTypeForKey(key)
-		cacheControl := cacheControlForKey(key)
-
-		f, err := os.Open(file.FullPath) //nolint:gosec // file path derived from repo root
-		if err != nil {
-			return fmt.Errorf("open %s: %w", file.FullPath, err)
-		}
-		_, putErr := client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:       aws.String(bucket),
-			Key:          aws.String(key),
-			Body:         f,
-			ContentType:  aws.String(contentType),
-			CacheControl: aws.String(cacheControl),
-		})
-		_ = f.Close()
-		if putErr != nil {
-			return fmt.Errorf("upload %s to s3://%s/%s: %w", file.RelativePath, bucket, key, putErr)
-		}
-	}
-
-	fmt.Println("  s3: uploaded", len(files), "file(s)")
-	return nil
+	return uploadDirWithPrefixFn(ctx, client, bucket, prefix, dir)
 }
 
 type localFile struct {
@@ -151,8 +93,13 @@ func listFiles(root string) ([]localFile, error) {
 }
 
 func deleteAllObjects(ctx context.Context, client s3BucketAPI, bucket string) error {
+	return deleteBucketPrefix(ctx, client, bucket, "")
+}
+
+func deleteBucketPrefix(ctx context.Context, client s3BucketAPI, bucket string, prefix string) error {
 	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
+		Prefix: aws.String(strings.TrimSpace(prefix)),
 	})
 
 	var keys []s3types.ObjectIdentifier
@@ -192,6 +139,54 @@ func deleteAllObjects(ctx context.Context, client s3BucketAPI, bucket string) er
 	return nil
 }
 
+func uploadDirWithPrefix(ctx context.Context, client s3PutObjectAPI, bucket string, prefix string, dir string) error {
+	if strings.TrimSpace(bucket) == "" {
+		return fmt.Errorf("bucket is empty")
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("stat dir %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path %s is not a directory", dir)
+	}
+
+	files, err := listFiles(dir)
+	if err != nil {
+		return err
+	}
+
+	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	for _, file := range files {
+		key := filepath.ToSlash(file.RelativePath)
+		if cleanPrefix != "" {
+			key = cleanPrefix + "/" + key
+		}
+		contentType := contentTypeForKey(key)
+		cacheControl := cacheControlForKey(key)
+
+		f, err := os.Open(file.FullPath) //nolint:gosec // file path derived from repo root
+		if err != nil {
+			return fmt.Errorf("open %s: %w", file.FullPath, err)
+		}
+		_, putErr := client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:       aws.String(bucket),
+			Key:          aws.String(key),
+			Body:         f,
+			ContentType:  aws.String(contentType),
+			CacheControl: aws.String(cacheControl),
+		})
+		_ = f.Close()
+		if putErr != nil {
+			return fmt.Errorf("upload %s to s3://%s/%s: %w", file.RelativePath, bucket, key, putErr)
+		}
+	}
+
+	fmt.Println("  s3: uploaded", len(files), "file(s)")
+	return nil
+}
+
 func putObjectString(ctx context.Context, client s3PutObjectAPI, bucket, key, content, contentType, cacheControl string) error {
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(bucket),
@@ -203,7 +198,7 @@ func putObjectString(ctx context.Context, client s3PutObjectAPI, bucket, key, co
 	if err != nil {
 		return fmt.Errorf("put s3://%s/%s: %w", bucket, key, err)
 	}
-	fmt.Println("  s3: uploaded client placeholder")
+	fmt.Println("  s3: uploaded", key)
 	return nil
 }
 
@@ -222,7 +217,7 @@ func contentTypeForKey(key string) string {
 
 func cacheControlForKey(key string) string {
 	switch {
-	case strings.HasPrefix(key, "_assets/"):
+	case strings.HasPrefix(key, "_assets/"), strings.HasPrefix(key, "l/_assets/"):
 		return "public, max-age=31536000, immutable"
 	case strings.HasSuffix(key, ".html"):
 		return "public, max-age=60"

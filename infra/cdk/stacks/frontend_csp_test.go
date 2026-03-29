@@ -1,99 +1,14 @@
 package stacks
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	localconstructs "cdk/constructs"
-
-	"github.com/aws/aws-cdk-go/awscdk/v2"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
-	"github.com/aws/jsii-runtime-go"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
-	outdir := t.TempDir()
-	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
-	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
-		Env: &awscdk.Environment{
-			Account: jsii.String("123456789012"),
-			Region:  jsii.String("us-east-1"),
-		},
-	})
-
-	hostedZone := awsroute53.NewHostedZone(stack, jsii.String("HostedZone"), &awsroute53.HostedZoneProps{
-		ZoneName: jsii.String("example.com"),
-	})
-
-	staticPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(stack, jsii.String("dev.example.com"))
-
-	clientBucket := awss3.NewBucket(stack, jsii.String("ClientBucket"), &awss3.BucketProps{
-		BucketName: jsii.String("test-dev-client-123456789012-us-east-1"),
-	})
-	authBucket := awss3.NewBucket(stack, jsii.String("AuthBucket"), &awss3.BucketProps{
-		BucketName: jsii.String("test-dev-auth-ui-123456789012-us-east-1"),
-	})
-
-	_ = apptheorycdk.NewAppTheoryPathRoutedFrontend(stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
-		ApiOriginUrl: jsii.String("api.dev.example.com"),
-		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
-			HostedZone:       hostedZone,
-			DomainName:       jsii.String("dev.example.com"),
-			CreateAAAARecord: jsii.Bool(true),
-		},
-		ApiBypassPaths: &[]*apptheorycdk.ApiBypassConfig{
-			{PathPattern: jsii.String("/auth/wallet/*")},
-		},
-		SpaOrigins: &[]*apptheorycdk.SpaOriginConfig{
-			{
-				Bucket:                  authBucket,
-				PathPattern:             jsii.String("/auth/*"),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-			},
-			{
-				Bucket:                  authBucket,
-				PathPattern:             jsii.String("/auth"),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-			},
-			{
-				Bucket:                  clientBucket,
-				PathPattern:             jsii.String("/l/*"),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-			},
-			{
-				Bucket:                  clientBucket,
-				PathPattern:             jsii.String("/l"),
-				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
-				StripPrefixBeforeOrigin: jsii.Bool(true),
-			},
-		},
-		SpaResponseHeadersPolicy: staticPolicy,
-	})
-
-	app.Synth(nil)
-
-	templatePath := filepath.Join(outdir, "TestStack.template.json")
-	data, err := os.ReadFile(templatePath)
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-
-	var tpl map[string]any
-	if err := json.Unmarshal(data, &tpl); err != nil {
-		t.Fatalf("unmarshal template: %v", err)
-	}
-
-	resources := mustResources(t, tpl)
-	policyLogicalID, policy := findSingleResponseHeadersPolicy(t, resources)
-	csp := extractResponseHeadersPolicyCSP(t, policy)
+	resources := synthClientFrontendResources(t)
+	authPolicyLogicalID, authPolicy, clientPolicyLogicalID, clientPolicy := findFrontendResponseHeadersPolicies(t, resources)
+	csp := extractResponseHeadersPolicyCSP(t, authPolicy)
 
 	if strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
 		t.Fatalf("CSP must not include unsafe directives: %s", csp)
@@ -105,6 +20,9 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 		"'sha256-IV0HjYu959C/EiJIL2l/9Ty8PA4757JXhA/g112YXVE='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
 	})
+	if hasResponseHeadersPolicyCSP(clientPolicy) {
+		t.Fatalf("client SSR response headers policy must not inject CSP")
+	}
 
 	dist := findSingleCloudFrontDistribution(t, resources)
 	defaultBehavior := extractDefaultCacheBehavior(t, dist)
@@ -113,50 +31,72 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 	}
 
 	cacheBehaviors := extractCacheBehaviors(t, dist)
-	needPolicy := map[string]struct{}{
+	authBehaviors := map[string]struct{}{
 		"/auth":   {},
 		"/auth/*": {},
-		"/l":      {},
-		"/l/*":    {},
+	}
+	clientBehaviors := map[string]struct{}{
+		"/l":           {},
+		"/l/*":         {},
+		"/l/_assets/*": {},
 	}
 	for _, behavior := range cacheBehaviors {
 		pathPattern, _ := behavior["PathPattern"].(string)
-		_, shouldHave := needPolicy[pathPattern]
 		raw, has := behavior["ResponseHeadersPolicyId"]
-		if shouldHave && !has {
-			t.Fatalf("behavior %q missing ResponseHeadersPolicyId", pathPattern)
-		}
-		if !shouldHave && has && strings.HasPrefix(pathPattern, "/auth/wallet") {
-			t.Fatalf("behavior %q must not attach ResponseHeadersPolicyId (API-owned route)", pathPattern)
-		}
-		if !shouldHave || !has {
+		if _, shouldHave := authBehaviors[pathPattern]; shouldHave {
+			if !has {
+				t.Fatalf("behavior %q missing ResponseHeadersPolicyId", pathPattern)
+			}
+			if !isRefTo(raw, authPolicyLogicalID) {
+				t.Fatalf("behavior %q ResponseHeadersPolicyId does not reference %s", pathPattern, authPolicyLogicalID)
+			}
 			continue
 		}
-		if !isRefTo(raw, policyLogicalID) {
-			t.Fatalf("behavior %q ResponseHeadersPolicyId does not reference %s", pathPattern, policyLogicalID)
+		if _, shouldHave := clientBehaviors[pathPattern]; shouldHave {
+			if !has {
+				t.Fatalf("behavior %q missing ResponseHeadersPolicyId", pathPattern)
+			}
+			if !isRefTo(raw, clientPolicyLogicalID) {
+				t.Fatalf("behavior %q ResponseHeadersPolicyId does not reference %s", pathPattern, clientPolicyLogicalID)
+			}
+			continue
+		}
+		if has && strings.HasPrefix(pathPattern, "/auth/wallet") {
+			t.Fatalf("behavior %q must not attach ResponseHeadersPolicyId (API-owned route)", pathPattern)
 		}
 	}
 }
 
-func findSingleResponseHeadersPolicy(t *testing.T, resources map[string]any) (string, map[string]any) {
+func findFrontendResponseHeadersPolicies(t *testing.T, resources map[string]any) (string, map[string]any, string, map[string]any) {
 	t.Helper()
-	var logicalID string
-	var res map[string]any
+	var authLogicalID string
+	var authPolicy map[string]any
+	var clientLogicalID string
+	var clientPolicy map[string]any
+
 	for id, raw := range resources {
 		typed, ok := raw.(map[string]any)
 		if !ok || typed["Type"] != "AWS::CloudFront::ResponseHeadersPolicy" {
 			continue
 		}
-		if logicalID != "" {
-			t.Fatalf("expected one ResponseHeadersPolicy, found multiple (%s, %s)", logicalID, id)
+		if hasResponseHeadersPolicyCSP(typed) {
+			if authLogicalID != "" {
+				t.Fatalf("expected one auth ResponseHeadersPolicy, found multiple (%s, %s)", authLogicalID, id)
+			}
+			authLogicalID = id
+			authPolicy = typed
+			continue
 		}
-		logicalID = id
-		res = typed
+		if clientLogicalID != "" {
+			t.Fatalf("expected one client ResponseHeadersPolicy, found multiple (%s, %s)", clientLogicalID, id)
+		}
+		clientLogicalID = id
+		clientPolicy = typed
 	}
-	if logicalID == "" {
-		t.Fatalf("expected ResponseHeadersPolicy resource")
+	if authLogicalID == "" || clientLogicalID == "" {
+		t.Fatalf("expected auth and client ResponseHeadersPolicy resources")
 	}
-	return logicalID, res
+	return authLogicalID, authPolicy, clientLogicalID, clientPolicy
 }
 
 func extractResponseHeadersPolicyCSP(t *testing.T, policy map[string]any) string {
@@ -189,6 +129,23 @@ func extractResponseHeadersPolicyCSP(t *testing.T, policy map[string]any) string
 		t.Fatalf("ContentSecurityPolicy Override must be false to preserve any origin-provided CSP")
 	}
 	return value
+}
+
+func hasResponseHeadersPolicyCSP(policy map[string]any) bool {
+	props, ok := policy["Properties"].(map[string]any)
+	if !ok {
+		return false
+	}
+	cfg, ok := props["ResponseHeadersPolicyConfig"].(map[string]any)
+	if !ok {
+		return false
+	}
+	sec, ok := cfg["SecurityHeadersConfig"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = sec["ContentSecurityPolicy"]
+	return ok
 }
 
 func findSingleCloudFrontDistribution(t *testing.T, resources map[string]any) map[string]any {

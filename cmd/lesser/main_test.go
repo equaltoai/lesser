@@ -68,6 +68,24 @@ func TestRunCLI_DispatchAndExitCodes(t *testing.T) {
 		require.Contains(t, buf.String(), "Error:")
 	})
 
+	t.Run("client install uses runner and returns 1 on error", func(t *testing.T) {
+		previous := runClientInstallFn
+		t.Cleanup(func() { runClientInstallFn = previous })
+
+		var called bool
+		runClientInstallFn = func(argv []string) error {
+			called = true
+			require.Equal(t, []string{"--config", "x"}, argv)
+			return errors.New("boom")
+		}
+
+		var buf bytes.Buffer
+		code := runCLI([]string{"lesser", "client", "install", "--config", "x"}, &buf)
+		require.True(t, called)
+		require.Equal(t, 1, code)
+		require.Contains(t, buf.String(), "Error:")
+	})
+
 	t.Run("dispatches simple commands", func(t *testing.T) {
 		previousBuild := runBuildFn
 		previousVerify := runVerifyFn
@@ -111,6 +129,7 @@ func TestRunCLI_DispatchAndExitCodes(t *testing.T) {
 func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevUp := runUpFn
 	prevDown := runDownFn
+	prevClientInstall := runClientInstallFn
 	prevClientDeploy := runClientDeployFn
 	prevInitAdmin := runInitAdminFn
 	prevBuild := runBuildFn
@@ -146,6 +165,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	t.Cleanup(func() {
 		runUpFn = prevUp
 		runDownFn = prevDown
+		runClientInstallFn = prevClientInstall
 		runClientDeployFn = prevClientDeploy
 		runInitAdminFn = prevInitAdmin
 		runBuildFn = prevBuild
@@ -193,6 +213,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	runUpFn = stub("up")
 	runDownFn = stub("down")
+	runClientInstallFn = stub("client install")
 	runClientDeployFn = stub("client deploy")
 	runInitAdminFn = stub("init-admin")
 	runBuildFn = stub("build")
@@ -245,6 +266,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 2, runCLI([]string{"lesser", "client", "wat"}, &buf))
 	require.Contains(t, buf.String(), "Unknown client command:")
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "client", "install", "--config", "x"}, &buf))
+	require.Equal(t, []string{"--config", "x"}, calls["client install"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "client", "deploy", "--dist", "x"}, &buf))
 	require.Equal(t, []string{"--dist", "x"}, calls["client deploy"].argv)

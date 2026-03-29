@@ -10,21 +10,57 @@ import (
 	_jsii "github.com/aws/jsii-runtime-go"
 )
 
-// NewFrontendStaticResponseHeadersPolicy returns a ResponseHeadersPolicy intended for HTML
-// served from S3-backed CloudFront behaviors (e.g. /l/* and /auth/* on the stage apex).
-//
-// The policy is strict and intentionally does not rely on unsafe CSP directives. Inline
-// scripts/styles required by the bundled auth UI are allow-listed by hash.
+// NewFrontendStaticResponseHeadersPolicy returns a strict response headers policy for the bundled auth UI.
 func NewFrontendStaticResponseHeadersPolicy(scope constructs.Construct, domainName *string) awscloudfront.ResponseHeadersPolicy {
 	csp := buildFrontendStaticCSP(domainName)
 
-	return awscloudfront.NewResponseHeadersPolicy(scope, _jsii.String("FrontendStaticResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
+	return awscloudfront.NewResponseHeadersPolicy(scope, _jsii.String("AuthUIResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
 		Comment: _jsii.String("Lesser static site security headers (no unsafe CSP directives)"),
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
 				ContentSecurityPolicy: _jsii.String(csp),
 				Override:              _jsii.Bool(false),
 			},
+			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{Override: _jsii.Bool(true)},
+			FrameOptions: &awscloudfront.ResponseHeadersFrameOptions{
+				FrameOption: awscloudfront.HeadersFrameOption_DENY,
+				Override:    _jsii.Bool(true),
+			},
+			ReferrerPolicy: &awscloudfront.ResponseHeadersReferrerPolicy{
+				ReferrerPolicy: awscloudfront.HeadersReferrerPolicy_STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+				Override:       _jsii.Bool(true),
+			},
+			StrictTransportSecurity: &awscloudfront.ResponseHeadersStrictTransportSecurity{
+				AccessControlMaxAge: awscdk.Duration_Days(_jsii.Number(365)),
+				IncludeSubdomains:   _jsii.Bool(true),
+				Override:            _jsii.Bool(true),
+			},
+			XssProtection: &awscloudfront.ResponseHeadersXSSProtection{
+				Protection: _jsii.Bool(true),
+				ModeBlock:  _jsii.Bool(true),
+				Override:   _jsii.Bool(true),
+			},
+		},
+		CustomHeadersBehavior: &awscloudfront.ResponseCustomHeadersBehavior{
+			CustomHeaders: &[]*awscloudfront.ResponseCustomHeader{
+				{
+					Header:   _jsii.String("Permissions-Policy"),
+					Value:    _jsii.String("camera=(), microphone=(), geolocation=(), payment=()"),
+					Override: _jsii.Bool(true),
+				},
+			},
+		},
+		RemoveHeaders: &[]*string{
+			_jsii.String("Server"),
+		},
+	})
+}
+
+// NewClientSSRResponseHeadersPolicy leaves CSP to the origin so FaceTheory responses can remain authoritative.
+func NewClientSSRResponseHeadersPolicy(scope constructs.Construct) awscloudfront.ResponseHeadersPolicy {
+	return awscloudfront.NewResponseHeadersPolicy(scope, _jsii.String("ClientSSRResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
+		Comment: _jsii.String("Lesser SSR client security headers without CloudFront-managed CSP"),
+		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{Override: _jsii.Bool(true)},
 			FrameOptions: &awscloudfront.ResponseHeadersFrameOptions{
 				FrameOption: awscloudfront.HeadersFrameOption_DENY,

@@ -128,7 +128,14 @@ func TestRunDown_PurgeArtifacts(t *testing.T) {
 		"--state", statePath,
 		"--purge-artifacts",
 	}))
-	require.Equal(t, []string{"dev-auth", "dev-client", "live-auth", "live-client"}, purged)
+	require.Equal(t, []string{
+		"app-dev-client-artifacts-123456789012-us-east-1",
+		"app-live-client-artifacts-123456789012-us-east-1",
+		"dev-auth",
+		"dev-client",
+		"live-auth",
+		"live-client",
+	}, purged)
 }
 
 func TestRunDown_MissingStatePathErrors(t *testing.T) {
