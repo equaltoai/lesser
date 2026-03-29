@@ -119,6 +119,31 @@ func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	require.Contains(t, err.Error(), "cdk deploy demo")
 }
 
+func TestCdkDeployWithOutputs_UsesExplicitOutputsPath(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	repoRoot := t.TempDir()
+	outputsPath := filepath.Join(t.TempDir(), "deploy", "cdk-outputs", "demo.json")
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
+	}
+
+	res, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		OutputsPath:  outputsPath,
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Key": "Value"}, res.Outputs)
+	require.Contains(t, gotArgs, outputsPath)
+}
+
 func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {
 	previousRunCommand := runCommandFn
 	t.Cleanup(func() { runCommandFn = previousRunCommand })

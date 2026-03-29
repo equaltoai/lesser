@@ -17,6 +17,7 @@ type cdkDeployRequest struct {
 	HostedZoneID    string
 	Region          string
 	LambdaAssetRoot string
+	OutputsPath     string
 	StageFilter     string
 	WithStaging     bool
 	Contexts        map[string]string
@@ -75,7 +76,10 @@ func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accou
 func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile string, req cdkDeployRequest) (cdkDeployResult, error) {
 	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
 
-	outputsPath := filepath.Join(repoRoot, "tmp", "cdk-outputs.json")
+	outputsPath := strings.TrimSpace(req.OutputsPath)
+	if outputsPath == "" {
+		outputsPath = filepath.Join(repoRoot, "tmp", "cdk-outputs.json")
+	}
 	if err := os.MkdirAll(filepath.Dir(outputsPath), 0o750); err != nil {
 		return cdkDeployResult{}, err
 	}

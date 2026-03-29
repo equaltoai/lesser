@@ -8,13 +8,24 @@ import (
 	"github.com/equaltoai/lesser/pkg/releaseassets"
 )
 
-func prepareLambdaAssetRoot(stateDir string) (string, error) {
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		return "", fmt.Errorf("create deploy state dir: %w", err)
-	}
+func deployWorkspaceRoot(stateDir string) string {
+	return filepath.Join(stateDir, "deploy")
+}
 
-	assetRoot, err := os.MkdirTemp(stateDir, "deploy-lambda-assets.")
-	if err != nil {
+func deployLambdaAssetRoot(stateDir string) string {
+	return filepath.Join(deployWorkspaceRoot(stateDir), "lambda-assets")
+}
+
+func deployCdkOutputsPath(stateDir string, stackName string) string {
+	return filepath.Join(deployWorkspaceRoot(stateDir), "cdk-outputs", stackName+".json")
+}
+
+func prepareLambdaAssetRoot(stateDir string) (string, error) {
+	assetRoot := deployLambdaAssetRoot(stateDir)
+	if err := os.RemoveAll(assetRoot); err != nil {
+		return "", fmt.Errorf("reset lambda asset root: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(assetRoot, "bin"), 0o750); err != nil {
 		return "", fmt.Errorf("create lambda asset root: %w", err)
 	}
 	return assetRoot, nil
