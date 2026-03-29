@@ -365,6 +365,12 @@ func extractBundleEntry(
 	if header.Typeflag != tar.TypeReg {
 		return fmt.Errorf("unexpected bundle entry type for %s", header.Name)
 	}
+	if strings.Contains(header.Name, "..") {
+		return fmt.Errorf("bundle archive entry %q must not contain '..'", header.Name)
+	}
+	if strings.Contains(header.Name, `\`) {
+		return fmt.Errorf("bundle archive entry %q must use forward slashes", header.Name)
+	}
 
 	normalizedPath, err := normalizeReleaseAssetPath(header.Name)
 	if err != nil {

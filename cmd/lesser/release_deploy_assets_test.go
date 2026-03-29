@@ -379,6 +379,26 @@ func TestExtractBundleEntry_ErrorsOnGuardClauses(t *testing.T) {
 		require.Contains(t, err.Error(), "duplicate bundle archive entry")
 	})
 
+	t.Run("path traversal", func(t *testing.T) {
+		err := extractBundleEntry(nil, &tar.Header{
+			Name:     "bin/../api.zip",
+			Typeflag: tar.TypeReg,
+			Size:     manifestFile.SizeBytes,
+		}, t.TempDir(), expectedFiles, map[string]struct{}{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must not contain '..'")
+	})
+
+	t.Run("windows separator", func(t *testing.T) {
+		err := extractBundleEntry(nil, &tar.Header{
+			Name:     `bin\\api.zip`,
+			Typeflag: tar.TypeReg,
+			Size:     manifestFile.SizeBytes,
+		}, t.TempDir(), expectedFiles, map[string]struct{}{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must use forward slashes")
+	})
+
 	t.Run("size mismatch", func(t *testing.T) {
 		err := extractBundleEntry(nil, &tar.Header{
 			Name:     manifestFile.Path,
