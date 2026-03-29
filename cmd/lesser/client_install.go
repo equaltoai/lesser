@@ -106,6 +106,29 @@ type clientInstallAssetsManifest struct {
 	Files      []string `json:"files"`
 }
 
+type clientInstallCommand struct {
+	appRoot            string
+	configPath         string
+	statePath          string
+	serverRoot         string
+	historyManifestKey string
+	manifestContent    string
+	receipt            *upReceipt
+	stages             []naming.Stage
+	pkgPlan            *clientInstallPackage
+	s3Client           *s3.Client
+	cfClient           *cloudfront.Client
+}
+
+type clientInstallStageTargets struct {
+	stageReceipt   *stageReceipt
+	stageKey       string
+	assetBucket    string
+	artifactBucket string
+	manifestKey    string
+	distributionID string
+}
+
 var installIDSanitizer = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 func runClientInstall(argv []string) error {
@@ -114,159 +137,250 @@ func runClientInstall(argv []string) error {
 		return err
 	}
 
-	app, err := naming.NormalizeAppName(args.App)
+	command, err := newClientInstallCommand(args)
 	if err != nil {
 		return err
+	}
+
+	logClientInstall(command)
+	if err := publishClientInstallStages(context.Background(), command); err != nil {
+		return err
+	}
+
+	return writeReceiptFn(command.statePath, command.receipt)
+}
+
+func newClientInstallCommand(args clientInstallArgs) (*clientInstallCommand, error) {
+	app, baseDomain, awsProfile, err := normalizeClientInstallInputs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	appRoot, configPath, pkgPlan, err := prepareClientInstallArtifacts(args)
+	if err != nil {
+		return nil, err
+	}
+
+	serverRoot, historyManifestKey, manifestContent, err := buildClientInstallManifestArtifact(pkgPlan)
+	if err != nil {
+		return nil, err
+	}
+
+	statePath, receipt, stages, err := resolveClientInstallReceipt(app, baseDomain, args)
+	if err != nil {
+		return nil, err
+	}
+
+	s3Client, cfClient, err := newClientInstallAWSClients(awsProfile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientInstallCommand{
+		appRoot:            appRoot,
+		configPath:         configPath,
+		statePath:          statePath,
+		serverRoot:         serverRoot,
+		historyManifestKey: historyManifestKey,
+		manifestContent:    manifestContent,
+		receipt:            receipt,
+		stages:             stages,
+		pkgPlan:            pkgPlan,
+		s3Client:           s3Client,
+		cfClient:           cfClient,
+	}, nil
+}
+
+func normalizeClientInstallInputs(args clientInstallArgs) (string, string, string, error) {
+	app, err := naming.NormalizeAppName(args.App)
+	if err != nil {
+		return "", "", "", err
 	}
 
 	baseDomain, err := normalizeBaseDomain(args.BaseDomain)
 	if err != nil {
-		return err
+		return "", "", "", err
 	}
 
 	awsProfile := strings.TrimSpace(args.AWSProfile)
 	if awsProfile == "" {
-		return errors.New("aws profile is required")
+		return "", "", "", errors.New("aws profile is required")
 	}
 
+	return app, baseDomain, awsProfile, nil
+}
+
+func prepareClientInstallArtifacts(args clientInstallArgs) (string, string, *clientInstallPackage, error) {
 	appRoot, configPath, err := resolveClientInstallRoot(args.ConfigPath)
 	if err != nil {
-		return err
+		return "", "", nil, err
 	}
 
 	config, err := readFaceTheoryLesserConfig(configPath)
 	if err != nil {
-		return err
+		return "", "", nil, err
 	}
 
 	pkg, err := readNodePackageJSON(filepath.Join(appRoot, "package.json"))
 	if err != nil {
-		return err
+		return "", "", nil, err
 	}
 	if err := validateFaceTheoryPackage(pkg); err != nil {
-		return err
+		return "", "", nil, err
 	}
 
 	if !args.SkipBuild {
 		if err := installNodeModulesIfNeeded(appRoot); err != nil {
-			return err
+			return "", "", nil, err
 		}
 		if err := runFaceTheoryBuild(context.Background(), appRoot, config); err != nil {
-			return err
+			return "", "", nil, err
 		}
 	}
 
 	pkgPlan, err := prepareClientInstallPackage(appRoot, config, pkg)
 	if err != nil {
-		return err
+		return "", "", nil, err
 	}
 
+	return appRoot, configPath, pkgPlan, nil
+}
+
+func buildClientInstallManifestArtifact(pkgPlan *clientInstallPackage) (string, string, string, error) {
+	serverRoot := filepath.ToSlash(filepath.Join(clientInstallHistoryRoot, pkgPlan.InstallID, "server"))
+	historyManifestKey := filepath.ToSlash(filepath.Join(clientInstallHistoryRoot, pkgPlan.InstallID, "manifest.json"))
+	manifest := pkgPlan.Manifest
+	manifest.Server.Root = serverRoot
+	manifest.Assets.Root = clientInstallAssetsRoot
+
+	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return "", "", "", fmt.Errorf("marshal install manifest: %w", err)
+	}
+
+	return serverRoot, historyManifestKey, string(append(manifestJSON, '\n')), nil
+}
+
+func resolveClientInstallReceipt(app, baseDomain string, args clientInstallArgs) (string, *upReceipt, []naming.Stage, error) {
 	statePath, err := resolveReceiptPath(app, baseDomain, args.StatePath)
 	if err != nil {
-		return err
+		return "", nil, nil, err
 	}
 
 	receipt, err := readReceipt(statePath)
 	if err != nil {
-		return err
+		return "", nil, nil, err
 	}
 
 	stages, err := parseStageSelection(args.Stage)
 	if err != nil {
-		return err
+		return "", nil, nil, err
 	}
 
-	ctx := context.Background()
-	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
+	return statePath, receipt, stages, nil
+}
+
+func newClientInstallAWSClients(awsProfile string) (*s3.Client, *cloudfront.Client, error) {
+	awsCfg, err := loadAWSConfigFromProfileFn(context.Background(), awsProfile)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return s3.NewFromConfig(awsCfg), cloudfront.NewFromConfig(awsCfg), nil
+}
+
+func logClientInstall(command *clientInstallCommand) {
+	fmt.Println("\nInstalling FaceTheory client:")
+	fmt.Println("  app_repo:", command.appRoot)
+	fmt.Println("  config:", command.configPath)
+	fmt.Println("  receipt:", command.statePath)
+	fmt.Println("  install_id:", command.pkgPlan.InstallID)
+}
+
+func publishClientInstallStages(ctx context.Context, command *clientInstallCommand) error {
+	for _, stage := range command.stages {
+		if err := publishClientInstallStage(ctx, command, stage); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func publishClientInstallStage(ctx context.Context, command *clientInstallCommand, stage naming.Stage) error {
+	targets, err := resolveClientInstallStageTargets(command.receipt, stage)
 	if err != nil {
 		return err
 	}
 
-	s3Client := s3.NewFromConfig(awsCfg)
-	cfClient := cloudfront.NewFromConfig(awsCfg)
+	fmt.Printf("\nPublishing client install (%s):\n", targets.stageKey)
+	fmt.Printf("  artifact_bucket: s3://%s/\n", targets.artifactBucket)
+	fmt.Printf("  asset_bucket:    s3://%s/\n", targets.assetBucket)
 
-	fmt.Println("\nInstalling FaceTheory client:")
-	fmt.Println("  app_repo:", appRoot)
-	fmt.Println("  config:", configPath)
-	fmt.Println("  receipt:", statePath)
-	fmt.Println("  install_id:", pkgPlan.InstallID)
-
-	for _, stage := range stages {
-		stageKey := string(stage)
-		stageReceipt := receipt.Stages[stageKey]
-		if stageReceipt == nil {
-			return fmt.Errorf("receipt missing stage %q", stageKey)
-		}
-
-		assetBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientBucketName"])
-		if assetBucket == "" {
-			assetBucket = naming.S3BucketName(receipt.App, stage, "client", receipt.AccountID, receipt.Region)
-		}
-
-		artifactBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientArtifactBucketName"])
-		if artifactBucket == "" {
-			artifactBucket = naming.S3BucketName(receipt.App, stage, clientArtifactBucketSuffix, receipt.AccountID, receipt.Region)
-		}
-
-		manifestKey := strings.TrimSpace(stageReceipt.StackOutputs["ClientInstallManifestKey"])
-		if manifestKey == "" {
-			manifestKey = clientInstallDefaultManifestKey
-		}
-
-		distID := strings.TrimSpace(stageReceipt.StackOutputs["FrontendDistributionId"])
-		if distID == "" {
-			return fmt.Errorf("missing FrontendDistributionId in receipt for stage %q", stageKey)
-		}
-
-		serverRoot := filepath.ToSlash(filepath.Join(clientInstallHistoryRoot, pkgPlan.InstallID, "server"))
-		historyManifestKey := filepath.ToSlash(filepath.Join(clientInstallHistoryRoot, pkgPlan.InstallID, "manifest.json"))
-		manifest := pkgPlan.Manifest
-		manifest.Server.Root = serverRoot
-		manifest.Assets.Root = clientInstallAssetsRoot
-
-		manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal install manifest (%s): %w", stageKey, err)
-		}
-		manifestContent := string(append(manifestJSON, '\n'))
-
-		fmt.Printf("\nPublishing client install (%s):\n", stageKey)
-		fmt.Printf("  artifact_bucket: s3://%s/\n", artifactBucket)
-		fmt.Printf("  asset_bucket:    s3://%s/\n", assetBucket)
-
-		if err := uploadDirWithPrefixFn(ctx, s3Client, artifactBucket, serverRoot, pkgPlan.ServerDir); err != nil {
-			return fmt.Errorf("upload SSR server bundle (%s): %w", stageKey, err)
-		}
-		if err := uploadDirWithPrefixFn(ctx, s3Client, assetBucket, clientInstallAssetsRoot, pkgPlan.AssetsDir); err != nil {
-			return fmt.Errorf("upload SSR assets (%s): %w", stageKey, err)
-		}
-		if err := putObjectStringFn(ctx, s3Client, artifactBucket, historyManifestKey, manifestContent, "application/json; charset=utf-8", "no-store"); err != nil {
-			return fmt.Errorf("upload install manifest history (%s): %w", stageKey, err)
-		}
-		if err := putObjectStringFn(ctx, s3Client, artifactBucket, manifestKey, manifestContent, "application/json; charset=utf-8", "no-store"); err != nil {
-			return fmt.Errorf("activate install manifest (%s): %w", stageKey, err)
-		}
-		if err := invalidateClientPathsFn(ctx, cfClient, distID); err != nil {
-			return fmt.Errorf("cloudfront invalidation (%s): %w", stageKey, err)
-		}
-
-		stageReceipt.ClientInstall = &clientInstallReceipt{
-			AppName:     pkgPlan.AppName,
-			DisplayName: pkgPlan.DisplayName,
-			Version:     pkgPlan.Version,
-			InstallID:   pkgPlan.InstallID,
-			ManifestKey: manifestKey,
-			ServerRoot:  serverRoot,
-			AssetsRoot:  clientInstallAssetsRoot,
-			InstalledAt: time.Now().UTC(),
-		}
+	if err := uploadDirWithPrefixFn(ctx, command.s3Client, targets.artifactBucket, command.serverRoot, command.pkgPlan.ServerDir); err != nil {
+		return fmt.Errorf("upload SSR server bundle (%s): %w", targets.stageKey, err)
+	}
+	if err := uploadDirWithPrefixFn(ctx, command.s3Client, targets.assetBucket, clientInstallAssetsRoot, command.pkgPlan.AssetsDir); err != nil {
+		return fmt.Errorf("upload SSR assets (%s): %w", targets.stageKey, err)
+	}
+	if err := putObjectStringFn(ctx, command.s3Client, targets.artifactBucket, command.historyManifestKey, command.manifestContent, "application/json; charset=utf-8", "no-store"); err != nil {
+		return fmt.Errorf("upload install manifest history (%s): %w", targets.stageKey, err)
+	}
+	if err := putObjectStringFn(ctx, command.s3Client, targets.artifactBucket, targets.manifestKey, command.manifestContent, "application/json; charset=utf-8", "no-store"); err != nil {
+		return fmt.Errorf("activate install manifest (%s): %w", targets.stageKey, err)
+	}
+	if err := invalidateClientPathsFn(ctx, command.cfClient, targets.distributionID); err != nil {
+		return fmt.Errorf("cloudfront invalidation (%s): %w", targets.stageKey, err)
 	}
 
-	if err := writeReceiptFn(statePath, receipt); err != nil {
-		return err
+	targets.stageReceipt.ClientInstall = &clientInstallReceipt{
+		AppName:     command.pkgPlan.AppName,
+		DisplayName: command.pkgPlan.DisplayName,
+		Version:     command.pkgPlan.Version,
+		InstallID:   command.pkgPlan.InstallID,
+		ManifestKey: targets.manifestKey,
+		ServerRoot:  command.serverRoot,
+		AssetsRoot:  clientInstallAssetsRoot,
+		InstalledAt: time.Now().UTC(),
 	}
 
 	return nil
+}
+
+func resolveClientInstallStageTargets(receipt *upReceipt, stage naming.Stage) (*clientInstallStageTargets, error) {
+	stageKey := string(stage)
+	stageReceipt := receipt.Stages[stageKey]
+	if stageReceipt == nil {
+		return nil, fmt.Errorf("receipt missing stage %q", stageKey)
+	}
+
+	assetBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientBucketName"])
+	if assetBucket == "" {
+		assetBucket = naming.S3BucketName(receipt.App, stage, "client", receipt.AccountID, receipt.Region)
+	}
+
+	artifactBucket := strings.TrimSpace(stageReceipt.StackOutputs["ClientArtifactBucketName"])
+	if artifactBucket == "" {
+		artifactBucket = naming.S3BucketName(receipt.App, stage, clientArtifactBucketSuffix, receipt.AccountID, receipt.Region)
+	}
+
+	manifestKey := strings.TrimSpace(stageReceipt.StackOutputs["ClientInstallManifestKey"])
+	if manifestKey == "" {
+		manifestKey = clientInstallDefaultManifestKey
+	}
+
+	distributionID := strings.TrimSpace(stageReceipt.StackOutputs["FrontendDistributionId"])
+	if distributionID == "" {
+		return nil, fmt.Errorf("missing FrontendDistributionId in receipt for stage %q", stageKey)
+	}
+
+	return &clientInstallStageTargets{
+		stageReceipt:   stageReceipt,
+		stageKey:       stageKey,
+		assetBucket:    assetBucket,
+		artifactBucket: artifactBucket,
+		manifestKey:    manifestKey,
+		distributionID: distributionID,
+	}, nil
 }
 
 func parseClientInstallArgs(argv []string) (clientInstallArgs, error) {

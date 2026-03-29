@@ -10,6 +10,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/stretchr/testify/require"
 )
 
@@ -227,6 +229,552 @@ func TestRunClientInstall_RecordsInstallInReceiptAndPublishesManifest(t *testing
 	require.Equal(t, filepath.ToSlash(filepath.Join(clientInstallHistoryRoot, manifest.InstallID, "server")), install.ServerRoot)
 	require.Equal(t, clientInstallAssetsRoot, install.AssetsRoot)
 	require.False(t, install.InstalledAt.IsZero())
+}
+
+func TestResolveClientInstallRoot_SearchesUpwardAndValidatesExplicitPath(t *testing.T) {
+	previousWD, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(previousWD) })
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, clientInstallConfigFileName)
+	require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"server","entry":"handler.mjs"},"assets":{"dir":"client"}}`, 0o644))
+
+	nested := filepath.Join(root, "apps", "demo")
+	require.NoError(t, os.MkdirAll(nested, 0o755))
+	require.NoError(t, os.Chdir(nested))
+
+	appRoot, resolvedConfig, err := resolveClientInstallRoot("")
+	require.NoError(t, err)
+	require.Equal(t, root, appRoot)
+	require.Equal(t, configPath, resolvedConfig)
+
+	_, _, err = resolveClientInstallRoot(filepath.Join(root, "missing.json"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "client install config not found")
+
+	empty := t.TempDir()
+	require.NoError(t, os.Chdir(empty))
+	_, _, err = resolveClientInstallRoot("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unable to locate")
+}
+
+func TestPrepareClientInstallArtifacts_RunsInstallAndBuild(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	appRoot := t.TempDir()
+	configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+	require.NoError(t, osWriteFile(configPath, strings.Join([]string{
+		"{",
+		`  "schema_version": 1,`,
+		`  "build": {"command": ["pnpm", "build:ssr"]},`,
+		`  "server": {"dir": "dist/server", "entry": "handler.mjs"},`,
+		`  "assets": {"dir": "dist/client"}`,
+		"}",
+		"",
+	}, "\n"), 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), strings.Join([]string{
+		"{",
+		`  "name": "@equaltoai/demo-client",`,
+		`  "version": "1.2.3",`,
+		`  "dependencies": {"@theory-cloud/facetheory": "^0.1.0"}`,
+		"}",
+		"",
+	}, "\n"), 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(appRoot, "dist", "server", "handler.mjs"), "export async function handler() {}", 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(appRoot, "dist", "client", "index.html"), "<!doctype html>", 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(appRoot, "dist", "client", "_assets", "app.js"), "console.log('ok')", 0o644))
+
+	type commandCall struct {
+		name string
+		args []string
+		dir  string
+	}
+	var calls []commandCall
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
+		calls = append(calls, commandCall{name: name, args: append([]string(nil), args...), dir: opts.Dir})
+		return nil
+	}
+
+	appRootResolved, resolvedConfig, plan, err := prepareClientInstallArtifacts(clientInstallArgs{
+		ConfigPath: configPath,
+	})
+	require.NoError(t, err)
+	require.Equal(t, appRoot, appRootResolved)
+	require.Equal(t, configPath, resolvedConfig)
+	require.NotNil(t, plan)
+	require.Equal(t, []commandCall{
+		{name: "pnpm", args: []string{"install", "--frozen-lockfile"}, dir: appRoot},
+		{name: "pnpm", args: []string{"build:ssr"}, dir: appRoot},
+	}, calls)
+}
+
+func TestNormalizeClientInstallInputs_ValidatesAndTrims(t *testing.T) {
+	_, _, _, err := normalizeClientInstallInputs(clientInstallArgs{
+		App:        "bad_app",
+		BaseDomain: "example.com",
+		AWSProfile: "profile",
+	})
+	require.Error(t, err)
+
+	_, _, _, err = normalizeClientInstallInputs(clientInstallArgs{
+		App:        "demo-app",
+		BaseDomain: "https://example.com",
+		AWSProfile: "profile",
+	})
+	require.Error(t, err)
+
+	_, _, _, err = normalizeClientInstallInputs(clientInstallArgs{
+		App:        "demo-app",
+		BaseDomain: "example.com",
+		AWSProfile: "   ",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "aws profile is required")
+
+	app, baseDomain, awsProfile, err := normalizeClientInstallInputs(clientInstallArgs{
+		App:        " Demo-App ",
+		BaseDomain: " Example.COM. ",
+		AWSProfile: " profile ",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "demo-app", app)
+	require.Equal(t, "example.com", baseDomain)
+	require.Equal(t, "profile", awsProfile)
+}
+
+func TestClientInstallValidationHelpers(t *testing.T) {
+	t.Run("read config validates schema and required fields", func(t *testing.T) {
+		root := t.TempDir()
+		invalidSchema := filepath.Join(root, "invalid-schema.json")
+		require.NoError(t, osWriteFile(invalidSchema, `{"schema_version":2,"server":{"dir":"server","entry":"handler.mjs"},"assets":{"dir":"client"}}`, 0o644))
+		_, err := readFaceTheoryLesserConfig(invalidSchema)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported client install config schema_version")
+
+		missingFields := filepath.Join(root, "missing-fields.json")
+		require.NoError(t, osWriteFile(missingFields, `{"schema_version":1,"server":{"dir":"","entry":""},"assets":{"dir":""}}`, 0o644))
+		_, err = readFaceTheoryLesserConfig(missingFields)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires server.dir and server.entry")
+
+		missingAssets := filepath.Join(root, "missing-assets.json")
+		require.NoError(t, osWriteFile(missingAssets, `{"schema_version":1,"server":{"dir":"server","entry":"handler.mjs"},"assets":{"dir":""}}`, 0o644))
+		_, err = readFaceTheoryLesserConfig(missingAssets)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires assets.dir")
+	})
+
+	t.Run("package validation accepts dev dependency and rejects missing package", func(t *testing.T) {
+		require.Error(t, validateFaceTheoryPackage(nil))
+		require.NoError(t, validateFaceTheoryPackage(&nodePackageJSON{
+			DevDependencies: map[string]string{"@theory-cloud/facetheory": "^0.1.0"},
+		}))
+		require.Error(t, validateFaceTheoryPackage(&nodePackageJSON{}))
+		require.True(t, hasNodeDependency(map[string]string{"x": "1"}, "x"))
+		require.False(t, hasNodeDependency(nil, "x"))
+	})
+
+	t.Run("read package json surfaces parse errors", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "package.json")
+		require.NoError(t, osWriteFile(path, "{not-json}", 0o644))
+		_, err := readNodePackageJSON(path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parse package.json")
+	})
+}
+
+func TestPrepareClientInstallArtifacts_PropagatesErrors(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	t.Run("missing config path", func(t *testing.T) {
+		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
+			ConfigPath: filepath.Join(t.TempDir(), "missing.json"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "client install config not found")
+	})
+
+	t.Run("missing package.json", func(t *testing.T) {
+		appRoot := t.TempDir()
+		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
+
+		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
+			ConfigPath: configPath,
+			SkipBuild:  true,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "read package.json")
+	})
+
+	t.Run("missing facetheory dependency", func(t *testing.T) {
+		appRoot := t.TempDir()
+		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), `{"name":"demo-client","version":"1.2.3"}`, 0o644))
+
+		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
+			ConfigPath: configPath,
+			SkipBuild:  true,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "@theory-cloud/facetheory")
+	})
+
+	t.Run("install failure", func(t *testing.T) {
+		appRoot := t.TempDir()
+		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), `{"name":"demo-client","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"^0.1.0"}}`, 0o644))
+		runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
+
+		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
+			ConfigPath: configPath,
+		})
+		require.ErrorIs(t, err, errSentinel)
+		require.Contains(t, err.Error(), "pnpm install (client app)")
+	})
+
+	t.Run("build failure", func(t *testing.T) {
+		appRoot := t.TempDir()
+		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), `{"name":"demo-client","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"^0.1.0"}}`, 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(appRoot, "node_modules"), 0o755))
+		runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
+
+		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
+			ConfigPath: configPath,
+		})
+		require.ErrorIs(t, err, errSentinel)
+		require.Contains(t, err.Error(), "build FaceTheory app")
+	})
+}
+
+func TestResolveClientInstallStageTargets_DefaultsAndErrors(t *testing.T) {
+	receipt := newUpReceipt(
+		"app",
+		"example.com",
+		"profile",
+		"123456789012",
+		"us-east-1",
+		nil,
+		hostedZone{ID: "Z1", Name: "example.com"},
+	)
+	receipt.Stages = map[string]*stageReceipt{
+		"dev": {
+			StackName: "app-dev",
+			StackOutputs: map[string]string{
+				"FrontendDistributionId": "DIST123",
+			},
+		},
+	}
+
+	targets, err := resolveClientInstallStageTargets(receipt, naming.StageDev)
+	require.NoError(t, err)
+	require.Equal(t, "dev", targets.stageKey)
+	require.Equal(t, "app-dev-client-123456789012-us-east-1", targets.assetBucket)
+	require.Equal(t, "app-dev-client-artifacts-123456789012-us-east-1", targets.artifactBucket)
+	require.Equal(t, clientInstallDefaultManifestKey, targets.manifestKey)
+	require.Equal(t, "DIST123", targets.distributionID)
+
+	receipt.Stages["live"] = &stageReceipt{StackName: "app-live", StackOutputs: map[string]string{}}
+	_, err = resolveClientInstallStageTargets(receipt, naming.StageLive)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing FrontendDistributionId")
+
+	delete(receipt.Stages, "dev")
+	_, err = resolveClientInstallStageTargets(receipt, naming.StageDev)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `receipt missing stage "dev"`)
+}
+
+func TestPrepareClientInstallPackage_DefaultsAndErrors(t *testing.T) {
+	t.Run("falls back metadata defaults", func(t *testing.T) {
+		appRoot := t.TempDir()
+		serverDir := filepath.Join(appRoot, "build", "server")
+		assetsDir := filepath.Join(appRoot, "build", "client")
+
+		require.NoError(t, osMkdirAll(serverDir))
+		require.NoError(t, osMkdirAll(assetsDir))
+		require.NoError(t, osWriteFile(filepath.Join(serverDir, "handler.mjs"), "export async function handler() {}", 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(assetsDir, "index.html"), "<!doctype html>", 0o644))
+
+		plan, err := prepareClientInstallPackage(appRoot, &faceTheoryLesserConfig{
+			SchemaVersion: clientInstallManifestSchemaVersion,
+			Server: faceTheoryLesserServerConfig{
+				Dir:   "build/server",
+				Entry: "handler.mjs",
+			},
+			Assets: faceTheoryLesserAssetsConfig{
+				Dir: "build/client",
+			},
+		}, &nodePackageJSON{})
+		require.NoError(t, err)
+		require.Equal(t, "facetheory-client", plan.AppName)
+		require.Equal(t, "facetheory-client", plan.DisplayName)
+		require.Equal(t, "0.0.0", plan.Version)
+	})
+
+	t.Run("surfaces missing server entry", func(t *testing.T) {
+		appRoot := t.TempDir()
+		require.NoError(t, osMkdirAll(filepath.Join(appRoot, "build", "server")))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "build", "client", "index.html"), "<!doctype html>", 0o644))
+
+		_, err := prepareClientInstallPackage(appRoot, &faceTheoryLesserConfig{
+			SchemaVersion: clientInstallManifestSchemaVersion,
+			Server: faceTheoryLesserServerConfig{
+				Dir:   "build/server",
+				Entry: "handler.mjs",
+			},
+			Assets: faceTheoryLesserAssetsConfig{
+				Dir: "build/client",
+			},
+		}, &nodePackageJSON{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "server entry is missing")
+	})
+
+	t.Run("surfaces empty asset directory", func(t *testing.T) {
+		appRoot := t.TempDir()
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "build", "server", "handler.mjs"), "export async function handler() {}", 0o644))
+		require.NoError(t, osMkdirAll(filepath.Join(appRoot, "build", "client")))
+
+		_, err := prepareClientInstallPackage(appRoot, &faceTheoryLesserConfig{
+			SchemaVersion: clientInstallManifestSchemaVersion,
+			Server: faceTheoryLesserServerConfig{
+				Dir:   "build/server",
+				Entry: "handler.mjs",
+			},
+			Assets: faceTheoryLesserAssetsConfig{
+				Dir: "build/client",
+			},
+		}, &nodePackageJSON{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "asset directory")
+	})
+}
+
+func TestPublishClientInstallStage_PropagatesUploadFailure(t *testing.T) {
+	previousUploadDir := uploadDirWithPrefixFn
+	t.Cleanup(func() { uploadDirWithPrefixFn = previousUploadDir })
+
+	receipt := newUpReceipt(
+		"app",
+		"example.com",
+		"profile",
+		"123456789012",
+		"us-east-1",
+		nil,
+		hostedZone{ID: "Z1", Name: "example.com"},
+	)
+	receipt.Stages = map[string]*stageReceipt{
+		"dev": {
+			StackName: "app-dev",
+			StackOutputs: map[string]string{
+				"ClientBucketName":         "dev-client",
+				"ClientArtifactBucketName": "dev-client-artifacts",
+				"FrontendDistributionId":   "DIST123",
+			},
+		},
+	}
+
+	uploadDirWithPrefixFn = func(context.Context, s3PutObjectAPI, string, string, string) error {
+		return errSentinel
+	}
+
+	command := &clientInstallCommand{
+		serverRoot:         "installs/demo/server",
+		historyManifestKey: "installs/demo/manifest.json",
+		manifestContent:    "{}\n",
+		receipt:            receipt,
+		pkgPlan: &clientInstallPackage{
+			ServerDir:   "/tmp/server",
+			AssetsDir:   "/tmp/assets",
+			AppName:     "demo-client",
+			DisplayName: "Demo Client",
+			Version:     "1.2.3",
+			InstallID:   "demo",
+		},
+		s3Client: &s3.Client{},
+		cfClient: &cloudfront.Client{},
+	}
+
+	err := publishClientInstallStage(context.Background(), command, naming.StageDev)
+	require.ErrorIs(t, err, errSentinel)
+	require.Contains(t, err.Error(), "upload SSR server bundle (dev)")
+}
+
+func TestInstallNodeModulesIfNeeded_SkipsExistingDirectory(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	appRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(appRoot, "node_modules"), 0o755))
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		t.Fatal("runCommandFn should not be called when node_modules already exists")
+		return nil
+	}
+
+	require.NoError(t, installNodeModulesIfNeeded(appRoot))
+}
+
+func TestInstallNodeModulesIfNeeded_WrapsInstallError(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	appRoot := t.TempDir()
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		return errSentinel
+	}
+
+	err := installNodeModulesIfNeeded(appRoot)
+	require.ErrorIs(t, err, errSentinel)
+	require.Contains(t, err.Error(), "pnpm install (client app)")
+}
+
+func TestRunFaceTheoryBuild_UsesDefaultCommand(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	var calledName string
+	var calledArgs []string
+	var calledDir string
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
+		calledName = name
+		calledArgs = append([]string(nil), args...)
+		calledDir = opts.Dir
+		return nil
+	}
+
+	require.NoError(t, runFaceTheoryBuild(context.Background(), "/tmp/demo", nil))
+	require.Equal(t, "pnpm", calledName)
+	require.Equal(t, []string{"build"}, calledArgs)
+	require.Equal(t, "/tmp/demo", calledDir)
+}
+
+func TestRunFaceTheoryBuild_WrapsBuildError(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		return errSentinel
+	}
+
+	err := runFaceTheoryBuild(context.Background(), "/tmp/demo", &faceTheoryLesserConfig{
+		Build: &faceTheoryLesserBuildConfig{Command: []string{"pnpm", "build:ssr"}},
+	})
+	require.ErrorIs(t, err, errSentinel)
+	require.Contains(t, err.Error(), "build FaceTheory app")
+}
+
+func TestResolveClientInstallReceipt_ErrorsOnInvalidStage(t *testing.T) {
+	receipt := newUpReceipt(
+		"app",
+		"example.com",
+		"profile",
+		"123456789012",
+		"us-east-1",
+		nil,
+		hostedZone{ID: "Z1", Name: "example.com"},
+	)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	require.NoError(t, writeReceipt(statePath, receipt))
+
+	_, _, _, err := resolveClientInstallReceipt("app", "example.com", clientInstallArgs{
+		StatePath: statePath,
+		Stage:     "nope",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid --stage")
+}
+
+func TestNewClientInstallAWSClients_PropagatesLoadError(t *testing.T) {
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	t.Cleanup(func() { loadAWSConfigFromProfileFn = previousLoadAWS })
+
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
+		return aws.Config{}, errSentinel
+	}
+
+	_, _, err := newClientInstallAWSClients("profile")
+	require.ErrorIs(t, err, errSentinel)
+}
+
+func TestPublishClientInstallStage_PropagatesManifestAndInvalidationErrors(t *testing.T) {
+	previousUploadDir := uploadDirWithPrefixFn
+	previousPutObjectString := putObjectStringFn
+	previousInvalidate := invalidateClientPathsFn
+	t.Cleanup(func() {
+		uploadDirWithPrefixFn = previousUploadDir
+		putObjectStringFn = previousPutObjectString
+		invalidateClientPathsFn = previousInvalidate
+	})
+
+	newCommand := func() *clientInstallCommand {
+		receipt := newUpReceipt(
+			"app",
+			"example.com",
+			"profile",
+			"123456789012",
+			"us-east-1",
+			nil,
+			hostedZone{ID: "Z1", Name: "example.com"},
+		)
+		receipt.Stages = map[string]*stageReceipt{
+			"dev": {
+				StackName: "app-dev",
+				StackOutputs: map[string]string{
+					"ClientBucketName":         "dev-client",
+					"ClientArtifactBucketName": "dev-client-artifacts",
+					"FrontendDistributionId":   "DIST123",
+				},
+			},
+		}
+		return &clientInstallCommand{
+			serverRoot:         "installs/demo/server",
+			historyManifestKey: "installs/demo/manifest.json",
+			manifestContent:    "{}\n",
+			receipt:            receipt,
+			pkgPlan: &clientInstallPackage{
+				ServerDir:   "/tmp/server",
+				AssetsDir:   "/tmp/assets",
+				AppName:     "demo-client",
+				DisplayName: "Demo Client",
+				Version:     "1.2.3",
+				InstallID:   "demo",
+			},
+			s3Client: &s3.Client{},
+			cfClient: &cloudfront.Client{},
+		}
+	}
+
+	t.Run("manifest upload failure", func(t *testing.T) {
+		uploadDirWithPrefixFn = func(context.Context, s3PutObjectAPI, string, string, string) error { return nil }
+		putObjectStringFn = func(context.Context, s3PutObjectAPI, string, string, string, string, string) error {
+			return errSentinel
+		}
+		invalidateClientPathsFn = func(context.Context, *cloudfront.Client, string) error { return nil }
+
+		err := publishClientInstallStage(context.Background(), newCommand(), naming.StageDev)
+		require.ErrorIs(t, err, errSentinel)
+		require.Contains(t, err.Error(), "upload install manifest history (dev)")
+	})
+
+	t.Run("cloudfront invalidation failure", func(t *testing.T) {
+		uploadDirWithPrefixFn = func(context.Context, s3PutObjectAPI, string, string, string) error { return nil }
+		putObjectStringFn = func(context.Context, s3PutObjectAPI, string, string, string, string, string) error { return nil }
+		invalidateClientPathsFn = func(context.Context, *cloudfront.Client, string) error { return errSentinel }
+
+		err := publishClientInstallStage(context.Background(), newCommand(), naming.StageDev)
+		require.ErrorIs(t, err, errSentinel)
+		require.Contains(t, err.Error(), "cloudfront invalidation (dev)")
+	})
 }
 
 func osMkdirAll(path string) error {

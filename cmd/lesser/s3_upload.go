@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -13,12 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 )
-
-type s3HeadObjectAPI interface {
-	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
-}
 
 type s3PutObjectAPI interface {
 	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
@@ -35,38 +29,9 @@ type s3BucketUploaderAPI interface {
 }
 
 var (
-	s3ObjectExistsFn      = s3ObjectExists
 	putObjectStringFn     = putObjectString
 	uploadDirWithPrefixFn = uploadDirWithPrefix
 )
-
-func s3ObjectExists(ctx context.Context, client s3HeadObjectAPI, bucket string, key string) (bool, error) {
-	_, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
-	if err == nil {
-		return true, nil
-	}
-
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFound", "NoSuchKey":
-			return false, nil
-		}
-	}
-
-	if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "NoSuchKey") {
-		return false, nil
-	}
-
-	return false, err
-}
-
-func replaceBucketWithDir(ctx context.Context, client s3BucketUploaderAPI, bucket string, dir string) error {
-	return replaceBucketWithDirPrefix(ctx, client, bucket, "", dir)
-}
 
 func replaceBucketWithDirPrefix(ctx context.Context, client s3BucketUploaderAPI, bucket string, prefix string, dir string) error {
 	if strings.TrimSpace(bucket) == "" {
@@ -85,7 +50,7 @@ func replaceBucketWithDirPrefix(ctx context.Context, client s3BucketUploaderAPI,
 		return err
 	}
 
-	return uploadDirWithPrefix(ctx, client, bucket, prefix, dir)
+	return uploadDirWithPrefixFn(ctx, client, bucket, prefix, dir)
 }
 
 type localFile struct {

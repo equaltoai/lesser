@@ -38,15 +38,15 @@ func TestContentTypeAndCacheControlHelpers(t *testing.T) {
 }
 
 func TestReplaceBucketWithDir_Validation(t *testing.T) {
-	err := replaceBucketWithDir(context.Background(), &s3.Client{}, "", t.TempDir())
+	err := replaceBucketWithDirPrefix(context.Background(), &s3.Client{}, "", "", t.TempDir())
 	require.Error(t, err)
 
-	err = replaceBucketWithDir(context.Background(), &s3.Client{}, "bucket", filepath.Join(t.TempDir(), "missing"))
+	err = replaceBucketWithDirPrefix(context.Background(), &s3.Client{}, "bucket", "", filepath.Join(t.TempDir(), "missing"))
 	require.Error(t, err)
 
 	file := filepath.Join(t.TempDir(), "file.txt")
 	require.NoError(t, os.WriteFile(file, []byte("x"), 0o644))
-	err = replaceBucketWithDir(context.Background(), &s3.Client{}, "bucket", file)
+	err = replaceBucketWithDirPrefix(context.Background(), &s3.Client{}, "bucket", "", file)
 	require.Error(t, err)
 }
 
@@ -68,44 +68,6 @@ func (e fakeSmithyAPIError) ErrorMessage() string {
 
 func (e fakeSmithyAPIError) ErrorFault() smithy.ErrorFault {
 	return smithy.FaultClient
-}
-
-type fakeS3HeadClient struct {
-	err error
-}
-
-func (f *fakeS3HeadClient) HeadObject(_ context.Context, _ *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &s3.HeadObjectOutput{}, nil
-}
-
-func TestS3ObjectExists_HandlesNotFoundAndErrors(t *testing.T) {
-	t.Run("exists", func(t *testing.T) {
-		ok, err := s3ObjectExists(context.Background(), &fakeS3HeadClient{}, "b", "k")
-		require.NoError(t, err)
-		require.True(t, ok)
-	})
-
-	t.Run("smithy NotFound", func(t *testing.T) {
-		ok, err := s3ObjectExists(context.Background(), &fakeS3HeadClient{err: fakeSmithyAPIError{code: "NotFound"}}, "b", "k")
-		require.NoError(t, err)
-		require.False(t, ok)
-	})
-
-	t.Run("string contains NotFound", func(t *testing.T) {
-		ok, err := s3ObjectExists(context.Background(), &fakeS3HeadClient{err: errors.New("NotFound")}, "b", "k")
-		require.NoError(t, err)
-		require.False(t, ok)
-	})
-
-	t.Run("other error", func(t *testing.T) {
-		boom := errors.New("boom")
-		ok, err := s3ObjectExists(context.Background(), &fakeS3HeadClient{err: boom}, "b", "k")
-		require.ErrorIs(t, err, boom)
-		require.False(t, ok)
-	})
 }
 
 type fakeS3PutClient struct {
@@ -244,7 +206,7 @@ func TestReplaceBucketWithDir_UploadsFilesAndWrapsErrors(t *testing.T) {
 				listOutputs: []*s3.ListObjectsV2Output{{IsTruncated: aws.Bool(false)}},
 			},
 		}
-		require.NoError(t, replaceBucketWithDir(context.Background(), fake, "bucket", root))
+		require.NoError(t, replaceBucketWithDirPrefix(context.Background(), fake, "bucket", "", root))
 		require.Equal(t, 2, fake.putCalls)
 		require.Equal(t, []string{"_assets/app.js", "index.html"}, fake.putKeys)
 	})
@@ -259,7 +221,7 @@ func TestReplaceBucketWithDir_UploadsFilesAndWrapsErrors(t *testing.T) {
 			},
 			putErr: errors.New("put failed"),
 		}
-		err := replaceBucketWithDir(context.Background(), fake, "bucket", root)
+		err := replaceBucketWithDirPrefix(context.Background(), fake, "bucket", "", root)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "upload index.html to s3://bucket/index.html")
 	})
