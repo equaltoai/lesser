@@ -30,6 +30,8 @@ running environment.
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - Lambda bundle manifest schema: `docs/contracts/lambda-bundle-manifest.schema.json`
 - Lambda bundle manifest example: `docs/contracts/examples/lesser-lambda-bundle.example.json`
+- Published release metadata now includes `lesser-release.json` entries that point at the Lambda bundle and manifest
+  for release-driven deploy consumers.
 
 ## REST (OpenAPI)
 

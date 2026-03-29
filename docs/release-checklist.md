@@ -16,8 +16,10 @@ This checklist is for maintainers preparing a release/deployable build.
 ## Release contract scope
 
 - [ ] Confirm the release contract still matches reality in `docs/contracts/release-driven-deploy-contract.md`
-- [ ] Treat Lambda deploy bundles as a future release asset until milestone M1 publishes them; current deploy validation
-  still runs through the source-based `lesser up` path
+- [ ] Confirm `dist/release/` contains the published deploy assets:
+  `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-release.json`, and `checksums.txt`
+- [ ] Remember that release-driven Lambda assets are published now, but `lesser up` still validates deploys through the
+  source-based path until artifact-consumption support lands
 
 ## Deploy
 

@@ -11,6 +11,7 @@ OUT_DIR="${2:-dist/release}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
+export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
 
 if [[ -z "${VERSION}" ]]; then
   echo "version is required" >&2
@@ -58,6 +59,9 @@ TARGETS=(
   "darwin arm64"
 )
 
+echo "Building canonical Lambda zip artifacts"
+go run ./cmd/lesser build lambdas --rebuild
+
 for target in "${TARGETS[@]}"; do
   read -r GOOS GOARCH <<< "${target}"
   OUTPUT_PATH="${OUT_DIR}/lesser-${GOOS}-${GOARCH}"
@@ -66,25 +70,13 @@ for target in "${TARGETS[@]}"; do
     go build -trimpath -ldflags="-s -w" -o "${OUTPUT_PATH}" ./cmd/lesser
 done
 
-(
-  cd "${OUT_DIR}"
-  sha256sum lesser-* > checksums.txt
-)
-
-cat > "${OUT_DIR}/lesser-release.json" <<JSON
-{
-  "schema": 1,
-  "name": "lesser",
-  "version": "${VERSION}",
-  "git_sha": "${GIT_SHA}",
-  "go_version": "${GO_VERSION}",
-  "cdk": {
-    "major": ${CDK_MAJOR}
-  },
-  "artifacts": {
-    "receipt_schema_version": ${RECEIPT_SCHEMA_VERSION}
-  }
-}
-JSON
+go run ./tools/release_assets \
+  --repo-root "${ROOT_DIR}" \
+  --out-dir "${OUT_DIR}" \
+  --version "${VERSION}" \
+  --git-sha "${GIT_SHA}" \
+  --go-version "${GO_VERSION}" \
+  --cdk-major "${CDK_MAJOR}" \
+  --receipt-schema-version "${RECEIPT_SCHEMA_VERSION}"
 
 echo "Wrote release assets to ${OUT_DIR}"

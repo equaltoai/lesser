@@ -9,7 +9,9 @@ Current state:
 
 - `lesser up` is still a source-based deploy path.
 - It currently builds Lambda zip artifacts and `auth-ui/` from the repo checkout before deploying.
-- The frozen contract for future release-driven artifact mode lives in `docs/contracts/release-driven-deploy-contract.md`.
+- Releases now publish immutable Lambda deploy assets (`lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, and
+  `lesser-release.json` deploy-artifact metadata) for release-driven deploys and managed consumers.
+- The published contract for that release path lives in `docs/contracts/release-driven-deploy-contract.md`.
 
 ## Prerequisites
 
@@ -82,7 +84,7 @@ Bootstrap state:
 
 Important scope note:
 
-- Prebuilt Lambda release assets are a planned optimization, not the current default.
+- Prebuilt Lambda release assets now exist, but they are not yet the current `lesser up` default.
 - Even after Lambda prebuilds land, deploy-time responsibilities such as CDK execution, auth UI upload, hosted-zone
   resolution, and receipt/bootstrap writes remain instance-specific.
 
