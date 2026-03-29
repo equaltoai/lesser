@@ -107,6 +107,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/soul/agents/register/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Begin a soul promotion request */
+        post: operations["soulRegisterBegin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/register/{id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify proofs and principal approval for a soul promotion request */
+        post: operations["soulRegisterVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/register/{id}/mint-conversation/{conversationId}/finalize/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build finalize preflight data for a completed mint conversation */
+        post: operations["soulMintConversationFinalizePreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/register/{id}/mint-conversation/{conversationId}/finalize/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compatibility alias for finalize preflight */
+        post: operations["soulMintConversationFinalizeBegin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/{agentId}/mint-conversation/{conversationId}/finalize/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build finalize preflight data using the stable agentId handle */
+        post: operations["soulAgentMintConversationFinalizePreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/{agentId}/mint-conversation/{conversationId}/finalize/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compatibility alias for finalize preflight via the stable agentId handle */
+        post: operations["soulAgentMintConversationFinalizeBegin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/promotions/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List durable promotion workflows for the authenticated requester */
+        get: operations["soulListMyPromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/promotions/mine/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List structured promotion lifecycle events for the authenticated requester */
+        get: operations["soulListMyPromotionLifecycleEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/{agentId}/promotion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the durable, agent-centered promotion state */
+        get: operations["soulGetPromotion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/{agentId}/promotion/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify a soul promotion request using the stable agentId handle */
+        post: operations["soulVerifyPromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/soul/agents/{agentId}/promotion/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List structured lifecycle events for a single agent promotion workflow */
+        get: operations["soulListAgentPromotionLifecycleEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/soul/comm/send": {
         parameters: {
             query?: never;
@@ -300,6 +487,270 @@ export interface components {
         SoulAgentCommActivityResponse: components["schemas"]["soul-agent-comm-activity.response.schema"];
         SoulAgentCommQueueItem: components["schemas"]["soul-agent-comm-queue-item.schema"];
         SoulAgentCommQueueResponse: components["schemas"]["soul-agent-comm-queue.response.schema"];
+        SafeTxPayload: {
+            safe_address: string;
+            to: string;
+            value: string;
+            data: string;
+        };
+        SoulOperation: {
+            operation_id: string;
+            kind: string;
+            agent_id?: string;
+            /** @enum {string} */
+            status: "pending" | "proposed" | "executed" | "failed";
+            safe_payload?: string;
+            exec_tx_hash?: string;
+            exec_block_number?: number;
+            exec_success?: boolean;
+            receipt_json?: string;
+            snapshot_json?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            executed_at?: string;
+        };
+        WalletChallengeResponse: {
+            id: string;
+            username?: string;
+            address: string;
+            chainId: number;
+            nonce: string;
+            message: string;
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        SoulRegistryProofInstructions: {
+            /** @enum {string} */
+            method: "dns_txt" | "https_well_known";
+            dns_name?: string;
+            dns_value?: string;
+            /** Format: uri */
+            https_url?: string;
+            https_body?: string;
+        };
+        SoulAgentRegistration: {
+            id: string;
+            username?: string;
+            domain_raw?: string;
+            domain_normalized: string;
+            local_id_raw?: string;
+            local_id: string;
+            agent_id: string;
+            wallet_address: string;
+            capabilities?: string[];
+            wallet_nonce?: string;
+            wallet_message?: string;
+            proof_token?: string;
+            dns_verified?: boolean;
+            https_verified?: boolean;
+            wallet_verified?: boolean;
+            /** Format: date-time */
+            verified_at?: string;
+            /** @enum {string} */
+            status: "pending" | "completed";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        SoulAgentPromotionPrerequisites: {
+            principal_declaration_recorded: boolean;
+            mint_operation_created: boolean;
+            mint_executed: boolean;
+            conversation_started: boolean;
+            conversation_completed: boolean;
+            review_draft_ready: boolean;
+            ready_for_finalize: boolean;
+            graduated: boolean;
+        };
+        SoulAgentPromotion: {
+            agent_id: string;
+            registration_id?: string;
+            requested_by?: string;
+            domain: string;
+            local_id: string;
+            wallet: string;
+            /** @enum {string} */
+            stage: "requested" | "approved" | "minted" | "reviewing" | "ready_to_finalize" | "graduated";
+            /** @enum {string} */
+            request_status: "requested" | "verified" | "minted" | "graduated";
+            /** @enum {string} */
+            review_status: "not_started" | "conversation_in_progress" | "draft_ready" | "published";
+            /** @enum {string} */
+            approval_status: "pending" | "approved";
+            /** @enum {string} */
+            readiness_status: "awaiting_verification" | "awaiting_mint" | "ready_for_conversation" | "ready_for_finalize" | "graduated";
+            mint_operation_id?: string;
+            /** @enum {string} */
+            mint_operation_status?: "pending" | "proposed" | "executed" | "failed";
+            principal_address?: string;
+            latest_conversation_id?: string;
+            /** @enum {string} */
+            latest_conversation_status?: "in_progress" | "completed" | "failed";
+            latest_review_sha256?: string;
+            latest_boundary_count?: number;
+            latest_capability_count?: number;
+            published_version?: number;
+            /** Format: date-time */
+            requested_at?: string;
+            /** Format: date-time */
+            verified_at?: string;
+            /** Format: date-time */
+            approved_at?: string;
+            /** Format: date-time */
+            minted_at?: string;
+            /** Format: date-time */
+            review_started_at?: string;
+            /** Format: date-time */
+            review_ready_at?: string;
+            /** Format: date-time */
+            graduated_at?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            prerequisites: components["schemas"]["SoulAgentPromotionPrerequisites"];
+            next_actions?: ("verify_request" | "record_mint_execution" | "start_review_conversation" | "complete_review_conversation" | "begin_finalize")[];
+        };
+        SoulAgentPromotionResponse: {
+            /** @enum {string} */
+            version: "1";
+            promotion: components["schemas"]["SoulAgentPromotion"];
+        };
+        SoulAgentPromotionListResponse: {
+            /** @enum {string} */
+            version: "1";
+            promotions: components["schemas"]["SoulAgentPromotion"][];
+            count: number;
+            has_more: boolean;
+            next_cursor?: string;
+        };
+        SoulAgentPromotionLifecycleEvent: {
+            event_id: string;
+            /** @enum {string} */
+            event_type: "request_created" | "request_approved" | "mint_executed" | "review_started" | "finalize_ready" | "graduated";
+            summary?: string;
+            /** Format: date-time */
+            occurred_at: string;
+            request_id?: string;
+            operation_id?: string;
+            conversation_id?: string;
+            promotion: components["schemas"]["SoulAgentPromotion"];
+        };
+        SoulAgentPromotionLifecycleEventListResponse: {
+            /** @enum {string} */
+            version: "1";
+            events: components["schemas"]["SoulAgentPromotionLifecycleEvent"][];
+            count: number;
+            has_more: boolean;
+            next_cursor?: string;
+        };
+        SoulAgentRegistrationBeginRequest: {
+            domain: string;
+            local_id: string;
+            wallet_address: string;
+            capabilities?: (string | {
+                [key: string]: unknown;
+            })[];
+        };
+        SoulAgentRegistrationBeginResponse: {
+            registration: components["schemas"]["SoulAgentRegistration"];
+            wallet: components["schemas"]["WalletChallengeResponse"];
+            proofs: components["schemas"]["SoulRegistryProofInstructions"][];
+            promotion?: components["schemas"]["SoulAgentPromotion"];
+        };
+        SoulAgentRegistrationVerifyRequest: {
+            signature: string;
+            principal_address: string;
+            principal_declaration: string;
+            principal_signature: string;
+            /** Format: date-time */
+            declared_at: string;
+        };
+        SoulAgentRegistrationVerifyResponse: {
+            registration: components["schemas"]["SoulAgentRegistration"];
+            operation: components["schemas"]["SoulOperation"];
+            safe_tx?: components["schemas"]["SafeTxPayload"];
+            promotion?: components["schemas"]["SoulAgentPromotion"];
+        };
+        SoulMintConversationFinalizeBeginRequest: {
+            boundary_signatures: {
+                [key: string]: string;
+            };
+        };
+        SoulMintConversationDeclarationPreview: {
+            selfDescription: {
+                [key: string]: unknown;
+            };
+            capabilities: {
+                [key: string]: unknown;
+            }[];
+            boundaries: {
+                [key: string]: unknown;
+            }[];
+            transparency: {
+                [key: string]: unknown;
+            };
+        };
+        SoulMintConversationFinalizeBoundaryRequirement: {
+            boundary_id: string;
+            category: string;
+            statement: string;
+            rationale?: string;
+            supersedes?: string;
+            signature_hex?: string;
+            signer_wallet: string;
+            /** @enum {string} */
+            signing_method: "eip191_personal_sign";
+            /** @enum {string} */
+            message_encoding: "utf8";
+            message: string;
+            digest_hex: string;
+        };
+        SoulMintConversationFinalizeSigningInput: {
+            signer_wallet: string;
+            /** @enum {string} */
+            signing_method: "eip191_personal_sign";
+            /** @enum {string} */
+            message_encoding: "hex_bytes";
+            message_hex: string;
+            digest_hex: string;
+            canonical_json: string;
+        };
+        SoulMintConversationFinalizeRequestTemplate: {
+            boundary_signatures: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            issued_at: string;
+            expected_version: number;
+            self_attestation: string;
+        };
+        SoulMintConversationFinalizePreflightResponse: {
+            /** @enum {string} */
+            version: "1";
+            digest_hex: string;
+            /** Format: date-time */
+            issued_at: string;
+            expected_version: number;
+            next_version: number;
+            declarations_preview: components["schemas"]["SoulMintConversationDeclarationPreview"];
+            boundary_requirements: components["schemas"]["SoulMintConversationFinalizeBoundaryRequirement"][];
+            self_attestation_signing: components["schemas"]["SoulMintConversationFinalizeSigningInput"];
+            finalize_request_template: components["schemas"]["SoulMintConversationFinalizeRequestTemplate"];
+            registration_preview?: {
+                [key: string]: unknown;
+            };
+        };
         /** GET /api/v1/soul/agents/{agentId}/channels/preferences response */
         "soul-agent-channel-preferences.response.schema": {
             agentId: string;
@@ -451,6 +902,7 @@ export interface components {
             subject?: string;
             body: string;
             inReplyTo?: string | null;
+            idempotencyKey?: string;
         } & (unknown & unknown & unknown);
         /** POST /api/v1/soul/comm/send response */
         "soul-comm-send.response.schema": {
@@ -869,6 +1321,715 @@ export interface operations {
             };
             /** @description Invalid request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulRegisterBegin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulAgentRegistrationBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentRegistrationBeginResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulRegisterVerify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulAgentRegistrationVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentRegistrationVerifyResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulMintConversationFinalizePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulMintConversationFinalizeBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationFinalizePreflightResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulMintConversationFinalizeBegin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulMintConversationFinalizeBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationFinalizePreflightResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulAgentMintConversationFinalizePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulMintConversationFinalizeBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationFinalizePreflightResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulAgentMintConversationFinalizeBegin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulMintConversationFinalizeBeginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationFinalizePreflightResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulListMyPromotions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentPromotionListResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulListMyPromotionLifecycleEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentPromotionLifecycleEventListResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulGetPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentPromotionResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulVerifyPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulAgentRegistrationVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentRegistrationVerifyResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    soulListAgentPromotionLifecycleEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulAgentPromotionLifecycleEventListResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

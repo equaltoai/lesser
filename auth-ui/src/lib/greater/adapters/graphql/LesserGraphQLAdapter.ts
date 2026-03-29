@@ -56,7 +56,6 @@ import type {
 	RevokeAgentAccessLeaseMutationVariables,
 	CreateAgentAccessLeaseSessionKeyChallengeMutationVariables,
 	AuthorizeAgentAccessLeaseSessionKeyMutationVariables,
-	CreateAgentAccessLeaseRenewChallengeMutationVariables,
 	ExchangeAgentAccessLeaseTokenMutationVariables,
 	UpdateAdminAgentPolicyMutationVariables,
 	AdminVerifyAgentMutationVariables,

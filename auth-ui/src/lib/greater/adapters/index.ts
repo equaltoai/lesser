@@ -108,7 +108,13 @@ export { createLesserMessagesHandlers } from './messaging/index.js';
 export type { LesserMessagesHandlersConfig } from './messaging/index.js';
 
 // Reactive Stores (Svelte 5 Runes)
-export { createTimelineStore, createNotificationStore, createPresenceStore } from './stores';
+export {
+	createTimelineStore,
+	createNotificationStore,
+	createPresenceStore,
+	createBrowserPresenceActivitySource,
+	createBrowserPresenceLocationSource,
+} from './stores';
 
 // Admin Streaming Store
 export { AdminStreamingStore, createAdminStreamingStore } from './stores/adminStreamingStore';
@@ -228,6 +234,10 @@ export type {
 	TimelineStore,
 	NotificationStore,
 	PresenceStore,
+	PresenceActivitySource,
+	PresenceLocationSource,
+	BrowserPresenceActivitySourceOptions,
+	BrowserPresenceLocationSourceOptions,
 	BaseStore,
 	StoreFactory,
 
