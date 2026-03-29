@@ -13,7 +13,10 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
 
@@ -64,6 +67,18 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	})
 }
 
+func TestClientFrontendLogicalIDsRemainStable(t *testing.T) {
+	resources := synthClientFrontendResources(t)
+
+	requireResourceLogicalID(t, resources, "ClientFrontendDistribution015B354C")
+	requireResourceLogicalID(t, resources, "ClientFrontendAliasRecordD250F593")
+	requireResourceLogicalID(t, resources, "ClientFrontendAliasRecordAAAACA5BB675")
+
+	requireResourceLogicalIDAbsent(t, resources, "ClientFrontend6814B143")
+	requireResourceLogicalIDPrefixAbsent(t, resources, "FrontendAliasARecord")
+	requireResourceLogicalIDPrefixAbsent(t, resources, "FrontendAliasAAAARecord")
+}
+
 func synthClientFrontendResources(t *testing.T) map[string]any {
 	t.Helper()
 
@@ -79,6 +94,9 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 	authPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(stack, jsii.String("dev.example.com"))
 	clientPolicy := localconstructs.NewClientSSRResponseHeadersPolicy(stack)
 	rewriteFn := newClientFrontendRewriteFunction(stack)
+	hostedZone := awsroute53.NewHostedZone(stack, jsii.String("HostedZone"), &awsroute53.HostedZoneProps{
+		ZoneName: jsii.String("example.com"),
+	})
 
 	clientBucket := awss3.NewBucket(stack, jsii.String("ClientBucket"), &awss3.BucketProps{
 		BucketName: jsii.String("test-dev-client-123456789012-us-east-1"),
@@ -109,7 +127,8 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 		},
 	}
 
-	dist := awscloudfront.NewDistribution(stack, jsii.String("ClientFrontend"), &awscloudfront.DistributionProps{
+	clientFrontend := constructs.NewConstruct(stack, jsii.String("ClientFrontend"))
+	dist := awscloudfront.NewDistribution(clientFrontend, jsii.String("Distribution"), &awscloudfront.DistributionProps{
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			Origin:               apiOriginTarget,
 			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
@@ -157,6 +176,18 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 		ResponseHeadersPolicy: clientPolicy,
 		FunctionAssociations:  functionAssociations,
 	})
+	recordName := relativeRecordName("dev.example.com", hostedZone)
+	target := awsroute53targets.NewCloudFrontTarget(dist)
+	awsroute53.NewARecord(clientFrontend, jsii.String("AliasRecord"), &awsroute53.ARecordProps{
+		Zone:       hostedZone,
+		RecordName: recordName,
+		Target:     awsroute53.RecordTarget_FromAlias(target),
+	})
+	awsroute53.NewAaaaRecord(clientFrontend, jsii.String("AliasRecordAAAA"), &awsroute53.AaaaRecordProps{
+		Zone:       hostedZone,
+		RecordName: recordName,
+		Target:     awsroute53.RecordTarget_FromAlias(target),
+	})
 
 	app.Synth(nil)
 
@@ -172,6 +203,29 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 	}
 
 	return mustResources(t, tpl)
+}
+
+func requireResourceLogicalID(t *testing.T, resources map[string]any, logicalID string) {
+	t.Helper()
+	if _, ok := resources[logicalID]; !ok {
+		t.Fatalf("expected logical ID %q in synthesized template", logicalID)
+	}
+}
+
+func requireResourceLogicalIDAbsent(t *testing.T, resources map[string]any, logicalID string) {
+	t.Helper()
+	if _, ok := resources[logicalID]; ok {
+		t.Fatalf("expected logical ID %q to be absent from synthesized template", logicalID)
+	}
+}
+
+func requireResourceLogicalIDPrefixAbsent(t *testing.T, resources map[string]any, prefix string) {
+	t.Helper()
+	for logicalID := range resources {
+		if strings.HasPrefix(logicalID, prefix) {
+			t.Fatalf("expected no logical IDs with prefix %q, found %q", prefix, logicalID)
+		}
+	}
 }
 
 func findCacheBehaviorByPathPattern(t *testing.T, behaviors []map[string]any, pathPattern string) map[string]any {
