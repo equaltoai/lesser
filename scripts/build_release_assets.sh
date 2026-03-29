@@ -70,27 +70,18 @@ for target in "${TARGETS[@]}"; do
     go build -trimpath -ldflags="-s -w" -o "${OUTPUT_PATH}" ./cmd/lesser
 done
 
-go run ./tools/release_assets --repo-root "${ROOT_DIR}" --out-dir "${OUT_DIR}" --version "${VERSION}" --git-sha "${GIT_SHA}"
+go run ./tools/release_assets \
+  --repo-root "${ROOT_DIR}" \
+  --out-dir "${OUT_DIR}" \
+  --version "${VERSION}" \
+  --git-sha "${GIT_SHA}" \
+  --go-version "${GO_VERSION}" \
+  --cdk-major "${CDK_MAJOR}" \
+  --receipt-schema-version "${RECEIPT_SCHEMA_VERSION}"
 
 (
   cd "${OUT_DIR}"
   sha256sum lesser-* > checksums.txt
 )
-
-cat > "${OUT_DIR}/lesser-release.json" <<JSON
-{
-  "schema": 1,
-  "name": "lesser",
-  "version": "${VERSION}",
-  "git_sha": "${GIT_SHA}",
-  "go_version": "${GO_VERSION}",
-  "cdk": {
-    "major": ${CDK_MAJOR}
-  },
-  "artifacts": {
-    "receipt_schema_version": ${RECEIPT_SCHEMA_VERSION}
-  }
-}
-JSON
 
 echo "Wrote release assets to ${OUT_DIR}"
