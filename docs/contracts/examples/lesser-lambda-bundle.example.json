@@ -1,0 +1,38 @@
+{
+  "kind": "lesser.lambda_bundle_manifest",
+  "schema_version": 1,
+  "release": {
+    "name": "lesser",
+    "version": "v1.2.3",
+    "git_sha": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "bundle": {
+    "path": "lesser-lambda-bundle.tar.gz",
+    "format": "tar.gz",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "inventory_source": {
+    "path": "infra/cdk/inventory/lambdas.go",
+    "kind": "lesser.lambda_inventory"
+  },
+  "files": [
+    {
+      "path": "bin/activity-processor.zip",
+      "lambda": "activity-processor",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 1048576
+    },
+    {
+      "path": "bin/api.zip",
+      "lambda": "api",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size_bytes": 2097152
+    },
+    {
+      "path": "bin/graphql.zip",
+      "lambda": "graphql",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "size_bytes": 1572864
+    }
+  ]
+}

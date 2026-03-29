@@ -62,6 +62,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 
 - Deploy: `docs/deployment.md`
 - CLI workflows: `docs/lesser-cli.md`
+- Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - CLI auth (device flow): `docs/cli/auth.md`
 - Configure: `docs/configuration.md`
 - Operate: `docs/monitoring.md`, `docs/security.md`, `docs/backup-recovery.md`, `docs/operations/runbook.md`
@@ -74,6 +75,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 - Local dev: `docs/development.md`
 - Testing: `docs/testing.md`
 - CLI workflows: `docs/lesser-cli.md`
+- Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - CLI auth (device flow): `docs/cli/auth.md`
 - Repo drift guardrails: `./lesser verify`
 - Internal drift specs: `docs/specs/README.md`

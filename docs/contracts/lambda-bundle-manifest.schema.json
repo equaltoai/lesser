@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://equalto.ai/contracts/lesser/lambda-bundle-manifest.schema.json",
+  "title": "Lesser Lambda Bundle Manifest",
+  "description": "Schema for the first-phase Lesser release-published Lambda bundle manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schema_version",
+    "release",
+    "bundle",
+    "inventory_source",
+    "files"
+  ],
+  "properties": {
+    "kind": {
+      "const": "lesser.lambda_bundle_manifest"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "git_sha"
+      ],
+      "properties": {
+        "name": {
+          "const": "lesser"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9].*$"
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "lesser-lambda-bundle.tar.gz"
+        },
+        "format": {
+          "const": "tar.gz"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "inventory_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "path": {
+          "const": "infra/cdk/inventory/lambdas.go"
+        },
+        "kind": {
+          "const": "lesser.lambda_inventory"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "lambda",
+          "sha256",
+          "size_bytes"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^bin/[a-z0-9-]+\\.zip$"
+          },
+          "lambda": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}
