@@ -231,6 +231,62 @@ func TestRunClientInstall_RecordsInstallInReceiptAndPublishesManifest(t *testing
 	require.False(t, install.InstalledAt.IsZero())
 }
 
+func TestRunClientInstall_PropagatesErrors(t *testing.T) {
+	t.Run("parse args", func(t *testing.T) {
+		err := runClientInstall(nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "required flags")
+	})
+
+	t.Run("build command", func(t *testing.T) {
+		err := runClientInstall([]string{
+			"--app", "bad_app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("publish stage", func(t *testing.T) {
+		previousLoadAWS := loadAWSConfigFromProfileFn
+		previousUploadDir := uploadDirWithPrefixFn
+		previousPutObjectString := putObjectStringFn
+		previousInvalidate := invalidateClientPathsFn
+		previousWriteReceipt := writeReceiptFn
+		t.Cleanup(func() {
+			loadAWSConfigFromProfileFn = previousLoadAWS
+			uploadDirWithPrefixFn = previousUploadDir
+			putObjectStringFn = previousPutObjectString
+			invalidateClientPathsFn = previousInvalidate
+			writeReceiptFn = previousWriteReceipt
+		})
+
+		appRoot, configPath, statePath := writeClientInstallFixture(t)
+		_ = appRoot
+		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
+			return aws.Config{Region: "us-east-1"}, nil
+		}
+		uploadDirWithPrefixFn = func(context.Context, s3PutObjectAPI, string, string, string) error {
+			return errSentinel
+		}
+		putObjectStringFn = func(context.Context, s3PutObjectAPI, string, string, string, string, string) error { return nil }
+		invalidateClientPathsFn = func(context.Context, *cloudfront.Client, string) error { return nil }
+		writeReceiptFn = func(string, *upReceipt) error { return nil }
+
+		err := runClientInstall([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--stage", "dev",
+			"--state", statePath,
+			"--config", configPath,
+			"--skip-build",
+		})
+		require.ErrorIs(t, err, errSentinel)
+		require.Contains(t, err.Error(), "upload SSR server bundle")
+	})
+}
+
 func TestResolveClientInstallRoot_SearchesUpwardAndValidatesExplicitPath(t *testing.T) {
 	previousWD, err := os.Getwd()
 	require.NoError(t, err)
@@ -258,6 +314,64 @@ func TestResolveClientInstallRoot_SearchesUpwardAndValidatesExplicitPath(t *test
 	_, _, err = resolveClientInstallRoot("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unable to locate")
+}
+
+func TestNewClientInstallCommand_PropagatesErrors(t *testing.T) {
+	t.Run("input normalization", func(t *testing.T) {
+		_, err := newClientInstallCommand(clientInstallArgs{
+			App:        "bad_app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("artifact preparation", func(t *testing.T) {
+		_, err := newClientInstallCommand(clientInstallArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ConfigPath: filepath.Join(t.TempDir(), "missing.json"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "client install config not found")
+	})
+
+	t.Run("receipt resolution", func(t *testing.T) {
+		appRoot, configPath, _ := writeClientInstallFixture(t)
+		_ = appRoot
+		_, err := newClientInstallCommand(clientInstallArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ConfigPath: configPath,
+			StatePath:  filepath.Join(t.TempDir(), "missing-state.json"),
+			SkipBuild:  true,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "deployment receipt not found")
+	})
+
+	t.Run("aws client creation", func(t *testing.T) {
+		previousLoadAWS := loadAWSConfigFromProfileFn
+		t.Cleanup(func() { loadAWSConfigFromProfileFn = previousLoadAWS })
+
+		appRoot, configPath, statePath := writeClientInstallFixture(t)
+		_ = appRoot
+		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
+			return aws.Config{}, errSentinel
+		}
+
+		_, err := newClientInstallCommand(clientInstallArgs{
+			App:        "app",
+			BaseDomain: "example.com",
+			AWSProfile: "profile",
+			ConfigPath: configPath,
+			StatePath:  statePath,
+			SkipBuild:  true,
+		})
+		require.ErrorIs(t, err, errSentinel)
+	})
 }
 
 func TestPrepareClientInstallArtifacts_RunsInstallAndBuild(t *testing.T) {
@@ -387,6 +501,16 @@ func TestClientInstallValidationHelpers(t *testing.T) {
 	})
 }
 
+func TestClientInstallFileReaders_PropagateReadErrors(t *testing.T) {
+	_, err := readFaceTheoryLesserConfig(filepath.Join(t.TempDir(), "missing.json"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read client install config")
+
+	_, err = readNodePackageJSON(filepath.Join(t.TempDir(), "missing-package.json"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read package.json")
+}
+
 func TestPrepareClientInstallArtifacts_PropagatesErrors(t *testing.T) {
 	previousRunCommand := runCommandFn
 	t.Cleanup(func() { runCommandFn = previousRunCommand })
@@ -492,6 +616,66 @@ func TestResolveClientInstallStageTargets_DefaultsAndErrors(t *testing.T) {
 	_, err = resolveClientInstallStageTargets(receipt, naming.StageDev)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), `receipt missing stage "dev"`)
+}
+
+func TestPublishClientInstallStages_StopsOnError(t *testing.T) {
+	previousUploadDir := uploadDirWithPrefixFn
+	t.Cleanup(func() { uploadDirWithPrefixFn = previousUploadDir })
+
+	receipt := newUpReceipt(
+		"app",
+		"example.com",
+		"profile",
+		"123456789012",
+		"us-east-1",
+		nil,
+		hostedZone{ID: "Z1", Name: "example.com"},
+	)
+	receipt.Stages = map[string]*stageReceipt{
+		"dev": {
+			StackName: "app-dev",
+			StackOutputs: map[string]string{
+				"ClientBucketName":         "dev-client",
+				"ClientArtifactBucketName": "dev-client-artifacts",
+				"FrontendDistributionId":   "DIST123",
+			},
+		},
+		"live": {
+			StackName: "app-live",
+			StackOutputs: map[string]string{
+				"ClientBucketName":         "live-client",
+				"ClientArtifactBucketName": "live-client-artifacts",
+				"FrontendDistributionId":   "DIST456",
+			},
+		},
+	}
+
+	var calls []string
+	uploadDirWithPrefixFn = func(_ context.Context, _ s3PutObjectAPI, bucket, prefix, dir string) error {
+		calls = append(calls, bucket+":"+prefix+":"+dir)
+		return errSentinel
+	}
+
+	err := publishClientInstallStages(context.Background(), &clientInstallCommand{
+		receipt:            receipt,
+		stages:             []naming.Stage{naming.StageDev, naming.StageLive},
+		serverRoot:         "installs/demo/server",
+		historyManifestKey: "installs/demo/manifest.json",
+		manifestContent:    "{}\n",
+		pkgPlan: &clientInstallPackage{
+			ServerDir:   "/tmp/server",
+			AssetsDir:   "/tmp/assets",
+			AppName:     "demo-client",
+			DisplayName: "Demo Client",
+			Version:     "1.2.3",
+			InstallID:   "demo",
+		},
+		s3Client: &s3.Client{},
+		cfClient: &cloudfront.Client{},
+	})
+	require.ErrorIs(t, err, errSentinel)
+	require.Len(t, calls, 1)
+	require.Contains(t, err.Error(), "upload SSR server bundle (dev)")
 }
 
 func TestPrepareClientInstallPackage_DefaultsAndErrors(t *testing.T) {
@@ -787,4 +971,64 @@ func osWriteFile(path string, data string, perm uint32) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(data), os.FileMode(perm))
+}
+
+func writeClientInstallFixture(t *testing.T) (string, string, string) {
+	t.Helper()
+
+	appRoot := t.TempDir()
+	serverDir := filepath.Join(appRoot, "dist", "server")
+	assetsDir := filepath.Join(appRoot, "dist", "client")
+	require.NoError(t, osMkdirAll(serverDir))
+	require.NoError(t, osMkdirAll(filepath.Join(assetsDir, "_assets")))
+	require.NoError(t, osWriteFile(filepath.Join(serverDir, "handler.mjs"), "export async function handler() {}", 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(assetsDir, "index.html"), "<!doctype html>", 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(assetsDir, "_assets", "app.js"), "console.log('ok')", 0o644))
+
+	configPath := filepath.Join(appRoot, clientInstallConfigFileName)
+	require.NoError(t, osWriteFile(configPath, strings.Join([]string{
+		"{",
+		`  "schema_version": 1,`,
+		`  "app_name": "demo-client",`,
+		`  "display_name": "Demo Client",`,
+		`  "version": "1.2.3",`,
+		`  "server": {"dir": "dist/server", "entry": "handler.mjs"},`,
+		`  "assets": {"dir": "dist/client"}`,
+		"}",
+		"",
+	}, "\n"), 0o644))
+	require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), strings.Join([]string{
+		"{",
+		`  "name": "@equaltoai/demo-client",`,
+		`  "version": "1.2.3",`,
+		`  "dependencies": {"@theory-cloud/facetheory": "^0.1.0"}`,
+		"}",
+		"",
+	}, "\n"), 0o644))
+
+	receipt := newUpReceipt(
+		"app",
+		"example.com",
+		"profile",
+		"123456789012",
+		"us-east-1",
+		nil,
+		hostedZone{ID: "Z1", Name: "example.com"},
+	)
+	receipt.Stages = map[string]*stageReceipt{
+		"dev": {
+			StackName: "app-dev",
+			StackOutputs: map[string]string{
+				"ClientBucketName":         "dev-client",
+				"ClientArtifactBucketName": "dev-client-artifacts",
+				"ClientInstallManifestKey": "install/dev/current.json",
+				"FrontendDistributionId":   "DIST123",
+			},
+		},
+	}
+
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	require.NoError(t, writeReceipt(statePath, receipt))
+
+	return appRoot, configPath, statePath
 }
