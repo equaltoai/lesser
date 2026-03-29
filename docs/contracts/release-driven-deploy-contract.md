@@ -86,7 +86,7 @@ Milestone-0 freezes four artifact categories. These names are part of the contra
 
 The first-phase Lambda deploy artifact category uses two canonical release assets:
 
-- `lesser-lambda-bundle.tar.gz`: archive that reproduces the deployable `bin/*.zip` layout after extraction
+- `lesser-lambda-bundle.tar.gz`: archive that reproduces the deployable `bin/*.zip` layout inside the local deploy workspace after extraction
 - `lesser-lambda-bundle.json`: machine-readable manifest for the archive contents
 
 The normative manifest schema is:
@@ -162,9 +162,9 @@ When `--release-dir` is set, `lesser up` must:
    `artifacts.deploy_artifacts.lambda_bundle`.
 4. Validate `lesser-lambda-bundle.json` against schema version `1`.
 5. Verify the bundle archive checksum from the manifest.
-6. Extract the archive deterministically into the exact `bin/*.zip` layout current CDK deploys consume.
+6. Extract the archive deterministically into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/bin/*.zip`.
 7. Verify every extracted `bin/<lambda>.zip` against the manifest before using it.
-8. Skip source-based Lambda compilation once verified assets are present.
+8. Pass that staged asset root into CDK as the Lambda asset input and skip source-based Lambda compilation once verified assets are present.
 
 ### Override rules
 
@@ -213,3 +213,34 @@ repo-local source inputs present:
 
 The CLI now validates those two source inputs up front so artifact mode fails with an explicit missing-source error
 instead of drifting into later `cdk` or `pnpm` failures.
+
+## M3 Managed-Runner Consumption Path
+
+Managed runners should treat artifact-driven deploy execution as a two-input model:
+
+- repo-local execution source that still contains `infra/cdk/` and `auth-ui/`
+- release-local deploy assets staged into `--release-dir`
+
+The minimal managed-runner input contract is:
+
+- a Lesser checkout with `infra/cdk/cdk.json` and `auth-ui/package.json`
+- a `lesser` CLI binary from that checkout
+- a release directory containing:
+  - `checksums.txt`
+  - `lesser-release.json`
+  - `lesser-lambda-bundle.tar.gz`
+  - `lesser-lambda-bundle.json`
+- deploy-time AWS credentials and instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, and bootstrap/output flags)
+
+When artifact mode runs successfully, the local Lesser state dir becomes the canonical execution workspace:
+
+- staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
+- staged Lambda provenance metadata: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
+- per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
+- stable instance receipt: `~/.lesser/<app>/<base-domain>/state.json`
+
+This keeps the managed-runner contract explicit:
+
+- release assets are external deploy inputs, not mutable repo byproducts
+- repo-local CDK/auth-ui source still remains an execution prerequisite
+- receipt/output behavior stays in the same Lesser-owned state dir the operator path already uses

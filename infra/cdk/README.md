@@ -30,6 +30,7 @@ The CDK app reads the following context values:
 - `app` (default: `lesser`)
 - `baseDomain` (required for stage stacks): base domain with an existing public hosted zone (for example `example.com`)
 - `hostedZoneId` (recommended for stage stacks): Route53 hosted zone ID for `baseDomain` (otherwise CDK will do a lookup)
+- `lambdaAssetRoot` (optional): root directory that contains `bin/*.zip`; defaults to the repo root when omitted
 - `stage` (optional): `shared|dev|staging|live|all` (empty means “all stages”)
 - `withStaging` (optional): `true` to include staging when deploying all stages
 
@@ -37,12 +38,13 @@ The app also expects to run under the CDK CLI so `CDK_DEFAULT_ACCOUNT` and `CDK_
 
 ## Lambda Assets
 
-Stage stacks reference zip artifacts in `bin/*.zip`.
+Stage stacks reference zip artifacts in `<lambdaAssetRoot>/bin/*.zip`.
 
-- `lesser up` builds these automatically.
-- If you run `cdk` directly, ensure `bin/*.zip` exists first (for example: `./lesser build lambdas`).
-- Releases now publish a Lambda bundle that must extract back into this exact `bin/*.zip` layout; CDK still consumes
-  the extracted files, not the release archive directly.
+- `lesser up` builds or verifies these automatically, stages them under
+  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`, and passes that path as `lambdaAssetRoot`.
+- If you run `cdk` directly without `lesser up`, ensure the default repo-root `bin/*.zip` layout exists first (for example:
+  `./lesser build lambdas`), or pass your own `--context lambdaAssetRoot=<path>`.
+- Releases still publish a Lambda bundle archive, but CDK consumes the staged extracted files, not the archive directly.
 
 ## CDK Commands (Infra Contributors)
 
