@@ -5,6 +5,12 @@
 Deployments are managed with AWS CDK (CloudFormation) under `infra/cdk/`, but the operator interface is the `lesser`
 CLI.
 
+Current state:
+
+- `lesser up` is still a source-based deploy path.
+- It currently builds Lambda zip artifacts and `auth-ui/` from the repo checkout before deploying.
+- The frozen contract for future release-driven artifact mode lives in `docs/contracts/release-driven-deploy-contract.md`.
+
 ## Prerequisites
 
 - AWS CLI configured (and logged in for your chosen profile)
@@ -22,6 +28,7 @@ At a high level, `./lesser up`:
 - Ensures CDK bootstrap exists for the target account/region
 - Deploys the shared stack (`<app>-shared`)
 - Deploys stage stacks (`<app>-dev`, `<app>-live`, optional `<app>-staging`)
+- Builds and uploads `auth-ui/`
 - Writes local receipts under `~/.lesser/<app>/<base-domain>/`
 
 ## Deploy
@@ -72,6 +79,12 @@ Bootstrap state:
 ## Updating an existing deployment
 
 ✅ CORRECT: rerun `./lesser up` with the same `--app` + `--base-domain` to apply changes.
+
+Important scope note:
+
+- Prebuilt Lambda release assets are a planned optimization, not the current default.
+- Even after Lambda prebuilds land, deploy-time responsibilities such as CDK execution, auth UI upload, hosted-zone
+  resolution, and receipt/bootstrap writes remain instance-specific.
 
 If you changed Lambda code and want to force refresh zip artifacts:
 

@@ -41,6 +41,13 @@ Common commands:
 
 ### Deploy dev + live (and optional staging)
 
+Current behavior:
+
+- `lesser up` is still source-based and builds Lambda artifacts locally.
+- The future artifact-driven input surface is reserved as `--release-dir`; that contract is documented in
+  `docs/contracts/release-driven-deploy-contract.md`.
+- `--rebuild-lambdas` remains the explicit source-build override path once artifact mode exists.
+
 ```bash
 ./lesser up \
   --app my-lesser \

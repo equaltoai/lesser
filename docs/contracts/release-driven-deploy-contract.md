@@ -11,6 +11,7 @@ contract instead of reinventing new names or trust boundaries.
 - Current default deploy path: source-based `./lesser up`
 - Phase-1 immutable deploy goal: publish trusted Lambda deploy assets in releases
 - Explicit non-goal for milestone 0: claiming deploy execution is already fully immutable
+- Current operator truth: deploys still depend on repo-local CDK source, auth UI source, and deploy-time AWS state
 
 ## M0.1 Current Mutable Deploy Inventory
 
@@ -170,3 +171,32 @@ When `--release-dir` is set, the future artifact-driven `lesser up` path must:
 - Without `--release-dir`, `lesser up` continues to use the current source-based build path.
 - Invalid or incomplete release assets are hard errors in artifact mode; the CLI must not silently fall back to an
   unrequested source build.
+
+## M0.5 Deploy-Time Responsibilities That Remain Instance-Specific
+
+Prebuilt Lambda release assets reduce compilation cost, but they do not eliminate deploy-time work. The following
+responsibilities remain deployment-specific even after first-phase Lambda bundles exist:
+
+| Responsibility | Why it remains deploy-time |
+| --- | --- |
+| AWS credential and account selection | Trust, billing, and target account state vary per deploy |
+| Hosted-zone lookup and stage-domain routing | Domain ownership and DNS records are instance-specific |
+| `cdk bootstrap` and `cdk deploy` execution | CloudFormation synthesis and updates depend on the target account, region, and stack history |
+| CDK context inputs such as `bodyEnabled`, `lesserHostUrl`, translation flags, tips, and AI toggles | These are per-instance configuration choices, not release artifacts |
+| Auth UI build and upload | The current deploy path still builds `auth-ui/` from repo-local source and uploads it separately |
+| CloudFront invalidations and post-deploy writes | These target live distributions, buckets, DynamoDB tables, and local receipts |
+| Bootstrap/admin state handling | Wallet/bootstrap behavior depends on the instance lifecycle and provisioning mode |
+
+### Honest first-phase scope
+
+The first-phase immutable deploy contract means:
+
+- Lesser releases can publish trusted Lambda deploy assets.
+- `lesser up` can eventually consume those assets instead of recompiling handlers.
+
+It does not mean:
+
+- auth UI is already a release-published deploy artifact
+- CDK execution is detached from repo-local infrastructure source
+- deploys can run without AWS account, domain, or per-instance configuration context
+- managed runners no longer need to provide provisioning input or retain their own higher-level receipts
