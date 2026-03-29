@@ -79,3 +79,44 @@ Milestone-0 freezes four artifact categories. These names are part of the contra
   or outputs, not release artifacts.
 - CDK source, auth UI source, and repo-local helper scripts remain source inputs until a later milestone explicitly
   publishes them as release artifacts.
+
+## M0.3 Manifest And Checksum Contract For The Lambda Bundle
+
+The first-phase Lambda deploy artifact category uses two canonical release assets:
+
+- `lesser-lambda-bundle.tar.gz`: archive that reproduces the deployable `bin/*.zip` layout after extraction
+- `lesser-lambda-bundle.json`: machine-readable manifest for the archive contents
+
+The normative manifest schema is:
+
+- `docs/contracts/lambda-bundle-manifest.schema.json`
+
+The illustrative example is:
+
+- `docs/contracts/examples/lesser-lambda-bundle.example.json`
+
+### Manifest rules
+
+- `kind` is always `lesser.lambda_bundle_manifest`.
+- `schema_version` starts at `1`. Any breaking shape change increments `schema_version` instead of reusing the old
+  meaning.
+- `release` identifies the Lesser release that published the bundle.
+- `bundle.path` is always `lesser-lambda-bundle.tar.gz`.
+- `bundle.sha256` is the top-level checksum for the archive bytes exactly as published in the release.
+- `files[]` enumerates the extracted deploy layout that `lesser up` will materialize under `bin/`.
+- Every `files[].path` is a relative `bin/<lambda>.zip` path, sorted lexicographically, with no duplicates.
+- Every `files[].sha256` hashes the exact zip file bytes at that extracted path.
+- Every `files[].size_bytes` records the extracted zip size in bytes.
+- `inventory_source.path` points at `infra/cdk/inventory/lambdas.go`, which remains the canonical source of truth for
+  the deployable Lambda set.
+
+### Checksum rules
+
+- `checksums.txt` remains the release-level checksum file for top-level published assets.
+- `lesser-lambda-bundle.tar.gz` and `lesser-lambda-bundle.json` must both appear in `checksums.txt`.
+- `bundle.sha256` duplicates the archive checksum inside the manifest so consumers can verify the deploy artifact even
+  after the bundle is staged away from the original release directory.
+- Consumers must reject the bundle if the archive checksum, manifest checksum, or any listed file checksum does not
+  match.
+- The manifest must enumerate the exact stage-stack Lambda zip set and exclude non-deploy extras such as
+  `cloudfront-keygen.zip`.

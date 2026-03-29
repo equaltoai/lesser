@@ -28,7 +28,8 @@ running environment.
 ## Deploy And Release Contracts
 
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
-- Future Lambda bundle schema/example files live alongside that contract.
+- Lambda bundle manifest schema: `docs/contracts/lambda-bundle-manifest.schema.json`
+- Lambda bundle manifest example: `docs/contracts/examples/lesser-lambda-bundle.example.json`
 
 ## REST (OpenAPI)
 
