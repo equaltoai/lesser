@@ -229,7 +229,7 @@ func (e *upEnv) run(ctx context.Context) error {
 	if err := ensureToolsAvailableFn(); err != nil {
 		return err
 	}
-	if err := buildLambdaZipsFn(e.repoRoot, e.args.RebuildLambdas); err != nil {
+	if err := e.prepareLambdaArtifacts(); err != nil {
 		return err
 	}
 	if err := e.handleBootstrapOutput(); err != nil {
@@ -269,6 +269,20 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	e.printSummary(statePath)
+	return nil
+}
+
+func (e *upEnv) prepareLambdaArtifacts() error {
+	if strings.TrimSpace(e.args.ReleaseDir) == "" {
+		return buildLambdaZipsFn(e.repoRoot, e.args.RebuildLambdas)
+	}
+
+	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s\n", len(result.Files), result.Version)
 	return nil
 }
 

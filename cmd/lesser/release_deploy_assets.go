@@ -24,6 +24,8 @@ type releaseLambdaInstallResult struct {
 	Files   []string
 }
 
+var installReleaseLambdaAssetsFn = installReleaseLambdaAssets
+
 type releaseFileSet struct {
 	checksumsPath       string
 	releaseManifestPath string
