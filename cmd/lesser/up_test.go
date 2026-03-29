@@ -569,6 +569,11 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	}
 
 	require.NoError(t, env.run(context.Background()))
+
+	data, err := os.ReadFile(filepath.Join(env.lambdaAssetRoot, lambdaAssetMetadataFileName))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"mode": "release"`)
+	require.Contains(t, string(data), `"release_version": "v1.2.3"`)
 }
 
 func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
@@ -611,6 +616,10 @@ func TestUpEnv_PrepareLambdaArtifacts_RebuildOverridesReleaseDir(t *testing.T) {
 
 	require.NoError(t, env.prepareLambdaArtifacts())
 	require.True(t, buildCalled)
+
+	data, err := os.ReadFile(filepath.Join(env.lambdaAssetRoot, lambdaAssetMetadataFileName))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"mode": "source"`)
 }
 
 func TestUpEnv_HandleBootstrapOutput_WritesWhenConfigured(t *testing.T) {

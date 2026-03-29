@@ -288,24 +288,61 @@ func (e *upEnv) prepareLambdaArtifacts() error {
 		if err := buildLambdaZipsFn(e.repoRoot, true); err != nil {
 			return err
 		}
-		_, err = stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
-		return err
+		files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		if err != nil {
+			return err
+		}
+		return e.recordLocalLambdaAssets(files)
 	}
 
 	if strings.TrimSpace(e.args.ReleaseDir) == "" {
 		if err := buildLambdaZipsFn(e.repoRoot, false); err != nil {
 			return err
 		}
-		_, err = stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
-		return err
+		files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		if err != nil {
+			return err
+		}
+		return e.recordLocalLambdaAssets(files)
 	}
 
 	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir, e.lambdaAssetRoot)
 	if err != nil {
 		return err
 	}
+	files, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, result.Files)
+	if err != nil {
+		return err
+	}
+	if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
+		Schema:         1,
+		Mode:           "release",
+		Files:          files,
+		ReleaseVersion: result.Version,
+		ReleaseGitSHA:  result.GitSHA,
+		PreparedAt:     time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
 
-	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s\n", len(result.Files), result.Version)
+	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s into %s\n", len(result.Files), result.Version, e.lambdaAssetRoot)
+	return nil
+}
+
+func (e *upEnv) recordLocalLambdaAssets(files []string) error {
+	relFiles, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, files)
+	if err != nil {
+		return err
+	}
+	if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
+		Schema:     1,
+		Mode:       "source",
+		Files:      relFiles,
+		PreparedAt: time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("✓ Staged %d Lambda artifact(s) from local build into %s\n", len(files), e.lambdaAssetRoot)
 	return nil
 }
 
@@ -435,6 +472,9 @@ func (e *upEnv) bootstrapStages(ctx context.Context, receipt *upReceipt) error {
 
 func (e *upEnv) printSummary(statePath string) {
 	fmt.Println("\nDeployment receipt:", statePath)
+	if strings.TrimSpace(e.lambdaAssetRoot) != "" {
+		fmt.Println("Lambda asset root:", e.lambdaAssetRoot)
+	}
 	printStageURLs(e.stages, e.baseDomain)
 	fmt.Println("\nNext steps:")
 	if strings.TrimSpace(e.args.ProvisioningInputPath) != "" {
