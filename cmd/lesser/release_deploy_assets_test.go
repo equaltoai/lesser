@@ -123,6 +123,21 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenInventoryDoesNotMatch(t *testing.T
 	require.Contains(t, err.Error(), "does not match canonical inventory")
 }
 
+func TestInstallReleaseLambdaAssets_AcceptsPathSortedBundleManifest(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalInventory(t, []string{"graphql", "graphql-ws"})
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceRepo, "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceRepo, "bin", "graphql.zip"), []byte("graphql zip"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceRepo, "bin", "graphql-ws.zip"), []byte("graphql-ws zip"), 0o644))
+
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"graphql", "graphql-ws"})
+
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.3", result.Version)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
+}
+
 func TestVerifyReleaseChecksums_MissingEntry(t *testing.T) {
 	releaseDir := t.TempDir()
 	files := releaseFileSet{
