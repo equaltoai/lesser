@@ -444,3 +444,35 @@ The migration cannot complete until Lesser publishes or freezes contracts for:
 - receipt/output contracts that preserve the current Lesser state-dir behavior without depending on a mutable checkout
 
 Milestone 4 keeps those dependencies named. It does not imply they are already solved by the Lambda bundle milestone.
+
+## M4.5 Phase-2 Cost, Latency, Reliability, And Verification Goals
+
+The next immutable deploy phase exists to solve an operational problem, not just to publish more files. The target
+state is a thinner deploy path that avoids repeated release-generic work during each installation or client update.
+
+### Outcome goals
+
+| Goal area | Current managed-deploy pain | Phase-2 target state | How success should be verified |
+| --- | --- | --- | --- |
+| Cost | Each deploy still pays for repo-local synthesis/build tooling beyond the Lambda bundle | Release-generic assembly work happens once per release publish, not once per deploy | Managed deploy logs show artifact verification plus executor work, but no repo-local Lambda compile, deploy-assembly synthesis, or frontend rebuild steps |
+| Latency | Mutable source preparation still delays deploy start and compounds runner time | A managed runner should reach the first live AWS deploy operation after artifact verification and input validation only, without any release-generic build stage in the path | Future runner smoke tests and timing instrumentation show deploy preparation is bounded by asset download/verification rather than by source builds |
+| Reliability | Repo drift and local toolchain state can change deploy behavior for the same release | The same release artifacts plus the same instance-input set should resolve to the same deploy assembly contract and verification results | Descriptor/checksum validation, executor compatibility checks, and source-independence smoke tests all pass for the same release/input pair |
+| Verification | Today the contract is partly implicit in repo layout and CLI behavior | The future executor must fail fast on missing assets, incompatible descriptor versions, or incomplete instance inputs before mutating AWS state | CI contract tests, release checks, and executor preflight tests catch drift before a live deploy begins |
+
+### Target-state verification guardrails
+
+Later implementation work should prove the phase-2 target with explicit checks:
+
+- contract tests for the published deploy assembly descriptor schema and examples
+- release checks that the future deploy assembly assets and `lesser-release.json` references are present and checksummed
+- executor integration tests that consume release assets plus instance inputs without needing repo-local synthesis or rebuilds
+- managed-runner smoke tests that confirm the deploy path stays on the artifact/executor route rather than silently falling back to source-shelling
+
+### What milestone 4 deliberately leaves unchanged
+
+Milestone 4 defines the target and the migration path, but it does not claim:
+
+- CDK source is already gone from deploy execution
+- auth UI is already a release-published immutable asset
+- a no-checkout deploy path is shipping today
+- managed deploy pain is solved by the Lambda bundle milestone alone
