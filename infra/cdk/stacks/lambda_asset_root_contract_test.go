@@ -76,59 +76,9 @@ func TestLesserApiStackLambdaFunctionsPropsUsesConfiguredLambdaAssetRoot(t *test
 }
 
 func TestLesserApiStackSynthUsesConfiguredLambdaAssetRootWithoutRepoBin(t *testing.T) {
-	tempRoot := t.TempDir()
-	workspace := filepath.Join(tempRoot, "infra", "cdk")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
-	}
-
-	originalWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(workspace); err != nil {
-		t.Fatalf("chdir %s: %v", workspace, err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(originalWD)
-	})
-
-	if _, err := os.Stat(filepath.Join(tempRoot, "bin")); !os.IsNotExist(err) {
-		t.Fatalf("expected %s/bin to be absent, got err=%v", tempRoot, err)
-	}
-
 	assetRoot := writePlaceholderLambdaAssets(t, t.TempDir())
-	outdir := t.TempDir()
-	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
-	app.Node().SetContext(jsii.String("aws:cdk:enable-asset-metadata"), true)
-
-	apiStack := NewLesserApiStack(app, "TestLesserApiStack", &LesserApiStackProps{
-		StackProps: awscdk.StackProps{
-			Env: &awscdk.Environment{
-				Account: jsii.String("123456789012"),
-				Region:  jsii.String("us-east-1"),
-			},
-		},
-		Environment:      "development",
-		Domain:           "dev.example.com",
-		Config:           map[string]interface{}{"lambdaAssetRoot": assetRoot},
-		HostedZoneDomain: "example.com",
-		HostedZoneId:     "Z1",
-		AppName:          "app",
-		AccountID:        "123456789012",
-		Region:           "us-east-1",
-	})
-
-	app.Synth(nil)
-
-	for _, spec := range inventory.LambdaInventory.Lambdas {
-		fn := apiStack.Functions.Must(spec.Name)
-		stagedAssetPath := resolveLambdaAssetPathMetadata(t, fn)
-		stagedHash := sha256HexFile(t, filepath.Join(outdir, stagedAssetPath))
-		expectedHash := sha256HexFile(t, filepath.Join(assetRoot, "bin", spec.Name+".zip"))
-		if stagedHash != expectedHash {
-			t.Fatalf("unexpected staged asset for %s: got %s want hash of %s", spec.Name, filepath.Join(outdir, stagedAssetPath), filepath.Join(assetRoot, "bin", spec.Name+".zip"))
-		}
+	if err := VerifyLambdaAssetRootWithSynth(assetRoot); err != nil {
+		t.Fatalf("VerifyLambdaAssetRootWithSynth: %v", err)
 	}
 }
 

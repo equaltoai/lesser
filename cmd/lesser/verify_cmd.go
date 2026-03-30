@@ -59,6 +59,8 @@ func runVerify(argv []string) error {
 		return runVerifyAccountHydration(argv[1:])
 	case "status-contract":
 		return runVerifyStatusContract(argv[1:])
+	case "artifact-deploy":
+		return runVerifyArtifactDeployFn(argv[1:])
 	case "inventory":
 		return runVerifyInventory(argv[1:])
 	case "lambda-set":
