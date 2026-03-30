@@ -348,3 +348,51 @@ That mirrors the existing `lambda_bundle` reference model:
 
 Milestone 4 does not change the live release manifest schema yet. It freezes the next-step target so the future
 `deploy_assembly` category can be added as a sibling of `lambda_bundle` rather than as a separate trust model.
+
+## M4.3 Separate Generic Release Artifacts From Instance-Specific Deploy Inputs
+
+The future deploy contract uses a two-part model:
+
+- generic release artifacts published once per Lesser release
+- instance-specific deploy inputs supplied separately for each installation or update
+
+### Generic release artifacts
+
+These artifacts must stay identical for every consumer of the same Lesser release:
+
+| Release artifact | Scope | Why it stays generic |
+| --- | --- | --- |
+| `lesser-<os>-<arch>` CLI binaries | Release | They execute workflows, but they are not parameterized by one target installation |
+| `checksums.txt` and `lesser-release.json` | Release | They define discovery and integrity for the published assets |
+| `lesser-lambda-bundle.tar.gz` and `lesser-lambda-bundle.json` | Release | They reproduce the canonical Lambda asset set for that release |
+| Future `lesser-deploy-assembly.tar.gz` and `lesser-deploy-assembly.json` | Release | They package the reusable deploy assembly payload and its descriptor once per release |
+
+### Canonical instance-specific input set
+
+The future thin deploy executor should consume these input categories separately from the release artifacts:
+
+| Input category | What it covers | Why it stays instance-specific | Current operator / runner surface |
+| --- | --- | --- | --- |
+| `app_identity` | app slug, stack prefix, state-dir namespace | One release can be installed under many app names | `--app` and local receipt paths |
+| `aws_target` | AWS credentials, account, region, bootstrap environment | Trust and billing boundaries vary per deploy | AWS profile/env credentials plus CLI region resolution |
+| `base_domain` | root domain for the installation | Domains vary per customer/instance | `--base-domain` |
+| `hosted_zone` | actual Route53 hosted zone binding | The same domain may resolve in different AWS accounts or zones | Route53 lookup and optional operator choice |
+| `stage_plan` | which stages are being updated plus their live stack history | Deploys are updates against existing stage stacks | CloudFormation state and Lesser receipts |
+| `feature_config` | `bodyEnabled`, translation flags, AI toggles, tips, and similar behavior switches | These are installation-level decisions, not release identity | CLI flags, env vars, and provisioning input JSON |
+| `managed_service_urls` | `lesserHostUrl`, attestations URL, similar managed endpoints | Managed control-plane wiring differs by installation | provisioning input JSON or env vars |
+| `provisioning_input` | operator/runner-supplied bootstrap and managed config blob | It is provided per deploy request | `--provisioning-input` |
+| `bootstrap_io` | output/bootstrap file locations and receipt handling | File paths are runner-local execution concerns | `--out`, local Lesser state dir, managed receipts |
+
+### Separation rules
+
+The contract boundary is:
+
+- release artifacts may describe required input categories, but they must not embed per-instance values
+- app names, domains, hosted-zone IDs, account IDs, feature flags, and provisioning JSON stay outside published artifacts
+- the same release artifact set must be reusable across different customers and domains without rewriting the artifact bytes
+- operators and managed runners should map their local invocation surfaces into the same canonical input categories above
+
+This keeps the future deploy assembly usable by both modes:
+
+- operators can continue supplying flags and files that map onto the canonical categories
+- managed runners can build the same category map from their higher-level job model without mutating the published release artifacts

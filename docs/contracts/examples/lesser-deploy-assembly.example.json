@@ -23,16 +23,16 @@
   },
   "instance_inputs": {
     "required": [
-      "app",
-      "aws_region",
+      "app_identity",
+      "aws_target",
       "base_domain",
-      "feature_flags",
+      "feature_config",
       "hosted_zone",
       "stage_plan"
     ],
     "optional": [
-      "bootstrap_output_path",
-      "lesser_host_urls",
+      "bootstrap_io",
+      "managed_service_urls",
       "provisioning_input"
     ]
   },

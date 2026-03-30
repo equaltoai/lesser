@@ -171,7 +171,19 @@ func TestDeployAssemblyDescriptorExampleContract(t *testing.T) {
 	require.Equal(t, "lesser-release.json", descriptor.Compatibility.ReleaseManifestPath)
 	require.Equal(t, "deploy_assembly", descriptor.Compatibility.DeployArtifactsKey)
 	require.GreaterOrEqual(t, descriptor.Compatibility.ExecutorContractValue, 1)
-	require.NotEmpty(t, descriptor.InstanceInputs.Required)
+	require.ElementsMatch(t, []string{
+		"app_identity",
+		"aws_target",
+		"base_domain",
+		"feature_config",
+		"hosted_zone",
+		"stage_plan",
+	}, descriptor.InstanceInputs.Required)
+	require.ElementsMatch(t, []string{
+		"bootstrap_io",
+		"managed_service_urls",
+		"provisioning_input",
+	}, descriptor.InstanceInputs.Optional)
 	require.NotEmpty(t, descriptor.Verification.IntegrityRequired)
 	require.NotEmpty(t, descriptor.Verification.PreflightRequired)
 }
