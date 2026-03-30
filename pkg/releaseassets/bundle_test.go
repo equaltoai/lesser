@@ -30,6 +30,17 @@ var LambdaInventory = []struct{ Name string }{
 	require.Equal(t, []string{"api", "inbox"}, names)
 }
 
+func TestCanonicalLambdaNames_ErrorsWhenNoNamesFound(t *testing.T) {
+	repoRoot := t.TempDir()
+	inventoryPath := filepath.Join(repoRoot, "infra", "cdk", "inventory")
+	require.NoError(t, os.MkdirAll(inventoryPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(inventoryPath, "lambdas.go"), []byte("package inventory\n"), 0o644))
+
+	_, err := CanonicalLambdaNames(repoRoot)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no Lambda names found")
+}
+
 func TestWriteLambdaBundle(t *testing.T) {
 	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",

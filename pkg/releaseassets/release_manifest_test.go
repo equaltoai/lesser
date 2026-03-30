@@ -39,6 +39,57 @@ func TestWriteReleaseManifest(t *testing.T) {
 }
 
 func TestWriteReleaseManifest_RequiresMetadata(t *testing.T) {
-	_, err := WriteReleaseManifest(t.TempDir(), ReleaseManifestInput{})
-	require.Error(t, err)
+	tests := []struct {
+		name        string
+		input       ReleaseManifestInput
+		wantErrText string
+	}{
+		{
+			name:        "version",
+			input:       ReleaseManifestInput{},
+			wantErrText: "release version is required",
+		},
+		{
+			name: "git sha",
+			input: ReleaseManifestInput{
+				Version: "v1.2.3",
+			},
+			wantErrText: "release git SHA is required",
+		},
+		{
+			name: "go version",
+			input: ReleaseManifestInput{
+				Version: "v1.2.3",
+				GitSHA:  "0123456789abcdef0123456789abcdef01234567",
+			},
+			wantErrText: "go version is required",
+		},
+		{
+			name: "cdk major",
+			input: ReleaseManifestInput{
+				Version:   "v1.2.3",
+				GitSHA:    "0123456789abcdef0123456789abcdef01234567",
+				GoVersion: "go1.26.1",
+			},
+			wantErrText: "cdk major version is required",
+		},
+		{
+			name: "receipt schema version",
+			input: ReleaseManifestInput{
+				Version:   "v1.2.3",
+				GitSHA:    "0123456789abcdef0123456789abcdef01234567",
+				GoVersion: "go1.26.1",
+				CDKMajor:  2,
+			},
+			wantErrText: "receipt schema version is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := WriteReleaseManifest(t.TempDir(), tt.input)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.wantErrText)
+		})
+	}
 }
