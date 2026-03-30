@@ -391,6 +391,7 @@ The contract boundary is:
 - app names, domains, hosted-zone IDs, account IDs, feature flags, and provisioning JSON stay outside published artifacts
 - the same release artifact set must be reusable across different customers and domains without rewriting the artifact bytes
 - operators and managed runners should map their local invocation surfaces into the same canonical input categories above
+- `docs/contracts/deploy-assembly-descriptor.schema.json` freezes those exact category names so future descriptors cannot silently invent a different taxonomy
 
 This keeps the future deploy assembly usable by both modes:
 

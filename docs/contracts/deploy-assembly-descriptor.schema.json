@@ -4,6 +4,22 @@
   "title": "Lesser Deploy Assembly Descriptor",
   "type": "object",
   "additionalProperties": false,
+  "$defs": {
+    "instance_input_category": {
+      "type": "string",
+      "enum": [
+        "app_identity",
+        "aws_target",
+        "base_domain",
+        "hosted_zone",
+        "stage_plan",
+        "feature_config",
+        "managed_service_urls",
+        "provisioning_input",
+        "bootstrap_io"
+      ]
+    }
+  },
   "required": [
     "kind",
     "schema_version",
@@ -119,16 +135,14 @@
         "required": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
+            "$ref": "#/$defs/instance_input_category"
           },
           "uniqueItems": true
         },
         "optional": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
+            "$ref": "#/$defs/instance_input_category"
           },
           "uniqueItems": true
         }

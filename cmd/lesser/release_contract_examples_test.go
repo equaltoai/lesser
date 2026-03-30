@@ -222,6 +222,24 @@ func TestDeployAssemblyDescriptorSchemaContract(t *testing.T) {
 	compatibilityProps := anyMap(t, anyMap(t, properties["compatibility"])["properties"])
 	require.Equal(t, "lesser-release.json", anyMap(t, compatibilityProps["release_manifest_path"])["const"])
 	require.Equal(t, "deploy_assembly", anyMap(t, compatibilityProps["deploy_artifacts_key"])["const"])
+
+	defs := anyMap(t, schema["$defs"])
+	instanceInputCategory := anyMap(t, defs["instance_input_category"])
+	require.ElementsMatch(t, []string{
+		"app_identity",
+		"aws_target",
+		"base_domain",
+		"hosted_zone",
+		"stage_plan",
+		"feature_config",
+		"managed_service_urls",
+		"provisioning_input",
+		"bootstrap_io",
+	}, anySliceToStrings(t, instanceInputCategory["enum"]))
+
+	instanceInputProps := anyMap(t, anyMap(t, properties["instance_inputs"])["properties"])
+	require.Equal(t, "#/$defs/instance_input_category", anyMap(t, anyMap(t, instanceInputProps["required"])["items"])["$ref"])
+	require.Equal(t, "#/$defs/instance_input_category", anyMap(t, anyMap(t, instanceInputProps["optional"])["items"])["$ref"])
 }
 
 func anyMap(t *testing.T, value any) map[string]any {
