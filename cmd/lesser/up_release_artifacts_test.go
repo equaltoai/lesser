@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -137,6 +138,98 @@ func TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys(t *te
 	firstAssetRoot := lambdaAssetRoots[0]
 	for _, assetRoot := range lambdaAssetRoots[1:] {
 		require.Equal(t, firstAssetRoot, assetRoot)
+	}
+
+	apiBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "api.zip"))
+	require.NoError(t, err)
+	require.Equal(t, "api zip", string(apiBytes))
+
+	inboxBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "inbox.zip"))
+	require.NoError(t, err)
+	require.Equal(t, "inbox zip", string(inboxBytes))
+}
+
+func TestRunUp_ReleaseDirUsesRealCdkDeployPreparationWithoutRepoBin(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+
+	restore := stubRunUpReleaseArtifactDeps(t, targetRepo)
+	defer restore()
+
+	buildLambdaZipsFn = func(string, bool) error {
+		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
+		return nil
+	}
+	cdkDeployWithOutputsFn = cdkDeployWithOutputs
+
+	previousRunCommand := runCommandFn
+	defer func() { runCommandFn = previousRunCommand }()
+
+	type deployInvocation struct {
+		stackName       string
+		stageContext    string
+		lambdaAssetRoot string
+	}
+	var invocations []deployInvocation
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		require.Equal(t, "cdk", name)
+		require.NotEmpty(t, args)
+		require.Equal(t, "deploy", args[0])
+
+		outputsPath := ""
+		invocation := deployInvocation{}
+		if len(args) > 1 {
+			invocation.stackName = args[1]
+		}
+		for i := 0; i < len(args)-1; i++ {
+			switch args[i] {
+			case "--outputs-file":
+				outputsPath = args[i+1]
+			case "--context":
+				switch {
+				case strings.HasPrefix(args[i+1], "stage="):
+					invocation.stageContext = strings.TrimPrefix(args[i+1], "stage=")
+				case strings.HasPrefix(args[i+1], "lambdaAssetRoot="):
+					invocation.lambdaAssetRoot = strings.TrimPrefix(args[i+1], "lambdaAssetRoot=")
+				}
+			}
+		}
+		require.NotEmpty(t, outputsPath)
+		require.NotEmpty(t, invocation.lambdaAssetRoot)
+		invocations = append(invocations, invocation)
+
+		outputsJSON := "{}"
+		if invocation.stackName != "" {
+			outputsJSON = `{"` + invocation.stackName + `":{}}`
+		}
+		return os.WriteFile(outputsPath, []byte(outputsJSON), 0o644)
+	}
+
+	require.NoError(t, runUp([]string{
+		"--app", "app",
+		"--base-domain", "example.com",
+		"--aws-profile", "profile",
+		"--release-dir", releaseDir,
+	}))
+
+	require.Len(t, invocations, 3)
+	require.ElementsMatch(t, []string{
+		naming.SharedStackName("app"),
+		naming.StageStackName("app", naming.StageDev),
+		naming.StageStackName("app", naming.StageLive),
+	}, []string{
+		invocations[0].stackName,
+		invocations[1].stackName,
+		invocations[2].stackName,
+	})
+
+	firstAssetRoot := invocations[0].lambdaAssetRoot
+	for _, invocation := range invocations[1:] {
+		require.Equal(t, firstAssetRoot, invocation.lambdaAssetRoot)
 	}
 
 	apiBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "api.zip"))
