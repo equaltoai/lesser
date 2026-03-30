@@ -62,6 +62,9 @@ jobs:
       - name: Verify (CI gate)
         run: ./lesser verify ci
 
+      - name: Verify artifact-driven deploy certification
+        run: bash scripts/verify_artifact_deploy.sh
+
       - name: Disk usage (post verify)
         if: always()
         run: bash scripts/ci_disk_usage.sh "post verify"

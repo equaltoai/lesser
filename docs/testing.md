@@ -56,11 +56,13 @@ bash scripts/install_ci_tools.sh
 go build -o lesser ./cmd/lesser
 ./lesser build lambdas
 ./lesser verify ci
+bash scripts/verify_artifact_deploy.sh
 ```
 
 Notes:
 
 - `./lesser verify ci` is stricter than `./lesser verify` (adds lint, security scans, supply chain verification, strict OpenAPI, and coverage gates).
+- Artifact-driven deploy certification is a separate CI/release step because it exercises focused `cmd/lesser` and nested `infra/cdk/stacks` regressions that protect `--release-dir` stage-stack behavior.
 - By default, the `./lesser` CLI caps Go/lint parallelism on high-core machines to avoid host OOMs (sets `GOMAXPROCS` and `GOFLAGS=-p` up to 4). Override with `LESSER_JOBS` (or your own `GOMAXPROCS` / `GOFLAGS`).
 - CI runs coverage in short mode and skips HTML generation to keep runtime down (`./lesser test coverage --scope overall --short --verbose=false --exclude-generated=false --html=false`).
 - Coverage gates are strict (for example, `89.999%` fails even if it rounds to `90.0%` in a 1-decimal summary). If debugging drift, run with `GOFLAGS=-count=1` to force fresh test runs.

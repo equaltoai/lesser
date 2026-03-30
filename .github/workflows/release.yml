@@ -71,6 +71,9 @@ jobs:
       - name: Build release assets
         run: bash scripts/build_release_assets.sh "${RELEASE_VERSION}" dist/release
 
+      - name: Verify artifact-driven deploy certification
+        run: bash scripts/verify_artifact_deploy.sh dist/release
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

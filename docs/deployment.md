@@ -130,6 +130,11 @@ When `--release-dir` is used, the runner should treat the local deploy workspace
 as the canonical execution output surface for Lambda assets and CDK outputs. The repo-root `bin/` directory is no longer
 the deploy-time contract for artifact mode.
 
+The current release trust signal for managed consumers is the artifact-driven deploy certification gate:
+
+- CI and release publication both run `bash scripts/verify_artifact_deploy.sh`
+- tagged releases also run that certification against the freshly built `dist/release/` asset set before publication
+
 ## Verify “locked but reachable”
 
 ```bash
