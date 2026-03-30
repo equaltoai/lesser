@@ -60,6 +60,26 @@ func TestInstallReleaseLambdaAssets_DoesNotStageUnderRepoRootTmp(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(targetRepo, "tmp", "release-lambda-assets"))
 }
 
+func TestEnsureReleaseStagingDir_UsesDeployWorkspaceRoot(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "deploy", "lambda-assets")
+
+	stagingDir, err := ensureReleaseStagingDir(assetRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(stagingDir) })
+
+	require.DirExists(t, stagingDir)
+	require.Equal(t, filepath.Dir(assetRoot), filepath.Dir(stagingDir))
+}
+
+func TestEnsureReleaseStagingDir_ErrorsWhenWorkspaceRootBlocked(t *testing.T) {
+	workspaceRoot := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(workspaceRoot, []byte("blocked"), 0o644))
+
+	_, err := ensureReleaseStagingDir(filepath.Join(workspaceRoot, "lambda-assets"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create release workspace root")
+}
+
 func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",

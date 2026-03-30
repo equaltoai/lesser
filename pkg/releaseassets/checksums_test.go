@@ -26,3 +26,15 @@ func TestWriteChecksums(t *testing.T) {
 		require.True(t, strings.HasSuffix(lines[i], "  "+assetName))
 	}
 }
+
+func TestWriteChecksums_ErrorsWhenAssetMissing(t *testing.T) {
+	outDir := t.TempDir()
+	for _, assetName := range publishedReleaseAssets[1:] {
+		require.NoError(t, os.WriteFile(filepath.Join(outDir, assetName), []byte(assetName), 0o644))
+	}
+
+	err := WriteChecksums(outDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "hash release asset")
+	require.Contains(t, err.Error(), publishedReleaseAssets[0])
+}
