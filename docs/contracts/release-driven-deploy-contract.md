@@ -1,6 +1,7 @@
 # Lesser Release-Driven Deploy Contract
 
-This document freezes the milestone-0 contract for release-driven Lesser deploys.
+This document freezes the current release-driven deploy contract and the next-step target contract for later immutable
+deploy milestones.
 
 Its job is to make the current deploy path explicit before later milestones move work from deploy time into release
 time. When this document says a category or rule is "canonical", later implementation milestones should preserve that
@@ -251,3 +252,42 @@ This keeps the managed-runner contract explicit:
 - repo-local CDK/auth-ui source still remains an execution prerequisite
 - the checkout must stay version-aligned with the release bundle because bundle validation uses the checkout's canonical Lambda inventory
 - receipt/output behavior stays in the same Lesser-owned state dir the operator path already uses
+
+## M4.1 Per-Instance Context Inventory That Still Blocks A Reusable Deploy Assembly
+
+Moving beyond prebuilt Lambdas requires naming which contexts still keep deploy execution instance-bound today.
+
+| Context family | Examples | Current source of truth | Release-generic or instance-bound? | Compile/release-time or deploy-time? | Why it still blocks a reusable deploy assembly today |
+| --- | --- | --- | --- | --- | --- |
+| App identity | `--app`, stack names, Lesser state-dir prefix | CLI flags and local receipt paths | Instance-bound | Deploy-time | The same release can be installed under different app slugs, so synthesized stack names and local state paths cannot be baked once per release |
+| Domain routing | `--base-domain`, per-stage domains, CloudFront aliases | CLI flags, `stageURLs`, Route53 resolution | Instance-bound | Deploy-time | DNS ownership and stage-domain mappings vary per deployment and depend on live hosted-zone/account state |
+| Hosted zone selection | hosted zone ID/name, public DNS authority | Route53 lookup in the target AWS account | Instance-bound | Deploy-time | The deploy executor must bind the release to the actual hosted zone for the target account instead of assuming one zone per release |
+| AWS target environment | account ID, region, bootstrap state, CDK environment | Ambient AWS auth and CDK bootstrap state | Instance-bound | Deploy-time | CloudFormation updates, bootstrap buckets, and trust boundaries are specific to the target account and region |
+| Stage state | stage stack history, prior outputs, stage-specific URLs | Existing CloudFormation stacks plus Lesser receipts | Instance-bound | Deploy-time | Stage deploys are updates against live stack history rather than one-shot release materialization |
+| Feature/config toggles | `bodyEnabled`, `lesserHostUrl`, translation flags, AI toggles, tips, managed provisioning inputs | CLI flags, env vars, provisioning JSON, stack context | Instance-bound | Deploy-time | These change behavior for one installation without changing the underlying release payload, so they must stay outside generic release artifacts |
+| Bootstrap/admin lifecycle | bootstrap receipts, setup completion state, admin writes | `~/.lesser/...`, DynamoDB, setup endpoints | Instance-bound | Deploy-time | Lifecycle state depends on what has already happened in the target installation |
+| Auth/UI publish destination | auth bucket name, CloudFront invalidation target | Stack outputs and live AWS state | Instance-bound output over release-generic source | Deploy-time for upload, release-time candidate for build | The UI source is generic, but the destination bucket/distribution is chosen from live stack outputs at deploy time |
+
+### Generic release state versus instance-bound deploy state
+
+The reusable pieces that belong to a release contract are:
+
+- the Lesser revision (`version`, `git_sha`) and its published checksums
+- the operator CLI binary that executes deploy workflows
+- the Lambda bundle and manifest that reproduce the canonical `bin/*.zip` set
+- the repo revision that defines the canonical CDK app, auth UI source, and Lambda inventory
+- any future published deploy assembly payload that is valid for every installation of that release
+
+The still-instance-bound pieces are:
+
+- app slug, base domain, hosted zone, AWS account, and region
+- stage stack history, bootstrap state, and prior CloudFormation outputs
+- per-instance feature/config toggles and provisioning input JSON
+- post-deploy side effects such as DNS records, invalidations, receipt writes, and bootstrap/admin state changes
+
+### Compile-time versus deploy-time contexts
+
+Milestone 4 keeps one boundary explicit:
+
+- Release-time / compile-time candidates: Lambda compilation, auth UI bundling, CDK or equivalent deploy assembly synthesis, release manifests, and checksums
+- Deploy-time only: AWS credential selection, hosted-zone lookup, stack update planning against live history, feature-flag injection, DNS writes, invalidations, and instance receipt/bootstrap updates
