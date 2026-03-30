@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://equalto.ai/contracts/deploy-assembly-descriptor.schema.json",
+  "title": "Lesser Deploy Assembly Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "instance_input_category": {
+      "type": "string",
+      "enum": [
+        "app_identity",
+        "aws_target",
+        "base_domain",
+        "hosted_zone",
+        "stage_plan",
+        "feature_config",
+        "managed_service_urls",
+        "provisioning_input",
+        "bootstrap_io"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "release",
+    "assembly",
+    "payload",
+    "compatibility",
+    "instance_inputs",
+    "verification"
+  ],
+  "properties": {
+    "kind": {
+      "const": "lesser.deploy_assembly_descriptor"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "git_sha"
+      ],
+      "properties": {
+        "name": {
+          "const": "lesser"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9].*$"
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        }
+      }
+    },
+    "assembly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "lesser-deploy-assembly.tar.gz"
+        },
+        "format": {
+          "const": "tar.gz"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract_version",
+        "entrypoint"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "contract_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entrypoint": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\).+$"
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_manifest_path",
+        "deploy_artifacts_key",
+        "executor_contract_version"
+      ],
+      "properties": {
+        "release_manifest_path": {
+          "const": "lesser-release.json"
+        },
+        "deploy_artifacts_key": {
+          "const": "deploy_assembly"
+        },
+        "executor_contract_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "instance_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "optional"
+      ],
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instance_input_category"
+          },
+          "uniqueItems": true
+        },
+        "optional": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instance_input_category"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrity_required",
+        "preflight_required"
+      ],
+      "properties": {
+        "integrity_required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "preflight_required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

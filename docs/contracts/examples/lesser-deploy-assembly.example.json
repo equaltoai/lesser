@@ -1,0 +1,49 @@
+{
+  "kind": "lesser.deploy_assembly_descriptor",
+  "schema_version": 1,
+  "release": {
+    "name": "lesser",
+    "version": "v1.2.3",
+    "git_sha": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "assembly": {
+    "path": "lesser-deploy-assembly.tar.gz",
+    "format": "tar.gz",
+    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "payload": {
+    "kind": "aws.cloud_assembly",
+    "contract_version": 1,
+    "entrypoint": "cdk.out/manifest.json"
+  },
+  "compatibility": {
+    "release_manifest_path": "lesser-release.json",
+    "deploy_artifacts_key": "deploy_assembly",
+    "executor_contract_version": 1
+  },
+  "instance_inputs": {
+    "required": [
+      "app_identity",
+      "aws_target",
+      "base_domain",
+      "feature_config",
+      "hosted_zone",
+      "stage_plan"
+    ],
+    "optional": [
+      "bootstrap_io",
+      "managed_service_urls",
+      "provisioning_input"
+    ]
+  },
+  "verification": {
+    "integrity_required": [
+      "assembly.sha256",
+      "checksums.txt"
+    ],
+    "preflight_required": [
+      "instance_input_validation",
+      "release_manifest_compatibility"
+    ]
+  }
+}
