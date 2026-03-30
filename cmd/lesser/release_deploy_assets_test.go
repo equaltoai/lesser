@@ -138,6 +138,20 @@ func TestInstallReleaseLambdaAssets_AcceptsPathSortedBundleManifest(t *testing.T
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
 }
 
+func TestInstallReleaseLambdaAssets_AcceptsCanonicalInventoryDeclaredOutOfOrder(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"inbox", "api"})
+
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.3", result.Version)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
+}
+
 func TestVerifyReleaseChecksums_MissingEntry(t *testing.T) {
 	releaseDir := t.TempDir()
 	files := releaseFileSet{
