@@ -396,3 +396,51 @@ This keeps the future deploy assembly usable by both modes:
 
 - operators can continue supplying flags and files that map onto the canonical categories
 - managed runners can build the same category map from their higher-level job model without mutating the published release artifacts
+
+## M4.4 Migration Path From Source-Shelling `cdk deploy` To A Thin Deploy Executor
+
+Today, `./lesser up` still treats a source checkout as the deploy substrate:
+
+- it shells into the repo-local CDK app
+- it validates or builds local deploy artifacts
+- it builds and uploads `auth-ui/` from source
+- it writes local receipts and bootstrap outputs in the same execution flow
+
+Milestone 4 freezes the migration path so later work can remove those source dependencies deliberately instead of by
+accident.
+
+### Target responsibilities for a thin deploy executor
+
+The future executor should still own only the work that must remain deploy-time:
+
+- verify the selected release assets and their checksums
+- accept the canonical instance-input set for one installation
+- bind release artifacts to the target AWS account, region, domain, and hosted zone
+- execute the infrastructure update plan against live CloudFormation state
+- publish the resulting outputs, receipts, and post-deploy side effects
+
+The future executor should stop owning release-time work such as:
+
+- compiling Lambdas from source
+- synthesizing the deploy assembly from repo-local CDK/app source
+- rebuilding any release-generic frontend payloads
+- discovering artifact shape from ad-hoc repo structure
+
+### Migration sequence
+
+| Phase | Deploy substrate | What still comes from source? | What must move into release assets next? |
+| --- | --- | --- | --- |
+| Current M0-M3 path | source checkout plus optional `--release-dir` Lambda bundle | CDK app, auth UI source, Lambda inventory, helper scripts | reusable deploy assembly, auth UI artifact, executor-facing input contract |
+| M4 contract target | source checkout for execution, but with a frozen future deploy-assembly contract | CDK shelling and auth UI source still remain live dependencies | publishable deploy assembly descriptor/archive and explicit instance-input contract |
+| Future phase-2 executor | release directory plus instance-input set | only tooling needed to execute the deploy contract, not the full repo source tree | release-published infrastructure assembly, frontend payloads, and executor compatibility metadata |
+
+### Dependencies that must become explicit future work
+
+The migration cannot complete until Lesser publishes or freezes contracts for:
+
+- a deploy assembly payload that replaces repo-local CDK synthesis as the generic release artifact
+- release-published frontend assets, or an explicit reason the frontend remains outside the immutable path
+- executor compatibility rules for CloudFormation/bootstrap behavior against live AWS state
+- receipt/output contracts that preserve the current Lesser state-dir behavior without depending on a mutable checkout
+
+Milestone 4 keeps those dependencies named. It does not imply they are already solved by the Lambda bundle milestone.
