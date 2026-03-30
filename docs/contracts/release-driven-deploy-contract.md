@@ -70,7 +70,7 @@ Milestone-0 freezes four artifact categories. These names are part of the contra
 | `operator_cli` | `lesser-<os>-<arch>` | Human- or runner-invoked CLI executable | Operators, CI, `lesser-host` runner | Already published |
 | `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, artifact mode in `lesser up` | Already published |
 | `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | First-phase immutable deploy asset containing the canonical `bin/*.zip` set plus its manifest | Artifact mode in `lesser up`, managed runners | Published |
-| `deploy_assembly` | Reserved future category | Later deploy package that may include more than prebuilt Lambdas | Future thin deploy executor / managed runners | Explicitly out of scope for the first phase |
+| `deploy_assembly` | `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json` | Later deploy package that may include more than prebuilt Lambdas | Future thin deploy executor / managed runners | Contract target defined, but not yet published in live releases |
 
 ### Taxonomy rules
 
@@ -291,3 +291,60 @@ Milestone 4 keeps one boundary explicit:
 
 - Release-time / compile-time candidates: Lambda compilation, auth UI bundling, CDK or equivalent deploy assembly synthesis, release manifests, and checksums
 - Deploy-time only: AWS credential selection, hosted-zone lookup, stack update planning against live history, feature-flag injection, DNS writes, invalidations, and instance receipt/bootstrap updates
+
+## M4.2 Future Release Contract For A Publishable Deploy Assembly
+
+Milestone 4 does not publish a deploy assembly yet, but it does freeze the outer contract shape for when that happens.
+
+The future release directory layout for the `deploy_assembly` category is:
+
+- `lesser-deploy-assembly.tar.gz`: archive containing the release-published deploy assembly payload
+- `lesser-deploy-assembly.json`: descriptor that tells a thin deploy executor how to verify and interpret the archive
+
+The normative descriptor schema is:
+
+- `docs/contracts/deploy-assembly-descriptor.schema.json`
+
+The illustrative example is:
+
+- `docs/contracts/examples/lesser-deploy-assembly.example.json`
+
+### Why the contract uses a descriptor instead of freezing one payload format
+
+The outer Lesser contract stays stable even if the inner payload changes over time. That is why the descriptor freezes:
+
+- the published archive path and checksum
+- the release identity (`name`, `version`, `git_sha`)
+- the payload kind and entrypoint
+- the executor compatibility contract
+- the required instance-input categories and verification expectations
+
+The descriptor deliberately does not freeze one implementation such as AWS Cloud Assembly forever. Instead:
+
+- `payload.kind` names the inner assembly type, such as `aws.cloud_assembly`
+- `payload.entrypoint` identifies the file inside the archive that the future executor should start from
+- `payload.contract_version` version-controls the inner payload independently of the outer Lesser descriptor
+
+This leaves room for Cloud Assembly or an equivalent plan format without forcing the release contract to rename assets or
+change trust boundaries later.
+
+### Compatibility with the current release manifest model
+
+When Lesser eventually publishes a deploy assembly, the top-level `lesser-release.json` contract should extend the
+existing `artifacts.deploy_artifacts` section instead of inventing a second discovery document.
+
+The future shape is:
+
+- `artifacts.deploy_artifacts.deploy_assembly.path`
+- `artifacts.deploy_artifacts.deploy_assembly.manifest_path`
+- `artifacts.deploy_artifacts.deploy_assembly.manifest_kind`
+- `artifacts.deploy_artifacts.deploy_assembly.manifest_schema_version`
+
+That mirrors the existing `lambda_bundle` reference model:
+
+- release metadata points at one published archive plus one machine-readable descriptor
+- the descriptor carries the detailed contract for the archive contents and compatibility rules
+- `checksums.txt` remains the top-level integrity root for the published assets
+
+Milestone 4 does not change the live release manifest schema yet. It freezes the next-step target so the future
+`deploy_assembly` category can be added as a sibling of `lambda_bundle` rather than as a separate trust model.
