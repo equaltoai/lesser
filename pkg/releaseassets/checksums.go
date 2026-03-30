@@ -20,6 +20,11 @@ var publishedReleaseAssets = []string{
 	ReleaseManifestName,
 }
 
+// PublishedReleaseAssetNames returns the canonical published release asset set.
+func PublishedReleaseAssetNames() []string {
+	return append([]string(nil), publishedReleaseAssets...)
+}
+
 // WriteChecksums writes checksums.txt for the full published release asset set.
 func WriteChecksums(outDir string) error {
 	lines := make([]string, 0, len(publishedReleaseAssets))

@@ -12,6 +12,7 @@ This checklist is for maintainers preparing a release/deployable build.
 - [ ] Build lambdas: `./lesser build lambdas`
 - [ ] Run the CI gate: `./lesser verify ci`
   - Generates a module inventory snapshot in `report/module_inventory.txt`
+- [ ] Run artifact-driven deploy certification: `bash scripts/verify_artifact_deploy.sh [dist/release]`
 
 ## Release contract scope
 

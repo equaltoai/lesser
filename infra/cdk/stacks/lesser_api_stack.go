@@ -917,10 +917,15 @@ func (s *LesserApiStack) createLambdaFunctions() {
 		s.JwtSecret = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("JwtSecret"), jsii.String(fmt.Sprintf("%s/jwt-secret", s.AppName)))
 	}
 
-	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
+	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, s.lambdaFunctionsProps())
+}
+
+func (s *LesserApiStack) lambdaFunctionsProps() *localconstructs.LambdaFunctionsProps {
+	return &localconstructs.LambdaFunctionsProps{
 		AppName:             s.AppName,
 		Environment:         s.Environment,
 		Domain:              s.Domain,
+		LambdaAssetRoot:     s.configString("lambdaAssetRoot"),
 		Table:               s.MainTable,
 		RateLimitTable:      s.RateLimitTable,
 		StreamEventsTable:   s.StreamEventsTable,
@@ -935,7 +940,23 @@ func (s *LesserApiStack) createLambdaFunctions() {
 		Config:              s.Configuration,
 		EncryptionRole:      s.LambdaEncryptionRole,
 		BasicRole:           s.LambdaBasicRole,
-	})
+	}
+}
+
+func (s *LesserApiStack) configString(key string) string {
+	if s.Configuration == nil {
+		return ""
+	}
+	value, ok := s.Configuration[key]
+	if !ok {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
 }
 
 func (s *LesserApiStack) createAPIGateway(domain string) {

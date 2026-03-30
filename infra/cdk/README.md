@@ -46,6 +46,20 @@ Stage stacks reference zip artifacts in `<lambdaAssetRoot>/bin/*.zip`.
   `./lesser build lambdas`), or pass your own `--context lambdaAssetRoot=<path>`.
 - Releases still publish a Lambda bundle archive, but CDK consumes the staged extracted files, not the archive directly.
 
+### Artifact-root propagation chain
+
+Managed artifact mode depends on one explicit propagation chain:
+
+1. `lesser up --release-dir ...` prepares `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
+2. `cmd/lesser/up.go` passes that staged path as `cdkDeployRequest.LambdaAssetRoot`
+3. `cmd/lesser/cdk.go` emits `--context lambdaAssetRoot=<path>` for both the shared-stack and stage-stack deploy calls
+4. `infra/cdk/main.go` copies that context into each stage stack's config map
+5. `infra/cdk/stacks/lesser_api_stack.go` threads the configured `lambdaAssetRoot` into `constructs.LambdaFunctionsProps`
+6. `infra/cdk/constructs/lambda_functions.go` binds every inventory Lambda asset from `<lambdaAssetRoot>/bin/<name>.zip`
+
+If any boundary in that chain drops `lambdaAssetRoot`, artifact mode silently falls back to repo-local `bin/*.zip`, which
+is exactly the regression the M7 hardening tests are meant to catch.
+
 ## CDK Commands (Infra Contributors)
 
 Run these from `infra/cdk/`.
