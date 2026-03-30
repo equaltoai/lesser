@@ -102,6 +102,27 @@ func TestVerifyPublishedReleaseAssets_FailsWhenChecksumEntryMissing(t *testing.T
 	require.Contains(t, err.Error(), "checksums.txt missing entry for lesser-linux-amd64")
 }
 
+func TestVerifyPublishedReleaseAssets_PropagatesRequiredFileError(t *testing.T) {
+	err := verifyPublishedReleaseAssets(t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "required release file")
+}
+
+func TestVerifyPublishedReleaseAssets_PropagatesChecksumParseError(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	checksumPath := filepath.Join(releaseDir, releaseassets.ChecksumsFileName)
+	require.NoError(t, os.WriteFile(checksumPath, []byte("not-a-valid-checksum-line\n"), 0o644))
+
+	err := verifyPublishedReleaseAssets(releaseDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected '<sha256>  <file>'")
+}
+
 func TestParseVerifyArtifactDeployArgs_NormalizesReleaseDir(t *testing.T) {
 	releaseDir := t.TempDir()
 
@@ -223,6 +244,43 @@ func TestRunVerifyArtifactDeploy_PropagatesRepoRootError(t *testing.T) {
 
 	findRepoRootFn = func() (string, error) { return "", errSentinel }
 	err := runVerifyArtifactDeploy([]string{"--release-dir", t.TempDir()})
+	require.ErrorIs(t, err, errSentinel)
+}
+
+func TestRunVerifyArtifactDeploy_PropagatesPublishedAssetValidationError(t *testing.T) {
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+
+	previousRepoRoot := findRepoRootFn
+	t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
+
+	findRepoRootFn = func() (string, error) { return targetRepo, nil }
+
+	err := runVerifyArtifactDeploy([]string{"--release-dir", t.TempDir()})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "required release file")
+}
+
+func TestRunVerifyArtifactDeploy_PropagatesReleaseStagingError(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+
+	previousRepoRoot := findRepoRootFn
+	previousInstall := installReleaseLambdaAssetsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		installReleaseLambdaAssetsFn = previousInstall
+	})
+
+	findRepoRootFn = func() (string, error) { return targetRepo, nil }
+	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
+		return releaseLambdaInstallResult{}, errSentinel
+	}
+
+	err := runVerifyArtifactDeploy([]string{"--release-dir", releaseDir})
 	require.ErrorIs(t, err, errSentinel)
 }
 
