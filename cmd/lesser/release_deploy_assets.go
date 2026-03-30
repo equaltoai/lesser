@@ -286,6 +286,7 @@ func validateBundleAgainstInventory(repoRoot string, bundle releaseassets.Lambda
 	for _, file := range bundle.Files {
 		manifestNames = append(manifestNames, file.Lambda)
 	}
+	slices.Sort(manifestNames)
 
 	if !slices.Equal(lambdaNames, manifestNames) {
 		return fmt.Errorf("lambda bundle manifest does not match canonical inventory")
