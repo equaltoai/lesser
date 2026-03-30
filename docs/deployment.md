@@ -11,6 +11,8 @@ Current state:
 - Lambda zip artifacts can now come from either local source builds or a verified published release directory.
 - Releases now publish immutable Lambda deploy assets (`lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, and
   `lesser-release.json` deploy-artifact metadata) for release-driven deploys and managed consumers.
+- Regardless of origin, `lesser up` now stages the Lambda zip set into
+  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/` and passes that staged asset root into CDK.
 - The published contract for that release path lives in `docs/contracts/release-driven-deploy-contract.md`.
 
 ## Prerequisites
@@ -27,6 +29,7 @@ Current state:
 At a high level, `./lesser up`:
 
 - Builds Lambda zip artifacts locally, or installs them from `--release-dir` after verification
+- Stages the deployable Lambda zip set into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 - Ensures CDK bootstrap exists for the target account/region
 - Deploys the shared stack (`<app>-shared`)
 - Deploys stage stacks (`<app>-dev`, `<app>-live`, optional `<app>-staging`)
@@ -72,6 +75,12 @@ Local receipt (non-secret):
 
 - `~/.lesser/<app>/<base-domain>/state.json`
 
+Deploy workspace:
+
+- Staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
+- Lambda asset provenance sidecar: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
+- Per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
+
 ## What gets deployed
 
 Stacks:
@@ -107,6 +116,19 @@ If you changed Lambda code and want to force refresh zip artifacts:
 ```
 
 `--rebuild-lambdas` is the explicit source-build override and takes precedence over `--release-dir`.
+
+## Managed runner artifact mode
+
+For a managed consumer or CI runner, the minimal artifact-driven deploy inputs are:
+
+- a Lesser checkout containing `infra/cdk/` and `auth-ui/`
+- a built `lesser` CLI binary from that checkout
+- a staged `--release-dir` containing `checksums.txt`, `lesser-release.json`, `lesser-lambda-bundle.tar.gz`, and `lesser-lambda-bundle.json`
+- AWS credentials plus the normal instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, and bootstrap/output flags as needed)
+
+When `--release-dir` is used, the runner should treat the local deploy workspace under `~/.lesser/<app>/<base-domain>/deploy/`
+as the canonical execution output surface for Lambda assets and CDK outputs. The repo-root `bin/` directory is no longer
+the deploy-time contract for artifact mode.
 
 ## Verify “locked but reachable”
 

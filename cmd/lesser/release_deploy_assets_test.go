@@ -21,23 +21,63 @@ func TestInstallReleaseLambdaAssets(t *testing.T) {
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
 	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
 
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.3", result.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
 	require.Equal(t, []string{
-		filepath.Join(targetRepo, "bin", "api.zip"),
-		filepath.Join(targetRepo, "bin", "inbox.zip"),
+		filepath.Join(assetRoot, "bin", "api.zip"),
+		filepath.Join(assetRoot, "bin", "inbox.zip"),
 	}, result.Files)
 
-	apiBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "api.zip"))
+	apiBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "api.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "api zip", string(apiBytes))
 
-	inboxBytes, err := os.ReadFile(filepath.Join(targetRepo, "bin", "inbox.zip"))
+	inboxBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "inbox.zip"))
 	require.NoError(t, err)
 	require.Equal(t, "inbox zip", string(inboxBytes))
+}
+
+func TestInstallReleaseLambdaAssets_DoesNotStageUnderRepoRootTmp(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+	require.NoError(t, os.WriteFile(filepath.Join(targetRepo, "tmp"), []byte("blocked"), 0o644))
+
+	assetRoot := filepath.Join(t.TempDir(), "deploy", "lambda-assets")
+	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		filepath.Join(assetRoot, "bin", "api.zip"),
+		filepath.Join(assetRoot, "bin", "inbox.zip"),
+	}, result.Files)
+	require.NoDirExists(t, filepath.Join(targetRepo, "tmp", "release-lambda-assets"))
+}
+
+func TestEnsureReleaseStagingDir_UsesDeployWorkspaceRoot(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "deploy", "lambda-assets")
+
+	stagingDir, err := ensureReleaseStagingDir(assetRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(stagingDir) })
+
+	require.DirExists(t, stagingDir)
+	require.Equal(t, filepath.Dir(assetRoot), filepath.Dir(stagingDir))
+}
+
+func TestEnsureReleaseStagingDir_ErrorsWhenWorkspaceRootBlocked(t *testing.T) {
+	workspaceRoot := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(workspaceRoot, []byte("blocked"), 0o644))
+
+	_, err := ensureReleaseStagingDir(filepath.Join(workspaceRoot, "lambda-assets"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create release workspace root")
 }
 
 func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) {
@@ -50,7 +90,7 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) 
 
 	require.NoError(t, os.Remove(filepath.Join(releaseDir, releaseassets.ChecksumsFileName)))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "required release file checksums.txt")
 }
@@ -65,7 +105,7 @@ func TestInstallReleaseLambdaAssets_ErrorsOnChecksumMismatch(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName), []byte("{}\n"), 0o644))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "lesser-lambda-bundle.json checksum mismatch")
 }
@@ -78,7 +118,7 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenInventoryDoesNotMatch(t *testing.T
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
 	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "graphql"})
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir)
+	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not match canonical inventory")
 }
@@ -651,6 +691,10 @@ func testRepoWithCanonicalInventory(t *testing.T, lambdas []string) string {
 	t.Helper()
 
 	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "package.json"), []byte("{\n  \"name\": \"auth-ui\"\n}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{\n  \"app\": \"go run main.go\"\n}\n"), 0o644))
 	inventoryPath := filepath.Join(repoRoot, "infra", "cdk", "inventory")
 	require.NoError(t, os.MkdirAll(inventoryPath, 0o755))
 

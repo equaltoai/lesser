@@ -45,7 +45,8 @@ Current behavior:
 
 - `lesser up` still uses the repo checkout for CDK and `auth-ui/`, but Lambda artifacts now have two explicit modes.
 - Default mode builds Lambda artifacts locally from source.
-- `--release-dir <path>` verifies published release assets and installs the Lambda bundle into `bin/` instead of rebuilding.
+- `--release-dir <path>` verifies published release assets and stages the Lambda bundle into
+  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/` instead of rebuilding.
 - `--rebuild-lambdas` remains the explicit source-build override path and wins even if `--release-dir` is also set.
 
 ```bash
@@ -71,6 +72,9 @@ Key outputs:
 
 - Sensitive bootstrap material: `~/.lesser/<app>/<base-domain>/bootstrap.json` (0600)
 - Non-secret receipt: `~/.lesser/<app>/<base-domain>/state.json`
+- Staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
+- Lambda asset provenance: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
+- Per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
 
 ### Install a FaceTheory client release
 

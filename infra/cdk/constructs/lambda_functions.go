@@ -2,6 +2,7 @@ package constructs
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"cdk/inventory"
@@ -24,6 +25,7 @@ type LambdaFunctionsProps struct {
 	AppName             string
 	Environment         string
 	Domain              string
+	LambdaAssetRoot     string
 	Table               awsdynamodb.Table
 	RateLimitTable      awsdynamodb.Table
 	StreamEventsTable   awsdynamodb.Table
@@ -71,6 +73,10 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	if appName == "" {
 		appName = naming.DefaultAppName
+	}
+	lambdaAssetRoot := strings.TrimSpace(props.LambdaAssetRoot)
+	if lambdaAssetRoot == "" {
+		lambdaAssetRoot = filepath.Clean(filepath.Join("..", ".."))
 	}
 
 	domainValue := strings.TrimSpace(props.Domain)
@@ -226,7 +232,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			Environment:  &env,
 			Tracing:      awslambda.Tracing_ACTIVE,
 			FunctionName: jsii.String(functionName),
-			Code:         awslambda.Code_FromAsset(jsii.String(fmt.Sprintf("../../bin/%s.zip", spec.Name)), nil),
+			Code:         awslambda.Code_FromAsset(jsii.String(filepath.ToSlash(filepath.Join(lambdaAssetRoot, "bin", spec.Name+".zip"))), nil),
 			Handler:      jsii.String("bootstrap"),
 			LogGroup:     logGroup,
 			Role:         role,

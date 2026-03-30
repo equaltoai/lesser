@@ -30,6 +30,23 @@ var LambdaInventory = []struct{ Name string }{
 	require.Equal(t, []string{"api", "inbox"}, names)
 }
 
+func TestCanonicalLambdaNames_ErrorsWhenNoNamesFound(t *testing.T) {
+	repoRoot := t.TempDir()
+	inventoryPath := filepath.Join(repoRoot, "infra", "cdk", "inventory")
+	require.NoError(t, os.MkdirAll(inventoryPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(inventoryPath, "lambdas.go"), []byte("package inventory\n"), 0o644))
+
+	_, err := CanonicalLambdaNames(repoRoot)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no Lambda names found")
+}
+
+func TestCanonicalLambdaNames_ErrorsWhenInventoryMissing(t *testing.T) {
+	_, err := CanonicalLambdaNames(t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read lambda inventory")
+}
+
 func TestWriteLambdaBundle(t *testing.T) {
 	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
@@ -157,6 +174,54 @@ func TestWriteLambdaBundle_MissingArtifactErrors(t *testing.T) {
 	_, err := WriteLambdaBundle(repoRoot, t.TempDir())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "inbox.zip")
+}
+
+func TestCollectBundleFiles_ErrorsWhenArtifactIsDirectory(t *testing.T) {
+	repoRoot := t.TempDir()
+	inventoryPath := filepath.Join(repoRoot, "infra", "cdk", "inventory")
+	require.NoError(t, os.MkdirAll(inventoryPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(inventoryPath, "lambdas.go"), []byte(`package inventory
+var LambdaInventory = []struct{ Name string }{
+	{Name: "api"},
+}
+`), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "bin", "api.zip"), 0o755))
+
+	_, err := CollectBundleFiles(repoRoot)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "is a directory")
+}
+
+func TestWriteLambdaBundle_ErrorsWhenOutputDirBlocked(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	outDir := filepath.Join(t.TempDir(), "release")
+	require.NoError(t, os.WriteFile(outDir, []byte("blocked"), 0o644))
+
+	_, err := WriteLambdaBundle(repoRoot, outDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create release dir")
+}
+
+func TestWriteLambdaBundleManifest_RequiresReleaseMetadata(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	outDir := t.TempDir()
+
+	files, err := WriteLambdaBundle(repoRoot, outDir)
+	require.NoError(t, err)
+
+	_, err = WriteLambdaBundleManifest(outDir, "", "0123456789abcdef0123456789abcdef01234567", files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "release version is required")
+
+	_, err = WriteLambdaBundleManifest(outDir, "v1.2.3", "", files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "release git SHA is required")
 }
 
 type bundleEntry struct {

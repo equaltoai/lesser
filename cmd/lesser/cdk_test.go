@@ -84,18 +84,20 @@ func TestCdkDeployWithOutputs_IncludesStageAndStagingFlags(t *testing.T) {
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
-		StackName:    "demo",
-		App:          "app",
-		BaseDomain:   "example.com",
-		HostedZoneID: "Z1",
-		Region:       "us-east-1",
-		StageFilter:  "DEV",
-		WithStaging:  true,
+		StackName:       "demo",
+		App:             "app",
+		BaseDomain:      "example.com",
+		HostedZoneID:    "Z1",
+		Region:          "us-east-1",
+		LambdaAssetRoot: "/tmp/lambda-assets",
+		StageFilter:     "DEV",
+		WithStaging:     true,
 	})
 	require.NoError(t, err)
 	require.Contains(t, gotArgs, "--context")
 	require.Contains(t, gotArgs, "stage=dev")
 	require.Contains(t, gotArgs, "withStaging=true")
+	require.Contains(t, gotArgs, "lambdaAssetRoot=/tmp/lambda-assets")
 }
 
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
@@ -115,6 +117,31 @@ func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cdk deploy demo")
+}
+
+func TestCdkDeployWithOutputs_UsesExplicitOutputsPath(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	repoRoot := t.TempDir()
+	outputsPath := filepath.Join(t.TempDir(), "deploy", "cdk-outputs", "demo.json")
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
+	}
+
+	res, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		OutputsPath:  outputsPath,
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Key": "Value"}, res.Outputs)
+	require.Contains(t, gotArgs, outputsPath)
 }
 
 func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {

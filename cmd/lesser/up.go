@@ -65,6 +65,7 @@ func runUp(argv []string) error {
 type upEnv struct {
 	args              upArgs
 	repoRoot          string
+	lambdaAssetRoot   string
 	app               string
 	baseDomain        string
 	awsProfile        string
@@ -81,6 +82,9 @@ type upEnv struct {
 func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	repoRoot, err := findRepoRootFn()
 	if err != nil {
+		return nil, err
+	}
+	if err := validateDeploySourceInputsFn(repoRoot); err != nil {
 		return nil, err
 	}
 
@@ -271,23 +275,74 @@ func (e *upEnv) run(ctx context.Context) error {
 }
 
 func (e *upEnv) prepareLambdaArtifacts() error {
+	assetRoot, err := prepareLambdaAssetRootFn(e.stateDir)
+	if err != nil {
+		return err
+	}
+	e.lambdaAssetRoot = assetRoot
+
 	if e.args.RebuildLambdas {
 		if strings.TrimSpace(e.args.ReleaseDir) != "" {
 			fmt.Println("Rebuilding Lambda artifacts from source because --rebuild-lambdas overrides --release-dir.")
 		}
-		return buildLambdaZipsFn(e.repoRoot, true)
+		if err := buildLambdaZipsFn(e.repoRoot, true); err != nil {
+			return err
+		}
+		files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		if err != nil {
+			return err
+		}
+		return e.recordLocalLambdaAssets(files)
 	}
 
 	if strings.TrimSpace(e.args.ReleaseDir) == "" {
-		return buildLambdaZipsFn(e.repoRoot, false)
+		if err := buildLambdaZipsFn(e.repoRoot, false); err != nil {
+			return err
+		}
+		files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
+		if err != nil {
+			return err
+		}
+		return e.recordLocalLambdaAssets(files)
 	}
 
-	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir)
+	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir, e.lambdaAssetRoot)
 	if err != nil {
 		return err
 	}
+	files, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, result.Files)
+	if err != nil {
+		return err
+	}
+	if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
+		Schema:         1,
+		Mode:           "release",
+		Files:          files,
+		ReleaseVersion: result.Version,
+		ReleaseGitSHA:  result.GitSHA,
+		PreparedAt:     time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
 
-	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s\n", len(result.Files), result.Version)
+	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s into %s\n", len(result.Files), result.Version, e.lambdaAssetRoot)
+	return nil
+}
+
+func (e *upEnv) recordLocalLambdaAssets(files []string) error {
+	relFiles, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, files)
+	if err != nil {
+		return err
+	}
+	if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
+		Schema:     1,
+		Mode:       "source",
+		Files:      relFiles,
+		PreparedAt: time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("✓ Staged %d Lambda artifact(s) from local build into %s\n", len(files), e.lambdaAssetRoot)
 	return nil
 }
 
@@ -354,14 +409,16 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	sharedStack := naming.SharedStackName(e.app)
 	fmt.Println("\nDeploying shared stack:", sharedStack)
 	sharedResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
-		StackName:    sharedStack,
-		App:          e.app,
-		BaseDomain:   e.baseDomain,
-		HostedZoneID: e.hostedZone.ID,
-		Region:       e.awsCfg.Region,
-		StageFilter:  string(naming.StageShared),
-		WithStaging:  e.args.WithStaging,
-		Contexts:     contexts,
+		StackName:       sharedStack,
+		App:             e.app,
+		BaseDomain:      e.baseDomain,
+		HostedZoneID:    e.hostedZone.ID,
+		Region:          e.awsCfg.Region,
+		LambdaAssetRoot: e.lambdaAssetRoot,
+		OutputsPath:     deployCdkOutputsPath(e.stateDir, sharedStack),
+		StageFilter:     string(naming.StageShared),
+		WithStaging:     e.args.WithStaging,
+		Contexts:        contexts,
 	})
 	if err != nil {
 		return nil, err
@@ -372,14 +429,16 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 		stack := naming.StageStackName(e.app, stage)
 		fmt.Println("\nDeploying stage stack:", stack)
 		stageResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
-			StackName:    stack,
-			App:          e.app,
-			BaseDomain:   e.baseDomain,
-			HostedZoneID: e.hostedZone.ID,
-			Region:       e.awsCfg.Region,
-			StageFilter:  string(stage),
-			WithStaging:  e.args.WithStaging,
-			Contexts:     contexts,
+			StackName:       stack,
+			App:             e.app,
+			BaseDomain:      e.baseDomain,
+			HostedZoneID:    e.hostedZone.ID,
+			Region:          e.awsCfg.Region,
+			LambdaAssetRoot: e.lambdaAssetRoot,
+			OutputsPath:     deployCdkOutputsPath(e.stateDir, stack),
+			StageFilter:     string(stage),
+			WithStaging:     e.args.WithStaging,
+			Contexts:        contexts,
 		})
 		if err != nil {
 			return nil, err
@@ -413,6 +472,9 @@ func (e *upEnv) bootstrapStages(ctx context.Context, receipt *upReceipt) error {
 
 func (e *upEnv) printSummary(statePath string) {
 	fmt.Println("\nDeployment receipt:", statePath)
+	if strings.TrimSpace(e.lambdaAssetRoot) != "" {
+		fmt.Println("Lambda asset root:", e.lambdaAssetRoot)
+	}
 	printStageURLs(e.stages, e.baseDomain)
 	fmt.Println("\nNext steps:")
 	if strings.TrimSpace(e.args.ProvisioningInputPath) != "" {
