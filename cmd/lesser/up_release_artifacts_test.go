@@ -86,6 +86,68 @@ func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
 	require.False(t, buildCalled)
 }
 
+func TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
+
+	restore := stubRunUpReleaseArtifactDeps(t, targetRepo)
+	defer restore()
+
+	_, err := os.Stat(filepath.Join(targetRepo, "bin"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	buildLambdaZipsFn = func(string, bool) error {
+		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
+		return nil
+	}
+
+	var requests []cdkDeployRequest
+	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+		requests = append(requests, req)
+		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+	}
+
+	require.NoError(t, runUp([]string{
+		"--app", "app",
+		"--base-domain", "example.com",
+		"--aws-profile", "profile",
+		"--release-dir", releaseDir,
+	}))
+
+	require.Len(t, requests, 3)
+
+	expectedStacks := []string{
+		naming.SharedStackName("app"),
+		naming.StageStackName("app", naming.StageDev),
+		naming.StageStackName("app", naming.StageLive),
+	}
+	gotStacks := make([]string, 0, len(requests))
+	lambdaAssetRoots := make([]string, 0, len(requests))
+	for _, req := range requests {
+		gotStacks = append(gotStacks, req.StackName)
+		require.NotEmpty(t, req.LambdaAssetRoot)
+		lambdaAssetRoots = append(lambdaAssetRoots, req.LambdaAssetRoot)
+	}
+	require.ElementsMatch(t, expectedStacks, gotStacks)
+
+	firstAssetRoot := lambdaAssetRoots[0]
+	for _, assetRoot := range lambdaAssetRoots[1:] {
+		require.Equal(t, firstAssetRoot, assetRoot)
+	}
+
+	apiBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "api.zip"))
+	require.NoError(t, err)
+	require.Equal(t, "api zip", string(apiBytes))
+
+	inboxBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "inbox.zip"))
+	require.NoError(t, err)
+	require.Equal(t, "inbox zip", string(inboxBytes))
+}
+
 func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 	t.Helper()
 
