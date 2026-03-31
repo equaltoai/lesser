@@ -31,11 +31,19 @@ func TestWriteReleaseManifest(t *testing.T) {
 	require.Equal(t, LambdaBundleManifestName, manifest.Artifacts.DeployArtifacts.LambdaBundle.ManifestPath)
 	require.Equal(t, LambdaBundleManifestKind, manifest.Artifacts.DeployArtifacts.LambdaBundle.ManifestKind)
 	require.Equal(t, LambdaBundleManifestSchemaVersion, manifest.Artifacts.DeployArtifacts.LambdaBundle.ManifestSchemaVersion)
+	require.Equal(t, AuthUIBundleArchiveName, manifest.Artifacts.DeployArtifacts.AuthUIBundle.Path)
+	require.Equal(t, "tar.gz", manifest.Artifacts.DeployArtifacts.AuthUIBundle.Format)
+	require.Equal(t, DeployAssemblyArchiveName, manifest.Artifacts.DeployArtifacts.DeployAssembly.Path)
+	require.Equal(t, DeployAssemblyManifestName, manifest.Artifacts.DeployArtifacts.DeployAssembly.ManifestPath)
+	require.Equal(t, DeployAssemblyManifestKind, manifest.Artifacts.DeployArtifacts.DeployAssembly.ManifestKind)
+	require.Equal(t, DeployAssemblyManifestSchemaVersion, manifest.Artifacts.DeployArtifacts.DeployAssembly.ManifestSchemaVersion)
 
 	data, err := os.ReadFile(filepath.Join(outDir, ReleaseManifestName))
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"deploy_artifacts": {`)
 	require.Contains(t, string(data), `"lambda_bundle": {`)
+	require.Contains(t, string(data), `"auth_ui_bundle": {`)
+	require.Contains(t, string(data), `"deploy_assembly": {`)
 }
 
 func TestWriteReleaseManifest_RequiresMetadata(t *testing.T) {
@@ -92,4 +100,19 @@ func TestWriteReleaseManifest_RequiresMetadata(t *testing.T) {
 			require.Contains(t, err.Error(), tt.wantErrText)
 		})
 	}
+}
+
+func TestWriteReleaseManifest_ErrorsWhenPathBlocked(t *testing.T) {
+	outDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(outDir, ReleaseManifestName), 0o755))
+
+	_, err := WriteReleaseManifest(outDir, ReleaseManifestInput{
+		Version:              "v1.2.3",
+		GitSHA:               "0123456789abcdef0123456789abcdef01234567",
+		GoVersion:            "go1.26.1",
+		CDKMajor:             2,
+		ReceiptSchemaVersion: 7,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write release manifest")
 }

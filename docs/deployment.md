@@ -7,22 +7,34 @@ CLI.
 
 Current state:
 
-- `lesser up` still deploys CDK and builds `auth-ui/` from the repo checkout.
-- Lambda zip artifacts can now come from either local source builds or a verified published release directory.
-- Releases now publish immutable Lambda deploy assets (`lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, and
-  `lesser-release.json` deploy-artifact metadata) for release-driven deploys and managed consumers.
-- Regardless of origin, `lesser up` now stages the Lambda zip set into
-  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/` and passes that staged asset root into CDK.
+- `lesser up` has two deploy modes:
+  - source mode: build from the repo checkout and deploy through the legacy CDK path
+  - release mode: verify a published `--release-dir`, stage the release assets into the Lesser state dir, and deploy
+    from the release-published CloudFormation assembly without a repo checkout
+- Releases now publish immutable deploy assets for all three release-generic parts of the deploy:
+  `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-auth-ui.tar.gz`,
+  `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json`, `lesser-release.json`, and `checksums.txt`
+- Regardless of origin, `lesser up` stages the Lambda zip set into
+  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`.
 - The published contract for that release path lives in `docs/contracts/release-driven-deploy-contract.md`.
 
 ## Prerequisites
 
+- A public Route53 hosted zone that exactly matches your `base-domain` (for example: `example.com`)
+- An AWS profile with a default region configured (the CLI derives region from the profile)
+
+Release mode (`--release-dir`) requires:
+
+- a built `lesser` CLI binary
+- AWS credentials/config for the selected profile or ambient environment
+- a release directory containing the published release assets
+
+Source mode additionally requires:
+
 - AWS CLI configured (and logged in for your chosen profile)
 - AWS CDK v2 installed and on `PATH` (`npm install -g aws-cdk`)
 - Go 1.25+
-- `pnpm` installed (for building `auth-ui/` during deploy)
-- A public Route53 hosted zone that exactly matches your `base-domain` (for example: `example.com`)
-- An AWS profile with a default region configured (the CLI derives region from the profile)
+- `pnpm` installed
 
 ## What `lesser up` does
 
@@ -30,10 +42,11 @@ At a high level, `./lesser up`:
 
 - Builds Lambda zip artifacts locally, or installs them from `--release-dir` after verification
 - Stages the deployable Lambda zip set into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
-- Ensures CDK bootstrap exists for the target account/region
-- Deploys the shared stack (`<app>-shared`)
-- Deploys stage stacks (`<app>-dev`, `<app>-live`, optional `<app>-staging`)
-- Builds and uploads `auth-ui/`
+- In release mode, stages the auth UI bundle into `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`
+- In release mode, stages the deploy assembly into `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`
+- In source mode, ensures CDK bootstrap exists for the target account/region and deploys through the repo-local CDK app
+- In release mode, deploys the shared and stage stacks from the verified release assembly with CloudFormation
+- Uploads the auth UI payload and preserves CloudFront invalidation behavior
 - Writes local receipts under `~/.lesser/<app>/<base-domain>/`
 
 ## Deploy
@@ -54,7 +67,7 @@ Deploy **dev + live** (and optionally **staging**):
   --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 
-Deploy with published Lambda assets:
+Deploy from published release assets:
 
 ```bash
 ./lesser up \
@@ -79,7 +92,8 @@ Deploy workspace:
 
 - Staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 - Lambda asset provenance sidecar: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
-- Per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
+- Staged auth UI bundle: `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`
+- Staged deploy assembly: `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`
 
 ## What gets deployed
 
@@ -104,10 +118,9 @@ Bootstrap state:
 
 Important scope note:
 
-- Prebuilt Lambda release assets are now supported through `--release-dir`, but source builds remain the default when
-  that flag is absent.
-- Even in artifact mode, deploy-time responsibilities such as CDK execution, auth UI upload, hosted-zone resolution,
-  and receipt/bootstrap writes remain instance-specific.
+- Source mode remains available and is still the default when `--release-dir` is absent.
+- Release mode is source-free, but deploy-time responsibilities such as hosted-zone resolution, CloudFormation
+  execution against live stacks, auth UI upload, invalidation, and receipt/bootstrap writes remain instance-specific.
 
 If you changed Lambda code and want to force refresh zip artifacts:
 
@@ -121,14 +134,25 @@ If you changed Lambda code and want to force refresh zip artifacts:
 
 For a managed consumer or CI runner, the minimal artifact-driven deploy inputs are:
 
-- a Lesser checkout containing `infra/cdk/` and `auth-ui/`
-- a built `lesser` CLI binary from that checkout
-- a staged `--release-dir` containing `checksums.txt`, `lesser-release.json`, `lesser-lambda-bundle.tar.gz`, and `lesser-lambda-bundle.json`
+- a built `lesser` CLI binary
+- a staged `--release-dir` containing:
+  - `checksums.txt`
+  - `lesser-release.json`
+  - `lesser-lambda-bundle.tar.gz`
+  - `lesser-lambda-bundle.json`
+  - `lesser-auth-ui.tar.gz`
+  - `lesser-deploy-assembly.tar.gz`
+  - `lesser-deploy-assembly.json`
 - AWS credentials plus the normal instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, and bootstrap/output flags as needed)
 
 When `--release-dir` is used, the runner should treat the local deploy workspace under `~/.lesser/<app>/<base-domain>/deploy/`
-as the canonical execution output surface for Lambda assets and CDK outputs. The repo-root `bin/` directory is no longer
-the deploy-time contract for artifact mode.
+as the canonical execution workspace for:
+
+- `lambda-assets/`
+- `auth-ui/`
+- `deploy-assembly/`
+
+The repo-root `bin/` directory and repo-local `infra/cdk/` tree are not part of the artifact-mode execution contract.
 
 The current release trust signal for managed consumers is the artifact-driven deploy certification gate:
 

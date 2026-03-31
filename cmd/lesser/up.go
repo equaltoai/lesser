@@ -66,6 +66,10 @@ type upEnv struct {
 	args              upArgs
 	repoRoot          string
 	lambdaAssetRoot   string
+	releaseVersion    string
+	releaseGitSHA     string
+	releaseAuthUIDir  string
+	releaseAssembly   *releaseDeployAssemblyInstallResult
 	app               string
 	baseDomain        string
 	awsProfile        string
@@ -79,74 +83,184 @@ type upEnv struct {
 	stateDir          string
 }
 
+type upAWSContext struct {
+	awsCfg     aws.Config
+	awsProfile string
+	accountID  string
+	hostedZone hostedZone
+	stages     []naming.Stage
+	newDB      bootstrapDBFactory
+}
+
+type upBootstrapContext struct {
+	bootstrap         bootstrapWallet
+	bootstrapRequired bool
+	stateDir          string
+}
+
 func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
-	repoRoot, err := findRepoRootFn()
+	app, baseDomain, args, repoRoot, err := resolveUpExecutionInputs(args)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDeploySourceInputsFn(repoRoot); err != nil {
+	awsContext, err := resolveUpAWSContext(ctx, args, baseDomain)
+	if err != nil {
+		return nil, err
+	}
+	bootstrapContext, err := resolveUpBootstrapContext(ctx, args, app, baseDomain, awsContext.stages, awsContext.newDB)
+	if err != nil {
 		return nil, err
 	}
 
+	return &upEnv{
+		args:              args,
+		repoRoot:          repoRoot,
+		app:               app,
+		baseDomain:        baseDomain,
+		awsProfile:        awsContext.awsProfile,
+		awsCfg:            awsContext.awsCfg,
+		accountID:         awsContext.accountID,
+		hostedZone:        awsContext.hostedZone,
+		stages:            awsContext.stages,
+		newDB:             awsContext.newDB,
+		bootstrap:         bootstrapContext.bootstrap,
+		bootstrapRequired: bootstrapContext.bootstrapRequired,
+		stateDir:          bootstrapContext.stateDir,
+	}, nil
+}
+
+func resolveUpExecutionInputs(args upArgs) (string, string, upArgs, string, error) {
 	app, err := naming.NormalizeAppName(args.App)
 	if err != nil {
-		return nil, err
+		return "", "", upArgs{}, "", err
 	}
 
 	baseDomain, err := normalizeBaseDomain(args.BaseDomain)
 	if err != nil {
-		return nil, err
+		return "", "", upArgs{}, "", err
 	}
 
 	args.ReleaseDir, err = resolveUpReleaseDir(args.ReleaseDir)
 	if err != nil {
-		return nil, err
+		return "", "", upArgs{}, "", err
 	}
 
+	repoRoot := ""
+	if requiresDeploySourceCheckout(args) {
+		repoRoot, err = findRepoRootFn()
+		if err != nil {
+			return "", "", upArgs{}, "", err
+		}
+		if err := validateDeploySourceInputsFn(repoRoot); err != nil {
+			return "", "", upArgs{}, "", err
+		}
+	}
+
+	return app, baseDomain, args, repoRoot, nil
+}
+
+func resolveUpAWSContext(ctx context.Context, args upArgs, baseDomain string) (upAWSContext, error) {
 	awsCfg, awsProfile, err := loadAWSConfigForCLIFn(ctx, args.AWSProfile)
 	if err != nil {
-		return nil, err
+		return upAWSContext{}, err
 	}
 
 	accountID, err := resolveAWSAccountIDFn(ctx, awsCfg)
 	if err != nil {
-		return nil, err
+		return upAWSContext{}, err
 	}
 
 	hostedZone, err := resolveHostedZoneFn(ctx, awsCfg, baseDomain)
 	if err != nil {
-		return nil, err
+		return upAWSContext{}, err
 	}
 
 	stages, err := selectUpStages(args.WithStaging, args.Stage)
 	if err != nil {
-		return nil, err
+		return upAWSContext{}, err
 	}
-	newDB := bootstrapDBFactory(func() (theorydb.DB, error) {
-		db, dbErr := tabletheory.New(session.Config{
+
+	return upAWSContext{
+		awsCfg:     awsCfg,
+		awsProfile: awsProfile,
+		accountID:  accountID,
+		hostedZone: hostedZone,
+		stages:     stages,
+		newDB:      newBootstrapDBFactory(awsCfg),
+	}, nil
+}
+
+func newBootstrapDBFactory(awsCfg aws.Config) bootstrapDBFactory {
+	return bootstrapDBFactory(func() (theorydb.DB, error) {
+		db, err := tabletheory.New(session.Config{
 			Region:              awsCfg.Region,
 			CredentialsProvider: awsCfg.Credentials,
 		})
-		if dbErr != nil {
-			return nil, dbErr
+		if err != nil {
+			return nil, err
 		}
 		return db, nil
 	})
+}
 
+func resolveUpBootstrapContext(
+	ctx context.Context,
+	args upArgs,
+	app string,
+	baseDomain string,
+	stages []naming.Stage,
+	newDB bootstrapDBFactory,
+) (upBootstrapContext, error) {
 	existingBootstrapAddr, bootstrapRequired, err := inspectBootstrapRequirementsFn(ctx, newDB, app, stages)
 	if err != nil {
-		return nil, err
+		return upBootstrapContext{}, err
 	}
+
 	desiredBootstrapAddr := strings.ToLower(strings.TrimSpace(args.BootstrapWalletAddress))
-	if desiredBootstrapAddr != "" && existingBootstrapAddr != "" && !strings.EqualFold(existingBootstrapAddr, desiredBootstrapAddr) {
-		return nil, fmt.Errorf("--bootstrap-wallet-address %s does not match deployed bootstrap address %s", desiredBootstrapAddr, existingBootstrapAddr)
+	if err := validateRequestedBootstrapAddress(existingBootstrapAddr, desiredBootstrapAddr); err != nil {
+		return upBootstrapContext{}, err
 	}
 
 	stateDir, err := ensureLocalStateDir(app, baseDomain)
 	if err != nil {
-		return nil, err
+		return upBootstrapContext{}, err
 	}
 
+	bootstrap, err := resolveBootstrapWalletForUp(existingBootstrapAddr, desiredBootstrapAddr, bootstrapRequired)
+	if err != nil {
+		return upBootstrapContext{}, err
+	}
+	bootstrap, err = hydrateBootstrapWalletForOutPath(args.OutPath, stateDir, bootstrap)
+	if err != nil {
+		return upBootstrapContext{}, err
+	}
+	if err := validateBootstrapMnemonicOutput(args.OutPath, stateDir, bootstrap); err != nil {
+		return upBootstrapContext{}, err
+	}
+
+	return upBootstrapContext{
+		bootstrap:         bootstrap,
+		bootstrapRequired: bootstrapRequired,
+		stateDir:          stateDir,
+	}, nil
+}
+
+func validateRequestedBootstrapAddress(existingBootstrapAddr string, desiredBootstrapAddr string) error {
+	if desiredBootstrapAddr != "" && existingBootstrapAddr != "" && !strings.EqualFold(existingBootstrapAddr, desiredBootstrapAddr) {
+		return fmt.Errorf(
+			"--bootstrap-wallet-address %s does not match deployed bootstrap address %s",
+			desiredBootstrapAddr,
+			existingBootstrapAddr,
+		)
+	}
+	return nil
+}
+
+func resolveBootstrapWalletForUp(
+	existingBootstrapAddr string,
+	desiredBootstrapAddr string,
+	bootstrapRequired bool,
+) (bootstrapWallet, error) {
 	bootstrap := bootstrapWallet{
 		Address:        strings.ToLower(strings.TrimSpace(existingBootstrapAddr)),
 		DerivationPath: defaultBootstrapDerivationPath,
@@ -155,48 +269,42 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	if desiredBootstrapAddr != "" {
 		bootstrap.Address = desiredBootstrapAddr
 	}
-	if bootstrapRequired && desiredBootstrapAddr == "" {
-		bootstrap, err = determineBootstrapWalletFn(existingBootstrapAddr)
-		if err != nil {
-			return nil, err
-		}
+	if !bootstrapRequired || desiredBootstrapAddr != "" {
+		return bootstrap, nil
+	}
+	return determineBootstrapWalletFn(existingBootstrapAddr)
+}
+
+func hydrateBootstrapWalletForOutPath(outPath string, stateDir string, bootstrap bootstrapWallet) (bootstrapWallet, error) {
+	if outPath == "" || bootstrap.Mnemonic != "" {
+		return bootstrap, nil
 	}
 
-	if bootstrap.Mnemonic != "" && strings.TrimSpace(args.OutPath) == "" {
-		defaultPath := filepath.Join(stateDir, "bootstrap.json")
-		return nil, fmt.Errorf("bootstrap wallet generated; --out is required to persist the mnemonic (recommended: %s)", defaultPath)
+	defaultPath := filepath.Join(stateDir, "bootstrap.json")
+	if !fileExists(defaultPath) {
+		return bootstrapWallet{}, errors.New("--out requires local bootstrap key material; no mnemonic found in ~/.lesser (cannot recover from AWS)")
 	}
 
-	if args.OutPath != "" && bootstrap.Mnemonic == "" {
-		defaultPath := filepath.Join(stateDir, "bootstrap.json")
-		if !fileExists(defaultPath) {
-			return nil, errors.New("--out requires local bootstrap key material; no mnemonic found in ~/.lesser (cannot recover from AWS)")
-		}
-		loaded, err := readBootstrapKeyMaterialFn(defaultPath)
-		if err != nil {
-			return nil, err
-		}
-		if !strings.EqualFold(loaded.Address, bootstrap.Address) {
-			return nil, fmt.Errorf("local bootstrap key material address %s does not match deployed bootstrap address %s", loaded.Address, bootstrap.Address)
-		}
-		bootstrap = loaded
+	loaded, err := readBootstrapKeyMaterialFn(defaultPath)
+	if err != nil {
+		return bootstrapWallet{}, err
 	}
+	if !strings.EqualFold(loaded.Address, bootstrap.Address) {
+		return bootstrapWallet{}, fmt.Errorf(
+			"local bootstrap key material address %s does not match deployed bootstrap address %s",
+			loaded.Address,
+			bootstrap.Address,
+		)
+	}
+	return loaded, nil
+}
 
-	return &upEnv{
-		args:              args,
-		repoRoot:          repoRoot,
-		app:               app,
-		baseDomain:        baseDomain,
-		awsProfile:        awsProfile,
-		awsCfg:            awsCfg,
-		accountID:         accountID,
-		hostedZone:        hostedZone,
-		stages:            stages,
-		newDB:             newDB,
-		bootstrap:         bootstrap,
-		bootstrapRequired: bootstrapRequired,
-		stateDir:          stateDir,
-	}, nil
+func validateBootstrapMnemonicOutput(outPath string, stateDir string, bootstrap bootstrapWallet) error {
+	if bootstrap.Mnemonic == "" || strings.TrimSpace(outPath) != "" {
+		return nil
+	}
+	defaultPath := filepath.Join(stateDir, "bootstrap.json")
+	return fmt.Errorf("bootstrap wallet generated; --out is required to persist the mnemonic (recommended: %s)", defaultPath)
 }
 
 func upStages(withStaging bool) []naming.Stage {
@@ -228,7 +336,7 @@ func selectUpStages(withStaging bool, stage string) ([]naming.Stage, error) {
 }
 
 func (e *upEnv) run(ctx context.Context) error {
-	if err := ensureToolsAvailableFn(); err != nil {
+	if err := e.ensureToolsAvailable(); err != nil {
 		return err
 	}
 	if err := e.prepareLambdaArtifacts(); err != nil {
@@ -275,6 +383,41 @@ func (e *upEnv) run(ctx context.Context) error {
 }
 
 func (e *upEnv) prepareLambdaArtifacts() error {
+	if e.usesReleaseArtifacts() {
+		result, err := installReleaseDeployAssetsFn(e.args.ReleaseDir, deployWorkspaceRoot(e.stateDir))
+		if err != nil {
+			return err
+		}
+		e.lambdaAssetRoot = result.LambdaAssetRoot
+		e.releaseVersion = result.Version
+		e.releaseGitSHA = result.GitSHA
+		e.releaseAuthUIDir = result.AuthUIDir
+		e.releaseAssembly = &result.Assembly
+
+		files, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, result.LambdaFiles)
+		if err != nil {
+			return err
+		}
+		if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
+			Schema:         1,
+			Mode:           "release",
+			Files:          files,
+			ReleaseVersion: result.Version,
+			ReleaseGitSHA:  result.GitSHA,
+			PreparedAt:     time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+
+		fmt.Printf(
+			"✓ Installed %d Lambda artifact(s), auth UI bundle, and deploy assembly from release %s into %s\n",
+			len(result.LambdaFiles),
+			result.Version,
+			deployWorkspaceRoot(e.stateDir),
+		)
+		return nil
+	}
+
 	assetRoot, err := prepareLambdaAssetRootFn(e.stateDir)
 	if err != nil {
 		return err
@@ -295,38 +438,14 @@ func (e *upEnv) prepareLambdaArtifacts() error {
 		return e.recordLocalLambdaAssets(files)
 	}
 
-	if strings.TrimSpace(e.args.ReleaseDir) == "" {
-		if err := buildLambdaZipsFn(e.repoRoot, false); err != nil {
-			return err
-		}
-		files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
-		if err != nil {
-			return err
-		}
-		return e.recordLocalLambdaAssets(files)
+	if err := buildLambdaZipsFn(e.repoRoot, false); err != nil {
+		return err
 	}
-
-	result, err := installReleaseLambdaAssetsFn(e.repoRoot, e.args.ReleaseDir, e.lambdaAssetRoot)
+	files, err := stageLocalLambdaAssetsFn(e.repoRoot, e.lambdaAssetRoot)
 	if err != nil {
 		return err
 	}
-	files, err := relativeLambdaAssetFiles(e.lambdaAssetRoot, result.Files)
-	if err != nil {
-		return err
-	}
-	if err := writeLambdaAssetMetadata(e.lambdaAssetRoot, lambdaAssetMetadata{
-		Schema:         1,
-		Mode:           "release",
-		Files:          files,
-		ReleaseVersion: result.Version,
-		ReleaseGitSHA:  result.GitSHA,
-		PreparedAt:     time.Now().UTC(),
-	}); err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ Installed %d Lambda artifact(s) from release %s into %s\n", len(result.Files), result.Version, e.lambdaAssetRoot)
-	return nil
+	return e.recordLocalLambdaAssets(files)
 }
 
 func (e *upEnv) recordLocalLambdaAssets(files []string) error {
@@ -368,6 +487,13 @@ func (e *upEnv) handleBootstrapOutput() error {
 }
 
 func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
+	if e.usesReleaseArtifacts() {
+		return e.deployFromReleaseAssembly(ctx)
+	}
+	return e.deployFromSource(ctx)
+}
+
+func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	receipt := newUpReceipt(e.app, e.baseDomain, e.awsProfile, e.accountID, e.awsCfg.Region, e.stages, e.hostedZone)
 	receipt.Integration = resolveIntegrationReceipt(e.args)
 
@@ -501,7 +627,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.AWSProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
 	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1|2)")
-	fs.StringVar(&args.ReleaseDir, "release-dir", "", "directory containing release deploy assets (checksums.txt, lesser-release.json, lesser-lambda-bundle.tar.gz, lesser-lambda-bundle.json)")
+	fs.StringVar(&args.ReleaseDir, "release-dir", "", "directory containing release deploy assets (checksums.txt, lesser-release.json, lesser-lambda-bundle.tar.gz, lesser-lambda-bundle.json, lesser-auth-ui.tar.gz, lesser-deploy-assembly.tar.gz, lesser-deploy-assembly.json)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
@@ -537,6 +663,21 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	}
 
 	return args, nil
+}
+
+func (e *upEnv) usesReleaseArtifacts() bool {
+	return strings.TrimSpace(e.args.ReleaseDir) != "" && !e.args.RebuildLambdas
+}
+
+func (e *upEnv) ensureToolsAvailable() error {
+	if e.usesReleaseArtifacts() {
+		return nil
+	}
+	return ensureToolsAvailableFn()
+}
+
+func requiresDeploySourceCheckout(args upArgs) bool {
+	return strings.TrimSpace(args.ReleaseDir) == "" || args.RebuildLambdas
 }
 
 func normalizeReleaseDir(input string) (string, error) {

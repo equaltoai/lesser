@@ -72,7 +72,9 @@ func main() {
 			Env:         env,
 			Description: jsii.String("Lesser shared resources - KMS keys, secrets, roles"),
 		},
-		AppName: appName,
+		AppName:   appName,
+		AccountID: awsAccount,
+		Region:    awsRegion,
 	})
 
 	if stageFilter == "shared" {

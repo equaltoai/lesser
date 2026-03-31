@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awskms"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
@@ -16,7 +17,9 @@ import (
 
 type SharedStackProps struct {
 	awscdk.StackProps
-	AppName string
+	AppName   string
+	AccountID string
+	Region    string
 }
 
 type SharedStack struct {
@@ -26,6 +29,7 @@ type SharedStack struct {
 	LambdaBasicRole      awsiam.Role
 	ActorPrivateKey      awssecretsmanager.Secret
 	JWTSecret            awssecretsmanager.Secret
+	ReleaseAssetBucket   awss3.Bucket
 }
 
 func NewSharedStack(scope constructs.Construct, id string, props *SharedStackProps) *SharedStack {
@@ -92,6 +96,16 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		},
 	})
 
+	releaseAssetBucket := awss3.NewBucket(stack, jsii.String("ReleaseAssetBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(naming.S3BucketName(props.AppName, naming.StageShared, "release-assets", props.AccountID, props.Region)),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		EnforceSSL:        jsii.Bool(true),
+		Versioned:         jsii.Bool(true),
+		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
+	})
+	sharedStack.ReleaseAssetBucket = releaseAssetBucket
+
 	// Create outputs
 	awscdk.NewCfnOutput(stack, jsii.String("EncryptionKeyArn"), &awscdk.CfnOutputProps{
 		Value:       sharedStack.EncryptionKey.KeyArn(),
@@ -116,6 +130,11 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 	awscdk.NewCfnOutput(stack, jsii.String("LambdaBasicRoleArn"), &awscdk.CfnOutputProps{
 		Value:       sharedStack.LambdaBasicRole.RoleArn(),
 		Description: jsii.String("Lambda basic role ARN"),
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("ReleaseAssetBucketName"), &awscdk.CfnOutputProps{
+		Value:       sharedStack.ReleaseAssetBucket.BucketName(),
+		Description: jsii.String("Shared S3 bucket for release-published deploy assembly assets"),
 	})
 
 	// Write all shared resource ARNs to SSM Parameter Store for cross-stack reference

@@ -2,6 +2,7 @@ package releaseassets
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -222,6 +223,79 @@ func TestWriteLambdaBundleManifest_RequiresReleaseMetadata(t *testing.T) {
 	_, err = WriteLambdaBundleManifest(outDir, "v1.2.3", "", files)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "release git SHA is required")
+}
+
+func TestWriteLambdaBundle_ErrorsWhenArchivePathIsDirectory(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	outDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(outDir, LambdaBundleArchiveName), 0o755))
+
+	_, err := WriteLambdaBundle(repoRoot, outDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "finalize lambda bundle")
+}
+
+func TestWriteLambdaBundle_ErrorsWhenArtifactUnreadable(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	require.NoError(t, os.Chmod(filepath.Join(repoRoot, "bin", "api.zip"), 0o000))
+
+	_, err := WriteLambdaBundle(repoRoot, t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read lambda artifact")
+}
+
+func TestWriteLambdaBundleManifest_ErrorsWhenManifestPathBlocked(t *testing.T) {
+	repoRoot := testRepoWithLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	outDir := t.TempDir()
+	files, err := WriteLambdaBundle(repoRoot, outDir)
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(outDir, LambdaBundleManifestName), 0o755))
+
+	_, err = WriteLambdaBundleManifest(outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write lambda bundle manifest")
+}
+
+func TestWriteBundleFile(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "api.zip")
+	require.NoError(t, os.WriteFile(sourcePath, []byte("api zip"), 0o644))
+
+	var buffer bytes.Buffer
+	tw := tar.NewWriter(&buffer)
+	require.NoError(t, writeBundleFile(tw, BundleFile{
+		Path:       "bin/api.zip",
+		SourcePath: sourcePath,
+	}))
+	require.NoError(t, tw.Close())
+
+	tr := tar.NewReader(bytes.NewReader(buffer.Bytes()))
+	header, err := tr.Next()
+	require.NoError(t, err)
+	require.Equal(t, "bin/api.zip", header.Name)
+	content, err := io.ReadAll(tr)
+	require.NoError(t, err)
+	require.Equal(t, "api zip", string(content))
+}
+
+func TestWriteBundleFile_ErrorsWhenSourceMissing(t *testing.T) {
+	tw := tar.NewWriter(io.Discard)
+	err := writeBundleFile(tw, BundleFile{
+		Path:       "bin/api.zip",
+		SourcePath: filepath.Join(t.TempDir(), "missing.zip"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read lambda artifact")
+	require.NoError(t, tw.Close())
 }
 
 type bundleEntry struct {

@@ -59,6 +59,12 @@ TARGETS=(
   "darwin arm64"
 )
 
+echo "Building auth UI release bundle"
+cd "${ROOT_DIR}/auth-ui"
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+cd "${ROOT_DIR}"
+
 echo "Building canonical Lambda zip artifacts"
 go run ./cmd/lesser build lambdas --rebuild
 

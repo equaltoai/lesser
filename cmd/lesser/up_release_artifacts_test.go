@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,11 +29,6 @@ func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
 		buildCalled = true
 		return nil
 	}
-	var lambdaAssetRoot string
-	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
-		lambdaAssetRoot = req.LambdaAssetRoot
-		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
-	}
 
 	require.NoError(t, runUp([]string{
 		"--app", "app",
@@ -43,7 +37,10 @@ func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
 		"--release-dir", releaseDir,
 	}))
 	require.False(t, buildCalled)
-	require.NotEmpty(t, lambdaAssetRoot)
+
+	homeDir, err := userHomeDirFn()
+	require.NoError(t, err)
+	lambdaAssetRoot := filepath.Join(homeDir, ".lesser", "app", "example.com", "deploy", "lambda-assets")
 
 	apiBytes, err := os.ReadFile(filepath.Join(lambdaAssetRoot, "bin", "api.zip"))
 	require.NoError(t, err)
@@ -71,9 +68,9 @@ func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
 		buildCalled = true
 		return nil
 	}
-	cdkBootstrapFn = func(context.Context, string, string, string, string) error {
-		t.Fatal("cdk bootstrap should not run when release assets fail validation")
-		return nil
+	deployCloudFormationStackFn = func(context.Context, aws.Config, cloudFormationDeployRequest) (map[string]string, error) {
+		t.Fatal("cloudformation deploy should not run when release assets fail validation")
+		return nil, nil
 	}
 
 	err := runUp([]string{
@@ -87,7 +84,7 @@ func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
 	require.False(t, buildCalled)
 }
 
-func TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys(t *testing.T) {
+func TestRunUp_ReleaseDirDeploysSharedAndStageTemplatesFromReleaseAssembly(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
@@ -106,10 +103,13 @@ func TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys(t *te
 		return nil
 	}
 
-	var requests []cdkDeployRequest
-	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+	var requests []cloudFormationDeployRequest
+	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
 		requests = append(requests, req)
-		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+		if req.StackName == naming.SharedStackName("app") {
+			return map[string]string{"ReleaseAssetBucketName": "app-shared-release-assets"}, nil
+		}
+		return map[string]string{}, nil
 	}
 
 	require.NoError(t, runUp([]string{
@@ -121,35 +121,22 @@ func TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys(t *te
 
 	require.Len(t, requests, 3)
 
-	expectedStacks := []string{
-		naming.SharedStackName("app"),
-		naming.StageStackName("app", naming.StageDev),
-		naming.StageStackName("app", naming.StageLive),
-	}
-	gotStacks := make([]string, 0, len(requests))
-	lambdaAssetRoots := make([]string, 0, len(requests))
-	for _, req := range requests {
-		gotStacks = append(gotStacks, req.StackName)
-		require.NotEmpty(t, req.LambdaAssetRoot)
-		lambdaAssetRoots = append(lambdaAssetRoots, req.LambdaAssetRoot)
-	}
-	require.ElementsMatch(t, expectedStacks, gotStacks)
+	require.Equal(t, naming.SharedStackName("app"), requests[0].StackName)
+	require.NotEmpty(t, requests[0].TemplateBody)
+	require.Empty(t, requests[0].TemplateURL)
+	require.Equal(t, map[string]string{"AppSlug": "app"}, requests[0].Parameters)
 
-	firstAssetRoot := lambdaAssetRoots[0]
-	for _, assetRoot := range lambdaAssetRoots[1:] {
-		require.Equal(t, firstAssetRoot, assetRoot)
+	for _, req := range requests[1:] {
+		require.Empty(t, req.TemplateBody)
+		require.NotEmpty(t, req.TemplateURL)
+		require.Equal(t, "app", req.Parameters["AppSlug"])
+		require.Equal(t, "example.com", req.Parameters["BaseDomain"])
+		require.Equal(t, "Z1", req.Parameters["HostedZoneId"])
+		require.Equal(t, "app-shared-release-assets", req.Parameters["ReleaseAssetBucketName"])
 	}
-
-	apiBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "api.zip"))
-	require.NoError(t, err)
-	require.Equal(t, "api zip", string(apiBytes))
-
-	inboxBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "inbox.zip"))
-	require.NoError(t, err)
-	require.Equal(t, "inbox zip", string(inboxBytes))
 }
 
-func TestRunUp_ReleaseDirUsesRealCdkDeployPreparationWithoutRepoBin(t *testing.T) {
+func TestRunUp_ReleaseDirUploadsStageTemplatesFromReleaseAssembly(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
@@ -164,49 +151,35 @@ func TestRunUp_ReleaseDirUsesRealCdkDeployPreparationWithoutRepoBin(t *testing.T
 		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
 		return nil
 	}
-	cdkDeployWithOutputsFn = cdkDeployWithOutputs
 
-	previousRunCommand := runCommandFn
-	defer func() { runCommandFn = previousRunCommand }()
-
-	type deployInvocation struct {
-		stackName       string
-		stageContext    string
-		lambdaAssetRoot string
+	var uploadedBucket string
+	var uploadedVersion string
+	var uploadedGitSHA string
+	var uploadedAssembly releaseDeployAssemblyInstallResult
+	uploadReleaseAssemblyAssetsFn = func(
+		_ context.Context,
+		_ aws.Config,
+		bucket string,
+		version string,
+		gitSHA string,
+		assembly releaseDeployAssemblyInstallResult,
+	) (releaseAssemblyUploadResult, error) {
+		uploadedBucket = bucket
+		uploadedVersion = version
+		uploadedGitSHA = gitSHA
+		uploadedAssembly = assembly
+		return releaseAssemblyUploadResult{
+			StageTemplateURLs: map[naming.Stage]string{
+				naming.StageDev:  "https://example.invalid/dev",
+				naming.StageLive: "https://example.invalid/live",
+			},
+		}, nil
 	}
-	var invocations []deployInvocation
-	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
-		require.Equal(t, "cdk", name)
-		require.NotEmpty(t, args)
-		require.Equal(t, "deploy", args[0])
-
-		outputsPath := ""
-		invocation := deployInvocation{}
-		if len(args) > 1 {
-			invocation.stackName = args[1]
+	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
+		if req.StackName == naming.SharedStackName("app") {
+			return map[string]string{"ReleaseAssetBucketName": "app-shared-release-assets"}, nil
 		}
-		for i := 0; i < len(args)-1; i++ {
-			switch args[i] {
-			case "--outputs-file":
-				outputsPath = args[i+1]
-			case "--context":
-				switch {
-				case strings.HasPrefix(args[i+1], "stage="):
-					invocation.stageContext = strings.TrimPrefix(args[i+1], "stage=")
-				case strings.HasPrefix(args[i+1], "lambdaAssetRoot="):
-					invocation.lambdaAssetRoot = strings.TrimPrefix(args[i+1], "lambdaAssetRoot=")
-				}
-			}
-		}
-		require.NotEmpty(t, outputsPath)
-		require.NotEmpty(t, invocation.lambdaAssetRoot)
-		invocations = append(invocations, invocation)
-
-		outputsJSON := "{}"
-		if invocation.stackName != "" {
-			outputsJSON = `{"` + invocation.stackName + `":{}}`
-		}
-		return os.WriteFile(outputsPath, []byte(outputsJSON), 0o644)
+		return map[string]string{}, nil
 	}
 
 	require.NoError(t, runUp([]string{
@@ -216,29 +189,12 @@ func TestRunUp_ReleaseDirUsesRealCdkDeployPreparationWithoutRepoBin(t *testing.T
 		"--release-dir", releaseDir,
 	}))
 
-	require.Len(t, invocations, 3)
-	require.ElementsMatch(t, []string{
-		naming.SharedStackName("app"),
-		naming.StageStackName("app", naming.StageDev),
-		naming.StageStackName("app", naming.StageLive),
-	}, []string{
-		invocations[0].stackName,
-		invocations[1].stackName,
-		invocations[2].stackName,
-	})
-
-	firstAssetRoot := invocations[0].lambdaAssetRoot
-	for _, invocation := range invocations[1:] {
-		require.Equal(t, firstAssetRoot, invocation.lambdaAssetRoot)
-	}
-
-	apiBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "api.zip"))
-	require.NoError(t, err)
-	require.Equal(t, "api zip", string(apiBytes))
-
-	inboxBytes, err := os.ReadFile(filepath.Join(firstAssetRoot, "bin", "inbox.zip"))
-	require.NoError(t, err)
-	require.Equal(t, "inbox zip", string(inboxBytes))
+	require.Equal(t, "app-shared-release-assets", uploadedBucket)
+	require.Equal(t, "v1.2.3", uploadedVersion)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", uploadedGitSHA)
+	require.NotEmpty(t, uploadedAssembly.SharedTemplate)
+	require.NotEmpty(t, uploadedAssembly.StageTemplates[naming.StageDev])
+	require.NotEmpty(t, uploadedAssembly.StageTemplates[naming.StageLive])
 }
 
 func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
@@ -252,12 +208,14 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 	previousInspect := inspectBootstrapRequirementsFn
 	previousTools := ensureToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
-	previousInstallRelease := installReleaseLambdaAssetsFn
+	previousInstallRelease := installReleaseDeployAssetsFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
 	previousBootstrap := ensureStageBootstrapStateFn
 	previousCdkBootstrap := cdkBootstrapFn
 	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
 	previousCdkDeploy := cdkDeployWithOutputsFn
+	previousCloudFormationDeploy := deployCloudFormationStackFn
+	previousUploadAssembly := uploadReleaseAssemblyAssetsFn
 	previousBuildAuthUI := buildAuthUIFn
 	previousReplaceBucket := replaceBucketWithDirPrefixFn
 	previousInvalidate := invalidateFrontendFn
@@ -278,7 +236,7 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 	}
 	ensureToolsAvailableFn = func() error { return nil }
 	buildLambdaZipsFn = func(string, bool) error { return nil }
-	installReleaseLambdaAssetsFn = installReleaseLambdaAssets
+	installReleaseDeployAssetsFn = installReleaseDeployAssets
 	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
 	ensureStageBootstrapStateFn = func(context.Context, bootstrapDBFactory, string, naming.Stage, string) (stageBootstrapState, error) {
 		return stageBootstrapState{Locked: true, Address: "0xabc"}, nil
@@ -287,6 +245,25 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
 	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
 		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+	}
+	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
+		if req.StackName == naming.SharedStackName("app") {
+			return map[string]string{"ReleaseAssetBucketName": "app-shared-release-assets"}, nil
+		}
+		return map[string]string{
+			"AuthUIBucketName":           "auth-ui-bucket",
+			"FrontendDistributionId":     "DIST",
+			"FrontendDistributionDomain": "dist.example.com",
+		}, nil
+	}
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+		return releaseAssemblyUploadResult{
+			StageTemplateURLs: map[naming.Stage]string{
+				naming.StageDev:     "https://example.invalid/dev",
+				naming.StageStaging: "https://example.invalid/staging",
+				naming.StageLive:    "https://example.invalid/live",
+			},
+		}, nil
 	}
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
 	replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
@@ -302,12 +279,14 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 		inspectBootstrapRequirementsFn = previousInspect
 		ensureToolsAvailableFn = previousTools
 		buildLambdaZipsFn = previousBuildZips
-		installReleaseLambdaAssetsFn = previousInstallRelease
+		installReleaseDeployAssetsFn = previousInstallRelease
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap
 		ensureStageBootstrapStateFn = previousBootstrap
 		cdkBootstrapFn = previousCdkBootstrap
 		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
 		cdkDeployWithOutputsFn = previousCdkDeploy
+		deployCloudFormationStackFn = previousCloudFormationDeploy
+		uploadReleaseAssemblyAssetsFn = previousUploadAssembly
 		buildAuthUIFn = previousBuildAuthUI
 		replaceBucketWithDirPrefixFn = previousReplaceBucket
 		invalidateFrontendFn = previousInvalidate

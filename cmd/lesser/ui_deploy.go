@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	invalidateFrontendFn      = invalidateFrontend
+	invalidateFrontendFn         = invalidateFrontend
 	replaceBucketWithDirPrefixFn = replaceBucketWithDirPrefix
 )
 
@@ -25,7 +25,7 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 		return fmt.Errorf("deployment receipt is nil")
 	}
 
-	authUIDist, err := buildAuthUIFn(e.repoRoot)
+	authUIDist, err := e.resolveAuthUIDist()
 	if err != nil {
 		return err
 	}
@@ -62,6 +62,19 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 	}
 
 	return nil
+}
+
+func (e *upEnv) resolveAuthUIDist() (string, error) {
+	if e.usesReleaseArtifacts() {
+		if strings.TrimSpace(e.releaseAuthUIDir) == "" {
+			return "", fmt.Errorf("release auth-ui bundle is not prepared")
+		}
+		if _, err := os.Stat(filepath.Join(e.releaseAuthUIDir, "index.html")); err != nil {
+			return "", fmt.Errorf("release auth-ui bundle missing index.html at %s", e.releaseAuthUIDir)
+		}
+		return e.releaseAuthUIDir, nil
+	}
+	return buildAuthUIFn(e.repoRoot)
 }
 
 func buildAuthUI(repoRoot string) (string, error) {

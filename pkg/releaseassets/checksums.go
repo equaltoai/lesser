@@ -17,6 +17,9 @@ var publishedReleaseAssets = []string{
 	"lesser-darwin-arm64",
 	LambdaBundleArchiveName,
 	LambdaBundleManifestName,
+	AuthUIBundleArchiveName,
+	DeployAssemblyArchiveName,
+	DeployAssemblyManifestName,
 	ReleaseManifestName,
 }
 

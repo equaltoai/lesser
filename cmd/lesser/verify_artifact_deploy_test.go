@@ -238,13 +238,18 @@ func TestRunVerifyArtifactDeploy_PropagatesCertifierError(t *testing.T) {
 	require.ErrorIs(t, err, errSentinel)
 }
 
-func TestRunVerifyArtifactDeploy_PropagatesRepoRootError(t *testing.T) {
+func TestRunVerifyArtifactDeploy_SkipsRepoBackedCertificationWhenRepoRootMissing(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
 	previousRepoRoot := findRepoRootFn
 	t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
 
 	findRepoRootFn = func() (string, error) { return "", errSentinel }
-	err := runVerifyArtifactDeploy([]string{"--release-dir", t.TempDir()})
-	require.ErrorIs(t, err, errSentinel)
+	require.NoError(t, runVerifyArtifactDeploy([]string{"--release-dir", releaseDir}))
 }
 
 func TestRunVerifyArtifactDeploy_PropagatesPublishedAssetValidationError(t *testing.T) {
@@ -266,18 +271,17 @@ func TestRunVerifyArtifactDeploy_PropagatesReleaseStagingError(t *testing.T) {
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
 
 	previousRepoRoot := findRepoRootFn
-	previousInstall := installReleaseLambdaAssetsFn
+	previousInstall := installReleaseDeployAssetsFn
 	t.Cleanup(func() {
 		findRepoRootFn = previousRepoRoot
-		installReleaseLambdaAssetsFn = previousInstall
+		installReleaseDeployAssetsFn = previousInstall
 	})
 
-	findRepoRootFn = func() (string, error) { return targetRepo, nil }
-	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
-		return releaseLambdaInstallResult{}, errSentinel
+	findRepoRootFn = func() (string, error) { return "", errSentinel }
+	installReleaseDeployAssetsFn = func(string, string) (releaseDeployAssetsInstallResult, error) {
+		return releaseDeployAssetsInstallResult{}, errSentinel
 	}
 
 	err := runVerifyArtifactDeploy([]string{"--release-dir", releaseDir})
@@ -290,27 +294,26 @@ func TestStageReleaseAssetsForArtifactDeployVerification_CleanupRemovesWorkspace
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
 
-	assetRoot, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(targetRepo, releaseDir)
+	result, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(releaseDir)
 	require.NoError(t, err)
-	require.DirExists(t, filepath.Dir(assetRoot))
+	require.DirExists(t, filepath.Dir(result.LambdaAssetRoot))
 
 	cleanup()
-	_, statErr := os.Stat(filepath.Dir(assetRoot))
+	_, statErr := os.Stat(filepath.Dir(result.LambdaAssetRoot))
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
 func TestStageReleaseAssetsForArtifactDeployVerification_PropagatesInstallError(t *testing.T) {
-	previousInstall := installReleaseLambdaAssetsFn
-	t.Cleanup(func() { installReleaseLambdaAssetsFn = previousInstall })
+	previousInstall := installReleaseDeployAssetsFn
+	t.Cleanup(func() { installReleaseDeployAssetsFn = previousInstall })
 
-	installReleaseLambdaAssetsFn = func(string, string, string) (releaseLambdaInstallResult, error) {
-		return releaseLambdaInstallResult{}, errSentinel
+	installReleaseDeployAssetsFn = func(string, string) (releaseDeployAssetsInstallResult, error) {
+		return releaseDeployAssetsInstallResult{}, errSentinel
 	}
 
-	assetRoot, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(t.TempDir(), t.TempDir())
+	result, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(t.TempDir())
 	require.ErrorIs(t, err, errSentinel)
-	require.Empty(t, assetRoot)
+	require.Empty(t, result)
 	require.Nil(t, cleanup)
 }

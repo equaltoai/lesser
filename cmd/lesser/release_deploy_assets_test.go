@@ -5,11 +5,13 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/releaseassets"
 	"github.com/stretchr/testify/require"
 )
@@ -20,10 +22,9 @@ func TestInstallReleaseLambdaAssets(t *testing.T) {
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
 	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
 
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
+	result, err := installReleaseLambdaAssetsForTest(releaseDir, assetRoot)
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.3", result.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
@@ -51,7 +52,7 @@ func TestInstallReleaseLambdaAssets_DoesNotStageUnderRepoRootTmp(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(targetRepo, "tmp"), []byte("blocked"), 0o644))
 
 	assetRoot := filepath.Join(t.TempDir(), "deploy", "lambda-assets")
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, assetRoot)
+	result, err := installReleaseLambdaAssetsForTest(releaseDir, assetRoot)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		filepath.Join(assetRoot, "bin", "api.zip"),
@@ -86,11 +87,10 @@ func TestInstallReleaseLambdaAssets_ErrorsWhenRequiredFileMissing(t *testing.T) 
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
 
 	require.NoError(t, os.Remove(filepath.Join(releaseDir, releaseassets.ChecksumsFileName)))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	_, err := installReleaseLambdaAssetsForTest(releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "required release file checksums.txt")
 }
@@ -101,26 +101,24 @@ func TestInstallReleaseLambdaAssets_ErrorsOnChecksumMismatch(t *testing.T) {
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
 
 	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName), []byte("{}\n"), 0o644))
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	_, err := installReleaseLambdaAssetsForTest(releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "lesser-lambda-bundle.json checksum mismatch")
 }
 
-func TestInstallReleaseLambdaAssets_ErrorsWhenInventoryDoesNotMatch(t *testing.T) {
+func TestInstallReleaseLambdaAssets_DoesNotRequireRepoInventoryCheckout(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "graphql"})
 
-	_, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "does not match canonical inventory")
+	result, err := installReleaseLambdaAssetsForTest(releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.3", result.Version)
 }
 
 func TestInstallReleaseLambdaAssets_AcceptsPathSortedBundleManifest(t *testing.T) {
@@ -130,9 +128,8 @@ func TestInstallReleaseLambdaAssets_AcceptsPathSortedBundleManifest(t *testing.T
 	require.NoError(t, os.WriteFile(filepath.Join(sourceRepo, "bin", "graphql-ws.zip"), []byte("graphql-ws zip"), 0o644))
 
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"graphql", "graphql-ws"})
 
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	result, err := installReleaseLambdaAssetsForTest(releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.3", result.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
@@ -144,9 +141,8 @@ func TestInstallReleaseLambdaAssets_AcceptsCanonicalInventoryDeclaredOutOfOrder(
 		"inbox": "inbox zip",
 	})
 	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"inbox", "api"})
 
-	result, err := installReleaseLambdaAssets(targetRepo, releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
+	result, err := installReleaseLambdaAssetsForTest(releaseDir, filepath.Join(t.TempDir(), "lambda-assets"))
 	require.NoError(t, err)
 	require.Equal(t, "v1.2.3", result.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
@@ -155,13 +151,23 @@ func TestInstallReleaseLambdaAssets_AcceptsCanonicalInventoryDeclaredOutOfOrder(
 func TestVerifyReleaseChecksums_MissingEntry(t *testing.T) {
 	releaseDir := t.TempDir()
 	files := releaseFileSet{
-		checksumsPath:       filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
-		releaseManifestPath: filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
-		bundleArchivePath:   filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
-		bundleManifestPath:  filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		checksumsPath:        filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
+		releaseManifestPath:  filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
+		bundleArchivePath:    filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
+		bundleManifestPath:   filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		authUIArchivePath:    filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName),
+		assemblyArchivePath:  filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName),
+		assemblyManifestPath: filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName),
 	}
 
-	for _, path := range []string{files.releaseManifestPath, files.bundleArchivePath, files.bundleManifestPath} {
+	for _, path := range []string{
+		files.releaseManifestPath,
+		files.bundleArchivePath,
+		files.bundleManifestPath,
+		files.authUIArchivePath,
+		files.assemblyArchivePath,
+		files.assemblyManifestPath,
+	} {
 		require.NoError(t, os.WriteFile(path, []byte("content"), 0o644))
 	}
 
@@ -173,23 +179,44 @@ func TestVerifyReleaseChecksums_MissingEntry(t *testing.T) {
 	require.Contains(t, err.Error(), "checksums.txt missing entry for lesser-lambda-bundle.json")
 }
 
+func installReleaseLambdaAssetsForTest(releaseDir string, assetRoot string) (releaseLambdaInstallResult, error) {
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	if err != nil {
+		return releaseLambdaInstallResult{}, err
+	}
+	return installReleaseLambdaAssetsFromVerified(release, assetRoot)
+}
+
 func TestVerifyReleaseChecksums_ChecksumMismatch(t *testing.T) {
 	releaseDir := t.TempDir()
 	files := releaseFileSet{
-		checksumsPath:       filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
-		releaseManifestPath: filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
-		bundleArchivePath:   filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
-		bundleManifestPath:  filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		checksumsPath:        filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
+		releaseManifestPath:  filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
+		bundleArchivePath:    filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
+		bundleManifestPath:   filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		authUIArchivePath:    filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName),
+		assemblyArchivePath:  filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName),
+		assemblyManifestPath: filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName),
 	}
 
-	for _, path := range []string{files.releaseManifestPath, files.bundleArchivePath, files.bundleManifestPath} {
+	for _, path := range []string{
+		files.releaseManifestPath,
+		files.bundleArchivePath,
+		files.bundleManifestPath,
+		files.authUIArchivePath,
+		files.assemblyArchivePath,
+		files.assemblyManifestPath,
+	} {
 		require.NoError(t, os.WriteFile(path, []byte("content"), 0o644))
 	}
 
 	err := verifyReleaseChecksums(files, map[string]string{
-		releaseassets.ReleaseManifestName:      fileSHA256Hex(t, files.releaseManifestPath),
-		releaseassets.LambdaBundleArchiveName:  fileSHA256Hex(t, files.bundleArchivePath),
-		releaseassets.LambdaBundleManifestName: strings.Repeat("0", 64),
+		releaseassets.ReleaseManifestName:        fileSHA256Hex(t, files.releaseManifestPath),
+		releaseassets.LambdaBundleArchiveName:    fileSHA256Hex(t, files.bundleArchivePath),
+		releaseassets.LambdaBundleManifestName:   strings.Repeat("0", 64),
+		releaseassets.AuthUIBundleArchiveName:    fileSHA256Hex(t, files.authUIArchivePath),
+		releaseassets.DeployAssemblyArchiveName:  fileSHA256Hex(t, files.assemblyArchivePath),
+		releaseassets.DeployAssemblyManifestName: fileSHA256Hex(t, files.assemblyManifestPath),
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "lesser-lambda-bundle.json checksum mismatch")
@@ -201,6 +228,9 @@ func TestRequiredReleaseFiles_RejectsDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(releaseDir, releaseassets.ReleaseManifestName), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName), []byte("bundle"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName), []byte("manifest"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName), []byte("auth-ui"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName), []byte("assembly"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName), []byte("descriptor"), 0o644))
 
 	_, err := requiredReleaseFiles(releaseDir)
 	require.Error(t, err)
@@ -509,6 +539,86 @@ func TestCopyFile_ErrorsWhenSourceMissing(t *testing.T) {
 	require.Contains(t, err.Error(), "open extracted file")
 }
 
+func TestInstallExtractedBundleFiles_Success(t *testing.T) {
+	stagingDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(stagingDir, "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stagingDir, "bin", "api.zip"), []byte("api zip"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(stagingDir, "bin", "inbox.zip"), []byte("inbox zip"), 0o644))
+
+	assetRoot := filepath.Join(t.TempDir(), "lambda-assets")
+	files, err := installExtractedBundleFiles(assetRoot, stagingDir, []releaseassets.LambdaBundleManifestFile{
+		{Path: "bin/api.zip", Lambda: "api"},
+		{Path: "bin/inbox.zip", Lambda: "inbox"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		filepath.Join(assetRoot, "bin", "api.zip"),
+		filepath.Join(assetRoot, "bin", "inbox.zip"),
+	}, files)
+
+	apiBytes, err := os.ReadFile(filepath.Join(assetRoot, "bin", "api.zip"))
+	require.NoError(t, err)
+	require.Equal(t, "api zip", string(apiBytes))
+}
+
+func TestCopyFileAndChecksumHelpers_Success(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "staging", "api.zip")
+	require.NoError(t, os.MkdirAll(filepath.Dir(sourcePath), 0o755))
+	require.NoError(t, os.WriteFile(sourcePath, []byte("api zip"), 0o644))
+
+	targetPath := filepath.Join(root, "deploy", "api.zip")
+	require.NoError(t, os.MkdirAll(filepath.Dir(targetPath), 0o755))
+	require.NoError(t, copyFile(targetPath, sourcePath))
+
+	targetBytes, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, "api zip", string(targetBytes))
+
+	actualSHA, err := sha256File(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, sha256HexString("api zip"), actualSHA)
+	require.NoError(t, verifyFileChecksum(targetPath, actualSHA, "api.zip"))
+
+	type checksumDoc struct {
+		Name string `json:"name"`
+	}
+	jsonPath := filepath.Join(root, "doc.json")
+	require.NoError(t, os.WriteFile(jsonPath, []byte(`{"name":"lesser"}`), 0o644))
+
+	var doc checksumDoc
+	require.NoError(t, readJSONFile(jsonPath, &doc))
+	require.Equal(t, "lesser", doc.Name)
+}
+
+func TestCopyFile_ErrorsWhenTargetCreateFails(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "staging", "api.zip")
+	require.NoError(t, os.MkdirAll(filepath.Dir(sourcePath), 0o755))
+	require.NoError(t, os.WriteFile(sourcePath, []byte("api zip"), 0o644))
+
+	err := copyFile(filepath.Join(root, "missing", "nested", "api.zip"), sourcePath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create target file")
+}
+
+func TestInstallReleaseLambdaAssetsFromVerified_ErrorsWhenWorkspaceBlocked(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	require.NoError(t, err)
+
+	blockedParent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(blockedParent, []byte("blocked"), 0o644))
+
+	_, err = installReleaseLambdaAssetsFromVerified(release, filepath.Join(blockedParent, "lambda-assets"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "reset release workspace")
+}
+
 func TestValidateBundleManifest(t *testing.T) {
 	releaseManifest := validReleaseManifest()
 	tests := []struct {
@@ -674,8 +784,230 @@ func TestNormalizeReleaseAssetPath(t *testing.T) {
 	}
 }
 
+func TestInstallReleaseDeployAssemblyFromVerified_StagesTemplatesAndAssets(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	payload := validReleaseAssemblyPayloadManifest()
+	assetBody := "console.log('release asset');\n"
+	payload.Assets = []releaseDeployAssemblyAssetManifest{
+		{
+			ObjectKey:   "release/v1/assets/frontend/main.js",
+			ArchivePath: "assets/frontend/main.js",
+			SHA256:      sha256HexString(assetBody),
+			SizeBytes:   int64(len(assetBody)),
+		},
+	}
+	writeDeployAssemblyFixture(t, releaseDir, payload, map[string]string{
+		"assets/frontend/main.js": assetBody,
+	})
+
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	require.NoError(t, err)
+
+	result, err := installReleaseDeployAssemblyFromVerified(release, filepath.Join(t.TempDir(), "deploy-assembly"))
+	require.NoError(t, err)
+	require.Equal(t, "manifest.json", result.PayloadEntrypoint)
+	require.FileExists(t, result.SharedTemplate)
+	require.FileExists(t, result.StageTemplates[naming.StageDev])
+	require.FileExists(t, result.StageTemplates[naming.StageStaging])
+	require.FileExists(t, result.StageTemplates[naming.StageLive])
+	require.Len(t, result.Assets, 1)
+	require.Equal(t, "release/v1/assets/frontend/main.js", result.Assets[0].ObjectKey)
+	require.FileExists(t, result.Assets[0].LocalPath)
+
+	assetBytes, err := os.ReadFile(result.Assets[0].LocalPath)
+	require.NoError(t, err)
+	require.Equal(t, assetBody, string(assetBytes))
+}
+
+func TestInstallReleaseDeployAssets_StagesWorkspaceRoots(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	workspaceRoot := filepath.Join(t.TempDir(), "deploy")
+	result, err := installReleaseDeployAssets(releaseDir, workspaceRoot)
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.3", result.Version)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.GitSHA)
+	require.Equal(t, filepath.Join(workspaceRoot, "lambda-assets"), result.LambdaAssetRoot)
+	require.Equal(t, filepath.Join(workspaceRoot, releaseAuthUIWorkspaceName), result.AuthUIDir)
+	require.Equal(t, filepath.Join(workspaceRoot, releaseDeployAssemblyWorkspaceName), result.Assembly.RootDir)
+	require.FileExists(t, filepath.Join(result.AuthUIDir, "index.html"))
+	require.FileExists(t, result.Assembly.SharedTemplate)
+	require.Len(t, result.LambdaFiles, 2)
+}
+
+func TestInstallReleaseDeployAssemblyFromVerified_ErrorsWhenArchiveContentsDrift(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	writeDeployAssemblyFixture(t, releaseDir, validReleaseAssemblyPayloadManifest(), map[string]string{
+		"assets/frontend/extra.js": "console.log('extra');\n",
+	})
+
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	require.NoError(t, err)
+
+	_, err = installReleaseDeployAssemblyFromVerified(release, filepath.Join(t.TempDir(), "deploy-assembly"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deploy assembly archive contents do not match payload manifest")
+}
+
+func TestInstallReleaseAuthUIBundleFromVerified_ErrorsWhenIndexMissing(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	writeAuthUIBundleFixture(t, releaseDir, map[string]string{
+		"assets/app.js": "console.log('auth');\n",
+	})
+
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	require.NoError(t, err)
+
+	err = installReleaseAuthUIBundleFromVerified(release, filepath.Join(t.TempDir(), "auth-ui"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "auth-ui archive missing index.html")
+}
+
+func TestInstallReleaseDeployAssets_ErrorsWhenAuthUIBundleInvalid(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	writeAuthUIBundleFixture(t, releaseDir, map[string]string{
+		"assets/app.js": "console.log('auth');\n",
+	})
+
+	_, err := installReleaseDeployAssets(releaseDir, filepath.Join(t.TempDir(), "deploy"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "auth-ui archive missing index.html")
+}
+
+func TestLoadVerifiedReleaseAssets_RejectsDeployAssemblyDescriptorMismatch(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	descriptorPath := filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName)
+	descriptor, err := readDeployAssemblyDescriptorFile(descriptorPath)
+	require.NoError(t, err)
+
+	descriptor.Release.Version = "v9.9.9"
+	descriptorBytes, err := json.MarshalIndent(descriptor, "", "  ")
+	require.NoError(t, err)
+	descriptorBytes = append(descriptorBytes, '\n')
+	require.NoError(t, os.WriteFile(descriptorPath, descriptorBytes, 0o644))
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
+
+	_, err = loadVerifiedReleaseAssets(releaseDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match release manifest")
+}
+
+func TestLoadVerifiedReleaseAssets_RejectsInvalidDeployAssemblyDescriptorJSON(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	descriptorPath := filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName)
+	require.NoError(t, os.WriteFile(descriptorPath, []byte("{"), 0o644))
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
+
+	_, err := loadVerifiedReleaseAssets(releaseDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read deploy assembly descriptor")
+}
+
+func TestLoadVerifiedReleaseAssets_RejectsDeployAssemblyArchiveChecksumMismatch(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName), []byte("tampered"), 0o644))
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
+
+	_, err := loadVerifiedReleaseAssets(releaseDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deploy assembly archive checksum mismatch")
+}
+
+func TestExtractTarGzArchive_ErrorsOnInvalidArchiveAndVisitorFailure(t *testing.T) {
+	invalidArchive := filepath.Join(t.TempDir(), "invalid.tar.gz")
+	require.NoError(t, os.WriteFile(invalidArchive, []byte("not a gzip stream"), 0o644))
+
+	err := extractTarGzArchive(invalidArchive, func(*tar.Header, *tar.Reader) error { return nil })
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "open gzip stream")
+
+	validArchive := filepath.Join(t.TempDir(), "valid.tar.gz")
+	writeTarGzFixture(t, validArchive, map[string]string{
+		"assets/plain.txt": "plain",
+	})
+
+	err = extractTarGzArchive(validArchive, func(*tar.Header, *tar.Reader) error {
+		return errSentinel
+	})
+	require.ErrorIs(t, err, errSentinel)
+}
+
+func TestWriteExtractedFile_ErrorsOnCreateAndFinalizeFailures(t *testing.T) {
+	blockedParent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(blockedParent, []byte("blocked"), 0o644))
+
+	err := writeExtractedFile(filepath.Join(blockedParent, "plain.txt"), strings.NewReader("plain"), 5, "plain.txt")
+	require.ErrorContains(t, err, "create extraction dir")
+
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "existing-dir")
+	require.NoError(t, os.MkdirAll(targetPath, 0o755))
+
+	err = writeExtractedFile(targetPath, strings.NewReader("plain"), 5, "plain.txt")
+	require.ErrorContains(t, err, "finalize extracted file")
+}
+
+func TestResetAndFinalizeReleaseWorkspaceDir_ErrorsWhenParentBlocked(t *testing.T) {
+	blockedParent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(blockedParent, []byte("blocked"), 0o644))
+
+	err := resetReleaseWorkspaceDir(filepath.Join(blockedParent, "workspace"))
+	require.ErrorContains(t, err, "reset release workspace")
+
+	staging := filepath.Join(t.TempDir(), "staging")
+	require.NoError(t, os.MkdirAll(staging, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(staging, "new.txt"), []byte("new"), 0o644))
+
+	err = finalizeReleaseWorkspaceDir(filepath.Join(t.TempDir(), "missing-parent", "workspace"), staging)
+	require.ErrorContains(t, err, "finalize release workspace")
+}
+
 func testReleaseDirFromRepo(t *testing.T, repoRoot string) string {
 	t.Helper()
+
+	const (
+		version = "v1.2.3"
+		gitSHA  = "0123456789abcdef0123456789abcdef01234567"
+	)
 
 	releaseDir := t.TempDir()
 	for _, assetName := range []string{
@@ -686,13 +1018,15 @@ func testReleaseDirFromRepo(t *testing.T, repoRoot string) string {
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(releaseDir, assetName), []byte(assetName), 0o755))
 	}
+	require.NoError(t, releaseassets.WriteAuthUIBundle(repoRoot, releaseDir))
+	writeMinimalDeployAssembly(t, releaseDir, version, gitSHA)
 	files, err := releaseassets.WriteLambdaBundle(repoRoot, releaseDir)
 	require.NoError(t, err)
-	_, err = releaseassets.WriteLambdaBundleManifest(releaseDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567", files)
+	_, err = releaseassets.WriteLambdaBundleManifest(releaseDir, version, gitSHA, files)
 	require.NoError(t, err)
 	_, err = releaseassets.WriteReleaseManifest(releaseDir, releaseassets.ReleaseManifestInput{
-		Version:              "v1.2.3",
-		GitSHA:               "0123456789abcdef0123456789abcdef01234567",
+		Version:              version,
+		GitSHA:               gitSHA,
 		GoVersion:            "go1.26.1",
 		CDKMajor:             2,
 		ReceiptSchemaVersion: 7,
@@ -721,8 +1055,9 @@ func testRepoWithCanonicalInventory(t *testing.T, lambdas []string) string {
 
 	repoRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "auth-ui", "dist"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "package.json"), []byte("{\n  \"name\": \"auth-ui\"\n}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "auth-ui", "dist", "index.html"), []byte("<html/>"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{\n  \"app\": \"go run main.go\"\n}\n"), 0o644))
 	inventoryPath := filepath.Join(repoRoot, "infra", "cdk", "inventory")
 	require.NoError(t, os.MkdirAll(inventoryPath, 0o755))
@@ -757,9 +1092,163 @@ func validReleaseManifest() releaseassets.ReleaseManifest {
 					ManifestKind:          releaseassets.LambdaBundleManifestKind,
 					ManifestSchemaVersion: releaseassets.LambdaBundleManifestSchemaVersion,
 				},
+				AuthUIBundle: releaseassets.ReleaseAuthUIBundleRef{
+					Path:   releaseassets.AuthUIBundleArchiveName,
+					Format: "tar.gz",
+				},
+				DeployAssembly: releaseassets.ReleaseDeployAssemblyRef{
+					Path:                  releaseassets.DeployAssemblyArchiveName,
+					ManifestPath:          releaseassets.DeployAssemblyManifestName,
+					ManifestKind:          releaseassets.DeployAssemblyManifestKind,
+					ManifestSchemaVersion: releaseassets.DeployAssemblyManifestSchemaVersion,
+				},
 			},
 		},
 	}
+}
+
+func writeMinimalDeployAssembly(t *testing.T, releaseDir, version, gitSHA string) {
+	t.Helper()
+
+	payload := releaseDeployAssemblyPayloadManifest{
+		Kind:          releaseAssemblyPayloadManifestKind,
+		SchemaVersion: releaseAssemblyPayloadManifestSchema,
+		Release: releaseassets.LambdaBundleRelease{
+			Name:    "lesser",
+			Version: version,
+			GitSHA:  gitSHA,
+		},
+		Stacks: []releaseDeployAssemblyStackManifest{
+			{Name: string(naming.StageShared), TemplatePath: releaseAssemblySharedTemplatePath, SHA256: sha256HexString(`{"Parameters":{"AppSlug":{"Type":"String"}}}`)},
+			{Name: string(naming.StageDev), Stage: string(naming.StageDev), TemplatePath: "templates/lesser-managed-dev.template.json", SHA256: sha256HexString(`{"Parameters":{"AppSlug":{"Type":"String"}}}`)},
+			{Name: string(naming.StageStaging), Stage: string(naming.StageStaging), TemplatePath: "templates/lesser-managed-staging.template.json", SHA256: sha256HexString(`{"Parameters":{"AppSlug":{"Type":"String"}}}`)},
+			{Name: string(naming.StageLive), Stage: string(naming.StageLive), TemplatePath: "templates/lesser-managed-live.template.json", SHA256: sha256HexString(`{"Parameters":{"AppSlug":{"Type":"String"}}}`)},
+		},
+		Assets: []releaseDeployAssemblyAssetManifest{},
+	}
+
+	templateBodies := map[string]string{
+		releaseAssemblySharedTemplatePath:                `{"Parameters":{"AppSlug":{"Type":"String"}}}`,
+		"templates/lesser-managed-dev.template.json":     `{"Parameters":{"AppSlug":{"Type":"String"}}}`,
+		"templates/lesser-managed-staging.template.json": `{"Parameters":{"AppSlug":{"Type":"String"}}}`,
+		"templates/lesser-managed-live.template.json":    `{"Parameters":{"AppSlug":{"Type":"String"}}}`,
+	}
+
+	archivePath := filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName)
+	f, err := os.Create(archivePath)
+	require.NoError(t, err)
+
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	writeEntry := func(name string, data []byte) {
+		require.NoError(t, tw.WriteHeader(&tar.Header{
+			Name: name,
+			Mode: 0o644,
+			Size: int64(len(data)),
+		}))
+		_, copyErr := tw.Write(data)
+		require.NoError(t, copyErr)
+	}
+
+	payloadData, err := json.MarshalIndent(payload, "", "  ")
+	require.NoError(t, err)
+	payloadData = append(payloadData, '\n')
+	writeEntry("manifest.json", payloadData)
+	for _, name := range []string{
+		releaseAssemblySharedTemplatePath,
+		"templates/lesser-managed-dev.template.json",
+		"templates/lesser-managed-staging.template.json",
+		"templates/lesser-managed-live.template.json",
+	} {
+		writeEntry(name, []byte(templateBodies[name]))
+	}
+
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.NoError(t, f.Close())
+
+	descriptor := releaseassets.DeployAssemblyDescriptor{
+		Kind:          releaseassets.DeployAssemblyManifestKind,
+		SchemaVersion: releaseassets.DeployAssemblyManifestSchemaVersion,
+		Release: releaseassets.LambdaBundleRelease{
+			Name:    "lesser",
+			Version: version,
+			GitSHA:  gitSHA,
+		},
+		Assembly: releaseassets.DeployAssemblyAsset{
+			Path:   releaseassets.DeployAssemblyArchiveName,
+			Format: "tar.gz",
+			SHA256: fileSHA256Hex(t, archivePath),
+		},
+		Payload: releaseassets.DeployAssemblyPayload{
+			Kind:            "lesser.cloudformation_release_assembly",
+			ContractVersion: 1,
+			Entrypoint:      "manifest.json",
+		},
+		Compatibility: releaseassets.DeployAssemblyCompatibility{
+			ReleaseManifestPath:     releaseassets.ReleaseManifestName,
+			DeployArtifactsKey:      "deploy_assembly",
+			ExecutorContractVersion: 1,
+		},
+		InstanceInputs: releaseassets.DeployAssemblyInstanceInputs{
+			Required: []string{"app_identity", "aws_target", "base_domain", "hosted_zone", "stage_plan"},
+			Optional: []string{"feature_config", "managed_service_urls", "provisioning_input", "bootstrap_io"},
+		},
+		Verification: releaseassets.DeployAssemblyVerification{
+			IntegrityRequired: []string{"assembly.sha256", "checksums.txt"},
+			PreflightRequired: []string{"instance_input_validation", "release_manifest_compatibility"},
+		},
+	}
+
+	descriptorData, err := json.MarshalIndent(descriptor, "", "  ")
+	require.NoError(t, err)
+	descriptorData = append(descriptorData, '\n')
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName), descriptorData, 0o644))
+}
+
+func writeAuthUIBundleFixture(t *testing.T, releaseDir string, entries map[string]string) {
+	t.Helper()
+
+	writeTarGzFixture(t, filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName), entries)
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
+}
+
+func writeDeployAssemblyFixture(
+	t *testing.T,
+	releaseDir string,
+	payload releaseDeployAssemblyPayloadManifest,
+	extraEntries map[string]string,
+) {
+	t.Helper()
+
+	releaseManifest, err := readReleaseManifestFile(filepath.Join(releaseDir, releaseassets.ReleaseManifestName))
+	require.NoError(t, err)
+
+	entries := map[string]string{}
+	payloadBytes, err := json.MarshalIndent(payload, "", "  ")
+	require.NoError(t, err)
+	entries["manifest.json"] = string(append(payloadBytes, '\n'))
+
+	for _, stack := range payload.Stacks {
+		entries[stack.TemplatePath] = `{"Parameters":{"AppSlug":{"Type":"String"}}}`
+	}
+	for path, body := range extraEntries {
+		entries[path] = body
+	}
+
+	archivePath := filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName)
+	writeTarGzFixture(t, archivePath, entries)
+
+	descriptor := validDeployAssemblyDescriptor(releaseManifest)
+	descriptor.Release.Version = releaseManifest.Version
+	descriptor.Release.GitSHA = releaseManifest.GitSHA
+	descriptor.Assembly.SHA256 = fileSHA256Hex(t, archivePath)
+
+	descriptorBytes, err := json.MarshalIndent(descriptor, "", "  ")
+	require.NoError(t, err)
+	descriptorBytes = append(descriptorBytes, '\n')
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName), descriptorBytes, 0o644))
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
 }
 
 func validBundleManifest() releaseassets.LambdaBundleManifest {
@@ -801,7 +1290,14 @@ func writeBundleArchive(t *testing.T, entries map[string]string) string {
 	t.Helper()
 
 	bundlePath := filepath.Join(t.TempDir(), releaseassets.LambdaBundleArchiveName)
-	f, err := os.Create(bundlePath)
+	writeTarGzFixture(t, bundlePath, entries)
+	return bundlePath
+}
+
+func writeTarGzFixture(t *testing.T, path string, entries map[string]string) {
+	t.Helper()
+
+	f, err := os.Create(path)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
 
@@ -824,8 +1320,6 @@ func writeBundleArchive(t *testing.T, entries map[string]string) string {
 	require.NoError(t, tw.Close())
 	require.NoError(t, gz.Close())
 	require.NoError(t, f.Close())
-
-	return bundlePath
 }
 
 func fileSHA256Hex(t *testing.T, path string) string {

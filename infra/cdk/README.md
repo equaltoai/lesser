@@ -1,14 +1,19 @@
 # Lesser CDK Infrastructure
 
-This directory contains the AWS CDK app (`infra/cdk/main.go`) used to deploy Lesser. Operator deployments are managed by the `lesser` CLI, which shells out to `cdk deploy`.
+This directory contains the AWS CDK app (`infra/cdk/main.go`) used to synthesize Lesser infrastructure.
+
+Operator deployments are managed by the `lesser` CLI:
+
+- source mode shells out to `cdk deploy`
+- release mode consumes the release-published deploy assembly and does not require a repo-local CDK checkout at deploy time
 
 ## Operator Deployments
 
 Prefer `lesser up` from the repo root:
 
 - Builds Lambda zip artifacts in `bin/`
-- Runs `cdk bootstrap` (if needed)
-- Deploys the shared stack, then each stage stack
+- In source mode, runs `cdk bootstrap` (if needed) and deploys the shared stack, then each stage stack
+- In release mode, deploys the shared and stage stacks from the release-published CloudFormation assembly
 - Writes a local receipt to `~/.lesser/<app>/<base-domain>/state.json`
 
 See `docs/deployment.md` for the operator workflow.
@@ -48,7 +53,7 @@ Stage stacks reference zip artifacts in `<lambdaAssetRoot>/bin/*.zip`.
 
 ### Artifact-root propagation chain
 
-Managed artifact mode depends on one explicit propagation chain:
+The `lambdaAssetRoot` propagation chain matters for direct CDK consumers and the legacy source-mode deploy path:
 
 1. `lesser up --release-dir ...` prepares `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 2. `cmd/lesser/up.go` passes that staged path as `cdkDeployRequest.LambdaAssetRoot`
@@ -57,8 +62,8 @@ Managed artifact mode depends on one explicit propagation chain:
 5. `infra/cdk/stacks/lesser_api_stack.go` threads the configured `lambdaAssetRoot` into `constructs.LambdaFunctionsProps`
 6. `infra/cdk/constructs/lambda_functions.go` binds every inventory Lambda asset from `<lambdaAssetRoot>/bin/<name>.zip`
 
-If any boundary in that chain drops `lambdaAssetRoot`, artifact mode silently falls back to repo-local `bin/*.zip`, which
-is exactly the regression the M7 hardening tests are meant to catch.
+If any boundary in that chain drops `lambdaAssetRoot`, source-mode deploys can silently fall back to repo-local `bin/*.zip`.
+Release-mode deploys do not use this chain; they consume the release-published deploy assembly instead.
 
 ## CDK Commands (Infra Contributors)
 

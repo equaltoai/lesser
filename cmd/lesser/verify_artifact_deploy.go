@@ -27,23 +27,22 @@ func runVerifyArtifactDeploy(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRootFn()
-	if err != nil {
-		return err
-	}
-
 	if err := verifyPublishedReleaseAssets(args.ReleaseDir); err != nil {
 		return err
 	}
 
-	assetRoot, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(repoRoot, args.ReleaseDir)
+	result, cleanup, err := stageReleaseAssetsForArtifactDeployVerification(args.ReleaseDir)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	if err := runArtifactDeployCertificationFn(repoRoot, assetRoot); err != nil {
-		return err
+	if repoRoot, repoErr := findRepoRootFn(); repoErr == nil {
+		if err := runArtifactDeployCertificationFn(repoRoot, result.LambdaAssetRoot); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("! skipping repo-backed artifact deploy certification: %v\n", repoErr)
 	}
 
 	fmt.Printf("✓ artifact-driven deploy certification passed for %s\n", args.ReleaseDir)
@@ -96,25 +95,31 @@ func verifyPublishedReleaseAssets(releaseDir string) error {
 	return nil
 }
 
-func stageReleaseAssetsForArtifactDeployVerification(repoRoot string, releaseDir string) (string, func(), error) {
+func stageReleaseAssetsForArtifactDeployVerification(
+	releaseDir string,
+) (releaseDeployAssetsInstallResult, func(), error) {
 	workRoot, err := os.MkdirTemp("", "lesser-artifact-deploy.")
 	if err != nil {
-		return "", nil, fmt.Errorf("create artifact deploy verification workspace: %w", err)
+		return releaseDeployAssetsInstallResult{}, nil, fmt.Errorf("create artifact deploy verification workspace: %w", err)
 	}
 
 	cleanup := func() {
 		_ = os.RemoveAll(workRoot)
 	}
 
-	assetRoot := filepath.Join(workRoot, "lambda-assets")
-	result, err := installReleaseLambdaAssetsFn(repoRoot, releaseDir, assetRoot)
+	result, err := installReleaseDeployAssetsFn(releaseDir, workRoot)
 	if err != nil {
 		cleanup()
-		return "", nil, err
+		return releaseDeployAssetsInstallResult{}, nil, err
 	}
 
-	fmt.Printf("✓ Staged %d Lambda artifact(s) from release %s into %s\n", len(result.Files), result.Version, assetRoot)
-	return assetRoot, cleanup, nil
+	fmt.Printf(
+		"✓ Staged %d Lambda artifact(s), auth UI bundle, and deploy assembly from release %s into %s\n",
+		len(result.LambdaFiles),
+		result.Version,
+		workRoot,
+	)
+	return result, cleanup, nil
 }
 
 func runArtifactDeployCertification(repoRoot string, assetRoot string) error {

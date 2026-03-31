@@ -18,9 +18,9 @@ This checklist is for maintainers preparing a release/deployable build.
 
 - [ ] Confirm the release contract still matches reality in `docs/contracts/release-driven-deploy-contract.md`
 - [ ] Confirm `dist/release/` contains the published deploy assets:
-  `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-release.json`, and `checksums.txt`
-- [ ] Remember that `--release-dir` artifact consumption exists now, but only the Lambda asset set is release-published;
-  CDK execution and auth UI deployment still depend on repo-local source until later immutable deploy milestones land
+  `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-auth-ui.tar.gz`,
+  `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json`, `lesser-release.json`, and `checksums.txt`
+- [ ] Confirm the published release assets are sufficient for `./lesser up --release-dir ...` without a repo checkout
 
 ## Deploy
 
