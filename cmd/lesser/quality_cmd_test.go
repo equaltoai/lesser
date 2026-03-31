@@ -152,6 +152,8 @@ func TestRunLint_BatchesDirectories(t *testing.T) {
 		"run",
 		"--config",
 		".golangci.yml",
+		"--timeout",
+		defaultGolangCILintTimeout,
 		"--fix",
 		"--concurrency",
 		"4",
@@ -162,6 +164,8 @@ func TestRunLint_BatchesDirectories(t *testing.T) {
 		"run",
 		"--config",
 		".golangci.yml",
+		"--timeout",
+		defaultGolangCILintTimeout,
 		"--fix",
 		"--concurrency",
 		"4",
@@ -190,7 +194,12 @@ func TestRunLintInBatches_FallsBackToSingleInvocationWhenNoDirectoriesFound(t *t
 		return nil
 	}
 
-	require.NoError(t, runLintInBatches(repoRoot, []string{"run", "--config", ".golangci.yml"}, map[string]string{"GOCACHE": t.TempDir()}, 2))
+	require.NoError(t, runLintInBatches(
+		repoRoot,
+		[]string{"run", "--config", ".golangci.yml", "--timeout", defaultGolangCILintTimeout},
+		map[string]string{"GOCACHE": t.TempDir()},
+		2,
+	))
 	require.Equal(t, "golangci-lint", gotName)
-	require.Equal(t, []string{"run", "--config", ".golangci.yml"}, gotArgs)
+	require.Equal(t, []string{"run", "--config", ".golangci.yml", "--timeout", defaultGolangCILintTimeout}, gotArgs)
 }

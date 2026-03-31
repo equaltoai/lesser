@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	defaultLintBatchSize   = 10
-	lesserLintBatchSizeEnv = "LESSER_LINT_BATCH_SIZE"
+	defaultLintBatchSize       = 10
+	defaultGolangCILintTimeout = "20m"
+	lesserLintBatchSizeEnv     = "LESSER_LINT_BATCH_SIZE"
 )
 
 func runFmt(_ []string) error {
@@ -73,7 +74,7 @@ func runLint(argv []string) error {
 		return err
 	}
 
-	args := []string{"run", "--config", ".golangci.yml"}
+	args := []string{"run", "--config", ".golangci.yml", "--timeout", defaultGolangCILintTimeout}
 	if disableGosec {
 		args = append(args, "--disable", "gosec")
 	}

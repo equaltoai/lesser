@@ -155,7 +155,10 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	require.NoError(t, runVerify([]string{"ci"}))
 	var sawBatchedLint bool
 	for _, call := range calls {
-		if !strings.HasPrefix(call, "golangci-lint run --config .golangci.yml --disable gosec --concurrency "+strconv.Itoa(defaultVerifyCIJobs)) {
+		if !strings.HasPrefix(
+			call,
+			"golangci-lint run --config .golangci.yml --timeout "+defaultGolangCILintTimeout+" --disable gosec --concurrency "+strconv.Itoa(defaultVerifyCIJobs),
+		) {
 			continue
 		}
 		if strings.Contains(call, "./cmd/lesser") && strings.Contains(call, "./pkg/common") {
