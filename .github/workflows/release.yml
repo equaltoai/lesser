@@ -40,6 +40,17 @@ jobs:
             go.sum
             infra/cdk/go.sum
 
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install AWS CDK CLI
+        run: npm install -g aws-cdk@2
+
       - name: Create and push tag (workflow_dispatch)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
@@ -87,6 +98,9 @@ jobs:
             dist/release/lesser-darwin-arm64
             dist/release/lesser-lambda-bundle.tar.gz
             dist/release/lesser-lambda-bundle.json
+            dist/release/lesser-auth-ui.tar.gz
+            dist/release/lesser-deploy-assembly.tar.gz
+            dist/release/lesser-deploy-assembly.json
             dist/release/checksums.txt
             dist/release/lesser-release.json
           )

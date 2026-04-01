@@ -43,7 +43,7 @@ if [[ -n "${RELEASE_DIR}" ]]; then
 fi
 
 echo "==> Artifact-driven deploy certification (cmd/lesser)"
-go test ./cmd/lesser -run 'TestInstallReleaseLambdaAssets_AcceptsCanonicalInventoryDeclaredOutOfOrder|TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas|TestRunUp_ReleaseDirPropagatesArtifactRootAcrossSharedAndStageDeploys|TestRunUp_ReleaseDirUsesRealCdkDeployPreparationWithoutRepoBin' -count=1
+go test ./cmd/lesser -run 'TestInstallReleaseLambdaAssets_DoesNotRequireRepoInventoryCheckout|TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas|TestRunUp_ReleaseDirDeploysSharedAndStageTemplatesFromReleaseAssembly|TestRunUp_ReleaseDirUploadsStageTemplatesFromReleaseAssembly' -count=1
 
 echo "==> Artifact-driven deploy certification (infra/cdk)"
 (

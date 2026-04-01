@@ -1,94 +1,87 @@
 # Lesser Release-Driven Deploy Contract
 
-This document freezes the current release-driven deploy contract and the next-step target contract for later immutable
-deploy milestones.
+This document describes the current release-driven deploy contract for Lesser.
 
-Its job is to make the current deploy path explicit before later milestones move work from deploy time into release
-time. When this document says a category or rule is "canonical", later implementation milestones should preserve that
-contract instead of reinventing new names or trust boundaries.
+Its job is to keep the deploy boundary stable:
+
+- build release-generic assets once per Lesser release
+- keep install-specific values outside those assets
+- let `lesser up --release-dir ...` consume the published release without needing a repo checkout
 
 ## Status
 
-- Current default deploy path: source-based `./lesser up`
-- First-phase Lambda release assets are now published as release artifacts
-- `lesser up` now supports artifact consumption through `--release-dir`, while source builds remain the default when that flag is absent
-- Explicit non-goal for milestone 0: claiming deploy execution is already fully immutable
-- Current operator truth: deploys still depend on repo-local CDK source, auth UI source, and deploy-time AWS state
+- Default deploy path: source-based `./lesser up`
+- Source-free deploy path: `./lesser up --release-dir <dir>`
+- Explicit source override: `./lesser up --release-dir <dir> --rebuild-lambdas`
+- Release-published deploy assets now include the Lambda bundle, auth UI bundle, and deploy assembly
+- Install-specific values remain deploy-time inputs; they are not baked into the published release bytes
 
-## M0.1 Current Mutable Deploy Inventory
+## Current Deploy Inventory
 
-The table below inventories the current release-driven path and separates Lesser-owned work from runner-owned work.
+The table below separates release-generic work from deploy-time execution.
 
 | Step | Current owner | Current source of truth / input | Deterministic at release time? | Must still happen at deploy time? |
 | --- | --- | --- | --- | --- |
-| Materialize a Lesser checkout or release payload for execution | Operator or `lesser-host` runner | Git checkout or downloaded release assets | No | Yes |
-| Provide AWS credentials, region, and deploy inputs | Operator or `lesser-host` runner | Ambient AWS auth, CLI flags, `--provisioning-input` JSON | No | Yes |
-| Resolve `app`, `base-domain`, hosted zone, and stage selection | Lesser CLI (`lesser up`) | CLI flags plus Route53 lookup | No | Yes |
-| Validate external toolchain (`aws`, `cdk`, `go`, `pnpm`) | Lesser CLI | Local machine / runner environment | No | Yes |
-| Build `bin/*.zip` Lambda artifacts | Lesser CLI | Repo-local Go source plus `infra/cdk/inventory/lambdas.go` | Yes | Today: yes. Future phase-1 goal: no |
-| Run `cdk bootstrap` for the target account and region | Lesser CLI | AWS account + region state | No | Yes |
-| Run `cdk deploy` for the shared and stage stacks | Lesser CLI | Repo-local `infra/cdk/`, deploy contexts, AWS account state | No | Yes |
-| Build `auth-ui/` and upload it to the auth bucket | Lesser CLI | Repo-local `auth-ui/` source and `pnpm` toolchain | Yes | Yes |
-| Write CloudFront invalidations and other deploy-time side effects | Lesser CLI | Stack outputs plus live AWS state | No | Yes |
+| Materialize a Lesser CLI binary and release payload | Operator or managed runner | Downloaded release assets | Yes | Yes |
+| Provide AWS credentials and install-specific inputs | Operator or managed runner | Ambient AWS auth, CLI flags, `--provisioning-input` JSON | No | Yes |
+| Resolve `app`, `base-domain`, hosted zone, and stage selection | Lesser CLI | CLI flags plus Route53 lookup | No | Yes |
+| Verify published release assets and stage them into the Lesser state dir | Lesser CLI | `checksums.txt`, `lesser-release.json`, bundle manifests, bundle archives | Yes | Yes |
+| Deploy the shared stack from the release-published template | Lesser CLI | `lesser-deploy-assembly.tar.gz` plus deploy-time parameters | Yes for template bytes, no for target AWS state | Yes |
+| Upload deploy assembly assets and stage templates to the shared release bucket | Lesser CLI | Release-published deploy assembly payload plus shared-stack outputs | Yes for asset bytes, no for destination state | Yes |
+| Deploy stage stacks from the release-published templates | Lesser CLI | Release-published stage templates plus deploy-time parameters | Yes for template bytes, no for target AWS state | Yes |
+| Publish the prebuilt auth UI bundle and invalidate CloudFront | Lesser CLI | `lesser-auth-ui.tar.gz` plus live stack outputs | Yes for bundle bytes, no for destination state | Yes |
 | Bootstrap instance state, sync feature config, and write the local receipt | Lesser CLI | DynamoDB tables, deploy outputs, local filesystem | No | Yes |
+| Build Lambdas or auth UI from source | Lesser CLI | Repo-local checkout plus toolchains | Yes | Only on the legacy source path |
 
-### Lesser-owned mutable work today
+### Lesser-owned deploy-time work
 
-These steps currently happen inside the `lesser` repo during `./lesser up`:
+These steps remain owned by `lesser up` even in source-free artifact mode:
 
-- Lambda compilation into `bin/*.zip`
-- CDK bootstrap and deploy execution
-- auth UI build and upload
-- deploy receipt and stage bootstrap writes
+- release verification
+- CloudFormation execution against live stacks
+- auth UI publication and CloudFront invalidation
+- receipt/bootstrap writes and stage bootstrap state changes
 
-### Runner-owned work today
+### Release-time deterministic work
 
-The managed runner currently orchestrates deploy execution, but it does not define Lesser deploy assets itself. Its
-responsibilities are:
+These now happen once per Lesser release instead of once per deploy:
 
-- deciding which Lesser revision or release to materialize
-- supplying AWS credentials and deploy inputs
-- invoking `./lesser up`
-- preserving any higher-level managed receipts outside this repo
+- building the `lesser` CLI binaries
+- compiling the canonical Lambda zip set
+- building the `auth-ui` bundle
+- synthesizing the shared and stage deploy templates
+- collecting deploy-time file assets into the deploy assembly
+- writing release manifests, descriptors, and `checksums.txt`
 
-### Release-time deterministic candidates
+## Published Artifact Taxonomy
 
-The current path mixes deterministic build work with truly deploy-time work. Milestone-0 freezes the distinction:
-
-- Deterministic release-time candidates:
-  `lesser` CLI binaries, `bin/*.zip` Lambda artifacts, and future release metadata that identifies those artifacts
-- Still inherently deploy-time:
-  CDK bootstrap, CloudFormation deploys, hosted-zone resolution, auth UI upload, bootstrap/admin state writes, and
-  local receipt generation
-
-## M0.2 Deploy Artifact Taxonomy
-
-Milestone-0 freezes four artifact categories. These names are part of the contract.
+These artifact category names are part of the contract.
 
 | Category ID | Canonical assets | Purpose | Primary consumers | Status |
 | --- | --- | --- | --- | --- |
-| `operator_cli` | `lesser-<os>-<arch>` | Human- or runner-invoked CLI executable | Operators, CI, `lesser-host` runner | Already published |
-| `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, artifact mode in `lesser up` | Already published |
-| `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | First-phase immutable deploy asset containing the canonical `bin/*.zip` set plus its manifest | Artifact mode in `lesser up`, managed runners | Published |
-| `deploy_assembly` | `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json` | Later deploy package that may include more than prebuilt Lambdas | Future thin deploy executor / managed runners | Contract target defined, but not yet published in live releases |
+| `operator_cli` | `lesser-<os>-<arch>` | Human- or runner-invoked CLI executable | Operators, CI, managed runners | Published |
+| `release_metadata` | `checksums.txt`, `lesser-release.json` | Release-level discovery and integrity metadata | Operators, CI, `lesser up --release-dir` | Published |
+| `lambda_bundle` | `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json` | Canonical `bin/*.zip` Lambda asset set plus manifest | `lesser up --release-dir`, certification, managed runners | Published |
+| `auth_ui_bundle` | `lesser-auth-ui.tar.gz` | Prebuilt auth UI payload for deploy-time upload | `lesser up --release-dir`, managed runners | Published |
+| `deploy_assembly` | `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json` | Release-published shared/stage templates plus deploy-time file assets and executor contract | `lesser up --release-dir`, certification, managed runners | Published |
 
 ### Taxonomy rules
 
-- Operator CLI binaries are not deploy assets. They execute deploy workflows but are not themselves the payload being
-  deployed.
-- First-phase immutable deploy work targets only the `lambda_bundle` category.
-- `deploy_assembly` is a separate future category and must not be backfilled into the first-phase Lambda bundle.
-- Deploy receipts, bootstrap key material, provisioning input JSON, and other instance-local files are runtime inputs
-  or outputs, not release artifacts.
-- CDK source, auth UI source, and repo-local helper scripts remain source inputs until a later milestone explicitly
-  publishes them as release artifacts.
+- CLI binaries execute deploy workflows, but they are not themselves the deploy payload.
+- Release artifacts must stay byte-identical for every consumer of the same Lesser release.
+- Deploy receipts, bootstrap key material, provisioning input JSON, and other local files are runtime inputs or outputs, not release artifacts.
+- Install-specific values must be supplied separately from the published release artifacts.
+- The top-level release manifest remains the discovery root:
+  - `artifacts.deploy_artifacts.lambda_bundle`
+  - `artifacts.deploy_artifacts.auth_ui_bundle`
+  - `artifacts.deploy_artifacts.deploy_assembly`
 
-## M0.3 Manifest And Checksum Contract For The Lambda Bundle
+## Lambda Bundle Contract
 
-The first-phase Lambda deploy artifact category uses two canonical release assets:
+The Lambda deploy artifact category uses two canonical release assets:
 
-- `lesser-lambda-bundle.tar.gz`: archive that reproduces the deployable `bin/*.zip` layout inside the local deploy workspace after extraction
-- `lesser-lambda-bundle.json`: machine-readable manifest for the archive contents
+- `lesser-lambda-bundle.tar.gz`
+- `lesser-lambda-bundle.json`
 
 The normative manifest schema is:
 
@@ -101,45 +94,32 @@ The illustrative example is:
 ### Manifest rules
 
 - `kind` is always `lesser.lambda_bundle_manifest`.
-- `schema_version` starts at `1`. Any breaking shape change increments `schema_version` instead of reusing the old
-  meaning.
-- `release` identifies the Lesser release that published the bundle.
+- `schema_version` starts at `1`. Breaking shape changes increment `schema_version`.
 - `bundle.path` is always `lesser-lambda-bundle.tar.gz`.
-- `bundle.sha256` is the top-level checksum for the archive bytes exactly as published in the release.
-- `files[]` enumerates the extracted deploy layout that `lesser up` will materialize under `bin/`.
+- `bundle.sha256` is the checksum of the published archive bytes.
+- `files[]` enumerates the extracted deploy layout under `bin/`.
 - Every `files[].path` is a relative `bin/<lambda>.zip` path, sorted lexicographically, with no duplicates.
-- Every `files[].sha256` hashes the exact zip file bytes at that extracted path.
+- Every `files[].sha256` hashes the exact extracted zip file bytes.
 - Every `files[].size_bytes` records the extracted zip size in bytes.
-- `inventory_source.path` points at `infra/cdk/inventory/lambdas.go`, which remains the canonical source of truth for
-  the deployable Lambda set.
+- `inventory_source.path` points at `infra/cdk/inventory/lambdas.go`, which is still the canonical source of truth for the Lambda inventory at release build time.
 
 ### Checksum rules
 
 - `checksums.txt` remains the release-level checksum file for top-level published assets.
 - `lesser-lambda-bundle.tar.gz` and `lesser-lambda-bundle.json` must both appear in `checksums.txt`.
-- `bundle.sha256` duplicates the archive checksum inside the manifest so consumers can verify the deploy artifact even
-  after the bundle is staged away from the original release directory.
-- Consumers must reject the bundle if the archive checksum, manifest checksum, or any listed file checksum does not
-  match.
-- The manifest must enumerate the exact stage-stack Lambda zip set and exclude non-deploy extras such as
-  `cloudfront-keygen.zip`.
+- Consumers must reject the bundle if the archive checksum, manifest checksum, or any listed file checksum does not match.
+- The manifest must enumerate the exact stage-stack Lambda zip set and exclude non-deploy extras such as `cloudfront-keygen.zip`.
 
-## M0.4 Artifact Selection Rules For `lesser up`
+## `--release-dir` Contract For `lesser up`
 
-Milestone-0 chooses one canonical artifact-driven input surface for `lesser up`:
-
-- `--release-dir <path>`
-
-Phase one does not define a separate `--lambda-bundle <path>` flag. Operators and managed runners should stage the
-trusted release assets into a directory and hand that directory to `lesser up`.
+`--release-dir <path>` is the canonical artifact-driven input surface for Lesser deploys.
 
 ### Why `--release-dir` is canonical
 
 - Operators naturally download or mirror whole release assets.
 - Managed runners can materialize the same directory layout in ephemeral storage.
-- The CLI can verify release metadata, top-level checksums, and the Lambda bundle from one trust root.
-- A bundle-only flag would fragment trust, because the CLI would still need a second way to discover release metadata
-  and integrity expectations.
+- The CLI can verify release metadata, top-level checksums, the Lambda bundle, the auth UI bundle, and the deploy assembly from one trust root.
+- A bundle-only flag would fragment trust and create separate discovery paths for the same release.
 
 ### Required contents of `--release-dir`
 
@@ -149,157 +129,38 @@ Artifact mode requires these files in the release directory:
 - `lesser-release.json`
 - `lesser-lambda-bundle.tar.gz`
 - `lesser-lambda-bundle.json`
-
-Future milestones may add more files to the release directory, but first-phase Lambda deploy consumption only depends on
-the four files above.
+- `lesser-auth-ui.tar.gz`
+- `lesser-deploy-assembly.tar.gz`
+- `lesser-deploy-assembly.json`
 
 ### Selection and verification behavior
 
 When `--release-dir` is set, `lesser up` must:
 
 1. Fail fast if any required release file is missing.
-2. Verify `checksums.txt` for `lesser-release.json`, `lesser-lambda-bundle.tar.gz`, and `lesser-lambda-bundle.json`.
-3. Read `lesser-release.json` to confirm the release is a Lesser release and to discover
-   `artifacts.deploy_artifacts.lambda_bundle`.
-4. Validate `lesser-lambda-bundle.json` against schema version `1`.
-5. Verify the bundle archive checksum from the manifest.
-6. Extract the archive deterministically into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/bin/*.zip`.
-7. Verify every extracted `bin/<lambda>.zip` against the manifest before using it.
-8. Pass that staged asset root into CDK as the Lambda asset input and skip source-based Lambda compilation once verified assets are present.
+2. Verify `checksums.txt` for every published top-level deploy asset in the selected release directory.
+3. Read `lesser-release.json` to confirm the release identity and discover the canonical deploy artifact references.
+4. Validate and verify `lesser-lambda-bundle.json` plus `lesser-lambda-bundle.tar.gz`.
+5. Validate and verify `lesser-deploy-assembly.json` plus `lesser-deploy-assembly.tar.gz`.
+6. Extract and verify the Lambda bundle into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/bin/*.zip`.
+7. Extract the auth UI bundle into `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`.
+8. Extract and verify the deploy assembly into `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`.
+9. Deploy the shared and stage stacks from the verified release assembly instead of running repo-local `cdk synth` or `cdk deploy`.
+10. Upload the prebuilt auth UI bundle to the stack-selected auth UI bucket and preserve CloudFront invalidation behavior.
 
 ### Override rules
 
 - `--rebuild-lambdas` remains the explicit source-build override path.
-- If both `--release-dir` and `--rebuild-lambdas` are set, `--rebuild-lambdas` wins and `lesser up` rebuilds Lambdas from source.
-- Without `--release-dir`, `lesser up` continues to use the current source-based build path.
-- Invalid or incomplete release assets are hard errors in artifact mode; the CLI must not silently fall back to an
-  unrequested source build.
+- If both `--release-dir` and `--rebuild-lambdas` are set, source mode wins.
+- Without `--release-dir`, `lesser up` continues to use the existing source-based path.
+- Invalid or incomplete release assets are hard errors in artifact mode; the CLI must not silently fall back to an unrequested source build.
 
-## M0.5 Deploy-Time Responsibilities That Remain Instance-Specific
+## Deploy Assembly Contract
 
-Prebuilt Lambda release assets reduce compilation cost, but they do not eliminate deploy-time work. The following
-responsibilities remain deployment-specific even after first-phase Lambda bundles exist:
+The deploy assembly is the release-published infrastructure payload.
 
-| Responsibility | Why it remains deploy-time |
-| --- | --- |
-| AWS credential and account selection | Trust, billing, and target account state vary per deploy |
-| Hosted-zone lookup and stage-domain routing | Domain ownership and DNS records are instance-specific |
-| `cdk bootstrap` and `cdk deploy` execution | CloudFormation synthesis and updates depend on the target account, region, and stack history |
-| CDK context inputs such as `bodyEnabled`, `lesserHostUrl`, translation flags, tips, and AI toggles | These are per-instance configuration choices, not release artifacts |
-| Auth UI build and upload | The current deploy path still builds `auth-ui/` from repo-local source and uploads it separately |
-| CloudFront invalidations and post-deploy writes | These target live distributions, buckets, DynamoDB tables, and local receipts |
-| Bootstrap/admin state handling | Wallet/bootstrap behavior depends on the instance lifecycle and provisioning mode |
-
-### Honest first-phase scope
-
-The first-phase immutable deploy contract means:
-
-- Lesser releases can publish trusted Lambda deploy assets.
-- `lesser up` can consume those assets through `--release-dir` instead of recompiling handlers.
-
-It does not mean:
-
-- auth UI is already a release-published deploy artifact
-- CDK execution is detached from repo-local infrastructure source
-- deploys can run without AWS account, domain, or per-instance configuration context
-- managed runners no longer need to provide provisioning input or retain their own higher-level receipts
-
-### Current repo-local source assumptions that remain canonical
-
-Artifact-driven Lambda deployment is now supported, but `lesser up` still requires a Lesser checkout with these
-repo-local source inputs present:
-
-- `infra/cdk/cdk.json` and the surrounding `infra/cdk/` app, because CDK synthesis and deploy still run from source
-- `infra/cdk/inventory/lambdas.go`, because artifact mode validates the release bundle against the checkout's canonical Lambda inventory
-- `auth-ui/package.json` and the surrounding `auth-ui/` app, because auth UI upload is still built at deploy time
-
-The CLI now validates those repo-local source inputs up front so artifact mode fails with an explicit missing-source error
-instead of drifting into later `cdk` or `pnpm` failures.
-
-## M3 Managed-Runner Consumption Path
-
-Managed runners should treat artifact-driven deploy execution as a two-input model:
-
-- repo-local execution source that still contains `infra/cdk/` and `auth-ui/`
-- release-local deploy assets staged into `--release-dir`
-
-The minimal managed-runner input contract is:
-
-- a Lesser checkout with:
-  - `infra/cdk/cdk.json`
-  - `infra/cdk/inventory/lambdas.go`
-  - `auth-ui/package.json`
-- a checkout version whose canonical Lambda inventory matches the selected release bundle
-- a `lesser` CLI binary from that checkout
-- a release directory containing:
-  - `checksums.txt`
-  - `lesser-release.json`
-  - `lesser-lambda-bundle.tar.gz`
-  - `lesser-lambda-bundle.json`
-- deploy-time AWS credentials and instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, and bootstrap/output flags)
-
-When artifact mode runs successfully, the local Lesser state dir becomes the canonical execution workspace:
-
-- transient release extraction workspace: `~/.lesser/<app>/<base-domain>/deploy/release-lambda-assets.*`
-- staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
-- staged Lambda provenance metadata: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
-- per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
-- stable instance receipt: `~/.lesser/<app>/<base-domain>/state.json`
-
-This keeps the managed-runner contract explicit:
-
-- release assets are external deploy inputs, not mutable repo byproducts
-- repo-local CDK/auth-ui source still remains an execution prerequisite
-- the checkout must stay version-aligned with the release bundle because bundle validation uses the checkout's canonical Lambda inventory
-- receipt/output behavior stays in the same Lesser-owned state dir the operator path already uses
-
-## M4.1 Per-Instance Context Inventory That Still Blocks A Reusable Deploy Assembly
-
-Moving beyond prebuilt Lambdas requires naming which contexts still keep deploy execution instance-bound today.
-
-| Context family | Examples | Current source of truth | Release-generic or instance-bound? | Compile/release-time or deploy-time? | Why it still blocks a reusable deploy assembly today |
-| --- | --- | --- | --- | --- | --- |
-| App identity | `--app`, stack names, Lesser state-dir prefix | CLI flags and local receipt paths | Instance-bound | Deploy-time | The same release can be installed under different app slugs, so synthesized stack names and local state paths cannot be baked once per release |
-| Domain routing | `--base-domain`, per-stage domains, CloudFront aliases | CLI flags, `stageURLs`, Route53 resolution | Instance-bound | Deploy-time | DNS ownership and stage-domain mappings vary per deployment and depend on live hosted-zone/account state |
-| Hosted zone selection | hosted zone ID/name, public DNS authority | Route53 lookup in the target AWS account | Instance-bound | Deploy-time | The deploy executor must bind the release to the actual hosted zone for the target account instead of assuming one zone per release |
-| AWS target environment | account ID, region, bootstrap state, CDK environment | Ambient AWS auth and CDK bootstrap state | Instance-bound | Deploy-time | CloudFormation updates, bootstrap buckets, and trust boundaries are specific to the target account and region |
-| Stage state | stage stack history, prior outputs, stage-specific URLs | Existing CloudFormation stacks plus Lesser receipts | Instance-bound | Deploy-time | Stage deploys are updates against live stack history rather than one-shot release materialization |
-| Feature/config toggles | `bodyEnabled`, `lesserHostUrl`, translation flags, AI toggles, tips, managed provisioning inputs | CLI flags, env vars, provisioning JSON, stack context | Instance-bound | Deploy-time | These change behavior for one installation without changing the underlying release payload, so they must stay outside generic release artifacts |
-| Bootstrap/admin lifecycle | bootstrap receipts, setup completion state, admin writes | `~/.lesser/...`, DynamoDB, setup endpoints | Instance-bound | Deploy-time | Lifecycle state depends on what has already happened in the target installation |
-| Auth/UI publish destination | auth bucket name, CloudFront invalidation target | Stack outputs and live AWS state | Instance-bound output over release-generic source | Deploy-time for upload, release-time candidate for build | The UI source is generic, but the destination bucket/distribution is chosen from live stack outputs at deploy time |
-
-### Generic release state versus instance-bound deploy state
-
-The reusable pieces that belong to a release contract are:
-
-- the Lesser revision (`version`, `git_sha`) and its published checksums
-- the operator CLI binary that executes deploy workflows
-- the Lambda bundle and manifest that reproduce the canonical `bin/*.zip` set
-- the repo revision that defines the canonical CDK app, auth UI source, and Lambda inventory
-- any future published deploy assembly payload that is valid for every installation of that release
-
-The still-instance-bound pieces are:
-
-- app slug, base domain, hosted zone, AWS account, and region
-- stage stack history, bootstrap state, and prior CloudFormation outputs
-- per-instance feature/config toggles and provisioning input JSON
-- post-deploy side effects such as DNS records, invalidations, receipt writes, and bootstrap/admin state changes
-
-### Compile-time versus deploy-time contexts
-
-Milestone 4 keeps one boundary explicit:
-
-- Release-time / compile-time candidates: Lambda compilation, auth UI bundling, CDK or equivalent deploy assembly synthesis, release manifests, and checksums
-- Deploy-time only: AWS credential selection, hosted-zone lookup, stack update planning against live history, feature-flag injection, DNS writes, invalidations, and instance receipt/bootstrap updates
-
-## M4.2 Future Release Contract For A Publishable Deploy Assembly
-
-Milestone 4 does not publish a deploy assembly yet, but it does freeze the outer contract shape for when that happens.
-
-The future release directory layout for the `deploy_assembly` category is:
-
-- `lesser-deploy-assembly.tar.gz`: archive containing the release-published deploy assembly payload
-- `lesser-deploy-assembly.json`: descriptor that tells a thin deploy executor how to verify and interpret the archive
+- outer descriptor: `lesser-deploy-assembly.json`
+- payload archive: `lesser-deploy-assembly.tar.gz`
 
 The normative descriptor schema is:
 
@@ -309,171 +170,150 @@ The illustrative example is:
 
 - `docs/contracts/examples/lesser-deploy-assembly.example.json`
 
-### Why the contract uses a descriptor instead of freezing one payload format
+### Descriptor rules
 
-The outer Lesser contract stays stable even if the inner payload changes over time. That is why the descriptor freezes:
+- `kind` is always `lesser.deploy_assembly_descriptor`.
+- `schema_version` starts at `1`.
+- `assembly.path` is always `lesser-deploy-assembly.tar.gz`.
+- `payload.kind` identifies the inner assembly type.
+- `payload.entrypoint` points at the manifest inside the archive.
+- `compatibility.release_manifest_path` stays anchored to `lesser-release.json`.
+- `compatibility.deploy_artifacts_key` stays anchored to `deploy_assembly`.
+- `instance_inputs.required` and `instance_inputs.optional` freeze the canonical install-time input taxonomy.
 
-- the published archive path and checksum
-- the release identity (`name`, `version`, `git_sha`)
-- the payload kind and entrypoint
-- the executor compatibility contract
-- the required instance-input categories and verification expectations
+### Current payload shape
 
-The descriptor deliberately does not freeze one implementation such as AWS Cloud Assembly forever. Instead:
+The current deploy assembly payload packages:
 
-- `payload.kind` names the inner assembly type, such as `aws.cloud_assembly`
-- `payload.entrypoint` identifies the file inside the archive that the future executor should start from
-- `payload.contract_version` version-controls the inner payload independently of the outer Lesser descriptor
+- the shared CloudFormation template
+- the stage CloudFormation templates for `dev`, `staging`, and `live`
+- a payload manifest that records template and asset checksums
+- the deploy-time file assets referenced by those templates
 
-This leaves room for Cloud Assembly or an equivalent plan format without forcing the release contract to rename assets or
-change trust boundaries later.
+The stage templates are release-generic and install-time values flow in through parameters rather than release-time rewrites.
 
-### Compatibility with the current release manifest model
+## Canonical Install-Time Input Taxonomy
 
-When Lesser eventually publishes a deploy assembly, the top-level `lesser-release.json` contract should extend the
-existing `artifacts.deploy_artifacts` section instead of inventing a second discovery document.
+The release assembly descriptor freezes these input category names:
 
-The future shape is:
-
-- `artifacts.deploy_artifacts.deploy_assembly.path`
-- `artifacts.deploy_artifacts.deploy_assembly.manifest_path`
-- `artifacts.deploy_artifacts.deploy_assembly.manifest_kind`
-- `artifacts.deploy_artifacts.deploy_assembly.manifest_schema_version`
-
-That mirrors the existing `lambda_bundle` reference model:
-
-- release metadata points at one published archive plus one machine-readable descriptor
-- the descriptor carries the detailed contract for the archive contents and compatibility rules
-- `checksums.txt` remains the top-level integrity root for the published assets
-
-Milestone 4 does not change the live release manifest schema yet. It freezes the next-step target so the future
-`deploy_assembly` category can be added as a sibling of `lambda_bundle` rather than as a separate trust model.
-
-## M4.3 Separate Generic Release Artifacts From Instance-Specific Deploy Inputs
-
-The future deploy contract uses a two-part model:
-
-- generic release artifacts published once per Lesser release
-- instance-specific deploy inputs supplied separately for each installation or update
-
-### Generic release artifacts
-
-These artifacts must stay identical for every consumer of the same Lesser release:
-
-| Release artifact | Scope | Why it stays generic |
+| Input category | What it covers | Current executor surface |
 | --- | --- | --- |
-| `lesser-<os>-<arch>` CLI binaries | Release | They execute workflows, but they are not parameterized by one target installation |
-| `checksums.txt` and `lesser-release.json` | Release | They define discovery and integrity for the published assets |
-| `lesser-lambda-bundle.tar.gz` and `lesser-lambda-bundle.json` | Release | They reproduce the canonical Lambda asset set for that release |
-| Future `lesser-deploy-assembly.tar.gz` and `lesser-deploy-assembly.json` | Release | They package the reusable deploy assembly payload and its descriptor once per release |
-
-### Canonical instance-specific input set
-
-The future thin deploy executor should consume these input categories separately from the release artifacts:
-
-| Input category | What it covers | Why it stays instance-specific | Current operator / runner surface |
-| --- | --- | --- | --- |
-| `app_identity` | app slug, stack prefix, state-dir namespace | One release can be installed under many app names | `--app` and local receipt paths |
-| `aws_target` | AWS credentials, account, region, bootstrap environment | Trust and billing boundaries vary per deploy | AWS profile/env credentials plus CLI region resolution |
-| `base_domain` | root domain for the installation | Domains vary per customer/instance | `--base-domain` |
-| `hosted_zone` | actual Route53 hosted zone binding | The same domain may resolve in different AWS accounts or zones | Route53 lookup and optional operator choice |
-| `stage_plan` | which stages are being updated plus their live stack history | Deploys are updates against existing stage stacks | CloudFormation state and Lesser receipts |
-| `feature_config` | `bodyEnabled`, translation flags, AI toggles, tips, and similar behavior switches | These are installation-level decisions, not release identity | CLI flags, env vars, and provisioning input JSON |
-| `managed_service_urls` | `lesserHostUrl`, attestations URL, similar managed endpoints | Managed control-plane wiring differs by installation | provisioning input JSON or env vars |
-| `provisioning_input` | operator/runner-supplied bootstrap and managed config blob | It is provided per deploy request | `--provisioning-input` |
-| `bootstrap_io` | output/bootstrap file locations and receipt handling | File paths are runner-local execution concerns | `--out`, local Lesser state dir, managed receipts |
+| `app_identity` | app slug, stack prefix, state-dir namespace | `--app`, stack names, Lesser state dir |
+| `aws_target` | AWS credentials, account, region, live stack environment | ambient AWS auth plus SDK account/region resolution |
+| `base_domain` | root domain for the installation | `--base-domain` |
+| `hosted_zone` | actual Route53 hosted zone binding | Route53 lookup and selected hosted zone ID |
+| `stage_plan` | which stages are being deployed or updated | `--stage`, `--with-staging`, live stack history |
+| `feature_config` | install-level behavior flags such as translation and tips | CLI flags and provisioning input JSON |
+| `managed_service_urls` | managed control-plane URLs and instance-key ARN | CLI flags and provisioning input JSON |
+| `provisioning_input` | managed bootstrap/config blob supplied with the deploy request | `--provisioning-input` |
+| `bootstrap_io` | local output paths and receipt/bootstrap handling | `--out`, local Lesser state dir |
 
 ### Separation rules
 
-The contract boundary is:
+- Release artifacts may describe required input categories, but they must not embed per-install values.
+- App slugs, domains, hosted-zone IDs, AWS account state, feature flags, and provisioning JSON stay outside the published release bytes.
+- The same release directory must be reusable across different customers and domains without rewriting the artifact bytes.
+- Operators and managed runners should map their local invocation surfaces into the same canonical categories above.
 
-- release artifacts may describe required input categories, but they must not embed per-instance values
-- app names, domains, hosted-zone IDs, account IDs, feature flags, and provisioning JSON stay outside published artifacts
-- the same release artifact set must be reusable across different customers and domains without rewriting the artifact bytes
-- operators and managed runners should map their local invocation surfaces into the same canonical input categories above
-- `docs/contracts/deploy-assembly-descriptor.schema.json` freezes those exact category names so future descriptors cannot silently invent a different taxonomy
+## CloudFormation Parameter Contract
 
-This keeps the future deploy assembly usable by both modes:
+Install-specific values that affect the release assembly are expressed as CloudFormation parameters in the synthesized templates.
 
-- operators can continue supplying flags and files that map onto the canonical categories
-- managed runners can build the same category map from their higher-level job model without mutating the published release artifacts
+### Shared template parameters
 
-## M4.4 Migration Path From Source-Shelling `cdk deploy` To A Thin Deploy Executor
+- `AppSlug`
 
-Today, `./lesser up` still treats a source checkout as the deploy substrate:
+### Stage template required parameters
 
-- it shells into the repo-local CDK app
-- it validates or builds local deploy artifacts
-- it builds and uploads `auth-ui/` from source
-- it writes local receipts and bootstrap outputs in the same execution flow
+- `AppSlug`
+- `BaseDomain`
+- `HostedZoneId`
+- `ReleaseAssetBucketName`
 
-Milestone 4 freezes the migration path so later work can remove those source dependencies deliberately instead of by
-accident.
+### Stage template optional parameters
 
-### Target responsibilities for a thin deploy executor
+- `LesserHostUrl`
+- `LesserHostAttestationsUrl`
+- `LesserHostInstanceKeyArn`
+- `TranslationEnabled`
+- `TipEnabled`
+- `TipChainId`
+- `TipContractAddress`
 
-The future executor should still own only the work that must remain deploy-time:
+### Mapping notes
 
-- verify the selected release assets and their checksums
-- accept the canonical instance-input set for one installation
-- bind release artifacts to the target AWS account, region, domain, and hosted zone
-- execute the infrastructure update plan against live CloudFormation state
-- publish the resulting outputs, receipts, and post-deploy side effects
+- Shared-stack resources that are installation-specific but stable across stages are resolved through shared-stack outputs or dynamic SSM references at deploy time.
+- The release assembly keeps CloudFormation templates generic; it does not rewrite template bytes per installation.
+- `ReleaseAssetBucketName` binds the stage templates to the shared release-asset bucket created by the shared stack for that installation.
 
-The future executor should stop owning release-time work such as:
+## Managed Runner And Operator Execution Contract
 
-- compiling Lambdas from source
-- synthesizing the deploy assembly from repo-local CDK/app source
-- rebuilding any release-generic frontend payloads
-- discovering artifact shape from ad-hoc repo structure
+Artifact mode no longer requires a repo checkout.
 
-### Migration sequence
+The minimal source-free deploy inputs are:
 
-| Phase | Deploy substrate | What still comes from source? | What must move into release assets next? |
-| --- | --- | --- | --- |
-| Current M0-M3 path | source checkout plus optional `--release-dir` Lambda bundle | CDK app, auth UI source, Lambda inventory, helper scripts | reusable deploy assembly, auth UI artifact, executor-facing input contract |
-| M4 contract target | source checkout for execution, but with a frozen future deploy-assembly contract | CDK shelling and auth UI source still remain live dependencies | publishable deploy assembly descriptor/archive and explicit instance-input contract |
-| Future phase-2 executor | release directory plus instance-input set | only tooling needed to execute the deploy contract, not the full repo source tree | release-published infrastructure assembly, frontend payloads, and executor compatibility metadata |
+- a built `lesser` CLI binary from the selected release
+- a release directory containing the seven required published release assets
+- AWS credentials plus the normal instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, stage selection, and bootstrap/output flags as needed)
 
-### Dependencies that must become explicit future work
+When artifact mode runs successfully, the Lesser state dir becomes the canonical execution workspace:
 
-The migration cannot complete until Lesser publishes or freezes contracts for:
+- staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
+- Lambda provenance sidecar: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
+- staged auth UI bundle: `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`
+- staged deploy assembly: `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`
+- stable instance receipt: `~/.lesser/<app>/<base-domain>/state.json`
 
-- a deploy assembly payload that replaces repo-local CDK synthesis as the generic release artifact
-- release-published frontend assets, or an explicit reason the frontend remains outside the immutable path
-- executor compatibility rules for CloudFormation/bootstrap behavior against live AWS state
-- receipt/output contracts that preserve the current Lesser state-dir behavior without depending on a mutable checkout
+This keeps the runner contract explicit:
 
-Milestone 4 keeps those dependencies named. It does not imply they are already solved by the Lambda bundle milestone.
+- release assets are external deploy inputs, not mutable repo byproducts
+- the Lesser state dir is the canonical execution workspace
+- the same release directory can be reused across installations
+- install-specific values arrive through executor inputs and CloudFormation parameters, not by mutating the published release artifacts
 
-## M4.5 Phase-2 Cost, Latency, Reliability, And Verification Goals
+## Remaining Deploy-Time Responsibilities
 
-The next immutable deploy phase exists to solve an operational problem, not just to publish more files. The target
-state is a thinner deploy path that avoids repeated release-generic work during each installation or client update.
+Source-free release consumption removes rebuilds and repo-local synthesis, but it does not eliminate deploy-time work.
 
-### Outcome goals
+These responsibilities remain installation-specific:
 
-| Goal area | Current managed-deploy pain | Phase-2 target state | How success should be verified |
-| --- | --- | --- | --- |
-| Cost | Each deploy still pays for repo-local synthesis/build tooling beyond the Lambda bundle | Release-generic assembly work happens once per release publish, not once per deploy | Managed deploy logs show artifact verification plus executor work, but no repo-local Lambda compile, deploy-assembly synthesis, or frontend rebuild steps |
-| Latency | Mutable source preparation still delays deploy start and compounds runner time | A managed runner should reach the first live AWS deploy operation after artifact verification and input validation only, without any release-generic build stage in the path | Future runner smoke tests and timing instrumentation show deploy preparation is bounded by asset download/verification rather than by source builds |
-| Reliability | Repo drift and local toolchain state can change deploy behavior for the same release | The same release artifacts plus the same instance-input set should resolve to the same deploy assembly contract and verification results | Descriptor/checksum validation, executor compatibility checks, and source-independence smoke tests all pass for the same release/input pair |
-| Verification | Today the contract is partly implicit in repo layout and CLI behavior | The future executor must fail fast on missing assets, incompatible descriptor versions, or incomplete instance inputs before mutating AWS state | CI contract tests, release checks, and executor preflight tests catch drift before a live deploy begins |
+| Responsibility | Why it remains deploy-time |
+| --- | --- |
+| AWS credential and account selection | Trust, billing, and target account state vary per deploy |
+| Hosted-zone lookup and stage-domain routing | Domain ownership and DNS records are installation-specific |
+| CloudFormation stack execution against live shared and stage stacks | Updates depend on target account, region, and existing stack history |
+| Shared release bucket writes and template/asset publication | The destination bucket belongs to the target installation |
+| Auth UI upload and CloudFront invalidation | The destination bucket and distribution come from live stack outputs |
+| Bootstrap/admin lifecycle and feature-config sync | These depend on the current state of the installation |
+| Local receipt and bootstrap output writes | Output paths are local execution concerns |
 
-### Target-state verification guardrails
+## Source Mode Fallback
 
-Later implementation work should prove the phase-2 target with explicit checks:
+Legacy source mode is still supported and remains the default when `--release-dir` is omitted.
 
-- contract tests for the published deploy assembly descriptor schema and examples
-- release checks that the future deploy assembly assets and `lesser-release.json` references are present and checksummed
-- executor integration tests that consume release assets plus instance inputs without needing repo-local synthesis or rebuilds
-- managed-runner smoke tests that confirm the deploy path stays on the artifact/executor route rather than silently falling back to source-shelling
+That path still depends on:
 
-### What milestone 4 deliberately leaves unchanged
+- a repo checkout containing `infra/cdk/` and `auth-ui/`
+- local toolchains on `PATH` (`aws`, `cdk`, `go`, `pnpm`)
+- local Lambda builds and local auth UI builds during deploy
 
-Milestone 4 defines the target and the migration path, but it does not claim:
+This is now a compatibility path, not the only deploy path.
 
-- CDK source is already gone from deploy execution
-- auth UI is already a release-published immutable asset
-- a no-checkout deploy path is shipping today
-- managed deploy pain is solved by the Lambda bundle milestone alone
+## Verification And Certification Guardrails
+
+The release-driven deploy contract is enforced by:
+
+- contract schemas and examples:
+  - `docs/contracts/lambda-bundle-manifest.schema.json`
+  - `docs/contracts/deploy-assembly-descriptor.schema.json`
+  - `docs/contracts/examples/lesser-lambda-bundle.example.json`
+  - `docs/contracts/examples/lesser-deploy-assembly.example.json`
+- release asset verification in `lesser verify artifact-deploy --release-dir ...`
+- CI and release publication running `bash scripts/verify_artifact_deploy.sh`
+- targeted stack and CLI tests that prove release-mode deploys avoid repo-local rebuilds and repo-local `cdk synth`
+
+The certification goal is straightforward:
+
+- build once per release
+- verify once per release payload
+- let every deploy reuse the same published release artifacts with only install-time inputs changing

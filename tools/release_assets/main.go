@@ -42,6 +42,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+	if err := releaseassets.WriteAuthUIBundle(absRepoRoot, outDir); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	if version == "" || gitSHA == "" || goVersion == "" || cdkMajor == 0 || receiptSchemaVersion == 0 {
 		fmt.Fprintln(os.Stderr, "error: version, git-sha, go-version, cdk-major, and receipt-schema-version are required")
@@ -49,6 +53,10 @@ func main() {
 	}
 
 	if _, err := releaseassets.WriteLambdaBundleManifest(outDir, version, gitSHA, files); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+	if _, err := releaseassets.WriteDeployAssembly(absRepoRoot, outDir, version, gitSHA); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

@@ -24,92 +24,48 @@ type releaseLambdaInstallResult struct {
 	Files   []string
 }
 
-var installReleaseLambdaAssetsFn = installReleaseLambdaAssets
+const (
+	lesserReleaseName = "lesser"
+	tarGzFormat       = "tar.gz"
+)
 
 type releaseFileSet struct {
-	checksumsPath       string
-	releaseManifestPath string
-	bundleArchivePath   string
-	bundleManifestPath  string
-}
-
-func installReleaseLambdaAssets(repoRoot string, releaseDir string, assetRoot string) (releaseLambdaInstallResult, error) {
-	files, err := requiredReleaseFiles(releaseDir)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	checksums, err := readReleaseChecksums(files.checksumsPath)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-	if err := verifyReleaseChecksums(files, checksums); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	releaseManifest, err := readReleaseManifestFile(files.releaseManifestPath)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-	if err := validateReleaseManifest(releaseManifest); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	bundleManifest, err := readLambdaBundleManifestFile(files.bundleManifestPath)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-	if err := validateBundleManifest(bundleManifest, releaseManifest); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	if err := verifyFileChecksum(files.bundleArchivePath, bundleManifest.Bundle.SHA256, "bundle archive"); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-	if err := validateBundleAgainstInventory(repoRoot, bundleManifest); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	stagingDir, err := ensureReleaseStagingDir(assetRoot)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-	defer func() { _ = os.RemoveAll(stagingDir) }()
-
-	if err := extractBundleToStaging(files.bundleArchivePath, bundleManifest, stagingDir); err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	installedFiles, err := installExtractedBundleFiles(assetRoot, stagingDir, bundleManifest.Files)
-	if err != nil {
-		return releaseLambdaInstallResult{}, err
-	}
-
-	return releaseLambdaInstallResult{
-		Version: releaseManifest.Version,
-		GitSHA:  releaseManifest.GitSHA,
-		Files:   installedFiles,
-	}, nil
+	checksumsPath        string
+	releaseManifestPath  string
+	bundleArchivePath    string
+	bundleManifestPath   string
+	authUIArchivePath    string
+	assemblyArchivePath  string
+	assemblyManifestPath string
 }
 
 func requiredReleaseFiles(releaseDir string) (releaseFileSet, error) {
 	required := map[string]*string{
-		releaseassets.ChecksumsFileName:        nil,
-		releaseassets.ReleaseManifestName:      nil,
-		releaseassets.LambdaBundleArchiveName:  nil,
-		releaseassets.LambdaBundleManifestName: nil,
+		releaseassets.ChecksumsFileName:          nil,
+		releaseassets.ReleaseManifestName:        nil,
+		releaseassets.LambdaBundleArchiveName:    nil,
+		releaseassets.LambdaBundleManifestName:   nil,
+		releaseassets.AuthUIBundleArchiveName:    nil,
+		releaseassets.DeployAssemblyArchiveName:  nil,
+		releaseassets.DeployAssemblyManifestName: nil,
 	}
 
 	files := releaseFileSet{
-		checksumsPath:       filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
-		releaseManifestPath: filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
-		bundleArchivePath:   filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
-		bundleManifestPath:  filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		checksumsPath:        filepath.Join(releaseDir, releaseassets.ChecksumsFileName),
+		releaseManifestPath:  filepath.Join(releaseDir, releaseassets.ReleaseManifestName),
+		bundleArchivePath:    filepath.Join(releaseDir, releaseassets.LambdaBundleArchiveName),
+		bundleManifestPath:   filepath.Join(releaseDir, releaseassets.LambdaBundleManifestName),
+		authUIArchivePath:    filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName),
+		assemblyArchivePath:  filepath.Join(releaseDir, releaseassets.DeployAssemblyArchiveName),
+		assemblyManifestPath: filepath.Join(releaseDir, releaseassets.DeployAssemblyManifestName),
 	}
 	required[releaseassets.ChecksumsFileName] = &files.checksumsPath
 	required[releaseassets.ReleaseManifestName] = &files.releaseManifestPath
 	required[releaseassets.LambdaBundleArchiveName] = &files.bundleArchivePath
 	required[releaseassets.LambdaBundleManifestName] = &files.bundleManifestPath
+	required[releaseassets.AuthUIBundleArchiveName] = &files.authUIArchivePath
+	required[releaseassets.DeployAssemblyArchiveName] = &files.assemblyArchivePath
+	required[releaseassets.DeployAssemblyManifestName] = &files.assemblyManifestPath
 
 	for name, fullPath := range required {
 		info, err := os.Stat(*fullPath)
@@ -155,6 +111,9 @@ func verifyReleaseChecksums(files releaseFileSet, checksums map[string]string) e
 		{name: releaseassets.ReleaseManifestName, path: files.releaseManifestPath},
 		{name: releaseassets.LambdaBundleArchiveName, path: files.bundleArchivePath},
 		{name: releaseassets.LambdaBundleManifestName, path: files.bundleManifestPath},
+		{name: releaseassets.AuthUIBundleArchiveName, path: files.authUIArchivePath},
+		{name: releaseassets.DeployAssemblyArchiveName, path: files.assemblyArchivePath},
+		{name: releaseassets.DeployAssemblyManifestName, path: files.assemblyManifestPath},
 	} {
 		expected, ok := checksums[item.name]
 		if !ok {
@@ -179,7 +138,7 @@ func validateReleaseManifest(manifest releaseassets.ReleaseManifest) error {
 	if manifest.Schema != 1 {
 		return fmt.Errorf("unsupported release manifest schema %d", manifest.Schema)
 	}
-	if manifest.Name != "lesser" {
+	if manifest.Name != lesserReleaseName {
 		return fmt.Errorf("unexpected release manifest name %q", manifest.Name)
 	}
 	if manifest.Artifacts.DeployArtifacts.SchemaVersion != releaseassets.ReleaseDeployArtifactsSchemaVersion {
@@ -203,6 +162,28 @@ func validateReleaseManifest(manifest releaseassets.ReleaseManifest) error {
 		return fmt.Errorf("unsupported lambda bundle manifest schema %d", bundle.ManifestSchemaVersion)
 	}
 
+	authUI := manifest.Artifacts.DeployArtifacts.AuthUIBundle
+	if authUI.Path != releaseassets.AuthUIBundleArchiveName {
+		return fmt.Errorf("unexpected auth-ui bundle path %q", authUI.Path)
+	}
+	if authUI.Format != tarGzFormat {
+		return fmt.Errorf("unexpected auth-ui bundle format %q", authUI.Format)
+	}
+
+	assembly := manifest.Artifacts.DeployArtifacts.DeployAssembly
+	if assembly.Path != releaseassets.DeployAssemblyArchiveName {
+		return fmt.Errorf("unexpected deploy assembly path %q", assembly.Path)
+	}
+	if assembly.ManifestPath != releaseassets.DeployAssemblyManifestName {
+		return fmt.Errorf("unexpected deploy assembly manifest path %q", assembly.ManifestPath)
+	}
+	if assembly.ManifestKind != releaseassets.DeployAssemblyManifestKind {
+		return fmt.Errorf("unexpected deploy assembly manifest kind %q", assembly.ManifestKind)
+	}
+	if assembly.ManifestSchemaVersion != releaseassets.DeployAssemblyManifestSchemaVersion {
+		return fmt.Errorf("unsupported deploy assembly manifest schema %d", assembly.ManifestSchemaVersion)
+	}
+
 	return nil
 }
 
@@ -221,7 +202,7 @@ func validateBundleManifest(bundle releaseassets.LambdaBundleManifest, releaseMa
 	if bundle.SchemaVersion != releaseassets.LambdaBundleManifestSchemaVersion {
 		return fmt.Errorf("unsupported lambda bundle manifest schema %d", bundle.SchemaVersion)
 	}
-	if bundle.Release.Name != "lesser" {
+	if bundle.Release.Name != lesserReleaseName {
 		return fmt.Errorf("unexpected lambda bundle release name %q", bundle.Release.Name)
 	}
 	if bundle.Release.Version != releaseManifest.Version {
@@ -233,7 +214,7 @@ func validateBundleManifest(bundle releaseassets.LambdaBundleManifest, releaseMa
 	if bundle.Bundle.Path != releaseManifest.Artifacts.DeployArtifacts.LambdaBundle.Path {
 		return fmt.Errorf("lambda bundle archive path %q does not match release manifest", bundle.Bundle.Path)
 	}
-	if bundle.Bundle.Format != "tar.gz" {
+	if bundle.Bundle.Format != tarGzFormat {
 		return fmt.Errorf("unexpected lambda bundle format %q", bundle.Bundle.Format)
 	}
 	if bundle.InventorySource.Path != releaseassets.LambdaInventoryPath {
@@ -273,24 +254,6 @@ func validateBundleManifest(bundle releaseassets.LambdaBundleManifest, releaseMa
 		}
 	}
 
-	return nil
-}
-
-func validateBundleAgainstInventory(repoRoot string, bundle releaseassets.LambdaBundleManifest) error {
-	lambdaNames, err := releaseassets.CanonicalLambdaNames(repoRoot)
-	if err != nil {
-		return err
-	}
-
-	manifestNames := make([]string, 0, len(bundle.Files))
-	for _, file := range bundle.Files {
-		manifestNames = append(manifestNames, file.Lambda)
-	}
-	slices.Sort(manifestNames)
-
-	if !slices.Equal(lambdaNames, manifestNames) {
-		return fmt.Errorf("lambda bundle manifest does not match canonical inventory")
-	}
 	return nil
 }
 

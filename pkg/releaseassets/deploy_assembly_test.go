@@ -1,0 +1,635 @@
+package releaseassets
+
+import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/stretchr/testify/require"
+)
+
+func TestCollectDeployAssets_FileAndZip(t *testing.T) {
+	root := t.TempDir()
+	plainFile := filepath.Join(root, "asset.txt")
+	require.NoError(t, os.WriteFile(plainFile, []byte("plain"), 0o644))
+
+	dirAsset := filepath.Join(root, "dir-asset")
+	require.NoError(t, os.MkdirAll(filepath.Join(dirAsset, "nested"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dirAsset, "nested", "index.js"), []byte("nested"), 0o644))
+
+	manifest := cdkAssetsManifest{
+		Files: map[string]cdkFileAsset{
+			"file": {
+				DisplayName: "plain file",
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: plainFile, Packaging: "file"},
+				Destinations: map[string]struct {
+					ObjectKey string `json:"objectKey"`
+				}{
+					"current": {ObjectKey: "assets/plain.txt"},
+				},
+			},
+			"zip": {
+				DisplayName: "dir zip",
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: dirAsset, Packaging: "zip"},
+				Destinations: map[string]struct {
+					ObjectKey string `json:"objectKey"`
+				}{
+					"current": {ObjectKey: "assets/dir.zip"},
+				},
+			},
+			"template": {
+				DisplayName: "template",
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: filepath.Join(root, "demo.template.json"), Packaging: "file"},
+				Destinations: map[string]struct {
+					ObjectKey string `json:"objectKey"`
+				}{
+					"current": {ObjectKey: "assets/demo.template.json"},
+				},
+			},
+		},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(root, "demo.template.json"), []byte("{}"), 0o644))
+
+	assets, err := collectDeployAssets("demo", manifest)
+	require.NoError(t, err)
+	require.Len(t, assets, 2)
+	require.Equal(t, "assets/dir.zip", assets[0].ObjectKey)
+	require.Equal(t, "assets/plain.txt", assets[1].ObjectKey)
+	require.Equal(t, "plain", string(assets[1].Data))
+
+	zipEntries := readZipEntries(t, assets[0].Data)
+	require.Equal(t, map[string]string{
+		"nested/index.js": "nested",
+	}, zipEntries)
+}
+
+func TestCollectDeployAssets_ErrorsWhenObjectKeyMissing(t *testing.T) {
+	root := t.TempDir()
+	manifest := cdkAssetsManifest{
+		Files: map[string]cdkFileAsset{
+			"bad": {
+				DisplayName: "bad",
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: filepath.Join(root, "asset.txt"), Packaging: "file"},
+			},
+		},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(root, "asset.txt"), []byte("content"), 0o644))
+
+	_, err := collectDeployAssets("demo", manifest)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing destination object key")
+}
+
+func TestReadAssetData_UnsupportedPackaging(t *testing.T) {
+	_, err := readAssetData("/tmp/nowhere", "tar")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported deploy asset packaging")
+}
+
+func TestReadAssetData_ErrorsWhenFileMissing(t *testing.T) {
+	_, err := readAssetData(filepath.Join(t.TempDir(), "missing.txt"), "file")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read deploy asset")
+}
+
+func TestWriteArchiveEntries_IsDeterministic(t *testing.T) {
+	entries := []archiveEntry{
+		{Path: "manifest.json", Data: []byte(`{"schema":1}`)},
+		{Path: "templates/demo.json", Data: []byte(`{"Parameters":{}}`)},
+	}
+
+	firstPath := filepath.Join(t.TempDir(), "assembly.tar.gz")
+	require.NoError(t, writeArchiveEntries(firstPath, entries))
+	firstBytes, err := os.ReadFile(firstPath)
+	require.NoError(t, err)
+
+	secondPath := filepath.Join(t.TempDir(), "assembly.tar.gz")
+	require.NoError(t, writeArchiveEntries(secondPath, entries))
+	secondBytes, err := os.ReadFile(secondPath)
+	require.NoError(t, err)
+
+	require.Equal(t, firstBytes, secondBytes)
+	require.Equal(t, []bundleEntry{
+		{Name: "manifest.json", Content: `{"schema":1}`},
+		{Name: "templates/demo.json", Content: `{"Parameters":{}}`},
+	}, readDeployAssemblyTarGzEntries(t, firstPath))
+}
+
+func TestWriteArchiveEntries_ErrorsWhenOutputDirBlocked(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "blocked", "assembly.tar.gz")
+	require.NoError(t, os.WriteFile(filepath.Dir(archivePath), []byte("blocked"), 0o644))
+
+	err := writeArchiveEntries(archivePath, []archiveEntry{{Path: "manifest.json", Data: []byte(`{}`)}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create deploy assembly archive")
+}
+
+func TestWriteArchiveEntries_ErrorsWhenArchivePathIsDirectory(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "assembly.tar.gz")
+	require.NoError(t, os.MkdirAll(archivePath, 0o755))
+
+	err := writeArchiveEntries(archivePath, []archiveEntry{{Path: "manifest.json", Data: []byte(`{}`)}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "finalize deploy assembly archive")
+}
+
+func TestWriteArchiveEntries_ErrorsWhenHeaderInvalid(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "assembly.tar.gz")
+
+	err := writeArchiveEntries(archivePath, []archiveEntry{{Path: "bad\x00name", Data: []byte(`{}`)}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write deploy assembly header")
+}
+
+func TestTemplateTransformHelpers(t *testing.T) {
+	template := map[string]any{
+		"Parameters": map[string]any{
+			"BootstrapVersion": map[string]any{"Type": "String"},
+			"EncryptionRoleArnParamLookupParameter": map[string]any{
+				"Type":    "String",
+				"Default": placeholderAppSlug,
+			},
+		},
+		"Resources": map[string]any{
+			"Bucket": map[string]any{
+				"Properties": map[string]any{
+					"BucketName": placeholderAppSlug + "-assets",
+					"Domain":     stagePlaceholderDomain(naming.StageDev),
+					"Lookup":     map[string]any{"Ref": "EncryptionRoleArnParamLookupParameter"},
+				},
+			},
+		},
+	}
+
+	deleteTemplateParameter(template, "BootstrapVersion")
+	deleteStageLookupParameters(template)
+	addStringParameter(template, "AppSlug", "app slug", false, "")
+	addStringParameter(template, "HostedZoneId", "zone", true, "ZDEFAULT")
+
+	transformed, err := transformTemplateValues(template, func(path []string) bool {
+		return len(path) == 3 && path[0] == "Parameters" && path[2] == "Default"
+	}, orderedPlaceholderReplacements(map[string]string{
+		placeholderAppSlug:                      "${AppSlug}",
+		stagePlaceholderDomain(naming.StageDev): stageDomainSub(naming.StageDev),
+	}))
+	require.NoError(t, err)
+
+	replaceStageLookupRefs(transformed, naming.StageDev)
+
+	parameters := transformed["Parameters"].(map[string]any)
+	require.NotContains(t, parameters, "BootstrapVersion")
+	require.Equal(t, map[string]any{
+		"Description": "app slug",
+		"Type":        "String",
+	}, parameters["AppSlug"])
+	require.Equal(t, map[string]any{
+		"Default":     "ZDEFAULT",
+		"Description": "zone",
+		"Type":        "String",
+	}, parameters["HostedZoneId"])
+
+	resources := transformed["Resources"].(map[string]any)
+	props := resources["Bucket"].(map[string]any)["Properties"].(map[string]any)
+	require.Equal(t, map[string]any{"Fn::Sub": "${AppSlug}-assets"}, props["BucketName"])
+	require.Equal(t, map[string]any{"Fn::Sub": "dev.${BaseDomain}"}, props["Domain"])
+	require.Equal(t, map[string]any{
+		"Fn::Sub": "{{resolve:ssm:/${AppSlug}/shared/iam/lambda-encryption-role-arn}}",
+	}, props["Lookup"])
+}
+
+func TestAddStringParameter_CreatesParametersMapAndPreservesExisting(t *testing.T) {
+	template := map[string]any{}
+	addStringParameter(template, "AppSlug", "app slug", true, "demo")
+	addStringParameter(template, "AppSlug", "changed", false, "")
+
+	parameters := template["Parameters"].(map[string]any)
+	require.Equal(t, map[string]any{
+		"Default":     "demo",
+		"Description": "app slug",
+		"Type":        "String",
+	}, parameters["AppSlug"])
+}
+
+func TestDeleteTemplateParameter_NoParametersSection(t *testing.T) {
+	template := map[string]any{
+		"Resources": map[string]any{},
+	}
+
+	deleteTemplateParameter(template, "Missing")
+	require.Equal(t, map[string]any{
+		"Resources": map[string]any{},
+	}, template)
+}
+
+func TestTransformTemplateValues_RootTypeError(t *testing.T) {
+	_, err := transformTemplateValues([]any{"nope"}, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected type")
+}
+
+func TestReplaceLookupRefValues_TraversesNestedCollections(t *testing.T) {
+	value := map[string]any{
+		"Items": []any{
+			map[string]any{"Ref": "LookupValue"},
+			map[string]any{"Nested": map[string]any{"Ref": "LookupValue"}},
+		},
+	}
+
+	replaced := replaceLookupRefValues(value, map[string]any{
+		"LookupValue": map[string]any{"Fn::Sub": "resolved"},
+	}).(map[string]any)
+
+	items := replaced["Items"].([]any)
+	require.Equal(t, map[string]any{"Fn::Sub": "resolved"}, items[0])
+	require.Equal(t, map[string]any{
+		"Nested": map[string]any{"Fn::Sub": "resolved"},
+	}, items[1])
+}
+
+func TestAbsolutizeAssetPathsAndEnvHelpers(t *testing.T) {
+	manifest := cdkAssetsManifest{
+		Files: map[string]cdkFileAsset{
+			"a": {
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: "nested/file.txt", Packaging: "file"},
+			},
+			"b": {
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: "", Packaging: "file"},
+			},
+			"c": {
+				Source: struct {
+					Path      string `json:"path"`
+					Packaging string `json:"packaging"`
+				}{Path: "/already/absolute.txt", Packaging: "file"},
+			},
+		},
+	}
+
+	updated := absolutizeAssetPaths("/tmp/synth", manifest)
+	require.Equal(t, "/tmp/synth/nested/file.txt", updated.Files["a"].Source.Path)
+	require.Equal(t, "", updated.Files["b"].Source.Path)
+	require.Equal(t, "/already/absolute.txt", updated.Files["c"].Source.Path)
+
+	env := setCmdEnv([]string{"PATH=/bin"}, "AWS_REGION", "us-east-1")
+	require.True(t, envHasKey(env, "AWS_REGION"))
+	env = setCmdEnv(env, "AWS_REGION", "us-west-2")
+	require.Contains(t, env, "AWS_REGION=us-west-2")
+	require.False(t, envHasKey(env, "AWS_PROFILE"))
+}
+
+func TestWriteDeployAssembly_RequiresMetadata(t *testing.T) {
+	_, err := WriteDeployAssembly(t.TempDir(), t.TempDir(), "", "abc")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "release version is required")
+
+	_, err = WriteDeployAssembly(t.TempDir(), t.TempDir(), "v1.2.3", "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "release git SHA is required")
+}
+
+func TestWriteDeployAssembly_ErrorsWhenOutputDirBlocked(t *testing.T) {
+	outDir := filepath.Join(t.TempDir(), "release")
+	require.NoError(t, os.WriteFile(outDir, []byte("blocked"), 0o644))
+
+	_, err := WriteDeployAssembly(t.TempDir(), outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create release dir")
+}
+
+func TestWriteDeployAssembly(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+
+	binDir := t.TempDir()
+	sharedStack := naming.SharedStackName(placeholderAppSlug)
+	devStack := naming.StageStackName(placeholderAppSlug, naming.StageDev)
+	stagingStack := naming.StageStackName(placeholderAppSlug, naming.StageStaging)
+	liveStack := naming.StageStackName(placeholderAppSlug, naming.StageLive)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "cdk"), []byte(fakeCDKScript(sharedStack, devStack, stagingStack, liveStack)), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	outDir := t.TempDir()
+	descriptor, err := WriteDeployAssembly(repoRoot, outDir, "v1.2.3", "0123456789abcdef0123456789abcdef01234567")
+	require.NoError(t, err)
+
+	require.Equal(t, DeployAssemblyManifestKind, descriptor.Kind)
+	require.Equal(t, DeployAssemblyArchiveName, descriptor.Assembly.Path)
+	require.Equal(t, "tar.gz", descriptor.Assembly.Format)
+	require.Equal(t, []string{
+		"app_identity",
+		"aws_target",
+		"base_domain",
+		"hosted_zone",
+		"stage_plan",
+	}, descriptor.InstanceInputs.Required)
+	require.Equal(t, []string{
+		"feature_config",
+		"managed_service_urls",
+		"provisioning_input",
+		"bootstrap_io",
+	}, descriptor.InstanceInputs.Optional)
+
+	archiveEntries := readTarGzEntryBytes(t, filepath.Join(outDir, DeployAssemblyArchiveName))
+	require.Contains(t, archiveEntries, deployAssemblyInternalManifestPath)
+	require.Contains(t, archiveEntries, "templates/lesser-shared.template.json")
+	require.Contains(t, archiveEntries, stageTemplateFileNames[naming.StageDev])
+	require.Contains(t, archiveEntries, stageTemplateFileNames[naming.StageStaging])
+	require.Contains(t, archiveEntries, stageTemplateFileNames[naming.StageLive])
+	require.Contains(t, archiveEntries, "assets/plain.txt")
+	require.Contains(t, archiveEntries, "assets/site.zip")
+
+	var payload deployAssemblyPayloadManifest
+	require.NoError(t, json.Unmarshal(archiveEntries[deployAssemblyInternalManifestPath], &payload))
+	require.Len(t, payload.Stacks, 4)
+	require.Len(t, payload.Assets, 2)
+
+	devTemplate := string(archiveEntries[stageTemplateFileNames[naming.StageDev]])
+	require.Contains(t, devTemplate, `"AppSlug"`)
+	require.Contains(t, devTemplate, `"ReleaseAssetBucketName"`)
+	require.Contains(t, devTemplate, `{{resolve:ssm:/${AppSlug}/shared/iam/lambda-encryption-role-arn}}`)
+	require.Contains(t, devTemplate, `{{resolve:ssm:/${AppSlug}/dev/lesser-body/exports/v1/mcp_lambda_arn}}`)
+	require.Contains(t, devTemplate, `dev.${BaseDomain}`)
+	require.Contains(t, devTemplate, `"Fn::Sub": "${LesserHostUrl}"`)
+	require.Contains(t, devTemplate, `"Fn::Sub": "${ReleaseAssetBucketName}"`)
+
+	zipEntries := readZipEntries(t, archiveEntries["assets/site.zip"])
+	require.Equal(t, map[string]string{
+		"nested/index.js": "console.log('stage')",
+	}, zipEntries)
+
+	sharedTemplate := string(archiveEntries["templates/lesser-shared.template.json"])
+	require.Contains(t, sharedTemplate, `"AppSlug"`)
+	require.Contains(t, sharedTemplate, `${AWS::AccountId}`)
+}
+
+func TestRunCDKSynthJSON_ErrorsWhenCommandFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+
+	binDir := t.TempDir()
+	script := "#!/usr/bin/env bash\nset -euo pipefail\necho synth failed >&2\nexit 1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "cdk"), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, _, _, err := runCDKSynthJSON(repoRoot, "demo", map[string]string{"app": "demo"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cdk synth demo")
+	require.Contains(t, err.Error(), "synth failed")
+}
+
+func TestRunCDKSynthJSON_ErrorsOnInvalidTemplateJSON(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+
+	binDir := t.TempDir()
+	script := "#!/usr/bin/env bash\nset -euo pipefail\necho '{'\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "cdk"), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, _, _, err := runCDKSynthJSON(repoRoot, "demo", map[string]string{"app": "demo"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse synthesized template")
+}
+
+func TestRunCDKSynthJSON_ErrorsOnInvalidAssetsManifest(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+
+	binDir := t.TempDir()
+	script := "#!/usr/bin/env bash\nset -euo pipefail\nstack=\"$2\"\noutput=\"\"\nshift 2\nwhile [[ $# -gt 0 ]]; do\n  case \"$1\" in\n    --output) output=\"$2\"; shift 2 ;;\n    --context) shift 2 ;;\n    *) shift ;;\n  esac\ndone\nmkdir -p \"$output\"\nprintf '{' > \"$output/$stack.assets.json\"\necho '{}'\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "cdk"), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, _, _, err := runCDKSynthJSON(repoRoot, "demo", map[string]string{"app": "demo"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse asset manifest")
+}
+
+func TestMarshalTemplateJSON_AppendsTrailingNewline(t *testing.T) {
+	data, err := marshalTemplateJSON(map[string]any{"Resources": map[string]any{}})
+	require.NoError(t, err)
+	require.Equal(t, byte('\n'), data[len(data)-1])
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(data, &decoded))
+}
+
+func readZipEntries(t *testing.T, data []byte) map[string]string {
+	t.Helper()
+
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+
+	entries := map[string]string{}
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		require.NoError(t, err)
+		content, err := io.ReadAll(rc)
+		_ = rc.Close()
+		require.NoError(t, err)
+		entries[file.Name] = string(content)
+	}
+	return entries
+}
+
+func readTarGzEntryBytes(t *testing.T, archivePath string) map[string][]byte {
+	t.Helper()
+
+	f, err := os.Open(archivePath) // #nosec G304 -- test reads temp fixture path
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gz, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gz.Close() }()
+
+	tr := tar.NewReader(gz)
+	entries := map[string][]byte{}
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return entries
+		}
+		require.NoError(t, err)
+
+		content, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		entries[header.Name] = content
+	}
+}
+
+func readDeployAssemblyTarGzEntries(t *testing.T, archivePath string) []bundleEntry {
+	t.Helper()
+
+	f, err := os.Open(archivePath) // #nosec G304 -- test reads temp fixture path
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gz, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	defer func() { _ = gz.Close() }()
+
+	tr := tar.NewReader(gz)
+	var entries []bundleEntry
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return entries
+		}
+		require.NoError(t, err)
+
+		content, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		entries = append(entries, bundleEntry{
+			Name:    header.Name,
+			Content: string(content),
+		})
+	}
+}
+
+func fakeCDKScript(sharedStack, devStack, stagingStack, liveStack string) string {
+	return fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+
+stack="$2"
+shift 2
+output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      output="$2"
+      shift 2
+      ;;
+    --context)
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+mkdir -p "$output"
+
+write_stage_assets() {
+  printf 'plain' > "$output/plain.txt"
+  mkdir -p "$output/site/nested"
+  printf "console.log('stage')" > "$output/site/nested/index.js"
+  cat > "$output/$stack.assets.json" <<'JSON'
+{
+  "files": {
+    "plain": {
+      "displayName": "plain",
+      "source": { "path": "plain.txt", "packaging": "file" },
+      "destinations": { "current": { "objectKey": "assets/plain.txt" } }
+    },
+    "site": {
+      "displayName": "site",
+      "source": { "path": "site", "packaging": "zip" },
+      "destinations": { "current": { "objectKey": "assets/site.zip" } }
+    }
+  }
+}
+JSON
+}
+
+case "$stack" in
+  %q)
+    cat <<'JSON'
+{
+  "Parameters": {
+    "BootstrapVersion": { "Type": "String" }
+  },
+  "Resources": {
+    "Example": {
+      "Properties": {
+        "Name": "appslugplaceholder-111111111111-us-west-2"
+      }
+    }
+  }
+}
+JSON
+    ;;
+  %q|%q|%q)
+    write_stage_assets
+    if [[ "$stack" == %q ]]; then
+      stage_domain="dev.base.example.com"
+      body_path="dev"
+    elif [[ "$stack" == %q ]]; then
+      stage_domain="staging.base.example.com"
+      body_path="staging"
+    else
+      stage_domain="base.example.com"
+      body_path="live"
+    fi
+    cat <<JSON
+{
+  "Parameters": {
+    "BootstrapVersion": { "Type": "String" },
+    "EncryptionRoleArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
+    "BasicRoleArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
+    "JWTSecretArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
+    "ActorKeyArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
+    "LesserBodyMcpLambdaArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" }
+  },
+  "Resources": {
+    "Example": {
+      "Properties": {
+        "Domain": "$stage_domain",
+        "WildcardDomain": "*.$stage_domain",
+        "BaseDomain": "base.example.com",
+        "HostedZone": "ZHOSTEDZONEPLACEHOLDER",
+        "App": "appslugplaceholder",
+        "Account": "111111111111",
+        "Region": "us-west-2",
+        "ManagedUrl": "https://lesser-host.example.invalid",
+        "ManagedAttestations": "https://lesser-host-attestations.example.invalid",
+        "ManagedKey": "LESSER_HOST_INSTANCE_KEY_ARN_PLACEHOLDER",
+        "Translation": "TRANSLATION_ENABLED_PLACEHOLDER",
+        "TipEnabled": "TIP_ENABLED_PLACEHOLDER",
+        "TipChain": "TIP_CHAIN_ID_PLACEHOLDER",
+        "TipContract": "TIP_CONTRACT_ADDRESS_PLACEHOLDER",
+        "ReleaseBucket": "cdk-hnb659fds-assets-111111111111-us-west-2",
+        "EncryptionRole": { "Ref": "EncryptionRoleArnParamLookupParameter" },
+        "BasicRole": { "Ref": "BasicRoleArnParamLookupParameter" },
+        "JWTSecret": { "Ref": "JWTSecretArnParamLookupParameter" },
+        "ActorKey": { "Ref": "ActorKeyArnParamLookupParameter" },
+        "BodyLambda": { "Ref": "LesserBodyMcpLambdaArnParamLookupParameter" }
+      }
+    }
+  }
+}
+JSON
+    ;;
+  *)
+    echo "unexpected stack: $stack" >&2
+    exit 1
+    ;;
+esac
+`, sharedStack, devStack, stagingStack, liveStack, devStack, stagingStack)
+}

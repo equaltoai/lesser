@@ -38,12 +38,28 @@ type ReleaseArtifacts struct {
 
 // ReleaseDeployArtifacts describes artifacts consumed during deployment.
 type ReleaseDeployArtifacts struct {
-	SchemaVersion int                    `json:"schema_version"`
-	LambdaBundle  ReleaseLambdaBundleRef `json:"lambda_bundle"`
+	SchemaVersion  int                      `json:"schema_version"`
+	LambdaBundle   ReleaseLambdaBundleRef   `json:"lambda_bundle"`
+	AuthUIBundle   ReleaseAuthUIBundleRef   `json:"auth_ui_bundle"`
+	DeployAssembly ReleaseDeployAssemblyRef `json:"deploy_assembly"`
 }
 
 // ReleaseLambdaBundleRef points at the published Lambda bundle assets.
 type ReleaseLambdaBundleRef struct {
+	Path                  string `json:"path"`
+	ManifestPath          string `json:"manifest_path"`
+	ManifestKind          string `json:"manifest_kind"`
+	ManifestSchemaVersion int    `json:"manifest_schema_version"`
+}
+
+// ReleaseAuthUIBundleRef points at the published auth UI bundle.
+type ReleaseAuthUIBundleRef struct {
+	Path   string `json:"path"`
+	Format string `json:"format"`
+}
+
+// ReleaseDeployAssemblyRef points at the published deploy assembly assets.
+type ReleaseDeployAssemblyRef struct {
 	Path                  string `json:"path"`
 	ManifestPath          string `json:"manifest_path"`
 	ManifestKind          string `json:"manifest_kind"`
@@ -80,6 +96,16 @@ func WriteReleaseManifest(outDir string, input ReleaseManifestInput) (ReleaseMan
 					ManifestPath:          LambdaBundleManifestName,
 					ManifestKind:          LambdaBundleManifestKind,
 					ManifestSchemaVersion: LambdaBundleManifestSchemaVersion,
+				},
+				AuthUIBundle: ReleaseAuthUIBundleRef{
+					Path:   AuthUIBundleArchiveName,
+					Format: "tar.gz",
+				},
+				DeployAssembly: ReleaseDeployAssemblyRef{
+					Path:                  DeployAssemblyArchiveName,
+					ManifestPath:          DeployAssemblyManifestName,
+					ManifestKind:          DeployAssemblyManifestKind,
+					ManifestSchemaVersion: DeployAssemblyManifestSchemaVersion,
 				},
 			},
 		},

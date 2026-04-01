@@ -43,10 +43,10 @@ Common commands:
 
 Current behavior:
 
-- `lesser up` still uses the repo checkout for CDK and `auth-ui/`, but Lambda artifacts now have two explicit modes.
-- Default mode builds Lambda artifacts locally from source.
-- `--release-dir <path>` verifies published release assets and stages the Lambda bundle into
-  `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/` instead of rebuilding.
+- Default mode is still the legacy source path and builds deploy artifacts from the repo checkout.
+- `--release-dir <path>` is the source-free release path. It verifies the published release assets, stages the Lambda
+  bundle, auth UI bundle, and deploy assembly into the Lesser state dir, and deploys from those verified assets
+  without requiring a repo checkout, `cdk`, `go`, or `pnpm`.
 - `--rebuild-lambdas` remains the explicit source-build override path and wins even if `--release-dir` is also set.
 
 ```bash
@@ -57,7 +57,7 @@ Current behavior:
   --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 
-Deploy with published Lambda assets instead of rebuilding:
+Deploy from published release assets instead of rebuilding from source:
 
 ```bash
 ./lesser up \
@@ -74,7 +74,8 @@ Key outputs:
 - Non-secret receipt: `~/.lesser/<app>/<base-domain>/state.json`
 - Staged Lambda asset root: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 - Lambda asset provenance: `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/metadata.json`
-- Per-stack CDK outputs: `~/.lesser/<app>/<base-domain>/deploy/cdk-outputs/<stack>.json`
+- Staged auth UI bundle: `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`
+- Staged deploy assembly: `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`
 
 ### Install a FaceTheory client release
 

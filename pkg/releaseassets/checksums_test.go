@@ -38,3 +38,11 @@ func TestWriteChecksums_ErrorsWhenAssetMissing(t *testing.T) {
 	require.Contains(t, err.Error(), "hash release asset")
 	require.Contains(t, err.Error(), publishedReleaseAssets[0])
 }
+
+func TestPublishedReleaseAssetNames_ReturnsCopy(t *testing.T) {
+	names := PublishedReleaseAssetNames()
+	require.Equal(t, publishedReleaseAssets, names)
+
+	names[0] = "changed"
+	require.NotEqual(t, names[0], PublishedReleaseAssetNames()[0])
+}
