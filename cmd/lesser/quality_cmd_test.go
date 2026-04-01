@@ -203,3 +203,52 @@ func TestRunLintInBatches_FallsBackToSingleInvocationWhenNoDirectoriesFound(t *t
 	require.Equal(t, "golangci-lint", gotName)
 	require.Equal(t, []string{"run", "--config", ".golangci.yml", "--timeout", defaultGolangCILintTimeout}, gotArgs)
 }
+
+func TestRunLint_DisableGosecRunsSingleInvocationWithoutBatching(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousRunCommand := runCommandFn
+	previousEnsureTool := ensureToolAvailableFn
+	previousCapture := captureCommandOutputFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		runCommandFn = previousRunCommand
+		ensureToolAvailableFn = previousEnsureTool
+		captureCommandOutputFn = previousCapture
+	})
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	t.Setenv(lesserLintBatchSizeEnv, "0")
+	t.Setenv(lesserToolJobsEnvVar, "")
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
+
+	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, _ ...string) (string, error) {
+		if name == "golangci-lint" {
+			return "golangci-lint has version 2.5.0\n", nil
+		}
+		return "", nil
+	}
+
+	var runArgs []string
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		if name == "golangci-lint" && len(args) > 0 && args[0] == "run" {
+			runArgs = append([]string(nil), args...)
+		}
+		return nil
+	}
+
+	require.NoError(t, runLint([]string{"--disable-gosec"}))
+	require.Equal(t, []string{
+		"run",
+		"--config",
+		".golangci.yml",
+		"--timeout",
+		defaultGolangCILintTimeout,
+		"--disable",
+		"gosec",
+		"--concurrency",
+		"4",
+	}, runArgs)
+}

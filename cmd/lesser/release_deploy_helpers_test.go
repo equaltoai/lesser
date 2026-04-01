@@ -253,6 +253,45 @@ func TestValidateReleaseAssemblyAssetManifest(t *testing.T) {
 	require.ErrorContains(t, err, "invalid size")
 }
 
+func TestPopulateReleaseAssemblyTemplates_GuardsRequiredTemplates(t *testing.T) {
+	writeTemplate := func(t *testing.T, root string, path string) {
+		t.Helper()
+		fullPath := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(`{"Parameters":{"AppSlug":{"Type":"String"}}}`), 0o644))
+	}
+
+	t.Run("missing shared template", func(t *testing.T) {
+		stagingDir := t.TempDir()
+		payload := validReleaseAssemblyPayloadManifest()
+		stacks := payload.Stacks[1:]
+		extractedFiles := map[string]struct{}{}
+		for _, stack := range stacks {
+			writeTemplate(t, stagingDir, stack.TemplatePath)
+			extractedFiles[stack.TemplatePath] = struct{}{}
+		}
+
+		result := releaseDeployAssemblyInstallResult{StageTemplates: map[naming.Stage]string{}}
+		err := populateReleaseAssemblyTemplates(&result, stacks, stagingDir, extractedFiles, map[string]struct{}{"manifest.json": {}})
+		require.ErrorContains(t, err, "deploy assembly payload missing shared template")
+	})
+
+	t.Run("missing live stage template", func(t *testing.T) {
+		stagingDir := t.TempDir()
+		payload := validReleaseAssemblyPayloadManifest()
+		stacks := payload.Stacks[:3]
+		extractedFiles := map[string]struct{}{}
+		for _, stack := range stacks {
+			writeTemplate(t, stagingDir, stack.TemplatePath)
+			extractedFiles[stack.TemplatePath] = struct{}{}
+		}
+
+		result := releaseDeployAssemblyInstallResult{StageTemplates: map[naming.Stage]string{}}
+		err := populateReleaseAssemblyTemplates(&result, stacks, stagingDir, extractedFiles, map[string]struct{}{"manifest.json": {}})
+		require.ErrorContains(t, err, "deploy assembly payload missing live stage template")
+	})
+}
+
 func TestVerifyReleaseAssemblyAssetFile(t *testing.T) {
 	stagingDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(stagingDir, "assets"), 0o755))
@@ -282,6 +321,18 @@ func TestVerifyReleaseAssemblyAssetFile(t *testing.T) {
 	dirAsset.SHA256 = sha256HexString("")
 	dirAsset.SizeBytes = 0
 	require.ErrorContains(t, verifyReleaseAssemblyAssetFile(stagingDir, dirAsset), "is a directory")
+}
+
+func TestValidateReleaseAssemblyAssets_ErrorsWhenAssetFileMissing(t *testing.T) {
+	_, err := validateReleaseAssemblyAssets([]releaseDeployAssemblyAssetManifest{
+		{
+			ObjectKey:   "assets/plain.txt",
+			ArchivePath: "assets/plain.txt",
+			SHA256:      sha256HexString("plain"),
+			SizeBytes:   5,
+		},
+	}, t.TempDir(), map[string]struct{}{})
+	require.ErrorContains(t, err, "stat deploy assembly asset assets/plain.txt")
 }
 
 func TestValidatedArchiveEntryPath(t *testing.T) {

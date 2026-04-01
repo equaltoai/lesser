@@ -898,6 +898,22 @@ func TestInstallReleaseDeployAssets_ErrorsWhenAuthUIBundleInvalid(t *testing.T) 
 	require.Contains(t, err.Error(), "auth-ui archive missing index.html")
 }
 
+func TestInstallReleaseDeployAssets_ErrorsWhenDeployAssemblyMissingStageTemplate(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	payload := validReleaseAssemblyPayloadManifest()
+	payload.Stacks = payload.Stacks[:3]
+	writeDeployAssemblyFixture(t, releaseDir, payload, nil)
+
+	_, err := installReleaseDeployAssets(releaseDir, filepath.Join(t.TempDir(), "deploy"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deploy assembly payload missing live stage template")
+}
+
 func TestLoadVerifiedReleaseAssets_RejectsDeployAssemblyDescriptorMismatch(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
@@ -969,6 +985,50 @@ func TestExtractTarGzArchive_ErrorsOnInvalidArchiveAndVisitorFailure(t *testing.
 		return errSentinel
 	})
 	require.ErrorIs(t, err, errSentinel)
+}
+
+func TestReadReleaseAssemblyPayloadManifest_InvalidJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	require.NoError(t, os.WriteFile(path, []byte("{"), 0o644))
+
+	_, err := readReleaseAssemblyPayloadManifest(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read deploy assembly payload manifest")
+}
+
+func TestInstallReleaseAuthUIBundleFromVerified_ErrorsWhenArchiveContainsDuplicateEntries(t *testing.T) {
+	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
+		"api":   "api zip",
+		"inbox": "inbox zip",
+	})
+	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
+
+	authUIArchivePath := filepath.Join(releaseDir, releaseassets.AuthUIBundleArchiveName)
+	archiveFile, err := os.Create(authUIArchivePath)
+	require.NoError(t, err)
+
+	gz := gzip.NewWriter(archiveFile)
+	tw := tar.NewWriter(gz)
+	for _, body := range []string{"<html>one</html>", "<html>two</html>"} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{
+			Name: "index.html",
+			Mode: 0o644,
+			Size: int64(len(body)),
+		}))
+		_, err = tw.Write([]byte(body))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.NoError(t, archiveFile.Close())
+	require.NoError(t, releaseassets.WriteChecksums(releaseDir))
+
+	release, err := loadVerifiedReleaseAssets(releaseDir)
+	require.NoError(t, err)
+
+	err = installReleaseAuthUIBundleFromVerified(release, filepath.Join(t.TempDir(), "auth-ui"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate auth-ui archive entry index.html")
 }
 
 func TestWriteExtractedFile_ErrorsOnCreateAndFinalizeFailures(t *testing.T) {
