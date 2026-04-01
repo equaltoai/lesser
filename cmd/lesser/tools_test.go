@@ -21,6 +21,10 @@ func TestEnsureToolsAvailable_UsesInjectedChecker(t *testing.T) {
 	require.Equal(t, []string{"aws", "cdk", "go", "pnpm"}, called)
 
 	called = nil
+	require.NoError(t, ensureReleaseDeployToolsAvailable())
+	require.Equal(t, []string{"aws", "cdk", "go"}, called)
+
+	called = nil
 	require.NoError(t, ensureAWSCLIToolAvailable())
 	require.Equal(t, []string{"aws"}, called)
 }
@@ -37,4 +41,5 @@ func TestEnsureToolsAvailable_PropagatesError(t *testing.T) {
 	}
 
 	require.ErrorContains(t, ensureToolsAvailable(), "missing")
+	require.ErrorContains(t, ensureReleaseDeployToolsAvailable(), "missing")
 }

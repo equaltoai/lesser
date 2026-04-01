@@ -11,7 +11,7 @@ type deploySourceRequirement struct {
 	Description  string
 }
 
-var deploySourceRequirements = []deploySourceRequirement{
+var releaseDeployRequirements = []deploySourceRequirement{
 	{
 		RelativePath: filepath.Join("infra", "cdk", "cdk.json"),
 		Description:  "CDK application source",
@@ -20,16 +20,26 @@ var deploySourceRequirements = []deploySourceRequirement{
 		RelativePath: filepath.Join("infra", "cdk", "inventory", "lambdas.go"),
 		Description:  "canonical lambda inventory source",
 	},
-	{
-		RelativePath: filepath.Join("auth-ui", "package.json"),
-		Description:  "auth-ui source",
-	},
 }
 
+var deploySourceRequirements = append(append([]deploySourceRequirement{}, releaseDeployRequirements...), deploySourceRequirement{
+	RelativePath: filepath.Join("auth-ui", "package.json"),
+	Description:  "auth-ui source",
+})
+
 var validateDeploySourceInputsFn = validateDeploySourceInputs
+var validateReleaseDeployInputsFn = validateReleaseDeployInputs
 
 func validateDeploySourceInputs(repoRoot string) error {
-	for _, requirement := range deploySourceRequirements {
+	return validateDeployRequirements(repoRoot, deploySourceRequirements)
+}
+
+func validateReleaseDeployInputs(repoRoot string) error {
+	return validateDeployRequirements(repoRoot, releaseDeployRequirements)
+}
+
+func validateDeployRequirements(repoRoot string, requirements []deploySourceRequirement) error {
+	for _, requirement := range requirements {
 		fullPath := filepath.Join(repoRoot, requirement.RelativePath)
 		info, err := os.Stat(fullPath)
 		if err != nil {

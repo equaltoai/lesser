@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	ensureToolAvailableFn  = ensureToolAvailable
-	ensureToolsAvailableFn = ensureToolsAvailable
+	ensureToolAvailableFn               = ensureToolAvailable
+	ensureToolsAvailableFn              = ensureToolsAvailable
+	ensureReleaseDeployToolsAvailableFn = ensureReleaseDeployToolsAvailable
 )
 
 func ensureToolAvailable(name string) error {
@@ -19,6 +20,15 @@ func ensureToolAvailable(name string) error {
 
 func ensureToolsAvailable() error {
 	for _, name := range []string{"aws", "cdk", "go", "pnpm"} {
+		if err := ensureToolAvailableFn(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureReleaseDeployToolsAvailable() error {
+	for _, name := range []string{"aws", "cdk", "go"} {
 		if err := ensureToolAvailableFn(name); err != nil {
 			return err
 		}
