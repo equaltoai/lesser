@@ -44,9 +44,11 @@ Common commands:
 Current behavior:
 
 - Default mode is still the legacy source path and builds deploy artifacts from the repo checkout.
-- `--release-dir <path>` is the source-free release path. It verifies the published release assets, stages the Lambda
-  bundle, auth UI bundle, and deploy assembly into the Lesser state dir, and deploys from those verified assets
-  without requiring a repo checkout, `cdk`, `go`, or `pnpm`.
+- `--release-dir <path>` is the release-asset-driven path. It verifies the published release assets, stages the Lambda
+  bundle, auth UI bundle, and deploy assembly into the Lesser state dir, and then deploys through the repo-local CDK
+  app using the real app slug plus the staged release-built assets.
+- Current release mode still requires a release-matched repo checkout plus `cdk` and `go`, but it does not require
+  rebuilding Lambdas or auth UI from source and it does not require `pnpm`.
 - `--rebuild-lambdas` remains the explicit source-build override path and wins even if `--release-dir` is also set.
 
 ```bash

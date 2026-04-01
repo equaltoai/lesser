@@ -10,7 +10,7 @@ Current state:
 - `lesser up` has two deploy modes:
   - source mode: build from the repo checkout and deploy through the legacy CDK path
   - release mode: verify a published `--release-dir`, stage the release assets into the Lesser state dir, and deploy
-    from the release-published CloudFormation assembly without a repo checkout
+    through the repo-local CDK app using the real app slug plus the verified release-built Lambda/auth UI assets
 - Releases now publish immutable deploy assets for all three release-generic parts of the deploy:
   `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-auth-ui.tar.gz`,
   `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json`, `lesser-release.json`, and `checksums.txt`
@@ -28,13 +28,17 @@ Release mode (`--release-dir`) requires:
 - a built `lesser` CLI binary
 - AWS credentials/config for the selected profile or ambient environment
 - a release directory containing the published release assets
-
-Source mode additionally requires:
-
+- a release-matched Lesser repo checkout containing:
+  - `infra/cdk/cdk.json`
+  - `infra/cdk/inventory/lambdas.go`
 - AWS CLI configured (and logged in for your chosen profile)
 - AWS CDK v2 installed and on `PATH` (`npm install -g aws-cdk`)
 - Go 1.25+
+
+Source mode additionally requires:
+
 - `pnpm` installed
+- repo-local auth UI source at `auth-ui/package.json`
 
 ## What `lesser up` does
 
@@ -44,8 +48,10 @@ At a high level, `./lesser up`:
 - Stages the deployable Lambda zip set into `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`
 - In release mode, stages the auth UI bundle into `~/.lesser/<app>/<base-domain>/deploy/auth-ui/`
 - In release mode, stages the deploy assembly into `~/.lesser/<app>/<base-domain>/deploy/deploy-assembly/`
-- In source mode, ensures CDK bootstrap exists for the target account/region and deploys through the repo-local CDK app
-- In release mode, deploys the shared and stage stacks from the verified release assembly with CloudFormation
+- Ensures CDK bootstrap exists for the target account/region and deploys through the repo-local CDK app
+- In release mode, points CDK at the verified staged Lambda assets so the stack update reuses the real app slug and the
+  live stack’s logical ID contract
+- The staged deploy assembly remains published and verified, but it is not the default execution path for live updates
 - Uploads the auth UI payload and preserves CloudFront invalidation behavior
 - Writes local receipts under `~/.lesser/<app>/<base-domain>/`
 
@@ -119,8 +125,11 @@ Bootstrap state:
 Important scope note:
 
 - Source mode remains available and is still the default when `--release-dir` is absent.
-- Release mode is source-free, but deploy-time responsibilities such as hosted-zone resolution, CloudFormation
-  execution against live stacks, auth UI upload, invalidation, and receipt/bootstrap writes remain instance-specific.
+- Release mode is release-asset-driven, not fully source-free.
+- The safe default release path still requires a release-matched Lesser checkout plus `aws`, `cdk`, and `go`, because
+  CDK must synthesize with the real app slug before updating existing stacks.
+- Deploy-time responsibilities such as hosted-zone resolution, CDK/CloudFormation execution against live stacks, auth UI
+  upload, invalidation, and receipt/bootstrap writes remain instance-specific.
 
 If you changed Lambda code and want to force refresh zip artifacts:
 
@@ -143,7 +152,12 @@ For a managed consumer or CI runner, the minimal artifact-driven deploy inputs a
   - `lesser-auth-ui.tar.gz`
   - `lesser-deploy-assembly.tar.gz`
   - `lesser-deploy-assembly.json`
-- AWS credentials plus the normal instance inputs (`--app`, `--base-domain`, optional `--provisioning-input`, and bootstrap/output flags as needed)
+- a release-matched Lesser repo checkout containing:
+  - `infra/cdk/cdk.json`
+  - `infra/cdk/inventory/lambdas.go`
+- `aws`, `cdk`, and `go` available on `PATH`
+- target-account AWS credentials plus the normal instance inputs (`--app`, `--base-domain`, optional
+  `--provisioning-input`, and bootstrap/output flags as needed)
 
 When `--release-dir` is used, the runner should treat the local deploy workspace under `~/.lesser/<app>/<base-domain>/deploy/`
 as the canonical execution workspace for:
@@ -152,7 +166,54 @@ as the canonical execution workspace for:
 - `auth-ui/`
 - `deploy-assembly/`
 
-The repo-root `bin/` directory and repo-local `infra/cdk/` tree are not part of the artifact-mode execution contract.
+The repo-root `bin/` directory is not part of the artifact-mode execution contract.
+The repo-local `infra/cdk/` tree is still part of the current safe runner contract because CDK synthesizes the shared and
+stage stacks with the real app slug at deploy time.
+
+### Managed runner end-to-end (lesser-host)
+
+Current safe lesser-host/update provisioner flow:
+
+1. Materialize the Lesser CLI binary plus the published release directory for the target Lesser version.
+2. Materialize a Lesser repo checkout at the matching release/tag or git SHA.
+3. Obtain target-account AWS credentials for the managed instance account before invoking `lesser up`.
+4. Write a managed `--provisioning-input` JSON payload with the app slug, stage, admin wallet, lesser-host URLs, and
+   any managed feature flags.
+5. Run `./lesser up --release-dir <dir> --base-domain <domain> --provisioning-input <json> [--stage <stage>]`.
+6. On first provisioning only, run `./lesser init-admin --base-domain <domain> --provisioning-input <json>` after the
+   deploy succeeds.
+7. On later updates, rerun only `./lesser up --release-dir ...`; do not repeat `init-admin` for an already activated
+   instance.
+
+Example first-time managed provisioning:
+
+```bash
+AWS_PROFILE=Sim ./lesser up \
+  --base-domain simulacrum.greater.website \
+  --release-dir /opt/lesser/releases/vX.Y.Z \
+  --provisioning-input /tmp/simulacrum-provisioning.json \
+  --stage dev
+
+AWS_PROFILE=Sim ./lesser init-admin \
+  --base-domain simulacrum.greater.website \
+  --provisioning-input /tmp/simulacrum-provisioning.json
+```
+
+Example update:
+
+```bash
+AWS_PROFILE=Sim ./lesser up \
+  --base-domain simulacrum.greater.website \
+  --release-dir /opt/lesser/releases/vX.Y.Z \
+  --provisioning-input /tmp/simulacrum-provisioning.json \
+  --stage dev
+```
+
+Account boundary:
+
+- `lesser-host` may orchestrate from its own account, but the actual `lesser up` stack update must run with credentials
+  for the managed instance account.
+- Do not set `LESSER_USE_LEGACY_RELEASE_ASSEMBLY=1` in the managed runner. That escape hatch only exists for debugging.
 
 The current release trust signal for managed consumers is the artifact-driven deploy certification gate:
 
