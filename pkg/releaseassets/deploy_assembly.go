@@ -40,6 +40,7 @@ const (
 	deployAssemblyPayloadContractVersion  = 1
 	deployAssemblyInternalManifestKind    = "lesser.cloudformation_release_assembly_manifest"
 	deployAssemblyInternalManifestVersion = 1
+	cdkBootstrapValidationRule            = "CheckBootstrapVersion"
 	placeholderAppSlug                    = "appslugplaceholder"
 	placeholderBaseDomain                 = "base.example.com"
 	placeholderHostedZoneID               = "ZHOSTEDZONEPLACEHOLDER"
@@ -369,7 +370,7 @@ func synthesizeSharedTemplate(repoRoot string) ([]byte, error) {
 	}
 	defer func() { _ = os.RemoveAll(synthDir) }()
 
-	deleteTemplateParameter(template, "BootstrapVersion")
+	stripCDKBootstrapValidation(template)
 	addStringParameter(template, "AppSlug", "app slug / stack prefix for this installation", false, "")
 
 	replacements := orderedPlaceholderReplacements(map[string]string{
@@ -404,7 +405,7 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 	}
 	defer func() { _ = os.RemoveAll(synthDir) }()
 
-	deleteTemplateParameter(template, "BootstrapVersion")
+	stripCDKBootstrapValidation(template)
 	deleteStageLookupParameters(template)
 	addStringParameter(template, "AppSlug", "app slug / stack prefix for this installation", false, "")
 	addStringParameter(template, "BaseDomain", "base domain for this installation", false, "")
@@ -682,6 +683,25 @@ func deleteTemplateParameter(template map[string]any, name string) {
 		return
 	}
 	delete(parameters, name)
+	if len(parameters) == 0 {
+		delete(template, "Parameters")
+	}
+}
+
+func deleteTemplateRule(template map[string]any, name string) {
+	rules, ok := template["Rules"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(rules, name)
+	if len(rules) == 0 {
+		delete(template, "Rules")
+	}
+}
+
+func stripCDKBootstrapValidation(template map[string]any) {
+	deleteTemplateParameter(template, "BootstrapVersion")
+	deleteTemplateRule(template, cdkBootstrapValidationRule)
 }
 
 func addStringParameter(template map[string]any, name string, description string, withDefault bool, defaultValue string) {

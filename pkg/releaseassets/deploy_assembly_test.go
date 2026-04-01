@@ -179,9 +179,19 @@ func TestTemplateTransformHelpers(t *testing.T) {
 				},
 			},
 		},
+		"Rules": map[string]any{
+			cdkBootstrapValidationRule: map[string]any{
+				"Assertions": []any{
+					map[string]any{
+						"Assert":            map[string]any{"Fn::Contains": []any{[]any{"1", "2"}, map[string]any{"Ref": "BootstrapVersion"}}},
+						"AssertDescription": "CDK bootstrap version 6 required",
+					},
+				},
+			},
+		},
 	}
 
-	deleteTemplateParameter(template, "BootstrapVersion")
+	stripCDKBootstrapValidation(template)
 	deleteStageLookupParameters(template)
 	addStringParameter(template, "AppSlug", "app slug", false, "")
 	addStringParameter(template, "HostedZoneId", "zone", true, "ZDEFAULT")
@@ -198,6 +208,7 @@ func TestTemplateTransformHelpers(t *testing.T) {
 
 	parameters := transformed["Parameters"].(map[string]any)
 	require.NotContains(t, parameters, "BootstrapVersion")
+	require.NotContains(t, transformed, "Rules")
 	require.Equal(t, map[string]any{
 		"Description": "app slug",
 		"Type":        "String",
@@ -236,6 +247,7 @@ func TestDeleteTemplateParameter_NoParametersSection(t *testing.T) {
 	}
 
 	deleteTemplateParameter(template, "Missing")
+	deleteTemplateRule(template, cdkBootstrapValidationRule)
 	require.Equal(t, map[string]any{
 		"Resources": map[string]any{},
 	}, template)
@@ -385,6 +397,16 @@ func TestWriteDeployAssembly(t *testing.T) {
 	sharedTemplate := string(archiveEntries["templates/lesser-shared.template.json"])
 	require.Contains(t, sharedTemplate, `"AppSlug"`)
 	require.Contains(t, sharedTemplate, `${AWS::AccountId}`)
+	for _, templatePath := range []string{
+		"templates/lesser-shared.template.json",
+		stageTemplateFileNames[naming.StageDev],
+		stageTemplateFileNames[naming.StageStaging],
+		stageTemplateFileNames[naming.StageLive],
+	} {
+		templateJSON := string(archiveEntries[templatePath])
+		require.NotContains(t, templateJSON, `"BootstrapVersion"`)
+		require.NotContains(t, templateJSON, `"CheckBootstrapVersion"`)
+	}
 }
 
 func TestRunCDKSynthJSON_ErrorsWhenCommandFails(t *testing.T) {
@@ -607,11 +629,21 @@ JSON
 }
 
 case "$stack" in
-  %q)
+ %q)
     cat <<'JSON'
 {
   "Parameters": {
     "BootstrapVersion": { "Type": "String" }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": { "Fn::Contains": [["6"], { "Ref": "BootstrapVersion" }] },
+          "AssertDescription": "CDK bootstrap version 6 required"
+        }
+      ]
+    }
   },
   "Resources": {
     "Example": {
@@ -644,6 +676,16 @@ JSON
     "JWTSecretArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
     "ActorKeyArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
     "LesserBodyMcpLambdaArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": { "Fn::Contains": [["6"], { "Ref": "BootstrapVersion" }] },
+          "AssertDescription": "CDK bootstrap version 6 required"
+        }
+      ]
+    }
   },
   "Resources": {
     "Example": {
