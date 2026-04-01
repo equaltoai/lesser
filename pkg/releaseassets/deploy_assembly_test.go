@@ -228,6 +228,180 @@ func TestTemplateTransformHelpers(t *testing.T) {
 	}, props["Lookup"])
 }
 
+func TestNormalizeTemplateDependsOn(t *testing.T) {
+	template := map[string]any{
+		"Resources": map[string]any{
+			"ScalarSub": map[string]any{
+				"Type": "Custom::Example",
+				"DependsOn": map[string]any{
+					"Fn::Sub": "ImportedBasicRolePolicy${AppSlug}devImportedBasicRole2EE626BABA11CB8E",
+				},
+			},
+			"NestedList": map[string]any{
+				"Type": "Custom::Example",
+				"DependsOn": []any{
+					[]any{"ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A"},
+					[]any{
+						map[string]any{
+							"Fn::Sub": "ImportedBasicRolePolicy${AppSlug}devImportedBasicRole2EE626BABA11CB8E",
+						},
+					},
+				},
+			},
+			"EmptyList": map[string]any{
+				"Type":      "Custom::Example",
+				"DependsOn": []any{},
+			},
+		},
+	}
+
+	require.NoError(t, normalizeTemplateDependsOn(template))
+
+	resources := template["Resources"].(map[string]any)
+	require.Equal(t,
+		"ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E",
+		resources["ScalarSub"].(map[string]any)["DependsOn"],
+	)
+	require.Equal(t, []any{
+		"ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A",
+		"ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E",
+	}, resources["NestedList"].(map[string]any)["DependsOn"])
+	require.NotContains(t, resources["EmptyList"].(map[string]any), "DependsOn")
+}
+
+func TestNormalizeTemplateDependsOn_ErrorsOnUnsupportedValues(t *testing.T) {
+	template := map[string]any{
+		"Resources": map[string]any{
+			"Bad": map[string]any{
+				"Type":      "Custom::Example",
+				"DependsOn": map[string]any{"Fn::GetAtt": []any{"Other", "Arn"}},
+			},
+		},
+	}
+
+	err := normalizeTemplateDependsOn(template)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported intrinsic")
+}
+
+func TestNormalizeDependsOnSub_ArrayFormResolvesVariables(t *testing.T) {
+	resolved, err := normalizeDependsOnSub(map[string]any{
+		"Fn::Sub": []any{
+			"ImportedBasicRolePolicy${AppSlug}${StageDependency}",
+			map[string]any{
+				"StageDependency": "devImportedBasicRole2EE626BABA11CB8E",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t,
+		"ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E",
+		resolved,
+	)
+}
+
+func TestNormalizeDependsOnValue_FlattensNilAndNestedValues(t *testing.T) {
+	normalized, keep, err := normalizeDependsOnValue([]any{
+		nil,
+		[]any{
+			"ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A",
+			map[string]any{
+				"Fn::Sub": "ImportedBasicRolePolicy${AppSlug}devImportedBasicRole2EE626BABA11CB8E",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, keep)
+	require.Equal(t, []any{
+		"ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A",
+		"ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E",
+	}, normalized)
+}
+
+func TestNormalizeDependsOnHelpers_ErrorBranches(t *testing.T) {
+	_, err := normalizeDependsOnSub(map[string]any{
+		"Fn::Sub": []any{
+			"ImportedBasicRolePolicy${AppSlug}${StageDependency}",
+			map[string]any{
+				"StageDependency": 17,
+			},
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported type")
+
+	_, err = normalizeDependsOnString("ImportedBasicRolePolicy${AppSlug}")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unresolved substitutions")
+
+	_, err = normalizeDependsOnString("not-a-logical-id")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not a valid logical ID")
+
+	_, _, err = normalizeDependsOnValue(17)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported DependsOn value type")
+}
+
+func TestNormalizeDependsOnSub_ErrorsOnInvalidShapes(t *testing.T) {
+	testCases := []struct {
+		name    string
+		value   map[string]any
+		wantErr string
+	}{
+		{
+			name: "unsupported intrinsic wrapper",
+			value: map[string]any{
+				"Fn::Sub": "ImportedBasicRolePolicy${AppSlug}",
+				"Ref":     "OtherResource",
+			},
+			wantErr: "unsupported intrinsic",
+		},
+		{
+			name: "empty sub array",
+			value: map[string]any{
+				"Fn::Sub": []any{},
+			},
+			wantErr: "is empty",
+		},
+		{
+			name: "non string template",
+			value: map[string]any{
+				"Fn::Sub": []any{17},
+			},
+			wantErr: "template has unsupported type",
+		},
+		{
+			name: "variables not map",
+			value: map[string]any{
+				"Fn::Sub": []any{"ImportedBasicRolePolicy${AppSlug}", "bad-vars"},
+			},
+			wantErr: "variables have unsupported type",
+		},
+		{
+			name: "raw type unsupported",
+			value: map[string]any{
+				"Fn::Sub": 17,
+			},
+			wantErr: "unsupported type",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := normalizeDependsOnSub(tc.value)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestNormalizeDependsOnString_ErrorsOnEmptyValue(t *testing.T) {
+	_, err := normalizeDependsOnString("   ")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "DependsOn value is empty")
+}
+
 func TestAddStringParameter_CreatesParametersMapAndPreservesExisting(t *testing.T) {
 	template := map[string]any{}
 	addStringParameter(template, "AppSlug", "app slug", true, "demo")
@@ -406,6 +580,29 @@ func TestWriteDeployAssembly(t *testing.T) {
 		templateJSON := string(archiveEntries[templatePath])
 		require.NotContains(t, templateJSON, `"BootstrapVersion"`)
 		require.NotContains(t, templateJSON, `"CheckBootstrapVersion"`)
+	}
+
+	var devTemplateJSON map[string]any
+	require.NoError(t, json.Unmarshal(archiveEntries[stageTemplateFileNames[naming.StageDev]], &devTemplateJSON))
+	for _, resource := range devTemplateJSON["Resources"].(map[string]any) {
+		resMap := resource.(map[string]any)
+		dependsOn, ok := resMap["DependsOn"]
+		if !ok {
+			continue
+		}
+		switch v := dependsOn.(type) {
+		case string:
+			require.NotContains(t, v, "${")
+		case []any:
+			require.NotEmpty(t, v)
+			for _, item := range v {
+				itemStr, ok := item.(string)
+				require.True(t, ok)
+				require.NotContains(t, itemStr, "${")
+			}
+		default:
+			t.Fatalf("unexpected DependsOn type %T", dependsOn)
+		}
 	}
 }
 
@@ -688,7 +885,16 @@ JSON
     }
   },
   "Resources": {
+    "ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E": {
+      "Type": "AWS::IAM::Policy"
+    },
+    "ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A": {
+      "Type": "AWS::IAM::Policy"
+    },
     "Example": {
+      "DependsOn": [
+        "ImportedBasicRolePolicyappslugplaceholderdevImportedBasicRole2EE626BABA11CB8E"
+      ],
       "Properties": {
         "Domain": "$stage_domain",
         "WildcardDomain": "*.$stage_domain",
@@ -711,6 +917,18 @@ JSON
         "ActorKey": { "Ref": "ActorKeyArnParamLookupParameter" },
         "BodyLambda": { "Ref": "LesserBodyMcpLambdaArnParamLookupParameter" }
       }
+    },
+    "NestedDependsOnExample": {
+      "DependsOn": [
+        [
+          "ImportedEncryptionRolePolicyappslugplaceholderdevImportedEncryptionRole173ECB6CE41A2D5A"
+        ]
+      ],
+      "Type": "Custom::Example"
+    },
+    "EmptyDependsOnExample": {
+      "DependsOn": [],
+      "Type": "Custom::Example"
     }
   }
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -78,6 +79,8 @@ var stageLookupParameterNames = map[string]struct{}{
 	"ActorKeyArnParamLookupParameter":            {},
 	"LesserBodyMcpLambdaArnParamLookupParameter": {},
 }
+
+var cloudFormationLogicalIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 // DeployAssemblyDescriptor describes the published deploy assembly archive and
 // the outer executor contract.
@@ -383,6 +386,9 @@ func synthesizeSharedTemplate(repoRoot string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := normalizeTemplateDependsOn(transformed); err != nil {
+		return nil, err
+	}
 	return marshalTemplateJSON(transformed)
 }
 
@@ -445,6 +451,9 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 	}
 
 	replaceStageLookupRefs(transformed, stage)
+	if err := normalizeTemplateDependsOn(transformed); err != nil {
+		return nil, nil, err
+	}
 
 	templateBytes, err := marshalTemplateJSON(transformed)
 	if err != nil {
@@ -805,6 +814,156 @@ func transformValue(value any, path []string, skip func(path []string) bool, rep
 	default:
 		return value, nil
 	}
+}
+
+func normalizeTemplateDependsOn(value any) error {
+	switch v := value.(type) {
+	case map[string]any:
+		if dependsOn, ok := v["DependsOn"]; ok {
+			normalized, keep, err := normalizeDependsOnValue(dependsOn)
+			if err != nil {
+				return err
+			}
+			if keep {
+				v["DependsOn"] = normalized
+			} else {
+				delete(v, "DependsOn")
+			}
+		}
+		for _, child := range v {
+			if err := normalizeTemplateDependsOn(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if err := normalizeTemplateDependsOn(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeDependsOnValue(value any) (any, bool, error) {
+	items, err := flattenDependsOnValues(value)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(items) == 0 {
+		return nil, false, nil
+	}
+	if len(items) == 1 {
+		return items[0], true, nil
+	}
+
+	normalized := make([]any, len(items))
+	for idx, item := range items {
+		normalized[idx] = item
+	}
+	return normalized, true, nil
+}
+
+func flattenDependsOnValues(value any) ([]string, error) {
+	switch v := value.(type) {
+	case string:
+		resolved, err := normalizeDependsOnString(v)
+		if err != nil {
+			return nil, err
+		}
+		return []string{resolved}, nil
+	case map[string]any:
+		resolved, err := normalizeDependsOnSub(v)
+		if err != nil {
+			return nil, err
+		}
+		return []string{resolved}, nil
+	case []any:
+		flattened := make([]string, 0, len(v))
+		for _, child := range v {
+			items, err := flattenDependsOnValues(child)
+			if err != nil {
+				return nil, err
+			}
+			flattened = append(flattened, items...)
+		}
+		return flattened, nil
+	case nil:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported DependsOn value type %T", value)
+	}
+}
+
+func normalizeDependsOnSub(value map[string]any) (string, error) {
+	raw, ok := value["Fn::Sub"]
+	if !ok || len(value) != 1 {
+		return "", fmt.Errorf("DependsOn contains unsupported intrinsic %#v", value)
+	}
+
+	switch v := raw.(type) {
+	case string:
+		return normalizeDependsOnString(resolveDependsOnPlaceholders(v))
+	case []any:
+		if len(v) == 0 {
+			return "", fmt.Errorf("DependsOn Fn::Sub is empty")
+		}
+		template, ok := v[0].(string)
+		if !ok {
+			return "", fmt.Errorf("DependsOn Fn::Sub template has unsupported type %T", v[0])
+		}
+		resolved := resolveDependsOnPlaceholders(template)
+		if len(v) == 2 {
+			vars, ok := v[1].(map[string]any)
+			if !ok {
+				return "", fmt.Errorf("DependsOn Fn::Sub variables have unsupported type %T", v[1])
+			}
+			for key, rawValue := range vars {
+				strValue, ok := rawValue.(string)
+				if !ok {
+					return "", fmt.Errorf("DependsOn Fn::Sub variable %s has unsupported type %T", key, rawValue)
+				}
+				resolved = strings.ReplaceAll(resolved, "${"+key+"}", strValue)
+			}
+		}
+		return normalizeDependsOnString(resolved)
+	default:
+		return "", fmt.Errorf("DependsOn Fn::Sub has unsupported type %T", raw)
+	}
+}
+
+func resolveDependsOnPlaceholders(value string) string {
+	replacements := orderedPlaceholderReplacements(map[string]string{
+		"${AppSlug}":                   placeholderAppSlug,
+		"${AWS::AccountId}":            placeholderAccountID,
+		"${AWS::Region}":               placeholderRegion,
+		"${BaseDomain}":                placeholderBaseDomain,
+		"${HostedZoneId}":              placeholderHostedZoneID,
+		"${ReleaseAssetBucketName}":    assetBucketPlaceholder(),
+		"${LesserHostUrl}":             placeholderLesserHostURL,
+		"${LesserHostAttestationsUrl}": placeholderLesserHostAttestationsURL,
+		"${LesserHostInstanceKeyArn}":  placeholderLesserHostInstanceKeyARN,
+		"${TranslationEnabled}":        placeholderTranslationEnabled,
+		"${TipEnabled}":                placeholderTipEnabled,
+		"${TipChainId}":                placeholderTipChainID,
+		"${TipContractAddress}":        placeholderTipContractAddress,
+	})
+	resolved, _ := applyPlaceholderReplacements(value, replacements)
+	return resolved
+}
+
+func normalizeDependsOnString(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("DependsOn value is empty")
+	}
+	if strings.Contains(value, "${") {
+		return "", fmt.Errorf("DependsOn value %q has unresolved substitutions", value)
+	}
+	if !cloudFormationLogicalIDPattern.MatchString(value) {
+		return "", fmt.Errorf("DependsOn value %q is not a valid logical ID", value)
+	}
+	return value, nil
 }
 
 func applyPlaceholderReplacements(value string, replacements []placeholderReplacement) (string, bool) {
