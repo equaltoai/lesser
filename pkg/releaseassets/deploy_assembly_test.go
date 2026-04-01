@@ -416,6 +416,54 @@ func TestRunCDKSynthJSON_ErrorsOnInvalidTemplateJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "parse synthesized template")
 }
 
+func TestRunCDKSynthJSON_PrefersSynthesizedTemplateFileOverNoisyStdout(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
+
+	binDir := t.TempDir()
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+stack="$2"
+shift 2
+output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      output="$2"
+      shift 2
+      ;;
+    --context)
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$output"
+cat > "$output/$stack.template.json" <<'JSON'
+{
+  "Resources": {
+    "Example": {
+      "Type": "AWS::S3::Bucket"
+    }
+  }
+}
+JSON
+printf '7 feature flags are not configured.\n'
+`
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "cdk"), []byte(script), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	template, _, synthDir, err := runCDKSynthJSON(repoRoot, "demo", map[string]string{"app": "demo"})
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(synthDir) }()
+
+	resources, ok := template["Resources"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, resources, "Example")
+}
+
 func TestRunCDKSynthJSON_ErrorsOnInvalidAssetsManifest(t *testing.T) {
 	repoRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))

@@ -493,8 +493,14 @@ func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]stri
 		return nil, cdkAssetsManifest{}, "", fmt.Errorf("cdk synth %s: %w\n%s", stackName, err, strings.TrimSpace(stderr.String()))
 	}
 
+	templateData, err := readSynthesizedTemplateFile(synthDir, stackName, stdout.Bytes())
+	if err != nil {
+		_ = os.RemoveAll(synthDir)
+		return nil, cdkAssetsManifest{}, "", err
+	}
+
 	var template map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &template); err != nil {
+	if err := json.Unmarshal(templateData, &template); err != nil {
 		_ = os.RemoveAll(synthDir)
 		return nil, cdkAssetsManifest{}, "", fmt.Errorf("parse synthesized template for %s: %w", stackName, err)
 	}
@@ -510,6 +516,20 @@ func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]stri
 
 	assets = absolutizeAssetPaths(synthDir, assets)
 	return template, assets, synthDir, nil
+}
+
+func readSynthesizedTemplateFile(synthDir string, stackName string, stdout []byte) ([]byte, error) {
+	templatePath := filepath.Join(synthDir, stackName+".template.json")
+	templateData, err := os.ReadFile(templatePath)
+	if err == nil {
+		return templateData, nil
+	}
+
+	if len(bytes.TrimSpace(stdout)) != 0 {
+		return stdout, nil
+	}
+
+	return nil, fmt.Errorf("read synthesized template %s: %w", templatePath, err)
 }
 
 func absolutizeAssetPaths(synthDir string, manifest cdkAssetsManifest) cdkAssetsManifest {
