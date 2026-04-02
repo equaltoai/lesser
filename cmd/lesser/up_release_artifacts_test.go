@@ -84,7 +84,7 @@ func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
 	require.False(t, buildCalled)
 }
 
-func TestRunUp_ReleaseDirDeploysSharedAndStageTemplatesFromReleaseAssembly(t *testing.T) {
+func TestRunUp_ReleaseDirDeploysSharedAndStageStacksViaCDK(t *testing.T) {
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
@@ -103,83 +103,31 @@ func TestRunUp_ReleaseDirDeploysSharedAndStageTemplatesFromReleaseAssembly(t *te
 		return nil
 	}
 
-	var requests []cloudFormationDeployRequest
-	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
-		requests = append(requests, req)
-		if req.StackName == naming.SharedStackName("app") {
-			return map[string]string{"ReleaseAssetBucketName": "app-shared-release-assets"}, nil
-		}
-		return map[string]string{}, nil
-	}
-
-	require.NoError(t, runUp([]string{
-		"--app", "app",
-		"--base-domain", "example.com",
-		"--aws-profile", "profile",
-		"--release-dir", releaseDir,
-	}))
-
-	require.Len(t, requests, 3)
-
-	require.Equal(t, naming.SharedStackName("app"), requests[0].StackName)
-	require.NotEmpty(t, requests[0].TemplateBody)
-	require.Empty(t, requests[0].TemplateURL)
-	require.Equal(t, map[string]string{"AppSlug": "app"}, requests[0].Parameters)
-
-	for _, req := range requests[1:] {
-		require.Empty(t, req.TemplateBody)
-		require.NotEmpty(t, req.TemplateURL)
-		require.Equal(t, "app", req.Parameters["AppSlug"])
-		require.Equal(t, "example.com", req.Parameters["BaseDomain"])
-		require.Equal(t, "Z1", req.Parameters["HostedZoneId"])
-		require.Equal(t, "app-shared-release-assets", req.Parameters["ReleaseAssetBucketName"])
-	}
-}
-
-func TestRunUp_ReleaseDirUploadsStageTemplatesFromReleaseAssembly(t *testing.T) {
-	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
-		"api":   "api zip",
-		"inbox": "inbox zip",
-	})
-	releaseDir := testReleaseDirFromRepo(t, sourceRepo)
-	targetRepo := testRepoWithCanonicalInventory(t, []string{"api", "inbox"})
-
-	restore := stubRunUpReleaseArtifactDeps(t, targetRepo)
-	defer restore()
-
-	buildLambdaZipsFn = func(string, bool) error {
-		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
+	cdkBootstrapCalled := false
+	cdkBootstrapFn = func(context.Context, string, string, string, string) error {
+		cdkBootstrapCalled = true
 		return nil
 	}
-
-	var uploadedBucket string
-	var uploadedVersion string
-	var uploadedGitSHA string
-	var uploadedAssembly releaseDeployAssemblyInstallResult
-	uploadReleaseAssemblyAssetsFn = func(
-		_ context.Context,
-		_ aws.Config,
-		bucket string,
-		version string,
-		gitSHA string,
-		assembly releaseDeployAssemblyInstallResult,
-	) (releaseAssemblyUploadResult, error) {
-		uploadedBucket = bucket
-		uploadedVersion = version
-		uploadedGitSHA = gitSHA
-		uploadedAssembly = assembly
-		return releaseAssemblyUploadResult{
-			StageTemplateURLs: map[naming.Stage]string{
-				naming.StageDev:  "https://example.invalid/dev",
-				naming.StageLive: "https://example.invalid/live",
+	var requests []cdkDeployRequest
+	cdkDeployWithOutputsFn = func(_ context.Context, repoRoot string, profile string, req cdkDeployRequest) (cdkDeployResult, error) {
+		require.Equal(t, targetRepo, repoRoot)
+		require.Equal(t, "profile", profile)
+		requests = append(requests, req)
+		return cdkDeployResult{
+			StackName: req.StackName,
+			Outputs: map[string]string{
+				"AuthUIBucketName":       "auth-ui-bucket",
+				"FrontendDistributionId": "DIST",
 			},
 		}, nil
 	}
-	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
-		if req.StackName == naming.SharedStackName("app") {
-			return map[string]string{"ReleaseAssetBucketName": "app-shared-release-assets"}, nil
-		}
-		return map[string]string{}, nil
+	deployCloudFormationStackFn = func(context.Context, aws.Config, cloudFormationDeployRequest) (map[string]string, error) {
+		t.Fatal("release-dir deploy should not execute release assembly stacks through CloudFormation directly")
+		return nil, nil
+	}
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+		t.Fatal("release-dir deploy should not upload release assembly stage templates")
+		return releaseAssemblyUploadResult{}, nil
 	}
 
 	require.NoError(t, runUp([]string{
@@ -189,12 +137,24 @@ func TestRunUp_ReleaseDirUploadsStageTemplatesFromReleaseAssembly(t *testing.T) 
 		"--release-dir", releaseDir,
 	}))
 
-	require.Equal(t, "app-shared-release-assets", uploadedBucket)
-	require.Equal(t, "v1.2.3", uploadedVersion)
-	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", uploadedGitSHA)
-	require.NotEmpty(t, uploadedAssembly.SharedTemplate)
-	require.NotEmpty(t, uploadedAssembly.StageTemplates[naming.StageDev])
-	require.NotEmpty(t, uploadedAssembly.StageTemplates[naming.StageLive])
+	require.True(t, cdkBootstrapCalled)
+	require.Len(t, requests, 3)
+
+	require.Equal(t, naming.SharedStackName("app"), requests[0].StackName)
+	require.Equal(t, "app", requests[0].App)
+	require.Equal(t, "example.com", requests[0].BaseDomain)
+	require.Equal(t, "Z1", requests[0].HostedZoneID)
+	require.NotEmpty(t, requests[0].LambdaAssetRoot)
+	require.Equal(t, string(naming.StageShared), requests[0].StageFilter)
+	require.False(t, requests[0].WithStaging)
+
+	for _, req := range requests[1:] {
+		require.Equal(t, "app", req.App)
+		require.Equal(t, "example.com", req.BaseDomain)
+		require.Equal(t, "Z1", req.HostedZoneID)
+		require.Equal(t, requests[0].LambdaAssetRoot, req.LambdaAssetRoot)
+		require.NotEqual(t, string(naming.StageShared), req.StageFilter)
+	}
 }
 
 func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
@@ -207,6 +167,7 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 	previousZone := resolveHostedZoneFn
 	previousInspect := inspectBootstrapRequirementsFn
 	previousTools := ensureToolsAvailableFn
+	previousReleaseTools := ensureReleaseDeployToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseDeployAssetsFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
@@ -235,6 +196,7 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 		return "0xabc", false, nil
 	}
 	ensureToolsAvailableFn = func() error { return nil }
+	ensureReleaseDeployToolsAvailableFn = func() error { return nil }
 	buildLambdaZipsFn = func(string, bool) error { return nil }
 	installReleaseDeployAssetsFn = installReleaseDeployAssets
 	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
@@ -256,14 +218,9 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 			"FrontendDistributionDomain": "dist.example.com",
 		}, nil
 	}
-	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
-		return releaseAssemblyUploadResult{
-			StageTemplateURLs: map[naming.Stage]string{
-				naming.StageDev:     "https://example.invalid/dev",
-				naming.StageStaging: "https://example.invalid/staging",
-				naming.StageLive:    "https://example.invalid/live",
-			},
-		}, nil
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+		t.Fatal("release assembly execution should not run in release-dir mode")
+		return releaseAssemblyUploadResult{}, nil
 	}
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
 	replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
@@ -278,6 +235,7 @@ func stubRunUpReleaseArtifactDeps(t *testing.T, repoRoot string) func() {
 		resolveHostedZoneFn = previousZone
 		inspectBootstrapRequirementsFn = previousInspect
 		ensureToolsAvailableFn = previousTools
+		ensureReleaseDeployToolsAvailableFn = previousReleaseTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseDeployAssetsFn = previousInstallRelease
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap

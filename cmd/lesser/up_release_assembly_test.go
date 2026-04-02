@@ -19,20 +19,39 @@ func TestUploadReleaseAssemblyAssets(t *testing.T) {
 	previousNewPresign := newS3PresignClientFn
 	previousUploadFile := uploadReleaseAssemblyFileFn
 	previousPresignURL := presignReleaseAssemblyURLFn
+	previousPutObject := putS3ObjectFn
 	t.Cleanup(func() {
 		newS3ClientFn = previousNewS3Client
 		newS3PresignClientFn = previousNewPresign
 		uploadReleaseAssemblyFileFn = previousUploadFile
 		presignReleaseAssemblyURLFn = previousPresignURL
+		putS3ObjectFn = previousPutObject
 	})
 
-	var uploadedKeys []string
+	tempDir := t.TempDir()
+	assetPath := filepath.Join(tempDir, "plain.txt")
+	require.NoError(t, os.WriteFile(assetPath, []byte("plain"), 0o644))
+	devPath := filepath.Join(tempDir, "dev.template.json")
+	stagingPath := filepath.Join(tempDir, "staging.template.json")
+	livePath := filepath.Join(tempDir, "live.template.json")
+	for _, path := range []string{devPath, stagingPath, livePath} {
+		require.NoError(t, os.WriteFile(path, []byte(`{"Description":"appslugplaceholder-template"}`), 0o644))
+	}
+
+	var uploadedAssetKeys []string
+	templateBodies := map[string]string{}
 	newS3ClientFn = func(aws.Config, ...func(*s3.Options)) *s3.Client { return nil }
 	newS3PresignClientFn = func(*s3.Client, ...func(*s3.PresignOptions)) *s3.PresignClient { return nil }
 	uploadReleaseAssemblyFileFn = func(_ context.Context, _ *s3.Client, bucket, objectKey, localPath string) error {
 		require.Equal(t, "bucket", bucket)
-		uploadedKeys = append(uploadedKeys, objectKey+"="+filepath.Base(localPath))
+		uploadedAssetKeys = append(uploadedAssetKeys, objectKey+"="+filepath.Base(localPath))
 		return nil
+	}
+	putS3ObjectFn = func(_ context.Context, _ *s3.Client, input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+		body, err := io.ReadAll(input.Body)
+		require.NoError(t, err)
+		templateBodies[aws.ToString(input.Key)] = string(body)
+		return &s3.PutObjectOutput{}, nil
 	}
 	presignReleaseAssemblyURLFn = func(_ context.Context, _ *s3.PresignClient, _ string, templateKey string) (string, error) {
 		return "https://example.com/" + templateKey, nil
@@ -40,23 +59,21 @@ func TestUploadReleaseAssemblyAssets(t *testing.T) {
 
 	assembly := releaseDeployAssemblyInstallResult{
 		Assets: []releaseDeployAssemblyAsset{
-			{ObjectKey: "assets/plain.txt", LocalPath: "/tmp/plain.txt"},
+			{ObjectKey: "assets/plain.txt", LocalPath: assetPath},
 		},
 		StageTemplates: map[naming.Stage]string{
-			naming.StageDev:     "/tmp/dev.template.json",
-			naming.StageStaging: "/tmp/staging.template.json",
-			naming.StageLive:    "/tmp/live.template.json",
+			naming.StageDev:     devPath,
+			naming.StageStaging: stagingPath,
+			naming.StageLive:    livePath,
 		},
 	}
 
-	result, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", assembly)
+	result, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", "app", assembly)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		"assets/plain.txt=plain.txt",
-		"release-assembly/v1.2.3/abcdef/templates/dev.template.json=dev.template.json",
-		"release-assembly/v1.2.3/abcdef/templates/staging.template.json=staging.template.json",
-		"release-assembly/v1.2.3/abcdef/templates/live.template.json=live.template.json",
-	}, uploadedKeys)
+	require.Equal(t, []string{"assets/plain.txt=plain.txt"}, uploadedAssetKeys)
+	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/dev.template.json"])
+	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/staging.template.json"])
+	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/live.template.json"])
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/dev.template.json", result.StageTemplateURLs[naming.StageDev])
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/staging.template.json", result.StageTemplateURLs[naming.StageStaging])
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/live.template.json", result.StageTemplateURLs[naming.StageLive])
@@ -67,27 +84,37 @@ func TestUploadReleaseAssemblyAssets_Errors(t *testing.T) {
 	previousNewPresign := newS3PresignClientFn
 	previousUploadFile := uploadReleaseAssemblyFileFn
 	previousPresignURL := presignReleaseAssemblyURLFn
+	previousPutObject := putS3ObjectFn
 	t.Cleanup(func() {
 		newS3ClientFn = previousNewS3Client
 		newS3PresignClientFn = previousNewPresign
 		uploadReleaseAssemblyFileFn = previousUploadFile
 		presignReleaseAssemblyURLFn = previousPresignURL
+		putS3ObjectFn = previousPutObject
 	})
 
 	newS3ClientFn = func(aws.Config, ...func(*s3.Options)) *s3.Client { return nil }
 	newS3PresignClientFn = func(*s3.Client, ...func(*s3.PresignOptions)) *s3.PresignClient { return nil }
+	putS3ObjectFn = func(context.Context, *s3.Client, *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+		return &s3.PutObjectOutput{}, nil
+	}
+	tempDir := t.TempDir()
+	templatePaths := map[naming.Stage]string{
+		naming.StageDev:     filepath.Join(tempDir, "dev.template.json"),
+		naming.StageStaging: filepath.Join(tempDir, "staging.template.json"),
+		naming.StageLive:    filepath.Join(tempDir, "live.template.json"),
+	}
+	for _, path := range templatePaths {
+		require.NoError(t, os.WriteFile(path, []byte(`{"Description":"appslugplaceholder-template"}`), 0o644))
+	}
 
-	_, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "", "v1.2.3", "abcdef", releaseDeployAssemblyInstallResult{})
+	_, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "", "v1.2.3", "abcdef", "app", releaseDeployAssemblyInstallResult{})
 	require.ErrorContains(t, err, "release asset bucket is required")
 
 	uploadReleaseAssemblyFileFn = func(context.Context, *s3.Client, string, string, string) error { return errors.New("upload failed") }
-	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", releaseDeployAssemblyInstallResult{
-		Assets: []releaseDeployAssemblyAsset{{ObjectKey: "assets/plain.txt", LocalPath: "/tmp/plain.txt"}},
-		StageTemplates: map[naming.Stage]string{
-			naming.StageDev:     "/tmp/dev.template.json",
-			naming.StageStaging: "/tmp/staging.template.json",
-			naming.StageLive:    "/tmp/live.template.json",
-		},
+	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", "app", releaseDeployAssemblyInstallResult{
+		Assets:         []releaseDeployAssemblyAsset{{ObjectKey: "assets/plain.txt", LocalPath: filepath.Join(tempDir, "plain.txt")}},
+		StageTemplates: templatePaths,
 	})
 	require.ErrorContains(t, err, "upload failed")
 
@@ -95,22 +122,18 @@ func TestUploadReleaseAssemblyAssets_Errors(t *testing.T) {
 	presignReleaseAssemblyURLFn = func(context.Context, *s3.PresignClient, string, string) (string, error) {
 		return "", errors.New("presign failed")
 	}
-	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", releaseDeployAssemblyInstallResult{
-		StageTemplates: map[naming.Stage]string{
-			naming.StageDev:     "/tmp/dev.template.json",
-			naming.StageStaging: "/tmp/staging.template.json",
-			naming.StageLive:    "/tmp/live.template.json",
-		},
+	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", "app", releaseDeployAssemblyInstallResult{
+		StageTemplates: templatePaths,
 	})
 	require.ErrorContains(t, err, "presign failed")
 
 	presignReleaseAssemblyURLFn = func(context.Context, *s3.PresignClient, string, string) (string, error) {
 		return "https://example.com/template.json", nil
 	}
-	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", releaseDeployAssemblyInstallResult{
+	_, err = uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", "app", releaseDeployAssemblyInstallResult{
 		StageTemplates: map[naming.Stage]string{
-			naming.StageDev:     "/tmp/dev.template.json",
-			naming.StageStaging: "/tmp/staging.template.json",
+			naming.StageDev:     templatePaths[naming.StageDev],
+			naming.StageStaging: templatePaths[naming.StageStaging],
 		},
 	})
 	require.ErrorContains(t, err, "release assembly missing stage template for live")
@@ -212,7 +235,7 @@ func TestUpEnvDeployFromReleaseAssembly_ErrorsWhenStageTemplateURLMissing(t *tes
 		t.Fatal("stage deploy should not run without a template URL")
 		return nil, nil
 	}
-	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
 		return releaseAssemblyUploadResult{
 			StageTemplateURLs: map[naming.Stage]string{},
 		}, nil

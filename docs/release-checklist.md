@@ -20,7 +20,8 @@ This checklist is for maintainers preparing a release/deployable build.
 - [ ] Confirm `dist/release/` contains the published deploy assets:
   `lesser-lambda-bundle.tar.gz`, `lesser-lambda-bundle.json`, `lesser-auth-ui.tar.gz`,
   `lesser-deploy-assembly.tar.gz`, `lesser-deploy-assembly.json`, `lesser-release.json`, and `checksums.txt`
-- [ ] Confirm the published release assets are sufficient for `./lesser up --release-dir ...` without a repo checkout
+- [ ] Confirm the published release assets are sufficient for `./lesser up --release-dir ...` with a release-matched
+      Lesser checkout, target-account AWS credentials, and `aws`/`cdk`/`go`
 
 ## Deploy
 

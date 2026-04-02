@@ -56,3 +56,27 @@ func TestValidateDeploySourceInputs(t *testing.T) {
 		require.Contains(t, err.Error(), "deploy requires repo-local CDK application source file")
 	})
 }
+
+func TestValidateReleaseDeployInputs(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk", "inventory"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "inventory", "lambdas.go"), []byte("package inventory\n"), 0o644))
+
+	require.NoError(t, validateReleaseDeployInputs(repoRoot))
+
+	t.Run("does not require auth ui source", func(t *testing.T) {
+		require.NoError(t, validateReleaseDeployInputs(repoRoot))
+	})
+
+	t.Run("missing inventory", func(t *testing.T) {
+		missingRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(missingRoot, "infra", "cdk"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(missingRoot, "infra", "cdk", "cdk.json"), []byte("{}\n"), 0o644))
+
+		err := validateReleaseDeployInputs(missingRoot)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "deploy requires repo-local canonical lambda inventory source")
+		require.Contains(t, err.Error(), filepath.Join(missingRoot, "infra", "cdk", "inventory", "lambdas.go"))
+	})
+}

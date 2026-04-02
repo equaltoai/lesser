@@ -48,6 +48,8 @@ type upArgs struct {
 	AIContentDetectionEnabled *bool
 }
 
+const legacyReleaseAssemblyEnv = "LESSER_USE_LEGACY_RELEASE_ASSEMBLY"
+
 func runUp(argv []string) error {
 	args, err := parseUpArgs(argv)
 	if err != nil {
@@ -151,12 +153,19 @@ func resolveUpExecutionInputs(args upArgs) (string, string, upArgs, string, erro
 		if err != nil {
 			return "", "", upArgs{}, "", err
 		}
-		if err := validateDeploySourceInputsFn(repoRoot); err != nil {
+		if err := validateUpDeployInputs(args, repoRoot); err != nil {
 			return "", "", upArgs{}, "", err
 		}
 	}
 
 	return app, baseDomain, args, repoRoot, nil
+}
+
+func validateUpDeployInputs(args upArgs, repoRoot string) error {
+	if usesReleaseArtifactsArgs(args) {
+		return validateReleaseDeployInputsFn(repoRoot)
+	}
+	return validateDeploySourceInputsFn(repoRoot)
 }
 
 func resolveUpAWSContext(ctx context.Context, args upArgs, baseDomain string) (upAWSContext, error) {
@@ -487,7 +496,8 @@ func (e *upEnv) handleBootstrapOutput() error {
 }
 
 func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
-	if e.usesReleaseArtifacts() {
+	if e.usesReleaseArtifacts() && releaseAssemblyLegacyModeEnabled() {
+		fmt.Printf("\nUsing legacy release assembly deploy path because %s is enabled.\n", legacyReleaseAssemblyEnv)
 		return e.deployFromReleaseAssembly(ctx)
 	}
 	return e.deployFromSource(ctx)
@@ -665,19 +675,28 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	return args, nil
 }
 
+func usesReleaseArtifactsArgs(args upArgs) bool {
+	return strings.TrimSpace(args.ReleaseDir) != "" && !args.RebuildLambdas
+}
+
 func (e *upEnv) usesReleaseArtifacts() bool {
-	return strings.TrimSpace(e.args.ReleaseDir) != "" && !e.args.RebuildLambdas
+	return usesReleaseArtifactsArgs(e.args)
 }
 
 func (e *upEnv) ensureToolsAvailable() error {
 	if e.usesReleaseArtifacts() {
-		return nil
+		return ensureReleaseDeployToolsAvailableFn()
 	}
 	return ensureToolsAvailableFn()
 }
 
-func requiresDeploySourceCheckout(args upArgs) bool {
-	return strings.TrimSpace(args.ReleaseDir) == "" || args.RebuildLambdas
+func requiresDeploySourceCheckout(_ upArgs) bool {
+	return true
+}
+
+func releaseAssemblyLegacyModeEnabled() bool {
+	value := strings.TrimSpace(os.Getenv(legacyReleaseAssemblyEnv))
+	return value == "1" || strings.EqualFold(value, "true")
 }
 
 func normalizeReleaseDir(input string) (string, error) {

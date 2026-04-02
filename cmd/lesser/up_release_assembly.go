@@ -14,6 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
+const releaseAssemblyAppSlugPlaceholder = "appslugplaceholder"
+
 type releaseAssemblyUploadResult struct {
 	StageTemplateURLs map[naming.Stage]string
 }
@@ -39,16 +41,19 @@ func (e *upEnv) deployFromReleaseAssembly(ctx context.Context) (*upReceipt, erro
 		return nil, err
 	}
 
-	sharedTemplate, err := os.ReadFile(e.releaseAssembly.SharedTemplate) // #nosec G304 -- shared template path comes from verified release assembly extraction
+	sharedTemplateRaw, err := os.ReadFile(e.releaseAssembly.SharedTemplate) // #nosec G304 -- shared template path comes from verified release assembly extraction
 	if err != nil {
 		return nil, fmt.Errorf("read shared deploy assembly template: %w", err)
 	}
+	// Replace the synthesis placeholder with the concrete app slug so that logical IDs,
+	// SSM paths, and all other embedded references resolve correctly.
+	sharedTemplate := strings.ReplaceAll(string(sharedTemplateRaw), releaseAssemblyAppSlugPlaceholder, e.app)
 
 	sharedStack := naming.SharedStackName(e.app)
 	fmt.Println("\nDeploying shared stack from release assembly:", sharedStack)
 	sharedOutputs, err := deployCloudFormationStackFn(ctx, e.awsCfg, cloudFormationDeployRequest{
 		StackName:    sharedStack,
-		TemplateBody: string(sharedTemplate),
+		TemplateBody: sharedTemplate,
 		Parameters: map[string]string{
 			"AppSlug": e.app,
 		},
@@ -67,6 +72,7 @@ func (e *upEnv) deployFromReleaseAssembly(ctx context.Context) (*upReceipt, erro
 		releaseAssetBucket,
 		e.releaseVersion,
 		e.releaseGitSHA,
+		e.app,
 		*e.releaseAssembly,
 	)
 	if err != nil {
@@ -151,6 +157,7 @@ func uploadReleaseAssemblyAssets(
 	bucket string,
 	version string,
 	gitSHA string,
+	appSlug string,
 	assembly releaseDeployAssemblyInstallResult,
 ) (releaseAssemblyUploadResult, error) {
 	if strings.TrimSpace(bucket) == "" {
@@ -176,9 +183,21 @@ func uploadReleaseAssemblyAssets(
 		if templatePath == "" {
 			return releaseAssemblyUploadResult{}, fmt.Errorf("release assembly missing stage template for %s", stage)
 		}
+		// Read the template, replace the synthesis placeholder with the concrete app
+		// slug so logical IDs, SSM paths, and all embedded references match the target
+		// instance, then upload the resolved template.
+		rawTemplate, err := os.ReadFile(templatePath) // #nosec G304 -- template path from verified assembly
+		if err != nil {
+			return releaseAssemblyUploadResult{}, fmt.Errorf("read stage template %s: %w", templatePath, err)
+		}
+		resolvedTemplate := strings.ReplaceAll(string(rawTemplate), releaseAssemblyAppSlugPlaceholder, appSlug)
 		templateKey := path.Join(templatePrefix, path.Base(templatePath))
-		if err := uploadReleaseAssemblyFileFn(ctx, s3Client, bucket, templateKey, templatePath); err != nil {
-			return releaseAssemblyUploadResult{}, err
+		if _, err := putS3ObjectFn(ctx, s3Client, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(templateKey),
+			Body:   strings.NewReader(resolvedTemplate),
+		}); err != nil {
+			return releaseAssemblyUploadResult{}, fmt.Errorf("upload resolved stage template to s3://%s/%s: %w", bucket, templateKey, err)
 		}
 		presigned, err := presignReleaseAssemblyURLFn(ctx, presignClient, bucket, templateKey)
 		if err != nil {

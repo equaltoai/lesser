@@ -372,6 +372,121 @@ func TestPrepareUpEnv_RejectsInvalidReleaseDir(t *testing.T) {
 	})
 }
 
+func TestValidateUpDeployInputs(t *testing.T) {
+	previousSource := validateDeploySourceInputsFn
+	previousRelease := validateReleaseDeployInputsFn
+	t.Cleanup(func() {
+		validateDeploySourceInputsFn = previousSource
+		validateReleaseDeployInputsFn = previousRelease
+	})
+
+	t.Run("release artifacts use release deploy requirements", func(t *testing.T) {
+		validateDeploySourceInputsFn = func(string) error {
+			t.Fatal("source deploy requirements should not run for release artifacts")
+			return nil
+		}
+		validateReleaseDeployInputsFn = func(repoRoot string) error {
+			require.Equal(t, "/repo", repoRoot)
+			return nil
+		}
+
+		require.NoError(t, validateUpDeployInputs(upArgs{ReleaseDir: "/tmp/release"}, "/repo"))
+	})
+
+	t.Run("source deploys use source requirements", func(t *testing.T) {
+		validateDeploySourceInputsFn = func(repoRoot string) error {
+			require.Equal(t, "/repo", repoRoot)
+			return nil
+		}
+		validateReleaseDeployInputsFn = func(string) error {
+			t.Fatal("release deploy requirements should not run for source deploys")
+			return nil
+		}
+
+		require.NoError(t, validateUpDeployInputs(upArgs{}, "/repo"))
+	})
+}
+
+func TestReleaseAssemblyLegacyModeEnabled(t *testing.T) {
+	previous, hadPrevious := os.LookupEnv(legacyReleaseAssemblyEnv)
+	t.Cleanup(func() {
+		if hadPrevious {
+			require.NoError(t, os.Setenv(legacyReleaseAssemblyEnv, previous))
+			return
+		}
+		require.NoError(t, os.Unsetenv(legacyReleaseAssemblyEnv))
+	})
+
+	require.NoError(t, os.Unsetenv(legacyReleaseAssemblyEnv))
+	require.False(t, releaseAssemblyLegacyModeEnabled())
+
+	require.NoError(t, os.Setenv(legacyReleaseAssemblyEnv, "1"))
+	require.True(t, releaseAssemblyLegacyModeEnabled())
+
+	require.NoError(t, os.Setenv(legacyReleaseAssemblyEnv, "true"))
+	require.True(t, releaseAssemblyLegacyModeEnabled())
+}
+
+func TestUpEnv_Deploy_UsesLegacyReleaseAssemblyWhenEnabled(t *testing.T) {
+	previousEnv, hadEnv := os.LookupEnv(legacyReleaseAssemblyEnv)
+	previousCdkBootstrap := cdkBootstrapFn
+	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
+	previousDeploy := deployCloudFormationStackFn
+	previousUpload := uploadReleaseAssemblyAssetsFn
+	t.Cleanup(func() {
+		if hadEnv {
+			require.NoError(t, os.Setenv(legacyReleaseAssemblyEnv, previousEnv))
+		} else {
+			require.NoError(t, os.Unsetenv(legacyReleaseAssemblyEnv))
+		}
+		cdkBootstrapFn = previousCdkBootstrap
+		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
+		deployCloudFormationStackFn = previousDeploy
+		uploadReleaseAssemblyAssetsFn = previousUpload
+	})
+
+	require.NoError(t, os.Setenv(legacyReleaseAssemblyEnv, "1"))
+
+	assets := stubReleaseDeployAssetsInstallResult(t, t.TempDir())
+	cdkBootstrapFn = func(context.Context, string, string, string, string) error {
+		t.Fatal("legacy release assembly mode should bypass CDK deploy")
+		return nil
+	}
+	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
+	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
+		if req.StackName == naming.SharedStackName("app") {
+			return map[string]string{"ReleaseAssetBucketName": "release-assets"}, nil
+		}
+		return map[string]string{}, nil
+	}
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+		return releaseAssemblyUploadResult{
+			StageTemplateURLs: map[naming.Stage]string{
+				naming.StageDev: "https://example.invalid/dev",
+			},
+		}, nil
+	}
+
+	env := &upEnv{
+		args:            upArgs{ReleaseDir: "/tmp/release"},
+		app:             "app",
+		baseDomain:      "example.com",
+		awsProfile:      "profile",
+		accountID:       "123456789012",
+		awsCfg:          aws.Config{Region: "us-east-1"},
+		hostedZone:      hostedZone{ID: "Z1", Name: "example.com"},
+		stages:          []naming.Stage{naming.StageDev},
+		releaseVersion:  assets.Version,
+		releaseGitSHA:   assets.GitSHA,
+		releaseAssembly: &assets.Assembly,
+	}
+
+	receipt, err := env.deploy(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, receipt)
+	require.Equal(t, naming.StageStackName("app", naming.StageDev), receipt.Stages[string(naming.StageDev)].StackName)
+}
+
 func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousHome := userHomeDirFn
@@ -497,6 +612,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 
 func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
+	previousReleaseTools := ensureReleaseDeployToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseDeployAssetsFn
 	previousWriteBootstrap := writeBootstrapKeyMaterialFn
@@ -512,6 +628,7 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	previousWriteReceipt := writeReceiptFn
 	t.Cleanup(func() {
 		ensureToolsAvailableFn = previousTools
+		ensureReleaseDeployToolsAvailableFn = previousReleaseTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseDeployAssetsFn = previousInstallRelease
 		writeBootstrapKeyMaterialFn = previousWriteBootstrap
@@ -543,6 +660,7 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	}
 
 	ensureToolsAvailableFn = func() error { return nil }
+	ensureReleaseDeployToolsAvailableFn = func() error { return nil }
 	buildLambdaZipsFn = func(string, bool) error {
 		t.Fatal("buildLambdaZips should not run when --release-dir is provided")
 		return nil
@@ -554,21 +672,22 @@ func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
 	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
 	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
 	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
-	deployCloudFormationStackFn = func(_ context.Context, _ aws.Config, req cloudFormationDeployRequest) (map[string]string, error) {
-		if req.StackName == naming.SharedStackName("app") {
-			return map[string]string{"ReleaseAssetBucketName": "release-assets"}, nil
-		}
-		return map[string]string{"AuthUIBucketName": "auth-ui-bucket"}, nil
+	deployCloudFormationStackFn = func(context.Context, aws.Config, cloudFormationDeployRequest) (map[string]string, error) {
+		t.Fatal("release-dir deploy should not execute the release assembly path")
+		return nil, nil
 	}
-	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
-		return releaseAssemblyUploadResult{
-			StageTemplateURLs: map[naming.Stage]string{
-				naming.StageDev: "https://example.invalid/dev",
-			},
-		}, nil
+	uploadReleaseAssemblyAssetsFn = func(context.Context, aws.Config, string, string, string, string, releaseDeployAssemblyInstallResult) (releaseAssemblyUploadResult, error) {
+		t.Fatal("release-dir deploy should not upload release assembly templates")
+		return releaseAssemblyUploadResult{}, nil
 	}
 	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
-		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+		return cdkDeployResult{
+			StackName: req.StackName,
+			Outputs: map[string]string{
+				"AuthUIBucketName":       "auth-ui-bucket",
+				"FrontendDistributionId": "DIST",
+			},
+		}, nil
 	}
 	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
 	replaceBucketWithDirPrefixFn = func(context.Context, s3BucketUploaderAPI, string, string, string) error { return nil }
@@ -1016,6 +1135,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 
 func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	previousTools := ensureToolsAvailableFn
+	previousReleaseTools := ensureReleaseDeployToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
 	previousInstallRelease := installReleaseDeployAssetsFn
 	previousPrepareAssetRoot := prepareLambdaAssetRootFn
@@ -1027,6 +1147,7 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	previousDeployUI := buildAuthUIFn
 	t.Cleanup(func() {
 		ensureToolsAvailableFn = previousTools
+		ensureReleaseDeployToolsAvailableFn = previousReleaseTools
 		buildLambdaZipsFn = previousBuildZips
 		installReleaseDeployAssetsFn = previousInstallRelease
 		prepareLambdaAssetRootFn = previousPrepareAssetRoot
@@ -1073,7 +1194,7 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 	t.Run("release asset install error", func(t *testing.T) {
 		env := baseEnv()
 		env.args.ReleaseDir = "/tmp/release"
-		ensureToolsAvailableFn = func() error { return nil }
+		ensureReleaseDeployToolsAvailableFn = func() error { return nil }
 		buildLambdaZipsFn = func(string, bool) error {
 			t.Fatal("buildLambdaZips should not run when release assets are requested")
 			return nil
