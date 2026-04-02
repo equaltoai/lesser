@@ -5273,6 +5273,42 @@ components:
             description: Mastodon-compatible snowflake identifier (stringified uint).
             pattern: ^[0-9]+$
             type: string
+        SoulAgentAvatar:
+            additionalProperties: false
+            properties:
+                current_renderer_address:
+                    type: string
+                current_style_id:
+                    anyOf:
+                        - type: integer
+                        - type: "null"
+                current_style_name:
+                    type: string
+                image:
+                    type: string
+                styles:
+                    items:
+                        $ref: '#/components/schemas/SoulAgentAvatarStyle'
+                    type: array
+                token_uri:
+                    type: string
+            type: object
+        SoulAgentAvatarStyle:
+            additionalProperties: false
+            properties:
+                image:
+                    type: string
+                renderer_address:
+                    type: string
+                selected:
+                    type: boolean
+                style_id:
+                    type: integer
+                style_name:
+                    type: string
+            required:
+                - style_id
+            type: object
         SoulAgentBinding:
             additionalProperties: false
             properties:
@@ -5294,6 +5330,10 @@ components:
             properties:
                 agent_id:
                     type: string
+                avatar:
+                    anyOf:
+                        - $ref: '#/components/schemas/SoulAgentAvatar'
+                        - type: "null"
                 capabilities:
                     items:
                         type: string
@@ -5304,9 +5344,13 @@ components:
                     anyOf:
                         - type: string
                         - type: "null"
+                lifecycle_reason:
+                    type: string
                 lifecycle_status:
                     type: string
                 local_id:
+                    type: string
+                meta_uri:
                     type: string
                 mint_tx_hash:
                     type: string
@@ -5314,13 +5358,25 @@ components:
                     anyOf:
                         - $ref: '#/components/schemas/RFC3339DateTime'
                         - type: "null"
+                predecessor_agent_id:
+                    type: string
                 principal_address:
+                    type: string
+                principal_declaration:
+                    type: string
+                principal_declared_at:
+                    type: string
+                principal_signature:
                     type: string
                 self_description_version:
                     anyOf:
                         - type: integer
                         - type: "null"
                 status:
+                    type: string
+                successor_agent_id:
+                    type: string
+                token_id:
                     type: string
                 updated_at:
                     anyOf:

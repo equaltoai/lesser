@@ -4450,14 +4450,40 @@ type SoulAgentIdentity {
   localId: String!
   ensName: String
   wallet: String!
+  tokenId: String
+  metaUri: String
+  avatar: SoulAgentAvatar
   principalAddress: String
+  principalSignature: String
+  principalDeclaration: String
+  principalDeclaredAt: String
   status: String!
   lifecycleStatus: String
+  lifecycleReason: String
+  successorAgentId: String
+  predecessorAgentId: String
   selfDescriptionVersion: Int
   capabilities: [String!]!
   mintTxHash: String
   mintedAt: Time
   updatedAt: Time
+}
+
+type SoulAgentAvatar {
+  tokenUri: String
+  image: String
+  currentStyleId: Int
+  currentStyleName: String
+  currentRendererAddress: String
+  styles: [SoulAgentAvatarStyle!]!
+}
+
+type SoulAgentAvatarStyle {
+  styleId: Int!
+  styleName: String
+  rendererAddress: String
+  image: String
+  selected: Boolean!
 }
 
 type SoulAgentBinding {

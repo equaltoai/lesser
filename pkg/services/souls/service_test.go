@@ -828,6 +828,59 @@ func TestSoulHelpers(t *testing.T) {
 	require.NotNil(t, normalizedValue)
 	require.Equal(t, "alpha.eth", *normalizedValue)
 
+	require.Nil(t, cloneSoulAvatar(nil))
+
+	currentStyleID := 2
+	ensName := " alpha.eth "
+	mintedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, 4, 2, 13, 30, 0, 0, time.UTC)
+	mapped := soulFromIdentity(&hostSoulIdentity{
+		AgentID:                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Domain:                 " example.com ",
+		LocalID:                " agent-alpha ",
+		ENSName:                &ensName,
+		Wallet:                 "0x1111111111111111111111111111111111111111",
+		TokenID:                " 42 ",
+		MetaURI:                " https://example.com/meta.json ",
+		Avatar:                 &hostSoulAvatar{TokenURI: " https://example.com/token.json ", Image: " data:image/svg+xml;base64,abc ", CurrentStyleID: &currentStyleID, CurrentStyleName: " Sigil ", CurrentRendererAddress: " 0xABCDEF ", Styles: []hostSoulAvatarStyle{{StyleID: 2, StyleName: " Sigil ", RendererAddress: " 0x1234 ", Image: " data:image/svg+xml;base64,style ", Selected: true}}},
+		PrincipalAddress:       "0x2222222222222222222222222222222222222222",
+		PrincipalSignature:     " 0xdeadbeef ",
+		PrincipalDeclaration:   " I accept responsibility. ",
+		PrincipalDeclaredAt:    " 2026-04-01T12:00:00Z ",
+		Status:                 " active ",
+		LifecycleStatus:        " active ",
+		LifecycleReason:        " steady ",
+		SuccessorAgentID:       " 0xbb ",
+		PredecessorAgentID:     " 0xcc ",
+		SelfDescriptionVersion: &currentStyleID,
+		Capabilities:           []string{"chat"},
+		MintTxHash:             " 0xfeed ",
+		MintedAt:               &mintedAt,
+		UpdatedAt:              &updatedAt,
+	}, &storageModels.InstanceSoulBodyBinding{
+		Username:         "agent-alpha",
+		PrincipalAddress: "0x3333333333333333333333333333333333333333",
+		BoundAt:          mintedAt,
+		UpdatedAt:        updatedAt,
+	})
+	require.Equal(t, "example.com", mapped.Domain)
+	require.Equal(t, "agent-alpha", mapped.LocalID)
+	require.NotNil(t, mapped.ENSName)
+	require.Equal(t, "alpha.eth", *mapped.ENSName)
+	require.Equal(t, "42", mapped.TokenID)
+	require.Equal(t, "https://example.com/meta.json", mapped.MetaURI)
+	require.NotNil(t, mapped.Avatar)
+	require.Equal(t, "https://example.com/token.json", mapped.Avatar.TokenURI)
+	require.Equal(t, "Sigil", mapped.Avatar.CurrentStyleName)
+	require.Equal(t, "0xabcdef", mapped.Avatar.CurrentRendererAddress)
+	require.Len(t, mapped.Avatar.Styles, 1)
+	require.Equal(t, "0x1234", mapped.Avatar.Styles[0].RendererAddress)
+	require.True(t, mapped.Bound)
+	require.Equal(t, "agent-alpha", mapped.BoundAgentUsername)
+	require.Equal(t, "0x3333333333333333333333333333333333333333", mapped.BoundPrincipalAddress)
+	require.Equal(t, mintedAt, mapped.BoundAt)
+	require.Equal(t, updatedAt, mapped.BoundUpdatedAt)
+
 	_, err = validateAgentID("0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
 	require.Error(t, err)
 }

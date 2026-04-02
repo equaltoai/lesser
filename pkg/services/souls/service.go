@@ -64,9 +64,18 @@ type Soul struct {
 	LocalID                string
 	ENSName                *string
 	Wallet                 string
+	TokenID                string
+	MetaURI                string
+	Avatar                 *SoulAvatar
 	PrincipalAddress       string
+	PrincipalSignature     string
+	PrincipalDeclaration   string
+	PrincipalDeclaredAt    string
 	Status                 string
 	LifecycleStatus        string
+	LifecycleReason        string
+	SuccessorAgentID       string
+	PredecessorAgentID     string
 	SelfDescriptionVersion *int
 	Capabilities           []string
 	MintTxHash             string
@@ -77,6 +86,25 @@ type Soul struct {
 	BoundPrincipalAddress  string
 	BoundAt                time.Time
 	BoundUpdatedAt         time.Time
+}
+
+// SoulAvatar represents the current soul avatar plus all configured style variants.
+type SoulAvatar struct {
+	TokenURI               string
+	Image                  string
+	CurrentStyleID         *int
+	CurrentStyleName       string
+	CurrentRendererAddress string
+	Styles                 []SoulAvatarStyle
+}
+
+// SoulAvatarStyle represents one renderer-backed avatar style option.
+type SoulAvatarStyle struct {
+	StyleID         int
+	StyleName       string
+	RendererAddress string
+	Image           string
+	Selected        bool
 }
 
 // NewService creates a new soul service.
@@ -510,9 +538,18 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 		LocalID:                strings.TrimSpace(identity.LocalID),
 		ENSName:                normalizedOptionalString(identity.ENSName),
 		Wallet:                 strings.ToLower(strings.TrimSpace(identity.Wallet)),
+		TokenID:                strings.TrimSpace(identity.TokenID),
+		MetaURI:                strings.TrimSpace(identity.MetaURI),
+		Avatar:                 cloneSoulAvatar(identity.Avatar),
 		PrincipalAddress:       strings.ToLower(strings.TrimSpace(identity.PrincipalAddress)),
+		PrincipalSignature:     strings.TrimSpace(identity.PrincipalSignature),
+		PrincipalDeclaration:   strings.TrimSpace(identity.PrincipalDeclaration),
+		PrincipalDeclaredAt:    strings.TrimSpace(identity.PrincipalDeclaredAt),
 		Status:                 strings.TrimSpace(identity.Status),
 		LifecycleStatus:        strings.TrimSpace(identity.LifecycleStatus),
+		LifecycleReason:        strings.TrimSpace(identity.LifecycleReason),
+		SuccessorAgentID:       strings.TrimSpace(identity.SuccessorAgentID),
+		PredecessorAgentID:     strings.TrimSpace(identity.PredecessorAgentID),
 		SelfDescriptionVersion: identity.SelfDescriptionVersion,
 		Capabilities:           append([]string(nil), identity.Capabilities...),
 		MintTxHash:             strings.TrimSpace(identity.MintTxHash),
@@ -527,6 +564,32 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 		soul.BoundUpdatedAt = binding.UpdatedAt
 	}
 	return soul
+}
+
+func cloneSoulAvatar(value *hostSoulAvatar) *SoulAvatar {
+	if value == nil {
+		return nil
+	}
+
+	styles := make([]SoulAvatarStyle, 0, len(value.Styles))
+	for _, style := range value.Styles {
+		styles = append(styles, SoulAvatarStyle{
+			StyleID:         style.StyleID,
+			StyleName:       strings.TrimSpace(style.StyleName),
+			RendererAddress: strings.ToLower(strings.TrimSpace(style.RendererAddress)),
+			Image:           strings.TrimSpace(style.Image),
+			Selected:        style.Selected,
+		})
+	}
+
+	return &SoulAvatar{
+		TokenURI:               strings.TrimSpace(value.TokenURI),
+		Image:                  strings.TrimSpace(value.Image),
+		CurrentStyleID:         value.CurrentStyleID,
+		CurrentStyleName:       strings.TrimSpace(value.CurrentStyleName),
+		CurrentRendererAddress: strings.ToLower(strings.TrimSpace(value.CurrentRendererAddress)),
+		Styles:                 styles,
+	}
 }
 
 func normalizedOptionalString(value *string) *string {
@@ -555,19 +618,45 @@ type hostSoulAgentResponse struct {
 }
 
 type hostSoulIdentity struct {
-	AgentID                string     `json:"agent_id"`
-	Domain                 string     `json:"domain"`
-	LocalID                string     `json:"local_id"`
-	ENSName                *string    `json:"ens_name"`
-	Wallet                 string     `json:"wallet"`
-	PrincipalAddress       string     `json:"principal_address"`
-	Status                 string     `json:"status"`
-	LifecycleStatus        string     `json:"lifecycle_status"`
-	SelfDescriptionVersion *int       `json:"self_description_version"`
-	Capabilities           []string   `json:"capabilities"`
-	MintTxHash             string     `json:"mint_tx_hash"`
-	MintedAt               *time.Time `json:"minted_at"`
-	UpdatedAt              *time.Time `json:"updated_at"`
+	AgentID                string          `json:"agent_id"`
+	Domain                 string          `json:"domain"`
+	LocalID                string          `json:"local_id"`
+	ENSName                *string         `json:"ens_name"`
+	Wallet                 string          `json:"wallet"`
+	TokenID                string          `json:"token_id"`
+	MetaURI                string          `json:"meta_uri"`
+	Avatar                 *hostSoulAvatar `json:"avatar"`
+	PrincipalAddress       string          `json:"principal_address"`
+	PrincipalSignature     string          `json:"principal_signature"`
+	PrincipalDeclaration   string          `json:"principal_declaration"`
+	PrincipalDeclaredAt    string          `json:"principal_declared_at"`
+	Status                 string          `json:"status"`
+	LifecycleStatus        string          `json:"lifecycle_status"`
+	LifecycleReason        string          `json:"lifecycle_reason"`
+	SuccessorAgentID       string          `json:"successor_agent_id"`
+	PredecessorAgentID     string          `json:"predecessor_agent_id"`
+	SelfDescriptionVersion *int            `json:"self_description_version"`
+	Capabilities           []string        `json:"capabilities"`
+	MintTxHash             string          `json:"mint_tx_hash"`
+	MintedAt               *time.Time      `json:"minted_at"`
+	UpdatedAt              *time.Time      `json:"updated_at"`
+}
+
+type hostSoulAvatar struct {
+	TokenURI               string                `json:"token_uri"`
+	Image                  string                `json:"image"`
+	CurrentStyleID         *int                  `json:"current_style_id"`
+	CurrentStyleName       string                `json:"current_style_name"`
+	CurrentRendererAddress string                `json:"current_renderer_address"`
+	Styles                 []hostSoulAvatarStyle `json:"styles"`
+}
+
+type hostSoulAvatarStyle struct {
+	StyleID         int    `json:"style_id"`
+	StyleName       string `json:"style_name"`
+	RendererAddress string `json:"renderer_address"`
+	Image           string `json:"image"`
+	Selected        bool   `json:"selected"`
 }
 
 type accountRepository interface {

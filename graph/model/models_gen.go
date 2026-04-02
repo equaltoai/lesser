@@ -2584,6 +2584,23 @@ type SignatureCheckpointSigner struct {
 	Note   *string `json:"note,omitempty"`
 }
 
+type SoulAgentAvatar struct {
+	TokenURI               *string                 `json:"tokenUri,omitempty"`
+	Image                  *string                 `json:"image,omitempty"`
+	CurrentStyleID         *int                    `json:"currentStyleId,omitempty"`
+	CurrentStyleName       *string                 `json:"currentStyleName,omitempty"`
+	CurrentRendererAddress *string                 `json:"currentRendererAddress,omitempty"`
+	Styles                 []*SoulAgentAvatarStyle `json:"styles"`
+}
+
+type SoulAgentAvatarStyle struct {
+	StyleID         int     `json:"styleId"`
+	StyleName       *string `json:"styleName,omitempty"`
+	RendererAddress *string `json:"rendererAddress,omitempty"`
+	Image           *string `json:"image,omitempty"`
+	Selected        bool    `json:"selected"`
+}
+
 type SoulAgentBinding struct {
 	AgentUsername    string  `json:"agentUsername"`
 	PrincipalAddress *string `json:"principalAddress,omitempty"`
@@ -2592,19 +2609,28 @@ type SoulAgentBinding struct {
 }
 
 type SoulAgentIdentity struct {
-	AgentID                string   `json:"agentId"`
-	Domain                 string   `json:"domain"`
-	LocalID                string   `json:"localId"`
-	EnsName                *string  `json:"ensName,omitempty"`
-	Wallet                 string   `json:"wallet"`
-	PrincipalAddress       *string  `json:"principalAddress,omitempty"`
-	Status                 string   `json:"status"`
-	LifecycleStatus        *string  `json:"lifecycleStatus,omitempty"`
-	SelfDescriptionVersion *int     `json:"selfDescriptionVersion,omitempty"`
-	Capabilities           []string `json:"capabilities"`
-	MintTxHash             *string  `json:"mintTxHash,omitempty"`
-	MintedAt               *Time    `json:"mintedAt,omitempty"`
-	UpdatedAt              *Time    `json:"updatedAt,omitempty"`
+	AgentID                string           `json:"agentId"`
+	Domain                 string           `json:"domain"`
+	LocalID                string           `json:"localId"`
+	EnsName                *string          `json:"ensName,omitempty"`
+	Wallet                 string           `json:"wallet"`
+	TokenID                *string          `json:"tokenId,omitempty"`
+	MetaURI                *string          `json:"metaUri,omitempty"`
+	Avatar                 *SoulAgentAvatar `json:"avatar,omitempty"`
+	PrincipalAddress       *string          `json:"principalAddress,omitempty"`
+	PrincipalSignature     *string          `json:"principalSignature,omitempty"`
+	PrincipalDeclaration   *string          `json:"principalDeclaration,omitempty"`
+	PrincipalDeclaredAt    *string          `json:"principalDeclaredAt,omitempty"`
+	Status                 string           `json:"status"`
+	LifecycleStatus        *string          `json:"lifecycleStatus,omitempty"`
+	LifecycleReason        *string          `json:"lifecycleReason,omitempty"`
+	SuccessorAgentID       *string          `json:"successorAgentId,omitempty"`
+	PredecessorAgentID     *string          `json:"predecessorAgentId,omitempty"`
+	SelfDescriptionVersion *int             `json:"selfDescriptionVersion,omitempty"`
+	Capabilities           []string         `json:"capabilities"`
+	MintTxHash             *string          `json:"mintTxHash,omitempty"`
+	MintedAt               *Time            `json:"mintedAt,omitempty"`
+	UpdatedAt              *Time            `json:"updatedAt,omitempty"`
 }
 
 type SoulInventoryItem struct {
