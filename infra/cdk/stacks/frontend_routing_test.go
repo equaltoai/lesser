@@ -53,6 +53,7 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l")
 	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l/*")
 	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/l/_assets/*")
+	requirePathPatternPrecedes(t, cacheBehaviors, "/l/_assets/*", "/l/*")
 
 	// Issue #54/#587: rewrite function must normalize /l and preserve directory-index semantics for auth-ui routes.
 	fn := findSingleCloudFrontFunction(t, resources)
@@ -193,17 +194,17 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 		ResponseHeadersPolicy: clientPolicy,
 		FunctionAssociations:  functionAssociations,
 	})
+	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
 	dist.AddBehavior(jsii.String("/l/*"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
 		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
 		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-		ResponseHeadersPolicy: clientPolicy,
-		FunctionAssociations:  functionAssociations,
-	})
-	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
-		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
 		ResponseHeadersPolicy: clientPolicy,
 		FunctionAssociations:  functionAssociations,
 	})
@@ -311,6 +312,32 @@ func findCacheBehaviorByPathPattern(t *testing.T, behaviors []map[string]any, pa
 	}
 	t.Fatalf("expected cache behavior for %q", pathPattern)
 	return nil
+}
+
+func requirePathPatternPrecedes(t *testing.T, behaviors []map[string]any, earlier string, later string) {
+	t.Helper()
+
+	earlierIndex := -1
+	laterIndex := -1
+	for i, behavior := range behaviors {
+		got, _ := behavior["PathPattern"].(string)
+		switch got {
+		case earlier:
+			earlierIndex = i
+		case later:
+			laterIndex = i
+		}
+	}
+
+	if earlierIndex == -1 {
+		t.Fatalf("expected cache behavior for %q", earlier)
+	}
+	if laterIndex == -1 {
+		t.Fatalf("expected cache behavior for %q", later)
+	}
+	if earlierIndex >= laterIndex {
+		t.Fatalf("expected cache behavior %q to precede %q, got indexes %d >= %d", earlier, later, earlierIndex, laterIndex)
+	}
 }
 
 func findSingleCloudFrontFunction(t *testing.T, resources map[string]any) map[string]any {
