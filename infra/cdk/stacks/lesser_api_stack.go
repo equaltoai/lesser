@@ -364,17 +364,17 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		ResponseHeadersPolicy: clientPolicy,
 		FunctionAssociations:  functionAssociations,
 	})
+	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
+		ResponseHeadersPolicy: clientPolicy,
+		FunctionAssociations:  functionAssociations,
+	})
 	dist.AddBehavior(jsii.String("/l/*"), clientSSROrigin, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
 		CachePolicy:           awscloudfront.CachePolicy_CACHING_DISABLED(),
 		OriginRequestPolicy:   awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-		ResponseHeadersPolicy: clientPolicy,
-		FunctionAssociations:  functionAssociations,
-	})
-	dist.AddBehavior(jsii.String("/l/_assets/*"), clientAssetOrigin, &awscloudfront.AddBehaviorOptions{
-		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-		CachePolicy:           awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
 		ResponseHeadersPolicy: clientPolicy,
 		FunctionAssociations:  functionAssociations,
 	})
