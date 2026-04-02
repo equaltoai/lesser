@@ -34,3 +34,16 @@ func TestCryptoAdapter_RSAKeyPairAndPEMEncoding(t *testing.T) {
 	_, err = adapter.EncodePrivateKeyPEM(&privateKey.PublicKey)
 	require.Error(t, err)
 }
+
+func TestAuthAdapter_DelegatesToAuthHelpers(t *testing.T) {
+	adapter := NewAuthAdapter("jwt-secret", nil)
+	password := "Moss!River72"
+
+	hash, err := adapter.HashPassword(password)
+	require.NoError(t, err)
+	require.NotEmpty(t, hash)
+	require.NotEqual(t, password, hash)
+
+	require.NoError(t, adapter.ValidatePassword(password, "alice"))
+	require.Greater(t, adapter.PasswordStrength(password), 0)
+}

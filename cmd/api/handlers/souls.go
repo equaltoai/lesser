@@ -146,9 +146,18 @@ func toAPISoulInventoryItem(soul soulservice.Soul) apimodels.SoulInventoryItem {
 			LocalID:                soul.LocalID,
 			ENSName:                soul.ENSName,
 			Wallet:                 soul.Wallet,
+			TokenID:                soul.TokenID,
+			MetaURI:                soul.MetaURI,
+			Avatar:                 toAPISoulAvatar(soul.Avatar),
 			PrincipalAddress:       soul.PrincipalAddress,
+			PrincipalSignature:     soul.PrincipalSignature,
+			PrincipalDeclaration:   soul.PrincipalDeclaration,
+			PrincipalDeclaredAt:    soul.PrincipalDeclaredAt,
 			Status:                 soul.Status,
 			LifecycleStatus:        soul.LifecycleStatus,
+			LifecycleReason:        soul.LifecycleReason,
+			SuccessorAgentID:       soul.SuccessorAgentID,
+			PredecessorAgentID:     soul.PredecessorAgentID,
 			SelfDescriptionVersion: soul.SelfDescriptionVersion,
 			Capabilities:           append([]string(nil), soul.Capabilities...),
 			MintTxHash:             soul.MintTxHash,
@@ -158,5 +167,31 @@ func toAPISoulInventoryItem(soul soulservice.Soul) apimodels.SoulInventoryItem {
 		BindingState:              bindingState,
 		AvailableForIncorporation: available,
 		Binding:                   binding,
+	}
+}
+
+func toAPISoulAvatar(value *soulservice.SoulAvatar) *apimodels.SoulAgentAvatar {
+	if value == nil {
+		return nil
+	}
+
+	styles := make([]apimodels.SoulAgentAvatarStyle, 0, len(value.Styles))
+	for _, style := range value.Styles {
+		styles = append(styles, apimodels.SoulAgentAvatarStyle{
+			StyleID:         style.StyleID,
+			StyleName:       style.StyleName,
+			RendererAddress: style.RendererAddress,
+			Image:           style.Image,
+			Selected:        style.Selected,
+		})
+	}
+
+	return &apimodels.SoulAgentAvatar{
+		TokenURI:               value.TokenURI,
+		Image:                  value.Image,
+		CurrentStyleID:         value.CurrentStyleID,
+		CurrentStyleName:       value.CurrentStyleName,
+		CurrentRendererAddress: value.CurrentRendererAddress,
+		Styles:                 styles,
 	}
 }

@@ -2853,6 +2853,23 @@ type ComplexityRoot struct {
 		Status func(childComplexity int) int
 	}
 
+	SoulAgentAvatar struct {
+		CurrentRendererAddress func(childComplexity int) int
+		CurrentStyleID         func(childComplexity int) int
+		CurrentStyleName       func(childComplexity int) int
+		Image                  func(childComplexity int) int
+		Styles                 func(childComplexity int) int
+		TokenURI               func(childComplexity int) int
+	}
+
+	SoulAgentAvatarStyle struct {
+		Image           func(childComplexity int) int
+		RendererAddress func(childComplexity int) int
+		Selected        func(childComplexity int) int
+		StyleID         func(childComplexity int) int
+		StyleName       func(childComplexity int) int
+	}
+
 	SoulAgentBinding struct {
 		AgentUsername    func(childComplexity int) int
 		BoundAt          func(childComplexity int) int
@@ -2862,16 +2879,25 @@ type ComplexityRoot struct {
 
 	SoulAgentIdentity struct {
 		AgentID                func(childComplexity int) int
+		Avatar                 func(childComplexity int) int
 		Capabilities           func(childComplexity int) int
 		Domain                 func(childComplexity int) int
 		EnsName                func(childComplexity int) int
+		LifecycleReason        func(childComplexity int) int
 		LifecycleStatus        func(childComplexity int) int
 		LocalID                func(childComplexity int) int
+		MetaURI                func(childComplexity int) int
 		MintTxHash             func(childComplexity int) int
 		MintedAt               func(childComplexity int) int
+		PredecessorAgentID     func(childComplexity int) int
 		PrincipalAddress       func(childComplexity int) int
+		PrincipalDeclaration   func(childComplexity int) int
+		PrincipalDeclaredAt    func(childComplexity int) int
+		PrincipalSignature     func(childComplexity int) int
 		SelfDescriptionVersion func(childComplexity int) int
 		Status                 func(childComplexity int) int
+		SuccessorAgentID       func(childComplexity int) int
+		TokenID                func(childComplexity int) int
 		UpdatedAt              func(childComplexity int) int
 		Wallet                 func(childComplexity int) int
 	}
@@ -18793,6 +18819,83 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SignatureCheckpointSigner.Status(childComplexity), true
 
+	case "SoulAgentAvatar.currentRendererAddress":
+		if e.complexity.SoulAgentAvatar.CurrentRendererAddress == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.CurrentRendererAddress(childComplexity), true
+
+	case "SoulAgentAvatar.currentStyleId":
+		if e.complexity.SoulAgentAvatar.CurrentStyleID == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.CurrentStyleID(childComplexity), true
+
+	case "SoulAgentAvatar.currentStyleName":
+		if e.complexity.SoulAgentAvatar.CurrentStyleName == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.CurrentStyleName(childComplexity), true
+
+	case "SoulAgentAvatar.image":
+		if e.complexity.SoulAgentAvatar.Image == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.Image(childComplexity), true
+
+	case "SoulAgentAvatar.styles":
+		if e.complexity.SoulAgentAvatar.Styles == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.Styles(childComplexity), true
+
+	case "SoulAgentAvatar.tokenUri":
+		if e.complexity.SoulAgentAvatar.TokenURI == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatar.TokenURI(childComplexity), true
+
+	case "SoulAgentAvatarStyle.image":
+		if e.complexity.SoulAgentAvatarStyle.Image == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatarStyle.Image(childComplexity), true
+
+	case "SoulAgentAvatarStyle.rendererAddress":
+		if e.complexity.SoulAgentAvatarStyle.RendererAddress == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatarStyle.RendererAddress(childComplexity), true
+
+	case "SoulAgentAvatarStyle.selected":
+		if e.complexity.SoulAgentAvatarStyle.Selected == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatarStyle.Selected(childComplexity), true
+
+	case "SoulAgentAvatarStyle.styleId":
+		if e.complexity.SoulAgentAvatarStyle.StyleID == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatarStyle.StyleID(childComplexity), true
+
+	case "SoulAgentAvatarStyle.styleName":
+		if e.complexity.SoulAgentAvatarStyle.StyleName == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentAvatarStyle.StyleName(childComplexity), true
+
 	case "SoulAgentBinding.agentUsername":
 		if e.complexity.SoulAgentBinding.AgentUsername == nil {
 			break
@@ -18828,6 +18931,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulAgentIdentity.AgentID(childComplexity), true
 
+	case "SoulAgentIdentity.avatar":
+		if e.complexity.SoulAgentIdentity.Avatar == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.Avatar(childComplexity), true
+
 	case "SoulAgentIdentity.capabilities":
 		if e.complexity.SoulAgentIdentity.Capabilities == nil {
 			break
@@ -18849,6 +18959,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulAgentIdentity.EnsName(childComplexity), true
 
+	case "SoulAgentIdentity.lifecycleReason":
+		if e.complexity.SoulAgentIdentity.LifecycleReason == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.LifecycleReason(childComplexity), true
+
 	case "SoulAgentIdentity.lifecycleStatus":
 		if e.complexity.SoulAgentIdentity.LifecycleStatus == nil {
 			break
@@ -18862,6 +18979,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SoulAgentIdentity.LocalID(childComplexity), true
+
+	case "SoulAgentIdentity.metaUri":
+		if e.complexity.SoulAgentIdentity.MetaURI == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.MetaURI(childComplexity), true
 
 	case "SoulAgentIdentity.mintTxHash":
 		if e.complexity.SoulAgentIdentity.MintTxHash == nil {
@@ -18877,12 +19001,40 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulAgentIdentity.MintedAt(childComplexity), true
 
+	case "SoulAgentIdentity.predecessorAgentId":
+		if e.complexity.SoulAgentIdentity.PredecessorAgentID == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.PredecessorAgentID(childComplexity), true
+
 	case "SoulAgentIdentity.principalAddress":
 		if e.complexity.SoulAgentIdentity.PrincipalAddress == nil {
 			break
 		}
 
 		return e.complexity.SoulAgentIdentity.PrincipalAddress(childComplexity), true
+
+	case "SoulAgentIdentity.principalDeclaration":
+		if e.complexity.SoulAgentIdentity.PrincipalDeclaration == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.PrincipalDeclaration(childComplexity), true
+
+	case "SoulAgentIdentity.principalDeclaredAt":
+		if e.complexity.SoulAgentIdentity.PrincipalDeclaredAt == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.PrincipalDeclaredAt(childComplexity), true
+
+	case "SoulAgentIdentity.principalSignature":
+		if e.complexity.SoulAgentIdentity.PrincipalSignature == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.PrincipalSignature(childComplexity), true
 
 	case "SoulAgentIdentity.selfDescriptionVersion":
 		if e.complexity.SoulAgentIdentity.SelfDescriptionVersion == nil {
@@ -18897,6 +19049,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SoulAgentIdentity.Status(childComplexity), true
+
+	case "SoulAgentIdentity.successorAgentId":
+		if e.complexity.SoulAgentIdentity.SuccessorAgentID == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.SuccessorAgentID(childComplexity), true
+
+	case "SoulAgentIdentity.tokenId":
+		if e.complexity.SoulAgentIdentity.TokenID == nil {
+			break
+		}
+
+		return e.complexity.SoulAgentIdentity.TokenID(childComplexity), true
 
 	case "SoulAgentIdentity.updatedAt":
 		if e.complexity.SoulAgentIdentity.UpdatedAt == nil {
@@ -125439,6 +125605,478 @@ func (ec *executionContext) fieldContext_SignatureCheckpointSigner_note(_ contex
 	return fc, nil
 }
 
+func (ec *executionContext) _SoulAgentAvatar_tokenUri(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_tokenUri(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TokenURI, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_tokenUri(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatar_image(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_image(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Image, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_image(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatar_currentStyleId(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_currentStyleId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CurrentStyleID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_currentStyleId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatar_currentStyleName(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_currentStyleName(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CurrentStyleName, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_currentStyleName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatar_currentRendererAddress(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_currentRendererAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CurrentRendererAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_currentRendererAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatar_styles(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatar) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatar_styles(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Styles, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.SoulAgentAvatarStyle)
+	fc.Result = res
+	return ec.marshalNSoulAgentAvatarStyle2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatarStyleᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatar_styles(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatar",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "styleId":
+				return ec.fieldContext_SoulAgentAvatarStyle_styleId(ctx, field)
+			case "styleName":
+				return ec.fieldContext_SoulAgentAvatarStyle_styleName(ctx, field)
+			case "rendererAddress":
+				return ec.fieldContext_SoulAgentAvatarStyle_rendererAddress(ctx, field)
+			case "image":
+				return ec.fieldContext_SoulAgentAvatarStyle_image(ctx, field)
+			case "selected":
+				return ec.fieldContext_SoulAgentAvatarStyle_selected(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SoulAgentAvatarStyle", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatarStyle_styleId(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatarStyle) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatarStyle_styleId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.StyleID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatarStyle_styleId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatarStyle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatarStyle_styleName(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatarStyle) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatarStyle_styleName(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.StyleName, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatarStyle_styleName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatarStyle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatarStyle_rendererAddress(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatarStyle) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatarStyle_rendererAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RendererAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatarStyle_rendererAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatarStyle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatarStyle_image(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatarStyle) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatarStyle_image(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Image, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatarStyle_image(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatarStyle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentAvatarStyle_selected(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentAvatarStyle) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentAvatarStyle_selected(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Selected, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentAvatarStyle_selected(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentAvatarStyle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SoulAgentBinding_agentUsername(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentBinding) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SoulAgentBinding_agentUsername(ctx, field)
 	if err != nil {
@@ -125829,6 +126467,143 @@ func (ec *executionContext) fieldContext_SoulAgentIdentity_wallet(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _SoulAgentIdentity_tokenId(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_tokenId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TokenID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_tokenId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_metaUri(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_metaUri(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MetaURI, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_metaUri(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_avatar(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_avatar(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Avatar, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.SoulAgentAvatar)
+	fc.Result = res
+	return ec.marshalOSoulAgentAvatar2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatar(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_avatar(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "tokenUri":
+				return ec.fieldContext_SoulAgentAvatar_tokenUri(ctx, field)
+			case "image":
+				return ec.fieldContext_SoulAgentAvatar_image(ctx, field)
+			case "currentStyleId":
+				return ec.fieldContext_SoulAgentAvatar_currentStyleId(ctx, field)
+			case "currentStyleName":
+				return ec.fieldContext_SoulAgentAvatar_currentStyleName(ctx, field)
+			case "currentRendererAddress":
+				return ec.fieldContext_SoulAgentAvatar_currentRendererAddress(ctx, field)
+			case "styles":
+				return ec.fieldContext_SoulAgentAvatar_styles(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SoulAgentAvatar", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SoulAgentIdentity_principalAddress(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SoulAgentIdentity_principalAddress(ctx, field)
 	if err != nil {
@@ -125858,6 +126633,129 @@ func (ec *executionContext) _SoulAgentIdentity_principalAddress(ctx context.Cont
 }
 
 func (ec *executionContext) fieldContext_SoulAgentIdentity_principalAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_principalSignature(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_principalSignature(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalSignature, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_principalSignature(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_principalDeclaration(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_principalDeclaration(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalDeclaration, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_principalDeclaration(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_principalDeclaredAt(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_principalDeclaredAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalDeclaredAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_principalDeclaredAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "SoulAgentIdentity",
 		Field:      field,
@@ -125943,6 +126841,129 @@ func (ec *executionContext) _SoulAgentIdentity_lifecycleStatus(ctx context.Conte
 }
 
 func (ec *executionContext) fieldContext_SoulAgentIdentity_lifecycleStatus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_lifecycleReason(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_lifecycleReason(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LifecycleReason, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_lifecycleReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_successorAgentId(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_successorAgentId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SuccessorAgentID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_successorAgentId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulAgentIdentity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulAgentIdentity_predecessorAgentId(ctx context.Context, field graphql.CollectedField, obj *model.SoulAgentIdentity) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulAgentIdentity_predecessorAgentId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PredecessorAgentID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulAgentIdentity_predecessorAgentId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "SoulAgentIdentity",
 		Field:      field,
@@ -126212,12 +127233,30 @@ func (ec *executionContext) fieldContext_SoulInventoryItem_agent(_ context.Conte
 				return ec.fieldContext_SoulAgentIdentity_ensName(ctx, field)
 			case "wallet":
 				return ec.fieldContext_SoulAgentIdentity_wallet(ctx, field)
+			case "tokenId":
+				return ec.fieldContext_SoulAgentIdentity_tokenId(ctx, field)
+			case "metaUri":
+				return ec.fieldContext_SoulAgentIdentity_metaUri(ctx, field)
+			case "avatar":
+				return ec.fieldContext_SoulAgentIdentity_avatar(ctx, field)
 			case "principalAddress":
 				return ec.fieldContext_SoulAgentIdentity_principalAddress(ctx, field)
+			case "principalSignature":
+				return ec.fieldContext_SoulAgentIdentity_principalSignature(ctx, field)
+			case "principalDeclaration":
+				return ec.fieldContext_SoulAgentIdentity_principalDeclaration(ctx, field)
+			case "principalDeclaredAt":
+				return ec.fieldContext_SoulAgentIdentity_principalDeclaredAt(ctx, field)
 			case "status":
 				return ec.fieldContext_SoulAgentIdentity_status(ctx, field)
 			case "lifecycleStatus":
 				return ec.fieldContext_SoulAgentIdentity_lifecycleStatus(ctx, field)
+			case "lifecycleReason":
+				return ec.fieldContext_SoulAgentIdentity_lifecycleReason(ctx, field)
+			case "successorAgentId":
+				return ec.fieldContext_SoulAgentIdentity_successorAgentId(ctx, field)
+			case "predecessorAgentId":
+				return ec.fieldContext_SoulAgentIdentity_predecessorAgentId(ctx, field)
 			case "selfDescriptionVersion":
 				return ec.fieldContext_SoulAgentIdentity_selfDescriptionVersion(ctx, field)
 			case "capabilities":
@@ -168158,6 +169197,105 @@ func (ec *executionContext) _SignatureCheckpointSigner(ctx context.Context, sel 
 	return out
 }
 
+var soulAgentAvatarImplementors = []string{"SoulAgentAvatar"}
+
+func (ec *executionContext) _SoulAgentAvatar(ctx context.Context, sel ast.SelectionSet, obj *model.SoulAgentAvatar) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soulAgentAvatarImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoulAgentAvatar")
+		case "tokenUri":
+			out.Values[i] = ec._SoulAgentAvatar_tokenUri(ctx, field, obj)
+		case "image":
+			out.Values[i] = ec._SoulAgentAvatar_image(ctx, field, obj)
+		case "currentStyleId":
+			out.Values[i] = ec._SoulAgentAvatar_currentStyleId(ctx, field, obj)
+		case "currentStyleName":
+			out.Values[i] = ec._SoulAgentAvatar_currentStyleName(ctx, field, obj)
+		case "currentRendererAddress":
+			out.Values[i] = ec._SoulAgentAvatar_currentRendererAddress(ctx, field, obj)
+		case "styles":
+			out.Values[i] = ec._SoulAgentAvatar_styles(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var soulAgentAvatarStyleImplementors = []string{"SoulAgentAvatarStyle"}
+
+func (ec *executionContext) _SoulAgentAvatarStyle(ctx context.Context, sel ast.SelectionSet, obj *model.SoulAgentAvatarStyle) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soulAgentAvatarStyleImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoulAgentAvatarStyle")
+		case "styleId":
+			out.Values[i] = ec._SoulAgentAvatarStyle_styleId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "styleName":
+			out.Values[i] = ec._SoulAgentAvatarStyle_styleName(ctx, field, obj)
+		case "rendererAddress":
+			out.Values[i] = ec._SoulAgentAvatarStyle_rendererAddress(ctx, field, obj)
+		case "image":
+			out.Values[i] = ec._SoulAgentAvatarStyle_image(ctx, field, obj)
+		case "selected":
+			out.Values[i] = ec._SoulAgentAvatarStyle_selected(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var soulAgentBindingImplementors = []string{"SoulAgentBinding"}
 
 func (ec *executionContext) _SoulAgentBinding(ctx context.Context, sel ast.SelectionSet, obj *model.SoulAgentBinding) graphql.Marshaler {
@@ -168242,8 +169380,20 @@ func (ec *executionContext) _SoulAgentIdentity(ctx context.Context, sel ast.Sele
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "tokenId":
+			out.Values[i] = ec._SoulAgentIdentity_tokenId(ctx, field, obj)
+		case "metaUri":
+			out.Values[i] = ec._SoulAgentIdentity_metaUri(ctx, field, obj)
+		case "avatar":
+			out.Values[i] = ec._SoulAgentIdentity_avatar(ctx, field, obj)
 		case "principalAddress":
 			out.Values[i] = ec._SoulAgentIdentity_principalAddress(ctx, field, obj)
+		case "principalSignature":
+			out.Values[i] = ec._SoulAgentIdentity_principalSignature(ctx, field, obj)
+		case "principalDeclaration":
+			out.Values[i] = ec._SoulAgentIdentity_principalDeclaration(ctx, field, obj)
+		case "principalDeclaredAt":
+			out.Values[i] = ec._SoulAgentIdentity_principalDeclaredAt(ctx, field, obj)
 		case "status":
 			out.Values[i] = ec._SoulAgentIdentity_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -168251,6 +169401,12 @@ func (ec *executionContext) _SoulAgentIdentity(ctx context.Context, sel ast.Sele
 			}
 		case "lifecycleStatus":
 			out.Values[i] = ec._SoulAgentIdentity_lifecycleStatus(ctx, field, obj)
+		case "lifecycleReason":
+			out.Values[i] = ec._SoulAgentIdentity_lifecycleReason(ctx, field, obj)
+		case "successorAgentId":
+			out.Values[i] = ec._SoulAgentIdentity_successorAgentId(ctx, field, obj)
+		case "predecessorAgentId":
+			out.Values[i] = ec._SoulAgentIdentity_predecessorAgentId(ctx, field, obj)
 		case "selfDescriptionVersion":
 			out.Values[i] = ec._SoulAgentIdentity_selfDescriptionVersion(ctx, field, obj)
 		case "capabilities":
@@ -180021,6 +181177,60 @@ func (ec *executionContext) marshalNSignatureCheckpointSigner2ᚖgithubᚗcomᚋ
 	return ec._SignatureCheckpointSigner(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNSoulAgentAvatarStyle2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatarStyleᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SoulAgentAvatarStyle) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNSoulAgentAvatarStyle2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatarStyle(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSoulAgentAvatarStyle2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatarStyle(ctx context.Context, sel ast.SelectionSet, v *model.SoulAgentAvatarStyle) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SoulAgentAvatarStyle(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNSoulAgentIdentity2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentIdentity(ctx context.Context, sel ast.SelectionSet, v *model.SoulAgentIdentity) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -183316,6 +184526,13 @@ func (ec *executionContext) marshalOSignatureCheckpointCard2ᚖgithubᚗcomᚋeq
 		return graphql.Null
 	}
 	return ec._SignatureCheckpointCard(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOSoulAgentAvatar2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentAvatar(ctx context.Context, sel ast.SelectionSet, v *model.SoulAgentAvatar) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._SoulAgentAvatar(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOSoulAgentBinding2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulAgentBinding(ctx context.Context, sel ast.SelectionSet, v *model.SoulAgentBinding) graphql.Marshaler {
