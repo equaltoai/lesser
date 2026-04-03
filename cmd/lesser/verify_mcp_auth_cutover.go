@@ -156,13 +156,14 @@ func executeVerifyMCPAuthCutover(ctx context.Context, client *http.Client, baseU
 
 	seenResources := map[string]string{}
 	for _, actor := range actors {
+		bundle := auth.BuildPublicMCPAccessBundle(summary.BaseURL, actor)
 		var protectedMeta verifyMCPAuthCutoverProtectedResourceMetadata
-		endpoint := summary.BaseURL + "/.well-known/oauth-protected-resource/mcp/" + url.PathEscape(actor)
+		endpoint := bundle.ProtectedResourceURL
 		if err := verifyMCPAuthCutoverGetJSON(ctx, client, endpoint, &protectedMeta); err != nil {
 			return summary, fmt.Errorf("load protected-resource metadata for %q: %w", actor, err)
 		}
 
-		expectedResource := summary.BaseURL + "/mcp/" + actor
+		expectedResource := bundle.MCPURL
 		resource := strings.TrimRight(strings.TrimSpace(protectedMeta.Resource), "/")
 		if resource != expectedResource {
 			return summary, fmt.Errorf("protected-resource metadata for %q returned %q (expected %q)", actor, resource, expectedResource)

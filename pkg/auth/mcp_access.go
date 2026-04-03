@@ -1,6 +1,10 @@
 package auth
 
-import "strings"
+import (
+	"net"
+	"net/url"
+	"strings"
+)
 
 // PublicMCPAccessBundle describes the client-neutral actor-scoped MCP access
 // surface that can be shown by agent UIs without provisioning connector state.
@@ -33,10 +37,48 @@ func BuildPublicMCPAccessBundle(baseURL, actorUsername string) PublicMCPAccessBu
 		return bundle
 	}
 
-	bundle.MCPURL = baseURL + "/mcp/" + actorUsername
-	bundle.ProtectedResourceURL = baseURL + "/.well-known/oauth-protected-resource/mcp/" + actorUsername
+	resourceBaseURL := canonicalMCPResourceBaseURL(baseURL)
+	bundle.MCPURL = resourceBaseURL + "/mcp/" + actorUsername
+	bundle.ProtectedResourceURL = resourceBaseURL + "/.well-known/oauth-protected-resource/mcp/" + actorUsername
 	bundle.AuthorizationServerURL = baseURL + "/.well-known/oauth-authorization-server"
 	bundle.RegistrationURL = baseURL + "/oauth/register"
 
 	return bundle
+}
+
+func canonicalMCPResourceBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return baseURL
+	}
+
+	host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	if host == "" || isLocalMCPHostname(host) || strings.HasPrefix(host, "api.") {
+		return strings.TrimRight(parsed.String(), "/")
+	}
+
+	apiHost := "api." + parsed.Hostname()
+	if port := parsed.Port(); port != "" {
+		parsed.Host = net.JoinHostPort(apiHost, port)
+	} else {
+		parsed.Host = apiHost
+	}
+
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func isLocalMCPHostname(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || host == "::1" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	return net.ParseIP(host) != nil
 }

@@ -88,11 +88,12 @@ func TestAgentManagementHandlersRound20(t *testing.T) {
 		resp := requireStatus(t, http.StatusOK)(h.HandleGetAgentLift(ctx))
 		var out apimodels.Agent
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
+		bundle := auth.BuildPublicMCPAccessBundle(cfg.BaseURL(), "agent1")
 		require.Equal(t, "agent1", out.Username)
-		require.Equal(t, cfg.BaseURL()+"/mcp/agent1", out.MCPAccess.MCPURL)
-		require.Equal(t, cfg.BaseURL()+"/.well-known/oauth-protected-resource/mcp/agent1", out.MCPAccess.ProtectedResourceURL)
-		require.Equal(t, cfg.BaseURL()+"/.well-known/oauth-authorization-server", out.MCPAccess.AuthorizationServerURL)
-		require.Equal(t, cfg.BaseURL()+"/oauth/register", out.MCPAccess.RegistrationURL)
+		require.Equal(t, bundle.MCPURL, out.MCPAccess.MCPURL)
+		require.Equal(t, bundle.ProtectedResourceURL, out.MCPAccess.ProtectedResourceURL)
+		require.Equal(t, bundle.AuthorizationServerURL, out.MCPAccess.AuthorizationServerURL)
+		require.Equal(t, bundle.RegistrationURL, out.MCPAccess.RegistrationURL)
 		require.Len(t, out.MCPAccess.Guidance, 5)
 	})
 
