@@ -22,23 +22,39 @@ import (
 
 // Object is the resolver for the object field.
 func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, error) {
-	// Get object using notes service
 	viewerUsername := r.optionalAuth(ctx)
-	note, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-		StatusID: id,
-		ViewerID: viewerUsername,
-	})
+	note, err := r.loadVisibleNoteForViewer(ctx, id, viewerUsername)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, nil
-		}
 		r.Logger.Error("Failed to get object",
 			zap.String("id", id),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to get object"), err)
 	}
+	if note == nil {
+		return nil, nil
+	}
 
 	return r.convertStatusToObject(ctx, note), nil
+}
+
+func (r *queryResolver) loadVisibleNoteForViewer(ctx context.Context, statusID, viewerID string) (*models.Status, error) {
+	notesSvc := r.notesService()
+	if notesSvc == nil {
+		return nil, errors.New("notes service is not available")
+	}
+
+	status, err := notesSvc.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerID,
+	})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return status, nil
 }
 
 func timelinePaginationOptions(first *int, after *model.Cursor) interfaces.PaginationOptions {
@@ -178,11 +194,13 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 
 // Search is the resolver for the search field.
 func (r *queryResolver) Search(ctx context.Context, query string, searchType *string, first *int, after *model.Cursor) (*model.SearchResult, error) {
+	viewerUsername := r.optionalAuth(ctx)
 
 	searchQuery := &search.Query{
-		Query: query,
-		Type:  "all",
-		Limit: 20,
+		Query:     query,
+		AccountID: viewerUsername,
+		Type:      "all",
+		Limit:     20,
 	}
 
 	if searchType != nil {
@@ -206,10 +224,10 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 		return nil, errors.Join(errors.New("search failed"), err)
 	}
 
-	return r.searchResultToGraphQL(ctx, result), nil
+	return r.searchResultToGraphQL(ctx, result, viewerUsername), nil
 }
 
-func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *search.Result) *model.SearchResult {
+func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *search.Result, viewerUsername string) *model.SearchResult {
 	accounts := make([]*activitypub.Actor, 0)
 	statuses := make([]*model.Object, 0)
 	hashtags := make([]*activitypub.Tag, 0)
@@ -238,7 +256,7 @@ func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *searc
 
 	statuses = make([]*model.Object, 0, len(result.Statuses))
 	for _, statusResult := range result.Statuses {
-		obj := r.convertSearchStatusToObject(ctx, statusResult.Status)
+		obj := r.convertSearchStatusToObject(ctx, viewerUsername, statusResult.Status)
 		if obj != nil {
 			statuses = append(statuses, obj)
 		}
@@ -260,16 +278,20 @@ func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *searc
 	}
 }
 
-func (r *queryResolver) convertSearchStatusToObject(ctx context.Context, status any) *model.Object {
+func (r *queryResolver) convertSearchStatusToObject(ctx context.Context, viewerUsername string, status any) *model.Object {
 	switch v := status.(type) {
 	case *models.Status:
-		return r.convertStatusToObject(ctx, v)
+		visible, err := r.loadVisibleNoteForViewer(ctx, v.StatusID, viewerUsername)
+		if err != nil || visible == nil {
+			return nil
+		}
+		return r.convertStatusToObject(ctx, visible)
 	case *activitypub.Note:
 		return r.convertNoteToObject(ctx, v)
 	case *storage.StatusSearchResult:
-		return r.loadStatusSearchResult(ctx, v)
+		return r.loadStatusSearchResult(ctx, viewerUsername, v)
 	case storage.StatusSearchResult:
-		return r.loadStatusSearchResult(ctx, &v)
+		return r.loadStatusSearchResult(ctx, viewerUsername, &v)
 	case map[string]any:
 		statusID := ""
 		if vID, ok := v["status_id"].(string); ok {
@@ -287,7 +309,10 @@ func (r *queryResolver) convertSearchStatusToObject(ctx context.Context, status 
 		if notesSvc == nil {
 			return nil
 		}
-		full, err := notesSvc.GetNote(ctx, statusID)
+		full, err := notesSvc.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: statusID,
+			ViewerID: viewerUsername,
+		})
 		if err != nil || full == nil {
 			return nil
 		}
@@ -297,7 +322,7 @@ func (r *queryResolver) convertSearchStatusToObject(ctx context.Context, status 
 	}
 }
 
-func (r *queryResolver) loadStatusSearchResult(ctx context.Context, result *storage.StatusSearchResult) *model.Object {
+func (r *queryResolver) loadStatusSearchResult(ctx context.Context, viewerUsername string, result *storage.StatusSearchResult) *model.Object {
 	if result == nil {
 		return nil
 	}
@@ -318,7 +343,10 @@ func (r *queryResolver) loadStatusSearchResult(ctx context.Context, result *stor
 		return nil
 	}
 
-	full, err := notesSvc.GetNote(ctx, statusID)
+	full, err := notesSvc.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil || full == nil {
 		return nil
 	}
@@ -342,6 +370,7 @@ func statusIDFromURL(rawURL string) string {
 
 // ThreadContext returns the context of a thread
 func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*model.ThreadContext, error) {
+	viewerUsername := r.optionalAuth(ctx)
 	storage := r.Storage
 	if storage == nil {
 		return nil, ErrStorageUnavailable
@@ -352,24 +381,27 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		return nil, ErrStatusRepositoryUnavailable
 	}
 
-	status, err := statusRepo.GetStatus(ctx, noteID)
+	status, err := r.loadVisibleNoteForViewer(ctx, noteID, viewerUsername)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get status"), err)
 	}
+	if status == nil {
+		return nil, nil
+	}
 
-	replies, err := r.getThreadReplies(ctx, statusRepo, noteID)
+	replies, err := r.getThreadReplies(ctx, statusRepo, noteID, viewerUsername)
 	if err != nil {
 		return nil, err
 	}
 
-	ancestors := r.buildThreadAncestors(ctx, statusRepo, status)
+	ancestors := r.buildThreadAncestors(ctx, statusRepo, status, viewerUsername)
 
 	engagement, err := r.calculateEngagementMetrics(ctx, storage, noteID)
 	if err != nil {
 		return nil, err
 	}
 
-	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies)
+	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies, viewerUsername)
 	rootNote := r.createRootNoteObject(ctx, status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
 
@@ -387,7 +419,7 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 	}, nil
 }
 
-func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status) []*model.Object {
+func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status, viewerUsername string) []*model.Object {
 	ancestors := make([]*model.Object, 0)
 	if status == nil || statusRepo == nil {
 		return ancestors
@@ -415,7 +447,7 @@ func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo int
 		}
 		visited[parentID] = struct{}{}
 
-		parent, err := statusRepo.GetStatus(ctx, parentID)
+		parent, err := r.loadVisibleNoteForViewer(ctx, parentID, viewerUsername)
 		if err != nil || parent == nil || parent.Deleted {
 			break
 		}

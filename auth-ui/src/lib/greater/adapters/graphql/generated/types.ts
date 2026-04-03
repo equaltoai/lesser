@@ -5668,6 +5668,25 @@ export type SignatureCheckpointSigner = {
   readonly status: Scalars['String']['output'];
 };
 
+export type SoulAgentAvatar = {
+  readonly __typename: 'SoulAgentAvatar';
+  readonly currentRendererAddress?: Maybe<Scalars['String']['output']>;
+  readonly currentStyleId?: Maybe<Scalars['Int']['output']>;
+  readonly currentStyleName?: Maybe<Scalars['String']['output']>;
+  readonly image?: Maybe<Scalars['String']['output']>;
+  readonly styles: ReadonlyArray<SoulAgentAvatarStyle>;
+  readonly tokenUri?: Maybe<Scalars['String']['output']>;
+};
+
+export type SoulAgentAvatarStyle = {
+  readonly __typename: 'SoulAgentAvatarStyle';
+  readonly image?: Maybe<Scalars['String']['output']>;
+  readonly rendererAddress?: Maybe<Scalars['String']['output']>;
+  readonly selected: Scalars['Boolean']['output'];
+  readonly styleId: Scalars['Int']['output'];
+  readonly styleName?: Maybe<Scalars['String']['output']>;
+};
+
 export type SoulAgentBinding = {
   readonly __typename: 'SoulAgentBinding';
   readonly agentUsername: Scalars['String']['output'];
@@ -5679,16 +5698,25 @@ export type SoulAgentBinding = {
 export type SoulAgentIdentity = {
   readonly __typename: 'SoulAgentIdentity';
   readonly agentId: Scalars['ID']['output'];
+  readonly avatar?: Maybe<SoulAgentAvatar>;
   readonly capabilities: ReadonlyArray<Scalars['String']['output']>;
   readonly domain: Scalars['String']['output'];
   readonly ensName?: Maybe<Scalars['String']['output']>;
+  readonly lifecycleReason?: Maybe<Scalars['String']['output']>;
   readonly lifecycleStatus?: Maybe<Scalars['String']['output']>;
   readonly localId: Scalars['String']['output'];
+  readonly metaUri?: Maybe<Scalars['String']['output']>;
   readonly mintTxHash?: Maybe<Scalars['String']['output']>;
   readonly mintedAt?: Maybe<Scalars['Time']['output']>;
+  readonly predecessorAgentId?: Maybe<Scalars['String']['output']>;
   readonly principalAddress?: Maybe<Scalars['String']['output']>;
+  readonly principalDeclaration?: Maybe<Scalars['String']['output']>;
+  readonly principalDeclaredAt?: Maybe<Scalars['String']['output']>;
+  readonly principalSignature?: Maybe<Scalars['String']['output']>;
   readonly selfDescriptionVersion?: Maybe<Scalars['Int']['output']>;
   readonly status: Scalars['String']['output'];
+  readonly successorAgentId?: Maybe<Scalars['String']['output']>;
+  readonly tokenId?: Maybe<Scalars['String']['output']>;
   readonly updatedAt?: Maybe<Scalars['Time']['output']>;
   readonly wallet: Scalars['String']['output'];
 };

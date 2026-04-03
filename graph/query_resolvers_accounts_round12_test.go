@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,6 +28,11 @@ func TestRound12QueryResolvers_Accounts_Basics(t *testing.T) {
 
 	username := "alice"
 	actor, err = q.Actor(context.Background(), nil, &username)
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+
+	fullID := config.Get().ActorURL("alice")
+	actor, err = q.Actor(context.Background(), &fullID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 

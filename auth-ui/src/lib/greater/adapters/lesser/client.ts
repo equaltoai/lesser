@@ -1,4 +1,5 @@
 import type { components } from '../rest/generated/lesser-api.js';
+import { resolveFetchLike, type FetchLike } from '../fetch.js';
 
 export type LesserSoulAgentIdentity = components['schemas']['SoulAgentIdentity'];
 export type LesserSoulAgentBinding = components['schemas']['SoulAgentBinding'];
@@ -7,7 +8,7 @@ export type LesserSoulInventoryItem = components['schemas']['SoulInventoryItem']
 export type LesserSoulsMineResponse = components['schemas']['SoulsMineResponse'];
 export type LesserSoulIncorporateResponse = components['schemas']['SoulIncorporateResponse'];
 
-export type LesserFetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type LesserFetchLike = FetchLike;
 
 export interface LesserSoulClientConfig {
 	baseUrl: string;
@@ -49,7 +50,7 @@ export class LesserSoulClient {
 		}
 
 		this.baseUrl = trimTrailingSlashes(baseUrl);
-		this.fetch = config.fetch ?? fetch;
+		this.fetch = resolveFetchLike(config.fetch);
 		this.headers = {
 			accept: 'application/json',
 			...(config.headers ?? {}),

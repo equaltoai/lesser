@@ -448,6 +448,95 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 	})
 }
 
+func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
+	originalLogger := logger
+	originalHandler := graphQLHandler
+	t.Cleanup(func() {
+		logger = originalLogger
+		graphQLHandler = originalHandler
+	})
+
+	logger = zap.NewNop()
+
+	t.Run("allows_public_query_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, readErr := io.ReadAll(r.Body)
+			require.NoError(t, readErr)
+			require.Equal(t, `{"query":"query PublicSurface { instance { domain } }","operationName":"PublicSurface"}`, string(body))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"query PublicSurface { instance { domain } }","operationName":"PublicSurface"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, []byte("ok"), resp.Body)
+	})
+
+	t.Run("allows_public_query_fragments_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"query PublicObject { ...VisibleFields } fragment VisibleFields on Query { object(id: \"status-1\") { id } }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
+	})
+
+	t.Run("rejects_non_public_query_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for disallowed anonymous requests")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"{ viewer { id } }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
+	t.Run("rejects_mutation_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for anonymous mutations")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"mutation { dismissAnnouncement(id: \"ann-1\") }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+}
+
 func TestExtractStandardizedServices_AndResolveStreamQueue_Round12(t *testing.T) {
 	originalLambdaCtx := lambdaCtx
 	originalCfg := cfg

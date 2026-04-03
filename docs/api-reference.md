@@ -241,6 +241,23 @@ GraphQL HTTP is served from:
 - `POST https://<stage-domain>/api/graphql` (recommended)
 - `POST https://<stage-domain>/graphql` (alias)
 
+Anonymous/public-read GraphQL contract:
+
+- No token required for:
+  - `actor(id|username)`
+  - `object(id)`
+  - `timeline(type: PUBLIC | LOCAL | HASHTAG | ACTOR, ...)`
+  - `search(query, ...)`
+  - `instance`
+  - `instanceActivity`
+  - `instancePeers`
+  - `announcements`
+  - `customEmojis`
+  - `threadContext(noteId)`
+- Anonymous note and thread reads only return `public` and `unlisted` content.
+- Everything else, including `viewer`, notifications, private timelines, moderation/admin queries, mutations, and
+  subscriptions, still requires authorization.
+
 ### Pattern: call GraphQL with JSON + variables
 
 ✅ CORRECT: use a JSON body with `query` + `variables`.
@@ -249,6 +266,14 @@ GraphQL HTTP is served from:
 curl -s "https://<stage-domain>/api/graphql" \
   -H "Content-Type: application/json" \
   -d '{"query":"query Instance { instance { title } }"}' | jq .
+```
+
+### Pattern: anonymous public thread permalink query
+
+```bash
+curl -s "https://<stage-domain>/api/graphql" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query Thread($id:ID!){object(id:$id){id url visibility} threadContext(noteId:$id){ancestors{id url visibility} descendants{id url visibility}}}","variables":{"id":"<status-id>"}}' | jq .
 ```
 
 ### Pattern: authenticated GraphQL query

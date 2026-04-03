@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
     title: Lesser REST API
     version: 0.1.0
-    description: Auto-generated route skeleton; fill request/response schemas over time. Do not serve this file at runtime; use it for build-time client generation.
+    description: Auto-generated route skeleton; fill request/response schemas over time. Do not serve this file at runtime; use it for build-time client generation. This contract covers the REST surface only; the anonymous GraphQL public-read subset is documented in docs/api-reference.md and docs/security-public-surface.md.
 components:
     securitySchemes:
         bearerAuth:
