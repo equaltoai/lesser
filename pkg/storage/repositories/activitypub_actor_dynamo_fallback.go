@@ -70,6 +70,7 @@ func defaultRepositoryDynamoClient(_ context.Context) (dynamoGetItemClient, erro
 	})
 
 	if entry.err != nil {
+		repositoryDynamoClients.Delete(cacheKey)
 		return nil, entry.err
 	}
 
