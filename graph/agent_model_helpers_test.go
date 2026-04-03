@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -48,10 +49,11 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.Equal(t, 0, agent.AgentCapabilities.MaxPostsPerHour)
 	require.True(t, agent.AgentCapabilities.RequiresApproval)
 	require.NotNil(t, agent.McpAccess)
-	require.Equal(t, "https://example.com/mcp/lowkey", agent.McpAccess.McpURL)
-	require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/lowkey", agent.McpAccess.ProtectedResourceURL)
-	require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", agent.McpAccess.AuthorizationServerURL)
-	require.Equal(t, "https://example.com/oauth/register", agent.McpAccess.RegistrationURL)
+	bundle := auth.BuildPublicMCPAccessBundle("https://example.com", "lowkey")
+	require.Equal(t, bundle.MCPURL, agent.McpAccess.McpURL)
+	require.Equal(t, bundle.ProtectedResourceURL, agent.McpAccess.ProtectedResourceURL)
+	require.Equal(t, bundle.AuthorizationServerURL, agent.McpAccess.AuthorizationServerURL)
+	require.Equal(t, bundle.RegistrationURL, agent.McpAccess.RegistrationURL)
 	require.Len(t, agent.McpAccess.Guidance, 5)
 }
 

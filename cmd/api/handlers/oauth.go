@@ -335,12 +335,7 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 			description: "resource must be the actor-scoped MCP URL for this server",
 		}
 	}
-
-	baseURL, baseErr := url.Parse(h.cfg.BaseURL())
-	if baseErr != nil || baseURL == nil {
-		return "", "", errors.New("authorization server base URL is invalid")
-	}
-	if !strings.EqualFold(parsed.Hostname(), baseURL.Hostname()) {
+	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "invalid_target",
 			description: "resource must be the actor-scoped MCP URL for this server",
@@ -377,7 +372,20 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 		}
 	}
 
-	canonicalResource := strings.TrimRight(baseURL.String(), "/") + "/mcp/" + actorUsername
+	canonicalResource := auth.BuildPublicMCPAccessBundle(h.cfg.BaseURL(), actorUsername).MCPURL
+	canonicalURL, canonicalErr := url.Parse(canonicalResource)
+	if canonicalErr != nil || canonicalURL == nil {
+		return "", "", errors.New("authorization server resource URL is invalid")
+	}
+	if !strings.EqualFold(parsed.Scheme, canonicalURL.Scheme) ||
+		!strings.EqualFold(parsed.Host, canonicalURL.Host) ||
+		parsed.EscapedPath() != canonicalURL.EscapedPath() {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "invalid_target",
+			description: "resource must be the actor-scoped MCP URL for this server",
+		}
+	}
+
 	return actorUsername, canonicalResource, nil
 }
 

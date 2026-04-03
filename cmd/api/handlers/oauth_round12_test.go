@@ -36,6 +36,8 @@ func round12DecodeJWTClaims(t *testing.T, tokenString string) auth.Claims {
 
 func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 	cfg := round11TestConfig()
+	agent1Resource := auth.BuildPublicMCPAccessBundle(cfg.BaseURL(), "agent1").MCPURL
+	agent2Resource := auth.BuildPublicMCPAccessBundle(cfg.BaseURL(), "agent2").MCPURL
 
 	t.Run("unsupported response type without redirect_uri returns JSON error", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
@@ -234,7 +236,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"response_type": "code",
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://example.com/mcp/agent1",
+			"resource":      agent1Resource,
 			"scope":         "read write",
 			"state":         "state-6",
 		}, nil)
@@ -243,11 +245,11 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
 		require.Contains(t, firstStringValue(resp.Headers, "location"), "/auth/consent?")
-		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), url.QueryEscape(agent1Resource))
 		require.NotNil(t, storedState)
 		require.NotNil(t, consentQuery)
-		require.Equal(t, "https://example.com/mcp/agent1", consentQuery.Resource)
-		require.Equal(t, "https://example.com/mcp/agent1", storedState.Resource)
+		require.Equal(t, agent1Resource, consentQuery.Resource)
+		require.Equal(t, agent1Resource, storedState.Resource)
 		require.Equal(t, "agent1", storedState.Username)
 		require.Equal(t, "alice", storedState.PrincipalUsername)
 	})
@@ -342,7 +344,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.Contains(t, redirectURL, "resource+is+required+for+remote+MCP+authorization")
 	})
 
-	t.Run("resource-bound authorize denies principals that do not own the requested actor", func(t *testing.T) {
+	t.Run("resource-bound authorize rejects apex mcp resource when api host is canonical", func(t *testing.T) {
 		state := &round10QueryState{
 			usersByUsername: map[string]storagemodels.User{
 				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
@@ -355,6 +357,31 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
 			"resource":      "https://example.com/mcp/agent1",
+			"scope":         "read write",
+			"state":         "state-agent-apex-invalid",
+		}, nil)
+		require.NoError(t, err)
+		ctx.Set("username", "owner")
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.Contains(t, redirectURL, "error=invalid_target")
+		require.Contains(t, redirectURL, "resource+must+be+the+actor-scoped+MCP+URL+for+this+server")
+	})
+
+	t.Run("resource-bound authorize denies principals that do not own the requested actor", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-1",
+			"redirect_uri":  "https://example.com/callback",
+			"resource":      agent1Resource,
 			"scope":         "read write",
 			"state":         "state-agent-forbidden",
 		}, nil)
@@ -410,7 +437,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"response_type": "code",
 			"client_id":     "client-agent",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://example.com/mcp/agent1",
+			"resource":      agent1Resource,
 			"scope":         "read write",
 			"state":         "state-agent-consent",
 		}, nil)
@@ -418,7 +445,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		ctx.Set("username", "owner")
 
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
-		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), url.QueryEscape(agent1Resource))
 		require.NotContains(t, firstStringValue(resp.Headers, "location"), "agent_username=")
 		require.NotContains(t, firstStringValue(resp.Headers, "location"), "principal_username=")
 		require.NotNil(t, storedState)
@@ -434,7 +461,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			GetUserAppConsentFunc: func(_ context.Context, query *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
 				consentQuery = query
 				if query.Username == "alice" && query.ClientID == "client-1" &&
-					(query.Resource == "" || query.Resource == "https://example.com/mcp/agent1") {
+					(query.Resource == "" || query.Resource == agent1Resource) {
 					return &accounts.GetUserAppConsentResult{
 						Consent: &storage.UserAppConsent{Scopes: []string{"read", "write"}},
 					}, nil
@@ -465,7 +492,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"response_type": "code",
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://example.com/mcp/agent2",
+			"resource":      agent2Resource,
 			"scope":         "read write",
 			"state":         "state-resource-bound-consent",
 		}, nil)
@@ -476,9 +503,9 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		redirectURL := firstStringValue(resp.Headers, "location")
 		require.Contains(t, redirectURL, "/auth/consent?")
 		require.NotNil(t, consentQuery)
-		require.Equal(t, "https://example.com/mcp/agent2", consentQuery.Resource)
+		require.Equal(t, agent2Resource, consentQuery.Resource)
 		require.NotNil(t, storedState)
-		require.Equal(t, "https://example.com/mcp/agent2", storedState.Resource)
+		require.Equal(t, agent2Resource, storedState.Resource)
 		require.Equal(t, "agent2", storedState.Username)
 	})
 
@@ -504,7 +531,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			"response_type": "code",
 			"client_id":     "client-1",
 			"redirect_uri":  "https://example.com/callback",
-			"resource":      "https://example.com/mcp/agent1",
+			"resource":      agent1Resource,
 			"state":         "state-7",
 		}, nil)
 		require.NoError(t, err)
@@ -519,10 +546,10 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NotEmpty(t, parsed.Query().Get("code"))
 		require.Equal(t, "state-7", parsed.Query().Get("state"))
 		require.NotNil(t, consentQuery)
-		require.Equal(t, "https://example.com/mcp/agent1", consentQuery.Resource)
+		require.Equal(t, agent1Resource, consentQuery.Resource)
 		require.NotNil(t, issuedAuthCode)
 		require.NotEmpty(t, issuedAuthCode.Code)
-		require.Equal(t, "https://example.com/mcp/agent1", issuedAuthCode.Resource)
+		require.Equal(t, agent1Resource, issuedAuthCode.Resource)
 		require.Equal(t, "agent1", issuedAuthCode.Username)
 	})
 
@@ -662,6 +689,7 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 
 func TestOAuthTokenLiftRound12(t *testing.T) {
 	cfg := round11TestConfig()
+	agent1Resource := auth.BuildPublicMCPAccessBundle(cfg.BaseURL(), "agent1").MCPURL
 	newDeviceFlowCLIClient := func() storagemodels.OAuthClient {
 		return storagemodels.OAuthClient{
 			ClientID:     "client-1",
@@ -967,7 +995,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 					Code:              "agent-code",
 					ClientID:          "client-agent",
 					RedirectURI:       "https://example.com/callback",
-					Resource:          "https://example.com/mcp/agent1",
+					Resource:          agent1Resource,
 					Username:          "agent1",
 					PrincipalUsername: "owner",
 					ExpiresAt:         time.Now().Add(5 * time.Minute),
@@ -980,7 +1008,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=agent-code&client_id=client-agent&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&resource=https%3A%2F%2Fexample.com%2Fmcp%2Fagent1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=agent-code&client_id=client-agent&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&resource="+url.QueryEscape(agent1Resource)))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -993,13 +1021,13 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
 		require.Equal(t, "@owner", claims.DelegatedBy)
 		require.NotEmpty(t, claims.SessionID)
-		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
+		require.Equal(t, []string{agent1Resource}, []string(claims.Audience))
 
 		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
 		require.Equal(t, "agent1", storedRefresh.Username)
-		require.Equal(t, "https://example.com/mcp/agent1", storedRefresh.Resource)
+		require.Equal(t, agent1Resource, storedRefresh.Resource)
 		require.NotEmpty(t, storedRefresh.SessionID)
 		require.Equal(t, claims.SessionID, storedRefresh.SessionID)
 		require.Empty(t, storedRefresh.FamilyID)
@@ -1015,7 +1043,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	t.Run("refresh_token public agent client rotates legacy runtime state into standard refresh state", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now)
-		token.Resource = "https://example.com/mcp/agent1"
+		token.Resource = agent1Resource
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -1048,7 +1076,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		claims := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
 		require.Equal(t, token.SessionID, claims.SessionID)
-		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
+		require.Equal(t, []string{agent1Resource}, []string(claims.Audience))
 
 		_, ok := state.refreshTokensByToken["rt-agent-connector"]
 		require.False(t, ok)
@@ -1057,7 +1085,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
 		require.Equal(t, token.SessionID, newToken.SessionID)
-		require.Equal(t, "https://example.com/mcp/agent1", newToken.Resource)
+		require.Equal(t, agent1Resource, newToken.Resource)
 		require.Empty(t, newToken.FamilyID)
 		require.Zero(t, newToken.Generation)
 		require.False(t, newToken.Current)
@@ -1071,7 +1099,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	t.Run("refresh_token public agent client ignores legacy runtime session bounds", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-aged", "agent1", "client-agent", "sid-agent-aged", "family-agent-aged", "Connector App", 1, true, false, now)
-		token.Resource = "https://example.com/mcp/agent1"
+		token.Resource = agent1Resource
 		token.SessionCreatedAt = now.Add(-72 * time.Hour)
 		token.LastUsedAt = now.Add(-2 * time.Hour)
 		token.IdleExpiresAt = now.Add(36 * time.Hour)
@@ -1111,7 +1139,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		claims := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
 		require.Equal(t, "sid-agent-aged", claims.SessionID)
-		require.Equal(t, []string{"https://example.com/mcp/agent1"}, []string(claims.Audience))
+		require.Equal(t, []string{agent1Resource}, []string(claims.Audience))
 		require.NotNil(t, claims.IssuedAt)
 		require.NotNil(t, claims.ExpiresAt)
 		require.InDelta(t, auth.AgentAccessTokenTTL(cfg).Seconds(), claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time).Seconds(), 5)

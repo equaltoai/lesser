@@ -157,13 +157,14 @@ func TestAgentHelpersRound20(t *testing.T) {
 			Verified:   true,
 			VerifiedAt: &verifiedAt,
 		}, "https://example.com/")
+		bundle := auth.BuildPublicMCPAccessBundle("https://example.com/", "agent1")
 		require.True(t, verified.Verified)
 		require.NotNil(t, verified.VerifiedAt)
 		require.Equal(t, verifiedAt.UTC(), *verified.VerifiedAt)
-		require.Equal(t, "https://example.com/mcp/agent1", verified.MCPAccess.MCPURL)
-		require.Equal(t, "https://example.com/.well-known/oauth-protected-resource/mcp/agent1", verified.MCPAccess.ProtectedResourceURL)
-		require.Equal(t, "https://example.com/.well-known/oauth-authorization-server", verified.MCPAccess.AuthorizationServerURL)
-		require.Equal(t, "https://example.com/oauth/register", verified.MCPAccess.RegistrationURL)
+		require.Equal(t, bundle.MCPURL, verified.MCPAccess.MCPURL)
+		require.Equal(t, bundle.ProtectedResourceURL, verified.MCPAccess.ProtectedResourceURL)
+		require.Equal(t, bundle.AuthorizationServerURL, verified.MCPAccess.AuthorizationServerURL)
+		require.Equal(t, bundle.RegistrationURL, verified.MCPAccess.RegistrationURL)
 		require.Len(t, verified.MCPAccess.Guidance, 5)
 	})
 
