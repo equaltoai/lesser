@@ -18,6 +18,8 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -534,6 +536,148 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 		resp, err := handleGraphQL(ctx)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+}
+
+func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
+	originalLogger := logger
+	t.Cleanup(func() { logger = originalLogger })
+	logger = zap.NewNop()
+
+	t.Run("graphqlFirstRequestValue", func(t *testing.T) {
+		require.Empty(t, graphqlFirstRequestValue(nil, "query"))
+		require.Empty(t, graphqlFirstRequestValue(map[string][]string{"other": {"x"}}, "query"))
+		require.Equal(t, "query-value", graphqlFirstRequestValue(map[string][]string{"query": {"query-value", "ignored"}}, "query"))
+	})
+
+	t.Run("graphqlExtractOperation", func(t *testing.T) {
+		ctxQuery := &apptheory.Context{
+			Request: apptheory.Request{
+				Query: map[string][]string{
+					"query":         {" query FromQuery { instance { domain } } "},
+					"operationName": {" FromQuery "},
+				},
+			},
+		}
+		query, operationName := graphqlExtractOperation(ctxQuery)
+		require.Equal(t, "query FromQuery { instance { domain } }", query)
+		require.Equal(t, "FromQuery", operationName)
+
+		ctxJSON := &apptheory.Context{
+			Request: apptheory.Request{
+				Body: []byte(`{"query":"query FromBody { instance { domain } }","operationName":"FromBody"}`),
+			},
+		}
+		query, operationName = graphqlExtractOperation(ctxJSON)
+		require.Equal(t, "query FromBody { instance { domain } }", query)
+		require.Equal(t, "FromBody", operationName)
+
+		ctxRaw := &apptheory.Context{
+			Request: apptheory.Request{
+				Body: []byte(`query RawBody { instance { domain } }`),
+			},
+		}
+		query, operationName = graphqlExtractOperation(ctxRaw)
+		require.Equal(t, "query RawBody { instance { domain } }", query)
+		require.Empty(t, operationName)
+
+		query, operationName = graphqlExtractOperation(&apptheory.Context{Request: apptheory.Request{Body: []byte("   ")}})
+		require.Empty(t, query)
+		require.Empty(t, operationName)
+	})
+
+	t.Run("graphqlSelectOperation", func(t *testing.T) {
+		require.Nil(t, graphqlSelectOperation(nil, ""))
+
+		singleDoc, err := parser.ParseQuery(&ast.Source{Input: `query { instance { domain } }`})
+		require.NoError(t, err)
+		operation := graphqlSelectOperation(singleDoc, "")
+		require.NotNil(t, operation)
+		require.Equal(t, ast.Query, operation.Operation)
+
+		multiDoc, err := parser.ParseQuery(&ast.Source{Input: `
+			query First { instance { domain } }
+			query Second { announcements { id } }
+		`})
+		require.NoError(t, err)
+		require.Nil(t, graphqlSelectOperation(multiDoc, ""))
+		require.NotNil(t, graphqlSelectOperation(multiDoc, "Second"))
+		require.Nil(t, graphqlSelectOperation(multiDoc, "Missing"))
+	})
+
+	t.Run("graphqlCollectTopLevelFields_and_find_fragment", func(t *testing.T) {
+		doc, err := parser.ParseQuery(&ast.Source{Input: `
+			query PublicSurface {
+				...VisibleFields
+				...VisibleFields
+				... on Query { customEmojis { shortcode } }
+				__typename
+			}
+
+			fragment VisibleFields on Query {
+				instance { domain }
+				announcements { id }
+			}
+		`})
+		require.NoError(t, err)
+
+		operation := graphqlSelectOperation(doc, "PublicSurface")
+		require.NotNil(t, operation)
+
+		fields, ok := graphqlCollectTopLevelFields(doc, operation.SelectionSet, map[string]struct{}{})
+		require.True(t, ok)
+		require.Equal(t, []string{"instance", "announcements", "customEmojis", "__typename"}, fields)
+
+		require.NotNil(t, graphqlFindFragment(doc, "VisibleFields"))
+		require.Nil(t, graphqlFindFragment(doc, "Missing"))
+		require.Nil(t, graphqlFindFragment(nil, "VisibleFields"))
+
+		missingFragmentFields, ok := graphqlCollectTopLevelFields(&ast.QueryDocument{}, ast.SelectionSet{
+			&ast.FragmentSpread{Name: "Missing"},
+		}, map[string]struct{}{})
+		require.False(t, ok)
+		require.Nil(t, missingFragmentFields)
+
+		blankFieldFields, ok := graphqlCollectTopLevelFields(doc, ast.SelectionSet{
+			&ast.Field{Name: "   "},
+		}, map[string]struct{}{})
+		require.False(t, ok)
+		require.Nil(t, blankFieldFields)
+	})
+
+	t.Run("graphqlAnonymousRequestAllowed", func(t *testing.T) {
+		authCtx := &apptheory.Context{}
+		authCtx.Set("is_authenticated", true)
+		require.True(t, graphqlAnonymousRequestAllowed(authCtx))
+
+		require.False(t, graphqlAnonymousRequestAllowed(&apptheory.Context{}))
+
+		invalidCtx := &apptheory.Context{
+			Request: apptheory.Request{Body: []byte(`{"query":"query { instance( }"}`)},
+		}
+		require.False(t, graphqlAnonymousRequestAllowed(invalidCtx))
+
+		multipleOpsCtx := &apptheory.Context{
+			Request: apptheory.Request{Body: []byte(`{"query":"query One { instance { domain } } query Two { announcements { id } }"}`)},
+		}
+		require.False(t, graphqlAnonymousRequestAllowed(multipleOpsCtx))
+
+		allowedCtx := &apptheory.Context{
+			Request: apptheory.Request{
+				Query: map[string][]string{
+					"query":         {`query PublicOp { actor(username: "alice") { id } } query PrivateOp { viewer { id } }`},
+					"operationName": {"PublicOp"},
+				},
+			},
+		}
+		require.True(t, graphqlAnonymousRequestAllowed(allowedCtx))
+
+		disallowedCtx := &apptheory.Context{
+			Request: apptheory.Request{
+				Body: []byte(`{"query":"query { instance { domain } viewer { id } }"}`),
+			},
+		}
+		require.False(t, graphqlAnonymousRequestAllowed(disallowedCtx))
 	})
 }
 
