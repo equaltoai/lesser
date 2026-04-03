@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	theorydberrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -45,7 +46,7 @@ func TestSearchExactUsername_ValidQuery(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchExactUsername(ctx, query, &results, seen)
+	assert.NoError(t, repo.searchExactUsername(ctx, query, &results, seen))
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "exact-match-id", results[0].ID)
@@ -71,7 +72,7 @@ func TestSearchExactUsername_QueryTooShort(t *testing.T) {
 	seen := make(map[string]bool)
 
 	// Should return early without making any DB calls
-	repo.searchExactUsername(ctx, query, &results, seen)
+	assert.NoError(t, repo.searchExactUsername(ctx, query, &results, seen))
 
 	assert.Empty(t, results)
 	assert.Empty(t, seen)
@@ -98,12 +99,12 @@ func TestSearchExactUsername_NotFound(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "ACTOR#notfound").Return(mockQuery)
 	mockQuery.On("Where", "SK", "=", "PROFILE").Return(mockQuery)
-	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(ErrTestMockError)
+	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(theorydberrors.ErrItemNotFound)
 
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchExactUsername(ctx, query, &results, seen)
+	assert.NoError(t, repo.searchExactUsername(ctx, query, &results, seen))
 
 	assert.Empty(t, results)
 	assert.Empty(t, seen)
@@ -137,7 +138,7 @@ func TestSearchExactUsername_NilActorInResult(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchExactUsername(ctx, query, &results, seen)
+	assert.Error(t, repo.searchExactUsername(ctx, query, &results, seen))
 
 	// Should not add nil actor to results
 	assert.Empty(t, results)
@@ -175,7 +176,7 @@ func TestSearchExactUsername_DeduplicatesAlreadySeen(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := map[string]bool{"already-seen-id": true} // Already seen
 
-	repo.searchExactUsername(ctx, query, &results, seen)
+	assert.NoError(t, repo.searchExactUsername(ctx, query, &results, seen))
 
 	// Should not add duplicate
 	assert.Empty(t, results)
@@ -232,7 +233,8 @@ func TestSearchUsernamePrefix_Success(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	assert.NoError(t, err)
 
 	assert.Len(t, results, 2)
 	assert.True(t, seen["alice-1"])
@@ -282,7 +284,8 @@ func TestSearchUsernamePrefix_DeduplicatesByActorID(t *testing.T) {
 	})
 	seen := map[string]bool{"alice-existing": true}
 
-	repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	assert.NoError(t, err)
 
 	// Should have 2: existing + new
 	assert.Len(t, results, 2)
@@ -330,7 +333,8 @@ func TestSearchUsernamePrefix_SkipsNilActors(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	assert.NoError(t, err)
 
 	// Only one valid result
 	assert.Len(t, results, 1)
@@ -367,7 +371,8 @@ func TestSearchUsernamePrefix_ErrorDoesNotPanic(t *testing.T) {
 	seen := make(map[string]bool)
 
 	// Should not panic on error
-	repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	assert.Error(t, err)
 
 	assert.Empty(t, results)
 	assert.Empty(t, seen)
@@ -417,7 +422,8 @@ func TestSearchDisplayName_Success(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchDisplayName(ctx, query, limit, &results, seen)
+	_, err := repo.searchDisplayName(ctx, query, limit, &results, seen)
+	assert.NoError(t, err)
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "name-match-1", results[0].ID)
@@ -444,7 +450,8 @@ func TestSearchDisplayName_QueryTooShort(t *testing.T) {
 	seen := make(map[string]bool)
 
 	// Should return early without making any DB calls
-	repo.searchDisplayName(ctx, query, limit, &results, seen)
+	_, err := repo.searchDisplayName(ctx, query, limit, &results, seen)
+	assert.NoError(t, err)
 
 	assert.Empty(t, results)
 	assert.Empty(t, seen)
@@ -494,7 +501,8 @@ func TestSearchDisplayName_DeduplicatesByActorID(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := map[string]bool{"already-seen": true}
 
-	repo.searchDisplayName(ctx, query, limit, &results, seen)
+	_, err := repo.searchDisplayName(ctx, query, limit, &results, seen)
+	assert.NoError(t, err)
 
 	// Only new match should be added
 	assert.Len(t, results, 1)
@@ -540,7 +548,8 @@ func TestSearchDisplayName_SkipsNilActors(t *testing.T) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
-	repo.searchDisplayName(ctx, query, limit, &results, seen)
+	_, err := repo.searchDisplayName(ctx, query, limit, &results, seen)
+	assert.NoError(t, err)
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "valid-match", results[0].ID)
@@ -575,7 +584,8 @@ func TestSearchDisplayName_ErrorDoesNotPanic(t *testing.T) {
 	seen := make(map[string]bool)
 
 	// Should not panic on error
-	repo.searchDisplayName(ctx, query, limit, &results, seen)
+	_, err := repo.searchDisplayName(ctx, query, limit, &results, seen)
+	assert.Error(t, err)
 
 	assert.Empty(t, results)
 	assert.Empty(t, seen)
@@ -655,7 +665,8 @@ func TestExecuteSearchStrategies_CallsAllThreeStrategies(t *testing.T) {
 		}
 	}).Return(nil)
 
-	results, seen := repo.executeSearchStrategies(ctx, query, limit, offset)
+	results, seen, err := repo.executeSearchStrategies(ctx, query, limit, offset)
+	assert.NoError(t, err)
 
 	// Should have 3 unique results
 	assert.Len(t, results, 3)
@@ -739,7 +750,8 @@ func TestExecuteSearchStrategies_DeduplicatesAcrossStrategies(t *testing.T) {
 		}
 	}).Return(nil)
 
-	results, seen := repo.executeSearchStrategies(ctx, query, limit, offset)
+	results, seen, err := repo.executeSearchStrategies(ctx, query, limit, offset)
+	assert.NoError(t, err)
 
 	// Should only have 1 unique result despite 3 matches
 	assert.Len(t, results, 1)

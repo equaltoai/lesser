@@ -2,12 +2,16 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
@@ -38,7 +42,7 @@ func TestSearchExactUsername_HyphenatedServiceActor(t *testing.T) {
 		}
 	}).Return(nil)
 
-	repo.searchExactUsername(ctx, "agent-0", &results, seen)
+	require.NoError(t, repo.searchExactUsername(ctx, "agent-0", &results, seen))
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "agent-0", results[0].PreferredUsername)
@@ -60,6 +64,24 @@ func TestSearchUsernamePrefix_HydratesPartialServiceActorWithHyphenatedUsername(
 	ctx := context.Background()
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
+
+	previousGetter := getRepositoryDynamoClient
+	t.Cleanup(func() { getRepositoryDynamoClient = previousGetter })
+	getRepositoryDynamoClient = func(context.Context) (dynamoGetItemClient, error) {
+		actorJSON, err := json.Marshal(&activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/agent-0", Type: activitypub.ServiceType},
+			PreferredUsername: "agent-0",
+			Name:              "Agent 0",
+		})
+		require.NoError(t, err)
+		return fakeDynamoGetItemClient{
+			output: &dynamodb.GetItemOutput{
+				Item: map[string]types.AttributeValue{
+					"actor": &types.AttributeValueMemberS{Value: string(actorJSON)},
+				},
+			},
+		}, nil
+	}
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(indexQuery).Once()
@@ -87,13 +109,14 @@ func TestSearchUsernamePrefix_HydratesPartialServiceActorWithHyphenatedUsername(
 	fullActorQuery.On("First", mock.AnythingOfType("*models.Actor")).Run(func(args mock.Arguments) {
 		actor := args.Get(0).(*models.Actor)
 		actor.Actor = &activitypub.Actor{
-			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/agent-0", Type: activitypub.ServiceType},
+			BaseObject:        activitypub.BaseObject{Type: activitypub.ServiceType},
 			PreferredUsername: "agent-0",
 			Name:              "Agent 0",
 		}
 	}).Return(nil)
 
-	repo.searchUsernamePrefix(ctx, "ag", 10, 0, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, "ag", 10, 0, &results, seen)
+	require.NoError(t, err)
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "agent-0", results[0].PreferredUsername)
@@ -148,10 +171,62 @@ func TestSearchDisplayName_HydratesPartialServiceActorFromIndexedMatch(t *testin
 		}
 	}).Return(nil)
 
-	repo.searchDisplayName(ctx, "pi", 10, &results, seen)
+	_, err := repo.searchDisplayName(ctx, "pi", 10, &results, seen)
+	require.NoError(t, err)
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "pilot", results[0].PreferredUsername)
 	assert.Equal(t, activitypub.ServiceType, results[0].Type)
 	assert.Equal(t, "https://example.com/users/pilot", results[0].ID)
+}
+
+func TestSearchAccountsAdvanced_ReturnsErrorWhenFallbackHydrationFails(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	exactQuery := new(mocks.MockQuery)
+
+	repo := &SearchRepository{
+		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.SearchSuggestion](
+			mockDB, "test-table", nil, nil, "SearchRepository", "search",
+		),
+	}
+
+	previousGetter := getRepositoryDynamoClient
+	t.Cleanup(func() { getRepositoryDynamoClient = previousGetter })
+	getRepositoryDynamoClient = func(context.Context) (dynamoGetItemClient, error) {
+		return fakeDynamoGetItemClient{err: assertiveFallbackError{}}, nil
+	}
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(exactQuery).Once()
+	exactQuery.On("Where", "PK", "=", "ACTOR#arch").Return(exactQuery)
+	exactQuery.On("Where", "SK", "=", "PROFILE").Return(exactQuery)
+	exactQuery.On("First", mock.AnythingOfType("*models.Actor")).Run(func(args mock.Arguments) {
+		actor := args.Get(0).(*models.Actor)
+		actor.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{Type: activitypub.ServiceType},
+			PreferredUsername: "arch",
+			Name:              "Arch",
+		}
+	}).Return(nil)
+
+	results, err := repo.SearchAccountsAdvanced(ctx, "arch", false, 10, 0, false, "")
+	require.Error(t, err)
+	require.Nil(t, results)
+}
+
+type fakeDynamoGetItemClient struct {
+	output *dynamodb.GetItemOutput
+	err    error
+}
+
+func (f fakeDynamoGetItemClient) GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	return f.output, f.err
+}
+
+type assertiveFallbackError struct{}
+
+func (assertiveFallbackError) Error() string {
+	return "fallback failed"
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	theorydberrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -32,7 +33,7 @@ func TestRound31QueryResolvers_Search_AccountsHydratePartialServiceActors(t *tes
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(exactQuery).Once()
 	exactQuery.On("Where", "PK", "=", "ACTOR#arch").Return(exactQuery)
 	exactQuery.On("Where", "SK", "=", "PROFILE").Return(exactQuery)
-	exactQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(assertiveNotFoundError{})
+	exactQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(theorydberrors.ErrItemNotFound)
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(prefixQuery).Once()
 	prefixQuery.On("Index", "gsi1").Return(prefixQuery)
@@ -81,10 +82,4 @@ func TestRound31QueryResolvers_Search_AccountsHydratePartialServiceActors(t *tes
 	require.NotNil(t, result)
 	require.Len(t, result.Accounts, 1)
 	require.Equal(t, "arch", result.Accounts[0].PreferredUsername)
-}
-
-type assertiveNotFoundError struct{}
-
-func (assertiveNotFoundError) Error() string {
-	return "not found"
 }

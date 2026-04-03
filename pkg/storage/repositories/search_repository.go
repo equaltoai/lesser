@@ -177,7 +177,10 @@ func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query str
 	}
 
 	// Collect results from different search strategies
-	results, _ := r.executeSearchStrategies(ctx, normalizedQuery, limit, offset)
+	results, _, err := r.executeSearchStrategies(ctx, normalizedQuery, limit, offset)
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply following filter if requested
 	if following && accountID != "" {
@@ -196,39 +199,51 @@ func (r *SearchRepository) normalizeSearchQuery(query string) string {
 }
 
 // executeSearchStrategies runs all search strategies and collects unique results
-func (r *SearchRepository) executeSearchStrategies(ctx context.Context, query string, limit, offset int) ([]*activitypub.Actor, map[string]bool) {
+func (r *SearchRepository) executeSearchStrategies(ctx context.Context, query string, limit, offset int) ([]*activitypub.Actor, map[string]bool, error) {
 	results := make([]*activitypub.Actor, 0)
 	seen := make(map[string]bool)
 
 	// Strategy 1: Exact username match
-	r.searchExactUsername(ctx, query, &results, seen)
+	if err := r.searchExactUsername(ctx, query, &results, seen); err != nil {
+		return nil, seen, err
+	}
 
 	// Strategy 2: Username prefix search
-	prefixStats := r.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	prefixStats, err := r.searchUsernamePrefix(ctx, query, limit, offset, &results, seen)
+	if err != nil {
+		return nil, seen, err
+	}
 
 	// Strategy 3: Display name search
-	displayNameStats := r.searchDisplayName(ctx, query, limit, &results, seen)
+	displayNameStats, err := r.searchDisplayName(ctx, query, limit, &results, seen)
+	if err != nil {
+		return nil, seen, err
+	}
 
 	r.logAccountSearchHydrationSummary(query, prefixStats, displayNameStats, len(results))
 
-	return results, seen
+	return results, seen, nil
 }
 
 // searchExactUsername searches for exact username matches
-func (r *SearchRepository) searchExactUsername(ctx context.Context, query string, results *[]*activitypub.Actor, seen map[string]bool) {
+func (r *SearchRepository) searchExactUsername(ctx context.Context, query string, results *[]*activitypub.Actor, seen map[string]bool) error {
 	if err := common.ValidateRepositorySearchQuery(query, 3); err != nil {
-		return
+		return nil
 	}
 
 	actor, err := r.getFullActorByUsername(ctx, query)
 	if err != nil {
-		return
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("exact username search hydration failed for %q: %w", query, err)
 	}
 	r.appendHydratedSearchActor(results, seen, actor, nil)
+	return nil
 }
 
 // searchUsernamePrefix searches for usernames starting with the query
-func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query string, limit, offset int, results *[]*activitypub.Actor, seen map[string]bool) *accountSearchStrategyStats {
+func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query string, limit, offset int, results *[]*activitypub.Actor, seen map[string]bool) (*accountSearchStrategyStats, error) {
 	stats := newAccountSearchStrategyStats()
 	prefixKey := query[:2]
 	var prefixMatches []models.Actor
@@ -242,7 +257,7 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 
 	if err != nil {
 		r.logger.Warn("username prefix search failed", zap.Error(err))
-		return stats
+		return stats, fmt.Errorf("username prefix search query failed for %q: %w", query, err)
 	}
 	stats.rawMatches = len(prefixMatches)
 
@@ -259,20 +274,20 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 				zap.String("query", query),
 				zap.String("username", username),
 				zap.Error(err))
-			continue
+			return stats, fmt.Errorf("username prefix hydration failed for %q: %w", username, err)
 		}
 
 		r.appendHydratedSearchActor(results, seen, actor, stats)
 	}
 
-	return stats
+	return stats, nil
 }
 
 // searchDisplayName searches for display names containing the query
-func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, limit int, results *[]*activitypub.Actor, seen map[string]bool) *accountSearchStrategyStats {
+func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, limit int, results *[]*activitypub.Actor, seen map[string]bool) (*accountSearchStrategyStats, error) {
 	stats := newAccountSearchStrategyStats()
 	if err := common.ValidateRepositorySearchQuery(query, 2); err != nil {
-		return stats
+		return stats, nil
 	}
 
 	displayNameKey := query[:2]
@@ -287,7 +302,7 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 
 	if err != nil {
 		r.logger.Warn("display name search failed", zap.Error(err))
-		return stats
+		return stats, fmt.Errorf("display name search query failed for %q: %w", query, err)
 	}
 	stats.rawMatches = len(displayNameMatches)
 
@@ -304,13 +319,13 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 				zap.String("query", query),
 				zap.String("username", username),
 				zap.Error(err))
-			continue
+			return stats, fmt.Errorf("display name hydration failed for %q: %w", username, err)
 		}
 
 		r.appendHydratedSearchActor(results, seen, actor, stats)
 	}
 
-	return stats
+	return stats, nil
 }
 
 func extractUsernameFromSearchSK(sk string) string {
@@ -346,20 +361,21 @@ func (r *SearchRepository) getFullActorByUsername(ctx context.Context, username 
 			zap.String("username", username),
 			zap.String("discard_reason", searchActorDiscardReason(actor)),
 			zap.Error(decErr))
-		return actor, nil
+		return nil, fmt.Errorf("dynamodb fallback decode failed for %q: %w", username, decErr)
 	}
 
 	if isSearchActorComplete(decoded) {
 		return decoded, nil
 	}
 
-	if decoded != nil {
-		r.searchLogger().Warn("decoded actor payload remains incomplete after DynamoDB fallback",
-			zap.String("username", username),
-			zap.String("discard_reason", searchActorDiscardReason(decoded)))
+	discardReason := searchActorDiscardReason(decoded)
+	if decoded == nil {
+		discardReason = "missing_actor_payload_after_fallback"
 	}
-
-	return actor, nil
+	r.searchLogger().Warn("decoded actor payload remains incomplete after DynamoDB fallback",
+		zap.String("username", username),
+		zap.String("discard_reason", discardReason))
+	return nil, fmt.Errorf("actor %q remained incomplete after dynamodb fallback: %s", username, discardReason)
 }
 
 func newAccountSearchStrategyStats() *accountSearchStrategyStats {
@@ -445,6 +461,9 @@ func (r *SearchRepository) hydrateIndexedActorMatch(ctx context.Context, match m
 
 	actor, err := r.getFullActorByUsername(ctx, username)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, username, "actor_not_found_after_index_match", nil
+		}
 		return nil, username, "", err
 	}
 

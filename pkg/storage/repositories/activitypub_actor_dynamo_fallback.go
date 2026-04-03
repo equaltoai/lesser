@@ -4,42 +4,60 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
+	tablesession "github.com/theory-cloud/tabletheory/pkg/session"
 )
+
+type dynamoGetItemClient interface {
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+}
+
+type repositoryDynamoSession interface {
+	Client() (*dynamodb.Client, error)
+}
 
 var (
-	loadDefaultAWSConfigForRepositories = awsconfig.LoadDefaultConfig
-
-	defaultDynamoClientOnce sync.Once
-	defaultDynamoClient     *dynamodb.Client
-	defaultDynamoClientErr  error
+	getRepositoryConfig  = lesserconfig.Get
+	newRepositorySession = func(cfg *tablesession.Config) (repositoryDynamoSession, error) {
+		return tablesession.NewSession(cfg)
+	}
+	getRepositoryDynamoClient = defaultRepositoryDynamoClient
 )
 
-func getDefaultDynamoClient(ctx context.Context) (*dynamodb.Client, error) {
-	defaultDynamoClientOnce.Do(func() {
-		cfg := lesserconfig.Get()
-		region := cfg.Region
-		if region == "" {
-			region = "us-east-1"
-		}
+func defaultRepositoryDynamoClient(_ context.Context) (dynamoGetItemClient, error) {
+	cfg := getRepositoryConfig()
+	region := cfg.Region
+	if region == "" {
+		region = "us-east-1"
+	}
 
-		awsCfg, err := loadDefaultAWSConfigForRepositories(ctx, awsconfig.WithRegion(region))
-		if err != nil {
-			defaultDynamoClientErr = err
-			return
-		}
-		defaultDynamoClient = dynamodb.NewFromConfig(awsCfg)
-	})
+	sessionConfig := &tablesession.Config{
+		Region:   region,
+		Endpoint: cfg.DynamoDBEndpoint,
+	}
 
-	return defaultDynamoClient, defaultDynamoClientErr
+	if cfg.DynamoDBEndpoint != "" {
+		sessionConfig.CredentialsProvider = credentials.NewStaticCredentialsProvider("fakeMyKeyId", "fakeSecretAccessKey", "")
+	}
+
+	sess, err := newRepositorySession(sessionConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create repository dynamodb session: %w", err)
+	}
+
+	client, err := sess.Client()
+	if err != nil {
+		return nil, fmt.Errorf("create repository dynamodb client: %w", err)
+	}
+
+	return client, nil
 }
 
 func loadActivityPubActorFromDynamo(ctx context.Context, tableName, username string) (*activitypub.Actor, error) {
@@ -50,7 +68,7 @@ func loadActivityPubActorFromDynamo(ctx context.Context, tableName, username str
 		return nil, fmt.Errorf("username is empty")
 	}
 
-	client, err := getDefaultDynamoClient(ctx)
+	client, err := getRepositoryDynamoClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init dynamodb client: %w", err)
 	}

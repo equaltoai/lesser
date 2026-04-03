@@ -51,7 +51,8 @@ func TestExecuteSearchStrategies_LogsSummaryWhenIndexedQueriesMiss(t *testing.T)
 		*matches = []models.Actor{}
 	}).Return(nil)
 
-	results, _ := repo.executeSearchStrategies(ctx, "ag", 10, 0)
+	results, _, err := repo.executeSearchStrategies(ctx, "ag", 10, 0)
+	require.NoError(t, err)
 	require.Empty(t, results)
 
 	entries := recorded.FilterMessage("account search hydration summary").All()
@@ -99,7 +100,8 @@ func TestExecuteSearchStrategies_LogsDiscardReasonsForIndexedMatches(t *testing.
 		*matches = []models.Actor{}
 	}).Return(nil)
 
-	results, _ := repo.executeSearchStrategies(ctx, "ag", 10, 0)
+	results, _, err := repo.executeSearchStrategies(ctx, "ag", 10, 0)
+	require.NoError(t, err)
 	require.Empty(t, results)
 
 	entries := recorded.FilterMessage("account search hydration summary").All()
@@ -144,7 +146,8 @@ func TestSearchUsernamePrefix_LogsHydrationWarningWhenLookupFails(t *testing.T) 
 	fullActorQuery.On("Where", "SK", "=", "PROFILE").Return(fullActorQuery)
 	fullActorQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(assertiveLookupError{})
 
-	repo.searchUsernamePrefix(ctx, "ar", 10, 0, &results, seen)
+	_, err := repo.searchUsernamePrefix(ctx, "ar", 10, 0, &results, seen)
+	require.Error(t, err)
 
 	entries := recorded.FilterMessage("indexed account search hydration failed").All()
 	require.Len(t, entries, 1)
