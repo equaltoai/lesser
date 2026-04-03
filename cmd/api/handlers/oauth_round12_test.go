@@ -796,6 +796,42 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_target", body["error"])
 	})
 
+	t.Run("authorization_code accepts omitted resource when original authorization request was resource-bound", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:           "client-1",
+					Name:               "Codex",
+					RedirectURIs:       []string{"https://example.com/callback"},
+					Scopes:             []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeFollow, auth.ScopePush},
+					Confidential:       false,
+					RegistrationSource: oauthRegistrationSourceDynamic,
+					CreatedAt:          time.Now().Add(-24 * time.Hour),
+				},
+			},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+				"code-resource-omitted": {
+					Code:          "code-resource-omitted",
+					ClientID:      "client-1",
+					RedirectURI:   "https://example.com/callback",
+					Resource:      "https://mcp.example/resource",
+					Username:      "alice",
+					ExpiresAt:     time.Now().Add(10 * time.Minute),
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeFollow, auth.ScopePush},
+					CodeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-resource-omitted&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+	})
+
 	t.Run("authorization_code confidential client requires client_secret", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
