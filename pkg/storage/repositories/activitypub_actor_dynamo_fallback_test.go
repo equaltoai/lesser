@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -120,4 +121,8 @@ type fakeRepositoryDynamoSession struct {
 
 func (f fakeRepositoryDynamoSession) Client() (*dynamodb.Client, error) {
 	return f.client, f.err
+}
+
+func resetRepositoryDynamoClientCache() {
+	repositoryDynamoClients = sync.Map{}
 }

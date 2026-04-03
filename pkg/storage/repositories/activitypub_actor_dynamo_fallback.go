@@ -139,7 +139,3 @@ type repositoryDynamoClientEntry struct {
 func repositoryDynamoClientKey(region, endpoint string) string {
 	return region + "|" + endpoint
 }
-
-func resetRepositoryDynamoClientCache() {
-	repositoryDynamoClients = sync.Map{}
-}
