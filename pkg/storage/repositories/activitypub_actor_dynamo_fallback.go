@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -29,6 +30,7 @@ var (
 		return tablesession.NewSession(cfg)
 	}
 	getRepositoryDynamoClient = defaultRepositoryDynamoClient
+	repositoryDynamoClients   sync.Map
 )
 
 func defaultRepositoryDynamoClient(_ context.Context) (dynamoGetItemClient, error) {
@@ -47,17 +49,31 @@ func defaultRepositoryDynamoClient(_ context.Context) (dynamoGetItemClient, erro
 		sessionConfig.CredentialsProvider = credentials.NewStaticCredentialsProvider("fakeMyKeyId", "fakeSecretAccessKey", "")
 	}
 
-	sess, err := newRepositorySession(sessionConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create repository dynamodb session: %w", err)
+	cacheKey := repositoryDynamoClientKey(sessionConfig.Region, sessionConfig.Endpoint)
+	entryAny, _ := repositoryDynamoClients.LoadOrStore(cacheKey, &repositoryDynamoClientEntry{})
+	entry := entryAny.(*repositoryDynamoClientEntry)
+
+	entry.once.Do(func() {
+		sess, err := newRepositorySession(sessionConfig)
+		if err != nil {
+			entry.err = fmt.Errorf("create repository dynamodb session: %w", err)
+			return
+		}
+
+		client, err := sess.Client()
+		if err != nil {
+			entry.err = fmt.Errorf("create repository dynamodb client: %w", err)
+			return
+		}
+
+		entry.client = client
+	})
+
+	if entry.err != nil {
+		return nil, entry.err
 	}
 
-	client, err := sess.Client()
-	if err != nil {
-		return nil, fmt.Errorf("create repository dynamodb client: %w", err)
-	}
-
-	return client, nil
+	return entry.client, nil
 }
 
 func loadActivityPubActorFromDynamo(ctx context.Context, tableName, username string) (*activitypub.Actor, error) {
@@ -111,4 +127,18 @@ func loadActivityPubActorFromDynamo(ctx context.Context, tableName, username str
 
 func awsString(v string) *string {
 	return &v
+}
+
+type repositoryDynamoClientEntry struct {
+	once   sync.Once
+	client dynamoGetItemClient
+	err    error
+}
+
+func repositoryDynamoClientKey(region, endpoint string) string {
+	return region + "|" + endpoint
+}
+
+func resetRepositoryDynamoClientCache() {
+	repositoryDynamoClients = sync.Map{}
 }
