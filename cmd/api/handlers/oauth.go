@@ -1124,6 +1124,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	clientID = strings.TrimSpace(clientID)
 	redirectURI = strings.TrimSpace(redirectURI)
 	clientSecret = strings.TrimSpace(clientSecret)
+	requestedResource = strings.TrimSpace(requestedResource)
 
 	client, err := h.validateAuthorizationCodeExchangeClient(ctx, oauthSvc, clientID, redirectURI, clientSecret, code)
 	if err != nil {
@@ -1134,7 +1135,14 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	if err != nil {
 		return "", "", nil, err
 	}
-	if strings.TrimSpace(authCode.Resource) != strings.TrimSpace(requestedResource) {
+	storedResource := strings.TrimSpace(authCode.Resource)
+	if storedResource != "" && requestedResource == "" {
+		// Some public MCP clients bind the resource at authorization time but omit it
+		// during the token exchange. Preserve the original code-bound resource instead
+		// of rejecting an otherwise valid authorization-code flow.
+		requestedResource = storedResource
+	}
+	if storedResource != requestedResource {
 		return "", "", nil, errOAuthInvalidTarget
 	}
 
