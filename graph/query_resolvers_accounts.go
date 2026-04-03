@@ -44,18 +44,26 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 	// Determine lookup method
 	var query *accounts.GetAccountQuery
 	if id != nil {
-		if err := common.ValidateRequiredParam("id", *id); err != nil {
+		resolvedID := deriveUsernameFromIRI(*id)
+		if resolvedID == "" {
+			resolvedID = strings.TrimSpace(*id)
+		}
+		if err := common.ValidateRequiredParam("id", resolvedID); err != nil {
 			return nil, err
 		}
 		query = &accounts.GetAccountQuery{
-			Username: *id,
+			Username: resolvedID,
 		}
 	} else if username != nil {
-		if err := common.ValidateRequiredParam("username", *username); err != nil {
+		resolvedUsername := deriveUsernameFromIRI(*username)
+		if resolvedUsername == "" {
+			resolvedUsername = strings.TrimSpace(*username)
+		}
+		if err := common.ValidateRequiredParam("username", resolvedUsername); err != nil {
 			return nil, err
 		}
 		query = &accounts.GetAccountQuery{
-			Username: *username,
+			Username: resolvedUsername,
 		}
 	} else {
 		return nil, ErrEitherIDOrUsernameRequired

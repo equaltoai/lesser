@@ -1,6 +1,6 @@
 # Public Surface Matrix (Living)
 
-Date: 2026-02-07  
+Date: 2026-04-02  
 Repo: `lesser`  
 
 This document defines Lesser’s intended **unauthenticated/public surface**.
@@ -9,7 +9,7 @@ Policy:
 - **Default-deny:** an endpoint/resolver is **not** considered public unless explicitly listed here.
 - **Public content** must be consistent with ActivityPub visibility models (`public` / `unlisted`) and must not leak
   private metadata.
-- **GraphQL is non-public by default** (auth required for all operations).
+- **GraphQL is auth-required by default** except for the explicitly allowlisted anonymous public-read subset below.
 
 Related:
 - Gaps inventory: `docs/security-gaps.md`
@@ -128,8 +128,20 @@ Notes:
 
 ## GraphQL (`cmd/graphql`)
 
-- **Auth** `POST/GET /graphql`, `POST/GET /api/graphql`, `GET /subscriptions`
-  - No GraphQL operations are intended to be publicly callable.
+- **Public** `POST/GET /graphql`, `POST/GET /api/graphql` for the anonymous public-read subset only:
+  - `actor(id|username)`
+  - `object(id)`
+  - `timeline(type: PUBLIC | LOCAL | HASHTAG | ACTOR, ...)`
+  - `search(query, ...)`
+  - `instance`
+  - `instanceActivity`
+  - `instancePeers`
+  - `announcements`
+  - `customEmojis`
+  - `threadContext(noteId)`
+  - Anonymous note/thread/status queries must only expose `public` and `unlisted` content.
+  - `timeline(type: HOME | DIRECT | LIST, ...)` remains auth-only even though `timeline` is part of the public query allowlist.
+- **Auth** `POST/GET /graphql`, `POST/GET /api/graphql`, `GET /subscriptions` for every other GraphQL operation
 - **Mod/Admin** moderation queries/mutations/subscriptions (role-gated in resolvers; see Milestone 5)
 - **Admin** ops/insights + operator controls (cost/perf, federation management, AI analysis/debug)
 - **Public/Internal** health endpoints:

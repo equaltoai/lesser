@@ -282,7 +282,7 @@ func defaultSpec() *openAPISpec {
 		Info: openAPIInfo{
 			Title:       "Lesser REST API",
 			Version:     "0.1.0",
-			Description: "Auto-generated route skeleton; fill request/response schemas over time. Do not serve this file at runtime; use it for build-time client generation.",
+			Description: "Auto-generated route skeleton; fill request/response schemas over time. Do not serve this file at runtime; use it for build-time client generation. This contract covers the REST surface only; the anonymous GraphQL public-read subset is documented in docs/api-reference.md and docs/security-public-surface.md.",
 		},
 		Components: openAPIComponents{},
 		Paths:      map[string]*pathItem{},

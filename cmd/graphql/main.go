@@ -50,7 +50,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/vektah/gqlparser/v2/parser"
 	"go.uber.org/zap"
 )
 
@@ -93,6 +95,20 @@ var (
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}
 )
+
+var anonymousGraphQLPublicQueryFields = map[string]struct{}{
+	"__typename":       {},
+	"actor":            {},
+	"announcements":    {},
+	"customEmojis":     {},
+	"instance":         {},
+	"instanceActivity": {},
+	"instancePeers":    {},
+	"object":           {},
+	"search":           {},
+	"threadContext":    {},
+	"timeline":         {},
+}
 
 type oauthMiddlewareAdapter struct {
 	service *auth.OAuthService
@@ -479,6 +495,11 @@ func graphqlWithUser(requestCtx context.Context, ctx *apptheory.Context) context
 	return requestCtx
 }
 
+type graphqlOperationRequest struct {
+	Query         string `json:"query"`
+	OperationName string `json:"operationName"`
+}
+
 func graphqlWithClaims(requestCtx context.Context, ctx *apptheory.Context) context.Context {
 	if ctx == nil {
 		return requestCtx
@@ -576,9 +597,162 @@ func graphqlRequestAuthenticated(ctx *apptheory.Context) bool {
 	return false
 }
 
+func graphqlAnonymousRequestAllowed(ctx *apptheory.Context) bool {
+	if graphqlRequestAuthenticated(ctx) {
+		return true
+	}
+
+	query, operationName := graphqlExtractOperation(ctx)
+	if query == "" {
+		return false
+	}
+
+	document, err := parser.ParseQuery(&ast.Source{Input: query})
+	if err != nil {
+		logger.Warn("failed to parse anonymous graphql request",
+			zap.String("path", graphqlPath(ctx)),
+			zap.Error(err))
+		return false
+	}
+
+	operation := graphqlSelectOperation(document, operationName)
+	if operation == nil || operation.Operation != ast.Query {
+		return false
+	}
+
+	fields, ok := graphqlCollectTopLevelFields(document, operation.SelectionSet, map[string]struct{}{})
+	if !ok || len(fields) == 0 {
+		return false
+	}
+
+	for _, fieldName := range fields {
+		if _, allowed := anonymousGraphQLPublicQueryFields[fieldName]; !allowed {
+			return false
+		}
+	}
+
+	return true
+}
+
+func graphqlExtractOperation(ctx *apptheory.Context) (query string, operationName string) {
+	parts := graphqlExtractRequestParts(ctx)
+
+	if query = graphqlFirstRequestValue(parts.query, "query"); query != "" {
+		return strings.TrimSpace(query), strings.TrimSpace(graphqlFirstRequestValue(parts.query, "operationName"))
+	}
+
+	body := strings.TrimSpace(string(parts.body))
+	if body == "" {
+		return "", ""
+	}
+
+	var request graphqlOperationRequest
+	if err := json.Unmarshal(parts.body, &request); err == nil {
+		return strings.TrimSpace(request.Query), strings.TrimSpace(request.OperationName)
+	}
+
+	return body, ""
+}
+
+func graphqlFirstRequestValue(values map[string][]string, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	items := values[key]
+	if len(items) == 0 {
+		return ""
+	}
+
+	return items[0]
+}
+
+func graphqlSelectOperation(document *ast.QueryDocument, operationName string) *ast.OperationDefinition {
+	if document == nil {
+		return nil
+	}
+
+	if operationName != "" {
+		for _, operation := range document.Operations {
+			if operation != nil && strings.TrimSpace(operation.Name) == operationName {
+				return operation
+			}
+		}
+		return nil
+	}
+
+	if len(document.Operations) != 1 {
+		return nil
+	}
+
+	return document.Operations[0]
+}
+
+func graphqlCollectTopLevelFields(document *ast.QueryDocument, selectionSet ast.SelectionSet, visitedFragments map[string]struct{}) ([]string, bool) {
+	if len(selectionSet) == 0 {
+		return nil, false
+	}
+
+	fields := make([]string, 0, len(selectionSet))
+	for _, selection := range selectionSet {
+		switch current := selection.(type) {
+		case *ast.Field:
+			name := strings.TrimSpace(current.Name)
+			if name == "" {
+				return nil, false
+			}
+			fields = append(fields, name)
+		case *ast.FragmentSpread:
+			name := strings.TrimSpace(current.Name)
+			if name == "" {
+				return nil, false
+			}
+			if _, seen := visitedFragments[name]; seen {
+				continue
+			}
+			visitedFragments[name] = struct{}{}
+
+			fragment := graphqlFindFragment(document, name)
+			if fragment == nil {
+				return nil, false
+			}
+
+			fragmentFields, ok := graphqlCollectTopLevelFields(document, fragment.SelectionSet, visitedFragments)
+			if !ok {
+				return nil, false
+			}
+			fields = append(fields, fragmentFields...)
+		case *ast.InlineFragment:
+			inlineFields, ok := graphqlCollectTopLevelFields(document, current.SelectionSet, visitedFragments)
+			if !ok {
+				return nil, false
+			}
+			fields = append(fields, inlineFields...)
+		default:
+			return nil, false
+		}
+	}
+
+	return fields, true
+}
+
+func graphqlFindFragment(document *ast.QueryDocument, name string) *ast.FragmentDefinition {
+	if document == nil {
+		return nil
+	}
+
+	for _, fragment := range document.Fragments {
+		if fragment != nil && strings.TrimSpace(fragment.Name) == name {
+			return fragment
+		}
+	}
+
+	return nil
+}
+
 // handleGraphQL processes GraphQL requests with proper context and DataLoader
 func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
-	if !graphqlRequestAuthenticated(ctx) {
+	if !graphqlAnonymousRequestAllowed(ctx) {
 		return graphqlErrorResponse(http.StatusUnauthorized, "authentication required"), nil
 	}
 

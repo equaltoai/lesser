@@ -2798,7 +2798,7 @@ type engagementMetrics struct {
 }
 
 // getThreadReplies fetches thread replies with error handling
-func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo interfaces.StatusRepository, noteID string) ([]*models.Status, error) {
+func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo interfaces.StatusRepository, noteID string, viewerID string) ([]*models.Status, error) {
 	paginationOpts := interfaces.PaginationOptions{
 		Limit:  100,
 		Cursor: "",
@@ -2810,7 +2810,28 @@ func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo interfa
 		return []*models.Status{}, nil
 	}
 
-	return repliesResult.Items, nil
+	visibleReplies := make([]*models.Status, 0, len(repliesResult.Items))
+	for _, reply := range repliesResult.Items {
+		if reply == nil {
+			continue
+		}
+
+		visibleReply, err := r.loadVisibleNoteForViewer(ctx, reply.StatusID, viewerID)
+		if err != nil {
+			r.Logger.Warn("failed to load visible thread reply",
+				zap.String("note_id", noteID),
+				zap.String("reply_id", reply.StatusID),
+				zap.Error(err))
+			continue
+		}
+		if visibleReply == nil {
+			continue
+		}
+
+		visibleReplies = append(visibleReplies, visibleReply)
+	}
+
+	return visibleReplies, nil
 }
 
 // calculateEngagementMetrics calculates like and reblog counts
@@ -2831,7 +2852,7 @@ func (r *queryResolver) calculateEngagementMetrics(ctx context.Context, storage 
 }
 
 // calculateThreadMetrics calculates various thread metrics
-func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status, replies []*models.Status) *threadMetrics {
+func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status, replies []*models.Status, viewerID string) *threadMetrics {
 	participants := make(map[string]bool)
 	var lastActivity time.Time
 	missingPosts := 0
@@ -2843,12 +2864,12 @@ func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo i
 
 	// Check for missing parent
 	if status.InReplyToID != "" {
-		missingPosts += r.checkMissingParent(ctx, statusRepo, status.InReplyToID)
+		missingPosts += r.checkMissingParent(ctx, statusRepo, status.InReplyToID, viewerID)
 	}
 
 	// Process replies
 	for _, reply := range replies {
-		r.processReply(ctx, statusRepo, reply, participants, &lastActivity, &maxDepth, replyIDs, &missingPosts, status.StatusID)
+		r.processReply(ctx, statusRepo, reply, participants, &lastActivity, &maxDepth, replyIDs, &missingPosts, status.StatusID, viewerID)
 	}
 
 	// Convert participants map to slice
@@ -2876,16 +2897,22 @@ func (r *queryResolver) processOriginalStatus(status *models.Status, participant
 }
 
 // checkMissingParent checks if the parent status exists
-func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo interfaces.StatusRepository, parentID string) int {
+func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo interfaces.StatusRepository, parentID string, viewerID string) int {
 	parent, err := statusRepo.GetStatus(ctx, parentID)
 	if err != nil || parent == nil || parent.Deleted {
 		return 1 // Parent is missing or deleted
 	}
+
+	visibleParent, err := r.loadVisibleNoteForViewer(ctx, parentID, viewerID)
+	if err != nil || visibleParent == nil {
+		return 0
+	}
+
 	return 0
 }
 
 // processReply processes a single reply for metrics calculation
-func (r *queryResolver) processReply(ctx context.Context, statusRepo interfaces.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string) {
+func (r *queryResolver) processReply(ctx context.Context, statusRepo interfaces.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string, viewerID string) {
 	replyIDs[reply.StatusID] = true
 
 	if reply.AuthorUsername != "" {
@@ -2907,6 +2934,12 @@ func (r *queryResolver) processReply(ctx context.Context, statusRepo interfaces.
 			referencedReply, err := statusRepo.GetStatus(ctx, reply.InReplyToID)
 			if err != nil || referencedReply == nil || referencedReply.Deleted {
 				*missingPosts++
+				return
+			}
+
+			visibleReply, err := r.loadVisibleNoteForViewer(ctx, reply.InReplyToID, viewerID)
+			if err != nil || visibleReply == nil {
+				return
 			}
 		}
 	}

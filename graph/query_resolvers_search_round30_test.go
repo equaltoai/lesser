@@ -44,7 +44,7 @@ func TestRound30QueryResolvers_SearchResultToGraphQL_SkipsNilElementsAndLoadsSta
 		Hashtags: []search.HashtagResult{
 			{Name: "golang", URL: "https://localhost/tags/golang"},
 		},
-	})
+	}, "")
 
 	require.NotNil(t, out)
 	require.NotNil(t, out.Accounts)
@@ -88,7 +88,7 @@ func TestRound30QueryResolvers_SearchResultToGraphQL_SelfSearchStillWorks(t *tes
 			{Status: &storage.StatusSearchResult{StatusID: "status-self"}},
 		},
 		Hashtags: []search.HashtagResult{},
-	})
+	}, "alice")
 
 	require.NotNil(t, out)
 	require.NotNil(t, out.Accounts)

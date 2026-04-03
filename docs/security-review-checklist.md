@@ -1,6 +1,6 @@
 # Security Review Checklist (Quick)
 
-Date: 2026-02-07  
+Date: 2026-04-02  
 Repo: `lesser`
 
 Use this checklist for PR review to prevent regressions in authz/privacy and HTML safety.
@@ -18,7 +18,8 @@ Related:
 - Any new REST route in `cmd/api` is either:
   - allowlisted in `cmd/api/public_surface_middleware.go`, or
   - expected to be auth-only (default), with tests proving it is blocked when unauthenticated.
-- GraphQL remains **auth-required by default** at the HTTP boundary (`cmd/graphql`).
+- GraphQL remains **auth-required by default** at the HTTP boundary (`cmd/graphql`), with any anonymous allowlist
+  explicitly documented and test-covered.
 
 Helpful commands:
 
@@ -70,4 +71,3 @@ Helpful commands:
 rg -n "text/html|Content-Type\\s*:\\s*text/html" cmd graph pkg
 rg -n "fmt\\.Sprintf\\(\"<|\\+\\s*\\\"<" cmd graph pkg
 ```
-
