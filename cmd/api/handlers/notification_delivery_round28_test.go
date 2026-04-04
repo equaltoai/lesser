@@ -10,12 +10,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	apiModels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -133,6 +139,65 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + managedCfg.LesserHostInstanceKey}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
 		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
+	})
+
+	t.Run("valid instance api key still works when lesser-host key lookup fails", func(t *testing.T) {
+		resetTrustSecretCache()
+
+		origLoad := loadAWSConfigForTrustSecrets
+		origNewClient := newSecretsManagerClientForTrustSecret
+		t.Cleanup(func() {
+			loadAWSConfigForTrustSecrets = origLoad
+			newSecretsManagerClientForTrustSecret = origNewClient
+			resetTrustSecretCache()
+		})
+
+		loadAWSConfigForTrustSecrets = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+			return aws.Config{}, nil
+		}
+		newSecretsManagerClientForTrustSecret = func(aws.Config) trustSecretsManagerClient {
+			return &stubTrustSecretsManagerClient{err: errors.New("secret unavailable")}
+		}
+
+		db := new(dynamormmocks.MockDB)
+		q := new(dynamormmocks.MockQuery)
+		setupMockInstanceRepoDB(db, q)
+		q.On("First", mock.AnythingOfType("*models.InstanceTrustConfig")).Run(func(args mock.Arguments) {
+			out := args.Get(0).(*storagemodels.InstanceTrustConfig)
+			out.PK = "INSTANCE#CONFIG"
+			out.SK = storagemodels.SKTrustConfig
+			out.Managed = &storagemodels.InstanceTrustConfigManaged{
+				BaseURL:              "https://persisted.example",
+				InstanceKeySecretARN: "secret-id",
+			}
+		}).Return(nil).Maybe()
+		q.On("First", mock.AnythingOfType("*models.InstanceSoulBodyBindingUsername")).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+		instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+		repos := &MockRepositoryStorage{}
+		repos.On("Instance").Return(instanceRepo).Maybe()
+
+		cfg := round11TestConfig()
+		cfg.AdminUsername = "admin"
+		cfg.InstanceAPIKey = "instance-key"
+
+		handler, baseRepos, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		repos.On("Account").Return(baseRepos.Account()).Maybe()
+		repos.On("Audit").Return(baseRepos.Audit()).Maybe()
+		handler.repos = repos
+		handler.logger = zap.NewNop()
+		handler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "agent-bob", cmd.UserID)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		headers := map[string]string{"Authorization": "Bearer instance-key"}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+		requireStatus(t, http.StatusNoContent)(handler.HandleDeliverNotificationLift(ctx))
 	})
 
 	t.Run("managed instances fall back to primary admin from instance state", func(t *testing.T) {

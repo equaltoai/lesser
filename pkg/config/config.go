@@ -292,6 +292,7 @@ func ResetForTests() {
 		value string
 		err   error
 	}{}
+	optionalSecretLoaders = sync.Map{}
 }
 
 // loadConfig loads configuration from environment variables
@@ -600,6 +601,24 @@ func (c *Config) CMSCategoriesAllowed() bool {
 	return c != nil && c.CMSEnabled() && c.CMSCategoriesEnabled
 }
 
+// ResolveInstanceAPIKey returns the configured instance API key, resolving the
+// optional Secrets Manager ARN lazily when needed.
+func (c *Config) ResolveInstanceAPIKey() (string, error) {
+	if c == nil {
+		return "", nil
+	}
+	return resolveOptionalSecretValue(c.InstanceAPIKey, c.InstanceAPIKeyARN)
+}
+
+// ResolveLesserHostInstanceKey returns the configured lesser.host instance key,
+// resolving the optional Secrets Manager ARN lazily when needed.
+func (c *Config) ResolveLesserHostInstanceKey() (string, error) {
+	if c == nil {
+		return "", nil
+	}
+	return resolveOptionalSecretValue(c.LesserHostInstanceKey, c.LesserHostInstanceKeyARN)
+}
+
 // Helper functions
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -614,6 +633,14 @@ var jwtSecretLoader struct {
 	value string
 	err   error
 }
+
+type optionalSecretLoader struct {
+	mu    sync.Mutex
+	ready bool
+	value string
+}
+
+var optionalSecretLoaders sync.Map
 
 func mustGetJWTSecret() string {
 	// Check for plain text secret (not recommended for production)
@@ -675,24 +702,45 @@ func fetchSecretValue(arn string) (string, error) {
 }
 
 func getOptionalSecretFromEnvOrARN(valueKey, arnKey string) string {
-	if v := strings.TrimSpace(os.Getenv(valueKey)); v != "" {
-		return v
+	val, err := resolveOptionalSecretValue(os.Getenv(valueKey), os.Getenv(arnKey))
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+func resolveOptionalSecretValue(value string, arn string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		return value, nil
 	}
 
-	arn := strings.TrimSpace(os.Getenv(arnKey))
+	arn = strings.TrimSpace(arn)
 	if arn == "" {
-		return ""
+		return "", nil
 	}
 	if isRunningTests() {
 		// Avoid reaching out to AWS Secrets Manager during unit tests.
-		return ""
+		return "", nil
 	}
 
-	val, err := fetchSecretValue(arn)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to resolve %s from %s: %v", arnKey, arn, err))
+	loaderAny, _ := optionalSecretLoaders.LoadOrStore(arn, &optionalSecretLoader{})
+	loader := loaderAny.(*optionalSecretLoader)
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+
+	if loader.ready {
+		return loader.value, nil
 	}
-	return val
+
+	fetchedValue, err := fetchSecretValue(arn)
+	if err != nil {
+		return "", err
+	}
+
+	loader.value = fetchedValue
+	loader.ready = true
+	return loader.value, nil
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {

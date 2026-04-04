@@ -650,12 +650,16 @@ func TestLesserHostTrustProxyHelpersRound20(t *testing.T) {
 		var h *Handler
 		require.Equal(t, "", h.lesserHostTrustBaseURL())
 		require.Equal(t, "", h.lesserHostAttestationsBaseURL())
-		require.Equal(t, "", h.lesserHostInstanceKey())
+		key, err := h.resolveLegacyLesserHostInstanceKey()
+		require.NoError(t, err)
+		require.Equal(t, "", key)
 
 		h = &Handler{}
 		require.Equal(t, "", h.lesserHostTrustBaseURL())
 		require.Equal(t, "", h.lesserHostAttestationsBaseURL())
-		require.Equal(t, "", h.lesserHostInstanceKey())
+		key, err = h.resolveLegacyLesserHostInstanceKey()
+		require.NoError(t, err)
+		require.Equal(t, "", key)
 	})
 
 	t.Run("proxy_validation_failures_return_503", func(t *testing.T) {

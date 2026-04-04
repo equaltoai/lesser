@@ -86,11 +86,11 @@ func (h *Handler) lesserHostAttestationsBaseURL() string {
 	return h.lesserHostTrustBaseURL()
 }
 
-func (h *Handler) lesserHostInstanceKey() string {
+func (h *Handler) resolveLegacyLesserHostInstanceKey() (string, error) {
 	if h == nil || h.cfg == nil {
-		return ""
+		return "", nil
 	}
-	return strings.TrimSpace(h.cfg.LesserHostInstanceKey)
+	return h.cfg.ResolveLesserHostInstanceKey()
 }
 
 func (h *Handler) effectiveLesserHostTrustBaseURL(ctx context.Context) string {
@@ -150,7 +150,7 @@ func (h *Handler) effectiveLesserHostInstanceKey(ctx context.Context) (string, e
 		return "", nil
 	}
 	if h.repos == nil {
-		return h.lesserHostInstanceKey(), nil
+		return h.resolveLegacyLesserHostInstanceKey()
 	}
 
 	exists, err := h.repos.Instance().TrustConfigExists(ctx)
@@ -159,7 +159,7 @@ func (h *Handler) effectiveLesserHostInstanceKey(ctx context.Context) (string, e
 	}
 	if !exists {
 		h.warnLegacyTrustConfig()
-		return h.lesserHostInstanceKey(), nil
+		return h.resolveLegacyLesserHostInstanceKey()
 	}
 
 	effective, err := h.repos.Instance().EffectiveTrustConfig(ctx)

@@ -982,6 +982,13 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
 		apis,
 	)
+	attachConfiguredSecretReadPolicy(
+		s.Stack,
+		s.AppName,
+		s.Environment,
+		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
+		s.Configuration,
+	)
 
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{
