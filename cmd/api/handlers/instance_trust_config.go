@@ -48,7 +48,15 @@ func (h *Handler) instanceTrustConfig(ctx context.Context) map[string]any {
 			return trust
 		}
 
-		if strings.TrimSpace(h.cfg.LesserHostInstanceKey) == "" {
+		key, err := h.cfg.ResolveLesserHostInstanceKey()
+		if err != nil {
+			h.logger.Warn("failed to resolve trust instance key from config; disabling trust in instance config",
+				zap.String("lesser_host_url", baseURL),
+				zap.Error(err),
+			)
+			return trust
+		}
+		if strings.TrimSpace(key) == "" {
 			h.logger.Warn("trust config missing instance key; disabling trust in instance config",
 				zap.String("lesser_host_url", baseURL),
 			)

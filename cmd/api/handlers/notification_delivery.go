@@ -26,7 +26,11 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
 
-	expectedKeys := h.notificationDeliveryKeys()
+	expectedKeys, err := h.notificationDeliveryKeys(ctx.Context())
+	if err != nil {
+		h.logger.Warn("failed to resolve notification delivery keys", zap.Error(err))
+		return common.RespondServiceUnavailable(ctx, "notification delivery")
+	}
 	if len(expectedKeys) == 0 {
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
@@ -304,16 +308,25 @@ func (h *Handler) notificationDeliveryUsernameForContactIdentifier(ctx context.C
 	return strings.TrimSpace(actor.PreferredUsername)
 }
 
-func (h *Handler) notificationDeliveryKeys() []string {
+func (h *Handler) notificationDeliveryKeys(ctx context.Context) ([]string, error) {
 	if h == nil || h.cfg == nil {
-		return nil
+		return nil, nil
 	}
 
 	keys := []string{}
-	keys = appendUniqueNotificationDeliveryKey(keys, h.cfg.InstanceAPIKey)
-	keys = appendUniqueNotificationDeliveryKey(keys, h.cfg.LesserHostInstanceKey)
+	instanceAPIKey, err := h.cfg.ResolveInstanceAPIKey()
+	if err != nil {
+		return nil, err
+	}
+	keys = appendUniqueNotificationDeliveryKey(keys, instanceAPIKey)
 
-	return keys
+	lesserHostKey, err := h.effectiveLesserHostInstanceKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys = appendUniqueNotificationDeliveryKey(keys, lesserHostKey)
+
+	return keys, nil
 }
 
 func appendUniqueNotificationDeliveryKey(keys []string, raw string) []string {
