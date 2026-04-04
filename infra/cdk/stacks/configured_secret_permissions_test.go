@@ -114,3 +114,66 @@ func TestConfiguredSecretReadPolicySkipsWhenNoConfiguredSecretARNs(t *testing.T)
 		t.Fatalf("expected no IAM policy resources, found %d", len(policies))
 	}
 }
+
+func TestConfiguredSecretReadPolicySupportsImportedRoles(t *testing.T) {
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
+	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Account: jsii.String("123456789012"),
+			Region:  jsii.String("us-east-1"),
+		},
+	})
+
+	importedRole := awsiam.Role_FromRoleArn(
+		stack,
+		jsii.String("ImportedRole"),
+		jsii.String("arn:aws:iam::123456789012:role/test-shared-lambda-role"),
+		nil,
+	)
+
+	attachConfiguredSecretReadPolicy(stack, "lesser", "development", []awsiam.IRole{importedRole}, map[string]interface{}{
+		"lesserHostInstanceKeyArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/instance-key-imported",
+	})
+
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(data, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+
+	resources := mustResources(t, tpl)
+	policies := collectIAMPolicies(t, resources)
+	if len(policies) != 1 {
+		t.Fatalf("expected exactly one IAM policy resource, found %d", len(policies))
+	}
+
+	props, ok := policies[0]["Properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("policy missing Properties")
+	}
+	roles, ok := props["Roles"].([]any)
+	if !ok || len(roles) != 1 {
+		t.Fatalf("expected exactly one imported role target, got %#v", props["Roles"])
+	}
+
+	doc := extractPolicyDocument(t, policies[0])
+	statements := extractPolicyStatements(t, doc)
+	if len(statements) != 1 {
+		t.Fatalf("expected exactly one policy statement, found %d", len(statements))
+	}
+	res := extractStatementResources(t, statements[0])
+	if len(res) != 1 {
+		t.Fatalf("expected exactly one secret resource, got %d", len(res))
+	}
+	if got, ok := res[0].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/instance-key-imported" {
+		t.Fatalf("unexpected imported-role secret resource: %#v", res[0])
+	}
+}

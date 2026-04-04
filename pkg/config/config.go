@@ -635,9 +635,9 @@ var jwtSecretLoader struct {
 }
 
 type optionalSecretLoader struct {
-	once  sync.Once
+	mu    sync.Mutex
+	ready bool
 	value string
-	err   error
 }
 
 var optionalSecretLoaders sync.Map
@@ -726,12 +726,20 @@ func resolveOptionalSecretValue(value string, arn string) (string, error) {
 
 	loaderAny, _ := optionalSecretLoaders.LoadOrStore(arn, &optionalSecretLoader{})
 	loader := loaderAny.(*optionalSecretLoader)
-	loader.once.Do(func() {
-		loader.value, loader.err = fetchSecretValue(arn)
-	})
-	if loader.err != nil {
-		return "", loader.err
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+
+	if loader.ready {
+		return loader.value, nil
 	}
+
+	fetchedValue, err := fetchSecretValue(arn)
+	if err != nil {
+		return "", err
+	}
+
+	loader.value = fetchedValue
+	loader.ready = true
 	return loader.value, nil
 }
 

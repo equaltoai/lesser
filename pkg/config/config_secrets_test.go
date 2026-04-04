@@ -168,3 +168,48 @@ func TestConfigResolveLesserHostInstanceKey_ReturnsFetchErrorsOutsideTests(t *te
 	require.Error(t, err)
 	require.Equal(t, "", value)
 }
+
+func TestConfigResolveOptionalSecret_RetriesAfterFailureUntilSuccess(t *testing.T) {
+	ResetForTests()
+
+	origLoad := loadDefaultAWSConfig
+	origNew := newSecretsManagerValueGetter
+	origArgs := os.Args
+	t.Cleanup(func() {
+		loadDefaultAWSConfig = origLoad
+		newSecretsManagerValueGetter = origNew
+		os.Args = origArgs
+		ResetForTests()
+	})
+
+	os.Args = []string{"app"}
+
+	loadDefaultAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{Region: "us-east-1"}, nil
+	}
+
+	callCount := 0
+	newSecretsManagerValueGetter = func(_ aws.Config) secretsManagerValueGetter {
+		callCount++
+		if callCount == 1 {
+			return stubSecretsManagerGetter{err: errors.New("temporary")}
+		}
+		secretString := `{"secret":"recovered"}`
+		return stubSecretsManagerGetter{
+			output: &secretsmanager.GetSecretValueOutput{SecretString: &secretString},
+		}
+	}
+
+	cfg := &Config{
+		InstanceAPIKeyARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:retryable-instance-api-key",
+	}
+
+	value, err := cfg.ResolveInstanceAPIKey()
+	require.Error(t, err)
+	require.Equal(t, "", value)
+
+	value, err = cfg.ResolveInstanceAPIKey()
+	require.NoError(t, err)
+	require.Equal(t, "recovered", value)
+	require.Equal(t, 2, callCount)
+}

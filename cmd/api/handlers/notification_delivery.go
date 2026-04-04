@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -314,19 +316,36 @@ func (h *Handler) notificationDeliveryKeys(ctx context.Context) ([]string, error
 	}
 
 	keys := []string{}
+	var errs []error
+
 	instanceAPIKey, err := h.cfg.ResolveInstanceAPIKey()
 	if err != nil {
-		return nil, err
+		if h.logger != nil {
+			h.logger.Warn("failed to resolve instance api key for notification delivery", zap.Error(err))
+		}
+		errs = append(errs, fmt.Errorf("resolve instance api key: %w", err))
+	} else {
+		keys = appendUniqueNotificationDeliveryKey(keys, instanceAPIKey)
 	}
-	keys = appendUniqueNotificationDeliveryKey(keys, instanceAPIKey)
 
 	lesserHostKey, err := h.effectiveLesserHostInstanceKey(ctx)
 	if err != nil {
-		return nil, err
+		if h.logger != nil {
+			h.logger.Warn("failed to resolve lesser-host instance key for notification delivery", zap.Error(err))
+		}
+		errs = append(errs, fmt.Errorf("resolve lesser-host instance key: %w", err))
+	} else {
+		keys = appendUniqueNotificationDeliveryKey(keys, lesserHostKey)
 	}
-	keys = appendUniqueNotificationDeliveryKey(keys, lesserHostKey)
 
-	return keys, nil
+	if len(keys) > 0 {
+		return keys, nil
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	return nil, nil
 }
 
 func appendUniqueNotificationDeliveryKey(keys []string, raw string) []string {
