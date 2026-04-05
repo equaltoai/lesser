@@ -51,6 +51,11 @@ func (r *accountsRound20LookupActorRepo) GetActor(_ context.Context, username st
 	return r.actor, r.err
 }
 
+func (r *accountsRound20LookupActorRepo) GetActorByUsername(_ context.Context, username string) (*activitypub.Actor, error) {
+	r.username = username
+	return r.actor, r.err
+}
+
 func TestAccountsRound20_PublicAccountFallbackHelpers(t *testing.T) {
 	cfg := round10TestConfig()
 	h := &Handler{cfg: cfg}
@@ -63,13 +68,15 @@ func TestAccountsRound20_PublicAccountFallbackHelpers(t *testing.T) {
 	t.Run("publicAccountFromStorageAccount falls back to actor conversion when user is missing", func(t *testing.T) {
 		actor := &activitypub.Actor{
 			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
-			PreferredUsername: "alice@example.net",
+			PreferredUsername: "alice",
 			Name:              "Alice",
 			URL:               "https://remote.example/@alice",
 		}
 
 		account := h.publicAccountFromStorageAccount(&storage.Account{Actor: actor})
-		require.Equal(t, actor.PreferredUsername, account.Username)
+		require.Equal(t, "alice", account.Username)
+		require.Equal(t, "alice@remote.example", account.Acct)
+		require.Equal(t, actor.ID, account.ID)
 		require.Equal(t, actor.Name, account.DisplayName)
 		require.Equal(t, actor.URL, account.URL)
 		require.NotNil(t, account.Emojis)
@@ -95,24 +102,45 @@ func TestAccountsRound20_PublicAccountFallbackHelpers(t *testing.T) {
 	t.Run("publicAccountFromActor preserves remote actor fallback", func(t *testing.T) {
 		actor := &activitypub.Actor{
 			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
-			PreferredUsername: "bob@example.net",
+			PreferredUsername: "bob",
 			Name:              "Bob",
 			URL:               "https://remote.example/@bob",
 		}
 
 		account := h.publicAccountFromActor(context.Background(), actor)
-		require.Equal(t, actor.PreferredUsername, account.Username)
+		require.Equal(t, "bob", account.Username)
+		require.Equal(t, "bob@remote.example", account.Acct)
+		require.Equal(t, actor.ID, account.ID)
 		require.Equal(t, actor.Name, account.DisplayName)
 		require.Equal(t, actor.URL, account.URL)
 		require.NotNil(t, account.Emojis)
 		require.NotNil(t, account.Fields)
 	})
+
+	t.Run("mastodonAccountFromStorageAccount preserves remote identity even when user is present", func(t *testing.T) {
+		actor := &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol", Type: "Person"},
+			PreferredUsername: "carol",
+			Name:              "Carol",
+			URL:               "https://remote.example/@carol",
+		}
+
+		account, err := h.mastodonAccountFromStorageAccount(&storage.Account{
+			User:  &storage.User{Username: "carol@remote.example", DisplayName: "Carol Local Wrapper"},
+			Actor: actor,
+		})
+		require.NoError(t, err)
+		require.Equal(t, actor.ID, account.ID)
+		require.Equal(t, "carol", account.Username)
+		require.Equal(t, "carol@remote.example", account.Acct)
+		require.Equal(t, actor.URL, account.URL)
+	})
 }
 
 func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 	t.Run("storageAccountFromActor handles nil empty and valid actors", func(t *testing.T) {
-		require.Nil(t, storageAccountFromActor(nil))
-		require.Nil(t, storageAccountFromActor(&activitypub.Actor{PreferredUsername: "   "}))
+		require.Nil(t, storageAccountFromActor(nil, "example.com"))
+		require.Nil(t, storageAccountFromActor(&activitypub.Actor{PreferredUsername: "   "}, "example.com"))
 
 		actor := &activitypub.Actor{
 			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice", Type: "Person"},
@@ -120,11 +148,22 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 			Name:              "Alice",
 		}
 
-		account := storageAccountFromActor(actor)
+		account := storageAccountFromActor(actor, "example.com")
 		require.NotNil(t, account)
 		require.Equal(t, "alice", account.User.Username)
 		require.Equal(t, "Alice", account.User.DisplayName)
 		require.Same(t, actor, account.Actor)
+
+		remoteActor := &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
+			PreferredUsername: "bob",
+			Name:              "Bob",
+		}
+
+		remoteAccount := storageAccountFromActor(remoteActor, "example.com")
+		require.NotNil(t, remoteAccount)
+		require.Equal(t, "bob@remote.example", remoteAccount.User.Username)
+		require.Equal(t, "Bob", remoteAccount.User.DisplayName)
 	})
 
 	t.Run("shouldFallbackAccountResolution recognizes public id shapes", func(t *testing.T) {
@@ -144,7 +183,7 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 			BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
 			PreferredUsername: "alice@example.com",
 		}))
-		require.True(t, h.actorAppearsLocal(&activitypub.Actor{
+		require.False(t, h.actorAppearsLocal(&activitypub.Actor{
 			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
 			PreferredUsername: "alice",
 		}))
@@ -402,19 +441,20 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		actorRepo := &accountsRound20LookupActorRepo{
 			actor: &activitypub.Actor{
 				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
-				PreferredUsername: "alice@example.com",
+				PreferredUsername: "alice",
 				Name:              "Alice",
 			},
 		}
 		repos.On("Account").Return(nil).Once()
 		repos.On("Actor").Return(actorRepo).Once()
+		repos.On("User").Return(nil).Once()
 
 		h := &Handler{cfg: cfg, repos: repos}
 		account, err := h.lookupStorageAccountByID(context.Background(), "alice")
 		require.NoError(t, err)
 		require.NotNil(t, account)
 		require.Equal(t, "alice", actorRepo.username)
-		require.Equal(t, "alice@example.com", account.User.Username)
+		require.Equal(t, "alice@remote.example", account.User.Username)
 		require.Equal(t, "Alice", account.User.DisplayName)
 		require.Equal(t, "https://remote.example/users/alice", account.Actor.ID)
 		repos.AssertExpectations(t)
@@ -426,6 +466,7 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		actorRepo := &accountsRound20LookupActorRepo{err: errors.New("actor lookup failed")}
 		repos.On("Account").Return(nil).Once()
 		repos.On("Actor").Return(actorRepo).Once()
+		repos.On("User").Return(nil).Once()
 
 		h := &Handler{cfg: cfg, repos: repos}
 		account, err := h.lookupStorageAccountByID(context.Background(), "alice")
@@ -441,11 +482,12 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		actorRepo := &accountsRound20LookupActorRepo{}
 		repos.On("Account").Return(nil).Once()
 		repos.On("Actor").Return(actorRepo).Once()
+		repos.On("User").Return(nil).Once()
 
 		h := &Handler{cfg: cfg, repos: repos}
 		account, err := h.lookupStorageAccountByID(context.Background(), "alice")
 		require.Nil(t, account)
-		require.EqualError(t, err, "account not found")
+		require.EqualError(t, err, "actor not found: alice")
 		require.Equal(t, "alice", actorRepo.username)
 		repos.AssertExpectations(t)
 	})

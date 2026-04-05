@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -151,7 +152,18 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 }
 
 func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (models.Account, error) {
-	if account == nil || account.User == nil {
+	if account == nil {
+		return models.Account{}, fmt.Errorf("account is missing account")
+	}
+
+	baseURL := handlerBaseURL(h)
+	if account.Actor != nil && !h.actorAppearsLocal(account.Actor) {
+		out := mastodonAccountFromActor(account.Actor, baseURL)
+		ensureMastodonAccountCollections(&out)
+		return out, nil
+	}
+
+	if account.User == nil {
 		return models.Account{}, fmt.Errorf("account is missing user")
 	}
 
@@ -159,9 +171,6 @@ func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (m
 	if username == "" {
 		return models.Account{}, fmt.Errorf("account is missing username")
 	}
-
-	baseURL := handlerBaseURL(h)
-
 	out := mastodonAccountFromActor(account.Actor, baseURL)
 	applyMastodonIdentity(&out, account.User, username)
 	applyMastodonProfile(&out, account.User, baseURL, username)
@@ -239,7 +248,7 @@ func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string
 		return localAccount, nil
 	}
 
-	return storageAccountFromActor(actor), nil
+	return storageAccountFromActor(actor, h.cfg.Domain), nil
 }
 
 func (h *Handler) accountLookupMatchesRequestedID(account *storage.Account, accountID string) bool {
@@ -302,7 +311,7 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 		}
 	}
 
-	return storageAccountFromActor(actor), nil
+	return storageAccountFromActor(actor, h.cfg.Domain), nil
 }
 
 func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
@@ -310,12 +319,12 @@ func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
 		return false
 	}
 
-	baseURL := handlerBaseURL(h)
-	if baseURL != "" && strings.HasPrefix(strings.TrimSpace(actor.ID), baseURL+"/users/") {
-		return true
+	localDomain := ""
+	if h != nil && h.cfg != nil {
+		localDomain = h.cfg.Domain
 	}
 
-	return !strings.Contains(strings.TrimSpace(actor.PreferredUsername), "@")
+	return !federation.DescribeActorIdentity(actor, localDomain).IsRemote
 }
 
 type actorNumericIDMappingEnsurer interface {
@@ -349,14 +358,18 @@ func (h *Handler) ensureLocalNumericIDMapping(ctx context.Context, username stri
 	}
 }
 
-func storageAccountFromActor(actor *activitypub.Actor) *storage.Account {
+func storageAccountFromActor(actor *activitypub.Actor, localDomain string) *storage.Account {
 	if actor == nil {
 		return nil
 	}
 
-	username := strings.TrimSpace(actor.PreferredUsername)
+	identity := federation.DescribeActorIdentity(actor, localDomain)
+	username := strings.TrimSpace(identity.Username)
 	if username == "" {
 		return nil
+	}
+	if identity.IsRemote && strings.TrimSpace(identity.Acct) != "" {
+		username = strings.TrimSpace(identity.Acct)
 	}
 
 	displayName := strings.TrimSpace(actor.Name)

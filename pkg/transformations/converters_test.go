@@ -260,6 +260,23 @@ func TestActorToAccountWithCounts_SetsCounts(t *testing.T) {
 	require.Equal(t, models.Account{}, ActorToAccountWithCounts(nil, "https://base", 1, 2, 3))
 }
 
+func TestActorToAccountBase_PreservesRemoteIdentity(t *testing.T) {
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Name:              "Alice",
+	}
+
+	account := ActorToAccountBase(actor, "https://local.example")
+	require.Equal(t, actor.ID, account.ID)
+	require.Equal(t, "alice", account.Username)
+	require.Equal(t, "alice@remote.example", account.Acct)
+	require.Equal(t, actor.ID, account.URL)
+}
+
 func TestBuildAgentConstraints(t *testing.T) {
 	require.Nil(t, buildAgentConstraints(nil))
 
