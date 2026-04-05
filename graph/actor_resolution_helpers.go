@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -41,6 +42,111 @@ func (r *Resolver) getStorageForResolution() core.RepositoryStorage {
 		return r.Registry.GetStorage()
 	}
 	return nil
+}
+
+func (r *Resolver) localActorDomain() string {
+	if r == nil || r.Config == nil {
+		return ""
+	}
+	return r.Config.Domain
+}
+
+func (r *Resolver) resolveExactActorLookup(ctx context.Context, actorID string) (*federation.ExactActorResolution, error) {
+	store := r.getStorageForResolution()
+	if store == nil {
+		return nil, common.ActorNotFoundError{Username: actorID}
+	}
+
+	resolution, err := federation.NewRemoteSearchService(store).ResolveExactActor(ctx, actorID, r.localActorDomain())
+	if err == nil || !graphActorLookupNotFound(err) {
+		return resolution, err
+	}
+
+	username := r.localUsernameForLookup(actorID)
+	if username == "" || r.Registry == nil || r.Registry.Accounts() == nil {
+		return nil, err
+	}
+
+	account, accountErr := r.Registry.Accounts().GetAccount(ctx, username)
+	if accountErr != nil || account == nil {
+		return nil, err
+	}
+
+	actor := r.convertAccountToActor(account)
+	return &federation.ExactActorResolution{
+		Actor:         actor,
+		ActorIdentity: federation.DescribeActorIdentity(actor, r.localActorDomain()),
+	}, nil
+}
+
+func graphActorLookupNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if common.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+func (r *Resolver) materializeActorResolution(ctx context.Context, resolution *federation.ExactActorResolution) *activitypub.Actor {
+	if resolution == nil || resolution.Actor == nil {
+		return nil
+	}
+
+	if resolution.IsRemote {
+		return resolution.Actor
+	}
+
+	username := strings.TrimSpace(resolution.Username)
+	if username == "" {
+		username = strings.TrimSpace(resolution.Actor.PreferredUsername)
+	}
+	if username == "" || r.Registry == nil || r.Registry.Accounts() == nil {
+		return resolution.Actor
+	}
+
+	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if err != nil || account == nil {
+		return resolution.Actor
+	}
+
+	return r.convertAccountToActor(account)
+}
+
+func (r *Resolver) localUsernameForLookup(actorID string) string {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return ""
+	}
+
+	localDomain := strings.TrimSpace(r.localActorDomain())
+	if localDomain == "" {
+		return strings.TrimPrefix(actorID, "@")
+	}
+
+	if strings.HasPrefix(strings.ToLower(actorID), "http://") || strings.HasPrefix(strings.ToLower(actorID), "https://") {
+		parsed, err := neturl.Parse(actorID)
+		if err != nil || !strings.EqualFold(strings.TrimSpace(parsed.Hostname()), localDomain) {
+			return ""
+		}
+		return strings.TrimPrefix(transformations.ExtractUsernameFromActorID(actorID), "@")
+	}
+
+	value := strings.TrimPrefix(actorID, "@")
+	if strings.Count(value, "@") == 1 {
+		parts := strings.Split(value, "@")
+		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[1]), localDomain) {
+			return strings.TrimSpace(parts[0])
+		}
+		return ""
+	}
+
+	if strings.Contains(value, "@") {
+		return ""
+	}
+
+	return value
 }
 
 func (r *Resolver) resolveActorFromStorage(ctx context.Context, store core.RepositoryStorage, actorID, localDomain string) *activitypub.Actor {

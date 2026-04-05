@@ -3,9 +3,12 @@ package graph
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,4 +64,35 @@ func TestRound12QueryResolvers_Accounts_Basics(t *testing.T) {
 	endorsements, err := q.Endorsements(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, endorsements)
+}
+
+func TestRound12QueryResolvers_Accounts_RemoteActorLookupUsesExactResolution(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	actorRepo, ok := storage.Actor().(*inmemory.ActorRepository)
+	require.True(t, ok)
+
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/steward",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "steward",
+		Inbox:             "https://remote.example/users/steward/inbox",
+		Outbox:            "https://remote.example/users/steward/outbox",
+	}
+	actorRepo.SetCachedRemoteActor("steward@remote.example", remoteActor, time.Hour)
+
+	q := resolver.Query()
+
+	username := "steward@remote.example"
+	actor, err := q.Actor(context.Background(), nil, &username)
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, remoteActor.ID, actor.ID)
+
+	id := remoteActor.ID
+	actor, err = q.Actor(context.Background(), &id, nil)
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, remoteActor.ID, actor.ID)
 }

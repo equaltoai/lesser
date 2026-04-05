@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -216,6 +217,10 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 		searchQuery.Offset = 20
 	}
 
+	if exact, handled, err := r.searchExactActorQuery(ctx, query, searchQuery.Type); handled {
+		return exact, err
+	}
+
 	result, err := r.Registry.Search().Search(ctx, searchQuery)
 	if err != nil {
 		r.Logger.Error("Failed to search",
@@ -225,6 +230,63 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 	}
 
 	return r.searchResultToGraphQL(ctx, result, viewerUsername), nil
+}
+
+func (r *queryResolver) searchExactActorQuery(ctx context.Context, query string, searchType string) (*model.SearchResult, bool, error) {
+	if !supportsExactActorGraphQLSearch(searchType) || !looksLikeExactActorQuery(query) {
+		return nil, false, nil
+	}
+
+	resolution, err := r.resolveExactActorLookup(ctx, query)
+	if err != nil {
+		if graphActorLookupNotFound(err) {
+			return emptyGraphSearchResult(), true, nil
+		}
+
+		r.Logger.Error("Failed exact actor search",
+			zap.String("query", query),
+			zap.Error(err))
+		return nil, true, errors.Join(errors.New("search failed"), err)
+	}
+
+	actor := r.materializeActorResolution(ctx, resolution)
+	if actor == nil {
+		return emptyGraphSearchResult(), true, nil
+	}
+
+	return &model.SearchResult{
+		Accounts: []*activitypub.Actor{actor},
+		Statuses: []*model.Object{},
+		Hashtags: []*activitypub.Tag{},
+	}, true, nil
+}
+
+func supportsExactActorGraphQLSearch(searchType string) bool {
+	switch strings.ToLower(strings.TrimSpace(searchType)) {
+	case "", "all", "accounts":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeExactActorQuery(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "http://") || strings.HasPrefix(strings.ToLower(trimmed), "https://") {
+		return true
+	}
+	return strings.Count(strings.TrimPrefix(trimmed, "@"), "@") == 1
+}
+
+func emptyGraphSearchResult() *model.SearchResult {
+	return &model.SearchResult{
+		Accounts: []*activitypub.Actor{},
+		Statuses: []*model.Object{},
+		Hashtags: []*activitypub.Tag{},
+	}
 }
 
 func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *search.Result, viewerUsername string) *model.SearchResult {
@@ -243,10 +305,13 @@ func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *searc
 	accounts = make([]*activitypub.Actor, 0, len(result.Accounts))
 	for _, account := range result.Accounts {
 		actor := account.Actor
-		if actor != nil && actor.PreferredUsername != "" && r.Registry != nil && r.Registry.Accounts() != nil {
-			fullAccount, err := r.Registry.Accounts().GetAccount(ctx, actor.PreferredUsername)
-			if err == nil && fullAccount != nil {
-				actor = r.convertAccountToActor(fullAccount)
+		if actor != nil {
+			identity := federation.DescribeActorIdentity(actor, r.localActorDomain())
+			if !identity.IsRemote && identity.Username != "" {
+				actor = r.materializeActorResolution(ctx, &federation.ExactActorResolution{
+					Actor:         actor,
+					ActorIdentity: identity,
+				})
 			}
 		}
 		if actor != nil {

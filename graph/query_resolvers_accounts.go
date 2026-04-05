@@ -41,50 +41,31 @@ func (r *queryResolver) Viewer(ctx context.Context) (*activitypub.Actor, error) 
 
 // Actor is the resolver for the actor field.
 func (r *queryResolver) Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error) {
-	// Determine lookup method
-	var query *accounts.GetAccountQuery
+	var lookup string
 	if id != nil {
-		resolvedID := deriveUsernameFromIRI(*id)
-		if resolvedID == "" {
-			resolvedID = strings.TrimSpace(*id)
-		}
-		if err := common.ValidateRequiredParam("id", resolvedID); err != nil {
+		lookup = strings.TrimSpace(*id)
+		if err := common.ValidateRequiredParam("id", lookup); err != nil {
 			return nil, err
-		}
-		query = &accounts.GetAccountQuery{
-			Username: resolvedID,
 		}
 	} else if username != nil {
-		resolvedUsername := deriveUsernameFromIRI(*username)
-		if resolvedUsername == "" {
-			resolvedUsername = strings.TrimSpace(*username)
-		}
-		if err := common.ValidateRequiredParam("username", resolvedUsername); err != nil {
+		lookup = strings.TrimSpace(*username)
+		if err := common.ValidateRequiredParam("username", lookup); err != nil {
 			return nil, err
-		}
-		query = &accounts.GetAccountQuery{
-			Username: resolvedUsername,
 		}
 	} else {
 		return nil, ErrEitherIDOrUsernameRequired
 	}
 
-	// Get account using service
-	usernameToLookup := ""
-	if err := common.ValidateRequiredParam("username", query.Username); err == nil {
-		usernameToLookup = query.Username
-	}
-
-	account, err := r.Registry.Accounts().GetAccount(ctx, usernameToLookup)
+	resolution, err := r.resolveExactActorLookup(ctx, lookup)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if graphActorLookupNotFound(err) {
 			return nil, nil
 		}
 		r.Logger.Error("Failed to get actor", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to get actor"), err)
 	}
 
-	return r.convertAccountToActor(account), nil
+	return r.materializeActorResolution(ctx, resolution), nil
 }
 
 // AccountQuotePermissions resolves quote permissions for the requested username.
