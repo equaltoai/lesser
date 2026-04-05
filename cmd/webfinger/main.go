@@ -20,9 +20,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -259,11 +262,15 @@ var (
 	logger    *zap.Logger
 	repos     core.RepositoryStorage
 
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = (*common.LambdaContext).InitializeWithDefaults
-	lambdaStartFn            = lambda.Start
-	rsaGenerateKeyFn         = rsa.GenerateKey
-	timeNowFn                = time.Now
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = (*common.LambdaContext).InitializeWithDefaults
+	lambdaStartFn              = lambda.Start
+	rsaGenerateKeyFn           = rsa.GenerateKey
+	timeNowFn                  = time.Now
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
 )
 
 func init() {
@@ -291,12 +298,49 @@ func initializeWebFinger() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
 	// Initialize with default options for API Lambda type
 	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
+
+	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || storage == nil {
+		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization")
+		initializeManualStorage()
+		storage, ok = lambdaCtx.Repos.(core.RepositoryStorage)
+	}
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+	}
+	repos = storage
+}
+
+func initializeManualStorage() {
+	if lambdaCtx == nil {
+		logger.Fatal("manual storage initialization requires lambda context")
+	}
+
+	tableName := strings.TrimSpace(cfg.DynamoTableName)
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required for webfinger lambda")
+	}
+
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+	}
+
+	storage, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize repository factory", zap.Error(err))
+	}
+
+	lambdaCtx.DynamoDB = db
+	lambdaCtx.Repos = storage
 }
 
 func main() {

@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,20 @@ func (f *fakeActorRepo) GetActorByUsername(_ context.Context, username string) (
 		return nil, f.err
 	}
 	return f.actor, nil
+}
+
+type fakeAccountRepo struct {
+	account     *storage.Account
+	err         error
+	gotUsername string
+}
+
+func (f *fakeAccountRepo) GetAccount(_ context.Context, username string) (*storage.Account, error) {
+	f.gotUsername = username
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.account, nil
 }
 
 type fakeAuthorizedFetch struct {
@@ -243,6 +258,82 @@ func TestActorHandler_Round12(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, 200, resp.Status)
 		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+		require.Equal(t, "alice", repo.gotUsername)
+	})
+
+	t.Run("json response hydrates sparse local actor from account record", func(t *testing.T) {
+		accountRepo := &fakeAccountRepo{
+			account: &storage.Account{
+				User: &storage.User{
+					Username:     "alice",
+					DisplayName:  "Alice",
+					Note:         "<p>Hello</p>",
+					Avatar:       "https://cdn.example/avatar.png",
+					Locked:       true,
+					Discoverable: true,
+				},
+				Actor: &activitypub.Actor{},
+			},
+		}
+		repo := &fakeActorRepo{actor: &activitypub.Actor{}}
+		h := &Handler{
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+			accountRepo:            accountRepo,
+			actorRepo:              repo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+
+		var body activitypub.Actor
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, cfg.ActorURL("alice"), body.ID)
+		require.Equal(t, activitypub.PersonType, body.Type)
+		require.Equal(t, "alice", body.PreferredUsername)
+		require.Equal(t, "Alice", body.Name)
+		require.Equal(t, cfg.ActorURL("alice")+"/inbox", body.Inbox)
+		require.True(t, body.ManuallyApprovesFollowers)
+		require.True(t, body.Discoverable)
+		require.NotNil(t, body.Icon)
+		require.Equal(t, "https://cdn.example/avatar.png", body.Icon.URL)
+		require.Equal(t, "alice", accountRepo.gotUsername)
+		require.Empty(t, repo.gotUsername)
+	})
+
+	t.Run("json response falls back to normalized actor repo data when account hydration misses", func(t *testing.T) {
+		accountRepo := &fakeAccountRepo{err: common.ActorNotFoundError{Username: "alice"}}
+		repo := &fakeActorRepo{actor: &activitypub.Actor{}}
+		h := &Handler{
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+			accountRepo:            accountRepo,
+			actorRepo:              repo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+
+		var body activitypub.Actor
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, cfg.ActorURL("alice"), body.ID)
+		require.Equal(t, activitypub.PersonType, body.Type)
 		require.Equal(t, "alice", repo.gotUsername)
 	})
 

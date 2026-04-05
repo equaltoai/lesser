@@ -25,12 +25,14 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/federation"
 	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -69,12 +71,17 @@ func init() {
 // Handler contains dependencies for the actor service
 type Handler struct {
 	actorRepo              actorGetter
+	accountRepo            accountGetter
 	authorizedFetchService authorizedFetchVerifier
 	instanceRepo           instanceStateGetter
 }
 
 type actorGetter interface {
 	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type accountGetter interface {
+	GetAccount(ctx context.Context, username string) (*storage.Account, error)
 }
 
 type authorizedFetchVerifier interface {
@@ -102,6 +109,7 @@ func NewHandler() *Handler {
 
 	return &Handler{
 		actorRepo:              actorRepo,
+		accountRepo:            repos.Account(),
 		authorizedFetchService: authorizedFetchService,
 		instanceRepo:           repos.Instance(),
 	}
@@ -198,8 +206,9 @@ func (h *Handler) HandleActorProfile(ctx *apptheory.Context) (*apptheory.Respons
 		zap.String("request_id", requestID),
 	)
 
-	// Get actor from repository
-	actor, err := h.actorRepo.GetActorByUsername(ctx.Context(), username)
+	// Serve a hydrated local actor document so federation clients do not see
+	// sparse legacy rows with missing required ActivityPub identifiers.
+	actor, err := h.loadActorProfile(ctx.Context(), username)
 	if err != nil {
 		if common.IsNotFound(err) {
 			return actorJSONError(http.StatusNotFound, "actor not found"), nil
@@ -666,4 +675,62 @@ func actorActivityJSON(status int, value any) (*apptheory.Response, error) {
 		},
 		Body: body,
 	}, nil
+}
+
+func (h *Handler) loadActorProfile(ctx context.Context, username string) (*activitypub.Actor, error) {
+	var accountErr error
+	actorLogger := logger
+	if actorLogger == nil {
+		actorLogger = zap.NewNop()
+	}
+
+	if h.accountRepo != nil {
+		account, err := h.accountRepo.GetAccount(ctx, username)
+		if err == nil {
+			if actor := h.hydrateAccountActor(username, account); actor != nil {
+				return actor, nil
+			}
+			accountErr = errors.New("account actor data is missing")
+		} else {
+			accountErr = err
+			if !common.IsNotFound(err) {
+				actorLogger.Warn("failed to load account for actor hydration",
+					zap.String("username", username),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
+	if h.actorRepo != nil {
+		actor, err := h.actorRepo.GetActorByUsername(ctx, username)
+		if err == nil {
+			return activitypubutil.BuildLocalActor(username, h.actorBaseURL(), nil, actor), nil
+		}
+		if accountErr != nil && !common.IsNotFound(accountErr) && common.IsNotFound(err) {
+			return nil, accountErr
+		}
+		return nil, err
+	}
+
+	if accountErr != nil {
+		return nil, accountErr
+	}
+
+	return nil, common.ActorNotFoundError{Username: username}
+}
+
+func (h *Handler) hydrateAccountActor(username string, account *storage.Account) *activitypub.Actor {
+	if account == nil {
+		return nil
+	}
+
+	return activitypubutil.BuildLocalActor(username, h.actorBaseURL(), account.User, account.Actor)
+}
+
+func (h *Handler) actorBaseURL() string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.BaseURL()
 }
