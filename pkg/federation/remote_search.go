@@ -58,6 +58,23 @@ type SearchResult struct {
 	RemoteDomain string
 }
 
+// ActorIdentity captures the stable, reversible identity fields callers need
+// to preserve local and remote actors across product flows.
+type ActorIdentity struct {
+	ActorID  string
+	Username string
+	Acct     string
+	Domain   string
+	IsRemote bool
+}
+
+// ExactActorResolution is the canonical exact actor lookup result shared by
+// product-facing callers.
+type ExactActorResolution struct {
+	Actor *activitypub.Actor
+	ActorIdentity
+}
+
 // ResolveActorURL resolves an ActivityPub actor URL to an Actor object.
 // It checks cache using an inferred handle when possible, then fetches the actor document and caches it.
 func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL string) (*SearchResult, error) {
@@ -79,7 +96,7 @@ func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL stri
 	// Attempt cache hit using a username inferred from the actor URL path.
 	if username := usernameFromActorPath(parsed.Path); username != "" {
 		cacheKey := fmt.Sprintf("%s@%s", username, domain)
-		cachedActor, err := s.actorRepo.GetCachedRemoteActor(ctx, cacheKey)
+		cachedActor, err := s.getCachedRemoteActor(ctx, cacheKey)
 		if err == nil && cachedActor != nil {
 			return &SearchResult{
 				Actor:        cachedActor,
@@ -101,7 +118,7 @@ func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL stri
 	}
 	if cacheUser != "" {
 		cacheKey := fmt.Sprintf("%s@%s", cacheUser, domain)
-		if err := s.userRepo.CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+		if err := s.cacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
 			s.logger.Warn("failed to cache remote actor resolved by URL",
 				zap.String("handle", cacheKey),
 				zap.String("actor_url", actorURL),
@@ -131,7 +148,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	// Check if it's a local actor (no domain or our domain)
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		// Local actor lookup
-		actor, err := s.actorRepo.GetActorByUsername(ctx, username)
+		actor, err := s.getLocalActor(ctx, username)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +160,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 
 	// For remote actors, check cache first
 	cacheKey := fmt.Sprintf("%s@%s", username, domain)
-	cachedActor, err := s.actorRepo.GetCachedRemoteActor(ctx, cacheKey)
+	cachedActor, err := s.getCachedRemoteActor(ctx, cacheKey)
 	if err == nil && cachedActor != nil {
 		s.logger.Debug("found actor in cache",
 			zap.String("handle", cacheKey))
@@ -174,7 +191,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	}
 
 	// Cache the remote actor with 24 hour TTL
-	if err := s.userRepo.CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+	if err := s.cacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
 		s.logger.Error("failed to cache remote actor",
 			zap.String("handle", cacheKey),
 			zap.Error(err))
@@ -186,6 +203,87 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 		IsRemote:     true,
 		RemoteDomain: domain,
 	}, nil
+}
+
+// ResolveExactActor resolves local usernames, local handles, local actor URLs,
+// remote handles, and remote actor URLs through one canonical seam.
+func (s *RemoteSearchService) ResolveExactActor(ctx context.Context, input, localDomain string) (*ExactActorResolution, error) {
+	input = strings.TrimSpace(input)
+	if err := common.ValidateRequiredParam("actor_lookup", input); err != nil {
+		return nil, err
+	}
+
+	localDomain = normalizeActorDomain(localDomain)
+
+	var result *SearchResult
+
+	switch {
+	case isActorURL(input):
+		parsed, err := url.Parse(input)
+		if err != nil {
+			return nil, err
+		}
+
+		host := normalizeActorDomain(parsed.Hostname())
+		if host == "" {
+			return nil, ErrInvalidDomainFormat
+		}
+
+		if localDomain != "" && host == localDomain {
+			username := usernameFromActorPath(parsed.Path)
+			if username == "" {
+				return nil, common.ActorNotFoundError{Username: input}
+			}
+
+			actor, err := s.getLocalActor(ctx, username)
+			if err != nil {
+				return nil, err
+			}
+
+			result = &SearchResult{Actor: actor}
+		} else {
+			result, err = s.ResolveActorURL(ctx, input)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case strings.Contains(strings.TrimPrefix(input, "@"), "@"):
+		username, domain, err := parseHandle(input)
+		if err != nil {
+			return nil, err
+		}
+
+		if localDomain != "" && domain == localDomain {
+			actor, err := s.getLocalActor(ctx, username)
+			if err != nil {
+				return nil, err
+			}
+
+			result = &SearchResult{Actor: actor}
+		} else {
+			handle := username
+			if domain != "" {
+				handle = fmt.Sprintf("%s@%s", username, domain)
+			}
+
+			result, err = s.ResolveActor(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+		}
+	default:
+		var err error
+		result, err = s.ResolveActor(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if result == nil || result.Actor == nil {
+		return nil, common.ActorNotFoundError{Username: input}
+	}
+
+	return buildExactActorResolution(result.Actor, localDomain, result.IsRemote, result.RemoteDomain), nil
 }
 
 // webFingerLookup performs a WebFinger query to find an actor's ActivityPub URL
@@ -292,8 +390,18 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 func (s *RemoteSearchService) SearchRemoteActors(ctx context.Context, query string, limit int) ([]*SearchResult, error) {
 	var results []*SearchResult
 
-	// Try exact handle resolution first
-	if isValidHandle(query) {
+	// Try exact actor URL or exact handle resolution first.
+	switch {
+	case isActorURL(query):
+		result, err := s.ResolveActorURL(ctx, query)
+		if err != nil {
+			s.logger.Debug("failed to resolve exact actor URL",
+				zap.String("query", query),
+				zap.Error(err))
+		} else if result != nil {
+			results = append(results, result)
+		}
+	case isValidHandle(query):
 		result, err := s.ResolveActor(ctx, query)
 		if err != nil {
 			s.logger.Debug("failed to resolve exact actor",
@@ -370,7 +478,7 @@ func parseHandle(handle string) (username, domain string, err error) {
 	} else if len(parts) == 2 {
 		// Remote user - validate both username and domain
 		username = parts[0]
-		domain = parts[1]
+		domain = normalizeActorDomain(parts[1])
 
 		if err := activitypub.ValidateUsername(username); err != nil {
 			return "", "", errors.Join(ErrInvalidUsernameFormat, err)
@@ -393,6 +501,172 @@ func isValidHandle(query string) bool {
 
 	// Should have exactly one @ for user@domain
 	return strings.Count(query, "@") == 1
+}
+
+func isActorURL(value string) bool {
+	value = strings.TrimSpace(strings.ToLower(value))
+	return strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")
+}
+
+func (s *RemoteSearchService) getLocalActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	if s.actorRepo == nil {
+		return nil, common.ActorNotFoundError{Username: username}
+	}
+
+	actor, err := s.actorRepo.GetActorByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil {
+		return nil, common.ActorNotFoundError{Username: username}
+	}
+
+	return actor, nil
+}
+
+func (s *RemoteSearchService) getCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	if s.actorRepo == nil {
+		return nil, common.ActorNotFoundError{Username: handle}
+	}
+	return s.actorRepo.GetCachedRemoteActor(ctx, handle)
+}
+
+func (s *RemoteSearchService) cacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	if s.userRepo == nil {
+		return nil
+	}
+	return s.userRepo.CacheRemoteActor(ctx, handle, actor, ttl)
+}
+
+func buildExactActorResolution(actor *activitypub.Actor, localDomain string, isRemote bool, remoteDomain string) *ExactActorResolution {
+	identity := DescribeActorIdentity(actor, localDomain)
+	if normalizedRemoteDomain := normalizeActorDomain(remoteDomain); normalizedRemoteDomain != "" {
+		identity.Domain = normalizedRemoteDomain
+		identity.IsRemote = normalizeActorDomain(localDomain) == "" || identity.Domain != normalizeActorDomain(localDomain)
+	}
+	if isRemote {
+		identity.IsRemote = true
+	}
+	if identity.IsRemote && identity.Domain != "" && identity.Username != "" {
+		identity.Acct = fmt.Sprintf("%s@%s", identity.Username, identity.Domain)
+	}
+
+	return &ExactActorResolution{
+		Actor:         actor,
+		ActorIdentity: identity,
+	}
+}
+
+// DescribeActorIdentity derives the canonical local or remote identity contract
+// callers can use without guessing the actor domain back later.
+func DescribeActorIdentity(actor *activitypub.Actor, localDomain string) ActorIdentity {
+	if actor == nil {
+		return ActorIdentity{}
+	}
+
+	localDomain = normalizeActorDomain(localDomain)
+	actorID := strings.TrimSpace(actor.ID)
+	domain := deriveActorDomain(actor)
+	username := deriveActorUsername(actor)
+	isRemote := false
+
+	if domain != "" {
+		isRemote = localDomain == "" || domain != localDomain
+	}
+
+	acct := username
+	if isRemote && domain != "" && username != "" {
+		acct = fmt.Sprintf("%s@%s", username, domain)
+	}
+
+	return ActorIdentity{
+		ActorID:  actorID,
+		Username: username,
+		Acct:     acct,
+		Domain:   domain,
+		IsRemote: isRemote,
+	}
+}
+
+func deriveActorDomain(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+
+	candidates := []string{
+		strings.TrimSpace(actor.ID),
+		strings.TrimSpace(actor.URL),
+	}
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+
+		parsed, err := url.Parse(candidate)
+		if err == nil {
+			if domain := normalizeActorDomain(parsed.Hostname()); domain != "" {
+				return domain
+			}
+		}
+	}
+
+	_, domain, err := parseLooseHandle(actor.PreferredUsername)
+	if err == nil {
+		return domain
+	}
+
+	return ""
+}
+
+func deriveActorUsername(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+
+	candidates := []string{
+		strings.TrimSpace(actor.PreferredUsername),
+		usernameFromActorPath(actor.ID),
+		usernameFromActorPath(actor.URL),
+	}
+
+	for _, candidate := range candidates {
+		username, _, err := parseLooseHandle(candidate)
+		if err == nil && username != "" {
+			return username
+		}
+	}
+
+	return ""
+}
+
+func parseLooseHandle(value string) (username string, domain string, err error) {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "@"))
+	if value == "" {
+		return "", "", ErrInvalidHandleFormat
+	}
+
+	parts := strings.Split(value, "@")
+	switch len(parts) {
+	case 1:
+		return strings.TrimSpace(parts[0]), "", nil
+	case 2:
+		return strings.TrimSpace(parts[0]), normalizeActorDomain(parts[1]), nil
+	default:
+		return "", "", ErrInvalidHandleFormat
+	}
+}
+
+func normalizeActorDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if idx := strings.Index(value, "/"); idx >= 0 {
+		value = value[:idx]
+	}
+	if idx := strings.Index(value, ":"); idx >= 0 {
+		value = value[:idx]
+	}
+	return strings.TrimSpace(value)
 }
 
 // searchKnownInstances performs fuzzy search on known remote instances

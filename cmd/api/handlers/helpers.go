@@ -85,13 +85,6 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 			}
 			return nil, invalidAccountURL()
 		}
-
-		remoteSearch := federation.NewRemoteSearchService(h.repos)
-		result, err := remoteSearch.ResolveActorURL(ctx, accountID)
-		if err != nil {
-			return nil, err
-		}
-		return result.Actor, nil
 	}
 
 	// Check if it's a numeric ID (Mastodon compatibility)
@@ -99,27 +92,11 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 		return h.resolveNumericAccountID(ctx, accountID)
 	}
 
-	// Support federated handles in addition to local usernames.
-	if strings.Contains(accountID, "@") {
-		handle := strings.TrimPrefix(strings.TrimSpace(accountID), "@")
-		parts := strings.Split(handle, "@")
-		if len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
-			// Treat local-domain handles as local usernames.
-			if strings.EqualFold(strings.ToLower(strings.TrimSpace(parts[1])), h.cfg.Domain) {
-				return h.repos.Actor().GetActor(ctx, parts[0])
-			}
-
-			remoteSearch := federation.NewRemoteSearchService(h.repos)
-			result, err := remoteSearch.ResolveActor(ctx, handle)
-			if err != nil {
-				return nil, err
-			}
-			return result.Actor, nil
-		}
+	resolution, err := federation.NewRemoteSearchService(h.repos).ResolveExactActor(ctx, accountID, h.cfg.Domain)
+	if err != nil {
+		return nil, err
 	}
-
-	// Assume it's a username for local accounts
-	return h.repos.Actor().GetActor(ctx, accountID)
+	return resolution.Actor, nil
 }
 
 func normalizeResolvedAccountID(accountID string) string {
