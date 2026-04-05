@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
 )
 
 // Actor conversion utilities
@@ -42,18 +43,37 @@ func ActorToAccountBase(actor *activitypub.Actor, baseURL string) models.Account
 		createdAt = TransformTimestamp(*actor.Published, time.RFC3339)
 	}
 
+	identity := federation.DescribeActorIdentity(actor, baseURL)
+
 	displayName := actor.Name
 	if displayName == "" {
-		displayName = actor.PreferredUsername
+		displayName = identity.Username
+	}
+
+	accountID := GenerateNumericIDFromUsername(identity.Username)
+	if identity.IsRemote && strings.TrimSpace(actor.ID) != "" {
+		accountID = strings.TrimSpace(actor.ID)
+	}
+
+	profileURL := strings.TrimSpace(actor.URL)
+	if profileURL == "" {
+		switch {
+		case identity.IsRemote:
+			profileURL = strings.TrimSpace(actor.ID)
+		case strings.TrimSpace(baseURL) != "" && identity.Username != "":
+			profileURL = strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/@" + identity.Username
+		default:
+			profileURL = strings.TrimSpace(actor.ID)
+		}
 	}
 
 	return models.Account{
-		ID:             GenerateNumericIDFromUsername(actor.PreferredUsername),
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
+		ID:             accountID,
+		Username:       identity.Username,
+		Acct:           identity.Acct,
 		DisplayName:    displayName,
 		Note:           actor.Summary,
-		URL:            actor.URL,
+		URL:            profileURL,
 		Avatar:         getAvatarURL(actor.Icon, baseURL),
 		AvatarStatic:   getAvatarURL(actor.Icon, baseURL),
 		Header:         getHeaderURL(actor.Image, baseURL),

@@ -23,6 +23,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/security/authz"
 	services_ai "github.com/equaltoai/lesser/pkg/services/ai"
@@ -898,6 +899,27 @@ func (r *Resolver) convertRelationshipToGraphQL(rel *relationships.RelationshipD
 func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.Actor {
 	if account == nil {
 		return nil
+	}
+
+	localDomain := ""
+	if r.Config != nil {
+		localDomain = r.Config.BaseURL()
+	}
+
+	if account.Actor != nil && federation.DescribeActorIdentity(account.Actor, localDomain).IsRemote {
+		actor := *account.Actor
+		if account.User != nil {
+			if strings.TrimSpace(actor.Name) == "" {
+				actor.Name = strings.TrimSpace(account.User.DisplayName)
+			}
+			if strings.TrimSpace(actor.Summary) == "" {
+				actor.Summary = strings.TrimSpace(account.User.Note)
+			}
+			if strings.TrimSpace(actor.URL) == "" {
+				actor.URL = strings.TrimSpace(account.User.URL)
+			}
+		}
+		return &actor
 	}
 
 	username := ""

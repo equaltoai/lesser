@@ -132,16 +132,21 @@ func ActivityPubActorToMastodon(actor *activitypub.Actor, baseURL string) (*mode
 		return nil, common.ValidationError{Field: "actor", Message: "actor cannot be nil"}
 	}
 
+	base := ActorToAccountBase(actor, baseURL)
 	account := &models.Account{
-		ID:             generateNumericIDFromUsername(actor.PreferredUsername),
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		Note:           actor.Summary,
-		URL:            actor.URL,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            isBot(actor.Type),
-		Discoverable:   actor.Discoverable,
+		ID:             base.ID,
+		Username:       base.Username,
+		Acct:           base.Acct,
+		DisplayName:    base.DisplayName,
+		Note:           base.Note,
+		URL:            base.URL,
+		Avatar:         base.Avatar,
+		AvatarStatic:   base.AvatarStatic,
+		Header:         base.Header,
+		HeaderStatic:   base.HeaderStatic,
+		Locked:         base.Locked,
+		Bot:            base.Bot,
+		Discoverable:   base.Discoverable,
 		FollowersCount: 0, // To be populated by caller
 		FollowingCount: 0, // To be populated by caller
 		StatusesCount:  0, // To be populated by caller
@@ -159,12 +164,6 @@ func ActivityPubActorToMastodon(actor *activitypub.Actor, baseURL string) (*mode
 	if actor.LastStatusAt != nil {
 		account.LastStatusAt = actor.LastStatusAt.Format("2006-01-02")
 	}
-
-	// Handle avatar/header with fallbacks
-	account.Avatar = getAvatarURL(actor.Icon, baseURL)
-	account.AvatarStatic = account.Avatar
-	account.Header = getHeaderURL(actor.Image, baseURL)
-	account.HeaderStatic = account.Header
 
 	return account, nil
 }

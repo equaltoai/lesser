@@ -278,6 +278,89 @@ func TestRemoteSearchService_ResolveActorURL_CacheAndFetch(t *testing.T) {
 	})
 }
 
+func TestRemoteSearchService_ResolveExactActor_LocalAndRemote(t *testing.T) {
+	localActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://local.example/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Inbox:             "https://local.example/users/alice/inbox",
+		Outbox:            "https://local.example/users/alice/outbox",
+	}
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/bob",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "bob",
+		Inbox:             "https://remote.example/users/bob/inbox",
+		Outbox:            "https://remote.example/users/bob/outbox",
+	}
+
+	svc := &RemoteSearchService{
+		actorRepo: &fakeRemoteSearchActorRepo{
+			localByUsername: map[string]*activitypub.Actor{
+				"alice": localActor,
+			},
+			cachedByHandle: map[string]*activitypub.Actor{
+				"bob@remote.example": remoteActor,
+			},
+		},
+		userRepo:   &fakeRemoteSearchUserRepo{},
+		httpClient: &fakeHTTPMux{do: func(_ *http.Request) (*http.Response, error) { return nil, errors.New("unexpected") }},
+		logger:     common.Logger(),
+	}
+
+	t.Run("local username stays local", func(t *testing.T) {
+		resolution, err := svc.ResolveExactActor(context.Background(), "alice", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, resolution)
+		require.NotNil(t, resolution.Actor)
+		assert.False(t, resolution.IsRemote)
+		assert.Equal(t, "alice", resolution.Username)
+		assert.Equal(t, "alice", resolution.Acct)
+		assert.Equal(t, "local.example", resolution.Domain)
+		assert.Equal(t, localActor.ID, resolution.ActorID)
+	})
+
+	t.Run("local handle resolves locally", func(t *testing.T) {
+		resolution, err := svc.ResolveExactActor(context.Background(), "@alice@local.example", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, resolution)
+		assert.False(t, resolution.IsRemote)
+		assert.Equal(t, localActor.ID, resolution.Actor.ID)
+	})
+
+	t.Run("local actor URL resolves locally", func(t *testing.T) {
+		resolution, err := svc.ResolveExactActor(context.Background(), "https://local.example/users/alice", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, resolution)
+		assert.False(t, resolution.IsRemote)
+		assert.Equal(t, localActor.ID, resolution.Actor.ID)
+	})
+
+	t.Run("remote handle preserves stable identity", func(t *testing.T) {
+		resolution, err := svc.ResolveExactActor(context.Background(), "bob@remote.example", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, resolution)
+		assert.True(t, resolution.IsRemote)
+		assert.Equal(t, "bob", resolution.Username)
+		assert.Equal(t, "bob@remote.example", resolution.Acct)
+		assert.Equal(t, "remote.example", resolution.Domain)
+		assert.Equal(t, remoteActor.ID, resolution.ActorID)
+	})
+
+	t.Run("remote actor URL preserves stable identity", func(t *testing.T) {
+		resolution, err := svc.ResolveExactActor(context.Background(), "https://remote.example/users/bob", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, resolution)
+		assert.True(t, resolution.IsRemote)
+		assert.Equal(t, "bob@remote.example", resolution.Acct)
+		assert.Equal(t, remoteActor.ID, resolution.Actor.ID)
+	})
+}
+
 func TestRemoteSearchService_SearchRemoteActors_FuzzySearch(t *testing.T) {
 	svc := &RemoteSearchService{
 		actorRepo: &fakeRemoteSearchActorRepo{},
@@ -333,6 +416,33 @@ func TestRemoteSearchService_SearchRemoteActors_ExactHandleStopsEarly(t *testing
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.True(t, results[0].IsRemote)
+}
+
+func TestRemoteSearchService_SearchRemoteActors_ExactActorURLStopsEarly(t *testing.T) {
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/bob",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "bob",
+		Inbox:             "https://remote.example/users/bob/inbox",
+		Outbox:            "https://remote.example/users/bob/outbox",
+	}
+
+	svc := &RemoteSearchService{
+		actorRepo: &fakeRemoteSearchActorRepo{
+			cachedByHandle: map[string]*activitypub.Actor{"bob@remote.example": remoteActor},
+		},
+		userRepo:   &fakeRemoteSearchUserRepo{},
+		httpClient: &fakeHTTPMux{do: func(_ *http.Request) (*http.Response, error) { return nil, errors.New("unexpected") }},
+		logger:     common.Logger(),
+	}
+
+	results, err := svc.SearchRemoteActors(context.Background(), "https://remote.example/users/bob", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.True(t, results[0].IsRemote)
+	assert.Equal(t, remoteActor.ID, results[0].Actor.ID)
 }
 
 func TestRemoteSearchService_SearchRemoteActors_LimitZeroReturns(t *testing.T) {

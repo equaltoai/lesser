@@ -103,8 +103,9 @@ const (
 
 // Query type constants
 const (
-	QueryTypeActor = "actor"
-	QueryTypeAll   = "all"
+	QueryTypeActor    = "actor"
+	QueryTypeAll      = "all"
+	QueryTypeAccounts = "accounts"
 )
 
 // Pattern type constants

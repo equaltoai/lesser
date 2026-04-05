@@ -3,10 +3,13 @@ package graph
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	theorydberrors "github.com/theory-cloud/tabletheory/pkg/errors"
@@ -76,10 +79,60 @@ func TestRound31QueryResolvers_Search_AccountsHydratePartialServiceActors(t *tes
 		*matches = []models.Actor{}
 	}).Return(nil)
 
-	searchType := "accounts"
+	searchType := QueryTypeAccounts
 	result, err := resolver.Query().Search(ctx, "arch", &searchType, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Accounts, 1)
 	require.Equal(t, "arch", result.Accounts[0].PreferredUsername)
+}
+
+func TestRound31QueryResolvers_Search_ExactRemoteHandleUsesRemoteAwareResolution(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	actorRepo, ok := storage.Actor().(*inmemory.ActorRepository)
+	require.True(t, ok)
+
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Name:              "Remote Alice",
+		Inbox:             "https://remote.example/users/alice/inbox",
+		Outbox:            "https://remote.example/users/alice/outbox",
+	}
+	actorRepo.SetCachedRemoteActor("alice@remote.example", remoteActor, time.Hour)
+
+	searchType := QueryTypeAccounts
+	result, err := resolver.Query().Search(context.Background(), "alice@remote.example", &searchType, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Accounts, 1)
+	require.Equal(t, remoteActor.ID, result.Accounts[0].ID)
+	require.Equal(t, remoteActor.PreferredUsername, result.Accounts[0].PreferredUsername)
+}
+
+func TestRound31QueryResolvers_SearchResultToGraphQL_PreservesRemoteActorIdentity(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Name:              "Remote Alice",
+		Inbox:             "https://remote.example/users/alice/inbox",
+		Outbox:            "https://remote.example/users/alice/outbox",
+	}
+
+	result := (&queryResolver{resolver}).searchResultToGraphQL(context.Background(), &search.Result{
+		Accounts: []search.AccountResult{
+			{Actor: remoteActor},
+		},
+	}, "")
+	require.NotNil(t, result)
+	require.Len(t, result.Accounts, 1)
+	require.Equal(t, remoteActor.ID, result.Accounts[0].ID)
+	require.Equal(t, remoteActor.PreferredUsername, result.Accounts[0].PreferredUsername)
 }
