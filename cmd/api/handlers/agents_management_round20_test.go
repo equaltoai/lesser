@@ -8,6 +8,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -95,6 +96,9 @@ func TestAgentManagementHandlersRound20(t *testing.T) {
 		require.Equal(t, bundle.AuthorizationServerURL, out.MCPAccess.AuthorizationServerURL)
 		require.Equal(t, bundle.RegistrationURL, out.MCPAccess.RegistrationURL)
 		require.Len(t, out.MCPAccess.Guidance, 5)
+		require.Equal(t, storage.AgentQuarantineStatusQuarantined, out.QuarantineStatus)
+		require.True(t, out.QuarantineActive)
+		require.NotNil(t, out.QuarantineEnd)
 	})
 
 	t.Run("update agent success", func(t *testing.T) {
@@ -113,6 +117,9 @@ func TestAgentManagementHandlersRound20(t *testing.T) {
 		var out apimodels.Agent
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Equal(t, "Updated Agent", out.DisplayName)
+		require.Equal(t, storage.AgentQuarantineStatusApproved, out.QuarantineStatus)
+		require.False(t, out.QuarantineActive)
+		require.NotNil(t, out.QuarantineApprovedAt)
 	})
 
 	t.Run("delete agent forbidden for wrong owner", func(t *testing.T) {

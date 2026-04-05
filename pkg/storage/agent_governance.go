@@ -10,7 +10,19 @@ const (
 	AgentQuarantineStatusQuarantined = "quarantined"
 	// AgentQuarantineStatusApproved marks an agent as approved to operate.
 	AgentQuarantineStatusApproved = "approved"
+	// AgentQuarantineStatusExpired marks a quarantine window that ended without an explicit early release.
+	AgentQuarantineStatusExpired = "expired"
 )
+
+// AgentQuarantineSummary is the normalized read-side quarantine contract for agent clients.
+type AgentQuarantineSummary struct {
+	Status     string
+	Start      *time.Time
+	End        *time.Time
+	ApprovedBy string
+	ApprovedAt *time.Time
+	Active     bool
+}
 
 // AgentGovernanceState stores typed governance state for an agent account.
 // It is intentionally separate from User.Metadata so core account hydration
@@ -97,6 +109,54 @@ func (s *AgentGovernanceState) QuarantineActiveAt(now time.Time) (bool, time.Tim
 		return true, end
 	}
 	return false, end
+}
+
+// QuarantineSummaryAt returns the normalized client-facing quarantine state.
+func (s *AgentGovernanceState) QuarantineSummaryAt(now time.Time) AgentQuarantineSummary {
+	if s == nil {
+		return AgentQuarantineSummary{}
+	}
+
+	active, _ := s.QuarantineActiveAt(now)
+
+	return AgentQuarantineSummary{
+		Status:     s.quarantineStatusAt(now, active),
+		Start:      cloneAgentGovernanceTime(s.QuarantineStart),
+		End:        cloneAgentGovernanceTime(s.QuarantineEnd),
+		ApprovedBy: strings.TrimSpace(s.QuarantineApprovedBy),
+		ApprovedAt: cloneAgentGovernanceTime(s.QuarantineApprovedAt),
+		Active:     active,
+	}
+}
+
+func (s *AgentGovernanceState) quarantineStatusAt(now time.Time, active bool) string {
+	if s == nil {
+		return ""
+	}
+
+	status := strings.ToLower(strings.TrimSpace(s.QuarantineStatus))
+	if active {
+		return AgentQuarantineStatusQuarantined
+	}
+	if status == AgentQuarantineStatusApproved || strings.TrimSpace(s.QuarantineApprovedBy) != "" || (s.QuarantineApprovedAt != nil && !s.QuarantineApprovedAt.IsZero()) {
+		return AgentQuarantineStatusApproved
+	}
+	if status == AgentQuarantineStatusQuarantined {
+		if s.QuarantineEnd == nil || s.QuarantineEnd.IsZero() {
+			return AgentQuarantineStatusQuarantined
+		}
+		return AgentQuarantineStatusExpired
+	}
+	if s.QuarantineEnd != nil && !s.QuarantineEnd.IsZero() {
+		if now.IsZero() {
+			now = time.Now().UTC()
+		}
+		if !now.UTC().Before(s.QuarantineEnd.UTC()) {
+			return AgentQuarantineStatusExpired
+		}
+		return AgentQuarantineStatusQuarantined
+	}
+	return status
 }
 
 func cloneAgentGovernanceTime(value *time.Time) *time.Time {

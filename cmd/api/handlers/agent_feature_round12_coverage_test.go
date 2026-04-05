@@ -12,6 +12,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
@@ -281,6 +282,9 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 		require.NoError(t, json.Unmarshal(verifyResp.Body, &verified))
 		require.True(t, verified.Verified)
 		require.NotNil(t, verified.VerifiedAt)
+		require.Equal(t, storage.AgentQuarantineStatusApproved, verified.QuarantineStatus)
+		require.False(t, verified.QuarantineActive)
+		require.NotNil(t, verified.QuarantineApprovedAt)
 
 		unverifyReq := apimodels.AdminVerifyAgentRequest{Reason: "nope"}
 		unverifyCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/agent1/unverify", headers, nil, unverifyReq)

@@ -4181,6 +4181,12 @@ type Agent {
   mcpAccess: AgentMCPAccess!
   verified: Boolean!
   verifiedAt: Time
+  quarantineStatus: String
+  quarantineStart: Time
+  quarantineEnd: Time
+  quarantineApprovedBy: String
+  quarantineApprovedAt: Time
+  quarantineActive: Boolean!
   ownerActor: Actor
 
   # Legacy/back-compat (to be removed once Simulacrum migrates)

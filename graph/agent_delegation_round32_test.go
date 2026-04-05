@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
@@ -626,6 +627,39 @@ func TestAdminUnverifyAgent_ClearsStaleVerificationFields(t *testing.T) {
 	require.Equal(t, "admin", updated.UnverifiedBy)
 	require.Equal(t, "revoked", updated.UnverifiedReason)
 	require.NotNil(t, updated.UnverifiedAt)
+}
+
+func TestAdminVerifyAgent_ReturnsUpdatedQuarantineState(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{"read"})
+	start := time.Now().UTC().Add(-time.Hour)
+	end := time.Now().UTC().Add(24 * time.Hour)
+	governance := state.governanceState("agent1")
+	governance.QuarantineStatus = storage.AgentQuarantineStatusQuarantined
+	governance.QuarantineStart = &start
+	governance.QuarantineEnd = &end
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("admin", auth.ScopeAdmin)
+
+	exit := true
+	result, err := resolver.Mutation().AdminVerifyAgent(ctx, "agent1", &model.AdminVerifyAgentInput{
+		Reason:         ptrString("ok"),
+		ExitQuarantine: &exit,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Verified)
+	require.NotNil(t, result.QuarantineStatus)
+	require.Equal(t, storage.AgentQuarantineStatusApproved, *result.QuarantineStatus)
+	require.False(t, result.QuarantineActive)
+	require.NotNil(t, result.QuarantineApprovedBy)
+	require.Equal(t, "admin", *result.QuarantineApprovedBy)
+	require.NotNil(t, result.QuarantineApprovedAt)
+
+	updated := state.governanceState("agent1")
+	require.Equal(t, storage.AgentQuarantineStatusApproved, updated.QuarantineStatus)
+	require.Equal(t, "admin", updated.QuarantineApprovedBy)
+	require.NotNil(t, updated.QuarantineApprovedAt)
 }
 
 func TestAdminUnverifyAgent_MissingGovernanceFailsClosed(t *testing.T) {

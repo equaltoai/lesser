@@ -65,27 +65,61 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		createdAt = user.CreatedAt
 	}
 
+	quarantineStatus, quarantineStart, quarantineEnd, quarantineApprovedBy, quarantineApprovedAt, quarantineActive := graphAgentQuarantineFields(governance)
+
 	return &model.Agent{
-		ID:                id,
-		Username:          username,
-		DisplayName:       displayName,
-		Bio:               bio,
-		AgentType:         agentType,
-		AgentVersion:      agentVersion,
-		AgentCapabilities: capabilities,
-		AgentOwner:        agentOwner,
-		DelegatedScopes:   delegatedScopes,
-		McpAccess:         graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
-		Verified:          verified,
-		VerifiedAt:        verifiedAt,
-		OwnerActor:        nil,
-		Type:              agentType,
-		Version:           agentVersion,
-		Capabilities:      capabilities,
-		Owner:             nil,
-		CreatedAt:         model.Time(createdAt),
-		ActivityCount:     0,
+		ID:                   id,
+		Username:             username,
+		DisplayName:          displayName,
+		Bio:                  bio,
+		AgentType:            agentType,
+		AgentVersion:         agentVersion,
+		AgentCapabilities:    capabilities,
+		AgentOwner:           agentOwner,
+		DelegatedScopes:      delegatedScopes,
+		McpAccess:            graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
+		Verified:             verified,
+		VerifiedAt:           verifiedAt,
+		QuarantineStatus:     quarantineStatus,
+		QuarantineStart:      quarantineStart,
+		QuarantineEnd:        quarantineEnd,
+		QuarantineApprovedBy: quarantineApprovedBy,
+		QuarantineApprovedAt: quarantineApprovedAt,
+		QuarantineActive:     quarantineActive,
+		OwnerActor:           nil,
+		Type:                 agentType,
+		Version:              agentVersion,
+		Capabilities:         capabilities,
+		Owner:                nil,
+		CreatedAt:            model.Time(createdAt),
+		ActivityCount:        0,
 	}
+}
+
+func graphAgentQuarantineFields(governance *storage.AgentGovernanceState) (*string, *model.Time, *model.Time, *string, *model.Time, bool) {
+	summary := governance.QuarantineSummaryAt(time.Now().UTC())
+	return graphOptionalString(summary.Status),
+		graphOptionalModelTime(summary.Start),
+		graphOptionalModelTime(summary.End),
+		graphOptionalString(summary.ApprovedBy),
+		graphOptionalModelTime(summary.ApprovedAt),
+		summary.Active
+}
+
+func graphOptionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func graphOptionalModelTime(value *time.Time) *model.Time {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	timestamp := model.Time(value.UTC())
+	return &timestamp
 }
 
 func graphAgentMCPAccessModel(bundle auth.PublicMCPAccessBundle) *model.AgentMCPAccess {

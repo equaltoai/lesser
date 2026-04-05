@@ -137,13 +137,24 @@ func TestAgentHelpersRound20(t *testing.T) {
 		}
 
 		unverified := agentFromStorageUser(user, &storage.AgentGovernanceState{
-			Username:        "agent1",
-			Verified:        false,
-			VerifiedAt:      &verifiedAt,
-			DelegatedScopes: []string{"read"},
+			Username:             "agent1",
+			Verified:             false,
+			VerifiedAt:           &verifiedAt,
+			DelegatedScopes:      []string{"read"},
+			QuarantineStatus:     storage.AgentQuarantineStatusQuarantined,
+			QuarantineStart:      ptrTime(createdAt),
+			QuarantineEnd:        ptrTime(createdAt.Add(24 * time.Hour)),
+			QuarantineApprovedBy: "admin",
+			QuarantineApprovedAt: ptrTime(createdAt.Add(time.Hour)),
 		})
 		require.False(t, unverified.Verified)
 		require.Nil(t, unverified.VerifiedAt)
+		require.Equal(t, storage.AgentQuarantineStatusQuarantined, unverified.QuarantineStatus)
+		require.NotNil(t, unverified.QuarantineStart)
+		require.NotNil(t, unverified.QuarantineEnd)
+		require.Equal(t, "admin", unverified.QuarantineApprovedBy)
+		require.NotNil(t, unverified.QuarantineApprovedAt)
+		require.True(t, unverified.QuarantineActive)
 		require.Equal(t, agentTypeCustom, unverified.AgentType)
 		require.Equal(t, agentVersionUnknown, unverified.AgentVersion)
 		require.Equal(t, []string{"read"}, unverified.DelegatedScopes)
@@ -166,6 +177,8 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.Equal(t, bundle.AuthorizationServerURL, verified.MCPAccess.AuthorizationServerURL)
 		require.Equal(t, bundle.RegistrationURL, verified.MCPAccess.RegistrationURL)
 		require.Len(t, verified.MCPAccess.Guidance, 5)
+		require.False(t, verified.QuarantineActive)
+		require.Empty(t, verified.QuarantineStatus)
 	})
 
 	t.Run("agent governance state helpers handle nil found and missing rows", func(t *testing.T) {

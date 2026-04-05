@@ -112,3 +112,60 @@ func TestAgentGovernanceStateQuarantineActiveAt(t *testing.T) {
 	require.True(t, active)
 	require.Equal(t, autoFuture.UTC(), until)
 }
+
+func TestAgentGovernanceStateQuarantineSummaryAt(t *testing.T) {
+	now := time.Date(2026, 4, 4, 18, 0, 0, 0, time.UTC)
+	start := now.Add(-24 * time.Hour)
+	future := now.Add(24 * time.Hour)
+	past := now.Add(-time.Hour)
+	approvedAt := now.Add(-30 * time.Minute)
+
+	t.Run("nil state", func(t *testing.T) {
+		var nilState *AgentGovernanceState
+		summary := nilState.QuarantineSummaryAt(now)
+		require.False(t, summary.Active)
+		require.Empty(t, summary.Status)
+		require.Nil(t, summary.Start)
+		require.Nil(t, summary.End)
+		require.Nil(t, summary.ApprovedAt)
+		require.Empty(t, summary.ApprovedBy)
+	})
+
+	t.Run("active quarantine normalizes to quarantined", func(t *testing.T) {
+		summary := (&AgentGovernanceState{
+			QuarantineStatus: AgentQuarantineStatusQuarantined,
+			QuarantineStart:  &start,
+			QuarantineEnd:    &future,
+		}).QuarantineSummaryAt(now)
+		require.True(t, summary.Active)
+		require.Equal(t, AgentQuarantineStatusQuarantined, summary.Status)
+		require.Equal(t, start.UTC(), *summary.Start)
+		require.Equal(t, future.UTC(), *summary.End)
+	})
+
+	t.Run("approved quarantine exposes release details", func(t *testing.T) {
+		summary := (&AgentGovernanceState{
+			QuarantineStatus:     AgentQuarantineStatusApproved,
+			QuarantineStart:      &start,
+			QuarantineEnd:        &past,
+			QuarantineApprovedBy: "admin",
+			QuarantineApprovedAt: &approvedAt,
+		}).QuarantineSummaryAt(now)
+		require.False(t, summary.Active)
+		require.Equal(t, AgentQuarantineStatusApproved, summary.Status)
+		require.Equal(t, "admin", summary.ApprovedBy)
+		require.Equal(t, approvedAt.UTC(), *summary.ApprovedAt)
+		require.Equal(t, past.UTC(), *summary.End)
+	})
+
+	t.Run("elapsed quarantine normalizes to expired", func(t *testing.T) {
+		summary := (&AgentGovernanceState{
+			QuarantineStatus: AgentQuarantineStatusQuarantined,
+			QuarantineStart:  &start,
+			QuarantineEnd:    &past,
+		}).QuarantineSummaryAt(now)
+		require.False(t, summary.Active)
+		require.Equal(t, AgentQuarantineStatusExpired, summary.Status)
+		require.Equal(t, past.UTC(), *summary.End)
+	})
+}
