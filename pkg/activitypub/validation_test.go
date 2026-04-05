@@ -257,6 +257,44 @@ func TestValidateActor_OptionalFields(t *testing.T) {
 	})
 }
 
+func TestValidateResolvedActor(t *testing.T) {
+	baseActor := &Actor{
+		BaseObject: BaseObject{
+			ID:   "https://example.com/users/alice",
+			Type: PersonType,
+		},
+		PreferredUsername: "alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+	}
+
+	t.Run("valid minimal actor", func(t *testing.T) {
+		err := ValidateResolvedActor(baseActor)
+		assert.NoError(t, err)
+	})
+
+	t.Run("nil actor", func(t *testing.T) {
+		err := ValidateResolvedActor(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be nil")
+	})
+
+	t.Run("missing id", func(t *testing.T) {
+		actor := *baseActor
+		actor.ID = ""
+		err := ValidateResolvedActor(&actor)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "id")
+	})
+
+	t.Run("invalid inbox", func(t *testing.T) {
+		actor := *baseActor
+		actor.Inbox = "not-a-url"
+		err := ValidateResolvedActor(&actor)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "inbox")
+	})
+}
+
 func TestValidateActivity(t *testing.T) {
 	baseActivity := &Activity{
 		BaseObject: BaseObject{

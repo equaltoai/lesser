@@ -98,6 +98,30 @@ func ValidateActor(actor *Actor) error {
 	return nil
 }
 
+// ValidateResolvedActor validates the minimum actor fields Lesser requires
+// after remote resolution or cache lookup.
+func ValidateResolvedActor(actor *Actor) error {
+	if actor == nil {
+		return common.ValidationError{Field: "actor", Message: "cannot be nil"}
+	}
+
+	if err := common.ValidateRequiredParam("id", actor.ID); err != nil {
+		return common.ValidationError{Field: "id", Message: "required field missing"}
+	}
+	if err := ValidateURL(actor.ID, "id"); err != nil {
+		return err
+	}
+
+	if err := common.ValidateRequiredParam("inbox", actor.Inbox); err != nil {
+		return common.ValidationError{Field: "inbox", Message: "required field missing"}
+	}
+	if err := ValidateURL(actor.Inbox, "inbox"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ValidateActivity validates an Activity object
 func ValidateActivity(activity *Activity) error {
 	if activity == nil {

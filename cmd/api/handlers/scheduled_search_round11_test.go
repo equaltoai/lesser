@@ -177,6 +177,8 @@ func TestSearchHandlers_Round11(t *testing.T) {
 	require.NoError(t, err)
 	requireStatus(t, http.StatusOK)(handler.HandleStatusSearchLift(statusCtx))
 
+	require.True(t, isValidHandle("user@example.com"))
 	require.True(t, isValidHandle("@user@example.com"))
+	require.False(t, isValidHandle("@user"))
 	require.False(t, isValidHandle("plain"))
 }

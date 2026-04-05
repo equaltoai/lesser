@@ -1400,13 +1400,31 @@ func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle strin
 	if time.Now().After(remoteActor.ExpiresAt) {
 		log.Debug("cached remote actor expired",
 			zap.Time("expired_at", remoteActor.ExpiresAt))
-		// Extract username from handle for error (consistent with legacy)
-		username := strings.Split(handle, "@")[0]
-		return nil, common.ActorNotFoundError{Username: username}
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(handle)}
+	}
+
+	if err := activitypub.ValidateResolvedActor(remoteActor.Actor); err != nil {
+		log.Warn("cached remote actor invalid",
+			zap.Error(err))
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(handle)}
 	}
 
 	log.Debug("retrieved cached remote actor",
 		zap.String("actor_id", remoteActor.Actor.ID))
 
 	return remoteActor.Actor, nil
+}
+
+func cachedRemoteActorLookupUsername(handle string) string {
+	handle = strings.TrimSpace(strings.TrimPrefix(handle, "@"))
+	if handle == "" {
+		return ""
+	}
+
+	parts := strings.Split(handle, "@")
+	if len(parts) == 0 {
+		return handle
+	}
+
+	return strings.TrimSpace(parts[0])
 }

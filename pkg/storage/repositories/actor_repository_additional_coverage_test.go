@@ -311,14 +311,25 @@ func TestActorRepository_migration_and_remote_actor_cache(t *testing.T) {
 	_, err = repo.GetCachedRemoteActor(ctx, "alice@remote")
 	assert.Error(t, err)
 
-	// GetCachedRemoteActor not found and success
+	// GetCachedRemoteActor not found, invalid payload, and success
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err = repo.GetCachedRemoteActor(ctx, "bob@remote")
 	assert.Error(t, err)
 
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		m := args.Get(0).(*models.RemoteActor)
-		m.Actor = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote/users/carla"}}
+		m.Actor = nil
+		m.ExpiresAt = time.Now().Add(time.Minute)
+	}).Once()
+	_, err = repo.GetCachedRemoteActor(ctx, "bad@remote")
+	assert.Error(t, err)
+
+	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.RemoteActor)
+		m.Actor = &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://remote/users/carla"},
+			Inbox:      "https://remote/users/carla/inbox",
+		}
 		m.ExpiresAt = time.Now().Add(time.Minute)
 	}).Once()
 	actor, err := repo.GetCachedRemoteActor(ctx, "carla@remote")
