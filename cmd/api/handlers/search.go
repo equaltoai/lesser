@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -519,20 +520,8 @@ func (h *Handler) finalizeStatusSearchResponse(ctx *apptheory.Context, resp *app
 		zap.Bool("local_only", params.localOnly))
 }
 
-// isValidHandle checks if a query looks like a federated handle (@user@domain.com)
+// isValidHandle checks if a query looks like a remote-resolvable handle.
 func isValidHandle(query string) bool {
-	// Simple check for @user@domain pattern
-	if len(query) < 5 {
-		return false
-	}
-
-	atCount := 0
-	for _, ch := range query {
-		if ch == '@' {
-			atCount++
-		}
-	}
-
-	// Should have exactly 2 @ symbols for federated handle
-	return atCount == 2 || (atCount == 1 && query[0] == '@')
+	query = strings.TrimPrefix(query, "@")
+	return strings.Count(query, "@") == 1
 }

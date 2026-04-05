@@ -25,6 +25,8 @@ func TestHelpersRound18_ResolveAccountID_CacheHits(t *testing.T) {
 		},
 		PreferredUsername: "alice",
 		Name:              "Alice",
+		Inbox:             "https://remote.example/users/alice/inbox",
+		Outbox:            "https://remote.example/users/alice/outbox",
 	}
 
 	cached := storagemodels.RemoteActor{

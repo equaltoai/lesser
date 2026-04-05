@@ -133,11 +133,20 @@ func TestRemoteSearchService_ResolveActor_LocalAndCached(t *testing.T) {
 		Inbox:             "https://local.example/users/alice/inbox",
 		Outbox:            "https://local.example/users/alice/outbox",
 	}
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/bob",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "bob",
+		Inbox:             "https://remote.example/users/bob/inbox",
+		Outbox:            "https://remote.example/users/bob/outbox",
+	}
 
 	svc := &RemoteSearchService{
 		actorRepo: &fakeRemoteSearchActorRepo{
 			localByUsername: map[string]*activitypub.Actor{"alice": localActor},
-			cachedByHandle:  map[string]*activitypub.Actor{"bob@remote.example": localActor},
+			cachedByHandle:  map[string]*activitypub.Actor{"bob@remote.example": remoteActor},
 		},
 		userRepo:   &fakeRemoteSearchUserRepo{},
 		httpClient: &fakeHTTPMux{do: func(_ *http.Request) (*http.Response, error) { return nil, errors.New("unexpected") }},
@@ -234,7 +243,15 @@ func TestRemoteSearchService_ResolveActor_WebFingerErrors(t *testing.T) {
 func TestRemoteSearchService_ResolveActorURL_CacheAndFetch(t *testing.T) {
 	actorRepo := &fakeRemoteSearchActorRepo{
 		cachedByHandle: map[string]*activitypub.Actor{
-			"bob@remote.example": {BaseObject: activitypub.BaseObject{ID: "cached"}},
+			"bob@remote.example": {
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/bob",
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: "bob",
+				Inbox:             "https://remote.example/users/bob/inbox",
+				Outbox:            "https://remote.example/users/bob/outbox",
+			},
 		},
 	}
 	userRepo := &fakeRemoteSearchUserRepo{}
@@ -262,7 +279,7 @@ func TestRemoteSearchService_ResolveActorURL_CacheAndFetch(t *testing.T) {
 		res, err := svc.ResolveActorURL(context.Background(), "https://remote.example/users/bob")
 		require.NoError(t, err)
 		require.NotNil(t, res)
-		assert.Equal(t, "cached", res.Actor.ID)
+		assert.Equal(t, "https://remote.example/users/bob", res.Actor.ID)
 	})
 
 	t.Run("fetch_and_cache_by_actor_id_fallback", func(t *testing.T) {
@@ -276,6 +293,103 @@ func TestRemoteSearchService_ResolveActorURL_CacheAndFetch(t *testing.T) {
 		userRepo.mu.Unlock()
 		assert.True(t, cached)
 	})
+}
+
+func TestRemoteSearchService_ResolveActor_IgnoresInvalidCachedActor(t *testing.T) {
+	actorRepo := &fakeRemoteSearchActorRepo{
+		cachedByHandle: map[string]*activitypub.Actor{
+			"bob@remote.example": {
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/bob",
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: "bob",
+			},
+		},
+	}
+	userRepo := &fakeRemoteSearchUserRepo{}
+
+	const actorURL = "https://remote.example/users/bob"
+
+	httpClient := &fakeHTTPMux{do: func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/.well-known/webfinger":
+			return jsonResponse(http.StatusOK, activitypub.WebFingerResource{
+				Links: []activitypub.WebFingerLink{
+					{Rel: "self", Type: "application/activity+json", Href: actorURL},
+				},
+			}), nil
+		case "/users/bob":
+			return jsonResponse(http.StatusOK, &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   actorURL,
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: "bob",
+				Inbox:             actorURL + "/inbox",
+				Outbox:            actorURL + "/outbox",
+			}), nil
+		default:
+			return nil, errors.New("unexpected url: " + req.URL.String())
+		}
+	}}
+
+	svc := &RemoteSearchService{
+		actorRepo:  actorRepo,
+		userRepo:   userRepo,
+		httpClient: httpClient,
+		logger:     common.Logger(),
+	}
+
+	res, err := svc.ResolveActor(context.Background(), "bob@remote.example")
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, actorURL, res.Actor.ID)
+	assert.Equal(t, actorURL+"/inbox", res.Actor.Inbox)
+}
+
+func TestRemoteSearchService_ResolveActorURL_IgnoresCachedActorIdentityMismatch(t *testing.T) {
+	actorRepo := &fakeRemoteSearchActorRepo{
+		cachedByHandle: map[string]*activitypub.Actor{
+			"bob@remote.example": {
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/alice",
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: "alice",
+				Inbox:             "https://remote.example/users/alice/inbox",
+				Outbox:            "https://remote.example/users/alice/outbox",
+			},
+		},
+	}
+
+	const actorURL = "https://remote.example/users/bob"
+
+	svc := &RemoteSearchService{
+		actorRepo: actorRepo,
+		userRepo:  &fakeRemoteSearchUserRepo{},
+		httpClient: &fakeHTTPMux{do: func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/users/bob" {
+				return jsonResponse(http.StatusOK, &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   actorURL,
+						Type: activitypub.PersonType,
+					},
+					PreferredUsername: "bob",
+					Inbox:             actorURL + "/inbox",
+					Outbox:            actorURL + "/outbox",
+				}), nil
+			}
+			return nil, errors.New("unexpected: " + req.URL.String())
+		}},
+		logger: common.Logger(),
+	}
+
+	res, err := svc.ResolveActorURL(context.Background(), actorURL)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, actorURL, res.Actor.ID)
+	assert.Equal(t, "bob", res.Actor.PreferredUsername)
 }
 
 func TestRemoteSearchService_ResolveExactActor_LocalAndRemote(t *testing.T) {

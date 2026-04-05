@@ -530,7 +530,32 @@ func (s *RemoteSearchService) getCachedRemoteActor(ctx context.Context, handle s
 	if s.actorRepo == nil {
 		return nil, common.ActorNotFoundError{Username: handle}
 	}
-	return s.actorRepo.GetCachedRemoteActor(ctx, handle)
+
+	actor, err := s.actorRepo.GetCachedRemoteActor(ctx, handle)
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil {
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorUsername(handle)}
+	}
+	if err := activitypub.ValidateResolvedActor(actor); err != nil {
+		s.logger.Warn("ignoring invalid cached remote actor",
+			zap.String("handle", handle),
+			zap.String("actor_id", strings.TrimSpace(actor.ID)),
+			zap.Error(err))
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorUsername(handle)}
+	}
+	if !cachedRemoteActorMatchesHandle(actor, handle) {
+		identity := DescribeActorIdentity(actor, "")
+		s.logger.Warn("ignoring cached remote actor identity mismatch",
+			zap.String("handle", handle),
+			zap.String("actor_id", strings.TrimSpace(actor.ID)),
+			zap.String("cached_username", identity.Username),
+			zap.String("cached_domain", identity.Domain))
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorUsername(handle)}
+	}
+
+	return actor, nil
 }
 
 func (s *RemoteSearchService) cacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
@@ -669,6 +694,24 @@ func normalizeActorDomain(value string) string {
 		value = value[:idx]
 	}
 	return strings.TrimSpace(value)
+}
+
+func cachedRemoteActorMatchesHandle(actor *activitypub.Actor, handle string) bool {
+	username, domain, err := parseHandle(handle)
+	if err != nil || domain == "" {
+		return false
+	}
+
+	identity := DescribeActorIdentity(actor, "")
+	return strings.EqualFold(exactHandle(identity.Username, identity.Domain), exactHandle(username, domain))
+}
+
+func cachedRemoteActorUsername(handle string) string {
+	username, _, err := parseLooseHandle(handle)
+	if err == nil && username != "" {
+		return username
+	}
+	return strings.TrimSpace(strings.TrimPrefix(handle, "@"))
 }
 
 // searchKnownInstances performs fuzzy search on known remote instances

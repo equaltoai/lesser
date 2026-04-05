@@ -104,6 +104,14 @@ func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, ac
 		return nil, storage.ErrNotFound
 	}
 
+	if err := activitypub.ValidateResolvedActor(remoteActor.Actor); err != nil {
+		zap.L().Warn("ignoring invalid cached remote actor",
+			zap.String("handle", handle),
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return nil, storage.ErrNotFound
+	}
+
 	return remoteActor.Actor, nil
 }
 

@@ -70,7 +70,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 				return nil
 			}
 			actors := []*activitypub.Actor{}
-			handler.addRemoteSearchResults(context.Background(), &actors, "@user@example.com", 10)
+			handler.addRemoteSearchResults(context.Background(), &actors, "user@example.com", 10)
 			require.Empty(t, actors)
 		})
 
@@ -79,7 +79,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 				return &round12RemoteSearchStub{err: errors.New("boom")}
 			}
 			actors := []*activitypub.Actor{}
-			handler.addRemoteSearchResults(context.Background(), &actors, "@user@example.com", 10)
+			handler.addRemoteSearchResults(context.Background(), &actors, "user@example.com", 10)
 			require.Empty(t, actors)
 		})
 
@@ -93,12 +93,13 @@ func TestSearch_Round12Coverage(t *testing.T) {
 				}
 			}
 			actors := []*activitypub.Actor{}
-			handler.addRemoteSearchResults(context.Background(), &actors, "@user@example.com", 10)
+			handler.addRemoteSearchResults(context.Background(), &actors, "user@example.com", 10)
 			require.Len(t, actors, 1)
 		})
 
+		require.True(t, isValidHandle("user@example.com"))
 		require.True(t, isValidHandle("@user@example.com"))
-		require.True(t, isValidHandle("@user"))
+		require.False(t, isValidHandle("@user"))
 		require.False(t, isValidHandle("nope"))
 	})
 

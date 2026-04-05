@@ -174,7 +174,10 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 	t.Run("expired_cache_returns_storage_not_found", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		stored := &models.RemoteActor{
-			Actor:     &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"}},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
+				Inbox:      "https://remote.example/users/bob/inbox",
+			},
 			Handle:    "bob@remote.example",
 			ExpiresAt: time.Now().Add(-time.Second),
 		}
@@ -193,9 +196,36 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 		testDB.AssertExpectations(t)
 	})
 
+	t.Run("invalid_cached_actor_returns_storage_not_found", func(t *testing.T) {
+		testDB := dynamormtesting.NewTestDB()
+		stored := &models.RemoteActor{
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
+			},
+			Handle:    "bob@remote.example",
+			ExpiresAt: time.Now().Add(5 * time.Minute),
+		}
+
+		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
+			ExpectWhere("SK", "=", "PROFILE")
+		testDB.MockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.RemoteActor)
+			*dest = *stored
+		}).Return(nil).Once()
+
+		svc := &DynamORMFederationStorage{db: testDB.MockDB}
+		actor, err := svc.GetCachedRemoteActor(ctx, "https://remote.example/users/bob")
+		require.ErrorIs(t, err, storage.ErrNotFound)
+		assert.Nil(t, actor)
+		testDB.AssertExpectations(t)
+	})
+
 	t.Run("success_returns_cached_actor", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
-		expected := &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"}}
+		expected := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
+			Inbox:      "https://remote.example/users/bob/inbox",
+		}
 		stored := &models.RemoteActor{
 			Actor:     expected,
 			Handle:    "bob@remote.example",
