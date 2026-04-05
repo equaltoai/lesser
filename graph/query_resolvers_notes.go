@@ -263,7 +263,7 @@ func (r *queryResolver) searchExactActorQuery(ctx context.Context, query string,
 
 func supportsExactActorGraphQLSearch(searchType string) bool {
 	switch strings.ToLower(strings.TrimSpace(searchType)) {
-	case "", "all", "accounts":
+	case "", QueryTypeAll, QueryTypeAccounts:
 		return true
 	default:
 		return false

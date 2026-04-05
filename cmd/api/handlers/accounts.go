@@ -463,7 +463,7 @@ func applyMastodonProfile(out *models.Account, user *storage.User, baseURL, user
 	if profileURL := strings.TrimSpace(user.URL); profileURL != "" {
 		out.URL = profileURL
 	}
-	if out.URL == "" && baseURL != "" {
+	if baseURL != "" && username != "" && strings.TrimSpace(user.URL) == "" {
 		out.URL = fmt.Sprintf("%s/@%s", baseURL, username)
 	}
 

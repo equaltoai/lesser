@@ -2382,11 +2382,30 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 	}
 
 	identity := federation.DescribeActorIdentity(actor, s.domainName)
+	username, userLookupUsername, userUsername := relationshipAccountUsernames(actor, fallbackUsername, identity)
+	storedUser := s.loadRelationshipStoredUser(ctx, userLookupUsername)
+
+	if identity.IsRemote {
+		return buildRemoteRelationshipAccount(actor, username, userUsername, storedUser)
+	}
+
+	return buildLocalRelationshipAccount(actor, s.baseURL(), username, userUsername, storedUser)
+}
+
+type relationshipAccountProfile struct {
+	displayName string
+	note        string
+	avatar      string
+	header      string
+	createdAt   time.Time
+	updatedAt   time.Time
+}
+
+func relationshipAccountUsernames(actor *activitypub.Actor, fallbackUsername string, identity federation.ActorIdentity) (string, string, string) {
 	username := strings.TrimSpace(identity.Username)
 	if username == "" {
 		username = activitypubutil.DerivePreferredUsername(actor, fallbackUsername)
 	}
-	baseURL := s.baseURL()
 
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -2400,171 +2419,173 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		userUsername = userLookupUsername
 	}
 
-	var storedUser *storage.User
-	if s.storage != nil && userLookupUsername != "" {
-		if userRepo := s.storage.User(); userRepo != nil {
-			if fetched, err := userRepo.GetUser(ctx, userLookupUsername); err == nil {
-				// Create a shallow copy so mutations don't affect repository caches
-				copied := *fetched
-				storedUser = &copied
-			} else if !strings.Contains(strings.ToLower(err.Error()), "not found") {
-				s.logger.Debug("failed to hydrate relationship account from user repository",
-					zap.String("username", userLookupUsername),
-					zap.Error(err))
-			}
-		}
+	return username, userLookupUsername, userUsername
+}
+
+func (s *Service) loadRelationshipStoredUser(ctx context.Context, username string) *storage.User {
+	if s.storage == nil || username == "" {
+		return nil
 	}
 
-	if identity.IsRemote {
-		actorCopy := *actor
-		if strings.TrimSpace(actorCopy.URL) == "" {
-			actorCopy.URL = strings.TrimSpace(actorCopy.ID)
-		}
-
-		displayName := strings.TrimSpace(actorCopy.Name)
-		if displayName == "" && storedUser != nil {
-			displayName = strings.TrimSpace(storedUser.DisplayName)
-		}
-		if displayName == "" {
-			displayName = username
-		}
-
-		note := strings.TrimSpace(actorCopy.Summary)
-		if note == "" && storedUser != nil {
-			note = strings.TrimSpace(storedUser.Note)
-		}
-
-		avatar := ""
-		if actorCopy.Icon != nil {
-			avatar = strings.TrimSpace(actorCopy.Icon.URL)
-		}
-		if avatar == "" && storedUser != nil {
-			avatar = strings.TrimSpace(storedUser.Avatar)
-		}
-
-		header := ""
-		if actorCopy.Image != nil {
-			header = strings.TrimSpace(actorCopy.Image.URL)
-		}
-		if header == "" && storedUser != nil {
-			header = strings.TrimSpace(storedUser.Header)
-		}
-
-		createdAt := time.Time{}
-		updatedAt := time.Time{}
-		if storedUser != nil {
-			createdAt = storedUser.CreatedAt
-			updatedAt = storedUser.UpdatedAt
-		} else {
-			if actorCopy.Published != nil {
-				createdAt = *actorCopy.Published
-			}
-			if actorCopy.Updated != nil {
-				updatedAt = *actorCopy.Updated
-			}
-		}
-
-		return &storage.Account{
-			User: &storage.User{
-				ID:           actorCopy.ID,
-				Username:     userUsername,
-				DisplayName:  displayName,
-				Note:         note,
-				Avatar:       avatar,
-				Header:       header,
-				URL:          actorCopy.URL,
-				Locked:       actorCopy.ManuallyApprovesFollowers,
-				Discoverable: actorCopy.Discoverable,
-				CreatedAt:    createdAt,
-				UpdatedAt:    updatedAt,
-			},
-			Actor: &actorCopy,
-		}
+	userRepo := s.storage.User()
+	if userRepo == nil {
+		return nil
 	}
 
+	fetched, err := userRepo.GetUser(ctx, username)
+	if err == nil && fetched != nil {
+		copied := *fetched
+		return &copied
+	}
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
+		s.logger.Debug("failed to hydrate relationship account from user repository",
+			zap.String("username", username),
+			zap.Error(err))
+	}
+
+	return nil
+}
+
+func buildRemoteRelationshipAccount(actor *activitypub.Actor, username, userUsername string, storedUser *storage.User) *storage.Account {
+	if actor == nil {
+		return nil
+	}
+
+	actorCopy := *actor
+	if strings.TrimSpace(actorCopy.URL) == "" {
+		actorCopy.URL = strings.TrimSpace(actorCopy.ID)
+	}
+
+	profile := relationshipActorProfile(&actorCopy, storedUser, username)
+	return &storage.Account{
+		User: &storage.User{
+			ID:           actorCopy.ID,
+			Username:     userUsername,
+			DisplayName:  profile.displayName,
+			Note:         profile.note,
+			Avatar:       profile.avatar,
+			Header:       profile.header,
+			URL:          actorCopy.URL,
+			Locked:       actorCopy.ManuallyApprovesFollowers,
+			Discoverable: actorCopy.Discoverable,
+			CreatedAt:    profile.createdAt,
+			UpdatedAt:    profile.updatedAt,
+		},
+		Actor: &actorCopy,
+	}
+}
+
+func buildLocalRelationshipAccount(actor *activitypub.Actor, baseURL, username, userUsername string, storedUser *storage.User) *storage.Account {
 	actorCopy := activitypubutil.BuildLocalActor(username, baseURL, storedUser, actor)
 	if actorCopy == nil {
 		return nil
 	}
 
-	displayName := strings.TrimSpace(actorCopy.Name)
-	if displayName == "" {
-		displayName = username
-	}
-	note := strings.TrimSpace(actorCopy.Summary)
-	avatar := ""
-	if actorCopy.Icon != nil {
-		avatar = strings.TrimSpace(actorCopy.Icon.URL)
-	}
-	header := ""
-	if actorCopy.Image != nil {
-		header = strings.TrimSpace(actorCopy.Image.URL)
-	}
-
-	createdAt := time.Time{}
-	updatedAt := time.Time{}
-	if storedUser != nil {
-		createdAt = storedUser.CreatedAt
-		updatedAt = storedUser.UpdatedAt
-	} else {
-		if actorCopy.Published != nil {
-			createdAt = *actorCopy.Published
-		}
-		if actorCopy.Updated != nil {
-			updatedAt = *actorCopy.Updated
-		}
-	}
-
+	profile := relationshipActorProfile(actorCopy, storedUser, username)
 	user := &storage.User{
 		ID:           actorCopy.ID,
 		Username:     userUsername,
-		DisplayName:  displayName,
-		Note:         note,
-		Avatar:       avatar,
-		Header:       header,
+		DisplayName:  profile.displayName,
+		Note:         profile.note,
+		Avatar:       profile.avatar,
+		Header:       profile.header,
 		URL:          actorCopy.URL,
 		Locked:       actorCopy.ManuallyApprovesFollowers,
 		Discoverable: actorCopy.Discoverable,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		CreatedAt:    profile.createdAt,
+		UpdatedAt:    profile.updatedAt,
 	}
-
-	if storedUser != nil {
-		user.ID = storedUser.ID
-		user.Email = storedUser.Email
-		user.URL = storedUser.URL
-		user.Metadata = storedUser.Metadata
-		user.Fields = storedUser.Fields
-		user.Approved = storedUser.Approved
-		user.Suspended = storedUser.Suspended
-		user.Silenced = storedUser.Silenced
-		user.Role = storedUser.Role
-		user.Locale = storedUser.Locale
-		user.RecoveryMethods = storedUser.RecoveryMethods
-		user.AllowNSFW = storedUser.AllowNSFW
-		user.RequireNSFWWarning = storedUser.RequireNSFWWarning
-		user.CreatedAt = storedUser.CreatedAt
-		user.UpdatedAt = storedUser.UpdatedAt
-		if strings.TrimSpace(storedUser.DisplayName) != "" {
-			user.DisplayName = storedUser.DisplayName
-		}
-		if strings.TrimSpace(storedUser.Note) != "" {
-			user.Note = storedUser.Note
-		}
-		if strings.TrimSpace(storedUser.Avatar) != "" {
-			user.Avatar = storedUser.Avatar
-		}
-		if strings.TrimSpace(storedUser.Header) != "" {
-			user.Header = storedUser.Header
-		}
-		user.Locked = storedUser.Locked
-		user.Discoverable = storedUser.Discoverable
-	}
+	applyStoredUserToRelationshipUser(user, storedUser)
 
 	return &storage.Account{
 		User:  user,
 		Actor: actorCopy,
 	}
+}
+
+func relationshipActorProfile(actor *activitypub.Actor, storedUser *storage.User, fallbackDisplay string) relationshipAccountProfile {
+	profile := relationshipAccountProfile{}
+	if actor == nil {
+		return profile
+	}
+
+	profile.displayName = strings.TrimSpace(actor.Name)
+	if profile.displayName == "" && storedUser != nil {
+		profile.displayName = strings.TrimSpace(storedUser.DisplayName)
+	}
+	if profile.displayName == "" {
+		profile.displayName = strings.TrimSpace(fallbackDisplay)
+	}
+
+	profile.note = strings.TrimSpace(actor.Summary)
+	if profile.note == "" && storedUser != nil {
+		profile.note = strings.TrimSpace(storedUser.Note)
+	}
+
+	if actor.Icon != nil {
+		profile.avatar = strings.TrimSpace(actor.Icon.URL)
+	}
+	if profile.avatar == "" && storedUser != nil {
+		profile.avatar = strings.TrimSpace(storedUser.Avatar)
+	}
+
+	if actor.Image != nil {
+		profile.header = strings.TrimSpace(actor.Image.URL)
+	}
+	if profile.header == "" && storedUser != nil {
+		profile.header = strings.TrimSpace(storedUser.Header)
+	}
+
+	if storedUser != nil {
+		profile.createdAt = storedUser.CreatedAt
+		profile.updatedAt = storedUser.UpdatedAt
+		return profile
+	}
+
+	if actor.Published != nil {
+		profile.createdAt = *actor.Published
+	}
+	if actor.Updated != nil {
+		profile.updatedAt = *actor.Updated
+	}
+
+	return profile
+}
+
+func applyStoredUserToRelationshipUser(user, storedUser *storage.User) {
+	if user == nil || storedUser == nil {
+		return
+	}
+
+	user.ID = storedUser.ID
+	user.Email = storedUser.Email
+	user.URL = storedUser.URL
+	user.Metadata = storedUser.Metadata
+	user.Fields = storedUser.Fields
+	user.Approved = storedUser.Approved
+	user.Suspended = storedUser.Suspended
+	user.Silenced = storedUser.Silenced
+	user.Role = storedUser.Role
+	user.Locale = storedUser.Locale
+	user.RecoveryMethods = storedUser.RecoveryMethods
+	user.AllowNSFW = storedUser.AllowNSFW
+	user.RequireNSFWWarning = storedUser.RequireNSFWWarning
+	user.CreatedAt = storedUser.CreatedAt
+	user.UpdatedAt = storedUser.UpdatedAt
+	if strings.TrimSpace(storedUser.DisplayName) != "" {
+		user.DisplayName = storedUser.DisplayName
+	}
+	if strings.TrimSpace(storedUser.Note) != "" {
+		user.Note = storedUser.Note
+	}
+	if strings.TrimSpace(storedUser.Avatar) != "" {
+		user.Avatar = storedUser.Avatar
+	}
+	if strings.TrimSpace(storedUser.Header) != "" {
+		user.Header = storedUser.Header
+	}
+	user.Locked = storedUser.Locked
+	user.Discoverable = storedUser.Discoverable
 }
 
 func (s *Service) baseURL() string {

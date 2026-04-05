@@ -336,7 +336,7 @@ func TestHelpersRound18_StatusAccountFallbackBranches(t *testing.T) {
 		})
 
 		require.Equal(t, "alice", account.Username)
-		require.Equal(t, "alice", account.Acct)
+		require.Equal(t, "alice@remote.example", account.Acct)
 		require.Equal(t, "Alice Remote", account.DisplayName)
 	})
 }

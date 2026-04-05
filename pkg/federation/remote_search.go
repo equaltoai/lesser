@@ -214,69 +214,9 @@ func (s *RemoteSearchService) ResolveExactActor(ctx context.Context, input, loca
 	}
 
 	localDomain = normalizeActorDomain(localDomain)
-
-	var result *SearchResult
-
-	switch {
-	case isActorURL(input):
-		parsed, err := url.Parse(input)
-		if err != nil {
-			return nil, err
-		}
-
-		host := normalizeActorDomain(parsed.Hostname())
-		if host == "" {
-			return nil, ErrInvalidDomainFormat
-		}
-
-		if localDomain != "" && host == localDomain {
-			username := usernameFromActorPath(parsed.Path)
-			if username == "" {
-				return nil, common.ActorNotFoundError{Username: input}
-			}
-
-			actor, err := s.getLocalActor(ctx, username)
-			if err != nil {
-				return nil, err
-			}
-
-			result = &SearchResult{Actor: actor}
-		} else {
-			result, err = s.ResolveActorURL(ctx, input)
-			if err != nil {
-				return nil, err
-			}
-		}
-	case strings.Contains(strings.TrimPrefix(input, "@"), "@"):
-		username, domain, err := parseHandle(input)
-		if err != nil {
-			return nil, err
-		}
-
-		if localDomain != "" && domain == localDomain {
-			actor, err := s.getLocalActor(ctx, username)
-			if err != nil {
-				return nil, err
-			}
-
-			result = &SearchResult{Actor: actor}
-		} else {
-			handle := username
-			if domain != "" {
-				handle = fmt.Sprintf("%s@%s", username, domain)
-			}
-
-			result, err = s.ResolveActor(ctx, handle)
-			if err != nil {
-				return nil, err
-			}
-		}
-	default:
-		var err error
-		result, err = s.ResolveActor(ctx, input)
-		if err != nil {
-			return nil, err
-		}
+	result, err := s.resolveExactSearchResult(ctx, input, localDomain)
+	if err != nil {
+		return nil, err
 	}
 
 	if result == nil || result.Actor == nil {
@@ -284,6 +224,68 @@ func (s *RemoteSearchService) ResolveExactActor(ctx context.Context, input, loca
 	}
 
 	return buildExactActorResolution(result.Actor, localDomain, result.IsRemote, result.RemoteDomain), nil
+}
+
+func (s *RemoteSearchService) resolveExactSearchResult(ctx context.Context, input, localDomain string) (*SearchResult, error) {
+	switch {
+	case isActorURL(input):
+		return s.resolveExactActorURL(ctx, input, localDomain)
+	case strings.Contains(strings.TrimPrefix(input, "@"), "@"):
+		return s.resolveExactActorHandle(ctx, input, localDomain)
+	default:
+		return s.ResolveActor(ctx, input)
+	}
+}
+
+func (s *RemoteSearchService) resolveExactActorURL(ctx context.Context, actorURL, localDomain string) (*SearchResult, error) {
+	parsed, err := url.Parse(actorURL)
+	if err != nil {
+		return nil, err
+	}
+
+	host := normalizeActorDomain(parsed.Hostname())
+	if host == "" {
+		return nil, ErrInvalidDomainFormat
+	}
+
+	if localDomain != "" && host == localDomain {
+		return s.resolveExactLocalActor(ctx, usernameFromActorPath(parsed.Path), actorURL)
+	}
+
+	return s.ResolveActorURL(ctx, actorURL)
+}
+
+func (s *RemoteSearchService) resolveExactActorHandle(ctx context.Context, handle, localDomain string) (*SearchResult, error) {
+	username, domain, err := parseHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+
+	if localDomain != "" && domain == localDomain {
+		return s.resolveExactLocalActor(ctx, username, handle)
+	}
+
+	return s.ResolveActor(ctx, exactHandle(username, domain))
+}
+
+func (s *RemoteSearchService) resolveExactLocalActor(ctx context.Context, username, input string) (*SearchResult, error) {
+	if username == "" {
+		return nil, common.ActorNotFoundError{Username: input}
+	}
+
+	actor, err := s.getLocalActor(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SearchResult{Actor: actor}, nil
+}
+
+func exactHandle(username, domain string) string {
+	if domain == "" {
+		return username
+	}
+	return fmt.Sprintf("%s@%s", username, domain)
 }
 
 // webFingerLookup performs a WebFinger query to find an actor's ActivityPub URL

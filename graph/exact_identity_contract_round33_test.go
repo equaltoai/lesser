@@ -80,7 +80,7 @@ func TestRound33QueryResolvers_Search_ExactIdentityContract(t *testing.T) {
 	}
 	actorRepo.SetCachedRemoteActor("alice@remote.example", remoteActor, time.Hour)
 
-	searchType := "accounts"
+	searchType := QueryTypeAccounts
 	tests := []struct {
 		name      string
 		query     string

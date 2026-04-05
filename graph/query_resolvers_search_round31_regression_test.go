@@ -79,7 +79,7 @@ func TestRound31QueryResolvers_Search_AccountsHydratePartialServiceActors(t *tes
 		*matches = []models.Actor{}
 	}).Return(nil)
 
-	searchType := "accounts"
+	searchType := QueryTypeAccounts
 	result, err := resolver.Query().Search(ctx, "arch", &searchType, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -104,7 +104,7 @@ func TestRound31QueryResolvers_Search_ExactRemoteHandleUsesRemoteAwareResolution
 	}
 	actorRepo.SetCachedRemoteActor("alice@remote.example", remoteActor, time.Hour)
 
-	searchType := "accounts"
+	searchType := QueryTypeAccounts
 	result, err := resolver.Query().Search(context.Background(), "alice@remote.example", &searchType, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
