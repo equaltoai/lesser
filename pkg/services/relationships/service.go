@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -372,27 +373,47 @@ func (s *Service) getFollowAccounts(ctx context.Context, followerID, followingID
 	}
 
 	if s.storage != nil {
-		followerActor, err := s.storage.Actor().GetActor(ctx, followerID)
+		follower, err := s.resolveFollowStorageAccount(ctx, followerID, true)
 		if err != nil {
 			return nil, nil, err
 		}
-		followingActor, err := s.storage.Actor().GetActor(ctx, followingID)
+		following, err := s.resolveFollowStorageAccount(ctx, followingID, false)
 		if err != nil {
 			return nil, nil, err
-		}
-
-		follower := &storage.Account{
-			User:  &storage.User{Username: followerActor.PreferredUsername},
-			Actor: followerActor,
-		}
-		following := &storage.Account{
-			User:  &storage.User{Username: followingActor.PreferredUsername},
-			Actor: followingActor,
 		}
 		return follower, following, nil
 	}
 
 	return nil, nil, NoRepositoryOrStorage()
+}
+
+func (s *Service) resolveFollowStorageAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
+	if s.storage == nil {
+		return nil, NoRepositoryOrStorage()
+	}
+
+	resolution, err := federation.NewRemoteSearchService(s.storage).ResolveExactActor(ctx, identifier, s.domainName)
+	if err != nil {
+		return nil, err
+	}
+	if resolution == nil || resolution.Actor == nil {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+	if requireLocal && resolution.IsRemote {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+
+	fallbackUsername := resolution.Username
+	if resolution.IsRemote && strings.TrimSpace(resolution.Acct) != "" {
+		fallbackUsername = resolution.Acct
+	}
+
+	account := s.buildAccountFromActor(ctx, resolution.Actor, fallbackUsername)
+	if account == nil {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+
+	return account, nil
 }
 
 // checkFollowPrerequisites checks if already following or blocked
@@ -472,10 +493,10 @@ func (s *Service) buildFollowActivity(ctx context.Context, follower, following *
 
 	objectSlug := followingID
 	if following != nil {
-		if following.Actor != nil && following.Actor.PreferredUsername != "" {
-			objectSlug = following.Actor.PreferredUsername
-		} else if following.User != nil && following.User.Username != "" {
+		if following.User != nil && following.User.Username != "" {
 			objectSlug = following.User.Username
+		} else if following.Actor != nil && following.Actor.PreferredUsername != "" {
+			objectSlug = following.Actor.PreferredUsername
 		}
 	}
 	if objectSlug == "" {
@@ -2360,7 +2381,11 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		return nil
 	}
 
-	username := activitypubutil.DerivePreferredUsername(actor, fallbackUsername)
+	identity := federation.DescribeActorIdentity(actor, s.domainName)
+	username := strings.TrimSpace(identity.Username)
+	if username == "" {
+		username = activitypubutil.DerivePreferredUsername(actor, fallbackUsername)
+	}
 	baseURL := s.baseURL()
 
 	username = strings.TrimSpace(username)
@@ -2368,18 +2393,92 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		username = strings.TrimSpace(fallbackUsername)
 	}
 
+	userLookupUsername := username
+	userUsername := username
+	if identity.IsRemote && strings.TrimSpace(identity.Acct) != "" {
+		userLookupUsername = strings.TrimSpace(identity.Acct)
+		userUsername = userLookupUsername
+	}
+
 	var storedUser *storage.User
-	if s.storage != nil && username != "" {
+	if s.storage != nil && userLookupUsername != "" {
 		if userRepo := s.storage.User(); userRepo != nil {
-			if fetched, err := userRepo.GetUser(ctx, username); err == nil {
+			if fetched, err := userRepo.GetUser(ctx, userLookupUsername); err == nil {
 				// Create a shallow copy so mutations don't affect repository caches
 				copied := *fetched
 				storedUser = &copied
 			} else if !strings.Contains(strings.ToLower(err.Error()), "not found") {
 				s.logger.Debug("failed to hydrate relationship account from user repository",
-					zap.String("username", username),
+					zap.String("username", userLookupUsername),
 					zap.Error(err))
 			}
+		}
+	}
+
+	if identity.IsRemote {
+		actorCopy := *actor
+		if strings.TrimSpace(actorCopy.URL) == "" {
+			actorCopy.URL = strings.TrimSpace(actorCopy.ID)
+		}
+
+		displayName := strings.TrimSpace(actorCopy.Name)
+		if displayName == "" && storedUser != nil {
+			displayName = strings.TrimSpace(storedUser.DisplayName)
+		}
+		if displayName == "" {
+			displayName = username
+		}
+
+		note := strings.TrimSpace(actorCopy.Summary)
+		if note == "" && storedUser != nil {
+			note = strings.TrimSpace(storedUser.Note)
+		}
+
+		avatar := ""
+		if actorCopy.Icon != nil {
+			avatar = strings.TrimSpace(actorCopy.Icon.URL)
+		}
+		if avatar == "" && storedUser != nil {
+			avatar = strings.TrimSpace(storedUser.Avatar)
+		}
+
+		header := ""
+		if actorCopy.Image != nil {
+			header = strings.TrimSpace(actorCopy.Image.URL)
+		}
+		if header == "" && storedUser != nil {
+			header = strings.TrimSpace(storedUser.Header)
+		}
+
+		createdAt := time.Time{}
+		updatedAt := time.Time{}
+		if storedUser != nil {
+			createdAt = storedUser.CreatedAt
+			updatedAt = storedUser.UpdatedAt
+		} else {
+			if actorCopy.Published != nil {
+				createdAt = *actorCopy.Published
+			}
+			if actorCopy.Updated != nil {
+				updatedAt = *actorCopy.Updated
+			}
+		}
+
+		return &storage.Account{
+			User: &storage.User{
+				ID:           actorCopy.ID,
+				Username:     userUsername,
+				DisplayName:  displayName,
+				Note:         note,
+				Avatar:       avatar,
+				Header:       header,
+				URL:          actorCopy.URL,
+				Locked:       actorCopy.ManuallyApprovesFollowers,
+				Discoverable: actorCopy.Discoverable,
+				CreatedAt:    createdAt,
+				UpdatedAt:    updatedAt,
+			},
+			Actor: &actorCopy,
 		}
 	}
 
@@ -2418,7 +2517,7 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 
 	user := &storage.User{
 		ID:           actorCopy.ID,
-		Username:     username,
+		Username:     userUsername,
 		DisplayName:  displayName,
 		Note:         note,
 		Avatar:       avatar,

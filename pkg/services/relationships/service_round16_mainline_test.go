@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -464,7 +465,25 @@ func TestStreamingEventEmitter_EmitEvents(t *testing.T) {
 
 func TestService_NewServiceWithStorage_GetFollowAccounts_StoragePath(t *testing.T) {
 	ctx := context.Background()
-	service, _ := newServiceWithStorageHarness(t)
+	service, storageHarness := newServiceWithStorageHarness(t)
+
+	actorRepo := inmemory.NewActorRepository()
+	storageHarness.actorRepo = actorRepo
+
+	require.NoError(t, actorRepo.CreateActor(ctx, &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+	}, ""))
+	require.NoError(t, actorRepo.CreateActor(ctx, &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/users/bob",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "bob",
+	}, ""))
 
 	follower, following, err := service.getFollowAccounts(ctx, "alice", "bob")
 	require.NoError(t, err)
