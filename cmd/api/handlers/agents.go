@@ -1011,6 +1011,7 @@ func agentFromStorageUserWithBaseURL(user *storage.User, governance *storage.Age
 		verifiedAt := governance.VerifiedAt.UTC()
 		out.VerifiedAt = &verifiedAt
 	}
+	applyAPIAgentQuarantineSummary(&out, governance)
 
 	out.DelegatedScopes = agentDelegatedScopes(governance)
 	out.AgentCapabilities = apiAgentCapabilitiesFromStorage(user.AgentCapabilities)
@@ -1025,6 +1026,19 @@ func agentFromStorageUserWithBaseURL(user *storage.User, governance *storage.Age
 	out.IdentitySemantics = apiAgentIdentitySemantics(agents.DeriveDroneIdentitySemantics(user.Username, workflowState, false, ""))
 
 	return out
+}
+
+func applyAPIAgentQuarantineSummary(out *apimodels.Agent, governance *storage.AgentGovernanceState) {
+	if out == nil {
+		return
+	}
+	summary := governance.QuarantineSummaryAt(time.Now().UTC())
+	out.QuarantineStatus = summary.Status
+	out.QuarantineStart = summary.Start
+	out.QuarantineEnd = summary.End
+	out.QuarantineApprovedBy = summary.ApprovedBy
+	out.QuarantineApprovedAt = summary.ApprovedAt
+	out.QuarantineActive = summary.Active
 }
 
 func collectAgentUsernames(users []*storage.User) []string {

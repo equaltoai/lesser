@@ -893,6 +893,24 @@ components:
                     $ref: '#/components/schemas/AgentIdentitySemantics'
                 mcp_access:
                     $ref: '#/components/schemas/AgentMCPAccess'
+                quarantine_active:
+                    type: boolean
+                quarantine_approved_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                quarantine_approved_by:
+                    type: string
+                quarantine_end:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                quarantine_start:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                quarantine_status:
+                    type: string
                 username:
                     type: string
                 verified:
@@ -908,6 +926,7 @@ components:
                 - display_name
                 - identity_semantics
                 - mcp_access
+                - quarantine_active
                 - username
                 - verified
             type: object

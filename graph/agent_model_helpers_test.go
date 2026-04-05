@@ -32,10 +32,15 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 		CreatedAt: createdAt,
 	}
 	governance := &storage.AgentGovernanceState{
-		Username:        "lowkey",
-		Verified:        true,
-		VerifiedAt:      ptrGraphTime(time.Date(2026, 2, 13, 13, 56, 1, 0, time.UTC)),
-		DelegatedScopes: []string{"read"},
+		Username:             "lowkey",
+		Verified:             true,
+		VerifiedAt:           ptrGraphTime(time.Date(2026, 2, 13, 13, 56, 1, 0, time.UTC)),
+		DelegatedScopes:      []string{"read"},
+		QuarantineStatus:     storage.AgentQuarantineStatusApproved,
+		QuarantineStart:      ptrGraphTime(time.Date(2026, 2, 13, 12, 42, 10, 0, time.UTC)),
+		QuarantineEnd:        ptrGraphTime(time.Date(2026, 2, 20, 12, 42, 10, 0, time.UTC)),
+		QuarantineApprovedBy: "owner",
+		QuarantineApprovedAt: ptrGraphTime(time.Date(2026, 2, 14, 8, 0, 0, 0, time.UTC)),
 	}
 
 	agent := resolver.convertStorageUserToAgent(user, governance)
@@ -48,6 +53,14 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.True(t, agent.AgentCapabilities.CanDM)
 	require.Equal(t, 0, agent.AgentCapabilities.MaxPostsPerHour)
 	require.True(t, agent.AgentCapabilities.RequiresApproval)
+	require.NotNil(t, agent.QuarantineStatus)
+	require.Equal(t, storage.AgentQuarantineStatusApproved, *agent.QuarantineStatus)
+	require.NotNil(t, agent.QuarantineApprovedBy)
+	require.Equal(t, "owner", *agent.QuarantineApprovedBy)
+	require.NotNil(t, agent.QuarantineApprovedAt)
+	require.NotNil(t, agent.QuarantineStart)
+	require.NotNil(t, agent.QuarantineEnd)
+	require.False(t, agent.QuarantineActive)
 	require.NotNil(t, agent.McpAccess)
 	bundle := auth.BuildPublicMCPAccessBundle("https://example.com", "lowkey")
 	require.Equal(t, bundle.MCPURL, agent.McpAccess.McpURL)
@@ -73,6 +86,29 @@ func TestConvertStorageUserToAgent_HidesVerifiedAtWhenAgentIsNotVerified(t *test
 	require.NotNil(t, agent)
 	require.False(t, agent.Verified)
 	require.Nil(t, agent.VerifiedAt)
+}
+
+func TestConvertStorageUserToAgent_NormalizesExpiredQuarantine(t *testing.T) {
+	resolver := &Resolver{}
+	now := time.Now().UTC()
+	past := now.Add(-2 * time.Hour)
+	user := &storage.User{
+		Username: "lowkey",
+		IsAgent:  true,
+	}
+	governance := &storage.AgentGovernanceState{
+		Username:         "lowkey",
+		QuarantineStatus: storage.AgentQuarantineStatusQuarantined,
+		QuarantineEnd:    &past,
+	}
+
+	agent := resolver.convertStorageUserToAgent(user, governance)
+	require.NotNil(t, agent)
+	require.NotNil(t, agent.QuarantineStatus)
+	require.Equal(t, storage.AgentQuarantineStatusExpired, *agent.QuarantineStatus)
+	require.False(t, agent.QuarantineActive)
+	require.NotNil(t, agent.QuarantineEnd)
+	require.Equal(t, past.UTC(), time.Time(*agent.QuarantineEnd))
 }
 
 func ptrGraphTime(value time.Time) *time.Time {

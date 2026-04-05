@@ -63,7 +63,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9 // indirect
+require github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect

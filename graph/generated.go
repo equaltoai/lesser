@@ -535,27 +535,33 @@ type ComplexityRoot struct {
 	}
 
 	Agent struct {
-		ActivityCount     func(childComplexity int) int
-		AgentCapabilities func(childComplexity int) int
-		AgentOwner        func(childComplexity int) int
-		AgentType         func(childComplexity int) int
-		AgentVersion      func(childComplexity int) int
-		Bio               func(childComplexity int) int
-		Capabilities      func(childComplexity int) int
-		CreatedAt         func(childComplexity int) int
-		DelegatedScopes   func(childComplexity int) int
-		DisplayName       func(childComplexity int) int
-		ID                func(childComplexity int) int
-		IdentitySemantics func(childComplexity int) int
-		McpAccess         func(childComplexity int) int
-		Owner             func(childComplexity int) int
-		OwnerActor        func(childComplexity int) int
-		Type              func(childComplexity int) int
-		Username          func(childComplexity int) int
-		Verified          func(childComplexity int) int
-		VerifiedAt        func(childComplexity int) int
-		Version           func(childComplexity int) int
-		Workflow          func(childComplexity int) int
+		ActivityCount        func(childComplexity int) int
+		AgentCapabilities    func(childComplexity int) int
+		AgentOwner           func(childComplexity int) int
+		AgentType            func(childComplexity int) int
+		AgentVersion         func(childComplexity int) int
+		Bio                  func(childComplexity int) int
+		Capabilities         func(childComplexity int) int
+		CreatedAt            func(childComplexity int) int
+		DelegatedScopes      func(childComplexity int) int
+		DisplayName          func(childComplexity int) int
+		ID                   func(childComplexity int) int
+		IdentitySemantics    func(childComplexity int) int
+		McpAccess            func(childComplexity int) int
+		Owner                func(childComplexity int) int
+		OwnerActor           func(childComplexity int) int
+		QuarantineActive     func(childComplexity int) int
+		QuarantineApprovedAt func(childComplexity int) int
+		QuarantineApprovedBy func(childComplexity int) int
+		QuarantineEnd        func(childComplexity int) int
+		QuarantineStart      func(childComplexity int) int
+		QuarantineStatus     func(childComplexity int) int
+		Type                 func(childComplexity int) int
+		Username             func(childComplexity int) int
+		Verified             func(childComplexity int) int
+		VerifiedAt           func(childComplexity int) int
+		Version              func(childComplexity int) int
+		Workflow             func(childComplexity int) int
 	}
 
 	AgentAccessLease struct {
@@ -5889,6 +5895,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.OwnerActor(childComplexity), true
+
+	case "Agent.quarantineActive":
+		if e.complexity.Agent.QuarantineActive == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineActive(childComplexity), true
+
+	case "Agent.quarantineApprovedAt":
+		if e.complexity.Agent.QuarantineApprovedAt == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineApprovedAt(childComplexity), true
+
+	case "Agent.quarantineApprovedBy":
+		if e.complexity.Agent.QuarantineApprovedBy == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineApprovedBy(childComplexity), true
+
+	case "Agent.quarantineEnd":
+		if e.complexity.Agent.QuarantineEnd == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineEnd(childComplexity), true
+
+	case "Agent.quarantineStart":
+		if e.complexity.Agent.QuarantineStart == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineStart(childComplexity), true
+
+	case "Agent.quarantineStatus":
+		if e.complexity.Agent.QuarantineStatus == nil {
+			break
+		}
+
+		return e.complexity.Agent.QuarantineStatus(childComplexity), true
 
 	case "Agent.type":
 		if e.complexity.Agent.Type == nil {
@@ -29311,6 +29359,18 @@ func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, fiel
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -40239,6 +40299,255 @@ func (ec *executionContext) fieldContext_Agent_verifiedAt(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_quarantineStatus(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineStatus(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineStatus, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineStatus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_quarantineStart(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineStart(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineStart, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineStart(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_quarantineEnd(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineEnd(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineEnd, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineEnd(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_quarantineApprovedBy(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineApprovedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineApprovedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_quarantineApprovedAt(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineApprovedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineApprovedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_quarantineActive(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_quarantineActive(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.QuarantineActive, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_quarantineActive(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_ownerActor(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_ownerActor(ctx, field)
 	if err != nil {
@@ -43761,6 +44070,18 @@ func (ec *executionContext) fieldContext_AgentEdge_node(_ context.Context, field
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -57996,6 +58317,18 @@ func (ec *executionContext) fieldContext_DelegationPayload_agent(_ context.Conte
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -59742,6 +60075,18 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_agent(_ co
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -95263,6 +95608,18 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -95362,6 +95719,18 @@ func (ec *executionContext) fieldContext_Mutation_deleteAgent(ctx context.Contex
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -96505,6 +96874,18 @@ func (ec *executionContext) fieldContext_Mutation_adminVerifyAgent(ctx context.C
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -96604,6 +96985,18 @@ func (ec *executionContext) fieldContext_Mutation_adminUnverifyAgent(ctx context
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -96703,6 +97096,18 @@ func (ec *executionContext) fieldContext_Mutation_adminSuspendAgent(ctx context.
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -115366,6 +115771,18 @@ func (ec *executionContext) fieldContext_Query_agent(ctx context.Context, field 
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -115528,6 +115945,18 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -118438,6 +118867,18 @@ func (ec *executionContext) fieldContext_RegisterAgentPayload_agent(_ context.Co
 				return ec.fieldContext_Agent_verified(ctx, field)
 			case "verifiedAt":
 				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "quarantineStatus":
+				return ec.fieldContext_Agent_quarantineStatus(ctx, field)
+			case "quarantineStart":
+				return ec.fieldContext_Agent_quarantineStart(ctx, field)
+			case "quarantineEnd":
+				return ec.fieldContext_Agent_quarantineEnd(ctx, field)
+			case "quarantineApprovedBy":
+				return ec.fieldContext_Agent_quarantineApprovedBy(ctx, field)
+			case "quarantineApprovedAt":
+				return ec.fieldContext_Agent_quarantineApprovedAt(ctx, field)
+			case "quarantineActive":
+				return ec.fieldContext_Agent_quarantineActive(ctx, field)
 			case "ownerActor":
 				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
@@ -150172,6 +150613,21 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "verifiedAt":
 			out.Values[i] = ec._Agent_verifiedAt(ctx, field, obj)
+		case "quarantineStatus":
+			out.Values[i] = ec._Agent_quarantineStatus(ctx, field, obj)
+		case "quarantineStart":
+			out.Values[i] = ec._Agent_quarantineStart(ctx, field, obj)
+		case "quarantineEnd":
+			out.Values[i] = ec._Agent_quarantineEnd(ctx, field, obj)
+		case "quarantineApprovedBy":
+			out.Values[i] = ec._Agent_quarantineApprovedBy(ctx, field, obj)
+		case "quarantineApprovedAt":
+			out.Values[i] = ec._Agent_quarantineApprovedAt(ctx, field, obj)
+		case "quarantineActive":
+			out.Values[i] = ec._Agent_quarantineActive(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "ownerActor":
 			out.Values[i] = ec._Agent_ownerActor(ctx, field, obj)
 		case "type":
