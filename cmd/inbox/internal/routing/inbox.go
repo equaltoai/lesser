@@ -2002,32 +2002,7 @@ func (ih *InboxHandler) processRejectMove(ctx context.Context, rejectActivity *a
 }
 
 func (ih *InboxHandler) buildCanonicalRemoteStatus(note *activitypub.Note) *models.Status {
-	if note == nil {
-		return nil
-	}
-
-	statusID := models.CanonicalStatusID(note.ID)
-	if statusID == "" {
-		return nil
-	}
-
-	noteCopy := *note
-	status := &models.Status{
-		StatusID:       statusID,
-		Note:           &noteCopy,
-		AuthorID:       strings.TrimSpace(note.AttributedTo),
-		AuthorUsername: ih.remoteStatusAuthorUsername(note),
-		URLs:           remoteStatusProjectionURLs(note),
-	}
-
-	if note.Published != nil {
-		status.PublishedAt = *note.Published
-	}
-	if note.Updated != nil {
-		status.UpdatedAt = *note.Updated
-	}
-
-	return status
+	return federation.BuildCanonicalRemoteStatus(note, ih.baseURL)
 }
 
 func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
@@ -2141,40 +2116,6 @@ func isRemoteStatusNotFound(err error) bool {
 	return errors.HasCode(err, errors.CodeNotFound) ||
 		stdErrors.Is(err, storage.ErrNotFound) ||
 		dynamormerrors.IsNotFound(err)
-}
-
-func (ih *InboxHandler) remoteStatusAuthorUsername(note *activitypub.Note) string {
-	if note == nil {
-		return ""
-	}
-
-	identity := federation.DescribeActorIdentity(&activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			ID: strings.TrimSpace(note.AttributedTo),
-		},
-	}, ih.baseURL)
-
-	if identity.IsRemote && identity.Acct != "" {
-		return identity.Acct
-	}
-	if identity.Username != "" {
-		return identity.Username
-	}
-
-	return ih.extractUsernameFromActorID(note.AttributedTo)
-}
-
-func remoteStatusProjectionURLs(note *activitypub.Note) []string {
-	if note == nil {
-		return nil
-	}
-
-	urls := make([]string, 0, 1)
-	if noteID := strings.TrimSpace(note.ID); noteID != "" {
-		urls = append(urls, noteID)
-	}
-
-	return urls
 }
 
 // processRemoteCreateActivity processes an incoming Create activity from a remote instance
