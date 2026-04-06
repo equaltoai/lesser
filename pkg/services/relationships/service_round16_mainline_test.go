@@ -1499,7 +1499,15 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 	}
 
 	fed := &MockFederationService{}
-	fed.On("QueueActivity", mock.Anything, mock.Anything).Return(fmt.Errorf("queue failed")).Maybe()
+	var queued []*activitypub.Activity
+	fed.On("QueueActivity", mock.Anything, mock.AnythingOfType("*activitypub.Activity")).
+		Run(func(args mock.Arguments) {
+			if activity, ok := args.Get(1).(*activitypub.Activity); ok {
+				queued = append(queued, activity)
+			}
+		}).
+		Return(fmt.Errorf("queue failed")).
+		Maybe()
 
 	service := NewService(nil, nil, publisher, fed, zap.NewNop(), "example.com")
 
@@ -1520,6 +1528,9 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 
 	// Remote actor queues and handles QueueActivity errors.
 	service.queueFederationFollow(ctx, follower, followingRemote, "act", "follow")
+	require.Len(t, queued, 1)
+	require.Equal(t, followingRemote.Actor.ID, queued[0].Object)
+	require.Equal(t, []string{followingRemote.Actor.ID}, queued[0].To)
 }
 
 func TestIsNilFederationService(t *testing.T) {

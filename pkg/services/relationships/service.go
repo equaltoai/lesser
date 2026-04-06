@@ -2783,6 +2783,7 @@ func (s *Service) queueFederationFollow(ctx context.Context, follower, following
 			Type:      "Follow",
 			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, activityID),
 			Published: &now,
+			To:        []string{following.Actor.ID},
 		},
 		Actor:  follower.Actor.ID,
 		Object: following.Actor.ID,
