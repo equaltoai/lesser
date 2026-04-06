@@ -286,6 +286,22 @@ func TestValidateResolvedActor(t *testing.T) {
 		assert.Contains(t, err.Error(), "id")
 	})
 
+	t.Run("missing type", func(t *testing.T) {
+		actor := *baseActor
+		actor.Type = ""
+		err := ValidateResolvedActor(&actor)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "type")
+	})
+
+	t.Run("missing preferred username", func(t *testing.T) {
+		actor := *baseActor
+		actor.PreferredUsername = ""
+		err := ValidateResolvedActor(&actor)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "preferredUsername")
+	})
+
 	t.Run("invalid inbox", func(t *testing.T) {
 		actor := *baseActor
 		actor.Inbox = "not-a-url"

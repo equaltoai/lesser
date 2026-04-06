@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -74,55 +73,67 @@ func (s *DynamORMFederationStorage) GetFollowers(ctx context.Context, username s
 
 // GetCachedRemoteActor retrieves a cached remote actor by actor ID.
 func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
-	// For GetCachedRemoteActor, we need to extract the handle from just the actor ID
-	// Since we don't have preferredUsername here, we'll extract it from the URL
-	handle := extractHandleFromURL(actorID)
+	handle := models.NormalizeRemoteActorHandle(actorID)
 	if err := common.ValidateRequiredParam("handle", handle); err != nil {
 		return nil, storage.ErrNotFound
 	}
 
-	// Query for cached remote actor
-	var remoteActor models.RemoteActor
-	err := s.db.WithContext(ctx).Model(&remoteActor).
-		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
-		Where("SK", "=", "PROFILE").
-		First(&remoteActor)
+	lookupHandles := []string{handle}
+	if !strings.HasPrefix(handle, "@") {
+		lookupHandles = append(lookupHandles, "@"+handle)
+	}
 
-	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
-			return nil, storage.ErrNotFound
+	for _, lookupHandle := range lookupHandles {
+		var remoteActor models.RemoteActor
+		err := s.db.WithContext(ctx).Model(&remoteActor).
+			Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", lookupHandle)).
+			Where("SK", "=", "PROFILE").
+			First(&remoteActor)
+
+		if err != nil {
+			if dynamormErrors.IsNotFound(err) {
+				continue
+			}
+			zap.L().Error("failed to get cached remote actor",
+				zap.String("handle", lookupHandle),
+				zap.String("actorID", actorID),
+				zap.Error(err))
+			return nil, errors.Join(ErrRemoteActorCacheRetrieveFailed, err)
 		}
-		zap.L().Error("failed to get cached remote actor",
-			zap.String("handle", handle),
-			zap.String("actorID", actorID),
-			zap.Error(err))
-		return nil, errors.Join(ErrRemoteActorCacheRetrieveFailed, err)
+
+		if time.Now().After(remoteActor.ExpiresAt) {
+			continue
+		}
+
+		actor := normalizeFederationCachedActor(lookupHandle, remoteActor.Actor)
+		if err := activitypub.ValidateResolvedActor(actor); err != nil {
+			zap.L().Warn("ignoring invalid cached remote actor",
+				zap.String("handle", lookupHandle),
+				zap.String("actorID", actorID),
+				zap.Error(err))
+			continue
+		}
+
+		return actor, nil
 	}
 
-	// Check if cache has expired
-	if time.Now().After(remoteActor.ExpiresAt) {
-		return nil, storage.ErrNotFound
-	}
-
-	if err := activitypub.ValidateResolvedActor(remoteActor.Actor); err != nil {
-		zap.L().Warn("ignoring invalid cached remote actor",
-			zap.String("handle", handle),
-			zap.String("actorID", actorID),
-			zap.Error(err))
-		return nil, storage.ErrNotFound
-	}
-
-	return remoteActor.Actor, nil
+	return nil, storage.ErrNotFound
 }
 
 // CacheRemoteActor caches a remote actor for future lookups.
 func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	if actor == nil {
+		return errors.Join(ErrRemoteActorCacheStoreFailed, fmt.Errorf("remote actor is required"))
+	}
+
 	now := time.Now()
 	expiresAt := now.Add(ttl)
+	canonicalHandle := models.NormalizeRemoteActorHandle(handle)
+	cachedActor := normalizeFederationCachedActor(canonicalHandle, actor)
 
 	remoteActor := &models.RemoteActor{
-		Handle:    handle,
-		Actor:     actor,
+		Handle:    canonicalHandle,
+		Actor:     cachedActor,
 		CachedAt:  now,
 		UpdatedAt: now,
 		ExpiresAt: expiresAt,
@@ -142,15 +153,15 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 				Update()
 			if err != nil {
 				zap.L().Error("failed to update cached remote actor",
-					zap.String("handle", handle),
-					zap.String("actorID", actor.ID),
+					zap.String("handle", canonicalHandle),
+					zap.String("actorID", cachedActor.ID),
 					zap.Error(err))
 				return errors.Join(ErrRemoteActorCacheUpdateFailed, err)
 			}
 		} else {
 			zap.L().Error("failed to cache remote actor",
-				zap.String("handle", handle),
-				zap.String("actorID", actor.ID),
+				zap.String("handle", canonicalHandle),
+				zap.String("actorID", cachedActor.ID),
 				zap.Error(err))
 			return errors.Join(ErrRemoteActorCacheStoreFailed, err)
 		}
@@ -184,30 +195,21 @@ func (s *DynamORMFederationStorage) RecordFederationActivity(ctx context.Context
 // extractHandleFromURL extracts the handle (user@domain) from an actor ID URL
 // e.g., "https://example.com/users/alice" -> "alice@example.com"
 func extractHandleFromURL(actorID string) string {
-	if actorID == "" {
-		return ""
+	return models.NormalizeRemoteActorHandle(actorID)
+}
+
+func normalizeFederationCachedActor(handle string, actor *activitypub.Actor) *activitypub.Actor {
+	if actor == nil {
+		return nil
 	}
 
-	parsed, err := url.Parse(actorID)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return ""
-	}
-
-	host := parsed.Hostname()
-	if host == "" {
-		return ""
-	}
-
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	for i, part := range parts {
-		if part == "users" && i+1 < len(parts) && parts[i+1] != "" {
-			return fmt.Sprintf("%s@%s", parts[i+1], host)
+	clone := *actor
+	if clone.PreferredUsername == "" {
+		parts := strings.Split(models.NormalizeRemoteActorHandle(handle), "@")
+		if len(parts) >= 1 {
+			clone.PreferredUsername = strings.TrimSpace(parts[0])
 		}
 	}
 
-	return ""
+	return &clone
 }

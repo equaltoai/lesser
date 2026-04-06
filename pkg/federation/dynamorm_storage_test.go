@@ -20,7 +20,7 @@ import (
 func TestExtractHandleFromURL(t *testing.T) {
 	assert.Equal(t, "alice@example.com", extractHandleFromURL("https://example.com/users/alice"))
 	assert.Equal(t, "alice@example.com", extractHandleFromURL("http://example.com/users/alice"))
-	assert.Equal(t, "", extractHandleFromURL("https://example.com/@alice"))
+	assert.Equal(t, "alice@example.com", extractHandleFromURL("https://example.com/@alice"))
 	assert.Equal(t, "", extractHandleFromURL("https://example.com/users/"))
 	assert.Equal(t, "", extractHandleFromURL("example.com/users/alice"))
 	assert.Equal(t, "", extractHandleFromURL(""))
@@ -135,7 +135,7 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 
-		actor, err := svc.GetCachedRemoteActor(ctx, "https://remote.example/@bob")
+		actor, err := svc.GetCachedRemoteActor(ctx, "https://remote.example/users/")
 		require.ErrorIs(t, err, storage.ErrNotFound)
 		assert.Nil(t, actor)
 		testDB.MockDB.AssertNotCalled(t, "Model", mock.Anything)
@@ -144,6 +144,9 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 	t.Run("not_found_returns_storage_not_found", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
+			ExpectWhere("SK", "=", "PROFILE").
+			ExpectNotFound()
+		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#@bob@remote.example").
 			ExpectWhere("SK", "=", "PROFILE").
 			ExpectNotFound()
 
@@ -175,8 +178,12 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		stored := &models.RemoteActor{
 			Actor: &activitypub.Actor{
-				BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
-				Inbox:      "https://remote.example/users/bob/inbox",
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/bob",
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: "bob",
+				Inbox:             "https://remote.example/users/bob/inbox",
 			},
 			Handle:    "bob@remote.example",
 			ExpiresAt: time.Now().Add(-time.Second),
@@ -188,6 +195,9 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 			dest := args.Get(0).(*models.RemoteActor)
 			*dest = *stored
 		}).Return(nil).Once()
+		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#@bob@remote.example").
+			ExpectWhere("SK", "=", "PROFILE").
+			ExpectNotFound()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		actor, err := svc.GetCachedRemoteActor(ctx, "https://remote.example/users/bob")
@@ -200,7 +210,10 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		stored := &models.RemoteActor{
 			Actor: &activitypub.Actor{
-				BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/bob",
+					Type: activitypub.PersonType,
+				},
 			},
 			Handle:    "bob@remote.example",
 			ExpiresAt: time.Now().Add(5 * time.Minute),
@@ -212,6 +225,9 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 			dest := args.Get(0).(*models.RemoteActor)
 			*dest = *stored
 		}).Return(nil).Once()
+		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#@bob@remote.example").
+			ExpectWhere("SK", "=", "PROFILE").
+			ExpectNotFound()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		actor, err := svc.GetCachedRemoteActor(ctx, "https://remote.example/users/bob")
@@ -223,8 +239,12 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 	t.Run("success_returns_cached_actor", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		expected := &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"},
-			Inbox:      "https://remote.example/users/bob/inbox",
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://remote.example/users/bob",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "bob",
+			Inbox:             "https://remote.example/users/bob/inbox",
 		}
 		stored := &models.RemoteActor{
 			Actor:     expected,
@@ -249,7 +269,14 @@ func TestDynamORMFederationStorage_GetCachedRemoteActor(t *testing.T) {
 
 func TestDynamORMFederationStorage_CacheRemoteActor(t *testing.T) {
 	ctx := context.Background()
-	actor := &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob"}}
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/bob",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "bob",
+		Inbox:             "https://remote.example/users/bob/inbox",
+	}
 
 	t.Run("create_success", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()

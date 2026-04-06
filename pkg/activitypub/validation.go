@@ -112,6 +112,23 @@ func ValidateResolvedActor(actor *Actor) error {
 		return err
 	}
 
+	if err := common.ValidateRequiredParam("type", actor.Type); err != nil {
+		return common.ValidationError{Field: "type", Message: "required field missing"}
+	}
+	switch actor.Type {
+	case PersonType, ServiceType, GroupType, OrganizationType, ApplicationType:
+		// Valid resolved actor types.
+	default:
+		return common.ValidationError{Field: "type", Message: "invalid actor type"}
+	}
+
+	if err := common.ValidateRequiredParam("preferredUsername", actor.PreferredUsername); err != nil {
+		return common.ValidationError{Field: "preferredUsername", Message: "required field missing"}
+	}
+	if err := ValidateUsername(actor.PreferredUsername); err != nil {
+		return err
+	}
+
 	if err := common.ValidateRequiredParam("inbox", actor.Inbox); err != nil {
 		return common.ValidationError{Field: "inbox", Message: "required field missing"}
 	}

@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ type RemoteActor struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// Actor data (ActivityPub actor object)
-	Actor *activitypub.Actor `theorydb:"attr:actor" json:"actor"`
+	Actor *activitypub.Actor `theorydb:"json,attr:actor" json:"actor"`
 
 	// Handle (user@domain format)
 	Handle string `theorydb:"attr:handle" json:"handle"`
@@ -41,6 +42,7 @@ type RemoteActor struct {
 
 // UpdateKeys updates the key fields for DynamORM
 func (r *RemoteActor) UpdateKeys() {
+	r.Handle = NormalizeRemoteActorHandle(r.Handle)
 	r.PK = fmt.Sprintf("REMOTE_ACTOR#%s", r.Handle)
 	r.SK = SKProfile
 	r.Domain = extractDomainFromHandle(r.Handle)
@@ -49,13 +51,86 @@ func (r *RemoteActor) UpdateKeys() {
 	}
 }
 
+// NormalizeRemoteActorHandle canonicalizes remote actor cache identifiers so
+// writes and reads converge on the same durable cache key.
+func NormalizeRemoteActorHandle(handle string) string {
+	handle = strings.TrimSpace(handle)
+	if handle == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(handle); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		host := normalizeRemoteActorDomain(parsed.Hostname())
+		if host == "" {
+			return ""
+		}
+
+		path := strings.Trim(parsed.Path, "/")
+		if path == "" {
+			return ""
+		}
+
+		parts := strings.Split(path, "/")
+		candidate := ""
+		for i, part := range parts {
+			if (part == "users" || part == "actors") && i+1 < len(parts) {
+				candidate = parts[i+1]
+				break
+			}
+		}
+		if candidate == "" && len(parts) > 0 {
+			last := parts[len(parts)-1]
+			if strings.HasPrefix(last, "@") {
+				candidate = last
+			}
+		}
+
+		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "@"))
+		if candidate != "" {
+			return strings.ToLower(candidate) + "@" + host
+		}
+
+		return ""
+	}
+
+	handle = strings.TrimPrefix(handle, "@")
+	parts := strings.Split(handle, "@")
+	if len(parts) != 2 {
+		if strings.Contains(handle, "/") {
+			return ""
+		}
+		return strings.ToLower(strings.TrimSpace(handle))
+	}
+
+	username := strings.ToLower(strings.TrimSpace(parts[0]))
+	domain := normalizeRemoteActorDomain(parts[1])
+	if username == "" || domain == "" {
+		return ""
+	}
+
+	return username + "@" + domain
+}
+
 // extractDomainFromHandle extracts the domain from a handle like user@domain
 func extractDomainFromHandle(handle string) string {
+	handle = NormalizeRemoteActorHandle(handle)
 	parts := strings.Split(handle, "@")
 	if len(parts) >= 2 {
 		return parts[len(parts)-1]
 	}
 	return ""
+}
+
+func normalizeRemoteActorDomain(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
+	if idx := strings.Index(raw, "/"); idx >= 0 {
+		raw = raw[:idx]
+	}
+	if idx := strings.Index(raw, ":"); idx >= 0 {
+		raw = raw[:idx]
+	}
+	return strings.TrimSpace(raw)
 }
 
 // TableName returns the DynamoDB table backing RemoteActor.
