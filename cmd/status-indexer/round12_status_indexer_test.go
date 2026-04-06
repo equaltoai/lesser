@@ -377,6 +377,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 	origLoadAWS := loadAWSConfigFn
 	origNewAI := newAIServiceFn
 	origNewIndexer := newStatusIndexerFn
+	origNewClient := newLambdaClientFn
 	origStart := lambdaStartFn
 	origProcessor := processor
 	t.Cleanup(func() {
@@ -384,6 +385,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 		loadAWSConfigFn = origLoadAWS
 		newAIServiceFn = origNewAI
 		newStatusIndexerFn = origNewIndexer
+		newLambdaClientFn = origNewClient
 		lambdaStartFn = origStart
 		processor = origProcessor
 	})
@@ -435,4 +437,56 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 
 	main()
 	require.True(t, called)
+}
+
+func TestStatusIndexer_Main_FallsBackToManualDynamoClient_Round12(t *testing.T) {
+	origMust := mustInitializeLambdaFn
+	origLoadAWS := loadAWSConfigFn
+	origNewAI := newAIServiceFn
+	origNewIndexer := newStatusIndexerFn
+	origNewClient := newLambdaClientFn
+	origStart := lambdaStartFn
+	origProcessor := processor
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMust
+		loadAWSConfigFn = origLoadAWS
+		newAIServiceFn = origNewAI
+		newStatusIndexerFn = origNewIndexer
+		newLambdaClientFn = origNewClient
+		lambdaStartFn = origStart
+		processor = origProcessor
+	})
+
+	mockDB := new(dynamormmocks.MockDB)
+	fakeCtx := &common.LambdaContext{
+		Config: &config.Config{
+			Domain:          "example.com",
+			Region:          "us-east-1",
+			DynamoTableName: "test-table",
+		},
+		Logger:   zap.NewNop(),
+		DynamoDB: nil,
+	}
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeCtx }
+	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{}, nil
+	}
+	newAIServiceFn = func(aws.Config, *ai.AIConfig) embeddingGenerator { return nil }
+	newLambdaClientFn = func(context.Context, string) (dynamormCore.DB, error) { return mockDB, nil }
+
+	var gotDB dynamormCore.DB
+	newStatusIndexerFn = func(db dynamormCore.DB, tableName, domain string, _ embeddingGenerator, logger *zap.Logger) *StatusIndexer {
+		gotDB = db
+		return &StatusIndexer{db: db, tableName: tableName, domain: domain, logger: logger, likeRepo: &fakeLikeCounter{}}
+	}
+
+	called := false
+	lambdaStartFn = func(h any) {
+		called = true
+	}
+
+	main()
+	require.True(t, called)
+	require.Same(t, mockDB, gotDB)
+	require.Same(t, mockDB, fakeCtx.DynamoDB)
 }

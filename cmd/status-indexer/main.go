@@ -14,9 +14,11 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/google/uuid"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
@@ -69,8 +71,43 @@ var (
 	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
 	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.AIConfig) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
 	newStatusIndexerFn     = NewStatusIndexer
+	newLambdaClientFn      = theorydb.NewLambdaOptimizedClient
 	lambdaStartFn          = lambda.Start
 )
+
+func resolveStatusIndexerDB(lambdaCtx *common.LambdaContext, cfg *config.Config, logger *zap.Logger) (dynamormCore.DB, error) {
+	log := logger
+	if log == nil {
+		log = zap.NewNop()
+	}
+
+	if lambdaCtx != nil && lambdaCtx.DynamoDB != nil {
+		if db, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok && db != nil {
+			return db, nil
+		}
+		log.Warn("lambda context dynamodb client had unexpected type; falling back to manual initialization")
+	} else {
+		log.Warn("lambda context dynamodb client missing; falling back to manual initialization")
+	}
+
+	if cfg == nil {
+		return nil, fmt.Errorf("lambda config is required for status-indexer dynamodb initialization")
+	}
+
+	region := strings.TrimSpace(cfg.Region)
+	if region == "" {
+		return nil, fmt.Errorf("AWS region is required for status-indexer dynamodb initialization")
+	}
+
+	db, err := newLambdaClientFn(context.Background(), region)
+	if err != nil {
+		return nil, err
+	}
+	if lambdaCtx != nil {
+		lambdaCtx.DynamoDB = db
+	}
+	return db, nil
+}
 
 func handleStatusIndexerStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	if processor == nil {
@@ -730,16 +767,9 @@ func main() {
 	}
 	aiService := newAIServiceFn(awsCfg, aiConfig)
 
-	// Get DynamORM DB instance
-	var db dynamormCore.DB
-	if lambdaCtx.DynamoDB != nil {
-		if dynamoDB, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok {
-			db = dynamoDB
-		} else {
-			logger.Fatal("Failed to cast DynamoDB client to expected type")
-		}
-	} else {
-		logger.Fatal("DynamoDB client not initialized")
+	db, err := resolveStatusIndexerDB(lambdaCtx, cfg, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize DynamoDB client", zap.Error(err))
 	}
 
 	// Initialize processor

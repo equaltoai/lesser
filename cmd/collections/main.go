@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -125,6 +126,7 @@ type CollectionsHandler struct {
 	relationshipRepo collectionsRelationshipRepo
 	likeRepo         collectionsLikeRepo
 	instanceRepo     instanceStateGetter
+	remoteResolver   collectionsRemoteResolver
 }
 
 type collectionsActorRepo interface {
@@ -148,13 +150,23 @@ type instanceStateGetter interface {
 	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
+type collectionsRemoteResolver interface {
+	ResolveExactActor(ctx context.Context, input, localDomain string) (*federation.ExactActorResolution, error)
+}
+
 // NewCollectionsHandler creates a new collections handler with standardized initialization
 func NewCollectionsHandler() *CollectionsHandler {
+	var remoteResolver collectionsRemoteResolver
+	if repos != nil {
+		remoteResolver = federation.NewRemoteSearchService(repos)
+	}
+
 	return &CollectionsHandler{
 		actorRepo:        repos.Actor(),
 		relationshipRepo: repos.Relationship(),
 		likeRepo:         repos.Like(),
 		instanceRepo:     repos.Instance(),
+		remoteResolver:   remoteResolver,
 	}
 }
 
@@ -493,28 +505,108 @@ func (ch *CollectionsHandler) collectionActorID(ctx context.Context, identifier 
 		return identifier
 	}
 
-	if strings.Contains(identifier, "@") && ch.actorRepo != nil {
+	if strings.Contains(identifier, "@") {
+		return ch.remoteCollectionActorID(ctx, identifier)
+	}
+
+	return ch.localCollectionActorID(identifier)
+}
+
+func (ch *CollectionsHandler) remoteCollectionActorID(ctx context.Context, identifier string) string {
+	if ch.actorRepo != nil {
 		actor, err := ch.actorRepo.GetCachedRemoteActor(ctx, identifier)
-		if err == nil && actor != nil {
-			if actorID := strings.TrimSpace(actor.ID); actorID != "" {
-				return actorID
-			}
-			if actorURL := strings.TrimSpace(actor.URL); actorURL != "" {
-				return actorURL
-			}
+		if actorID := collectionsActorURL(actor); actorID != "" {
+			return actorID
 		}
 		if err != nil {
 			logger.Warn("failed to resolve cached remote actor for collection item",
 				zap.String("identifier", identifier),
 				zap.Error(err))
 		}
+	}
+
+	if ch.remoteResolver != nil {
+		resolution, err := ch.remoteResolver.ResolveExactActor(ctx, identifier, collectionLocalDomain())
+		if err == nil && resolution != nil {
+			if actorID := collectionsActorURL(resolution.Actor); actorID != "" {
+				return actorID
+			}
+		}
+		if err != nil {
+			logger.Warn("failed to resolve remote actor for collection item",
+				zap.String("identifier", identifier),
+				zap.Error(err))
+		}
+	}
+
+	return ch.remoteCollectionActorURL(identifier)
+}
+
+func collectionsActorURL(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+	if actorID := strings.TrimSpace(actor.ID); actorID != "" {
+		return actorID
+	}
+	return strings.TrimSpace(actor.URL)
+}
+
+func (ch *CollectionsHandler) localCollectionActorID(identifier string) string {
+	domain := ""
+	if cfg != nil {
+		domain = strings.TrimSpace(cfg.Domain)
+	}
+	if domain == "" {
+		return identifier
+	}
+	if strings.HasPrefix(domain, "http") {
+		return fmt.Sprintf("%s/users/%s", domain, identifier)
+	}
+	return fmt.Sprintf("https://%s/users/%s", domain, identifier)
+}
+
+func (ch *CollectionsHandler) remoteCollectionActorURL(identifier string) string {
+	username, domain, ok := parseCollectionHandle(identifier)
+	if !ok {
 		return identifier
 	}
 
-	if strings.HasPrefix(cfg.Domain, "http") {
-		return fmt.Sprintf("%s/users/%s", cfg.Domain, identifier)
+	if localDomain := collectionLocalDomain(); localDomain != "" && strings.EqualFold(domain, localDomain) {
+		return ch.localCollectionActorID(username)
 	}
-	return fmt.Sprintf("https://%s/users/%s", cfg.Domain, identifier)
+
+	return fmt.Sprintf("https://%s/users/%s", domain, username)
+}
+
+func parseCollectionHandle(identifier string) (string, string, bool) {
+	parts := strings.Split(strings.TrimSpace(strings.TrimPrefix(identifier, "@")), "@")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+
+	username := strings.TrimSpace(parts[0])
+	domain := strings.TrimSpace(parts[1])
+	if username == "" || domain == "" {
+		return "", "", false
+	}
+
+	return username, domain, true
+}
+
+func collectionLocalDomain() string {
+	if cfg == nil {
+		return ""
+	}
+
+	domain := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(cfg.Domain, "https://"), "http://"))
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	if idx := strings.Index(domain, ":"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.TrimSpace(domain)
 }
 
 // generatePreviousCursor generates a cursor for reverse pagination
