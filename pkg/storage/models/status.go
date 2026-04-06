@@ -201,7 +201,9 @@ func (s *Status) extractFromNote() {
 	s.Sensitive = note.Sensitive
 
 	// Extract username from author ID
-	s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
+	if strings.TrimSpace(s.AuthorUsername) == "" {
+		s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
+	}
 
 	// Extract conversation ID
 	s.ConversationID = note.ConversationID

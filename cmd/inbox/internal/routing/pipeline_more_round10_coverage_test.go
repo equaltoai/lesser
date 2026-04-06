@@ -8,14 +8,38 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
-
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
+
+type recordingStatusRepository struct {
+	interfaces.StatusRepository
+	created   []*models.Status
+	createErr error
+}
+
+func (r *recordingStatusRepository) CreateStatus(_ context.Context, status *models.Status) error {
+	if status != nil {
+		cloned := *status
+		if status.Note != nil {
+			noteCopy := *status.Note
+			cloned.Note = &noteCopy
+		}
+		if status.URLs != nil {
+			cloned.URLs = append([]string(nil), status.URLs...)
+		}
+		r.created = append(r.created, &cloned)
+	}
+
+	return r.createErr
+}
 
 func TestInboxHandler_Round10_ProcessAddRemove_ErrorBranches(t *testing.T) {
 	env := newInboxTestEnv(t)
@@ -218,6 +242,50 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			Object:     map[string]any{"type": "Article"},
 		}
 		require.NoError(t, env.handler.processRemoteCreateActivity(ctx, create, env.local))
+	})
+
+	t.Run("create note materializes canonical status", func(t *testing.T) {
+		statusRepo := &recordingStatusRepository{}
+		env.handler.statusRepository = statusRepo
+
+		noteID := "https://remote.example/users/bob/statuses/create-123"
+		parentID := "https://another.remote/users/alice/statuses/create-123"
+		published := time.Date(2025, 12, 28, 13, 0, 0, 0, time.UTC)
+
+		create := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.CreateType, ID: env.cfg.BaseURL() + "/activities/create-status-materialization"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "hello from a federated note",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+				"inReplyTo":    parentID,
+				"published":    published.Format(time.RFC3339),
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteCreateActivity(ctx, create, env.local))
+		require.Len(t, statusRepo.created, 1)
+
+		status := statusRepo.created[0]
+		require.NotNil(t, status)
+		assert.Equal(t, models.CanonicalStatusID(noteID), status.StatusID)
+		assert.Equal(t, env.remoteActorID, status.AuthorID)
+		assert.Equal(t, "bob@remote.example", status.AuthorUsername)
+		assert.Equal(t, []string{noteID}, status.URLs)
+		require.NotNil(t, status.Note)
+		assert.Equal(t, noteID, status.Note.ID)
+		assert.Equal(t, env.remoteActorID, status.Note.AttributedTo)
+		assert.Equal(t, parentID, status.Note.InReplyTo)
+		assert.Equal(t, published, status.PublishedAt)
+
+		require.NoError(t, status.BeforeCreate())
+		assert.Equal(t, "bob@remote.example", status.AuthorUsername)
+		assert.Equal(t, models.CanonicalStatusID(parentID), status.InReplyToID)
+		assert.Equal(t, models.VisibilityPublic, status.Visibility)
 	})
 
 	t.Run("update invalid object returns success", func(t *testing.T) {

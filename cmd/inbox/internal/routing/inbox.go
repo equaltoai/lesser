@@ -35,6 +35,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -69,6 +70,7 @@ type InboxHandler struct {
 	activityRepository           interfaces.ActivityRepository
 	relationshipRepository       interfaces.ConcreteRelationshipRepository
 	objectRepository             interfaces.ObjectRepository
+	statusRepository             interfaces.StatusRepository
 	likeRepository               *repositories.LikeRepository
 	socialRepository             *repositories.SocialRepository
 	federationActivityRepository *repositories.FederationActivityRepository
@@ -128,6 +130,7 @@ type repositoryCollection struct {
 	activityRepo           interfaces.ActivityRepository
 	followRepo             interfaces.ConcreteRelationshipRepository
 	objectRepo             interfaces.ObjectRepository
+	statusRepo             interfaces.StatusRepository
 	likeRepo               *repositories.LikeRepository
 	socialRepo             *repositories.SocialRepository
 	federationActivityRepo *repositories.FederationActivityRepository
@@ -290,6 +293,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 		activityRepo:     repoFactory.Activity(),
 		followRepo:       repoFactory.Relationship(),
 		objectRepo:       repoFactory.Object(),
+		statusRepo:       repoFactory.Status(),
 		likeRepo:         repoFactory.Like(),
 		domainBlockRepo:  repoFactory.DomainBlock(),
 		userRepo:         repoFactory.User(),
@@ -375,6 +379,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		activityRepository:           repositories.activityRepo,
 		relationshipRepository:       repositories.followRepo,
 		objectRepository:             repositories.objectRepo,
+		statusRepository:             repositories.statusRepo,
 		likeRepository:               repositories.likeRepo,
 		socialRepository:             repositories.socialRepo,
 		federationActivityRepository: repositories.federationActivityRepo,
@@ -1995,6 +2000,89 @@ func (ih *InboxHandler) processRejectMove(ctx context.Context, rejectActivity *a
 	return nil
 }
 
+func (ih *InboxHandler) buildCanonicalRemoteStatus(note *activitypub.Note) *models.Status {
+	if note == nil {
+		return nil
+	}
+
+	statusID := models.CanonicalStatusID(note.ID)
+	if statusID == "" {
+		return nil
+	}
+
+	noteCopy := *note
+	status := &models.Status{
+		StatusID:       statusID,
+		Note:           &noteCopy,
+		AuthorID:       strings.TrimSpace(note.AttributedTo),
+		AuthorUsername: ih.remoteStatusAuthorUsername(note),
+		URLs:           remoteStatusProjectionURLs(note),
+	}
+
+	if note.Published != nil {
+		status.PublishedAt = *note.Published
+	}
+	if note.Updated != nil {
+		status.UpdatedAt = *note.Updated
+	}
+
+	return status
+}
+
+func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
+	if ih.statusRepository == nil {
+		return fmt.Errorf("status repository not configured")
+	}
+
+	status := ih.buildCanonicalRemoteStatus(note)
+	if status == nil {
+		return fmt.Errorf("canonical remote status payload is invalid")
+	}
+
+	if err := ih.statusRepository.CreateStatus(ctx, status); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (ih *InboxHandler) remoteStatusAuthorUsername(note *activitypub.Note) string {
+	if note == nil {
+		return ""
+	}
+
+	identity := federation.DescribeActorIdentity(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID: strings.TrimSpace(note.AttributedTo),
+		},
+	}, ih.baseURL)
+
+	if identity.IsRemote && identity.Acct != "" {
+		return identity.Acct
+	}
+	if identity.Username != "" {
+		return identity.Username
+	}
+
+	return ih.extractUsernameFromActorID(note.AttributedTo)
+}
+
+func remoteStatusProjectionURLs(note *activitypub.Note) []string {
+	if note == nil {
+		return nil
+	}
+
+	urls := make([]string, 0, 1)
+	if noteID := strings.TrimSpace(note.ID); noteID != "" {
+		urls = append(urls, noteID)
+	}
+
+	return urls
+}
+
 // processRemoteCreateActivity processes an incoming Create activity from a remote instance
 func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
@@ -2039,7 +2127,16 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 
 		// Store the note (it will be marked as remote)
 		if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
-			log.Error("failed to store remote note", zap.Error(err))
+			if !dynamormerrors.IsConditionFailed(err) {
+				log.Error("failed to store remote note", zap.Error(err))
+				return err
+			}
+		}
+
+		if err := ih.materializeRemoteNoteStatus(ctx, &note); err != nil {
+			log.Error("failed to materialize remote note status",
+				zap.String("note_id", note.ID),
+				zap.Error(err))
 			return err
 		}
 	}
