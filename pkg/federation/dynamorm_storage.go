@@ -192,12 +192,6 @@ func (s *DynamORMFederationStorage) RecordFederationActivity(ctx context.Context
 	return s.federationActivityRepository.Create(ctx, modelActivity)
 }
 
-// extractHandleFromURL extracts the handle (user@domain) from an actor ID URL
-// e.g., "https://example.com/users/alice" -> "alice@example.com"
-func extractHandleFromURL(actorID string) string {
-	return models.NormalizeRemoteActorHandle(actorID)
-}
-
 func normalizeFederationCachedActor(handle string, actor *activitypub.Actor) *activitypub.Actor {
 	if actor == nil {
 		return nil

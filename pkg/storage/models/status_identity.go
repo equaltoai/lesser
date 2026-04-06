@@ -125,10 +125,6 @@ func localStatusIDFromNormalizedURL(parsed *url.URL) string {
 	return strings.TrimSpace(parts[len(parts)-1])
 }
 
-func isLocalStatusIdentifierHost(host string) bool {
-	return isLocalStatusIdentifierHostForDomain(host, config.Get().Domain)
-}
-
 func isLocalStatusIdentifierHostForDomain(host string, localDomain string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {

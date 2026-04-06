@@ -17,13 +17,13 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestExtractHandleFromURL(t *testing.T) {
-	assert.Equal(t, "alice@example.com", extractHandleFromURL("https://example.com/users/alice"))
-	assert.Equal(t, "alice@example.com", extractHandleFromURL("http://example.com/users/alice"))
-	assert.Equal(t, "alice@example.com", extractHandleFromURL("https://example.com/@alice"))
-	assert.Equal(t, "", extractHandleFromURL("https://example.com/users/"))
-	assert.Equal(t, "", extractHandleFromURL("example.com/users/alice"))
-	assert.Equal(t, "", extractHandleFromURL(""))
+func TestNormalizeRemoteActorHandle(t *testing.T) {
+	assert.Equal(t, "alice@example.com", models.NormalizeRemoteActorHandle("https://example.com/users/alice"))
+	assert.Equal(t, "alice@example.com", models.NormalizeRemoteActorHandle("http://example.com/users/alice"))
+	assert.Equal(t, "alice@example.com", models.NormalizeRemoteActorHandle("https://example.com/@alice"))
+	assert.Equal(t, "", models.NormalizeRemoteActorHandle("https://example.com/users/"))
+	assert.Equal(t, "", models.NormalizeRemoteActorHandle("example.com/users/alice"))
+	assert.Equal(t, "", models.NormalizeRemoteActorHandle(""))
 }
 
 func TestNewDynamORMFederationStorage_Smoke(t *testing.T) {

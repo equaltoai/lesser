@@ -523,6 +523,115 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 	})
 }
 
+type invalidObjectJSONMarshaler struct{}
+
+func (invalidObjectJSONMarshaler) MarshalJSON() ([]byte, error) {
+	return []byte("{"), nil
+}
+
+func TestObjectRepository_CreateObject_EarlyErrorPaths(t *testing.T) {
+	ctx := context.Background()
+	repo := NewObjectRepository(nil, "test-table", "example.com", zap.NewNop())
+
+	err := repo.CreateObject(ctx, map[string]any{"bad": make(chan int)})
+	require.Error(t, err)
+
+	err = repo.CreateObject(ctx, invalidObjectJSONMarshaler{})
+	require.Error(t, err)
+}
+
+func TestObjectRepository_ObjectModelHelperCoverage(t *testing.T) {
+	repo := NewObjectRepository(nil, "test-table", "local.example", zap.NewNop())
+	publishedAt := time.Date(2025, 2, 2, 3, 4, 5, 0, time.UTC)
+	updatedAt := publishedAt.Add(time.Minute)
+
+	t.Run("populateObjectModelDefaults fills missing fields and infers remote metadata", func(t *testing.T) {
+		objModel := &models.Object{}
+		baseObj := activitypub.BaseObject{
+			ID:        "https://remote.example/users/bob/statuses/1",
+			Type:      activitypub.NoteType,
+			Context:   []any{"https://www.w3.org/ns/activitystreams"},
+			Published: &publishedAt,
+			Updated:   &updatedAt,
+		}
+
+		repo.populateObjectModelDefaults(objModel, baseObj, "https://remote.example/users/bob")
+
+		require.Equal(t, baseObj.ID, objModel.ID)
+		require.Equal(t, activitypub.NoteType, objModel.Type)
+		require.Equal(t, "https://remote.example/users/bob", objModel.AttributedTo)
+		require.Equal(t, publishedAt, objModel.Published)
+		require.Equal(t, updatedAt, objModel.Updated)
+		require.False(t, objModel.CreatedAt.IsZero())
+		require.True(t, objModel.IsRemote)
+		require.NotEmpty(t, objModel.ContextJSON)
+	})
+
+	t.Run("populateObjectModelDefaults preserves existing values and uses now fallback", func(t *testing.T) {
+		objModel := &models.Object{
+			ID:           "keep-id",
+			Type:         activitypub.ArticleType,
+			AttributedTo: "keep-actor",
+			IsRemote:     true,
+		}
+
+		repo.populateObjectModelDefaults(objModel, activitypub.BaseObject{}, "")
+		repo.populateObjectModelDefaults(nil, activitypub.BaseObject{}, "")
+
+		require.Equal(t, "keep-id", objModel.ID)
+		require.Equal(t, activitypub.ArticleType, objModel.Type)
+		require.Equal(t, "keep-actor", objModel.AttributedTo)
+		require.False(t, objModel.Published.IsZero())
+		require.Equal(t, objModel.Published, objModel.Updated)
+		require.False(t, objModel.CreatedAt.IsZero())
+		require.True(t, objModel.IsRemote)
+	})
+
+	t.Run("cloneInputObjectModel copies slices and rejects unsupported inputs", func(t *testing.T) {
+		source := &models.Object{
+			To:  []string{"to-1"},
+			CC:  []string{"cc-1"},
+			BTo: []string{"bto-1"},
+			BCC: []string{"bcc-1"},
+		}
+
+		clonedPtr, ok := cloneInputObjectModel(source)
+		require.True(t, ok)
+		require.NotSame(t, source, clonedPtr)
+
+		clonedValue, ok := cloneInputObjectModel(*source)
+		require.True(t, ok)
+
+		source.To[0] = "changed"
+		source.CC[0] = "changed"
+		source.BTo[0] = "changed"
+		source.BCC[0] = "changed"
+
+		require.Equal(t, []string{"to-1"}, clonedPtr.To)
+		require.Equal(t, []string{"cc-1"}, clonedPtr.CC)
+		require.Equal(t, []string{"bto-1"}, clonedPtr.BTo)
+		require.Equal(t, []string{"bcc-1"}, clonedPtr.BCC)
+		require.Equal(t, []string{"to-1"}, clonedValue.To)
+
+		_, ok = cloneInputObjectModel((*models.Object)(nil))
+		require.False(t, ok)
+
+		_, ok = cloneInputObjectModel(activitypub.Note{})
+		require.False(t, ok)
+	})
+
+	t.Run("object reference helpers normalize hosts and detect remote references", func(t *testing.T) {
+		require.Equal(t, "remote.example", normalizeObjectReferenceHost(" HTTPS://Remote.Example:443/users/bob "))
+		require.Equal(t, "remote.example", normalizeObjectReferenceHost("remote.example/path"))
+		require.Equal(t, "", normalizeObjectReferenceHost("   "))
+
+		require.True(t, isRemoteObjectReference("https://remote.example/users/bob", "local.example"))
+		require.False(t, isRemoteObjectReference("https://local.example/users/alice", "local.example"))
+		require.False(t, isRemoteObjectReference("", "local.example"))
+		require.False(t, isRemoteObjectReference("https://remote.example/users/bob", ""))
+	})
+}
+
 func TestObjectRepository_GetThreadContext_AncestorsDescendantsErrorFallback(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 11, 12, 13, 14, 0, time.UTC)
