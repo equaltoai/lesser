@@ -211,75 +211,144 @@ func executeRemoteNoteStatusMigration(
 			return summary, fmt.Errorf("query remote note object rows: %w", err)
 		}
 
-		for _, item := range out.Items {
-			var object models.Object
-			if err := attributevalue.UnmarshalMap(item, &object); err != nil {
-				if !rawRemoteNoteStatusItemIsRemote(item) && !isRemoteNoteStatusBackfillIdentifier(remoteNoteStatusObjectSampleID(item, nil), localDomain) {
-					continue
-				}
-
-				summary.ScannedRemoteObjects++
-				summary.MalformedRemoteObjects++
-				appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, remoteNoteStatusObjectSampleID(item, nil))
-				if limit > 0 && summary.ScannedRemoteObjects >= limit {
-					return summary, nil
-				}
-				continue
-			}
-
-			if !shouldBackfillRemoteNoteStatusObject(&object, localDomain) {
-				continue
-			}
-
-			summary.ScannedRemoteObjects++
-			appendRemoteNoteStatusMigrationSample(&summary.SampleObjectIDs, strings.TrimSpace(object.ID))
-
-			status, ok := buildRemoteNoteStatusBackfillStatus(&object, localDomain)
-			if !ok {
-				summary.MalformedRemoteObjects++
-				appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, remoteNoteStatusObjectSampleID(item, &object))
-				if limit > 0 && summary.ScannedRemoteObjects >= limit {
-					return summary, nil
-				}
-				continue
-			}
-
-			summary.MaterializableObjects++
-			appendRemoteNoteStatusMigrationSample(&summary.SampleStatusIDs, status.StatusID)
-
-			_, err = writer.GetStatus(ctx, status.StatusID)
-			switch {
-			case err == nil:
-				summary.ExistingStatuses++
-			case isRemoteNoteStatusBackfillNotFound(err):
-				summary.MissingStatuses++
-				if apply {
-					if err := writer.CreateStatus(ctx, status); err != nil {
-						if dynamormerrors.IsConditionFailed(err) {
-							continue
-						}
-						return summary, fmt.Errorf("create canonical status %q from remote object %q: %w", status.StatusID, object.ID, err)
-					}
-					summary.CreatedStatuses++
-				}
-			default:
-				return summary, fmt.Errorf("load canonical status %q for remote object %q: %w", status.StatusID, object.ID, err)
-			}
-
-			if limit > 0 && summary.ScannedRemoteObjects >= limit {
-				return summary, nil
-			}
+		stop, err := processRemoteNoteStatusMigrationPage(ctx, writer, out.Items, localDomain, apply, limit, &summary)
+		if err != nil {
+			return summary, err
 		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			return summary, nil
-		}
-		if limit > 0 && summary.ScannedRemoteObjects >= limit {
+		if stop || len(out.LastEvaluatedKey) == 0 {
 			return summary, nil
 		}
 
 		queryInput.ExclusiveStartKey = out.LastEvaluatedKey
 	}
+}
+
+func processRemoteNoteStatusMigrationPage(
+	ctx context.Context,
+	writer remoteNoteStatusBackfillWriter,
+	items []map[string]types.AttributeValue,
+	localDomain string,
+	apply bool,
+	limit int,
+	summary *remoteNoteStatusMigrationSummary,
+) (bool, error) {
+	for _, item := range items {
+		stop, err := processRemoteNoteStatusMigrationItem(ctx, writer, item, localDomain, apply, limit, summary)
+		if err != nil || stop {
+			return stop, err
+		}
+	}
+
+	return false, nil
+}
+
+func processRemoteNoteStatusMigrationItem(
+	ctx context.Context,
+	writer remoteNoteStatusBackfillWriter,
+	item map[string]types.AttributeValue,
+	localDomain string,
+	apply bool,
+	limit int,
+	summary *remoteNoteStatusMigrationSummary,
+) (bool, error) {
+	object, ok := decodeRemoteNoteStatusMigrationObject(item, localDomain)
+	if !ok {
+		return false, nil
+	}
+	if object == nil {
+		recordRemoteNoteStatusMalformedItem(summary, remoteNoteStatusObjectSampleID(item, nil))
+		return remoteNoteStatusMigrationLimitReached(limit, summary), nil
+	}
+
+	summary.ScannedRemoteObjects++
+	appendRemoteNoteStatusMigrationSample(&summary.SampleObjectIDs, strings.TrimSpace(object.ID))
+
+	status, ok := buildRemoteNoteStatusBackfillStatus(object, localDomain)
+	if !ok {
+		summary.MalformedRemoteObjects++
+		appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, remoteNoteStatusObjectSampleID(item, object))
+		return remoteNoteStatusMigrationLimitReached(limit, summary), nil
+	}
+
+	summary.MaterializableObjects++
+	appendRemoteNoteStatusMigrationSample(&summary.SampleStatusIDs, status.StatusID)
+
+	if err := applyRemoteNoteStatusBackfillCandidate(ctx, writer, object, status, apply, summary); err != nil {
+		return false, err
+	}
+
+	return remoteNoteStatusMigrationLimitReached(limit, summary), nil
+}
+
+func decodeRemoteNoteStatusMigrationObject(
+	item map[string]types.AttributeValue,
+	localDomain string,
+) (*models.Object, bool) {
+	var object models.Object
+	if err := attributevalue.UnmarshalMap(item, &object); err != nil {
+		if !rawRemoteNoteStatusItemIsRemote(item) &&
+			!isRemoteNoteStatusBackfillIdentifier(remoteNoteStatusObjectSampleID(item, nil), localDomain) {
+			return nil, false
+		}
+
+		return nil, true
+	}
+
+	if !shouldBackfillRemoteNoteStatusObject(&object, localDomain) {
+		return nil, false
+	}
+
+	return &object, true
+}
+
+func recordRemoteNoteStatusMalformedItem(summary *remoteNoteStatusMigrationSummary, sampleID string) {
+	if summary == nil {
+		return
+	}
+
+	summary.ScannedRemoteObjects++
+	summary.MalformedRemoteObjects++
+	appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, sampleID)
+}
+
+func applyRemoteNoteStatusBackfillCandidate(
+	ctx context.Context,
+	writer remoteNoteStatusBackfillWriter,
+	object *models.Object,
+	status *models.Status,
+	apply bool,
+	summary *remoteNoteStatusMigrationSummary,
+) error {
+	_, err := writer.GetStatus(ctx, status.StatusID)
+	switch {
+	case err == nil:
+		summary.ExistingStatuses++
+		return nil
+	case isRemoteNoteStatusBackfillNotFound(err):
+		summary.MissingStatuses++
+		if !apply {
+			return nil
+		}
+
+		if err := writer.CreateStatus(ctx, status); err != nil {
+			if dynamormerrors.IsConditionFailed(err) {
+				return nil
+			}
+			return fmt.Errorf("create canonical status %q from remote object %q: %w", status.StatusID, object.ID, err)
+		}
+		summary.CreatedStatuses++
+		return nil
+	default:
+		return fmt.Errorf("load canonical status %q for remote object %q: %w", status.StatusID, object.ID, err)
+	}
+}
+
+func remoteNoteStatusMigrationLimitReached(limit int, summary *remoteNoteStatusMigrationSummary) bool {
+	if limit <= 0 || summary == nil {
+		return false
+	}
+
+	return summary.ScannedRemoteObjects >= limit
 }
 
 func buildRemoteNoteStatusBackfillStatus(object *models.Object, localDomain string) (*models.Status, bool) {

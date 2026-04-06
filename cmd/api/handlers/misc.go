@@ -219,51 +219,6 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 	h.addAuthorMatchedStatuses(ctx, params, viewerUsername, seen, result)
 }
 
-// convertObjectToStatusResult converts object to status search result
-func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSearchResult {
-	switch v := obj.(type) {
-	case *activitypub.Note:
-		result := &storage.StatusSearchResult{
-			StatusID: v.ID,
-			URL:      v.ID,
-			Content:  v.Content,
-			AuthorID: v.AttributedTo,
-		}
-		if v.Published != nil {
-			result.Published = *v.Published
-		}
-		return result
-	case *storagemodels.Object:
-		return &storage.StatusSearchResult{
-			StatusID:  v.ID,
-			URL:       v.URL,
-			Content:   v.Content,
-			AuthorID:  v.AttributedTo,
-			Published: v.Published,
-		}
-	case map[string]any:
-		result := &storage.StatusSearchResult{}
-		if id, ok := v["id"].(string); ok {
-			result.StatusID = id
-		}
-		if url, ok := v["url"].(string); ok {
-			result.URL = url
-		}
-		if content, ok := v["content"].(string); ok {
-			result.Content = content
-		}
-		if authorID, ok := v["attributedTo"].(string); ok {
-			result.AuthorID = authorID
-		}
-		if published, ok := v["published"].(time.Time); ok {
-			result.Published = published
-		}
-		return result
-	default:
-		return nil
-	}
-}
-
 // convertStatusResultToAPI converts status result to API format
 func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult, viewerUsername string) models.Status {
 	if status, err := h.resolveStatusFromSearchResult(ctx.Context(), sr); err == nil && status != nil {
