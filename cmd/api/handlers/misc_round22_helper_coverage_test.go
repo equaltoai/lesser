@@ -10,19 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
-
-type miscRound22ObjectRepo struct {
-	interfaces.ObjectRepository
-	object any
-}
-
-func (r *miscRound22ObjectRepo) GetObject(_ context.Context, _ string) (any, error) {
-	return r.object, nil
-}
 
 func TestMiscRound22_ConvertThinStatusResultToAPIAddsResolvedAccount(t *testing.T) {
 	cfg := round11TestConfig()
@@ -147,18 +137,12 @@ func TestSearchRound22_ConvertStatusSearchResultsHydratesFullStatus(t *testing.T
 	require.Equal(t, 0.75, results[0].Score)
 }
 
-func TestMiscRound22_SearchStatusByURLFallsBackToObjectLookup(t *testing.T) {
+func TestMiscRound22_SearchStatusByURLIgnoresObjectOnlyArtifacts(t *testing.T) {
 	cfg := round11TestConfig()
 	statusURL := "https://remote.example/objects/search-only"
 
 	repos := &MockRepositoryStorage{}
 	repos.On("Status").Return(nil).Maybe()
-	repos.On("Object").Return(&miscRound22ObjectRepo{
-		object: &activitypub.Note{
-			BaseObject: activitypub.BaseObject{ID: statusURL, Type: activitypub.NoteType},
-			Content:    "fallback object content",
-		},
-	}).Once()
 
 	handler := &Handler{cfg: cfg, repos: repos}
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
@@ -167,9 +151,7 @@ func TestMiscRound22_SearchStatusByURLFallsBackToObjectLookup(t *testing.T) {
 	result := apimodels.SearchResult{Statuses: []apimodels.Status{}}
 	handler.searchStatusByURL(ctx, statusURL, "", &result)
 
-	require.Len(t, result.Statuses, 1)
-	require.Equal(t, statusURL, result.Statuses[0].ID)
-	require.Equal(t, "fallback object content", result.Statuses[0].Content)
+	require.Empty(t, result.Statuses)
 	repos.AssertExpectations(t)
 }
 
@@ -311,4 +293,32 @@ func TestMiscRound22_SearchStatusByURLUsesStoredStatusWhenAvailable(t *testing.T
 	require.Equal(t, statusID, result.Statuses[0].ID)
 	require.Equal(t, "stored status content", result.Statuses[0].Content)
 	require.Equal(t, cfg.BaseURL()+"/@simulacrum/"+statusID, result.Statuses[0].URL)
+}
+
+func TestMiscRound22_ResolveStatusBySearchURLUsesCanonicalRemoteStatusID(t *testing.T) {
+	cfg := round11TestConfig()
+	remoteURL := "https://remote.example/users/bob/statuses/abc-123"
+	statusID := storagemodels.CanonicalStatusID(remoteURL)
+
+	state := &round10QueryState{
+		notFoundPKs: map[string]bool{
+			"status#abc-123": true,
+		},
+		statusByID: map[string]storagemodels.Status{
+			statusID: {
+				StatusID:       statusID,
+				AuthorID:       "https://remote.example/users/bob",
+				AuthorUsername: "bob@remote.example",
+				Content:        "remote canonical status",
+				Visibility:     storagemodels.VisibilityPublic,
+			},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+
+	status, err := handler.resolveStatusBySearchURL(context.Background(), remoteURL)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.Equal(t, statusID, status.StatusID)
 }

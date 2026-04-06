@@ -35,14 +35,21 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 				},
 			},
 		},
-		objectsByID: map[string]storagemodels.Object{
-			objID: {
-				ID:           objID,
-				Type:         activitypub.NoteType,
-				Content:      "hello world",
-				Published:    now.Add(-1 * time.Hour),
-				AttributedTo: cfg.BaseURL() + "/users/alice",
-				URL:          objID,
+		statusByID: map[string]storagemodels.Status{
+			"obj-1": {
+				StatusID:       "obj-1",
+				AuthorID:       cfg.BaseURL() + "/users/alice",
+				AuthorUsername: "alice",
+				Content:        "hello world",
+				Visibility:     storagemodels.VisibilityPublic,
+				PublishedAt:    now.Add(-1 * time.Hour),
+				CreatedAt:      now.Add(-1 * time.Hour),
+				UpdatedAt:      now.Add(-1 * time.Hour),
+				Note: &activitypub.Note{
+					BaseObject:   activitypub.BaseObject{ID: objID, Type: activitypub.NoteType},
+					Content:      "hello world",
+					AttributedTo: cfg.BaseURL() + "/users/alice",
+				},
 			},
 		},
 	}
