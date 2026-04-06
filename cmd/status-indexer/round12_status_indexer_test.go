@@ -103,6 +103,14 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 			},
 		},
 	}))
+	require.True(t, si.isObjectMetadataRecord(events.DynamoDBEventRecord{
+		Change: events.DynamoDBStreamRecord{
+			Keys: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("object#1"),
+				"SK": events.NewStringAttribute("object#1"),
+			},
+		},
+	}))
 
 	_, err := si.extractObjectFromRecord(events.DynamoDBEventRecord{})
 	require.Error(t, err)
@@ -120,6 +128,19 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+
+	flatObjectMap, err := si.extractObjectFromRecord(events.DynamoDBEventRecord{
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"type":         events.NewStringAttribute("Note"),
+				"id":           events.NewStringAttribute("status-flat"),
+				"content":      events.NewStringAttribute("flat record"),
+				"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "status-flat", flatObjectMap["id"].String())
 
 	objectMap := map[string]events.DynamoDBAttributeValue{
 		"type":         events.NewStringAttribute("Note"),
@@ -159,6 +180,8 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 
 	require.Equal(t, "example.com", si.getDomain())
 	require.Equal(t, "localhost", (&StatusIndexer{}).getDomain())
+	require.Equal(t, "https://example.com/statuses/status-1", si.statusURL("status-1"))
+	require.Equal(t, "https://remote.example/objects/status-1", si.statusURL("https://remote.example/objects/status-1"))
 
 	require.Equal(t, "unknown", getRequestID(nil))
 	require.Equal(t, "unknown", getRequestID(context.Background()))
@@ -190,6 +213,7 @@ func TestStatusIndexer_calculateEngagementAndReplies_Round12(t *testing.T) {
 	require.Equal(t, 1, boosts)
 	require.Equal(t, 2, replies)
 	require.Equal(t, float64(2)*1.0+float64(1)*2.0+float64(2)*1.5, score)
+	q.AssertCalled(t, "Index", "gsi6")
 
 	q.ExpectedCalls = nil
 	q.On("Index", mock.Anything).Return(q)
@@ -295,30 +319,46 @@ func TestStatusIndexer_processRecord_Round12(t *testing.T) {
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
 			Keys: map[string]events.DynamoDBAttributeValue{
-				"PK": events.NewStringAttribute("OBJECT#1"),
-				"SK": events.NewStringAttribute("METADATA"),
+				"PK": events.NewStringAttribute("object#status-1"),
+				"SK": events.NewStringAttribute("object#status-1"),
 			},
 		},
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
-		"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-			"type": events.NewStringAttribute("Image"),
-		}),
+		"type": events.NewStringAttribute("Image"),
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
-		"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-			"type":         events.NewStringAttribute("Note"),
-			"id":           events.NewStringAttribute("status-1"),
-			"content":      events.NewStringAttribute("Hello world"),
-			"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
-			"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
-		}),
+		"type":         events.NewStringAttribute("Note"),
+		"id":           events.NewStringAttribute("status-1"),
+		"content":      events.NewStringAttribute("Hello world"),
+		"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+		"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
+
+	legacyRecord := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			Keys: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("OBJECT#legacy"),
+				"SK": events.NewStringAttribute("METADATA"),
+			},
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+					"type":         events.NewStringAttribute("Note"),
+					"id":           events.NewStringAttribute("status-legacy"),
+					"content":      events.NewStringAttribute("Hello legacy"),
+					"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+					"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+				}),
+			},
+		},
+	}
+	require.NoError(t, si.processRecord(context.Background(), legacyRecord))
 }
 
 func TestHandleStatusIndexerStreamRecord_Round12(t *testing.T) {
@@ -337,6 +377,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 	origLoadAWS := loadAWSConfigFn
 	origNewAI := newAIServiceFn
 	origNewIndexer := newStatusIndexerFn
+	origNewClient := newLambdaClientFn
 	origStart := lambdaStartFn
 	origProcessor := processor
 	t.Cleanup(func() {
@@ -344,6 +385,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 		loadAWSConfigFn = origLoadAWS
 		newAIServiceFn = origNewAI
 		newStatusIndexerFn = origNewIndexer
+		newLambdaClientFn = origNewClient
 		lambdaStartFn = origStart
 		processor = origProcessor
 	})
@@ -395,4 +437,56 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 
 	main()
 	require.True(t, called)
+}
+
+func TestStatusIndexer_Main_FallsBackToManualDynamoClient_Round12(t *testing.T) {
+	origMust := mustInitializeLambdaFn
+	origLoadAWS := loadAWSConfigFn
+	origNewAI := newAIServiceFn
+	origNewIndexer := newStatusIndexerFn
+	origNewClient := newLambdaClientFn
+	origStart := lambdaStartFn
+	origProcessor := processor
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMust
+		loadAWSConfigFn = origLoadAWS
+		newAIServiceFn = origNewAI
+		newStatusIndexerFn = origNewIndexer
+		newLambdaClientFn = origNewClient
+		lambdaStartFn = origStart
+		processor = origProcessor
+	})
+
+	mockDB := new(dynamormmocks.MockDB)
+	fakeCtx := &common.LambdaContext{
+		Config: &config.Config{
+			Domain:          "example.com",
+			Region:          "us-east-1",
+			DynamoTableName: "test-table",
+		},
+		Logger:   zap.NewNop(),
+		DynamoDB: nil,
+	}
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeCtx }
+	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{}, nil
+	}
+	newAIServiceFn = func(aws.Config, *ai.AIConfig) embeddingGenerator { return nil }
+	newLambdaClientFn = func(context.Context, string) (dynamormCore.DB, error) { return mockDB, nil }
+
+	var gotDB dynamormCore.DB
+	newStatusIndexerFn = func(db dynamormCore.DB, tableName, domain string, _ embeddingGenerator, logger *zap.Logger) *StatusIndexer {
+		gotDB = db
+		return &StatusIndexer{db: db, tableName: tableName, domain: domain, logger: logger, likeRepo: &fakeLikeCounter{}}
+	}
+
+	called := false
+	lambdaStartFn = func(h any) {
+		called = true
+	}
+
+	main()
+	require.True(t, called)
+	require.Same(t, mockDB, gotDB)
+	require.Same(t, mockDB, fakeCtx.DynamoDB)
 }

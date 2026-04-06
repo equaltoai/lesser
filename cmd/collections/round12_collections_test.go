@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -24,8 +25,10 @@ import (
 )
 
 type fakeActorRepo struct {
-	actor *activitypub.Actor
-	err   error
+	actor     *activitypub.Actor
+	err       error
+	cached    map[string]*activitypub.Actor
+	cachedErr error
 }
 
 func (f *fakeActorRepo) GetActor(context.Context, string) (*activitypub.Actor, error) {
@@ -33,6 +36,16 @@ func (f *fakeActorRepo) GetActor(context.Context, string) (*activitypub.Actor, e
 		return nil, f.err
 	}
 	return f.actor, nil
+}
+
+func (f *fakeActorRepo) GetCachedRemoteActor(_ context.Context, handle string) (*activitypub.Actor, error) {
+	if f.cachedErr != nil {
+		return nil, f.cachedErr
+	}
+	if actor, ok := f.cached[handle]; ok {
+		return actor, nil
+	}
+	return nil, common.ActorNotFoundError{Username: handle}
 }
 
 type fakeRelationshipRepo struct {
@@ -107,6 +120,20 @@ func (f *fakeInstanceRepo) GetInstanceState(context.Context) (*storageModels.Ins
 		return nil, f.err
 	}
 	return f.state, nil
+}
+
+type fakeRemoteResolver struct {
+	resolution *federation.ExactActorResolution
+	err        error
+	calls      int
+}
+
+func (f *fakeRemoteResolver) ResolveExactActor(context.Context, string, string) (*federation.ExactActorResolution, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resolution, nil
 }
 
 type extendedMockDB struct {
@@ -276,6 +303,50 @@ func TestReturnCollectionAndPages_Round12(t *testing.T) {
 	items, ok = page.OrderedItems.([]any)
 	require.True(t, ok)
 	require.Equal(t, "obj-1", items[0])
+
+	cfg.Domain = "example.com"
+	ch.actorRepo = &fakeActorRepo{
+		actor: actor,
+		cached: map[string]*activitypub.Actor{
+			"bob@remote.example": {
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob"},
+				PreferredUsername: "bob",
+			},
+		},
+	}
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeFollowers, []string{"bob@remote.example", "carol"}, nil, "", "", 10)
+	require.NoError(t, err)
+	page = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
+	items, ok = page.OrderedItems.([]any)
+	require.True(t, ok)
+	require.Equal(t, "https://remote.example/users/bob", items[0])
+	require.Equal(t, "https://example.com/users/carol", items[1])
+
+	resolver := &fakeRemoteResolver{
+		resolution: &federation.ExactActorResolution{
+			Actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/@erin"},
+				PreferredUsername: "erin",
+			},
+		},
+	}
+	ch.actorRepo = &fakeActorRepo{actor: actor}
+	ch.remoteResolver = resolver
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeFollowers, []string{"erin@remote.example"}, nil, "", "", 10)
+	require.NoError(t, err)
+	page = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
+	items, ok = page.OrderedItems.([]any)
+	require.True(t, ok)
+	require.Equal(t, "https://remote.example/@erin", items[0])
+	require.Equal(t, 1, resolver.calls)
+
+	ch.remoteResolver = &fakeRemoteResolver{err: errors.New("lookup failed")}
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeFollowers, []string{"frank@remote.example"}, nil, "", "", 10)
+	require.NoError(t, err)
+	page = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
+	items, ok = page.OrderedItems.([]any)
+	require.True(t, ok)
+	require.Equal(t, "https://remote.example/users/frank", items[0])
 }
 
 func TestHandleReverseDirection_Round12(t *testing.T) {

@@ -1720,20 +1720,35 @@ func (s *Service) getRelatedAccounts(ctx context.Context, username string, limit
 	// Convert user IDs to accounts
 	var accounts []*storage.Account
 	for _, userID := range relatedIDs {
-		// Get the actor for each user
-		actor, err := s.storage.Actor().GetActor(ctx, userID)
+		account, err := s.resolveRelatedAccount(ctx, userID)
 		if err != nil {
 			s.logger.Warn(fmt.Sprintf("failed to get %s actor", relationType), zap.String("actor", userID), zap.Error(err))
 			continue
 		}
-
-		account := s.buildAccountFromActor(ctx, actor, userID)
 		if account != nil {
 			accounts = append(accounts, account)
 		}
 	}
 
 	return accounts, nextCursor, nil
+}
+
+func (s *Service) resolveRelatedAccount(ctx context.Context, identifier string) (*storage.Account, error) {
+	normalized := s.normalizeActorIdentifier(identifier)
+	if normalized == "" {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+
+	// Local usernames stay on the direct actor lookup path.
+	if !strings.Contains(normalized, "@") {
+		actor, err := s.storage.Actor().GetActor(ctx, normalized)
+		if err != nil {
+			return nil, err
+		}
+		return s.buildAccountFromActor(ctx, actor, normalized), nil
+	}
+
+	return s.resolveFollowStorageAccount(ctx, normalized, false)
 }
 
 // GetFollowers retrieves followers for a user
@@ -2783,6 +2798,7 @@ func (s *Service) queueFederationFollow(ctx context.Context, follower, following
 			Type:      "Follow",
 			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, activityID),
 			Published: &now,
+			To:        []string{following.Actor.ID},
 		},
 		Actor:  follower.Actor.ID,
 		Object: following.Actor.ID,

@@ -253,7 +253,7 @@ type testRepositoryStorage struct {
 	domainBlockRepo  *repositories.DomainBlockRepository
 	relationshipRepo interfaces.ConcreteRelationshipRepository
 	socialRepo       *repositories.SocialRepository
-	userRepo         *repositories.UserRepository
+	userRepo         interfaces.UserRepository
 }
 
 func (s *testRepositoryStorage) GetDB() dynamormCore.DB { return s.db }
@@ -1499,7 +1499,15 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 	}
 
 	fed := &MockFederationService{}
-	fed.On("QueueActivity", mock.Anything, mock.Anything).Return(fmt.Errorf("queue failed")).Maybe()
+	var queued []*activitypub.Activity
+	fed.On("QueueActivity", mock.Anything, mock.AnythingOfType("*activitypub.Activity")).
+		Run(func(args mock.Arguments) {
+			if activity, ok := args.Get(1).(*activitypub.Activity); ok {
+				queued = append(queued, activity)
+			}
+		}).
+		Return(fmt.Errorf("queue failed")).
+		Maybe()
 
 	service := NewService(nil, nil, publisher, fed, zap.NewNop(), "example.com")
 
@@ -1520,6 +1528,97 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 
 	// Remote actor queues and handles QueueActivity errors.
 	service.queueFederationFollow(ctx, follower, followingRemote, "act", "follow")
+	require.Len(t, queued, 1)
+	require.Equal(t, followingRemote.Actor.ID, queued[0].Object)
+	require.Equal(t, []string{followingRemote.Actor.ID}, queued[0].To)
+}
+
+func TestService_GetRelatedAccounts_RemoteAwareReadback(t *testing.T) {
+	ctx := context.Background()
+	service, storageHarness := newServiceWithStorageHarness(t)
+
+	actorRepo := inmemory.NewActorRepository()
+	userRepo := inmemory.NewUserRepository()
+	relationshipRepo := inmemory.NewRelationshipRepository()
+	storageHarness.actorRepo = actorRepo
+	storageHarness.userRepo = userRepo
+	storageHarness.relationshipRepo = relationshipRepo
+
+	createLocalActor := func(username string) *activitypub.Actor {
+		return &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   fmt.Sprintf("https://example.com/users/%s", username),
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: username,
+			Inbox:             fmt.Sprintf("https://example.com/users/%s/inbox", username),
+			Outbox:            fmt.Sprintf("https://example.com/users/%s/outbox", username),
+		}
+	}
+
+	for _, username := range []string{"alice", "bob", "carol"} {
+		require.NoError(t, actorRepo.CreateActor(ctx, createLocalActor(username), ""))
+	}
+
+	remoteFollower := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.social/users/dave",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "dave",
+		URL:               "https://remote.social/@dave",
+		Inbox:             "https://remote.social/users/dave/inbox",
+		Outbox:            "https://remote.social/users/dave/outbox",
+	}
+	remoteFollowing := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.social/users/erin",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "erin",
+		URL:               "https://remote.social/@erin",
+		Inbox:             "https://remote.social/users/erin/inbox",
+		Outbox:            "https://remote.social/users/erin/outbox",
+	}
+	actorRepo.SetCachedRemoteActor("dave@remote.social", remoteFollower, time.Hour)
+	actorRepo.SetCachedRemoteActor("erin@remote.social", remoteFollowing, time.Hour)
+
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "bob", "alice", "act-bob"))
+	require.NoError(t, relationshipRepo.AcceptFollowRequest(ctx, "bob", "alice"))
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "dave@remote.social", "alice", "act-dave"))
+	require.NoError(t, relationshipRepo.AcceptFollowRequest(ctx, "dave@remote.social", "alice"))
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "alice", "carol", "act-carol"))
+	require.NoError(t, relationshipRepo.AcceptFollowRequest(ctx, "alice", "carol"))
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "alice", "erin@remote.social", "act-erin"))
+	require.NoError(t, relationshipRepo.AcceptFollowRequest(ctx, "alice", "erin@remote.social"))
+
+	followers, _, err := service.GetFollowers(ctx, "alice", 10, "")
+	require.NoError(t, err)
+	require.Len(t, followers, 2)
+
+	followerAccounts := make(map[string]string, len(followers))
+	for _, account := range followers {
+		require.NotNil(t, account)
+		require.NotNil(t, account.User)
+		require.NotNil(t, account.Actor)
+		followerAccounts[account.User.Username] = account.Actor.ID
+	}
+	require.Equal(t, "https://example.com/users/bob", followerAccounts["bob"])
+	require.Equal(t, remoteFollower.ID, followerAccounts["dave@remote.social"])
+
+	following, _, err := service.GetFollowing(ctx, "alice", 10, "")
+	require.NoError(t, err)
+	require.Len(t, following, 2)
+
+	followingAccounts := make(map[string]string, len(following))
+	for _, account := range following {
+		require.NotNil(t, account)
+		require.NotNil(t, account.User)
+		require.NotNil(t, account.Actor)
+		followingAccounts[account.User.Username] = account.Actor.ID
+	}
+	require.Equal(t, "https://example.com/users/carol", followingAccounts["carol"])
+	require.Equal(t, remoteFollowing.ID, followingAccounts["erin@remote.social"])
 }
 
 func TestIsNilFederationService(t *testing.T) {
