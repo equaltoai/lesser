@@ -369,6 +369,33 @@ func TestExecuteRemoteNoteStatusMigration_QueryPaginationAndErrors(t *testing.T)
 		require.Len(t, client.queryInputs, 2)
 		require.Equal(t, "next", strAttr(t, client.queryInputs[1].ExclusiveStartKey["PK"]))
 	})
+
+	t.Run("limit stops pagination before following the cursor", func(t *testing.T) {
+		client := &fakeUserKeyMigrationClient{
+			queryOutputs: []*dynamodb.QueryOutput{
+				{
+					Items: []map[string]types.AttributeValue{
+						remoteNoteObjectItem(t, "https://remote.example/users/bob/statuses/limit-stop", "https://remote.example/users/bob", "page one", now, true, ""),
+					},
+					LastEvaluatedKey: map[string]types.AttributeValue{
+						"PK": &types.AttributeValueMemberS{Value: "next"},
+					},
+				},
+				{
+					Items: []map[string]types.AttributeValue{
+						remoteNoteObjectItem(t, "https://remote.example/users/bob/statuses/should-not-be-read", "https://remote.example/users/bob", "page two", now.Add(time.Minute), true, ""),
+					},
+				},
+			},
+		}
+		writer := &fakeRemoteNoteStatusBackfillWriter{statuses: map[string]*models.Status{}}
+
+		summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", localDomain, false, 1)
+		require.NoError(t, err)
+		require.Equal(t, 1, summary.ScannedRemoteObjects)
+		require.Equal(t, 1, summary.MaterializableObjects)
+		require.Len(t, client.queryInputs, 1)
+	})
 }
 
 func TestRemoteNoteStatusMigration_HelperCoverage(t *testing.T) {

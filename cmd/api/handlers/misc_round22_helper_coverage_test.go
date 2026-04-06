@@ -356,6 +356,26 @@ func TestMiscRound22_SearchHelperPureFunctions(t *testing.T) {
 	}, "other"))
 }
 
+func TestMiscRound22_ConvertStatusResultToAPIFallsBackWhenResolutionMisses(t *testing.T) {
+	cfg := round11TestConfig()
+	repos := &MockRepositoryStorage{}
+	repos.On("Status").Return(nil).Maybe()
+	handler := &Handler{cfg: cfg, repos: repos}
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
+	require.NoError(t, err)
+
+	result := handler.convertStatusResultToAPI(ctx, &storage.StatusSearchResult{
+		StatusID:  "missing-status",
+		Content:   "thin fallback content",
+		URL:       cfg.BaseURL() + "/@ghost/missing-status",
+		Published: time.Date(2026, 3, 11, 12, 40, 0, 0, time.UTC),
+	}, "")
+
+	require.Equal(t, "missing-status", result.ID)
+	require.Equal(t, "thin fallback content", result.Content)
+	require.Equal(t, cfg.BaseURL()+"/@ghost/missing-status", result.URL)
+}
+
 func TestMiscRound22_ResolveStatusFromSearchResultHandlesFallbacks(t *testing.T) {
 	_, err := (*Handler)(nil).resolveStatusFromSearchResult(context.Background(), nil)
 	require.EqualError(t, err, "status repository unavailable")
@@ -391,6 +411,11 @@ func TestMiscRound22_ResolveStatusFromSearchResultHandlesFallbacks(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.Equal(t, canonicalID, status.StatusID)
+}
+
+func TestMiscRound22_ResolveStatusBySearchURLReturnsRepositoryUnavailable(t *testing.T) {
+	_, err := (&Handler{}).resolveStatusBySearchURL(context.Background(), "https://remote.example/users/bob/statuses/missing")
+	require.EqualError(t, err, "status repository unavailable")
 }
 
 func TestMiscRound22_ExecuteHashtagSearchAddsPlaceholderWhenNoMatches(t *testing.T) {
@@ -479,4 +504,79 @@ func TestMiscRound22_SearchStatusByContentAugmentsAuthorTimeline(t *testing.T) {
 
 	require.NotEmpty(t, result.Statuses)
 	require.Equal(t, statusID, result.Statuses[0].ID)
+}
+
+func TestMiscRound22_AddAuthorMatchedStatusesSkipsSeenAndInvisibleTimelineStatuses(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, 3, 11, 12, 55, 0, 0, time.UTC)
+	authorID := cfg.ActorURL("simulacrum")
+
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"simulacrum": {
+				Username:     "simulacrum",
+				DisplayName:  "Simulacrum",
+				CreatedAt:    now.Add(-24 * time.Hour),
+				UpdatedAt:    now.Add(-24 * time.Hour),
+				Discoverable: true,
+				Role:         "user",
+			},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"simulacrum": {
+				Username: "simulacrum",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: authorID, Type: "Service"},
+					PreferredUsername: "simulacrum",
+					Name:              "Simulacrum",
+					Discoverable:      true,
+				},
+				NumericID: common.GenerateNumericID("simulacrum"),
+			},
+		},
+		statusList: []storagemodels.Status{
+			{
+				StatusID:       "seen-status",
+				AuthorID:       authorID,
+				AuthorUsername: "simulacrum",
+				Content:        "already returned",
+				Visibility:     storagemodels.VisibilityPublic,
+				PublishedAt:    now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				Note: &activitypub.Note{
+					BaseObject:   activitypub.BaseObject{ID: authorID + "/statuses/seen-status", Type: activitypub.NoteType},
+					Content:      "already returned",
+					AttributedTo: authorID,
+				},
+			},
+			{
+				StatusID:       "hidden-status",
+				AuthorID:       authorID,
+				AuthorUsername: "simulacrum",
+				Content:        "private timeline entry",
+				Visibility:     storagemodels.VisibilityPrivate,
+				PublishedAt:    now.Add(time.Minute),
+				CreatedAt:      now.Add(time.Minute),
+				UpdatedAt:      now.Add(time.Minute),
+				Note: &activitypub.Note{
+					BaseObject:   activitypub.BaseObject{ID: authorID + "/statuses/hidden-status", Type: activitypub.NoteType},
+					Content:      "private timeline entry",
+					AttributedTo: authorID,
+				},
+			},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
+	require.NoError(t, err)
+
+	seen := map[string]struct{}{"seen-status": {}}
+	result := apimodels.SearchResult{Statuses: []apimodels.Status{}}
+	handler.addAuthorMatchedStatuses(ctx, &SearchParams{Query: "simulacrum", Limit: 3}, "other-user", seen, &result)
+
+	require.Empty(t, result.Statuses)
+	require.Len(t, seen, 1)
+	require.Contains(t, seen, "seen-status")
 }
