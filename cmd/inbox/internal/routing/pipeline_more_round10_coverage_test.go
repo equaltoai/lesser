@@ -466,6 +466,43 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		assert.Equal(t, noteID, status.Note.ID)
 	})
 
+	t.Run("update note preserves tombstone metadata", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/update-deleted-123"
+		deletedAt := time.Date(2025, 12, 28, 11, 0, 0, 0, time.UTC)
+		statusRepo := &recordingStatusRepository{
+			statuses: map[string]*models.Status{
+				models.CanonicalStatusID(noteID): {
+					StatusID:    models.CanonicalStatusID(noteID),
+					AuthorID:    env.remoteActorID,
+					Deleted:     true,
+					DeletedAt:   &deletedAt,
+					PublishedAt: time.Date(2025, 12, 28, 10, 0, 0, 0, time.UTC),
+					CreatedAt:   time.Date(2025, 12, 28, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		env.handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-preserves-tombstone"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "hello after delete",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.updated, 1)
+		require.True(t, statusRepo.updated[0].Deleted)
+		require.NotNil(t, statusRepo.updated[0].DeletedAt)
+		assert.Equal(t, deletedAt, *statusRepo.updated[0].DeletedAt)
+	})
+
 	t.Run("update note materializes missing canonical status", func(t *testing.T) {
 		noteID := "https://remote.example/users/bob/statuses/update-create-123"
 		statusRepo := &recordingStatusRepository{}

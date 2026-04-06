@@ -14,7 +14,7 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 		return nil
 	}
 
-	statusID := models.CanonicalStatusID(note.ID)
+	statusID := models.CanonicalStatusIDForDomain(note.ID, localDomain)
 	if statusID == "" {
 		return nil
 	}

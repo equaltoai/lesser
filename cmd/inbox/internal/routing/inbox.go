@@ -2079,6 +2079,8 @@ func mergeExistingRemoteStatusProjection(projected, existing *models.Status) {
 	projected.ReblogCount = existing.ReblogCount
 	projected.ReplyCount = existing.ReplyCount
 	projected.QuoteCount = existing.QuoteCount
+	projected.Deleted = existing.Deleted
+	projected.DeletedAt = existing.DeletedAt
 	projected.Flagged = existing.Flagged
 	projected.Version = existing.Version
 	projected.BoostOfStatusID = existing.BoostOfStatusID

@@ -63,10 +63,12 @@ func TestRunMigrateRemoteNoteStatuses_PrintsDryRunSummary(t *testing.T) {
 	previousLoadAWSConfig := loadAWSConfigForCLIFn
 	previousClientFactory := newRemoteNoteStatusMigrationClientFn
 	previousOpenWriter := openRemoteNoteStatusBackfillWriterFn
+	previousResolveDomain := resolveRemoteNoteStatusMigrationLocalDomainFn
 	t.Cleanup(func() {
 		loadAWSConfigForCLIFn = previousLoadAWSConfig
 		newRemoteNoteStatusMigrationClientFn = previousClientFactory
 		openRemoteNoteStatusBackfillWriterFn = previousOpenWriter
+		resolveRemoteNoteStatusMigrationLocalDomainFn = previousResolveDomain
 	})
 
 	now := time.Date(2026, 4, 6, 15, 4, 0, 0, time.UTC)
@@ -89,6 +91,9 @@ func TestRunMigrateRemoteNoteStatuses_PrintsDryRunSummary(t *testing.T) {
 	}
 	openRemoteNoteStatusBackfillWriterFn = func(aws.Config, string) (remoteNoteStatusBackfillWriter, func() error, error) {
 		return writer, func() error { return nil }, nil
+	}
+	resolveRemoteNoteStatusMigrationLocalDomainFn = func(context.Context, aws.Config, string, string) (string, error) {
+		return "https://dev.simulacrum.greater.website", nil
 	}
 
 	output := captureStdout(t, func() {
@@ -115,14 +120,16 @@ func TestRunMigrateRemoteNoteStatuses_PrintsDryRunSummary(t *testing.T) {
 	require.Len(t, client.queryInputs, 1)
 	require.Equal(t, "gsi2", aws.ToString(client.queryInputs[0].IndexName))
 	require.Equal(t, remoteNoteStatusBackfillTypePK, strAttr(t, client.queryInputs[0].ExpressionAttributeValues[":noteType"]))
+	require.Nil(t, client.queryInputs[0].FilterExpression)
 }
 
 func TestExecuteRemoteNoteStatusMigration_ApplyCreatesMissingStatusesAndClassifiesMalformedRows(t *testing.T) {
 	now := time.Date(2026, 4, 6, 15, 4, 0, 0, time.UTC)
+	localDomain := "https://dev.simulacrum.greater.website"
 	firstRemoteURL := "https://remote.example/users/bob/statuses/1"
 	secondRemoteURL := "https://remote.example/users/bob/statuses/2"
 	parentRemoteURL := "https://another.remote/users/alice/statuses/root"
-	existingStatusID := models.CanonicalStatusID(secondRemoteURL)
+	existingStatusID := models.CanonicalStatusIDForDomain(secondRemoteURL, localDomain)
 
 	client := &fakeUserKeyMigrationClient{
 		queryOutputs: []*dynamodb.QueryOutput{{
@@ -139,7 +146,7 @@ func TestExecuteRemoteNoteStatusMigration_ApplyCreatesMissingStatusesAndClassifi
 		},
 	}
 
-	summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", true, 0)
+	summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", localDomain, true, 0)
 	require.NoError(t, err)
 	require.Equal(t, 3, summary.ScannedRemoteObjects)
 	require.Equal(t, 2, summary.MaterializableObjects)
@@ -148,32 +155,66 @@ func TestExecuteRemoteNoteStatusMigration_ApplyCreatesMissingStatusesAndClassifi
 	require.Equal(t, 1, summary.MissingStatuses)
 	require.Equal(t, 1, summary.CreatedStatuses)
 	require.Contains(t, summary.SampleObjectIDs, firstRemoteURL)
-	require.Contains(t, summary.SampleStatusIDs, models.CanonicalStatusID(firstRemoteURL))
+	require.Contains(t, summary.SampleStatusIDs, models.CanonicalStatusIDForDomain(firstRemoteURL, localDomain))
 	require.Contains(t, summary.SampleMalformedObjectIDs, "https://remote.example/users/bob/statuses/bad")
 
-	created := writer.statuses[models.CanonicalStatusID(firstRemoteURL)]
+	created := writer.statuses[models.CanonicalStatusIDForDomain(firstRemoteURL, localDomain)]
 	require.NotNil(t, created)
-	require.Equal(t, models.CanonicalStatusID(firstRemoteURL), created.StatusID)
+	require.Equal(t, models.CanonicalStatusIDForDomain(firstRemoteURL, localDomain), created.StatusID)
 	require.Equal(t, "https://remote.example/users/bob", created.AuthorID)
 	require.Equal(t, "bob@remote.example", created.AuthorUsername)
 	require.Equal(t, models.VisibilityPublic, created.Visibility)
-	require.Equal(t, models.CanonicalStatusID(parentRemoteURL), created.InReplyToID)
+	require.Equal(t, models.CanonicalStatusIDForDomain(parentRemoteURL, localDomain), created.InReplyToID)
 	require.Equal(t, []string{firstRemoteURL}, created.URLs)
 	require.Equal(t, firstRemoteURL, created.Note.ID)
 }
 
+func TestExecuteRemoteNoteStatusMigration_FindsHistoricalRemoteRowsWithoutIsRemoteFlag(t *testing.T) {
+	now := time.Date(2026, 4, 6, 15, 4, 0, 0, time.UTC)
+	localDomain := "https://dev.simulacrum.greater.website"
+	remoteURL := "https://remote.example/users/bob/statuses/3"
+	localURL := "https://dev.simulacrum.greater.website/users/alice/statuses/3"
+
+	remoteItem := remoteNoteObjectItem(t, remoteURL, "https://remote.example/users/bob", "backfill me", now, false, "")
+	delete(remoteItem, "isRemote")
+
+	localItem := remoteNoteObjectItem(t, localURL, "https://dev.simulacrum.greater.website/users/alice", "skip me", now.Add(time.Minute), false, "")
+	delete(localItem, "isRemote")
+
+	client := &fakeUserKeyMigrationClient{
+		queryOutputs: []*dynamodb.QueryOutput{{
+			Items: []map[string]types.AttributeValue{remoteItem, localItem},
+		}},
+	}
+	writer := &fakeRemoteNoteStatusBackfillWriter{statuses: map[string]*models.Status{}}
+
+	summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", localDomain, true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.ScannedRemoteObjects)
+	require.Equal(t, 1, summary.MaterializableObjects)
+	require.Equal(t, 1, summary.MissingStatuses)
+	require.Equal(t, 1, summary.CreatedStatuses)
+	require.NotContains(t, summary.SampleObjectIDs, localURL)
+
+	created := writer.statuses[models.CanonicalStatusIDForDomain(remoteURL, localDomain)]
+	require.NotNil(t, created)
+	require.Equal(t, remoteURL, created.Note.ID)
+	require.Nil(t, writer.statuses[models.CanonicalStatusIDForDomain(localURL, localDomain)])
+}
+
 func TestExecuteRemoteNoteStatusMigration_ValidatesInputsAndTreatsConditionFailuresAsIdempotent(t *testing.T) {
 	now := time.Date(2026, 4, 6, 15, 4, 0, 0, time.UTC)
+	localDomain := "https://dev.simulacrum.greater.website"
 	remoteURL := "https://remote.example/users/bob/statuses/1"
-	statusID := models.CanonicalStatusID(remoteURL)
+	statusID := models.CanonicalStatusIDForDomain(remoteURL, localDomain)
 
-	_, err := executeRemoteNoteStatusMigration(context.Background(), nil, &fakeRemoteNoteStatusBackfillWriter{}, "table", false, 0)
+	_, err := executeRemoteNoteStatusMigration(context.Background(), nil, &fakeRemoteNoteStatusBackfillWriter{}, "table", localDomain, false, 0)
 	require.EqualError(t, err, "migration client is required")
 
-	_, err = executeRemoteNoteStatusMigration(context.Background(), &fakeUserKeyMigrationClient{}, nil, "table", false, 0)
+	_, err = executeRemoteNoteStatusMigration(context.Background(), &fakeUserKeyMigrationClient{}, nil, "table", localDomain, false, 0)
 	require.EqualError(t, err, "status backfill writer is required")
 
-	_, err = executeRemoteNoteStatusMigration(context.Background(), &fakeUserKeyMigrationClient{}, &fakeRemoteNoteStatusBackfillWriter{}, "   ", false, 0)
+	_, err = executeRemoteNoteStatusMigration(context.Background(), &fakeUserKeyMigrationClient{}, &fakeRemoteNoteStatusBackfillWriter{}, "   ", localDomain, false, 0)
 	require.EqualError(t, err, "table name is required")
 
 	writer := &fakeRemoteNoteStatusBackfillWriter{
@@ -188,7 +229,7 @@ func TestExecuteRemoteNoteStatusMigration_ValidatesInputsAndTreatsConditionFailu
 		}},
 	}
 
-	summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", true, 0)
+	summary, err := executeRemoteNoteStatusMigration(context.Background(), client, writer, "simulacrum-dev-main-table", localDomain, true, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, summary.ScannedRemoteObjects)
 	require.Equal(t, 1, summary.MaterializableObjects)

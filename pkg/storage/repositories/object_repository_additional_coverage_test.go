@@ -86,6 +86,85 @@ func TestObjectRepository_GetOrCreateStatusMetadata_CreatesOnNotFound(t *testing
 	require.NotNil(t, metadata)
 }
 
+func TestObjectRepository_CreateObject_PreservesRemoteNoteFields(t *testing.T) {
+	ctx := context.Background()
+	publishedAt := time.Date(2025, 1, 20, 10, 11, 12, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var captured *models.Object
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
+		captured = args.Get(0).(*models.Object)
+	}).Return(mockQuery).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "dev.simulacrum.greater.website", zap.NewNop())
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://remote.example/users/bob/statuses/1",
+			Type:      activitypub.NoteType,
+			Published: &publishedAt,
+			To:        []string{activitypub.PublicAddress},
+			BTo:       []string{"https://remote.example/users/bob/bto"},
+			BCC:       []string{"https://remote.example/users/bob/bcc"},
+			Summary:   "spoiler",
+		},
+		Content:        "hello from remote",
+		AttributedTo:   "https://remote.example/users/bob",
+		ConversationID: "conv-1",
+		Visibility:     models.VisibilityPrivate,
+	}
+
+	require.NoError(t, repo.CreateObject(ctx, note))
+	require.NotNil(t, captured)
+	require.True(t, captured.IsRemote)
+	require.Equal(t, "conv-1", captured.ConversationID)
+	require.Equal(t, models.VisibilityPrivate, captured.Visibility)
+	require.Equal(t, []string{"https://remote.example/users/bob/bto"}, captured.BTo)
+	require.Equal(t, []string{"https://remote.example/users/bob/bcc"}, captured.BCC)
+	require.Equal(t, "spoiler", captured.Summary)
+	require.Equal(t, publishedAt, captured.Published)
+}
+
+func TestObjectRepository_CreateObject_PreservesProvidedStorageModelFields(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2025, 1, 21, 11, 12, 13, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var captured *models.Object
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
+		captured = args.Get(0).(*models.Object)
+	}).Return(mockQuery).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "dev.simulacrum.greater.website", zap.NewNop())
+	source := &models.Object{
+		ID:             "https://remote.example/users/bob/statuses/2",
+		Type:           activitypub.NoteType,
+		AttributedTo:   "https://remote.example/users/bob",
+		Content:        "already modeled",
+		ConversationID: "conv-2",
+		Visibility:     models.VisibilityDirect,
+		IsRemote:       true,
+		Published:      now,
+		Updated:        now,
+		CreatedAt:      now,
+	}
+
+	require.NoError(t, repo.CreateObject(ctx, source))
+	require.NotNil(t, captured)
+	require.True(t, captured.IsRemote)
+	require.Equal(t, "conv-2", captured.ConversationID)
+	require.Equal(t, models.VisibilityDirect, captured.Visibility)
+	require.Equal(t, source.Content, captured.Content)
+	require.Equal(t, source.Published, captured.Published)
+}
+
 func TestObjectRepository_IsQuoteAllowed_CoverageMatrix(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 6, 7, 8, 9, 0, time.UTC)

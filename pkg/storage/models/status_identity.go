@@ -17,6 +17,12 @@ const remoteStatusIDPrefix = "remote_"
 // while remote status URLs hash to a deterministic remote-prefixed ID so
 // different domains cannot collide on the same final path segment.
 func CanonicalStatusID(raw string) string {
+	return CanonicalStatusIDForDomain(raw, config.Get().Domain)
+}
+
+// CanonicalStatusIDForDomain normalizes a status identifier against the
+// provided local domain instead of the global process config.
+func CanonicalStatusIDForDomain(raw string, localDomain string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
@@ -31,7 +37,7 @@ func CanonicalStatusID(raw string) string {
 		return raw
 	}
 
-	if isLocalStatusIdentifierHost(parsed.Hostname()) {
+	if isLocalStatusIdentifierHostForDomain(parsed.Hostname(), localDomain) {
 		return localStatusIDFromNormalizedURL(parsed)
 	}
 
@@ -120,13 +126,23 @@ func localStatusIDFromNormalizedURL(parsed *url.URL) string {
 }
 
 func isLocalStatusIdentifierHost(host string) bool {
+	return isLocalStatusIdentifierHostForDomain(host, config.Get().Domain)
+}
+
+func isLocalStatusIdentifierHostForDomain(host string, localDomain string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
 		return false
 	}
 
-	cfg := config.Get()
-	localDomain := strings.ToLower(strings.TrimSpace(cfg.Domain))
+	localDomain = strings.ToLower(strings.TrimSpace(localDomain))
+	localDomain = strings.TrimPrefix(strings.TrimPrefix(localDomain, "https://"), "http://")
+	if idx := strings.Index(localDomain, "/"); idx >= 0 {
+		localDomain = localDomain[:idx]
+	}
+	if idx := strings.Index(localDomain, ":"); idx >= 0 {
+		localDomain = localDomain[:idx]
+	}
 	if localDomain == "" {
 		return false
 	}

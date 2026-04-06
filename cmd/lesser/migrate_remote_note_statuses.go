@@ -4,13 +4,17 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -66,42 +70,82 @@ var openRemoteNoteStatusBackfillWriterFn = func(awsCfg aws.Config, tableName str
 	return newRemoteNoteStatusBackfillWriter(db, tableName), db.Close, nil
 }
 
+var resolveRemoteNoteStatusMigrationLocalDomainFn = func(ctx context.Context, awsCfg aws.Config, app string, env string) (string, error) {
+	app = strings.TrimSpace(app)
+	if app == "" {
+		app = naming.DefaultAppName
+	}
+
+	paramName := fmt.Sprintf("/%s/%s/lesser/exports/v1/domain", app, naming.StageForEnvironment(env))
+	out, err := ssm.NewFromConfig(awsCfg).GetParameter(ctx, &ssm.GetParameterInput{
+		Name: aws.String(paramName),
+	})
+	if err != nil {
+		var notFound *ssmtypes.ParameterNotFound
+		if stdErrors.As(err, &notFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("resolve stage domain from SSM %s: %w", paramName, err)
+	}
+
+	return strings.TrimSpace(aws.ToString(out.Parameter.Value)), nil
+}
+
 func newRemoteNoteStatusBackfillWriter(db core.DB, tableName string) remoteNoteStatusBackfillWriter {
 	return repositories.NewStatusRepository(db, tableName, zap.NewNop(), nil)
 }
 
 func runMigrateRemoteNoteStatuses(argv []string) error {
-	return runCommonMigrationCLI(
+	options, err := parseCommonMigrationCLIOptions(
 		argv,
 		"migrate-remote-note-statuses",
 		"maximum number of remote note object rows to inspect after remote filtering (0 = all)",
 		"materialize missing canonical status rows from remote note objects",
-		func(ctx context.Context, awsCfg aws.Config, tableName string, apply bool, limit int) (remoteNoteStatusMigrationSummary, error) {
-			prevTableName := models.MainTableName
-			models.MainTableName = tableName
-			defer func() {
-				models.MainTableName = prevTableName
-			}()
-
-			writer, closeWriter, err := openRemoteNoteStatusBackfillWriterFn(awsCfg, tableName)
-			if err != nil {
-				return remoteNoteStatusMigrationSummary{}, err
-			}
-			if closeWriter != nil {
-				defer func() { _ = closeWriter() }()
-			}
-
-			return executeRemoteNoteStatusMigration(
-				ctx,
-				newRemoteNoteStatusMigrationClientFn(awsCfg),
-				writer,
-				tableName,
-				apply,
-				limit,
-			)
-		},
-		printRemoteNoteStatusMigrationSummary,
 	)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	awsCfg, resolvedTableName, resolvedProfile, err := resolveCommonMigrationCLIOptions(ctx, options)
+	if err != nil {
+		return err
+	}
+
+	localDomain, err := resolveRemoteNoteStatusMigrationLocalDomainFn(ctx, awsCfg, options.App, options.Env)
+	if err != nil {
+		return err
+	}
+
+	prevTableName := models.MainTableName
+	models.MainTableName = resolvedTableName
+	defer func() {
+		models.MainTableName = prevTableName
+	}()
+
+	writer, closeWriter, err := openRemoteNoteStatusBackfillWriterFn(awsCfg, resolvedTableName)
+	if err != nil {
+		return err
+	}
+	if closeWriter != nil {
+		defer func() { _ = closeWriter() }()
+	}
+
+	summary, err := executeRemoteNoteStatusMigration(
+		ctx,
+		newRemoteNoteStatusMigrationClientFn(awsCfg),
+		writer,
+		resolvedTableName,
+		localDomain,
+		options.Apply,
+		options.Limit,
+	)
+	if err != nil {
+		return err
+	}
+
+	printRemoteNoteStatusMigrationSummary(summary, resolvedTableName, resolvedProfile, options.Apply)
+	return nil
 }
 
 func printRemoteNoteStatusMigrationSummary(
@@ -136,6 +180,7 @@ func executeRemoteNoteStatusMigration(
 	client remoteNoteStatusMigrationClient,
 	writer remoteNoteStatusBackfillWriter,
 	tableName string,
+	localDomain string,
 	apply bool,
 	limit int,
 ) (remoteNoteStatusMigrationSummary, error) {
@@ -155,10 +200,8 @@ func executeRemoteNoteStatusMigration(
 		TableName:              aws.String(tableName),
 		IndexName:              aws.String("gsi2"),
 		KeyConditionExpression: aws.String("gsi2PK = :noteType"),
-		FilterExpression:       aws.String("isRemote = :isRemote"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":noteType": &types.AttributeValueMemberS{Value: remoteNoteStatusBackfillTypePK},
-			":isRemote": &types.AttributeValueMemberBOOL{Value: true},
 		},
 	}
 
@@ -171,6 +214,10 @@ func executeRemoteNoteStatusMigration(
 		for _, item := range out.Items {
 			var object models.Object
 			if err := attributevalue.UnmarshalMap(item, &object); err != nil {
+				if !rawRemoteNoteStatusItemIsRemote(item) && !isRemoteNoteStatusBackfillIdentifier(remoteNoteStatusObjectSampleID(item, nil), localDomain) {
+					continue
+				}
+
 				summary.ScannedRemoteObjects++
 				summary.MalformedRemoteObjects++
 				appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, remoteNoteStatusObjectSampleID(item, nil))
@@ -180,10 +227,14 @@ func executeRemoteNoteStatusMigration(
 				continue
 			}
 
+			if !shouldBackfillRemoteNoteStatusObject(&object, localDomain) {
+				continue
+			}
+
 			summary.ScannedRemoteObjects++
 			appendRemoteNoteStatusMigrationSample(&summary.SampleObjectIDs, strings.TrimSpace(object.ID))
 
-			status, ok := buildRemoteNoteStatusBackfillStatus(&object)
+			status, ok := buildRemoteNoteStatusBackfillStatus(&object, localDomain)
 			if !ok {
 				summary.MalformedRemoteObjects++
 				appendRemoteNoteStatusMigrationSample(&summary.SampleMalformedObjectIDs, remoteNoteStatusObjectSampleID(item, &object))
@@ -231,11 +282,8 @@ func executeRemoteNoteStatusMigration(
 	}
 }
 
-func buildRemoteNoteStatusBackfillStatus(object *models.Object) (*models.Status, bool) {
-	if object == nil || !object.IsRemote {
-		return nil, false
-	}
-	if !strings.EqualFold(strings.TrimSpace(object.Type), activitypub.NoteType) {
+func buildRemoteNoteStatusBackfillStatus(object *models.Object, localDomain string) (*models.Status, bool) {
+	if !shouldBackfillRemoteNoteStatusObject(object, localDomain) {
 		return nil, false
 	}
 	if strings.TrimSpace(object.ID) == "" || strings.TrimSpace(object.AttributedTo) == "" {
@@ -253,12 +301,27 @@ func buildRemoteNoteStatusBackfillStatus(object *models.Object) (*models.Status,
 		note.Visibility = strings.TrimSpace(object.Visibility)
 	}
 
-	status := federation.BuildCanonicalRemoteStatus(note, "")
+	status := federation.BuildCanonicalRemoteStatus(note, localDomain)
 	if status == nil {
 		return nil, false
 	}
 
 	return status, true
+}
+
+func shouldBackfillRemoteNoteStatusObject(object *models.Object, localDomain string) bool {
+	if object == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(object.Type), activitypub.NoteType) {
+		return false
+	}
+	if object.IsRemote {
+		return true
+	}
+
+	return isRemoteNoteStatusBackfillIdentifier(object.ID, localDomain) ||
+		isRemoteNoteStatusBackfillIdentifier(object.AttributedTo, localDomain)
 }
 
 func isRemoteNoteStatusBackfillNotFound(err error) bool {
@@ -269,6 +332,47 @@ func isRemoteNoteStatusBackfillNotFound(err error) bool {
 	return dynamormerrors.IsNotFound(err) ||
 		stdErrors.Is(err, storage.ErrNotFound) ||
 		strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+func rawRemoteNoteStatusItemIsRemote(item map[string]types.AttributeValue) bool {
+	attr, ok := item["isRemote"]
+	if !ok || attr == nil {
+		return false
+	}
+
+	value, ok := attr.(*types.AttributeValueMemberBOOL)
+	return ok && value.Value
+}
+
+func isRemoteNoteStatusBackfillIdentifier(raw string, localDomain string) bool {
+	host := normalizeRemoteNoteStatusBackfillHost(raw)
+	localHost := normalizeRemoteNoteStatusBackfillHost(localDomain)
+	if host == "" || localHost == "" {
+		return false
+	}
+
+	return host != localHost
+}
+
+func normalizeRemoteNoteStatusBackfillHost(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(value); err == nil && parsed != nil && parsed.Hostname() != "" {
+		return strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	}
+
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if idx := strings.Index(value, "/"); idx >= 0 {
+		value = value[:idx]
+	}
+	if idx := strings.Index(value, ":"); idx >= 0 {
+		value = value[:idx]
+	}
+
+	return strings.TrimSpace(value)
 }
 
 func remoteNoteStatusObjectSampleID(item map[string]types.AttributeValue, object *models.Object) string {
