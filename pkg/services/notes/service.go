@@ -1727,16 +1727,7 @@ func mapMediaCategoryToAttachmentType(category models.MediaCategory) string {
 }
 
 func extractStatusIDFromObjectURL(objectURL string) string {
-	if objectURL == "" {
-		return ""
-	}
-
-	trimmed := strings.TrimSuffix(objectURL, "/")
-	parts := strings.Split(trimmed, "/")
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[len(parts)-1]
+	return models.CanonicalStatusID(objectURL)
 }
 
 func boostStatusIDFromAnnounceID(announceID string) string {

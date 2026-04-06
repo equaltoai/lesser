@@ -367,13 +367,7 @@ func extractUsernameFromActorID(actorID string) string {
 
 // extractStatusIDFromURL extracts status ID from a status URL
 func extractStatusIDFromURL(url string) string {
-	// Handle different status URL formats
-	// e.g., "https://example.com/users/username/statuses/123" -> "123"
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return ""
+	return CanonicalStatusID(url)
 }
 
 // determineVisibilityFromAudience determines visibility based on To/CC fields

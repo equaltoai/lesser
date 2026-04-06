@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -1395,20 +1394,7 @@ func (r *SearchRepository) statusModelToSearchResult(status *models.Status, scor
 }
 
 func (r *SearchRepository) extractStatusIDFromURL(rawURL string) (string, bool) {
-	u, err := url.Parse(rawURL)
-	if err != nil || u.Path == "" {
-		return "", false
-	}
-
-	path := strings.TrimSuffix(u.Path, "/")
-	parts := strings.Split(path, "/")
-	if len(parts) == 0 {
-		return "", false
-	}
-
-	// Support typical Mastodon-style URL: /users/<username>/statuses/<id>
-	// and tolerate other shapes by taking the last path segment.
-	statusID := parts[len(parts)-1]
+	statusID := models.CanonicalStatusID(rawURL)
 	if statusID == "" {
 		return "", false
 	}
@@ -1462,8 +1448,11 @@ func (r *SearchRepository) extractHashtags(text string) []string {
 }
 
 func (r *SearchRepository) isLocalStatus(statusID string) bool {
-	// Check if status is from local instance
-	// This is a simplified check - would need domain configuration
+	statusID = strings.TrimSpace(statusID)
+	if statusID == "" || models.IsCanonicalRemoteStatusID(statusID) {
+		return false
+	}
+
 	return !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://")
 }
 

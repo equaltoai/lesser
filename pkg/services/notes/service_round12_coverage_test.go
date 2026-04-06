@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -444,9 +445,14 @@ func Test_mapMediaCategoryToAttachmentType(t *testing.T) {
 }
 
 func Test_extractStatusIDFromObjectURL(t *testing.T) {
+	t.Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
+
 	assert.Equal(t, "", extractStatusIDFromObjectURL(""))
 	assert.Equal(t, "123", extractStatusIDFromObjectURL("https://example.com/users/alice/statuses/123"))
 	assert.Equal(t, "123", extractStatusIDFromObjectURL("https://example.com/users/alice/statuses/123/"))
+	assert.True(t, models.IsCanonicalRemoteStatusID(extractStatusIDFromObjectURL("https://remote.example/users/alice/statuses/123")))
 }
 
 func TestService_prepareMediaAttachments(t *testing.T) {

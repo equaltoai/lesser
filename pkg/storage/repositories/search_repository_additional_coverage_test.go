@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
@@ -282,12 +283,22 @@ func TestSearchRepository_CoverageSweep(t *testing.T) {
 	_, _ = repo.GetSearchTrends(ctx, 1)
 
 	// Pure helpers
+	t.Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
 	assert.True(t, repo.isURL("https://example.com"))
 	assert.False(t, repo.isURL("not-a-url"))
 	assert.Equal(t, []string{"tag"}, repo.extractHashtags("hello #Tag"))
 	assert.Equal(t, "alice", extractUsernameFromActor("https://example.com/users/alice"))
+	localStatusID, ok := repo.extractStatusIDFromURL("https://example.com/users/alice/statuses/123")
+	assert.True(t, ok)
+	assert.Equal(t, "123", localStatusID)
+	remoteStatusID, ok := repo.extractStatusIDFromURL("https://remote.example/users/alice/statuses/123")
+	assert.True(t, ok)
+	assert.True(t, models.IsCanonicalRemoteStatusID(remoteStatusID))
 	assert.True(t, repo.isLocalStatus("status-1"))
 	assert.False(t, repo.isLocalStatus("https://example.com/status/1"))
+	assert.False(t, repo.isLocalStatus(models.CanonicalStatusID("https://remote.example/users/alice/statuses/123")))
 	assert.Greater(t, repo.calculateContentScore("hello world", "world"), 0.0)
 	assert.Equal(t, 0.0, repo.cosineSimilarity([]float32{1}, []float32{1, 0}))
 	assert.Equal(t, "[empty]", repo.hashQuery(""))
