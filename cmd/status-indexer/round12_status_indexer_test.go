@@ -103,6 +103,14 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 			},
 		},
 	}))
+	require.True(t, si.isObjectMetadataRecord(events.DynamoDBEventRecord{
+		Change: events.DynamoDBStreamRecord{
+			Keys: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("object#1"),
+				"SK": events.NewStringAttribute("object#1"),
+			},
+		},
+	}))
 
 	_, err := si.extractObjectFromRecord(events.DynamoDBEventRecord{})
 	require.Error(t, err)
@@ -120,6 +128,19 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+
+	flatObjectMap, err := si.extractObjectFromRecord(events.DynamoDBEventRecord{
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"type":         events.NewStringAttribute("Note"),
+				"id":           events.NewStringAttribute("status-flat"),
+				"content":      events.NewStringAttribute("flat record"),
+				"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "status-flat", flatObjectMap["id"].String())
 
 	objectMap := map[string]events.DynamoDBAttributeValue{
 		"type":         events.NewStringAttribute("Note"),
@@ -159,6 +180,8 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 
 	require.Equal(t, "example.com", si.getDomain())
 	require.Equal(t, "localhost", (&StatusIndexer{}).getDomain())
+	require.Equal(t, "https://example.com/statuses/status-1", si.statusURL("status-1"))
+	require.Equal(t, "https://remote.example/objects/status-1", si.statusURL("https://remote.example/objects/status-1"))
 
 	require.Equal(t, "unknown", getRequestID(nil))
 	require.Equal(t, "unknown", getRequestID(context.Background()))
@@ -190,6 +213,7 @@ func TestStatusIndexer_calculateEngagementAndReplies_Round12(t *testing.T) {
 	require.Equal(t, 1, boosts)
 	require.Equal(t, 2, replies)
 	require.Equal(t, float64(2)*1.0+float64(1)*2.0+float64(2)*1.5, score)
+	q.AssertCalled(t, "Index", "gsi6")
 
 	q.ExpectedCalls = nil
 	q.On("Index", mock.Anything).Return(q)
@@ -295,30 +319,46 @@ func TestStatusIndexer_processRecord_Round12(t *testing.T) {
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
 			Keys: map[string]events.DynamoDBAttributeValue{
-				"PK": events.NewStringAttribute("OBJECT#1"),
-				"SK": events.NewStringAttribute("METADATA"),
+				"PK": events.NewStringAttribute("object#status-1"),
+				"SK": events.NewStringAttribute("object#status-1"),
 			},
 		},
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
-		"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-			"type": events.NewStringAttribute("Image"),
-		}),
+		"type": events.NewStringAttribute("Image"),
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
-		"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-			"type":         events.NewStringAttribute("Note"),
-			"id":           events.NewStringAttribute("status-1"),
-			"content":      events.NewStringAttribute("Hello world"),
-			"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
-			"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
-		}),
+		"type":         events.NewStringAttribute("Note"),
+		"id":           events.NewStringAttribute("status-1"),
+		"content":      events.NewStringAttribute("Hello world"),
+		"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+		"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
+
+	legacyRecord := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			Keys: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("OBJECT#legacy"),
+				"SK": events.NewStringAttribute("METADATA"),
+			},
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"Object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+					"type":         events.NewStringAttribute("Note"),
+					"id":           events.NewStringAttribute("status-legacy"),
+					"content":      events.NewStringAttribute("Hello legacy"),
+					"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+					"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+				}),
+			},
+		},
+	}
+	require.NoError(t, si.processRecord(context.Background(), legacyRecord))
 }
 
 func TestHandleStatusIndexerStreamRecord_Round12(t *testing.T) {

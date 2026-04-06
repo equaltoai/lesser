@@ -165,7 +165,7 @@ func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecor
 	if pk.DataType() == events.DataTypeString {
 		pkStr = pk.String()
 	}
-	if err := common.ValidateRequiredParam("pkStr", pkStr); err != nil || !strings.HasPrefix(pkStr, "OBJECT#") {
+	if err := common.ValidateRequiredParam("pkStr", pkStr); err != nil || !strings.HasPrefix(strings.ToLower(pkStr), "object#") {
 		return false
 	}
 
@@ -180,7 +180,7 @@ func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecor
 		skStr = sk.String()
 	}
 
-	return skStr == "METADATA"
+	return strings.EqualFold(skStr, "METADATA") || strings.EqualFold(skStr, pkStr)
 }
 
 // extractObjectFromRecord extracts the object map from the record
@@ -189,13 +189,19 @@ func (si *StatusIndexer) extractObjectFromRecord(record events.DynamoDBEventReco
 	if newImage == nil {
 		return nil, pkgErrors.StatusIndexerNoNewImage()
 	}
-
-	objectData, ok := newImage["Object"]
-	if !ok || objectData.DataType() != events.DataTypeMap {
+	if len(newImage) == 0 {
 		return nil, pkgErrors.StatusIndexerNoObjectData()
 	}
 
-	return objectData.Map(), nil
+	objectData, ok := newImage["Object"]
+	if ok {
+		if objectData.DataType() != events.DataTypeMap {
+			return nil, pkgErrors.StatusIndexerNoObjectData()
+		}
+		return objectData.Map(), nil
+	}
+
+	return newImage, nil
 }
 
 // isIndexableObjectType checks if the object type should be indexed
@@ -512,11 +518,11 @@ func (si *StatusIndexer) calculateEngagement(ctx context.Context, statusID strin
 // getReplyCount counts replies to a status by querying objects
 func (si *StatusIndexer) getReplyCount(ctx context.Context, statusID string) (int, error) {
 	// Query objects where InReplyTo matches this status
-	// This uses GSI to find replies efficiently
+	// Current object rows project replies through gsi6.
 	var objects []models.Object
 	err := si.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi3"). // Assuming gsi3 is for InReplyTo queries
-		Where("gsi3PK", "=", fmt.Sprintf("IN_REPLY_TO#%s", statusID)).
+		Index("gsi6").
+		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Limit(1000). // Reasonable limit to avoid timeout
 		All(&objects)
 
@@ -554,7 +560,7 @@ func (si *StatusIndexer) updateTrendingStatus(ctx context.Context, statusID, con
 
 	trendingStatus := &models.TrendingStatus{
 		ID:            statusID,
-		URL:           fmt.Sprintf("https://%s/statuses/%s", si.getDomain(), statusID),
+		URL:           si.statusURL(statusID),
 		AuthorID:      authorID,
 		Content:       content,
 		Engagements:   int64(likes + boosts + replies),
@@ -570,6 +576,13 @@ func (si *StatusIndexer) updateTrendingStatus(ctx context.Context, statusID, con
 
 	// Use Create which will update if exists due to the key structure
 	return si.db.WithContext(ctx).Model(trendingStatus).Create()
+}
+
+func (si *StatusIndexer) statusURL(statusID string) string {
+	if strings.Contains(statusID, "://") {
+		return statusID
+	}
+	return fmt.Sprintf("https://%s/statuses/%s", si.getDomain(), statusID)
 }
 
 // indexHashtagWithTrending indexes a hashtag and tracks its trending status
