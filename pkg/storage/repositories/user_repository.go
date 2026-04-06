@@ -2581,9 +2581,20 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 
 // CacheRemoteActor caches a remote actor with a TTL using DynamORM patterns
 func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error {
+	if actor == nil {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("remote actor is required"), "remote actor cache", "")
+	}
+
+	canonicalHandle := models.NormalizeRemoteActorHandle(handle)
+	if canonicalHandle == "" {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("invalid remote actor handle"), "remote actor cache", strings.TrimSpace(handle))
+	}
+
+	cachedActor := normalizeRemoteActorCacheActor(canonicalHandle, actor)
+
 	r.logger.Debug("caching remote actor",
-		zap.String("handle", handle),
-		zap.String("actor_id", actor.ID),
+		zap.String("handle", canonicalHandle),
+		zap.String("actor_id", cachedActor.ID),
 		zap.Duration("ttl", ttl))
 
 	now := time.Now()
@@ -2591,8 +2602,8 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 
 	// Create the DynamORM model following the exact legacy pattern
 	remoteActor := &models.RemoteActor{
-		Handle:    handle,
-		Actor:     actor,
+		Handle:    canonicalHandle,
+		Actor:     cachedActor,
 		CachedAt:  now,
 		UpdatedAt: now,
 		ExpiresAt: expiresAt,
@@ -2604,16 +2615,24 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 	// Create in DynamoDB using DynamORM
 	err := r.GetDB().WithContext(ctx).Model(remoteActor).Create()
 	if err != nil {
-		r.logger.Error("failed to cache remote actor",
-			zap.String("handle", handle),
-			zap.String("actor_id", actor.ID),
-			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, "remote actor cache", actor.ID)
+		if errors.IsConditionFailed(err) {
+			err = r.GetDB().WithContext(ctx).Model(remoteActor).
+				Where("PK", "=", remoteActor.PK).
+				Where("SK", "=", remoteActor.SK).
+				Update()
+		}
+		if err != nil {
+			r.logger.Error("failed to cache remote actor",
+				zap.String("handle", canonicalHandle),
+				zap.String("actor_id", cachedActor.ID),
+				zap.Error(err))
+			return ErrorHandler.HandleCreateError(err, "remote actor cache", cachedActor.ID)
+		}
 	}
 
 	r.logger.Debug("remote actor cached successfully",
-		zap.String("handle", handle),
-		zap.String("actor_id", actor.ID),
+		zap.String("handle", canonicalHandle),
+		zap.String("actor_id", cachedActor.ID),
 		zap.Duration("ttl", ttl),
 		zap.Time("expires_at", expiresAt))
 

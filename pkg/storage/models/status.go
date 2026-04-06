@@ -201,7 +201,9 @@ func (s *Status) extractFromNote() {
 	s.Sensitive = note.Sensitive
 
 	// Extract username from author ID
-	s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
+	if strings.TrimSpace(s.AuthorUsername) == "" {
+		s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
+	}
 
 	// Extract conversation ID
 	s.ConversationID = note.ConversationID
@@ -367,13 +369,7 @@ func extractUsernameFromActorID(actorID string) string {
 
 // extractStatusIDFromURL extracts status ID from a status URL
 func extractStatusIDFromURL(url string) string {
-	// Handle different status URL formats
-	// e.g., "https://example.com/users/username/statuses/123" -> "123"
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return ""
+	return CanonicalStatusID(url)
 }
 
 // determineVisibilityFromAudience determines visibility based on To/CC fields

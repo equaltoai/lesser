@@ -184,22 +184,8 @@ func (h *Handler) searchStatusByURL(ctx *apptheory.Context, statusURL string, vi
 		apiStatus, convErr := h.convertStorageStatusToAPI(fullStatus, viewerUsername)
 		if convErr == nil && apiStatus != nil {
 			result.Statuses = append(result.Statuses, *apiStatus)
-			return
 		}
 	}
-
-	obj, err := h.repos.Object().GetObject(ctx.Context(), statusURL)
-	if err != nil || obj == nil {
-		return
-	}
-
-	statusResult := h.convertObjectToStatusResult(obj)
-	if statusResult == nil {
-		return
-	}
-
-	status := h.convertStatusResultToAPI(ctx, statusResult, viewerUsername)
-	result.Statuses = append(result.Statuses, status)
 }
 
 // searchStatusByContent searches for statuses by content
@@ -231,51 +217,6 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 	}
 
 	h.addAuthorMatchedStatuses(ctx, params, viewerUsername, seen, result)
-}
-
-// convertObjectToStatusResult converts object to status search result
-func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSearchResult {
-	switch v := obj.(type) {
-	case *activitypub.Note:
-		result := &storage.StatusSearchResult{
-			StatusID: v.ID,
-			URL:      v.ID,
-			Content:  v.Content,
-			AuthorID: v.AttributedTo,
-		}
-		if v.Published != nil {
-			result.Published = *v.Published
-		}
-		return result
-	case *storagemodels.Object:
-		return &storage.StatusSearchResult{
-			StatusID:  v.ID,
-			URL:       v.URL,
-			Content:   v.Content,
-			AuthorID:  v.AttributedTo,
-			Published: v.Published,
-		}
-	case map[string]any:
-		result := &storage.StatusSearchResult{}
-		if id, ok := v["id"].(string); ok {
-			result.StatusID = id
-		}
-		if url, ok := v["url"].(string); ok {
-			result.URL = url
-		}
-		if content, ok := v["content"].(string); ok {
-			result.Content = content
-		}
-		if authorID, ok := v["attributedTo"].(string); ok {
-			result.AuthorID = authorID
-		}
-		if published, ok := v["published"].(time.Time); ok {
-			result.Published = published
-		}
-		return result
-	default:
-		return nil
-	}
 }
 
 // convertStatusResultToAPI converts status result to API format
@@ -343,8 +284,11 @@ func (h *Handler) resolveStatusBySearchURL(ctx context.Context, statusURL string
 		return status, nil
 	}
 
-	if candidate := deriveSearchStatusID(statusURL); candidate != "" {
-		return h.repos.Status().GetStatus(ctx, candidate)
+	for _, candidate := range h.statusLookupCandidates(statusURL) {
+		status, err := h.repos.Status().GetStatus(ctx, candidate)
+		if err == nil && status != nil {
+			return status, nil
+		}
 	}
 
 	return nil, errors.New("status not found")
@@ -355,11 +299,9 @@ func (h *Handler) resolveStatusFromSearchResult(ctx context.Context, sr *storage
 		return nil, errors.New("status repository unavailable")
 	}
 
-	candidates := []string{
-		strings.TrimSpace(sr.StatusID),
-		deriveSearchStatusID(sr.StatusID),
-		deriveSearchStatusID(sr.URL),
-	}
+	candidates := make([]string, 0, 6)
+	candidates = append(candidates, h.statusLookupCandidates(sr.StatusID)...)
+	candidates = append(candidates, h.statusLookupCandidates(sr.URL)...)
 	seen := map[string]struct{}{}
 	for _, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
@@ -388,6 +330,37 @@ func (h *Handler) resolveStatusFromSearchResult(ctx context.Context, sr *storage
 	}
 
 	return nil, errors.New("status not found")
+}
+
+func (h *Handler) statusLookupCandidates(value string) []string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+
+	candidates := make([]string, 0, 3)
+	appendCandidate := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == candidate {
+				return
+			}
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	if strings.Contains(trimmed, "://") {
+		appendCandidate(deriveSearchStatusID(trimmed))
+		appendCandidate(storagemodels.CanonicalStatusID(trimmed))
+		return candidates
+	}
+
+	appendCandidate(trimmed)
+
+	return candidates
 }
 
 func deriveSearchStatusID(value string) string {

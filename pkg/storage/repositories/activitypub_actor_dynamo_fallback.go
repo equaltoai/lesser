@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -123,6 +124,56 @@ func loadActivityPubActorFromDynamo(ctx context.Context, tableName, username str
 		return &actor, nil
 	default:
 		return nil, fmt.Errorf("unsupported actor attribute type: %T", attr)
+	}
+}
+
+func loadCachedRemoteActorFromDynamo(ctx context.Context, tableName, handle string) (*activitypub.Actor, error) {
+	handle = strings.TrimSpace(handle)
+	if tableName == "" {
+		return nil, fmt.Errorf("table name is empty")
+	}
+	if handle == "" {
+		return nil, fmt.Errorf("remote actor handle is empty")
+	}
+
+	client, err := getRepositoryDynamoClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("init dynamodb client: %w", err)
+	}
+
+	out, err := client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName:      &tableName,
+		ConsistentRead: aws.Bool(true),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "REMOTE_ACTOR#" + handle},
+			"SK": &types.AttributeValueMemberS{Value: "PROFILE"},
+		},
+		ProjectionExpression: awsString("actor"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get cached remote actor item: %w", err)
+	}
+
+	attr, ok := out.Item["actor"]
+	if !ok || attr == nil {
+		return nil, fmt.Errorf("cached remote actor attribute missing")
+	}
+
+	switch typed := attr.(type) {
+	case *types.AttributeValueMemberM:
+		var raw map[string]any
+		if err := attributevalue.UnmarshalMap(typed.Value, &raw); err != nil {
+			return nil, fmt.Errorf("unmarshal cached remote actor attribute map: %w", err)
+		}
+		return decodeActivityPubActorFromDynamoValue(raw)
+	case *types.AttributeValueMemberS:
+		var actor activitypub.Actor
+		if err := json.Unmarshal([]byte(typed.Value), &actor); err != nil {
+			return nil, fmt.Errorf("unmarshal cached remote actor attribute json: %w", err)
+		}
+		return &actor, nil
+	default:
+		return nil, fmt.Errorf("unsupported cached remote actor attribute type: %T", attr)
 	}
 }
 

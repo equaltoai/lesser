@@ -65,6 +65,8 @@ require (
 
 require github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9
 
+require github.com/aws/aws-sdk-go-v2/service/ssm v1.60.2 // indirect
+
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect

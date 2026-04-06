@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -12,6 +13,15 @@ import (
 // StatusModelTestSuite contains tests for Status model
 type StatusModelTestSuite struct {
 	suite.Suite
+}
+
+func (suite *StatusModelTestSuite) SetupTest() {
+	suite.T().Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+}
+
+func (suite *StatusModelTestSuite) TearDownTest() {
+	config.ResetForTests()
 }
 
 // TableName returns the DynamoDB table backing StatusModelTestSuite.
@@ -1487,6 +1497,11 @@ func TestExtractStatusIDFromURL(t *testing.T) {
 			expected: "123",
 		},
 		{
+			name:     "remote url is canonicalized to collision safe id",
+			url:      "https://remote.example/users/alice/statuses/123",
+			expected: CanonicalStatusID("https://remote.example/users/alice/statuses/123"),
+		},
+		{
 			name:     "just ID",
 			url:      "simple-id",
 			expected: "simple-id",
@@ -1500,6 +1515,10 @@ func TestExtractStatusIDFromURL(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DOMAIN", "example.com")
+			config.ResetForTests()
+			t.Cleanup(config.ResetForTests)
+
 			result := extractStatusIDFromURL(tc.url)
 			assert.Equal(t, tc.expected, result)
 		})

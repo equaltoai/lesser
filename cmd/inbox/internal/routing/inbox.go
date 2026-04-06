@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -35,6 +36,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -69,6 +71,7 @@ type InboxHandler struct {
 	activityRepository           interfaces.ActivityRepository
 	relationshipRepository       interfaces.ConcreteRelationshipRepository
 	objectRepository             interfaces.ObjectRepository
+	statusRepository             interfaces.StatusRepository
 	likeRepository               *repositories.LikeRepository
 	socialRepository             *repositories.SocialRepository
 	federationActivityRepository *repositories.FederationActivityRepository
@@ -128,6 +131,7 @@ type repositoryCollection struct {
 	activityRepo           interfaces.ActivityRepository
 	followRepo             interfaces.ConcreteRelationshipRepository
 	objectRepo             interfaces.ObjectRepository
+	statusRepo             interfaces.StatusRepository
 	likeRepo               *repositories.LikeRepository
 	socialRepo             *repositories.SocialRepository
 	federationActivityRepo *repositories.FederationActivityRepository
@@ -290,6 +294,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 		activityRepo:     repoFactory.Activity(),
 		followRepo:       repoFactory.Relationship(),
 		objectRepo:       repoFactory.Object(),
+		statusRepo:       repoFactory.Status(),
 		likeRepo:         repoFactory.Like(),
 		domainBlockRepo:  repoFactory.DomainBlock(),
 		userRepo:         repoFactory.User(),
@@ -375,6 +380,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		activityRepository:           repositories.activityRepo,
 		relationshipRepository:       repositories.followRepo,
 		objectRepository:             repositories.objectRepo,
+		statusRepository:             repositories.statusRepo,
 		likeRepository:               repositories.likeRepo,
 		socialRepository:             repositories.socialRepo,
 		federationActivityRepository: repositories.federationActivityRepo,
@@ -1995,6 +2001,125 @@ func (ih *InboxHandler) processRejectMove(ctx context.Context, rejectActivity *a
 	return nil
 }
 
+func (ih *InboxHandler) buildCanonicalRemoteStatus(note *activitypub.Note) *models.Status {
+	return federation.BuildCanonicalRemoteStatus(note, ih.baseURL)
+}
+
+func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
+	if ih.statusRepository == nil {
+		return fmt.Errorf("status repository not configured")
+	}
+
+	status := ih.buildCanonicalRemoteStatus(note)
+	if status == nil {
+		return fmt.Errorf("canonical remote status payload is invalid")
+	}
+
+	if err := ih.statusRepository.CreateStatus(ctx, status); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (ih *InboxHandler) upsertRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
+	if ih.statusRepository == nil {
+		return fmt.Errorf("status repository not configured")
+	}
+
+	status := ih.buildCanonicalRemoteStatus(note)
+	if status == nil {
+		return fmt.Errorf("canonical remote status payload is invalid")
+	}
+
+	existing, err := ih.statusRepository.GetStatus(ctx, status.StatusID)
+	if err != nil {
+		if isRemoteStatusNotFound(err) {
+			return ih.materializeRemoteNoteStatus(ctx, note)
+		}
+		return err
+	}
+
+	mergeExistingRemoteStatusProjection(status, existing)
+	return ih.statusRepository.UpdateStatus(ctx, status)
+}
+
+func (ih *InboxHandler) deleteRemoteNoteStatus(ctx context.Context, objectID string) error {
+	if ih.statusRepository == nil {
+		return fmt.Errorf("status repository not configured")
+	}
+
+	statusID := models.CanonicalStatusID(objectID)
+	if statusID == "" {
+		return fmt.Errorf("canonical remote status id is invalid")
+	}
+
+	if err := ih.statusRepository.DeleteStatus(ctx, statusID); err != nil {
+		if isRemoteStatusNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
+func mergeExistingRemoteStatusProjection(projected, existing *models.Status) {
+	if projected == nil || existing == nil {
+		return
+	}
+
+	projected.PK = existing.PK
+	projected.SK = existing.SK
+	projected.CreatedAt = existing.CreatedAt
+	projected.LikeCount = existing.LikeCount
+	projected.ReblogCount = existing.ReblogCount
+	projected.ReplyCount = existing.ReplyCount
+	projected.QuoteCount = existing.QuoteCount
+	projected.Deleted = existing.Deleted
+	projected.DeletedAt = existing.DeletedAt
+	projected.Flagged = existing.Flagged
+	projected.Version = existing.Version
+	projected.BoostOfStatusID = existing.BoostOfStatusID
+	projected.BoostOfAuthorID = existing.BoostOfAuthorID
+	projected.BoostAnnounceID = existing.BoostAnnounceID
+	projected.ReblogOfID = existing.ReblogOfID
+	projected.QuoteTargetStatusID = existing.QuoteTargetStatusID
+	projected.QuoteTargetAuthorID = existing.QuoteTargetAuthorID
+
+	if projected.Language == "" {
+		projected.Language = existing.Language
+	}
+	if projected.PublishedAt.IsZero() {
+		projected.PublishedAt = existing.PublishedAt
+	}
+	if len(projected.URLs) == 0 && len(existing.URLs) > 0 {
+		projected.URLs = append([]string(nil), existing.URLs...)
+	}
+
+	if projected.Note == nil || existing.Note == nil {
+		return
+	}
+
+	if projected.Note.Published == nil && !existing.PublishedAt.IsZero() {
+		publishedAt := existing.PublishedAt
+		projected.Note.Published = &publishedAt
+	}
+}
+
+func isRemoteStatusNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return errors.HasCode(err, errors.CodeNotFound) ||
+		stdErrors.Is(err, storage.ErrNotFound) ||
+		dynamormerrors.IsNotFound(err)
+}
+
 // processRemoteCreateActivity processes an incoming Create activity from a remote instance
 func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
@@ -2039,7 +2164,16 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 
 		// Store the note (it will be marked as remote)
 		if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
-			log.Error("failed to store remote note", zap.Error(err))
+			if !dynamormerrors.IsConditionFailed(err) {
+				log.Error("failed to store remote note", zap.Error(err))
+				return err
+			}
+		}
+
+		if err := ih.materializeRemoteNoteStatus(ctx, &note); err != nil {
+			log.Error("failed to materialize remote note status",
+				zap.String("note_id", note.ID),
+				zap.Error(err))
 			return err
 		}
 	}
@@ -2123,6 +2257,13 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 			return err
 		}
 
+		if err := ih.upsertRemoteNoteStatus(ctx, &note); err != nil {
+			log.Error("failed to refresh canonical remote note status",
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			return err
+		}
+
 		log.Info("successfully updated remote note",
 			zap.String("object_id", objectID),
 			zap.String("updated_by", activity.Actor))
@@ -2183,6 +2324,13 @@ func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activit
 	// Create tombstone (soft delete) instead of hard delete
 	if err := ih.createDeleteTombstone(ctx, objectID, activity, originalObject); err != nil {
 		log.Error("failed to create tombstone",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return err
+	}
+
+	if err := ih.deleteRemoteNoteStatus(ctx, objectID); err != nil {
+		log.Error("failed to tombstone canonical remote note status",
 			zap.String("object_id", objectID),
 			zap.Error(err))
 		return err

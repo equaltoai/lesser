@@ -99,6 +99,27 @@ func (r *StatusRepository) PrepareStatusCreate(status *models.Status) error {
 	return status.BeforeCreate()
 }
 
+// PrepareStatusUpdate materializes the canonical persisted Status shape before
+// UpdateStatus writes a status refresh back to storage.
+func (r *StatusRepository) PrepareStatusUpdate(status *models.Status) error {
+	if status == nil {
+		return fmt.Errorf("status is required")
+	}
+	if status.Note != nil {
+		normalized, err := notecontract.Normalize(status.Note)
+		if err != nil {
+			return fmt.Errorf("normalize status note for persistence: %w", err)
+		}
+		status.Note = normalized
+	}
+
+	if err := status.BeforeUpdate(); err != nil {
+		return err
+	}
+
+	return status.UpdateKeys()
+}
+
 // StageStatusCreate adds a prepared status row to a caller-owned transaction while
 // keeping StatusRepository as the owner of the status-create contract.
 func (r *StatusRepository) StageStatusCreate(tx core.TransactionBuilder, status *models.Status) error {
@@ -376,6 +397,10 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 
 // UpdateStatus updates an existing status using enhanced validation and event emission
 func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Status) error {
+	if err := r.PrepareStatusUpdate(status); err != nil {
+		return err
+	}
+
 	// Use UpdateBuilder with explicit fields to prevent Note field corruption
 	pk := status.PK
 	if pk == "" {
@@ -391,15 +416,47 @@ func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Stat
 		Where("SK", "=", sk).
 		UpdateBuilder()
 
-	// Set only the fields that should be updated - explicitly exclude Note to prevent corruption
-	// Update basic fields
-	if status.Content != "" {
-		updateBuilder.Set("Content", status.Content)
+	setOrRemoveStrings := func(field string, values []string) {
+		if len(values) == 0 {
+			updateBuilder.Remove(field)
+			return
+		}
+		updateBuilder.Set(field, values)
 	}
+	setOrRemoveString := func(field, value string) {
+		if strings.TrimSpace(value) == "" {
+			updateBuilder.Remove(field)
+			return
+		}
+		updateBuilder.Set(field, value)
+	}
+	setOrRemoveIndex := func(field, value string) {
+		if value == "" {
+			updateBuilder.Remove(field)
+			return
+		}
+		updateBuilder.Set(field, value)
+	}
+
+	updateBuilder.Set("AuthorID", status.AuthorID)
+	updateBuilder.Set("AuthorUsername", status.AuthorUsername)
+	updateBuilder.Set("Content", status.Content)
+	setOrRemoveString("ConversationID", status.ConversationID)
+	setOrRemoveString("InReplyToID", status.InReplyToID)
+	setOrRemoveString("ReblogOfID", status.ReblogOfID)
+	setOrRemoveString("BoostOfStatusID", status.BoostOfStatusID)
+	setOrRemoveString("BoostOfAuthorID", status.BoostOfAuthorID)
+	setOrRemoveString("BoostAnnounceID", status.BoostAnnounceID)
 	updateBuilder.Set("Sensitive", status.Sensitive)
 	updateBuilder.Set("Language", status.Language)
 	updateBuilder.Set("Visibility", status.Visibility)
+	updateBuilder.Set("PublishedAt", status.PublishedAt)
 	updateBuilder.Set("UpdatedAt", status.UpdatedAt)
+	updateBuilder.Set("ModifiedAt", status.ModifiedAt)
+	updateBuilder.Set("MediaCount", status.MediaCount)
+	setOrRemoveStrings("Hashtags", status.Hashtags)
+	setOrRemoveStrings("Mentions", status.Mentions)
+	setOrRemoveStrings("URLs", status.URLs)
 
 	// Update engagement counts (if changed)
 	if status.LikeCount >= 0 {
@@ -419,20 +476,37 @@ func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Stat
 	updateBuilder.Set("Deleted", status.Deleted)
 	if status.DeletedAt != nil {
 		updateBuilder.Set("DeletedAt", status.DeletedAt)
+	} else {
+		updateBuilder.Remove("DeletedAt")
 	}
 	updateBuilder.Set("Flagged", status.Flagged)
 
 	// Update addressing fields
-	if status.ToRecipients != nil {
-		updateBuilder.Set("ToRecipients", status.ToRecipients)
-	}
-	if status.CcRecipients != nil {
-		updateBuilder.Set("CcRecipients", status.CcRecipients)
-	}
+	setOrRemoveStrings("ToRecipients", status.ToRecipients)
+	setOrRemoveStrings("CcRecipients", status.CcRecipients)
+	setOrRemoveStrings("BtoRecipients", status.BtoRecipients)
+	setOrRemoveStrings("BccRecipients", status.BccRecipients)
 
 	// Update quote reference metadata so quote posts resolve correctly
-	updateBuilder.Set("QuoteTargetStatusID", status.QuoteTargetStatusID)
-	updateBuilder.Set("QuoteTargetAuthorID", status.QuoteTargetAuthorID)
+	setOrRemoveString("QuoteTargetStatusID", status.QuoteTargetStatusID)
+	setOrRemoveString("QuoteTargetAuthorID", status.QuoteTargetAuthorID)
+
+	setOrRemoveIndex("gsi1PK", status.GSI1PK)
+	setOrRemoveIndex("gsi1SK", status.GSI1SK)
+	setOrRemoveIndex("gsi2PK", status.GSI2PK)
+	setOrRemoveIndex("gsi2SK", status.GSI2SK)
+	setOrRemoveIndex("gsi3PK", status.GSI3PK)
+	setOrRemoveIndex("gsi3SK", status.GSI3SK)
+	setOrRemoveIndex("gsi4PK", status.GSI4PK)
+	setOrRemoveIndex("gsi4SK", status.GSI4SK)
+	setOrRemoveIndex("gsi5PK", status.GSI5PK)
+	setOrRemoveIndex("gsi5SK", status.GSI5SK)
+	setOrRemoveIndex("gsi6PK", status.GSI6PK)
+	setOrRemoveIndex("gsi6SK", status.GSI6SK)
+	setOrRemoveIndex("gsi7PK", status.GSI7PK)
+	setOrRemoveIndex("gsi7SK", status.GSI7SK)
+	setOrRemoveIndex("gsi8PK", status.GSI8PK)
+	setOrRemoveIndex("gsi8SK", status.GSI8SK)
 
 	// Only update Note field if it's explicitly provided and valid
 	// This prevents corruption from nil or partially-loaded Note fields

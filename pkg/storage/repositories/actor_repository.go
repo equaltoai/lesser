@@ -1377,46 +1377,81 @@ func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 // GetCachedRemoteActor retrieves a cached remote actor by handle
 //
 //nolint:dupl // Remote actor caching patterns are shared between actor repositories
-func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
-	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
+func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, identifier string) (*activitypub.Actor, error) {
+	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("identifier", identifier))
 
-	// Use direct query for RemoteActor (different model type)
+	lookupHandles := remoteActorLookupHandles(identifier)
+	if len(lookupHandles) == 0 {
+		return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(identifier)}
+	}
+
+	var firstErr error
+	for _, lookupHandle := range lookupHandles {
+		remoteActor, err := r.getCachedRemoteActorRecord(ctx, lookupHandle)
+		if err != nil {
+			if dynamormerrors.IsNotFound(err) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = ErrorHandler.HandleGetError(err, "remote actor", lookupHandle)
+			}
+			continue
+		}
+
+		if time.Now().After(remoteActor.ExpiresAt) {
+			log.Debug("cached remote actor expired",
+				zap.String("lookup_handle", lookupHandle),
+				zap.Time("expired_at", remoteActor.ExpiresAt))
+			continue
+		}
+
+		actor := normalizeRemoteActorCacheActor(lookupHandle, remoteActor.Actor)
+		if !remoteActorHasCanonicalIdentity(actor) {
+			decoded, decErr := loadCachedRemoteActorFromDynamo(ctx, r.tableName, lookupHandle)
+			if decErr != nil {
+				log.Warn("failed to decode cached remote actor payload from Dynamo fallback",
+					zap.String("lookup_handle", lookupHandle),
+					zap.Error(decErr))
+			} else {
+				actor = normalizeRemoteActorCacheActor(lookupHandle, decoded)
+			}
+		}
+
+		if err := activitypub.ValidateResolvedActor(actor); err != nil {
+			log.Warn("cached remote actor invalid",
+				zap.String("lookup_handle", lookupHandle),
+				zap.Error(err))
+			continue
+		}
+
+		log.Debug("retrieved cached remote actor",
+			zap.String("lookup_handle", lookupHandle),
+			zap.String("actor_id", actor.ID))
+
+		return actor, nil
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(identifier)}
+}
+
+func (r *ActorRepository) getCachedRemoteActorRecord(ctx context.Context, handle string) (*models.RemoteActor, error) {
 	var remoteActor models.RemoteActor
-
 	err := r.db.WithContext(ctx).Model(&models.RemoteActor{}).
 		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
 		Where("SK", "=", "PROFILE").
 		First(&remoteActor)
 	if err != nil {
-		if dynamormerrors.IsNotFound(err) {
-			// Extract username from handle for error (consistent with legacy)
-			username := strings.Split(handle, "@")[0]
-			return nil, common.ActorNotFoundError{Username: username}
-		}
-		return nil, ErrorHandler.HandleGetError(err, "remote actor", handle)
+		return nil, err
 	}
-
-	// Check if the cache has expired (consistent with legacy behavior)
-	if time.Now().After(remoteActor.ExpiresAt) {
-		log.Debug("cached remote actor expired",
-			zap.Time("expired_at", remoteActor.ExpiresAt))
-		return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(handle)}
-	}
-
-	if err := activitypub.ValidateResolvedActor(remoteActor.Actor); err != nil {
-		log.Warn("cached remote actor invalid",
-			zap.Error(err))
-		return nil, common.ActorNotFoundError{Username: cachedRemoteActorLookupUsername(handle)}
-	}
-
-	log.Debug("retrieved cached remote actor",
-		zap.String("actor_id", remoteActor.Actor.ID))
-
-	return remoteActor.Actor, nil
+	return &remoteActor, nil
 }
 
 func cachedRemoteActorLookupUsername(handle string) string {
-	handle = strings.TrimSpace(strings.TrimPrefix(handle, "@"))
+	handle = strings.TrimSpace(models.NormalizeRemoteActorHandle(handle))
 	if handle == "" {
 		return ""
 	}
@@ -1427,4 +1462,59 @@ func cachedRemoteActorLookupUsername(handle string) string {
 	}
 
 	return strings.TrimSpace(parts[0])
+}
+
+func remoteActorLookupHandles(identifier string) []string {
+	handles := make([]string, 0, 3)
+	seen := make(map[string]struct{}, 3)
+
+	appendHandle := func(handle string) {
+		handle = strings.TrimSpace(handle)
+		if handle == "" {
+			return
+		}
+		if _, exists := seen[handle]; exists {
+			return
+		}
+		seen[handle] = struct{}{}
+		handles = append(handles, handle)
+	}
+
+	canonical := models.NormalizeRemoteActorHandle(identifier)
+	appendHandle(canonical)
+	if canonical != "" {
+		appendHandle("@" + canonical)
+	}
+
+	legacy := strings.TrimSpace(identifier)
+	if strings.HasPrefix(legacy, "@") {
+		appendHandle(legacy)
+		appendHandle(strings.TrimPrefix(legacy, "@"))
+	}
+
+	return handles
+}
+
+func normalizeRemoteActorCacheActor(handle string, actor *activitypub.Actor) *activitypub.Actor {
+	if actor == nil {
+		return nil
+	}
+
+	clone := *actor
+	if strings.TrimSpace(clone.PreferredUsername) == "" {
+		clone.PreferredUsername = cachedRemoteActorLookupUsername(handle)
+	}
+
+	return &clone
+}
+
+func remoteActorHasCanonicalIdentity(actor *activitypub.Actor) bool {
+	if actor == nil {
+		return false
+	}
+
+	return strings.TrimSpace(actor.ID) != "" &&
+		strings.TrimSpace(actor.Type) != "" &&
+		strings.TrimSpace(actor.PreferredUsername) != "" &&
+		strings.TrimSpace(actor.Inbox) != ""
 }

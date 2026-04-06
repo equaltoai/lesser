@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	goerrors "errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -78,43 +79,9 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 		actorID = note.AttributedTo
 	}
 
-	// Create the model
-	objModel := models.NewObject(baseObj.ID, baseObj.Type, actorID)
-
-	// Set common fields
-	if isNote {
-		objModel.Content = note.Content
-		objModel.AttributedTo = note.AttributedTo
-		objModel.To = note.To
-		objModel.CC = note.CC
-		if note.InReplyTo != "" {
-			objModel.InReplyTo = &note.InReplyTo
-		}
-		objModel.Sensitive = note.Sensitive
-
-		// Store complex fields as JSON
-		if err := common.ValidateSliceNotEmpty("note attachments", note.Attachment); err == nil {
-			attachJSON, _ := json.Marshal(note.Attachment)
-			objModel.AttachmentJSON = string(attachJSON)
-		}
-		if err := common.ValidateSliceNotEmpty("note tags", note.Tag); err == nil {
-			tagJSON, _ := json.Marshal(note.Tag)
-			objModel.TagJSON = string(tagJSON)
-		}
-	}
-
-	// Set timestamps
-	if baseObj.Published != nil {
-		objModel.Published = *baseObj.Published
-	}
-	if baseObj.Updated != nil {
-		objModel.Updated = *baseObj.Updated
-	}
-
-	// Store context as JSON
-	if baseObj.Context != nil {
-		contextJSON, _ := json.Marshal(baseObj.Context)
-		objModel.ContextJSON = string(contextJSON)
+	objModel, err := r.buildObjectModel(baseObj, actorID, isNote, &note, object)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityObject, baseObj.ID)
 	}
 
 	// Store using BaseRepository
@@ -132,6 +99,156 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 		zap.String("actor", actorID))
 
 	return nil
+}
+
+func (r *ObjectRepository) buildObjectModel(
+	baseObj activitypub.BaseObject,
+	actorID string,
+	isNote bool,
+	note *activitypub.Note,
+	source any,
+) (*models.Object, error) {
+	if objModel, ok := cloneInputObjectModel(source); ok {
+		r.populateObjectModelDefaults(objModel, baseObj, actorID)
+		return objModel, nil
+	}
+
+	objModel := models.NewObject(baseObj.ID, baseObj.Type, actorID)
+	objModel.Summary = baseObj.Summary
+	objModel.To = append([]string(nil), baseObj.To...)
+	objModel.CC = append([]string(nil), baseObj.CC...)
+	objModel.BTo = append([]string(nil), baseObj.BTo...)
+	objModel.BCC = append([]string(nil), baseObj.BCC...)
+	objModel.Sensitive = baseObj.Sensitive
+	objModel.IsRemote = isRemoteObjectReference(baseObj.ID, r.domain) || isRemoteObjectReference(actorID, r.domain)
+	if baseObj.Published != nil && !baseObj.Published.IsZero() {
+		objModel.Published = *baseObj.Published
+	}
+	if baseObj.Updated != nil && !baseObj.Updated.IsZero() {
+		objModel.Updated = *baseObj.Updated
+	}
+
+	if isNote && note != nil {
+		objModel.Content = note.Content
+		objModel.AttributedTo = note.AttributedTo
+		objModel.ConversationID = note.ConversationID
+		objModel.Visibility = note.Visibility
+		if note.InReplyTo != "" {
+			replyTo := note.InReplyTo
+			objModel.InReplyTo = &replyTo
+		}
+
+		// Store complex fields as JSON
+		if err := common.ValidateSliceNotEmpty("note attachments", note.Attachment); err == nil {
+			attachJSON, _ := json.Marshal(note.Attachment)
+			objModel.AttachmentJSON = string(attachJSON)
+		}
+		if err := common.ValidateSliceNotEmpty("note tags", note.Tag); err == nil {
+			tagJSON, _ := json.Marshal(note.Tag)
+			objModel.TagJSON = string(tagJSON)
+		}
+	}
+
+	r.populateObjectModelDefaults(objModel, baseObj, actorID)
+	return objModel, nil
+}
+
+func (r *ObjectRepository) populateObjectModelDefaults(objModel *models.Object, baseObj activitypub.BaseObject, actorID string) {
+	if objModel == nil {
+		return
+	}
+
+	now := time.Now()
+
+	if strings.TrimSpace(objModel.ID) == "" {
+		objModel.ID = strings.TrimSpace(baseObj.ID)
+	}
+	if strings.TrimSpace(objModel.Type) == "" {
+		objModel.Type = strings.TrimSpace(baseObj.Type)
+	}
+	if strings.TrimSpace(objModel.AttributedTo) == "" {
+		objModel.AttributedTo = strings.TrimSpace(actorID)
+	}
+	if objModel.Published.IsZero() {
+		if baseObj.Published != nil && !baseObj.Published.IsZero() {
+			objModel.Published = *baseObj.Published
+		} else {
+			objModel.Published = now
+		}
+	}
+	if objModel.Updated.IsZero() {
+		if baseObj.Updated != nil && !baseObj.Updated.IsZero() {
+			objModel.Updated = *baseObj.Updated
+		} else {
+			objModel.Updated = objModel.Published
+		}
+	}
+	if objModel.CreatedAt.IsZero() {
+		objModel.CreatedAt = now
+	}
+	if !objModel.IsRemote {
+		objModel.IsRemote = isRemoteObjectReference(objModel.ID, r.domain) || isRemoteObjectReference(objModel.AttributedTo, r.domain)
+	}
+
+	if objModel.ContextJSON == "" && baseObj.Context != nil {
+		contextJSON, _ := json.Marshal(baseObj.Context)
+		objModel.ContextJSON = string(contextJSON)
+	}
+}
+
+func cloneInputObjectModel(object any) (*models.Object, bool) {
+	switch typed := object.(type) {
+	case *models.Object:
+		if typed == nil {
+			return nil, false
+		}
+		cloned := *typed
+		cloned.To = append([]string(nil), typed.To...)
+		cloned.CC = append([]string(nil), typed.CC...)
+		cloned.BTo = append([]string(nil), typed.BTo...)
+		cloned.BCC = append([]string(nil), typed.BCC...)
+		return &cloned, true
+	case models.Object:
+		cloned := typed
+		cloned.To = append([]string(nil), typed.To...)
+		cloned.CC = append([]string(nil), typed.CC...)
+		cloned.BTo = append([]string(nil), typed.BTo...)
+		cloned.BCC = append([]string(nil), typed.BCC...)
+		return &cloned, true
+	default:
+		return nil, false
+	}
+}
+
+func isRemoteObjectReference(raw string, localDomain string) bool {
+	host := normalizeObjectReferenceHost(raw)
+	localHost := normalizeObjectReferenceHost(localDomain)
+	if host == "" || localHost == "" {
+		return false
+	}
+
+	return host != localHost
+}
+
+func normalizeObjectReferenceHost(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(value); err == nil && parsed != nil && parsed.Hostname() != "" {
+		return strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	}
+
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if idx := strings.Index(value, "/"); idx >= 0 {
+		value = value[:idx]
+	}
+	if idx := strings.Index(value, ":"); idx >= 0 {
+		value = value[:idx]
+	}
+
+	return strings.TrimSpace(value)
 }
 
 // GetObject retrieves an object by ID

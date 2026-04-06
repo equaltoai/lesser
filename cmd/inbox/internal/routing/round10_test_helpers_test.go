@@ -123,6 +123,7 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 
 	innerDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	mockDB := &extendedMockDB{inner: innerDB}
 
 	innerDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
@@ -162,6 +163,16 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 	mockQuery.On("WithRetry", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Select", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
+	mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
+
+	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Add", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionNotExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ReturnValues", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Execute").Return(nil).Maybe()
 
 	// Avoid accidental federation deliveries from inbox flow; treat remote actor cache as missing.
 	mockQuery.On("First", mock.AnythingOfType("*models.RemoteActor")).Return(dynamormErrors.ErrItemNotFound).Maybe()

@@ -163,6 +163,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevMigrateDirectMessageState := runMigrateDirectMessageStateFn
 	prevMigrateNumericIDs := runMigrateNumericIDsFn
 	prevMigrateMCPAuthCutover := runMigrateMCPAuthCutoverFn
+	prevMigrateRemoteNoteStatuses := runMigrateRemoteNoteStatusesFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
 		runDownFn = prevDown
@@ -199,6 +200,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runMigrateDirectMessageStateFn = prevMigrateDirectMessageState
 		runMigrateNumericIDsFn = prevMigrateNumericIDs
 		runMigrateMCPAuthCutoverFn = prevMigrateMCPAuthCutover
+		runMigrateRemoteNoteStatusesFn = prevMigrateRemoteNoteStatuses
 	})
 
 	type call struct {
@@ -247,6 +249,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runMigrateDirectMessageStateFn = stub("migrate-direct-message-state")
 	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 	runMigrateMCPAuthCutoverFn = stub("migrate-mcp-auth-cutover")
+	runMigrateRemoteNoteStatusesFn = stub("migrate-remote-note-statuses")
 
 	var buf bytes.Buffer
 	require.Equal(t, 0, runCLI([]string{"lesser", helpFlagShort}, &buf))
@@ -363,6 +366,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-mcp-auth-cutover", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-mcp-auth-cutover"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-remote-note-statuses", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-remote-note-statuses"].argv)
 }
 
 func TestExitCodeFromErr(t *testing.T) {

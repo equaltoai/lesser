@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,6 +270,63 @@ func TestStatusRepository_create_update_delete_and_counts(t *testing.T) {
 	_, _ = repo.CountReplies(ctx, "root1")
 	assert.NoError(t, repo.UpdateEngagementMetrics(ctx, "boost1", 1, 2, 3, 4))
 	_, _ = repo.GetTotalStatusCount(ctx)
+}
+
+func TestStatusRepository_UpdateStatus_refreshes_derived_fields_and_indexes(t *testing.T) {
+	ctx := context.Background()
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
+	setupPermissiveStatusRepoMocks(mockDB, mockQuery, mockUpdateBuilder)
+
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+	noteID := "https://remote.example/users/bob/statuses/edited"
+	parentID := "https://another.remote/users/alice/statuses/root"
+	published := time.Date(2025, 12, 28, 12, 0, 0, 0, time.UTC)
+	updated := published.Add(5 * time.Minute)
+
+	status := &models.Status{
+		StatusID:       models.CanonicalStatusID(noteID),
+		AuthorID:       "https://remote.example/users/bob",
+		AuthorUsername: "bob@remote.example",
+		Language:       "en",
+		URLs:           []string{noteID},
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        noteID,
+				Type:      activitypub.NoteType,
+				To:        []string{activitypub.PublicAddress},
+				InReplyTo: parentID,
+				Published: &published,
+				Updated:   &updated,
+			},
+			Content:        "edited content",
+			AttributedTo:   "https://remote.example/users/bob",
+			ConversationID: "conv-1",
+			Tag: []activitypub.Tag{
+				{Type: "Hashtag", Name: "#Federation"},
+			},
+			Attachment: []activitypub.Attachment{
+				{Type: "Document", URL: "https://remote.example/media/1"},
+			},
+		},
+	}
+
+	assert.NoError(t, repo.UpdateStatus(ctx, status))
+
+	mockUpdateBuilder.AssertCalled(t, "Set", "AuthorUsername", "bob@remote.example")
+	mockUpdateBuilder.AssertCalled(t, "Set", "Content", "edited content")
+	mockUpdateBuilder.AssertCalled(t, "Set", "ConversationID", "conv-1")
+	mockUpdateBuilder.AssertCalled(t, "Set", "InReplyToID", models.CanonicalStatusID(parentID))
+	mockUpdateBuilder.AssertCalled(t, "Set", "Hashtags", []string{"federation"})
+	mockUpdateBuilder.AssertCalled(t, "Set", "URLs", []string{noteID})
+	mockUpdateBuilder.AssertCalled(t, "Set", "MediaCount", 1)
+	mockUpdateBuilder.AssertCalled(t, "Set", "gsi2PK", "PUBLIC_TIMELINE")
+	mockUpdateBuilder.AssertCalled(t, "Set", "gsi4PK", fmt.Sprintf("REPLIES#%s", models.CanonicalStatusID(parentID)))
+	mockUpdateBuilder.AssertCalled(t, "Set", "gsi7PK", "URL#"+strings.ToLower(noteID))
+	mockUpdateBuilder.AssertCalled(t, "Remove", "DeletedAt")
 }
 
 func TestStatusRepository_boost_deletion_not_found_and_found(t *testing.T) {

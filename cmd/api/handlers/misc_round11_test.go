@@ -72,12 +72,6 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 	require.NoError(t, err)
 	requireStatus(t, http.StatusOK)(handler.HandleSearchV2Lift(ctxSearch2))
 
-	objResult := handler.convertObjectToStatusResult(&state.objectList[0])
-	require.NotNil(t, objResult)
-	mapResult := handler.convertObjectToStatusResult(map[string]any{"id": "m1", "url": "https://example.com/1", "content": "hi", "attributedTo": "alice", "published": now})
-	require.NotNil(t, mapResult)
-	require.Nil(t, handler.convertObjectToStatusResult("bad"))
-
 	status := handler.convertStatusResultToAPI(ctxSearch, &storage.StatusSearchResult{
 		StatusID:  "s1",
 		Content:   "hi",

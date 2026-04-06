@@ -262,6 +262,12 @@ func TestActorRepository_migration_and_remote_actor_cache(t *testing.T) {
 	mockDB, mockQuery := setupPermissiveDBAndQuery()
 	repo := NewActorRepository(mockDB, "test-table", logger)
 
+	previousGetter := getRepositoryDynamoClient
+	t.Cleanup(func() { getRepositoryDynamoClient = previousGetter })
+	getRepositoryDynamoClient = func(context.Context) (dynamoGetItemClient, error) {
+		return nil, errors.New("dynamo unavailable in test")
+	}
+
 	// CheckAlsoKnownAs not found
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err := repo.CheckAlsoKnownAs(ctx, "alice", "target")
@@ -305,13 +311,19 @@ func TestActorRepository_migration_and_remote_actor_cache(t *testing.T) {
 	// GetCachedRemoteActor expired
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		m := args.Get(0).(*models.RemoteActor)
-		m.Actor = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote/users/alice"}}
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote/users/alice", Type: activitypub.PersonType},
+			PreferredUsername: "alice",
+			Inbox:             "https://remote/users/alice/inbox",
+		}
 		m.ExpiresAt = time.Now().Add(-time.Minute)
 	}).Once()
+	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err = repo.GetCachedRemoteActor(ctx, "alice@remote")
 	assert.Error(t, err)
 
 	// GetCachedRemoteActor not found, invalid payload, and success
+	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err = repo.GetCachedRemoteActor(ctx, "bob@remote")
 	assert.Error(t, err)
@@ -321,14 +333,16 @@ func TestActorRepository_migration_and_remote_actor_cache(t *testing.T) {
 		m.Actor = nil
 		m.ExpiresAt = time.Now().Add(time.Minute)
 	}).Once()
+	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err = repo.GetCachedRemoteActor(ctx, "bad@remote")
 	assert.Error(t, err)
 
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		m := args.Get(0).(*models.RemoteActor)
 		m.Actor = &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{ID: "https://remote/users/carla"},
-			Inbox:      "https://remote/users/carla/inbox",
+			BaseObject:        activitypub.BaseObject{ID: "https://remote/users/carla", Type: activitypub.PersonType},
+			PreferredUsername: "carla",
+			Inbox:             "https://remote/users/carla/inbox",
 		}
 		m.ExpiresAt = time.Now().Add(time.Minute)
 	}).Once()

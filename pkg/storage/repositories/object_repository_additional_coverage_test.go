@@ -86,6 +86,85 @@ func TestObjectRepository_GetOrCreateStatusMetadata_CreatesOnNotFound(t *testing
 	require.NotNil(t, metadata)
 }
 
+func TestObjectRepository_CreateObject_PreservesRemoteNoteFields(t *testing.T) {
+	ctx := context.Background()
+	publishedAt := time.Date(2025, 1, 20, 10, 11, 12, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var captured *models.Object
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
+		captured = args.Get(0).(*models.Object)
+	}).Return(mockQuery).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "dev.simulacrum.greater.website", zap.NewNop())
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://remote.example/users/bob/statuses/1",
+			Type:      activitypub.NoteType,
+			Published: &publishedAt,
+			To:        []string{activitypub.PublicAddress},
+			BTo:       []string{"https://remote.example/users/bob/bto"},
+			BCC:       []string{"https://remote.example/users/bob/bcc"},
+			Summary:   "spoiler",
+		},
+		Content:        "hello from remote",
+		AttributedTo:   "https://remote.example/users/bob",
+		ConversationID: "conv-1",
+		Visibility:     models.VisibilityPrivate,
+	}
+
+	require.NoError(t, repo.CreateObject(ctx, note))
+	require.NotNil(t, captured)
+	require.True(t, captured.IsRemote)
+	require.Equal(t, "conv-1", captured.ConversationID)
+	require.Equal(t, models.VisibilityPrivate, captured.Visibility)
+	require.Equal(t, []string{"https://remote.example/users/bob/bto"}, captured.BTo)
+	require.Equal(t, []string{"https://remote.example/users/bob/bcc"}, captured.BCC)
+	require.Equal(t, "spoiler", captured.Summary)
+	require.Equal(t, publishedAt, captured.Published)
+}
+
+func TestObjectRepository_CreateObject_PreservesProvidedStorageModelFields(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2025, 1, 21, 11, 12, 13, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var captured *models.Object
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
+		captured = args.Get(0).(*models.Object)
+	}).Return(mockQuery).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "dev.simulacrum.greater.website", zap.NewNop())
+	source := &models.Object{
+		ID:             "https://remote.example/users/bob/statuses/2",
+		Type:           activitypub.NoteType,
+		AttributedTo:   "https://remote.example/users/bob",
+		Content:        "already modeled",
+		ConversationID: "conv-2",
+		Visibility:     models.VisibilityDirect,
+		IsRemote:       true,
+		Published:      now,
+		Updated:        now,
+		CreatedAt:      now,
+	}
+
+	require.NoError(t, repo.CreateObject(ctx, source))
+	require.NotNil(t, captured)
+	require.True(t, captured.IsRemote)
+	require.Equal(t, "conv-2", captured.ConversationID)
+	require.Equal(t, models.VisibilityDirect, captured.Visibility)
+	require.Equal(t, source.Content, captured.Content)
+	require.Equal(t, source.Published, captured.Published)
+}
+
 func TestObjectRepository_IsQuoteAllowed_CoverageMatrix(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 6, 7, 8, 9, 0, time.UTC)
@@ -441,6 +520,115 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 			AttributedTo: "alice",
 		})
 		require.NoError(t, err)
+	})
+}
+
+type invalidObjectJSONMarshaler struct{}
+
+func (invalidObjectJSONMarshaler) MarshalJSON() ([]byte, error) {
+	return []byte("{"), nil
+}
+
+func TestObjectRepository_CreateObject_EarlyErrorPaths(t *testing.T) {
+	ctx := context.Background()
+	repo := NewObjectRepository(nil, "test-table", "example.com", zap.NewNop())
+
+	err := repo.CreateObject(ctx, map[string]any{"bad": make(chan int)})
+	require.Error(t, err)
+
+	err = repo.CreateObject(ctx, invalidObjectJSONMarshaler{})
+	require.Error(t, err)
+}
+
+func TestObjectRepository_ObjectModelHelperCoverage(t *testing.T) {
+	repo := NewObjectRepository(nil, "test-table", "local.example", zap.NewNop())
+	publishedAt := time.Date(2025, 2, 2, 3, 4, 5, 0, time.UTC)
+	updatedAt := publishedAt.Add(time.Minute)
+
+	t.Run("populateObjectModelDefaults fills missing fields and infers remote metadata", func(t *testing.T) {
+		objModel := &models.Object{}
+		baseObj := activitypub.BaseObject{
+			ID:        "https://remote.example/users/bob/statuses/1",
+			Type:      activitypub.NoteType,
+			Context:   []any{"https://www.w3.org/ns/activitystreams"},
+			Published: &publishedAt,
+			Updated:   &updatedAt,
+		}
+
+		repo.populateObjectModelDefaults(objModel, baseObj, "https://remote.example/users/bob")
+
+		require.Equal(t, baseObj.ID, objModel.ID)
+		require.Equal(t, activitypub.NoteType, objModel.Type)
+		require.Equal(t, "https://remote.example/users/bob", objModel.AttributedTo)
+		require.Equal(t, publishedAt, objModel.Published)
+		require.Equal(t, updatedAt, objModel.Updated)
+		require.False(t, objModel.CreatedAt.IsZero())
+		require.True(t, objModel.IsRemote)
+		require.NotEmpty(t, objModel.ContextJSON)
+	})
+
+	t.Run("populateObjectModelDefaults preserves existing values and uses now fallback", func(t *testing.T) {
+		objModel := &models.Object{
+			ID:           "keep-id",
+			Type:         activitypub.ArticleType,
+			AttributedTo: "keep-actor",
+			IsRemote:     true,
+		}
+
+		repo.populateObjectModelDefaults(objModel, activitypub.BaseObject{}, "")
+		repo.populateObjectModelDefaults(nil, activitypub.BaseObject{}, "")
+
+		require.Equal(t, "keep-id", objModel.ID)
+		require.Equal(t, activitypub.ArticleType, objModel.Type)
+		require.Equal(t, "keep-actor", objModel.AttributedTo)
+		require.False(t, objModel.Published.IsZero())
+		require.Equal(t, objModel.Published, objModel.Updated)
+		require.False(t, objModel.CreatedAt.IsZero())
+		require.True(t, objModel.IsRemote)
+	})
+
+	t.Run("cloneInputObjectModel copies slices and rejects unsupported inputs", func(t *testing.T) {
+		source := &models.Object{
+			To:  []string{"to-1"},
+			CC:  []string{"cc-1"},
+			BTo: []string{"bto-1"},
+			BCC: []string{"bcc-1"},
+		}
+
+		clonedPtr, ok := cloneInputObjectModel(source)
+		require.True(t, ok)
+		require.NotSame(t, source, clonedPtr)
+
+		clonedValue, ok := cloneInputObjectModel(*source)
+		require.True(t, ok)
+
+		source.To[0] = "changed"
+		source.CC[0] = "changed"
+		source.BTo[0] = "changed"
+		source.BCC[0] = "changed"
+
+		require.Equal(t, []string{"to-1"}, clonedPtr.To)
+		require.Equal(t, []string{"cc-1"}, clonedPtr.CC)
+		require.Equal(t, []string{"bto-1"}, clonedPtr.BTo)
+		require.Equal(t, []string{"bcc-1"}, clonedPtr.BCC)
+		require.Equal(t, []string{"to-1"}, clonedValue.To)
+
+		_, ok = cloneInputObjectModel((*models.Object)(nil))
+		require.False(t, ok)
+
+		_, ok = cloneInputObjectModel(activitypub.Note{})
+		require.False(t, ok)
+	})
+
+	t.Run("object reference helpers normalize hosts and detect remote references", func(t *testing.T) {
+		require.Equal(t, "remote.example", normalizeObjectReferenceHost(" HTTPS://Remote.Example:443/users/bob "))
+		require.Equal(t, "remote.example", normalizeObjectReferenceHost("remote.example/path"))
+		require.Equal(t, "", normalizeObjectReferenceHost("   "))
+
+		require.True(t, isRemoteObjectReference("https://remote.example/users/bob", "local.example"))
+		require.False(t, isRemoteObjectReference("https://local.example/users/alice", "local.example"))
+		require.False(t, isRemoteObjectReference("", "local.example"))
+		require.False(t, isRemoteObjectReference("https://remote.example/users/bob", ""))
 	})
 }
 

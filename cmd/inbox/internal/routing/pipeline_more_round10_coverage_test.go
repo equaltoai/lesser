@@ -8,14 +8,119 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
-
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
+
+type recordingStatusRepository struct {
+	interfaces.StatusRepository
+	statuses   map[string]*models.Status
+	created    []*models.Status
+	updated    []*models.Status
+	deletedIDs []string
+	createErr  error
+	getErr     error
+	updateErr  error
+	deleteErr  error
+}
+
+func (r *recordingStatusRepository) CreateStatus(_ context.Context, status *models.Status) error {
+	cloned := cloneRecordedStatus(status)
+	if cloned != nil {
+		r.created = append(r.created, cloned)
+		if r.statuses == nil {
+			r.statuses = map[string]*models.Status{}
+		}
+		r.statuses[cloned.StatusID] = cloneRecordedStatus(cloned)
+	}
+
+	return r.createErr
+}
+
+func (r *recordingStatusRepository) GetStatus(_ context.Context, statusID string) (*models.Status, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	if r.statuses == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	status, ok := r.statuses[statusID]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+
+	return cloneRecordedStatus(status), nil
+}
+
+func (r *recordingStatusRepository) UpdateStatus(_ context.Context, status *models.Status) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
+
+	cloned := cloneRecordedStatus(status)
+	if cloned != nil {
+		_ = cloned.UpdateKeys()
+		r.updated = append(r.updated, cloned)
+		if r.statuses == nil {
+			r.statuses = map[string]*models.Status{}
+		}
+		r.statuses[cloned.StatusID] = cloneRecordedStatus(cloned)
+	}
+
+	return nil
+}
+
+func (r *recordingStatusRepository) DeleteStatus(_ context.Context, statusID string) error {
+	r.deletedIDs = append(r.deletedIDs, statusID)
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+
+	if existing, ok := r.statuses[statusID]; ok && existing != nil {
+		now := time.Now().UTC()
+		existing.Deleted = true
+		existing.DeletedAt = &now
+	}
+
+	return nil
+}
+
+func cloneRecordedStatus(status *models.Status) *models.Status {
+	if status == nil {
+		return nil
+	}
+
+	cloned := *status
+	cloned.Hashtags = append([]string(nil), status.Hashtags...)
+	cloned.Mentions = append([]string(nil), status.Mentions...)
+	cloned.URLs = append([]string(nil), status.URLs...)
+	cloned.ToRecipients = append([]string(nil), status.ToRecipients...)
+	cloned.CcRecipients = append([]string(nil), status.CcRecipients...)
+	cloned.BtoRecipients = append([]string(nil), status.BtoRecipients...)
+	cloned.BccRecipients = append([]string(nil), status.BccRecipients...)
+
+	if status.Note != nil {
+		noteCopy := *status.Note
+		noteCopy.To = append([]string(nil), status.Note.To...)
+		noteCopy.CC = append([]string(nil), status.Note.CC...)
+		noteCopy.BTo = append([]string(nil), status.Note.BTo...)
+		noteCopy.BCC = append([]string(nil), status.Note.BCC...)
+		noteCopy.Attachment = append([]activitypub.Attachment(nil), status.Note.Attachment...)
+		noteCopy.Tag = append([]activitypub.Tag(nil), status.Note.Tag...)
+		cloned.Note = &noteCopy
+	}
+
+	return &cloned
+}
 
 func TestInboxHandler_Round10_ProcessAddRemove_ErrorBranches(t *testing.T) {
 	env := newInboxTestEnv(t)
@@ -220,6 +325,50 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.NoError(t, env.handler.processRemoteCreateActivity(ctx, create, env.local))
 	})
 
+	t.Run("create note materializes canonical status", func(t *testing.T) {
+		statusRepo := &recordingStatusRepository{}
+		env.handler.statusRepository = statusRepo
+
+		noteID := "https://remote.example/users/bob/statuses/create-123"
+		parentID := "https://another.remote/users/alice/statuses/create-123"
+		published := time.Date(2025, 12, 28, 13, 0, 0, 0, time.UTC)
+
+		create := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.CreateType, ID: env.cfg.BaseURL() + "/activities/create-status-materialization"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "hello from a federated note",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+				"inReplyTo":    parentID,
+				"published":    published.Format(time.RFC3339),
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteCreateActivity(ctx, create, env.local))
+		require.Len(t, statusRepo.created, 1)
+
+		status := statusRepo.created[0]
+		require.NotNil(t, status)
+		assert.Equal(t, models.CanonicalStatusID(noteID), status.StatusID)
+		assert.Equal(t, env.remoteActorID, status.AuthorID)
+		assert.Equal(t, "bob@remote.example", status.AuthorUsername)
+		assert.Equal(t, []string{noteID}, status.URLs)
+		require.NotNil(t, status.Note)
+		assert.Equal(t, noteID, status.Note.ID)
+		assert.Equal(t, env.remoteActorID, status.Note.AttributedTo)
+		assert.Equal(t, parentID, status.Note.InReplyTo)
+		assert.Equal(t, published, status.PublishedAt)
+
+		require.NoError(t, status.BeforeCreate())
+		assert.Equal(t, "bob@remote.example", status.AuthorUsername)
+		assert.Equal(t, models.CanonicalStatusID(parentID), status.InReplyToID)
+		assert.Equal(t, models.VisibilityPublic, status.Visibility)
+	})
+
 	t.Run("update invalid object returns success", func(t *testing.T) {
 		update := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-invalid-object"},
@@ -264,6 +413,118 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			},
 		}
 		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+	})
+
+	t.Run("update note refreshes canonical status", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/update-123"
+		parentID := "https://another.remote/users/alice/statuses/root-1"
+		statusRepo := &recordingStatusRepository{
+			statuses: map[string]*models.Status{
+				models.CanonicalStatusID(noteID): {
+					StatusID:       models.CanonicalStatusID(noteID),
+					AuthorID:       env.remoteActorID,
+					AuthorUsername: "bob@remote.example",
+					LikeCount:      7,
+					ReplyCount:     3,
+					PublishedAt:    time.Date(2025, 12, 28, 12, 0, 0, 0, time.UTC),
+					CreatedAt:      time.Date(2025, 12, 28, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		env.handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-status-materialization"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "hello after an edit",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+				"inReplyTo":    parentID,
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.updated, 1)
+		assert.Empty(t, statusRepo.created)
+
+		status := statusRepo.updated[0]
+		require.NotNil(t, status)
+		assert.Equal(t, models.CanonicalStatusID(noteID), status.StatusID)
+		assert.Equal(t, env.remoteActorID, status.AuthorID)
+		assert.Equal(t, "bob@remote.example", status.AuthorUsername)
+		assert.Equal(t, "hello after an edit", status.Content)
+		assert.Equal(t, models.CanonicalStatusID(parentID), status.InReplyToID)
+		assert.Equal(t, []string{noteID}, status.URLs)
+		assert.Equal(t, models.VisibilityPublic, status.Visibility)
+		assert.Equal(t, 7, status.LikeCount)
+		assert.Equal(t, 3, status.ReplyCount)
+		require.NotNil(t, status.Note)
+		assert.Equal(t, noteID, status.Note.ID)
+	})
+
+	t.Run("update note preserves tombstone metadata", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/update-deleted-123"
+		deletedAt := time.Date(2025, 12, 28, 11, 0, 0, 0, time.UTC)
+		statusRepo := &recordingStatusRepository{
+			statuses: map[string]*models.Status{
+				models.CanonicalStatusID(noteID): {
+					StatusID:    models.CanonicalStatusID(noteID),
+					AuthorID:    env.remoteActorID,
+					Deleted:     true,
+					DeletedAt:   &deletedAt,
+					PublishedAt: time.Date(2025, 12, 28, 10, 0, 0, 0, time.UTC),
+					CreatedAt:   time.Date(2025, 12, 28, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		env.handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-preserves-tombstone"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "hello after delete",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.updated, 1)
+		require.True(t, statusRepo.updated[0].Deleted)
+		require.NotNil(t, statusRepo.updated[0].DeletedAt)
+		assert.Equal(t, deletedAt, *statusRepo.updated[0].DeletedAt)
+	})
+
+	t.Run("update note materializes missing canonical status", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/update-create-123"
+		statusRepo := &recordingStatusRepository{}
+		env.handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-materializes-missing-status"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "late materialized edit",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.created, 1)
+		assert.Empty(t, statusRepo.updated)
+		assert.Equal(t, models.CanonicalStatusID(noteID), statusRepo.created[0].StatusID)
 	})
 
 	t.Run("delete unsupported object returns success", func(t *testing.T) {
@@ -312,6 +573,36 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			Object:     &activitypub.BaseObject{ID: env.cfg.BaseURL() + "/objects/1"},
 		}
 		require.NoError(t, env.handler.processRemoteDeleteActivity(ctx, del, env.local))
+	})
+
+	t.Run("delete note tombstones canonical status", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/delete-123"
+		statusRepo := &recordingStatusRepository{}
+		env.handler.statusRepository = statusRepo
+
+		del := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.DeleteType, ID: env.cfg.BaseURL() + "/activities/delete-status-materialization"},
+			Actor:      env.remoteActorID,
+			Object:     noteID,
+		}
+
+		require.NoError(t, env.handler.processRemoteDeleteActivity(ctx, del, env.local))
+		assert.Equal(t, []string{models.CanonicalStatusID(noteID)}, statusRepo.deletedIDs)
+	})
+
+	t.Run("delete missing canonical status stays idempotent", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/delete-missing-123"
+		statusRepo := &recordingStatusRepository{deleteErr: storage.ErrNotFound}
+		env.handler.statusRepository = statusRepo
+
+		del := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.DeleteType, ID: env.cfg.BaseURL() + "/activities/delete-status-missing"},
+			Actor:      env.remoteActorID,
+			Object:     noteID,
+		}
+
+		require.NoError(t, env.handler.processRemoteDeleteActivity(ctx, del, env.local))
+		assert.Equal(t, []string{models.CanonicalStatusID(noteID)}, statusRepo.deletedIDs)
 	})
 }
 

@@ -299,6 +299,26 @@ func TestConversationMigrationHelpers_BranchCoverage(t *testing.T) {
 	}
 	require.True(t, conversationMetadataLess(recordA, recordB))
 	require.False(t, conversationMetadataLess(recordB, recordA))
+	recordC := conversationMetadataRecord{
+		ConversationID:  "c",
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
+		LastMessageTime: later,
+	}
+	recordD := conversationMetadataRecord{
+		ConversationID:  "d",
+		CreatedAt:       createdAt.Add(time.Minute),
+		UpdatedAt:       updatedAt,
+		LastMessageTime: later,
+	}
+	require.True(t, conversationMetadataLess(recordC, recordD))
+	require.False(t, conversationMetadataLess(recordD, recordC))
+	require.True(t, conversationMetadataLess(recordA, conversationMetadataRecord{
+		ConversationID:  "z",
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
+		LastMessageTime: later,
+	}))
 
 	participantTime := updatedAt
 	participantA := conversationParticipantRecordItem{
@@ -319,6 +339,34 @@ func TestConversationMigrationHelpers_BranchCoverage(t *testing.T) {
 	}
 	require.True(t, participantRecordPreferred(participantB, participantA, "canon-conv"))
 	require.False(t, participantRecordPreferred(participantA, participantB, "canon-conv"))
+	participantLater := conversationParticipantRecordItem{
+		ConversationID: "legacy-conv",
+		SortTime:       participantTime.Add(time.Minute),
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("USER_CONVERSATIONS#arch"),
+			"SK": sAttr(conversationParticipantSortKey(participantTime.Add(time.Minute), "legacy-conv")),
+		},
+	}
+	require.True(t, participantRecordPreferred(participantLater, participantB, "canon-conv"))
+	require.Equal(t, participantLater.ConversationID, selectCanonicalParticipantRecord([]conversationParticipantRecordItem{participantA, participantLater}, "canon-conv").ConversationID)
+
+	participantTieA := conversationParticipantRecordItem{
+		ConversationID: "canon-conv",
+		SortTime:       participantTime,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("USER_CONVERSATIONS#arch"),
+			"SK": sAttr("PARTICIPANT#b"),
+		},
+	}
+	participantTieB := conversationParticipantRecordItem{
+		ConversationID: "canon-conv",
+		SortTime:       participantTime,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("USER_CONVERSATIONS#arch"),
+			"SK": sAttr("PARTICIPANT#a"),
+		},
+	}
+	require.True(t, participantRecordPreferred(participantTieB, participantTieA, "canon-conv"))
 
 	statusTime := updatedAt
 	statusA := conversationStatusRecord{
@@ -341,6 +389,48 @@ func TestConversationMigrationHelpers_BranchCoverage(t *testing.T) {
 	}
 	require.True(t, statusRecordPreferred(statusB, statusA, "canon-conv"))
 	require.False(t, statusRecordPreferred(statusA, statusB, "canon-conv"))
+	statusLater := conversationStatusRecord{
+		ConversationID: "legacy-conv",
+		LastReadAt:     statusTime.Add(time.Minute),
+		Unread:         false,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("CONVERSATION_STATUS#legacy-conv"),
+			"SK": sAttr("USER#arch"),
+		},
+	}
+	require.True(t, statusRecordPreferred(statusLater, statusB, "canon-conv"))
+
+	statusUnreadPreferred := conversationStatusRecord{
+		ConversationID: "canon-conv",
+		LastReadAt:     statusTime,
+		Unread:         false,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("CONVERSATION_STATUS#canon-conv"),
+			"SK": sAttr("USER#arch"),
+		},
+	}
+	require.True(t, statusRecordPreferred(statusB, statusUnreadPreferred, "canon-conv"))
+
+	statusTieA := conversationStatusRecord{
+		ConversationID: "canon-conv",
+		LastReadAt:     statusTime,
+		Unread:         true,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("CONVERSATION_STATUS#canon-conv"),
+			"SK": sAttr("USER#b"),
+		},
+	}
+	statusTieB := conversationStatusRecord{
+		ConversationID: "canon-conv",
+		LastReadAt:     statusTime,
+		Unread:         true,
+		Item: map[string]types.AttributeValue{
+			"PK": sAttr("CONVERSATION_STATUS#canon-conv"),
+			"SK": sAttr("USER#a"),
+		},
+	}
+	require.True(t, statusRecordPreferred(statusTieB, statusTieA, "canon-conv"))
+	require.Equal(t, statusLater.ConversationID, selectCanonicalStatusRecord([]conversationStatusRecord{statusA, statusLater}, "canon-conv").ConversationID)
 	require.True(t, anyStatusUnread([]conversationStatusRecord{statusA, statusB}))
 	require.False(t, anyStatusUnread([]conversationStatusRecord{statusA}))
 
@@ -481,6 +571,8 @@ func TestConversationMigrationParsersAndHelpers_HandleInvalidRows(t *testing.T) 
 	require.Equal(t, time.Unix(20, 0).UTC(), lastReadAt)
 
 	require.True(t, conversationParticipantSortTime("bad").IsZero())
+	validParticipantTime := time.Unix(30, 0).UTC()
+	require.Equal(t, validParticipantTime, conversationParticipantSortTime(conversationParticipantSortKey(validParticipantTime, "conv-1")))
 	require.Contains(t, conversationParticipantSortKey(time.Time{}, "conv-zero"), "#conv-zero")
 
 	snapshotItem := map[string]types.AttributeValue{}
