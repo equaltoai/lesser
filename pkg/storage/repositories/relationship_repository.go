@@ -207,7 +207,7 @@ func (r *RelationshipRepository) relationshipLookupCandidates(followerUsername, 
 	followerCandidates := r.relationshipIdentifierCandidates(followerUsername)
 	followingCandidates := r.relationshipIdentifierCandidates(followingUsername)
 
-	keys := make([]relationshipLookupKey, 0, len(followerCandidates)*len(followingCandidates))
+	keys := make([]relationshipLookupKey, 0)
 	seen := make(map[relationshipLookupKey]struct{})
 	for _, follower := range followerCandidates {
 		for _, following := range followingCandidates {
