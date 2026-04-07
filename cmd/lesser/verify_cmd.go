@@ -26,6 +26,8 @@ const (
 	goGCEnvVar                        = "GOGC"
 )
 
+var runVerifyRemoteNoteMaterializationFn = runVerifyRemoteNoteMaterialization
+
 func runVerify(argv []string) error {
 	if len(argv) == 0 {
 		return runVerifyAll(nil)
@@ -59,6 +61,8 @@ func runVerify(argv []string) error {
 		return runVerifyAccountHydration(argv[1:])
 	case "status-contract":
 		return runVerifyStatusContract(argv[1:])
+	case "remote-note-materialization":
+		return runVerifyRemoteNoteMaterializationFn(argv[1:])
 	case "artifact-deploy":
 		return runVerifyArtifactDeployFn(argv[1:])
 	case "inventory":
