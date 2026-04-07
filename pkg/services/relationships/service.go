@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -2407,6 +2408,10 @@ func (s *Service) normalizeActorIdentifier(identifier string) string {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
 		return ""
+	}
+
+	if normalized := models.NormalizeRelationshipIdentity(trimmed, s.domainName); normalized != "" {
+		return normalized
 	}
 
 	// Already a username or handle

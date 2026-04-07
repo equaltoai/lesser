@@ -28,6 +28,11 @@ type RelationshipRepository struct {
 	localDomain string
 }
 
+type relationshipLookupKey struct {
+	follower  string
+	following string
+}
+
 const (
 	defaultMoveQueryLimit = 100
 	maxMoveQueryLimit     = 500
@@ -66,14 +71,9 @@ func newRelationshipRepository(db core.DB, tableName string, logger *zap.Logger,
 
 // GetFollowRequest gets a follow request by follower and target IDs
 func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
-	var relationship models.RelationshipRecord
-
-	pk := fmt.Sprintf("FOLLOW#%s", followerID)
-	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
-
-	err := r.Get(ctx, pk, sk, &relationship)
+	relationship, err := r.getRelationshipRecord(ctx, followerID, targetID)
 	if err != nil {
-		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
+		if relationshipNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(err, EntityFollow, "not found")
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityFollow, "request")
@@ -94,10 +94,7 @@ func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerI
 
 // HasFollowRequest checks if there's a follow request between two users
 func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
-	pk := fmt.Sprintf("FOLLOW#%s", requesterID)
-	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
-
-	exists, err := r.Exists(ctx, pk, sk)
+	exists, err := r.hasRelationshipRecord(ctx, requesterID, targetID)
 	if err != nil {
 		return false, ErrorHandler.HandleQueryError(err, "follow request", "check")
 	}
@@ -107,6 +104,8 @@ func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requester
 
 // CreateRelationship creates a new follow relationship with enhanced validation and events
 func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error {
+	followerUsername = r.canonicalRelationshipIdentifier(followerUsername)
+	followingUsername = r.canonicalRelationshipIdentifier(followingUsername)
 	relationship := models.NewRelationshipRecord(followerUsername, followingUsername, activityID)
 
 	r.ensureDomainIndexes(relationship)
@@ -167,6 +166,124 @@ func normalizeDomain(raw string) string {
 	return normalized
 }
 
+func (r *RelationshipRepository) canonicalRelationshipIdentifier(identifier string) string {
+	if normalized := models.NormalizeRelationshipIdentity(identifier, r.localDomain); normalized != "" {
+		return normalized
+	}
+
+	return strings.TrimSpace(identifier)
+}
+
+func (r *RelationshipRepository) relationshipIdentifierCandidates(identifier string) []string {
+	candidates := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
+	}
+
+	canonical := r.canonicalRelationshipIdentifier(identifier)
+	add(canonical)
+
+	if canonical != "" && strings.Contains(canonical, "@") {
+		add("@" + canonical)
+	}
+
+	if canonical == "" {
+		add(strings.TrimSpace(identifier))
+	}
+
+	return candidates
+}
+
+func (r *RelationshipRepository) relationshipLookupCandidates(followerUsername, followingUsername string) []relationshipLookupKey {
+	followerCandidates := r.relationshipIdentifierCandidates(followerUsername)
+	followingCandidates := r.relationshipIdentifierCandidates(followingUsername)
+
+	keys := make([]relationshipLookupKey, 0, len(followerCandidates)*len(followingCandidates))
+	seen := make(map[relationshipLookupKey]struct{})
+	for _, follower := range followerCandidates {
+		for _, following := range followingCandidates {
+			key := relationshipLookupKey{follower: follower, following: following}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			keys = append(keys, key)
+		}
+	}
+
+	return keys
+}
+
+func relationshipNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return errors.IsNotFound(err) ||
+		pkgErrors.HasCode(err, pkgErrors.CodeNotFound) ||
+		strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+func (r *RelationshipRepository) getRelationshipRecord(ctx context.Context, followerUsername, followingUsername string) (*models.RelationshipRecord, error) {
+	var lastErr error
+
+	for _, candidate := range r.relationshipLookupCandidates(followerUsername, followingUsername) {
+		var relationship models.RelationshipRecord
+		pk := fmt.Sprintf("FOLLOW#%s", candidate.follower)
+		sk := fmt.Sprintf("FOLLOWING#%s", candidate.following)
+
+		err := r.Get(ctx, pk, sk, &relationship)
+		if err == nil {
+			return &relationship, nil
+		}
+		if relationshipNotFound(err) {
+			lastErr = err
+			continue
+		}
+		return nil, err
+	}
+
+	if lastErr == nil {
+		lastErr = storage.ErrNotFound
+	}
+
+	return nil, lastErr
+}
+
+func (r *RelationshipRepository) hasRelationshipRecord(ctx context.Context, followerUsername, followingUsername string) (bool, error) {
+	for _, candidate := range r.relationshipLookupCandidates(followerUsername, followingUsername) {
+		pk := fmt.Sprintf("FOLLOW#%s", candidate.follower)
+		sk := fmt.Sprintf("FOLLOWING#%s", candidate.following)
+
+		exists, err := r.Exists(ctx, pk, sk)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (r *RelationshipRepository) normalizeRelationshipListValue(value string) string {
+	if normalized := r.canonicalRelationshipIdentifier(value); normalized != "" {
+		return normalized
+	}
+
+	return strings.TrimSpace(value)
+}
+
 func (r *RelationshipRepository) ensureDomainIndexes(record *models.RelationshipRecord) {
 	if record == nil {
 		return
@@ -185,6 +302,16 @@ func (r *RelationshipRepository) ensureDomainIndexes(record *models.Relationship
 
 // DeleteRelationship removes a follow relationship
 func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followerUsername, followingUsername string) error {
+	if relationship, err := r.getRelationshipRecord(ctx, followerUsername, followingUsername); err == nil && relationship != nil {
+		followerUsername = relationship.ExtractFollowerUsername()
+		followingUsername = relationship.ExtractFollowingUsername()
+	} else if err != nil && !relationshipNotFound(err) {
+		return ErrorHandler.HandleGetError(err, EntityFollow, followerUsername)
+	} else {
+		followerUsername = r.canonicalRelationshipIdentifier(followerUsername)
+		followingUsername = r.canonicalRelationshipIdentifier(followingUsername)
+	}
+
 	pk := fmt.Sprintf("FOLLOW#%s", followerUsername)
 	sk := fmt.Sprintf("FOLLOWING#%s", followingUsername)
 
@@ -198,37 +325,29 @@ func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followe
 
 // GetRelationship retrieves a specific follow relationship
 func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUsername, followingUsername string) (*models.RelationshipRecord, error) {
-	var relationship models.RelationshipRecord
-
-	pk := fmt.Sprintf("FOLLOW#%s", followerUsername)
-	sk := fmt.Sprintf("FOLLOWING#%s", followingUsername)
-
-	err := r.Get(ctx, pk, sk, &relationship)
+	relationship, err := r.getRelationshipRecord(ctx, followerUsername, followingUsername)
 	if err != nil {
-		if errors.IsNotFound(err) || pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+		if relationshipNotFound(err) {
 			r.logger.Debug("relationship record not found",
 				zap.String("follower", followerUsername),
-				zap.String("following", followingUsername),
-				zap.String("pk", pk),
-				zap.String("sk", sk))
+				zap.String("following", followingUsername))
 			return nil, pkgErrors.ItemNotFoundWithID(EntityFollow, fmt.Sprintf("%s:%s", followerUsername, followingUsername))
 		}
 
 		r.logger.Error("relationship fetch failed",
 			zap.String("follower", followerUsername),
 			zap.String("following", followingUsername),
-			zap.String("pk", pk),
-			zap.String("sk", sk),
 			zap.String("error_type", fmt.Sprintf("%T", err)),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleGetError(err, EntityFollow, followerUsername)
 	}
 
-	return &relationship, nil
+	return relationship, nil
 }
 
 // getRelationshipsByState retrieves relationships for a user filtered by state
 func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, username string, state models.RelationshipState, limit int, cursor string, errorContext string) ([]string, string, error) {
+	username = r.canonicalRelationshipIdentifier(username)
 	if limit <= 0 {
 		limit = 40
 	}
@@ -279,7 +398,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 	followers := make([]string, 0, len(relationships))
 	for _, rel := range relationships {
 		if follower := rel.ExtractFollowerFromGSI(); follower != "" {
-			followers = append(followers, follower)
+			followers = append(followers, r.normalizeRelationshipListValue(follower))
 		}
 	}
 
@@ -299,6 +418,7 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 
 // GetFollowing retrieves all users that a user is following
 func (r *RelationshipRepository) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	username = r.canonicalRelationshipIdentifier(username)
 	if limit <= 0 {
 		limit = 40
 	}
@@ -348,7 +468,7 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 	following := make([]string, 0, len(relationships))
 	for _, rel := range relationships {
 		if followed := rel.ExtractFollowingUsername(); followed != "" {
-			following = append(following, followed)
+			following = append(following, r.normalizeRelationshipListValue(followed))
 		}
 	}
 
@@ -363,6 +483,7 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 
 // CountFollowers returns the number of followers for a user
 func (r *RelationshipRepository) CountFollowers(ctx context.Context, username string) (int, error) {
+	username = r.canonicalRelationshipIdentifier(username)
 	// Note: This uses GSI and filter, so we keep the custom implementation
 	// BaseRepository doesn't have a method for filtered counts on GSI
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
@@ -383,6 +504,7 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 
 // CountFollowing returns the number of users that a user is following
 func (r *RelationshipRepository) CountFollowing(ctx context.Context, username string) (int, error) {
+	username = r.canonicalRelationshipIdentifier(username)
 	// Note: This uses filter, so we keep the custom implementation
 	// BaseRepository doesn't have a method for filtered counts
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
@@ -469,6 +591,8 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 
 // UpdateRelationship updates relationship settings using enhanced validation and events
 func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followerUsername, followingUsername string, updates map[string]interface{}) error {
+	followerUsername = r.canonicalRelationshipIdentifier(followerUsername)
+	followingUsername = r.canonicalRelationshipIdentifier(followingUsername)
 	// First get the relationship
 	relationship, err := r.GetRelationship(ctx, followerUsername, followingUsername)
 	if err != nil {
@@ -635,14 +759,9 @@ func (r *RelationshipRepository) RejectFollowRequest(ctx context.Context, follow
 
 // HasPendingFollowRequest checks if there's a pending follow request between two users
 func (r *RelationshipRepository) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
-	var relationship models.RelationshipRecord
-
-	pk := fmt.Sprintf("FOLLOW#%s", requesterID)
-	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
-
-	err := r.Get(ctx, pk, sk, &relationship)
+	relationship, err := r.getRelationshipRecord(ctx, requesterID, targetID)
 	if err != nil {
-		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
+		if relationshipNotFound(err) {
 			return false, nil
 		}
 		return false, ErrorHandler.HandleQueryError(err, EntityFollow, "pending check")
@@ -994,10 +1113,10 @@ func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID str
 
 // IsFollowing checks if followerUsername is following the targetActorID
 func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUsername, targetActorID string) (bool, error) {
-	// Extract target username from actor ID
-	targetUsername := r.extractUsernameFromID(targetActorID)
+	followerUsername = r.canonicalRelationshipIdentifier(followerUsername)
+	targetActorID = r.canonicalRelationshipIdentifier(targetActorID)
 
-	relationship, err := r.GetRelationship(ctx, followerUsername, targetUsername)
+	relationship, err := r.GetRelationship(ctx, followerUsername, targetActorID)
 	if err != nil {
 		// If relationship not found, user is not following
 		if pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
@@ -1005,7 +1124,7 @@ func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUserna
 		}
 		r.logger.Error("isFollowing lookup failed",
 			zap.String("follower", followerUsername),
-			zap.String("target", targetUsername),
+			zap.String("target", targetActorID),
 			zap.String("error_type", fmt.Sprintf("%T", err)),
 			zap.Error(err))
 		return false, err
@@ -1019,17 +1138,14 @@ func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUserna
 	return relationship.State == models.RelationshipAccepted, nil
 }
 
-// extractUsernameFromID extracts username from an actor ID or returns the input if it's already a username
+// extractUsernameFromID extracts a canonical username or handle from an actor identifier.
 func (r *RelationshipRepository) extractUsernameFromID(actorIDOrUsername string) string {
-	// If it contains "https://" or has slashes, it's an actor ID, extract username
-	if strings.Contains(actorIDOrUsername, "://") || strings.Contains(actorIDOrUsername, "/") {
-		parts := strings.Split(actorIDOrUsername, "/")
-		if len(parts) > 0 {
-			return parts[len(parts)-1]
-		}
+	trimmed := strings.TrimSpace(strings.TrimSuffix(actorIDOrUsername, "/"))
+	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 && idx+1 < len(trimmed) {
+		return strings.TrimPrefix(trimmed[idx+1:], "@")
 	}
-	// Otherwise it's already a username
-	return actorIDOrUsername
+
+	return strings.TrimPrefix(trimmed, "@")
 }
 
 // ===== Relationship Note Methods =====
