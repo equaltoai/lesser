@@ -314,7 +314,7 @@ func (r *ActorRepository) loadCanonicalLocalActor(ctx context.Context, username 
 	}
 
 	actor := model.Actor
-	if canonicalLocalActorRepairNeeded(actor) {
+	if canonicalLocalActorFallbackNeeded(actor, canonicalUsername) {
 		readUsername := resolveCanonicalActorReadUsername(canonicalUsername, model)
 		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, readUsername)
 		if decErr != nil {
@@ -371,6 +371,14 @@ func canonicalLocalActorRepairNeeded(actor *activitypub.Actor) bool {
 	}
 
 	return actor.Endpoints == nil || strings.TrimSpace(actor.Endpoints.SharedInbox) == ""
+}
+
+func canonicalLocalActorFallbackNeeded(actor *activitypub.Actor, canonicalUsername string) bool {
+	if !canonicalLocalActorRepairNeeded(actor) {
+		return false
+	}
+
+	return strings.TrimSpace(canonicalUsername) == ""
 }
 
 // UpdateActor updates an existing actor
