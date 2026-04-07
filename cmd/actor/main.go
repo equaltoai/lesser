@@ -99,7 +99,8 @@ func NewHandler() *Handler {
 	actorRepo := repositories.NewActorRepository(
 		repos.GetDB(),
 		repos.GetTableName(),
-		logger)
+		logger,
+		cfg.Domain)
 
 	// Initialize authorized fetch service
 	authorizedFetchService := federation.NewAuthorizedFetchService(

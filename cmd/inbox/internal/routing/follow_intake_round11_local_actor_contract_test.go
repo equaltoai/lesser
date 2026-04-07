@@ -100,5 +100,5 @@ func newNestedBaseObjectLocalActorRepository(t *testing.T, env *inboxTestEnv, us
 		actorQuery.AssertExpectations(t)
 	})
 
-	return repositories.NewActorRepository(actorDB, env.cfg.DynamoTableName, zap.NewNop())
+	return repositories.NewActorRepository(actorDB, env.cfg.DynamoTableName, zap.NewNop(), env.cfg.Domain)
 }

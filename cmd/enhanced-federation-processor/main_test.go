@@ -166,7 +166,7 @@ func TestNewHandler_Round12(t *testing.T) {
 	processor := &fakeEnhancedRetryProcessor{}
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, nil }
 	newSQSClientFn = func(aws.Config, ...func(*sqs.Options)) *sqs.Client { return &sqs.Client{} }
-	newFederationStorageFn = func(dynamormCore.DB, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
+	newFederationStorageFn = func(dynamormCore.DB, string, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
 	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService {
 		return &federation.DeliveryService{}
 	}
@@ -176,6 +176,7 @@ func TestNewHandler_Round12(t *testing.T) {
 		Config: &config.Config{
 			Region:                "us-east-1",
 			DynamoTableName:       "table",
+			Domain:                "example.com",
 			EnhancedRetryQueueURL: "https://example.com/queue",
 		},
 		Logger:      zap.NewNop(),
@@ -217,7 +218,7 @@ func TestInitializeAndMainAndPanicRecovery_Round12(t *testing.T) {
 	processor := &fakeEnhancedRetryProcessor{}
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, nil }
 	newSQSClientFn = func(aws.Config, ...func(*sqs.Options)) *sqs.Client { return &sqs.Client{} }
-	newFederationStorageFn = func(dynamormCore.DB, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
+	newFederationStorageFn = func(dynamormCore.DB, string, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
 	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService {
 		return &federation.DeliveryService{}
 	}
@@ -228,6 +229,7 @@ func TestInitializeAndMainAndPanicRecovery_Round12(t *testing.T) {
 			Config: &config.Config{
 				Region:                "us-east-1",
 				DynamoTableName:       "table",
+				Domain:                "example.com",
 				EnhancedRetryQueueURL: "https://example.com/queue",
 			},
 			Logger:      zap.NewNop(),

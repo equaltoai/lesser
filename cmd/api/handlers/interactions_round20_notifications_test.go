@@ -183,7 +183,7 @@ func TestInteractionsRound20_RelationshipMutationHelpers(t *testing.T) {
 }
 
 func TestInteractionsRound20_InteractionHelperCoverage(t *testing.T) {
-	t.Run("resolve relationship target id falls back to preferred username", func(t *testing.T) {
+	t.Run("resolve relationship target id canonicalizes local preferred username rows", func(t *testing.T) {
 		cfg := round11TestConfig()
 		state := &round10QueryState{
 			usersByUsername: map[string]storagemodels.User{
@@ -197,7 +197,7 @@ func TestInteractionsRound20_InteractionHelperCoverage(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, state)
 		targetID, err := h.resolveRelationshipTargetID(context.Background(), "bob")
 		require.NoError(t, err)
-		require.Equal(t, "bob", targetID)
+		require.Equal(t, cfg.ActorURL("bob"), targetID)
 	})
 
 	t.Run("relationship target not found detection covers not found variants", func(t *testing.T) {

@@ -74,7 +74,7 @@ func round11NewHandler(t *testing.T, args ...any) (*Handler, *MockRepositoryStor
 	harness := round10NewDynamoHarness(t, state)
 
 	accountRepo := repositories.NewAccountRepository(harness.db, cfg.DynamoTableName, cfg.Domain, logger)
-	actorRepo := repositories.NewActorRepository(harness.db, cfg.DynamoTableName, logger)
+	actorRepo := repositories.NewActorRepository(harness.db, cfg.DynamoTableName, logger, cfg.Domain)
 	objectRepo := repositories.NewObjectRepository(harness.db, cfg.DynamoTableName, cfg.Domain, logger)
 	activityRepo := repositories.NewActivityRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	statusRepo := repositories.NewStatusRepository(harness.db, cfg.DynamoTableName, logger, nil)

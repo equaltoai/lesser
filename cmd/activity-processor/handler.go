@@ -167,7 +167,7 @@ func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 		Logger:           logger,
 		ActivityRepo:     repositories.NewActivityRepository(db, tableName, logger, nil),
 		ObjectRepo:       repositories.NewObjectRepository(db, tableName, domain, logger),
-		ActorRepo:        repositories.NewActorRepository(db, tableName, logger),
+		ActorRepo:        repositories.NewActorRepository(db, tableName, logger, domain),
 		TimelineRepo:     repositories.NewTimelineRepository(db, tableName, logger, nil),
 		RelationshipRepo: repositories.NewRelationshipRepository(db, tableName, logger),
 		LikeRepo:         repositories.NewLikeRepository(db, tableName, logger),

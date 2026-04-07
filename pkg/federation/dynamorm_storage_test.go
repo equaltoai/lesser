@@ -30,7 +30,7 @@ func TestNewDynamORMFederationStorage_Smoke(t *testing.T) {
 	testDB := dynamormtesting.NewTestDB()
 	logger := zaptest.NewLogger(t)
 
-	svc := NewDynamORMFederationStorage(testDB.MockDB, "table", logger)
+	svc := NewDynamORMFederationStorage(testDB.MockDB, "table", "example.com", logger)
 	require.NotNil(t, svc)
 	require.NotNil(t, svc.db)
 	require.NotNil(t, svc.actorRepository)

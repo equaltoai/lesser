@@ -37,7 +37,7 @@ func (f *federationService) DeliverToFollowers(ctx context.Context, activity *ac
 	if db := f.storage.GetDB(); db != nil {
 		// Check if it's a core.DB type
 		if coreDB, ok := db.(core.DB); ok {
-			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Logger.(*zap.Logger))
+			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Config.Config.Domain, f.deps.Logger.(*zap.Logger))
 		} else {
 			// Fall back to a basic implementation or return error
 			return ErrUnsupportedDatabaseType
@@ -59,7 +59,7 @@ func (f *federationService) DeliverToRecipients(ctx context.Context, activity *a
 	if db := f.storage.GetDB(); db != nil {
 		// Check if it's a core.DB type
 		if coreDB, ok := db.(core.DB); ok {
-			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Logger.(*zap.Logger))
+			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Config.Config.Domain, f.deps.Logger.(*zap.Logger))
 		} else {
 			// Fall back to a basic implementation or return error
 			return ErrUnsupportedDatabaseType

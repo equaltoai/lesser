@@ -149,7 +149,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		harness := round10NewDynamoHarness(t, state)
 
 		accountRepo := repositories.NewAccountRepository(harness.db, cfg.DynamoTableName, cfg.Domain, logger)
-		actorRepo := repositories.NewActorRepository(harness.db, cfg.DynamoTableName, logger)
+		actorRepo := repositories.NewActorRepository(harness.db, cfg.DynamoTableName, logger, cfg.Domain)
 		moderationRepo := repositories.NewModerationRepository(harness.db, cfg.DynamoTableName, logger)
 		userRepo := repositories.NewUserRepository(harness.db, cfg.DynamoTableName, logger)
 		statusRepo := repositories.NewStatusRepository(harness.db, cfg.DynamoTableName, logger, nil)

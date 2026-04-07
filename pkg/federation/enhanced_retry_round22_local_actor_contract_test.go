@@ -142,5 +142,5 @@ func newNestedBaseObjectSigningActorRepository(t *testing.T, username string) *r
 		actorQuery.AssertExpectations(t)
 	})
 
-	return repositories.NewActorRepository(actorDB, "test-table", zap.NewNop())
+	return repositories.NewActorRepository(actorDB, "test-table", zap.NewNop(), "example.com")
 }

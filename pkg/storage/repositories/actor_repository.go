@@ -33,11 +33,13 @@ type ActorRepositoryDeps interface {
 // ActorRepository implements actor operations using enhanced DynamORM patterns
 type ActorRepository struct {
 	*EnhancedBaseRepository[*models.Actor]
-	deps ActorRepositoryDeps
+	deps         ActorRepositoryDeps
+	localDomain  string
+	localBaseURL string
 }
 
 // NewActorRepository creates a new actor repository with enhanced functionality
-func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *ActorRepository {
+func NewActorRepository(db core.DB, tableName string, logger *zap.Logger, localDomains ...string) *ActorRepository {
 	// Create enhanced repository optimized for actor operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, nil, "ActorRepository", "actor")
 
@@ -47,13 +49,17 @@ func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *Actor
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for federation events
 
+	localDomain := normalizedActorRepositoryDomain(firstActorRepositoryDomain(localDomains...))
+
 	return &ActorRepository{
 		EnhancedBaseRepository: enhancedRepo,
+		localDomain:            localDomain,
+		localBaseURL:           actorRepositoryBaseURL(localDomain),
 	}
 }
 
 // NewActorRepositoryWithCostTracking creates a new actor repository with cost tracking
-func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActorRepository {
+func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService, localDomains ...string) *ActorRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, costService, "ActorRepository", "actor")
 
@@ -63,8 +69,12 @@ func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *za
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for federation events
 
+	localDomain := normalizedActorRepositoryDomain(firstActorRepositoryDomain(localDomains...))
+
 	return &ActorRepository{
 		EnhancedBaseRepository: enhancedRepo,
+		localDomain:            localDomain,
+		localBaseURL:           actorRepositoryBaseURL(localDomain),
 	}
 }
 
@@ -81,7 +91,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	username := canonicalNumericMappingUsername(actor.PreferredUsername)
-	actor = normalizeLocalActorIdentityForStorage(username, actorRepositoryBaseURL(), actor)
+	actor = normalizeLocalActorIdentityForStorage(username, r.localActorBaseURL(), actor)
 	numericID := common.GenerateNumericID(username)
 
 	// Encrypt private key - REQUIRED for security
@@ -115,7 +125,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	// Set domain for GSI3 if available
-	domain := lesserconfig.Get().Domain
+	domain := r.localActorDomain()
 	if domain != "" {
 		actorModel.GSI3PK = "DOMAIN#" + domain
 		actorModel.GSI3SK = username
@@ -329,7 +339,7 @@ func (r *ActorRepository) loadCanonicalLocalActor(ctx context.Context, username 
 	}
 
 	if canonicalUsername != "" {
-		actor = normalizeLocalActorIdentityForStorage(canonicalUsername, actorRepositoryBaseURL(), actor)
+		actor = normalizeLocalActorIdentityForStorage(canonicalUsername, r.localActorBaseURL(), actor)
 	}
 	if actor == nil {
 		return nil, ErrorHandler.HandleGetError(errors.New("actor data is missing"), EntityActor, username)
@@ -587,15 +597,45 @@ func (r *ActorRepository) ensureNumericIDMapping(ctx context.Context, _ string, 
 	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", normalizedNumericID)
 }
 
-func actorRepositoryBaseURL() string {
-	domain := strings.TrimSpace(lesserconfig.Get().Domain)
+func firstActorRepositoryDomain(localDomains ...string) string {
+	if len(localDomains) > 0 {
+		return localDomains[0]
+	}
+	return lesserconfig.Get().Domain
+}
+
+func normalizedActorRepositoryDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimPrefix(strings.TrimPrefix(domain, "https://"), "http://")
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.TrimSpace(domain)
+}
+
+func actorRepositoryBaseURL(domain string) string {
+	domain = normalizedActorRepositoryDomain(domain)
 	if domain == "" {
 		return ""
 	}
-	if strings.HasPrefix(domain, "http://") || strings.HasPrefix(domain, "https://") {
-		return strings.TrimSuffix(domain, "/")
+	if domain == DefaultDomain || domain == "127.0.0.1" {
+		return "http://" + strings.TrimSuffix(domain, "/")
 	}
 	return "https://" + strings.TrimSuffix(domain, "/")
+}
+
+func (r *ActorRepository) localActorDomain() string {
+	if r != nil && strings.TrimSpace(r.localDomain) != "" {
+		return r.localDomain
+	}
+	return normalizedActorRepositoryDomain(lesserconfig.Get().Domain)
+}
+
+func (r *ActorRepository) localActorBaseURL() string {
+	if r != nil && strings.TrimSpace(r.localBaseURL) != "" {
+		return r.localBaseURL
+	}
+	return actorRepositoryBaseURL(r.localActorDomain())
 }
 
 func (r *ActorRepository) deleteNumericIDMapping(ctx context.Context, numericID string) error {

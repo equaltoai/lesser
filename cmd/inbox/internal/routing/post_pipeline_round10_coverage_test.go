@@ -44,6 +44,9 @@ func TestInboxHandler_Round10_PostPipeline_CreateActivity(t *testing.T) {
 	env := newInboxTestEnv(t)
 	setRunAsyncSynchronous(t)
 
+	targetActor, err := env.handler.actorRepository.GetActorByUsername(context.Background(), "alice")
+	require.NoError(t, err)
+
 	centralized := costpkg.NewTrackingService(nil, env.logger, costpkg.DefaultTrackingServiceConfig())
 	t.Cleanup(func() { _ = centralized.Close(context.Background()) })
 	env.handler.centralizedCostService = centralized
@@ -53,14 +56,14 @@ func TestInboxHandler_Round10_PostPipeline_CreateActivity(t *testing.T) {
 		"type":     activitypub.CreateType,
 		"id":       env.cfg.BaseURL() + "/activities/create-1",
 		"actor":    env.remoteActorID,
-		"to":       []string{env.local.ID},
+		"to":       []string{targetActor.ID},
 		"object": map[string]any{
 			"@context":     "https://www.w3.org/ns/activitystreams",
 			"id":           env.cfg.BaseURL() + "/objects/note-1",
 			"type":         activitypub.NoteType,
 			"attributedTo": env.remoteActorID,
 			"content":      "hello world",
-			"to":           []string{env.local.ID},
+			"to":           []string{targetActor.ID},
 			"cc":           []string{},
 			"attachment": []any{
 				map[string]any{
