@@ -452,6 +452,26 @@ func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, foll
 		return result, true, nil
 	}
 
+	hasPending, requestID, err := s.pendingFollowState(ctx, followerID, followingID)
+	if err != nil {
+		return nil, false, err
+	}
+	if hasPending {
+		relationship, err := s.GetRelationship(ctx, followerID, followingID)
+		if err != nil {
+			return nil, false, err
+		}
+
+		result := &FollowResult{
+			Relationship: relationship,
+			RequestID:    requestID,
+			IsFollowing:  false,
+			Events:       []*streaming.Event{},
+		}
+		result.Activity = s.buildFollowActivity(ctx, nil, nil, followerID, followingID, relationship)
+		return result, true, nil
+	}
+
 	// Check if blocked
 	isBlocked, err := repo.IsBlocked(ctx, followingID, followerID)
 	if err != nil {
@@ -463,6 +483,32 @@ func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, foll
 	}
 
 	return nil, false, nil
+}
+
+func (s *Service) pendingFollowState(ctx context.Context, followerID, followingID string) (bool, string, error) {
+	if s.storage != nil {
+		relationshipRepo := s.storage.Relationship()
+		if relationshipRepo == nil {
+			return false, "", RepositoryNotAvailable("relationship")
+		}
+
+		hasPending, err := relationshipRepo.HasPendingFollowRequest(ctx, followerID, followingID)
+		if err != nil {
+			return false, "", err
+		}
+		if !hasPending {
+			return false, "", nil
+		}
+
+		relationship, err := relationshipRepo.GetRelationship(ctx, followerID, followingID)
+		if err != nil || relationship == nil {
+			return true, "", err
+		}
+
+		return true, relationship.ActivityID, nil
+	}
+
+	return false, "", nil
 }
 
 // createRelationship creates the relationship record
@@ -667,12 +713,13 @@ func (s *Service) createRelationship(ctx context.Context, followerID, followingI
 // processFollowApproval handles the approval workflow and emits events
 func (s *Service) processFollowApproval(ctx context.Context, follower, following *storage.Account, activityID, followerID, followingID string) (*FollowResult, error) {
 	requiresApproval := following.Actor != nil && following.Actor.ManuallyApprovesFollowers
+	requiresRemoteAcceptance := s.followRequiresRemoteAcceptance(following)
 
 	var events []*streaming.Event
 	var requestID string
 	isFollowingNow := false
 
-	if requiresApproval {
+	if requiresApproval || requiresRemoteAcceptance {
 		requestID = activityID
 		events = s.emitFollowRequestedEvents(ctx, follower, following, activityID)
 		s.queueFederationFollowRequest(ctx, follower, following, activityID)
@@ -697,6 +744,14 @@ func (s *Service) processFollowApproval(ctx context.Context, follower, following
 		Events:       events,
 		Activity:     s.buildFollowActivity(ctx, follower, following, followerID, followingID, relationship),
 	}, nil
+}
+
+func (s *Service) followRequiresRemoteAcceptance(following *storage.Account) bool {
+	if following == nil || following.Actor == nil {
+		return false
+	}
+
+	return !isLocalActor(following.Actor, s.domainName)
 }
 
 // acceptFollowRequest accepts a follow request
