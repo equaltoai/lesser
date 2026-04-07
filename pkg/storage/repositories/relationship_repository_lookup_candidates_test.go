@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -35,6 +36,7 @@ func TestRelationshipRepository_relationshipIdentifierCandidates_PreservesUnknow
 	repo.localDomain = "example.com"
 
 	require.Equal(t, []string{"https://remote.example/users/"}, repo.relationshipIdentifierCandidates(" https://remote.example/users/ "))
+	require.Empty(t, repo.relationshipIdentifierCandidates("   "))
 }
 
 func TestRelationshipRepository_getRelationshipRecord_FallsBackToLegacyRemoteIdentity(t *testing.T) {
@@ -62,4 +64,43 @@ func TestRelationshipRepository_getRelationshipRecord_FallsBackToLegacyRemoteIde
 	require.Equal(t, "FOLLOW#alice", record.PK)
 	require.Equal(t, "FOLLOWING#@bob@remote.example", record.SK)
 	require.Equal(t, models.RelationshipAccepted, record.State)
+}
+
+func TestRelationshipRepository_relationshipNotFound_RecognizesNilAndStringMessages(t *testing.T) {
+	require.False(t, relationshipNotFound(nil))
+	require.True(t, relationshipNotFound(errors.New("relationship not found")))
+}
+
+func TestRelationshipRepository_normalizeRelationshipListValue_UsesCanonicalOrTrimmedFallback(t *testing.T) {
+	repo := NewRelationshipRepository(nil, "test-table", zap.NewNop())
+	repo.localDomain = "example.com"
+
+	require.Equal(t, "bob@remote.example", repo.normalizeRelationshipListValue("https://remote.example/users/Bob"))
+	require.Equal(t, "https://remote.example/users/", repo.normalizeRelationshipListValue(" https://remote.example/users/ "))
+}
+
+func TestRelationshipRepository_DeleteRelationship_FallsBackToCanonicalIdentifiersWhenLookupMisses(t *testing.T) {
+	ctx := context.Background()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewRelationshipRepository(mockDB, "test-table", zap.NewNop())
+	repo.localDomain = "example.com"
+
+	mockQuery.On("First", mock.AnythingOfType("*models.RelationshipRecord")).
+		Return(dynamormerrors.ErrItemNotFound).
+		Twice()
+	mockQuery.On("Delete").Return(nil).Once()
+
+	require.NoError(t, repo.DeleteRelationship(ctx, "alice", "https://remote.example/users/bob"))
+}
+
+func TestRelationshipRepository_DeleteRelationship_ReturnsLookupErrors(t *testing.T) {
+	ctx := context.Background()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewRelationshipRepository(mockDB, "test-table", zap.NewNop())
+
+	mockQuery.On("First", mock.AnythingOfType("*models.RelationshipRecord")).
+		Return(errors.New("boom")).
+		Once()
+
+	require.Error(t, repo.DeleteRelationship(ctx, "alice", "bob"))
 }
