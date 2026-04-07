@@ -120,13 +120,32 @@ func TestActorRepository_helper_functions_and_conversions(t *testing.T) {
 
 func TestActorRepository_modelToActivityPubActor(t *testing.T) {
 	repo := &ActorRepository{}
-	_, err := repo.modelToActivityPubActor(&models.Actor{})
+	_, err := repo.modelToActivityPubActor(context.Background(), "alice", &models.Actor{})
 	assert.Error(t, err)
 
-	a := &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice"}
-	got, err := repo.modelToActivityPubActor(&models.Actor{Actor: a})
+	cfg := lesserconfig.Get()
+	previousDomain := cfg.Domain
+	cfg.Domain = "example.com"
+	defer func() { cfg.Domain = previousDomain }()
+
+	a := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice", Type: activitypub.PersonType},
+		PreferredUsername: "alice",
+		URL:               "https://example.com/@alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+		Outbox:            "https://example.com/users/alice/outbox",
+		Followers:         "https://example.com/users/alice/followers",
+		Following:         "https://example.com/users/alice/following",
+		Liked:             "https://example.com/users/alice/liked",
+		Endpoints:         &activitypub.Endpoints{SharedInbox: "https://example.com/inbox"},
+	}
+	got, err := repo.modelToActivityPubActor(context.Background(), "alice", &models.Actor{Username: "alice", Actor: a})
 	assert.NoError(t, err)
-	assert.Equal(t, a, got)
+	assert.Equal(t, "https://example.com/users/alice", got.ID)
+	assert.Equal(t, activitypub.PersonType, got.Type)
+	assert.Equal(t, "alice", got.PreferredUsername)
+	assert.Equal(t, "https://example.com/@alice", got.URL)
+	assert.Equal(t, "https://example.com/inbox", got.Endpoints.SharedInbox)
 }
 
 func TestActorRepository_basic_getters_and_update_actor(t *testing.T) {

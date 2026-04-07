@@ -153,22 +153,7 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	actor := actorModel.Actor
-	if actor != nil && actor.ID == "" && actor.PreferredUsername == "" {
-		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, username)
-		if decErr != nil {
-			r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
-				zap.String("username", username),
-				zap.Error(decErr))
-		} else if decoded != nil {
-			actor = decoded
-		}
-	}
-	if actor == nil {
-		return nil, ErrorHandler.HandleGetError(errors.New("actor data is missing"), EntityActor, username)
-	}
-	hydrateActivityPubActorTimestamps(actor, actorModel.CreatedAt, actorModel.UpdatedAt)
-	return actor, nil
+	return r.canonicalLocalActorFromModel(ctx, username, actorModel)
 }
 
 // GetActorWithMetadata retrieves an actor with metadata
@@ -190,8 +175,11 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 		Fields:       convertActorFields(actorModel.Fields),
 	}
 
-	actor := actorModel.Actor
-	hydrateActivityPubActorTimestamps(actor, actorModel.CreatedAt, actorModel.UpdatedAt)
+	actor, err := r.canonicalLocalActorFromModel(ctx, username, actorModel)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return actor, metadata, nil
 }
 
@@ -300,6 +288,89 @@ func hydrateActivityPubActorTimestamps(actor *activitypub.Actor, createdAt, upda
 		t := updatedAt.UTC()
 		actor.Updated = &t
 	}
+}
+
+// canonicalLocalActorFromModel defines the local-actor read contract for this repository.
+// Every local actor read path should return a canonical actor with local identifiers and
+// collections hydrated before inbox, delivery, or relay callers see it.
+func (r *ActorRepository) canonicalLocalActorFromModel(ctx context.Context, username string, model *models.Actor) (*activitypub.Actor, error) {
+	actor, err := r.loadCanonicalLocalActor(ctx, username, model)
+	if err != nil {
+		return nil, err
+	}
+
+	hydrateActivityPubActorTimestamps(actor, model.CreatedAt, model.UpdatedAt)
+	return actor, nil
+}
+
+func (r *ActorRepository) loadCanonicalLocalActor(ctx context.Context, username string, model *models.Actor) (*activitypub.Actor, error) {
+	if model == nil || model.Actor == nil {
+		return nil, ErrorHandler.HandleGetError(errors.New("actor data is missing"), EntityActor, username)
+	}
+
+	canonicalUsername := canonicalNumericMappingUsername(username)
+	if canonicalUsername == "" {
+		canonicalUsername = canonicalNumericMappingUsername(model.Username)
+	}
+
+	actor := model.Actor
+	if canonicalLocalActorRepairNeeded(actor) {
+		readUsername := resolveCanonicalActorReadUsername(canonicalUsername, model)
+		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, readUsername)
+		if decErr != nil {
+			if r.logger != nil {
+				r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
+					zap.String("username", readUsername),
+					zap.Error(decErr))
+			}
+		} else if decoded != nil {
+			actor = decoded
+		}
+	}
+
+	if canonicalUsername != "" {
+		actor = normalizeLocalActorIdentityForStorage(canonicalUsername, actorRepositoryBaseURL(), actor)
+	}
+	if actor == nil {
+		return nil, ErrorHandler.HandleGetError(errors.New("actor data is missing"), EntityActor, username)
+	}
+
+	return actor, nil
+}
+
+func resolveCanonicalActorReadUsername(username string, model *models.Actor) string {
+	if username != "" {
+		return username
+	}
+	if model == nil {
+		return ""
+	}
+	if canonical := canonicalNumericMappingUsername(model.Username); canonical != "" {
+		return canonical
+	}
+	if model.Actor == nil {
+		return ""
+	}
+	return canonicalNumericMappingUsername(model.Actor.PreferredUsername)
+}
+
+func canonicalLocalActorRepairNeeded(actor *activitypub.Actor) bool {
+	if actor == nil {
+		return true
+	}
+	if strings.TrimSpace(actor.ID) == "" ||
+		strings.TrimSpace(actor.Type) == "" ||
+		strings.TrimSpace(actor.PreferredUsername) == "" ||
+		strings.TrimSpace(actor.URL) == "" ||
+		strings.TrimSpace(actor.Inbox) == "" ||
+		strings.TrimSpace(actor.Outbox) == "" ||
+		strings.TrimSpace(actor.Followers) == "" ||
+		strings.TrimSpace(actor.Following) == "" ||
+		strings.TrimSpace(actor.Liked) == "" {
+		return true
+	}
+
+	return actor.Endpoints == nil || strings.TrimSpace(actor.Endpoints.SharedInbox) == ""
 }
 
 // UpdateActor updates an existing actor
@@ -797,31 +868,12 @@ func (r *ActorRepository) GetActorByUsername(ctx context.Context, username strin
 		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	if actorModel.Actor != nil && actorModel.Actor.ID == "" && actorModel.Actor.PreferredUsername == "" {
-		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, username)
-		if decErr != nil {
-			r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
-				zap.String("username", username),
-				zap.Error(decErr))
-		} else if decoded != nil {
-			actorModel.Actor = decoded
-		}
-	}
-
-	// Convert to ActivityPub actor
-	return r.modelToActivityPubActor(actorModel)
+	return r.modelToActivityPubActor(ctx, username, actorModel)
 }
 
 // modelToActivityPubActor converts a model to an ActivityPub actor
-func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activitypub.Actor, error) {
-	// The actor is stored as a JSON field in the model
-	if model.Actor == nil {
-		err := errors.New("actor data is missing")
-		return nil, ErrorHandler.HandleGetError(err, EntityActor, "actor data")
-	}
-
-	// Return the stored actor directly
-	return model.Actor, nil
+func (r *ActorRepository) modelToActivityPubActor(ctx context.Context, username string, model *models.Actor) (*activitypub.Actor, error) {
+	return r.canonicalLocalActorFromModel(ctx, username, model)
 }
 
 // GetAccountSuggestions gets suggested accounts for a user based on "friends of friends" algorithm
