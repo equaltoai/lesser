@@ -363,6 +363,18 @@ func TestMiscRound22_SearchHelperPureFunctions(t *testing.T) {
 	}, "other"))
 }
 
+func TestMiscRound22_SearchV2ExactActorRequiresResolve(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	require.False(t, (*Handler)(nil).searchV2ExactActorRequiresResolve("   "))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("alice@example.com"))
+	require.True(t, handler.searchV2ExactActorRequiresResolve("bob@remote.example"))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("https://example.com/users/alice"))
+	require.True(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/users/bob"))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/objects/note-1"))
+}
+
 func TestMiscRound22_ConvertStatusResultToAPIFallsBackWhenResolutionMisses(t *testing.T) {
 	cfg := round11TestConfig()
 	repos := &MockRepositoryStorage{}

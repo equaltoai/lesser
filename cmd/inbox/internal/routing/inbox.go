@@ -1569,9 +1569,13 @@ func (ih *InboxHandler) processAcceptByActivityID(ctx context.Context, objectID 
 
 	if err != nil {
 		log.Warn("failed to find original activity", zap.String("id", objectID), zap.Error(err))
+		return nil
 	}
 
-	return ih.acceptPendingFollowRelationship(ctx, targetActor.PreferredUsername, acceptorHandle)
+	log.Warn("accept activity did not reference a stored follow activity",
+		zap.String("id", objectID),
+		zap.String("original_type", fmt.Sprintf("%v", originalActivity.Type)))
+	return nil
 }
 
 func (ih *InboxHandler) processAcceptByEmbeddedObject(ctx context.Context, object map[string]any, targetActor *activitypub.Actor, acceptorHandle string) error {
@@ -1588,21 +1592,18 @@ func (ih *InboxHandler) processAcceptByEmbeddedObject(ctx context.Context, objec
 		}
 	}
 
-	if err := ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle); err != nil {
-		log.Warn("embedded accept follow lookup failed, falling back to pending relationship",
+	followTargetHandle := acceptorHandle
+	if followObjectID, ok := object["object"].(string); ok {
+		if handle := ih.extractHandleFromActorID(followObjectID); handle != "" {
+			followTargetHandle = handle
+		}
+	}
+	if followTargetHandle == "" || !strings.EqualFold(strings.TrimSpace(followTargetHandle), strings.TrimSpace(acceptorHandle)) {
+		log.Warn("embedded accept follow target mismatch",
 			zap.String("follower", followerHandle),
 			zap.String("acceptor", acceptorHandle),
-			zap.Error(err))
-		return ih.acceptPendingFollowRelationship(ctx, targetActor.PreferredUsername, acceptorHandle)
-	}
-
-	return nil
-}
-
-func (ih *InboxHandler) acceptPendingFollowRelationship(ctx context.Context, followerHandle, acceptorHandle string) error {
-	hasPending, err := ih.relationshipRepository.HasPendingFollowRequest(ctx, followerHandle, acceptorHandle)
-	if err != nil || !hasPending {
-		return err
+			zap.String("follow_target", followTargetHandle))
+		return nil
 	}
 
 	return ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle)

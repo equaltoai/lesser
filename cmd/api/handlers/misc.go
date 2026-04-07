@@ -51,6 +51,7 @@ type SearchParams struct {
 	Type      string
 	AccountID string
 	Limit     int
+	Resolve   bool
 }
 
 // HandleSearchLift performs a search across accounts, statuses, and hashtags
@@ -115,6 +116,7 @@ func (h *Handler) parseSearchParams(ctx *apptheory.Context) (*SearchParams, *app
 		Type:      queryValue(ctx, "type"),
 		AccountID: queryValue(ctx, "account_id"),
 		Limit:     limit,
+		Resolve:   h.parseBoolParam(ctx, "resolve"),
 	}, nil, nil
 }
 
@@ -485,6 +487,9 @@ func (h *Handler) searchV2ExactActorResult(ctx context.Context, params *SearchPa
 	if !supportsExactActorAPISearch(params.Type) || !looksLikeExactActorSearchQuery(params.Query) {
 		return nil, false, nil
 	}
+	if h.searchV2ExactActorRequiresResolve(params.Query) && !params.Resolve {
+		return nil, false, nil
+	}
 
 	actor, err := h.resolveAccountID(ctx, params.Query)
 	if err != nil {
@@ -510,6 +515,36 @@ func (h *Handler) searchV2ExactActorResult(ctx context.Context, params *SearchPa
 		Statuses: []models.Status{},
 		Hashtags: []models.Tag{},
 	}, true, nil
+}
+
+func (h *Handler) searchV2ExactActorRequiresResolve(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+
+	localDomain := ""
+	if h != nil && h.cfg != nil {
+		localDomain = normalizeLocalActorDomain(h.cfg.Domain)
+	}
+
+	if looksLikeActorURLSearchQuery(trimmed) {
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed == nil {
+			return false
+		}
+		host := normalizeLocalActorDomain(parsed.Hostname())
+		return host != "" && host != localDomain
+	}
+
+	handle := strings.TrimPrefix(trimmed, "@")
+	parts := strings.SplitN(handle, "@", 2)
+	if len(parts) != 2 {
+		return false
+	}
+
+	domain := normalizeLocalActorDomain(parts[1])
+	return domain != "" && domain != localDomain
 }
 
 func supportsExactActorAPISearch(searchType string) bool {
