@@ -778,8 +778,8 @@ func (h *Handler) buildUpdateStatusResponse(_ *apptheory.Context, note *activity
 
 // HandleGetStatusLift retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
@@ -962,8 +962,8 @@ func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory
 
 // validateStatusIDForContext validates the status ID, checks it exists, and enforces viewer privacy.
 func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context, viewerUsername string) (*storageMods.Status, *apptheory.Response, error) {
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		resp, respErr := common.RespondBadRequest(ctx, err.Error())
 		return nil, resp, respErr
 	}

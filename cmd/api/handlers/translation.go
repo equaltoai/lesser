@@ -115,8 +115,8 @@ func (h *Handler) isTranslationEnabled(ctx context.Context) bool {
 
 // getTranslationStatusID gets and validates the status ID
 func (h *Handler) getTranslationStatusID(ctx *apptheory.Context) (string, *apptheory.Response, error) {
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		resp, respErr := common.RespondValidationError(ctx, err)
 		return "", resp, respErr
 	}

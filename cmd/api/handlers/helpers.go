@@ -111,6 +111,26 @@ func normalizeResolvedAccountID(accountID string) string {
 	return normalized
 }
 
+func normalizeReadableStatusID(statusID string) (string, error) {
+	normalized := normalizeResolvedAccountID(statusID)
+	lowerNormalized := strings.ToLower(normalized)
+	if strings.HasPrefix(lowerNormalized, "http://") || strings.HasPrefix(lowerNormalized, "https://") {
+		parsed, err := url.Parse(normalized)
+		if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+			return "", common.ValidationError{Field: "status_id", Message: "contains invalid characters"}
+		}
+		if len(normalized) > 500 {
+			return "", common.ValidationError{Field: "status_id", Message: "cannot be longer than 500 characters"}
+		}
+		return normalized, nil
+	}
+
+	if err := common.ValidateStatusParamID(normalized); err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
 func (h *Handler) resolveNumericAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	actor, err := h.repos.Actor().GetActorByNumericID(ctx, accountID)
 	if err == nil || !isMissingAccountLookup(err) {
@@ -375,16 +395,7 @@ func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, stor
 	interactions := h.statusInteractionState(ctx, storageStatus, currentUsername)
 	reblogStatus := h.loadReblogStatus(ctx, storageStatus, currentUsername)
 	baseStatus := h.transformStatusBase(ctx, storageStatus)
-	baseURL := handlerBaseURL(h)
-	statusID := url.PathEscape(storageStatus.StatusID)
-	statusURI := ""
-	if actorURL := strings.TrimSpace(h.cfg.ActorURL(storageStatus.AuthorUsername)); actorURL != "" {
-		statusURI = strings.TrimSuffix(actorURL, "/") + "/statuses/" + statusID
-	}
-	statusURL := ""
-	if baseURL != "" {
-		statusURL = fmt.Sprintf("%s/@%s/%s", baseURL, storageStatus.AuthorUsername, statusID)
-	}
+	statusURI, statusURL := h.statusLinks(storageStatus)
 
 	apiStatus := &models.Status{
 		ID:                 baseStatus.ID,
@@ -463,13 +474,29 @@ func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *st
 		return prefetched
 	}
 
+	if h.statusAppearsRemote(storageStatus) {
+		if resolved := h.resolveStatusAuthorAccount(ctx, storageStatus); resolved != nil {
+			return resolved
+		}
+	}
+
 	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)
 	if err != nil || authorAccount == nil {
+		if resolved := h.resolveStatusAuthorAccount(ctx, storageStatus); resolved != nil {
+			return resolved
+		}
+
 		return &storage.Account{
 			User: &storage.User{
 				Username:    storageStatus.AuthorUsername,
 				DisplayName: storageStatus.AuthorUsername,
 			},
+		}
+	}
+
+	if h.statusAppearsRemote(storageStatus) && (authorAccount.Actor == nil || h.actorAppearsLocal(authorAccount.Actor)) {
+		if resolved := h.resolveStatusAuthorAccount(ctx, storageStatus); resolved != nil {
+			return resolved
 		}
 	}
 
@@ -487,6 +514,58 @@ func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *st
 	}
 
 	return authorAccount
+}
+
+func (h *Handler) resolveStatusAuthorAccount(ctx context.Context, storageStatus *storageModels.Status) *storage.Account {
+	actor := h.resolveStatusAuthorActor(ctx, storageStatus)
+	if actor == nil {
+		return nil
+	}
+
+	account := storageAccountFromActor(actor, h.cfg.Domain)
+	if account == nil {
+		return nil
+	}
+	if account.User == nil {
+		account.User = &storage.User{}
+	}
+	if strings.TrimSpace(account.User.DisplayName) == "" {
+		account.User.DisplayName = strings.TrimSpace(storageStatus.AuthorUsername)
+	}
+
+	return account
+}
+
+func (h *Handler) resolveStatusAuthorActor(ctx context.Context, storageStatus *storageModels.Status) *activitypub.Actor {
+	if storageStatus == nil {
+		return nil
+	}
+
+	candidates := []string{
+		strings.TrimSpace(storageStatus.AuthorID),
+		strings.TrimSpace(storageStatus.AuthorUsername),
+	}
+	if storageStatus.Note != nil {
+		candidates = append(candidates, strings.TrimSpace(storageStatus.Note.AttributedTo))
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		actor, err := h.resolveAccountID(ctx, candidate)
+		if err == nil && actor != nil {
+			return actor
+		}
+	}
+
+	return nil
 }
 
 func (h *Handler) statusEngagementCounts(ctx context.Context, storageStatus *storageModels.Status) statusEngagementCounts {
@@ -728,7 +807,7 @@ func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccou
 			},
 			PreferredUsername: storageStatus.AuthorUsername,
 			Name:              account.User.DisplayName,
-			URL:               fmt.Sprintf("%s/@%s", baseURL, storageStatus.AuthorUsername),
+			URL:               h.statusAuthorProfileURL(storageStatus),
 		}
 	}
 
@@ -742,6 +821,84 @@ func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccou
 	}
 
 	return withZeroAccountCounts(h.publicAccountFromStorageAccount(account))
+}
+
+func (h *Handler) statusLinks(storageStatus *storageModels.Status) (string, string) {
+	if storageStatus == nil {
+		return "", ""
+	}
+
+	if h.statusAppearsRemote(storageStatus) {
+		statusURL := h.remoteStatusURL(storageStatus)
+		if statusURL == "" {
+			statusURL = strings.TrimSpace(storageStatus.StatusID)
+		}
+		return statusURL, statusURL
+	}
+
+	baseURL := handlerBaseURL(h)
+	statusID := url.PathEscape(storageStatus.StatusID)
+	statusURI := ""
+	if actorURL := strings.TrimSpace(h.cfg.ActorURL(storageStatus.AuthorUsername)); actorURL != "" {
+		statusURI = strings.TrimSuffix(actorURL, "/") + "/statuses/" + statusID
+	}
+	statusURL := ""
+	if baseURL != "" {
+		statusURL = fmt.Sprintf("%s/@%s/%s", baseURL, storageStatus.AuthorUsername, statusID)
+	}
+	return statusURI, statusURL
+}
+
+func (h *Handler) statusAuthorProfileURL(storageStatus *storageModels.Status) string {
+	if storageStatus == nil {
+		return ""
+	}
+	if h.statusAppearsRemote(storageStatus) {
+		if actorID := strings.TrimSpace(storageStatus.AuthorID); actorID != "" {
+			return actorID
+		}
+	}
+
+	baseURL := handlerBaseURL(h)
+	if baseURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/@%s", baseURL, storageStatus.AuthorUsername)
+}
+
+func (h *Handler) remoteStatusURL(storageStatus *storageModels.Status) string {
+	if storageStatus == nil {
+		return ""
+	}
+	if storageStatus.Note != nil {
+		if noteID := strings.TrimSpace(storageStatus.Note.ID); noteID != "" {
+			return noteID
+		}
+	}
+	for _, value := range storageStatus.URLs {
+		value = strings.TrimSpace(value)
+		if strings.HasPrefix(strings.ToLower(value), "http://") || strings.HasPrefix(strings.ToLower(value), "https://") {
+			return value
+		}
+	}
+	return ""
+}
+
+func (h *Handler) statusAppearsRemote(storageStatus *storageModels.Status) bool {
+	if storageStatus == nil {
+		return false
+	}
+
+	if strings.Contains(storageStatus.AuthorUsername, "@") &&
+		!strings.HasSuffix(strings.ToLower(strings.TrimSpace(storageStatus.AuthorUsername)), "@"+strings.ToLower(strings.TrimSpace(h.cfg.Domain))) {
+		return true
+	}
+
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: strings.TrimSpace(storageStatus.AuthorID)},
+		PreferredUsername: strings.TrimSpace(storageStatus.AuthorUsername),
+	}
+	return !h.actorAppearsLocal(actor)
 }
 
 func withZeroAccountCounts(account models.Account) models.Account {

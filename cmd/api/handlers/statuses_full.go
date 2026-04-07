@@ -102,8 +102,8 @@ func (h *Handler) HandleCreateStatusFull(ctx *apptheory.Context) (*apptheory.Res
 
 // HandleGetStatusFull retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusFull(ctx *apptheory.Context) (*apptheory.Response, error) {
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		return common.RespondBadRequest(ctx, "missing status id")
 	}
 

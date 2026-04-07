@@ -663,9 +663,11 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 	s.logger.Debug("getting note",
 		zap.String("status_id", statusID))
 
-	// Get the status
-	status, err := s.noteRepo.GetStatus(ctx, statusID)
+	status, err := s.resolveStatusForRead(ctx, statusID)
 	if err != nil {
+		if statusLookupNotFound(err) {
+			return nil, ErrStatusNotFound
+		}
 		return nil, ErrGetStatus
 	}
 
@@ -695,9 +697,11 @@ func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*
 		zap.String("status_id", query.StatusID),
 		zap.String("viewer_id", query.ViewerID))
 
-	// Get the status
-	status, err := s.noteRepo.GetStatus(ctx, query.StatusID)
+	status, err := s.resolveStatusForRead(ctx, query.StatusID)
 	if err != nil {
+		if statusLookupNotFound(err) {
+			return nil, ErrStatusNotFound
+		}
 		return nil, ErrGetStatus
 	}
 
@@ -717,6 +721,57 @@ func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*
 	}
 
 	return status, nil
+}
+
+func (s *Service) resolveStatusForRead(ctx context.Context, statusID string) (*models.Status, error) {
+	if s.noteRepo == nil {
+		return nil, ErrStatusRepositoryUnavailable
+	}
+
+	statusID = strings.TrimSpace(statusID)
+	if statusID == "" {
+		return nil, storage.ErrNotFound
+	}
+
+	if strings.HasPrefix(strings.ToLower(statusID), "http://") || strings.HasPrefix(strings.ToLower(statusID), "https://") {
+		status, err := s.noteRepo.GetStatusByURL(ctx, statusID)
+		if err == nil && status != nil {
+			return status, nil
+		}
+		if err != nil && !statusLookupNotFound(err) {
+			return nil, err
+		}
+	}
+
+	var lastErr error
+	for _, candidate := range models.StatusLookupCandidatesForDomain(statusID, s.domainName) {
+		status, err := s.noteRepo.GetStatus(ctx, candidate)
+		if err == nil && status != nil {
+			return status, nil
+		}
+		if err != nil && !statusLookupNotFound(err) {
+			return nil, err
+		}
+		if err != nil {
+			lastErr = err
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = storage.ErrNotFound
+	}
+
+	return nil, lastErr
+}
+
+func statusLookupNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if common.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 // checkViewPermissions implements comprehensive privacy checking
