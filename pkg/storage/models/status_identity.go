@@ -20,6 +20,52 @@ func CanonicalStatusID(raw string) string {
 	return CanonicalStatusIDForDomain(raw, config.Get().Domain)
 }
 
+// StatusLookupCandidates returns the meaningful status identifiers that should be
+// attempted for a direct status read against the current local domain.
+func StatusLookupCandidates(raw string) []string {
+	return StatusLookupCandidatesForDomain(raw, config.Get().Domain)
+}
+
+// StatusLookupCandidatesForDomain returns the meaningful status identifiers that
+// should be attempted for a direct status read against the supplied local domain.
+func StatusLookupCandidatesForDomain(raw string, localDomain string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	candidates := make([]string, 0, 3)
+	seen := make(map[string]struct{}, 3)
+	appendCandidate := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
+	}
+
+	if _, parsed, ok := normalizeStatusIdentifierURL(raw); ok {
+		pathID := localStatusIDFromNormalizedURL(parsed)
+		canonicalID := CanonicalStatusIDForDomain(raw, localDomain)
+		if isLocalStatusIdentifierHostForDomain(parsed.Hostname(), localDomain) {
+			appendCandidate(pathID)
+			appendCandidate(canonicalID)
+			return candidates
+		}
+
+		appendCandidate(canonicalID)
+		appendCandidate(pathID)
+		return candidates
+	}
+
+	appendCandidate(raw)
+	return candidates
+}
+
 // CanonicalStatusIDForDomain normalizes a status identifier against the
 // provided local domain instead of the global process config.
 func CanonicalStatusIDForDomain(raw string, localDomain string) string {

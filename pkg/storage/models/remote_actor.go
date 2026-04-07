@@ -9,6 +9,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
+const (
+	remoteActorUsersPathSegment    = "users"
+	remoteActorActorsPathSegment   = "actors"
+	remoteActorProfilesPathSegment = "profiles"
+)
+
 // RemoteActor represents a cached remote actor in DynamoDB using DynamORM
 type RemoteActor struct {
 	_ struct{} `theorydb:"naming:camelCase"`
@@ -73,7 +79,7 @@ func NormalizeRemoteActorHandle(handle string) string {
 		parts := strings.Split(path, "/")
 		candidate := ""
 		for i, part := range parts {
-			if (part == "users" || part == "actors") && i+1 < len(parts) {
+			if (part == remoteActorUsersPathSegment || part == remoteActorActorsPathSegment) && i+1 < len(parts) {
 				candidate = parts[i+1]
 				break
 			}
@@ -109,6 +115,97 @@ func NormalizeRemoteActorHandle(handle string) string {
 	}
 
 	return username + "@" + domain
+}
+
+// NormalizeRelationshipIdentity canonicalizes relationship storage identifiers so
+// local actors persist as bare usernames and remote actors persist as user@domain.
+func NormalizeRelationshipIdentity(identifier string, localDomain string) string {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ""
+	}
+
+	localDomain = normalizeRemoteActorDomain(localDomain)
+	identifier = strings.TrimPrefix(identifier, "acct:")
+	identifier = strings.TrimSpace(identifier)
+
+	if parsed, err := url.Parse(identifier); err == nil && parsed.Scheme != "" {
+		username := normalizeRelationshipPathUsername(parsed.Path)
+		if username == "" {
+			return ""
+		}
+
+		host := normalizeRemoteActorDomain(parsed.Hostname())
+		if host == "" || host == localDomain {
+			return username
+		}
+
+		return username + "@" + host
+	}
+
+	trimmed := strings.TrimSuffix(strings.TrimPrefix(identifier, "@"), "/")
+	if trimmed == "" {
+		return ""
+	}
+
+	parts := strings.Split(trimmed, "@")
+	switch len(parts) {
+	case 1:
+		return strings.ToLower(strings.TrimSpace(parts[0]))
+	case 2:
+		username := strings.ToLower(strings.TrimSpace(parts[0]))
+		domain := normalizeRemoteActorDomain(parts[1])
+		if username == "" {
+			return ""
+		}
+		if domain == "" || domain == localDomain {
+			return username
+		}
+		return username + "@" + domain
+	default:
+		return ""
+	}
+}
+
+func normalizeRelationshipPathUsername(path string) string {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return ""
+	}
+
+	parts := strings.Split(path, "/")
+	candidate := ""
+	for i, part := range parts {
+		if (part == remoteActorUsersPathSegment || part == remoteActorActorsPathSegment || part == remoteActorProfilesPathSegment) && i+1 < len(parts) {
+			candidate = parts[i+1]
+			break
+		}
+	}
+	if candidate == "" {
+		for _, part := range parts {
+			if strings.HasPrefix(part, "@") {
+				candidate = part
+				break
+			}
+		}
+	}
+	if candidate == "" && len(parts) > 0 {
+		last := parts[len(parts)-1]
+		switch last {
+		case remoteActorUsersPathSegment, remoteActorActorsPathSegment, remoteActorProfilesPathSegment:
+			return ""
+		default:
+			candidate = last
+		}
+	}
+
+	candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "@"))
+	candidate = strings.TrimSuffix(candidate, ".json")
+	if candidate == "" {
+		return ""
+	}
+
+	return strings.ToLower(candidate)
 }
 
 // extractDomainFromHandle extracts the domain from a handle like user@domain

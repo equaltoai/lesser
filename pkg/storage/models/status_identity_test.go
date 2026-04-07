@@ -40,6 +40,25 @@ func TestCanonicalStatusID(t *testing.T) {
 	})
 }
 
+func TestStatusLookupCandidatesForDomain(t *testing.T) {
+	assert.Nil(t, StatusLookupCandidatesForDomain("   ", "example.com"))
+	assert.Equal(t, []string{"status-123"}, StatusLookupCandidatesForDomain(" status-123 ", "example.com"))
+
+	localURL := "https://example.com/users/alice/statuses/123/"
+	assert.Equal(t, []string{"123"}, StatusLookupCandidatesForDomain(localURL, "example.com"))
+
+	remoteURL := "https://remote.example/users/alice/statuses/123/"
+	assert.Equal(t,
+		[]string{CanonicalStatusIDForDomain(remoteURL, "example.com"), "123"},
+		StatusLookupCandidatesForDomain(remoteURL, "example.com"),
+	)
+
+	t.Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
+	assert.Equal(t, []string{"123"}, StatusLookupCandidates(localURL))
+}
+
 func TestIsCanonicalRemoteStatusID(t *testing.T) {
 	assert.False(t, IsCanonicalRemoteStatusID(""))
 	assert.False(t, IsCanonicalRemoteStatusID("status-123"))

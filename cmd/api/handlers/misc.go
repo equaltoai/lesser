@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ type SearchParams struct {
 	Type      string
 	AccountID string
 	Limit     int
+	Resolve   bool
 }
 
 // HandleSearchLift performs a search across accounts, statuses, and hashtags
@@ -114,6 +116,7 @@ func (h *Handler) parseSearchParams(ctx *apptheory.Context) (*SearchParams, *app
 		Type:      queryValue(ctx, "type"),
 		AccountID: queryValue(ctx, "account_id"),
 		Limit:     limit,
+		Resolve:   h.parseBoolParam(ctx, "resolve"),
 	}, nil, nil
 }
 
@@ -299,9 +302,19 @@ func (h *Handler) resolveStatusFromSearchResult(ctx context.Context, sr *storage
 		return nil, errors.New("status repository unavailable")
 	}
 
+	for _, statusURL := range []string{strings.TrimSpace(sr.URL), strings.TrimSpace(sr.StatusID)} {
+		if statusURL == "" || !strings.Contains(statusURL, "://") {
+			continue
+		}
+		status, err := h.repos.Status().GetStatusByURL(ctx, statusURL)
+		if err == nil && status != nil {
+			return status, nil
+		}
+	}
+
 	candidates := make([]string, 0, 6)
-	candidates = append(candidates, h.statusLookupCandidates(sr.StatusID)...)
 	candidates = append(candidates, h.statusLookupCandidates(sr.URL)...)
+	candidates = append(candidates, h.statusLookupCandidates(sr.StatusID)...)
 	seen := map[string]struct{}{}
 	for _, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
@@ -318,67 +331,16 @@ func (h *Handler) resolveStatusFromSearchResult(ctx context.Context, sr *storage
 			return status, nil
 		}
 	}
-
-	for _, statusURL := range []string{strings.TrimSpace(sr.URL), strings.TrimSpace(sr.StatusID)} {
-		if statusURL == "" || !strings.Contains(statusURL, "://") {
-			continue
-		}
-		status, err := h.repos.Status().GetStatusByURL(ctx, statusURL)
-		if err == nil && status != nil {
-			return status, nil
-		}
-	}
-
 	return nil, errors.New("status not found")
 }
 
 func (h *Handler) statusLookupCandidates(value string) []string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
+	localDomain := ""
+	if h != nil && h.cfg != nil {
+		localDomain = h.cfg.Domain
 	}
 
-	candidates := make([]string, 0, 3)
-	appendCandidate := func(candidate string) {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "" {
-			return
-		}
-		for _, existing := range candidates {
-			if existing == candidate {
-				return
-			}
-		}
-		candidates = append(candidates, candidate)
-	}
-
-	if strings.Contains(trimmed, "://") {
-		appendCandidate(deriveSearchStatusID(trimmed))
-		appendCandidate(storagemodels.CanonicalStatusID(trimmed))
-		return candidates
-	}
-
-	appendCandidate(trimmed)
-
-	return candidates
-}
-
-func deriveSearchStatusID(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-	if !strings.Contains(trimmed, "://") {
-		return trimmed
-	}
-
-	trimmed = strings.TrimRight(trimmed, "/")
-	lastSlash := strings.LastIndex(trimmed, "/")
-	if lastSlash == -1 || lastSlash+1 >= len(trimmed) {
-		return ""
-	}
-
-	return trimmed[lastSlash+1:]
+	return storagemodels.StatusLookupCandidatesForDomain(value, localDomain)
 }
 
 func shouldAugmentStatusSearchByAuthor(query string) bool {
@@ -505,10 +467,144 @@ func (h *Handler) addPlaceholderHashtag(query string, result *models.SearchResul
 
 // HandleSearchV2Lift handles GET /api/v2/search requests - returns same format as v1
 func (h *Handler) HandleSearchV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// V2 search has the same implementation as V1 in Lesser
-	// The main difference in Mastodon is that v2 groups results by type,
-	// but our v1 already returns grouped results
+	params, resp, err := h.parseSearchParams(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	if exact, handled, err := h.searchV2ExactActorResult(ctx.Context(), params); handled {
+		if err != nil {
+			h.logger.Error("exact actor search failed", zap.String("query", params.Query), zap.Error(err))
+			return common.RespondInternalServerError(ctx, "search failed")
+		}
+		return okJSON(exact)
+	}
+
 	return h.HandleSearchLift(ctx)
+}
+
+func (h *Handler) searchV2ExactActorResult(ctx context.Context, params *SearchParams) (*models.SearchResult, bool, error) {
+	if !supportsExactActorAPISearch(params.Type) || !looksLikeExactActorSearchQuery(params.Query) {
+		return nil, false, nil
+	}
+	if h.searchV2ExactActorRequiresResolve(params.Query) && !params.Resolve {
+		return nil, false, nil
+	}
+
+	actor, err := h.resolveAccountID(ctx, params.Query)
+	if err != nil {
+		if actorSearchNotFound(err) {
+			return &models.SearchResult{
+				Accounts: []models.Account{},
+				Statuses: []models.Status{},
+				Hashtags: []models.Tag{},
+			}, true, nil
+		}
+		return nil, true, err
+	}
+	if actor == nil {
+		return &models.SearchResult{
+			Accounts: []models.Account{},
+			Statuses: []models.Status{},
+			Hashtags: []models.Tag{},
+		}, true, nil
+	}
+
+	return &models.SearchResult{
+		Accounts: []models.Account{h.publicAccountFromActor(ctx, actor)},
+		Statuses: []models.Status{},
+		Hashtags: []models.Tag{},
+	}, true, nil
+}
+
+func (h *Handler) searchV2ExactActorRequiresResolve(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+
+	localDomain := ""
+	if h != nil && h.cfg != nil {
+		localDomain = normalizeLocalActorDomain(h.cfg.Domain)
+	}
+
+	if looksLikeActorURLSearchQuery(trimmed) {
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed == nil {
+			return false
+		}
+		host := normalizeLocalActorDomain(parsed.Hostname())
+		return host != "" && host != localDomain
+	}
+
+	handle := strings.TrimPrefix(trimmed, "@")
+	parts := strings.SplitN(handle, "@", 2)
+	if len(parts) != 2 {
+		return false
+	}
+
+	domain := normalizeLocalActorDomain(parts[1])
+	return domain != "" && domain != localDomain
+}
+
+func supportsExactActorAPISearch(searchType string) bool {
+	switch strings.ToLower(strings.TrimSpace(searchType)) {
+	case "", "accounts":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeExactActorSearchQuery(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+	if looksLikeActorURLSearchQuery(trimmed) {
+		return true
+	}
+	return strings.Count(strings.TrimPrefix(trimmed, "@"), "@") == 1
+}
+
+func looksLikeActorURLSearchQuery(query string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(query))
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+
+	path := strings.Trim(strings.ToLower(parsed.Path), "/")
+	if path == "" {
+		return false
+	}
+	if strings.Contains(path, "/statuses/") || strings.Contains(path, "/objects/") {
+		return false
+	}
+	if strings.HasPrefix(path, "@") {
+		return true
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		return false
+	}
+
+	switch parts[0] {
+	case "users", "actors", "profiles":
+		return strings.TrimSpace(parts[1]) != ""
+	default:
+		return false
+	}
+}
+
+func actorSearchNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if common.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 // HandleGetNotificationsLift retrieves notifications for the authenticated user

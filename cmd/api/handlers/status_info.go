@@ -19,8 +19,8 @@ import (
 // HandleGetStatusSourceLift handles GET /api/v1/statuses/:id/source
 func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract status ID from URL parameter
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
@@ -141,8 +141,8 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *apptheory.Context) (*apptheory
 
 // extractStatusIDForHistory extracts and validates the status ID parameter
 func (h *Handler) extractStatusIDForHistory(ctx *apptheory.Context) (string, error) {
-	statusID := ctx.Param("id")
-	if err := common.ValidateStatusParamID(statusID); err != nil {
+	statusID, err := normalizeReadableStatusID(ctx.Param("id"))
+	if err != nil {
 		return "", err
 	}
 	return statusID, nil

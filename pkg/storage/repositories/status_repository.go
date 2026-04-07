@@ -1007,8 +1007,6 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 }
 
 func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID string) ([]string, error) {
-	cfg := config.Get()
-
 	switch repo := r.relationshipRepo.(type) {
 	case interfaces.RelationshipRepository:
 		followingResult, err := repo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: homeTimelineFollowingSampleSize})
@@ -1029,7 +1027,9 @@ func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID st
 				continue
 			}
 			if account.User != nil && account.User.Username != "" {
-				actorIDs = append(actorIDs, cfg.ActorURL(account.User.Username))
+				if actorID := r.resolveTimelineActorID(ctx, account.User.Username); actorID != "" {
+					actorIDs = append(actorIDs, actorID)
+				}
 			}
 		}
 		return actorIDs, nil
@@ -1049,7 +1049,9 @@ func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID st
 			if username == "" {
 				continue
 			}
-			actorIDs = append(actorIDs, cfg.ActorURL(username))
+			if actorID := r.resolveTimelineActorID(ctx, username); actorID != "" {
+				actorIDs = append(actorIDs, actorID)
+			}
 		}
 		return actorIDs, nil
 	default:
@@ -1057,6 +1059,53 @@ func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID st
 			zap.String("repo_type", fmt.Sprintf("%T", r.relationshipRepo)))
 		return nil, fmt.Errorf("relationshipRepo does not support GetFollowing")
 	}
+}
+
+func (r *StatusRepository) resolveTimelineActorID(ctx context.Context, identifier string) string {
+	return homeTimelineActorID(identifier, config.Get().Domain, func(handle string) string {
+		actor, err := loadCachedRemoteActorFromDynamo(ctx, r.tableName, handle)
+		if err != nil || actor == nil {
+			return ""
+		}
+		return strings.TrimSpace(actor.ID)
+	})
+}
+
+func homeTimelineActorID(identifier string, localDomain string, remoteLookup func(handle string) string) string {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ""
+	}
+
+	lowerIdentifier := strings.ToLower(identifier)
+	if strings.HasPrefix(lowerIdentifier, "http://") || strings.HasPrefix(lowerIdentifier, "https://") {
+		return identifier
+	}
+
+	canonical := models.NormalizeRelationshipIdentity(identifier, localDomain)
+	if canonical == "" {
+		canonical = strings.TrimPrefix(strings.TrimSpace(identifier), "@")
+	}
+	if canonical == "" {
+		return ""
+	}
+
+	if !strings.Contains(canonical, "@") {
+		return config.Get().ActorURL(canonical)
+	}
+
+	if remoteLookup != nil {
+		if actorID := strings.TrimSpace(remoteLookup(canonical)); actorID != "" {
+			return actorID
+		}
+	}
+
+	parts := strings.SplitN(canonical, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://%s/users/%s", parts[1], parts[0])
 }
 
 func (r *StatusRepository) collectStatusesForActors(ctx context.Context, userID string, actorIDs []string) []models.Status {

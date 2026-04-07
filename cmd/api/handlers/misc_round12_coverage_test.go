@@ -74,8 +74,9 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 
 	t.Run("parseSearchParams handles bad limit and invalid query", func(t *testing.T) {
 		ctxBadLimit, err := round10NewLiftContext(http.MethodGet, "/api/v1/search", nil, map[string]string{
-			"q":     "hello",
-			"limit": "not-a-number",
+			"q":       "hello",
+			"limit":   "not-a-number",
+			"resolve": "true",
 		}, nil)
 		require.NoError(t, err)
 
@@ -83,6 +84,7 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, resp)
 		require.Equal(t, 20, params.Limit)
+		require.True(t, params.Resolve)
 
 		ctxInvalidQuery, err := round10NewLiftContext(http.MethodGet, "/api/v1/search", nil, map[string]string{
 			"q": "",

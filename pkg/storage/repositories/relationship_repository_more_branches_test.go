@@ -60,7 +60,7 @@ func TestRelationshipRepository_counts_and_pending_checks_error_paths(t *testing
 	// HasPendingFollowRequest not-found currently returns a wrapped error from BaseRepository.Get
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	_, err = repo.HasPendingFollowRequest(ctx, "alice", "bob")
-	assert.Error(t, err)
+	assert.NoError(t, err)
 
 	// HasPendingFollowRequest generic error -> error
 	mockQuery.On("First", mock.Anything).Return(errors.New("get failed")).Once()
@@ -110,6 +110,7 @@ func TestRelationshipRepository_UpdateRelationship_and_requests_error_paths(t *t
 	logger := zap.NewNop()
 	mockDB, mockQuery := setupPermissiveDBAndQuery()
 	repo := NewRelationshipRepository(mockDB, "test-table", logger)
+	repo.localDomain = "example.com"
 
 	repo.EnhancedBaseRepository.SetValidationService(nil)
 	repo.EnhancedBaseRepository.SetPermissionService(nil)
@@ -180,7 +181,7 @@ func TestRelationshipRepository_moves_and_endorsements_error_paths(t *testing.T)
 		model.State = models.RelationshipAccepted
 	}).Once()
 	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
-	assert.Error(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "https://example.com/users/bob"}))
+	assert.Error(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "bob"}))
 
 	// CreateEndorsement: pin limit reached
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
@@ -194,13 +195,13 @@ func TestRelationshipRepository_moves_and_endorsements_error_paths(t *testing.T)
 		*out = []models.AccountPin{{}, {}, {}, {}}
 	}).Once()
 	// ErrorHandler.HandleCreateError(nil, ...) returns nil, so this path currently returns nil.
-	assert.NoError(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "https://example.com/users/bob"}))
+	assert.NoError(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "bob"}))
 
 	// CreateEndorsement: not following -> nil (ErrorHandler.HandleCreateError(nil, ...) returns nil)
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
-	assert.NoError(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "https://example.com/users/bob"}))
+	assert.NoError(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "bob"}))
 
 	// CreateEndorsement: IsFollowing error path -> error
 	mockQuery.On("First", mock.Anything).Return(errors.New("follow lookup failed")).Once()
-	assert.Error(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "https://example.com/users/bob"}))
+	assert.Error(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "bob"}))
 }

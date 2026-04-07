@@ -143,6 +143,7 @@ func TestRelationshipRepository_endorsements_and_delegating_wrappers(t *testing.
 	logger := zap.NewNop()
 	mockDB, mockQuery := setupPermissiveDBAndQuery()
 	repo := NewRelationshipRepository(mockDB, "test-table", logger)
+	repo.localDomain = "example.com"
 
 	// IsEndorsed not found and success
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()

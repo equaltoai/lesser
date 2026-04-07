@@ -11,6 +11,8 @@ import (
 	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
+const actorUsersPathSegment = "users"
+
 func (h *Handler) shouldHideRemoteAgentActor(ctx context.Context, actorID string) bool {
 	if h == nil || h.cfg == nil || h.repos == nil || h.repos.Instance() == nil {
 		return false
@@ -129,7 +131,7 @@ func extractHandleFromActorID(actorID string) string {
 	// - /@<username>
 	segments := strings.Split(path, "/")
 	for idx, seg := range segments {
-		if seg == "users" && idx+1 < len(segments) {
+		if seg == actorUsersPathSegment && idx+1 < len(segments) {
 			username := strings.TrimSpace(segments[idx+1])
 			username = strings.TrimPrefix(username, "@")
 			if username != "" {

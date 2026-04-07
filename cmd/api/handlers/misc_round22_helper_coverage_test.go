@@ -329,13 +329,20 @@ func TestMiscRound22_SearchHelperPureFunctions(t *testing.T) {
 	canonicalRemoteID := storagemodels.CanonicalStatusID(remoteURL)
 
 	require.Nil(t, handler.statusLookupCandidates("   "))
-	require.Equal(t, []string{"abc-123", canonicalRemoteID}, handler.statusLookupCandidates(remoteURL))
+	require.Equal(t, []string{canonicalRemoteID, "abc-123"}, handler.statusLookupCandidates(remoteURL))
 	require.Equal(t, []string{"status-1"}, handler.statusLookupCandidates(" status-1 "))
 
-	require.Equal(t, "", deriveSearchStatusID(""))
-	require.Equal(t, "status-1", deriveSearchStatusID("status-1"))
-	require.Equal(t, "abc-123", deriveSearchStatusID(remoteURL))
-	require.Equal(t, "statuses", deriveSearchStatusID("https://remote.example/users/bob/statuses/"))
+	require.True(t, supportsExactActorAPISearch(""))
+	require.True(t, supportsExactActorAPISearch("accounts"))
+	require.False(t, supportsExactActorAPISearch("statuses"))
+	require.True(t, looksLikeExactActorSearchQuery("bob@remote.example"))
+	require.True(t, looksLikeExactActorSearchQuery("https://remote.example/users/bob"))
+	require.False(t, looksLikeExactActorSearchQuery(remoteURL))
+	require.True(t, looksLikeActorURLSearchQuery("https://remote.example/@bob"))
+	require.True(t, looksLikeActorURLSearchQuery("https://remote.example/users/bob"))
+	require.False(t, looksLikeActorURLSearchQuery(remoteURL))
+	require.True(t, actorSearchNotFound(storage.ErrNotFound))
+	require.False(t, actorSearchNotFound(nil))
 
 	require.True(t, shouldAugmentStatusSearchByAuthor("simulacrum"))
 	require.False(t, shouldAugmentStatusSearchByAuthor(""))
@@ -354,6 +361,18 @@ func TestMiscRound22_SearchHelperPureFunctions(t *testing.T) {
 		Visibility:     storagemodels.VisibilityPrivate,
 		AuthorUsername: "simulacrum",
 	}, "other"))
+}
+
+func TestMiscRound22_SearchV2ExactActorRequiresResolve(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	require.False(t, (*Handler)(nil).searchV2ExactActorRequiresResolve("   "))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("alice@example.com"))
+	require.True(t, handler.searchV2ExactActorRequiresResolve("bob@remote.example"))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("https://example.com/users/alice"))
+	require.True(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/users/bob"))
+	require.False(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/objects/note-1"))
 }
 
 func TestMiscRound22_ConvertStatusResultToAPIFallsBackWhenResolutionMisses(t *testing.T) {

@@ -1507,7 +1507,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 			To:      []string{activity.Actor},
 		},
 		Actor:  targetActor.ID,
-		Object: activity,
+		Object: activity.ID,
 	}
 
 	// Get the follower's inbox URL
@@ -1538,25 +1538,88 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 // processAcceptActivity processes an incoming Accept activity
 func (ih *InboxHandler) processAcceptActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
+	acceptorHandle := ih.extractHandleFromActorID(activity.Actor)
+	if acceptorHandle == "" {
+		return nil
+	}
 
-	// Check if this is accepting a Follow request
-	if objectID, ok := activity.Object.(string); ok {
-		// Fetch the original activity
-		originalActivity, err := ih.activityRepository.GetActivity(ctx, objectID)
-		if err != nil {
-			log.Warn("failed to find original activity", zap.String("id", objectID))
-			return nil // Don't fail, just ignore
-		}
+	switch object := activity.Object.(type) {
+	case string:
+		return ih.processAcceptByActivityID(ctx, object, targetActor, acceptorHandle)
+	case map[string]any:
+		return ih.processAcceptByEmbeddedObject(ctx, object, targetActor, acceptorHandle)
+	default:
+		log.Warn("accept activity has unsupported object type",
+			zap.String("object_type", fmt.Sprintf("%T", object)))
+		return nil
+	}
+}
 
-		if originalActivity.Type == activitypub.FollowType {
-			// Update the follow relationship to accepted
-			acceptorHandle := ih.extractHandleFromActorID(activity.Actor)
-			err = ih.relationshipRepository.AcceptFollowRequest(ctx, targetActor.PreferredUsername, acceptorHandle)
-			if err != nil {
-				log.Error("failed to update follow status", zap.Error(err))
-				return err
-			}
+func (ih *InboxHandler) processAcceptByActivityID(ctx context.Context, objectID string, targetActor *activitypub.Actor, acceptorHandle string) error {
+	log := common.WithContext(ctx)
+
+	originalActivity, err := ih.activityRepository.GetActivity(ctx, objectID)
+	if err == nil && originalActivity != nil && originalActivity.Type == activitypub.FollowType {
+		followerHandle := ih.extractHandleFromActorID(originalActivity.Actor)
+		if followerHandle == "" {
+			followerHandle = targetActor.PreferredUsername
 		}
+		return ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle)
+	}
+
+	if err != nil {
+		log.Warn("failed to find original activity", zap.String("id", objectID), zap.Error(err))
+		return nil
+	}
+
+	log.Warn("accept activity did not reference a stored follow activity",
+		zap.String("id", objectID),
+		zap.String("original_type", fmt.Sprintf("%v", originalActivity.Type)))
+	return nil
+}
+
+func (ih *InboxHandler) processAcceptByEmbeddedObject(ctx context.Context, object map[string]any, targetActor *activitypub.Actor, acceptorHandle string) error {
+	log := common.WithContext(ctx)
+
+	if objectType, _ := object["type"].(string); objectType != activitypub.FollowType {
+		return nil
+	}
+
+	followerHandle := targetActor.PreferredUsername
+	if actorID, ok := object["actor"].(string); ok {
+		if handle := ih.extractHandleFromActorID(actorID); handle != "" {
+			followerHandle = handle
+		}
+	}
+
+	followTargetHandle := acceptorHandle
+	if followObjectID, ok := object["object"].(string); ok {
+		if handle := ih.extractHandleFromActorID(followObjectID); handle != "" {
+			followTargetHandle = handle
+		}
+	}
+	if followTargetHandle == "" || !strings.EqualFold(strings.TrimSpace(followTargetHandle), strings.TrimSpace(acceptorHandle)) {
+		log.Warn("embedded accept follow target mismatch",
+			zap.String("follower", followerHandle),
+			zap.String("acceptor", acceptorHandle),
+			zap.String("follow_target", followTargetHandle))
+		return nil
+	}
+
+	return ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle)
+}
+
+func (ih *InboxHandler) acceptFollowRelationship(ctx context.Context, followerHandle, acceptorHandle string) error {
+	if followerHandle == "" || acceptorHandle == "" {
+		return nil
+	}
+
+	if err := ih.relationshipRepository.AcceptFollowRequest(ctx, followerHandle, acceptorHandle); err != nil {
+		common.WithContext(ctx).Error("failed to update follow status",
+			zap.String("follower", followerHandle),
+			zap.String("acceptor", acceptorHandle),
+			zap.Error(err))
+		return err
 	}
 
 	return nil
@@ -3775,17 +3838,11 @@ func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID stri
 }
 
 func (ih *InboxHandler) extractHandleFromActorID(actorID string) string {
-	// Extract username and domain from actor ID
-	// Format: https://domain.com/users/username -> @username@domain.com
-	parts := strings.Split(actorID, "/")
-	if len(parts) < 5 {
-		return actorID // Return as-is if not in expected format
+	if normalized := models.NormalizeRelationshipIdentity(actorID, ih.getConfig().Domain); normalized != "" {
+		return normalized
 	}
 
-	domain := parts[2]
-	username := parts[len(parts)-1]
-
-	return fmt.Sprintf("@%s@%s", username, domain)
+	return strings.TrimSpace(actorID)
 }
 
 // extractUsernameFromActorID extracts just the username from an actor ID

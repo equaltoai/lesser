@@ -168,7 +168,7 @@ func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 		require.Equal(t, "localhost", httpReq.URL.Host)
 
 		require.NotEmpty(t, generateActivityID())
-		require.Equal(t, "@alice@example.com", env.handler.extractHandleFromActorID("https://example.com/users/alice"))
+		require.Equal(t, "alice@example.com", env.handler.extractHandleFromActorID("https://example.com/users/alice"))
 		require.Equal(t, "alice", env.handler.extractUsernameFromActorID("https://example.com/users/alice"))
 		require.Equal(t, "example.com", env.handler.extractDomainFromURL("https://example.com/users/alice"))
 
