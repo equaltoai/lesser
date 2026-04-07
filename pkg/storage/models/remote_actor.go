@@ -9,6 +9,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
+const (
+	remoteActorUsersPathSegment    = "users"
+	remoteActorActorsPathSegment   = "actors"
+	remoteActorProfilesPathSegment = "profiles"
+)
+
 // RemoteActor represents a cached remote actor in DynamoDB using DynamORM
 type RemoteActor struct {
 	_ struct{} `theorydb:"naming:camelCase"`
@@ -73,7 +79,7 @@ func NormalizeRemoteActorHandle(handle string) string {
 		parts := strings.Split(path, "/")
 		candidate := ""
 		for i, part := range parts {
-			if (part == "users" || part == "actors") && i+1 < len(parts) {
+			if (part == remoteActorUsersPathSegment || part == remoteActorActorsPathSegment) && i+1 < len(parts) {
 				candidate = parts[i+1]
 				break
 			}
@@ -170,7 +176,7 @@ func normalizeRelationshipPathUsername(path string) string {
 	parts := strings.Split(path, "/")
 	candidate := ""
 	for i, part := range parts {
-		if (part == "users" || part == "actors" || part == "profiles") && i+1 < len(parts) {
+		if (part == remoteActorUsersPathSegment || part == remoteActorActorsPathSegment || part == remoteActorProfilesPathSegment) && i+1 < len(parts) {
 			candidate = parts[i+1]
 			break
 		}
@@ -186,7 +192,7 @@ func normalizeRelationshipPathUsername(path string) string {
 	if candidate == "" && len(parts) > 0 {
 		last := parts[len(parts)-1]
 		switch last {
-		case "users", "actors", "profiles":
+		case remoteActorUsersPathSegment, remoteActorActorsPathSegment, remoteActorProfilesPathSegment:
 			return ""
 		default:
 			candidate = last
