@@ -29,7 +29,7 @@ func TestActorRepository_Round34_LocalActorReadsCanonicalizeNestedBaseObjectRows
 
 	for name, getter := range getters {
 		t.Run(name, func(t *testing.T) {
-			restore := stubCanonicalLocalActorReadFallback(t, "alice")
+			restore := stubCanonicalLocalActorReadFallback(t, "alice", activitypub.PersonType)
 
 			ctx := context.Background()
 			mockDB, mockQuery := setupPermissiveDBAndQuery()
@@ -78,8 +78,48 @@ func TestActorRepository_Round34_LocalActorReadsCanonicalizeNestedBaseObjectRows
 	}
 }
 
+func TestActorRepository_Round34_LocalActorReadsRecoverNestedBaseObjectTypeForServiceRows(t *testing.T) {
+	getters := map[string]func(*ActorRepository, context.Context, string) (*activitypub.Actor, error){
+		"GetActor": func(repo *ActorRepository, ctx context.Context, username string) (*activitypub.Actor, error) {
+			return repo.GetActor(ctx, username)
+		},
+		"GetActorByUsername": func(repo *ActorRepository, ctx context.Context, username string) (*activitypub.Actor, error) {
+			return repo.GetActorByUsername(ctx, username)
+		},
+	}
+
+	for name, getter := range getters {
+		t.Run(name, func(t *testing.T) {
+			restore := stubCanonicalLocalActorReadFallback(t, "agent-0", activitypub.ServiceType)
+			defer restore()
+
+			ctx := context.Background()
+			mockDB, mockQuery := setupPermissiveDBAndQuery()
+			repo := NewActorRepository(mockDB, "test-table", zap.NewNop())
+
+			mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+				row := args.Get(0).(*models.Actor)
+				row.Username = "Agent-0"
+				row.Actor = &activitypub.Actor{
+					PreferredUsername: "Agent-0",
+				}
+			}).Once()
+
+			actor, err := getter(repo, ctx, "Agent-0")
+			require.NoError(t, err)
+			require.NotNil(t, actor)
+			require.Equal(t, "agent-0", actor.PreferredUsername)
+			require.Equal(t, "https://example.com/users/agent-0", actor.ID)
+			require.Equal(t, activitypub.ServiceType, actor.Type)
+
+			mockDB.AssertExpectations(t)
+			mockQuery.AssertExpectations(t)
+		})
+	}
+}
+
 func TestActorRepository_Round34_GetActorWithMetadataUsesCanonicalLocalActorContract(t *testing.T) {
-	restore := stubCanonicalLocalActorReadFallback(t, "agent-0")
+	restore := stubCanonicalLocalActorReadFallback(t, "agent-0", activitypub.ServiceType)
 	defer restore()
 
 	ctx := context.Background()
@@ -105,7 +145,7 @@ func TestActorRepository_Round34_GetActorWithMetadataUsesCanonicalLocalActorCont
 	require.NotNil(t, metadata)
 	require.Equal(t, "agent-0", actor.PreferredUsername)
 	require.Equal(t, "https://example.com/users/agent-0", actor.ID)
-	require.Equal(t, activitypub.PersonType, actor.Type)
+	require.Equal(t, activitypub.ServiceType, actor.Type)
 	require.Equal(t, "https://example.com/inbox", actor.Endpoints.SharedInbox)
 	require.Len(t, metadata.Fields, 1)
 	require.Equal(t, "Role", metadata.Fields[0].Name)
@@ -115,7 +155,7 @@ func TestActorRepository_Round34_GetActorWithMetadataUsesCanonicalLocalActorCont
 	mockQuery.AssertExpectations(t)
 }
 
-func stubCanonicalLocalActorReadFallback(t *testing.T, username string) func() {
+func stubCanonicalLocalActorReadFallback(t *testing.T, username string, actorType string) func() {
 	t.Helper()
 
 	cfg := lesserconfig.Get()
@@ -129,7 +169,7 @@ func stubCanonicalLocalActorReadFallback(t *testing.T, username string) func() {
 	rawActor, err := attributevalue.MarshalMap(map[string]any{
 		"BaseObject": map[string]any{
 			"ID":   fmt.Sprintf("https://example.com/users/%s", username),
-			"Type": activitypub.PersonType,
+			"Type": actorType,
 		},
 		"PreferredUsername": username,
 		"Inbox":             fmt.Sprintf("https://example.com/users/%s/inbox", username),

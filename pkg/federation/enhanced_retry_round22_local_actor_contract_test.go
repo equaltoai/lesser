@@ -80,7 +80,7 @@ func TestEnhancedRetryProcessor_Round22_UsesCanonicalLocalActorFromRepositoryAda
 	require.NoError(t, processor.ProcessEnhancedRetry(ctx, msg))
 	require.NotNil(t, stub.lastActor)
 	require.Equal(t, "https://example.com/users/alice", stub.lastActor.ID)
-	require.Equal(t, activitypub.PersonType, stub.lastActor.Type)
+	require.Equal(t, activitypub.ServiceType, stub.lastActor.Type)
 	require.Equal(t, "alice", stub.lastActor.PreferredUsername)
 	require.Equal(t, "https://example.com/users/alice/inbox", stub.lastActor.Inbox)
 	require.Equal(t, "https://example.com/users/alice#main-key", stub.lastActor.PublicKey.ID)
@@ -126,7 +126,20 @@ func newNestedBaseObjectSigningActorRepository(t *testing.T, username string) *r
 		row := args.Get(0).(*models.Actor)
 		row.Username = username
 		row.Actor = &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/ALICE",
+				Type: activitypub.ServiceType,
+			},
 			PreferredUsername: username,
+			URL:               "https://example.com/@ALICE",
+			Inbox:             "https://example.com/users/ALICE/inbox",
+			Outbox:            "https://example.com/users/ALICE/outbox",
+			Followers:         "https://example.com/users/ALICE/followers",
+			Following:         "https://example.com/users/ALICE/following",
+			Liked:             "https://example.com/users/ALICE/liked",
+			Endpoints: &activitypub.Endpoints{
+				SharedInbox: "https://example.com/inbox",
+			},
 			PublicKey: &activitypub.PublicKey{
 				ID:           "https://example.com/users/alice#main-key",
 				Owner:        "https://example.com/users/alice",
