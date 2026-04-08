@@ -253,7 +253,7 @@ func TestReadReleaseManifestFile_Success(t *testing.T) {
   "name": "lesser",
   "version": "v1.2.3",
   "git_sha": "0123456789abcdef0123456789abcdef01234567",
-  "go_version": "go1.26.1",
+  "go_version": "go1.26.2",
   "cdk": {"major": 2},
   "artifacts": {
     "receipt_schema_version": 7,
@@ -1087,7 +1087,7 @@ func testReleaseDirFromRepo(t *testing.T, repoRoot string) string {
 	_, err = releaseassets.WriteReleaseManifest(releaseDir, releaseassets.ReleaseManifestInput{
 		Version:              version,
 		GitSHA:               gitSHA,
-		GoVersion:            "go1.26.1",
+		GoVersion:            "go1.26.2",
 		CDKMajor:             2,
 		ReceiptSchemaVersion: 7,
 	})
@@ -1138,7 +1138,7 @@ func validReleaseManifest() releaseassets.ReleaseManifest {
 		Name:      "lesser",
 		Version:   "v1.2.3",
 		GitSHA:    "0123456789abcdef0123456789abcdef01234567",
-		GoVersion: "go1.26.1",
+		GoVersion: "go1.26.2",
 		CDK: releaseassets.ReleaseCDK{
 			Major: 2,
 		},

@@ -139,7 +139,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 		logger:                 logger,
 		tableName:              tableName,
 		domain:                 domain,
-		actorRepo:              NewActorRepository(db, tableName, logger),
+		actorRepo:              NewActorRepository(db, tableName, logger, domain),
 		governanceRepo:         NewAgentGovernanceRepository(db, tableName, logger),
 	}
 }
@@ -161,7 +161,7 @@ func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain s
 		logger:                 logger,
 		tableName:              tableName,
 		domain:                 domain,
-		actorRepo:              NewActorRepositoryWithCostTracking(db, tableName, logger, costService),
+		actorRepo:              NewActorRepositoryWithCostTracking(db, tableName, logger, costService, domain),
 		governanceRepo:         NewAgentGovernanceRepository(db, tableName, logger),
 	}
 }

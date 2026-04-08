@@ -118,15 +118,55 @@ func TestActorRepository_helper_functions_and_conversions(t *testing.T) {
 	assert.Equal(t, "", repo.resolveActorDomain(&activitypub.Actor{URL: "not a url"}))
 }
 
+func TestActorRepository_localDomainHelpers(t *testing.T) {
+	cfg := lesserconfig.Get()
+	previousDomain := cfg.Domain
+	cfg.Domain = DefaultDomain
+	defer func() { cfg.Domain = previousDomain }()
+
+	assert.Equal(t, "example.com", firstActorRepositoryDomain("example.com"))
+	assert.Equal(t, DefaultDomain, firstActorRepositoryDomain())
+	assert.Equal(t, "example.com", normalizedActorRepositoryDomain("https://example.com/users/alice"))
+	assert.Equal(t, "https://example.com", actorRepositoryBaseURL("https://example.com/users/alice"))
+	assert.Equal(t, "http://localhost", actorRepositoryBaseURL(DefaultDomain))
+
+	repo := NewActorRepository(nil, "test-table", zap.NewNop(), "example.com")
+	assert.Equal(t, "example.com", repo.localActorDomain())
+	assert.Equal(t, "https://example.com", repo.localActorBaseURL())
+
+	fallbackRepo := &ActorRepository{}
+	assert.Equal(t, DefaultDomain, fallbackRepo.localActorDomain())
+	assert.Equal(t, "http://localhost", fallbackRepo.localActorBaseURL())
+}
+
 func TestActorRepository_modelToActivityPubActor(t *testing.T) {
 	repo := &ActorRepository{}
-	_, err := repo.modelToActivityPubActor(&models.Actor{})
+	_, err := repo.modelToActivityPubActor(context.Background(), "alice", &models.Actor{})
 	assert.Error(t, err)
 
-	a := &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice"}
-	got, err := repo.modelToActivityPubActor(&models.Actor{Actor: a})
+	cfg := lesserconfig.Get()
+	previousDomain := cfg.Domain
+	cfg.Domain = "example.com"
+	defer func() { cfg.Domain = previousDomain }()
+
+	a := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice", Type: activitypub.PersonType},
+		PreferredUsername: "alice",
+		URL:               "https://example.com/@alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+		Outbox:            "https://example.com/users/alice/outbox",
+		Followers:         "https://example.com/users/alice/followers",
+		Following:         "https://example.com/users/alice/following",
+		Liked:             "https://example.com/users/alice/liked",
+		Endpoints:         &activitypub.Endpoints{SharedInbox: "https://example.com/inbox"},
+	}
+	got, err := repo.modelToActivityPubActor(context.Background(), "alice", &models.Actor{Username: "alice", Actor: a})
 	assert.NoError(t, err)
-	assert.Equal(t, a, got)
+	assert.Equal(t, "https://example.com/users/alice", got.ID)
+	assert.Equal(t, activitypub.PersonType, got.Type)
+	assert.Equal(t, "alice", got.PreferredUsername)
+	assert.Equal(t, "https://example.com/@alice", got.URL)
+	assert.Equal(t, "https://example.com/inbox", got.Endpoints.SharedInbox)
 }
 
 func TestActorRepository_basic_getters_and_update_actor(t *testing.T) {
@@ -448,7 +488,7 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.Actor)
 		*out = []models.Actor{
-			{Username: "alice", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice", Discoverable: true}},
+			{Username: "alice", Actor: &activitypub.Actor{PreferredUsername: "alice", Discoverable: true}},
 			{Username: "nilactor", Actor: nil},
 		}
 	}).Once()
@@ -566,6 +606,11 @@ func TestActorRepository_EnsureNumericIDMapping_conditionFailedWithExistingMappi
 func TestActorRepository_EnsureNumericIDMapping_normalizesMixedCaseIdentity(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
+	cfg := lesserconfig.Get()
+	previousDomain := cfg.Domain
+	cfg.Domain = "example.com"
+	defer func() { cfg.Domain = previousDomain }()
+
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	var currentModel any

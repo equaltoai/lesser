@@ -53,7 +53,7 @@ func NewHandler(lambdaCtx *common.LambdaContext) (*Handler, error) {
 	queueURL := lambdaCtx.Config.EnhancedRetryQueueURL
 
 	// Create federation storage and delivery service
-	federationStorage := newFederationStorageFn(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	federationStorage := newFederationStorageFn(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
 	deliveryService := newDeliveryServiceFn(federationStorage, lambdaCtx.Config)
 
 	// Create enhanced retry processor

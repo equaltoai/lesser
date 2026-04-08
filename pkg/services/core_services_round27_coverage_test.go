@@ -700,6 +700,22 @@ func TestFederationService_round27_coverage(t *testing.T) {
 		require.ErrorIs(t, err, ErrNoDatabaseAvailable)
 	})
 
+	t.Run("DeliverToFollowers_unsupported_db", func(t *testing.T) {
+		withDB := &federationService{
+			deps:    svc.deps,
+			storage: &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{rawDB: struct{}{}, table: "tbl", logger: zap.NewNop()}},
+			logger:  zap.NewNop(),
+		}
+
+		err := withDB.DeliverToFollowers(ctx, &activitypub.Activity{}, actor)
+		require.ErrorIs(t, err, ErrUnsupportedDatabaseType)
+	})
+
+	t.Run("DeliverToRecipients_no_db", func(t *testing.T) {
+		err := svc.DeliverToRecipients(ctx, &activitypub.Activity{}, actor)
+		require.ErrorIs(t, err, ErrNoDatabaseAvailable)
+	})
+
 	t.Run("DeliverToRecipients_unsupported_db", func(t *testing.T) {
 		withDB := &federationService{
 			deps:    svc.deps,
@@ -764,6 +780,28 @@ func TestFederationService_round27_coverage(t *testing.T) {
 		assert.ElementsMatch(t, []string{"https://remote/users/dan", "https://remote/users/eve"}, recipients)
 	})
 
+	t.Run("DetermineRecipients_private_uses_followers_and_to_cc_without_mentions", func(t *testing.T) {
+		followerCalls = nil
+
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				To: []string{"https://remote/users/eve"},
+				CC: []string{"https://remote/users/frank"},
+			},
+			Actor:  "https://example.com/users/alice",
+			Object: &activitypub.Note{Tag: []activitypub.Tag{{Type: "Mention", Href: "https://remote/users/dan", Name: "@dan"}}},
+		}
+		recipients, err := svc.DetermineRecipients(ctx, activity, "private")
+		require.NoError(t, err)
+		require.Len(t, followerCalls, 1)
+		assert.ElementsMatch(t, []string{
+			"https://remote/users/bob",
+			"https://remote/users/cat",
+			"https://remote/users/eve",
+			"https://remote/users/frank",
+		}, recipients)
+	})
+
 	t.Run("GetInstanceRelationships_propagates_error", func(t *testing.T) {
 		errBoom := stderrors.New("boom")
 		service := &federationService{
@@ -773,6 +811,20 @@ func TestFederationService_round27_coverage(t *testing.T) {
 		relationships, err := service.GetInstanceRelationships(ctx, "example.com")
 		assert.Nil(t, relationships)
 		assert.Equal(t, errBoom, err)
+	})
+
+	t.Run("GetInstanceRelationships_returns_response", func(t *testing.T) {
+		expected := &model.InstanceRelations{
+			Domain:          "example.com",
+			FederationScore: 0.75,
+		}
+		service := &federationService{
+			storage: storageWithInstanceRelationships{StorageAdapter: storage, resp: expected},
+			logger:  zap.NewNop(),
+		}
+		relationships, err := service.GetInstanceRelationships(ctx, "example.com")
+		require.NoError(t, err)
+		assert.Equal(t, expected, relationships)
 	})
 }
 

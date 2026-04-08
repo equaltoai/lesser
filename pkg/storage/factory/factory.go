@@ -131,7 +131,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	// Core repositories from main.go (only these are actually used)
 	f.accountRepo = repositories.NewAccountRepository(f.db, f.tableName, f.cfg.Domain, f.logger)
 	f.bookmarkRepo = repositories.NewBookmarkRepository(f.db, f.tableName, f.logger)
-	f.actorRepo = repositories.NewActorRepository(f.db, f.tableName, f.logger)
+	f.actorRepo = repositories.NewActorRepository(f.db, f.tableName, f.logger, f.cfg.Domain)
 	f.objectRepo = repositories.NewObjectRepository(f.db, f.tableName, f.cfg.Domain, f.logger)
 	f.activityRepo = repositories.NewActivityRepository(f.db, f.tableName, f.logger, nil)
 	f.userRepo = repositories.NewUserRepository(f.db, f.tableName, f.logger)

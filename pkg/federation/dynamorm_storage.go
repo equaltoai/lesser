@@ -45,11 +45,12 @@ type dynamormFederationRelationshipRepository interface {
 func NewDynamORMFederationStorage(
 	db core.DB,
 	tableName string,
+	domain string,
 	logger *zap.Logger,
 ) *DynamORMFederationStorage {
 	return &DynamORMFederationStorage{
 		db:                           db,
-		actorRepository:              repositories.NewActorRepository(db, tableName, logger),
+		actorRepository:              repositories.NewActorRepository(db, tableName, logger, domain),
 		federationActivityRepository: repositories.NewFederationActivityRepository(db, tableName, logger, nil),
 		relationshipRepository:       repositories.NewRelationshipRepository(db, tableName, logger),
 	}

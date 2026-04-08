@@ -403,7 +403,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	}
 
 	userRepo := repositories.NewUserRepository(db, tableName, lambdaCtx.Logger)
-	actorRepo := repositories.NewActorRepository(db, tableName, lambdaCtx.Logger)
+	actorRepo := repositories.NewActorRepository(db, tableName, lambdaCtx.Logger, domain)
 	accountRepo := repositories.NewAccountRepository(db, tableName, domain, lambdaCtx.Logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger, nil)
 

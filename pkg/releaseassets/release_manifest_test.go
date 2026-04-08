@@ -14,7 +14,7 @@ func TestWriteReleaseManifest(t *testing.T) {
 	manifest, err := WriteReleaseManifest(outDir, ReleaseManifestInput{
 		Version:              "v1.2.3",
 		GitSHA:               "0123456789abcdef0123456789abcdef01234567",
-		GoVersion:            "go1.26.1",
+		GoVersion:            "go1.26.2",
 		CDKMajor:             2,
 		ReceiptSchemaVersion: 7,
 	})
@@ -23,7 +23,7 @@ func TestWriteReleaseManifest(t *testing.T) {
 	require.Equal(t, "lesser", manifest.Name)
 	require.Equal(t, "v1.2.3", manifest.Version)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", manifest.GitSHA)
-	require.Equal(t, "go1.26.1", manifest.GoVersion)
+	require.Equal(t, "go1.26.2", manifest.GoVersion)
 	require.Equal(t, 2, manifest.CDK.Major)
 	require.Equal(t, 7, manifest.Artifacts.ReceiptSchemaVersion)
 	require.Equal(t, ReleaseDeployArtifactsSchemaVersion, manifest.Artifacts.DeployArtifacts.SchemaVersion)
@@ -77,7 +77,7 @@ func TestWriteReleaseManifest_RequiresMetadata(t *testing.T) {
 			input: ReleaseManifestInput{
 				Version:   "v1.2.3",
 				GitSHA:    "0123456789abcdef0123456789abcdef01234567",
-				GoVersion: "go1.26.1",
+				GoVersion: "go1.26.2",
 			},
 			wantErrText: "cdk major version is required",
 		},
@@ -86,7 +86,7 @@ func TestWriteReleaseManifest_RequiresMetadata(t *testing.T) {
 			input: ReleaseManifestInput{
 				Version:   "v1.2.3",
 				GitSHA:    "0123456789abcdef0123456789abcdef01234567",
-				GoVersion: "go1.26.1",
+				GoVersion: "go1.26.2",
 				CDKMajor:  2,
 			},
 			wantErrText: "receipt schema version is required",
@@ -109,7 +109,7 @@ func TestWriteReleaseManifest_ErrorsWhenPathBlocked(t *testing.T) {
 	_, err := WriteReleaseManifest(outDir, ReleaseManifestInput{
 		Version:              "v1.2.3",
 		GitSHA:               "0123456789abcdef0123456789abcdef01234567",
-		GoVersion:            "go1.26.1",
+		GoVersion:            "go1.26.2",
 		CDKMajor:             2,
 		ReceiptSchemaVersion: 7,
 	})
