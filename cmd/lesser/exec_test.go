@@ -131,9 +131,9 @@ func TestCacheDirVersionKey_UsesEffectiveGoToolchain(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$1" = "env" ] && [ "$2" = "GOVERSION" ]; then
 	if [ "${GOTOOLCHAIN:-}" = "` + expectedToolchain + `" ]; then
-		printf 'go1.26.1'
+		printf 'go1.26.2'
 	else
-		printf 'go1.26.0'
+		printf 'go1.26.1'
 	fi
 	exit 0
 fi
@@ -151,21 +151,21 @@ exit 1
 		require.NoError(t, os.Setenv("GOTOOLCHAIN", previous))
 	})
 
-	require.Equal(t, "go1.26.1", cacheDirVersionKey())
+	require.Equal(t, "go1.26.2", cacheDirVersionKey())
 }
 
 func TestReadRequestedGoToolchain(t *testing.T) {
 	repoRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.1\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.2\n"), 0o644))
 
 	toolchain, err := readRequestedGoToolchain(repoRoot)
 	require.NoError(t, err)
-	require.Equal(t, "go1.26.1", toolchain)
+	require.Equal(t, "go1.26.2", toolchain)
 
-	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.1\ntoolchain go1.26.2\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.2\ntoolchain go1.26.3\n"), 0o644))
 	toolchain, err = readRequestedGoToolchain(repoRoot)
 	require.NoError(t, err)
-	require.Equal(t, "go1.26.2", toolchain)
+	require.Equal(t, "go1.26.3", toolchain)
 }
 
 func TestSanitizeCacheKey_EmptyReturnsUnknown(t *testing.T) {

@@ -26,7 +26,7 @@ func main() {
 	flag.StringVar(&outDir, "out-dir", filepath.Join("dist", "release"), "directory where release assets are written")
 	flag.StringVar(&version, "version", "", "release version tag (example: v1.2.3)")
 	flag.StringVar(&gitSHA, "git-sha", "", "40-character git sha for the release commit")
-	flag.StringVar(&goVersion, "go-version", "", "Go toolchain version used for the release (example: go1.26.1)")
+	flag.StringVar(&goVersion, "go-version", "", "Go toolchain version used for the release (example: go1.26.2)")
 	flag.IntVar(&cdkMajor, "cdk-major", 0, "AWS CDK major version for the release")
 	flag.IntVar(&receiptSchemaVersion, "receipt-schema-version", 0, "receipt schema version published in the release manifest")
 	flag.Parse()
