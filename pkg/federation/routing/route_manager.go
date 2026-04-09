@@ -1475,17 +1475,6 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 		return errors.Join(ErrMarshalActivityFailed, err)
 	}
 
-	// Create the request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetInbox, bytes.NewReader(body))
-	if err != nil {
-		return errors.Join(ErrCreateRequestFailed, err)
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/activity+json")
-	req.Header.Set("Accept", "application/activity+json")
-	req.Header.Set("User-Agent", "Lesser/1.0 ActivityPub")
-
 	// Get the actor's private key from storage
 	if m.federationStore == nil {
 		return ErrFederationStoreNotConfiguredForSigning
@@ -1502,9 +1491,11 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 		return errors.Join(ErrParsePrivateKeyFailed, err)
 	}
 
-	// Sign the request
-	keyID := signingActor.PublicKey.ID
-	if err := federation.SignHTTPRequest(req, privateKey, keyID); err != nil {
+	req, err := federation.BuildSignedActivityPubRequest(ctx, http.MethodPost, targetInbox, "Lesser/1.0 ActivityPub", body, privateKey, signingActor.PublicKey.ID)
+	if err != nil {
+		if req == nil {
+			return errors.Join(ErrCreateRequestFailed, err)
+		}
 		return errors.Join(ErrSignRequestFailed, err)
 	}
 

@@ -142,22 +142,6 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		Timestamp:    startTime,
 	}
 
-	// Create the request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetInbox, bytes.NewReader(body))
-	if err != nil {
-		log.Error("failed to create request", zap.Error(err))
-		federationActivity.Success = false
-		federationActivity.ErrorMessage = err.Error()
-		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return errors.Join(ErrRequestCreationFailed, err)
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/activity+json")
-	req.Header.Set("Accept", "application/activity+json")
-	req.Header.Set("User-Agent", "Lesser/1.0")
-
 	// Get the actor's private key from storage
 	privateKeyPEM, err := d.store.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
@@ -180,16 +164,17 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		return errors.Join(ErrPrivateKeyParseFailed, err)
 	}
 
-	// Sign the request with enhanced algorithm selection
-	algorithm := DetermineSigningAlgorithm(privateKey, false) // Use modern algorithms by default
-	if err := SignHTTPRequestWithAlgorithm(req, privateKey, signingActor.PublicKey.ID, algorithm); err != nil {
+	req, err := BuildSignedActivityPubRequest(ctx, http.MethodPost, targetInbox, "Lesser/1.0", body, privateKey, signingActor.PublicKey.ID)
+	if err != nil {
 		log.Error("failed to sign request",
-			zap.Error(err),
-			zap.String("algorithm", algorithm))
+			zap.Error(err))
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		if req == nil {
+			return errors.Join(ErrRequestCreationFailed, err)
+		}
 		return errors.Join(ErrRequestSigningFailed, err)
 	}
 
