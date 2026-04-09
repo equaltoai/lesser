@@ -94,6 +94,57 @@ func TestBuildLocalActor_PreservesExistingLocalOriginWhenHostMatches(t *testing.
 	require.Equal(t, "https://localhost/users/alice/inbox", actor.Inbox)
 }
 
+func TestResolveLocalActorBaseURL_FallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns fallback when actor is nil or username is empty", func(t *testing.T) {
+		t.Parallel()
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(nil, "https://localhost", "alice"))
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(&activitypub.Actor{}, "https://localhost", ""))
+	})
+
+	t.Run("returns fallback when candidate host does not match", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/Alice"},
+			PreferredUsername: "Alice",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+
+	t.Run("returns fallback when actor identity belongs to another username", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://localhost/users/Bob"},
+			PreferredUsername: "Bob",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+
+	t.Run("skips malformed candidates and preserves fallback", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://%zz"},
+			URL:        "/users/alice",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+}
+
+func TestParsedURLHost_AdditionalBranches(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "localhost", parsedURLHost(" https://localhost/users/alice "))
+	require.Equal(t, "", parsedURLHost("https://%zz"))
+}
+
 func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	t.Parallel()
 
