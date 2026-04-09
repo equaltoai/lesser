@@ -34,6 +34,9 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	if wantPolicyID != nil && gotPolicyID != *wantPolicyID {
 		t.Fatalf("unexpected OriginRequestPolicyId: got %q want %q", gotPolicyID, *wantPolicyID)
 	}
+	if _, has := defaultBehavior["FunctionAssociations"]; !has {
+		t.Fatalf("default behavior must attach the rewrite function to preserve forwarded host headers")
+	}
 
 	cacheBehaviors := extractCacheBehaviors(t, dist)
 	bypass := findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth/wallet/*")
@@ -44,8 +47,8 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	if wantPolicyID != nil && got != *wantPolicyID {
 		t.Fatalf("behavior %q unexpected OriginRequestPolicyId: got %q want %q", "/auth/wallet/*", got, *wantPolicyID)
 	}
-	if _, has := bypass["FunctionAssociations"]; has {
-		t.Fatalf("behavior %q must not attach the rewrite function", "/auth/wallet/*")
+	if _, has := bypass["FunctionAssociations"]; !has {
+		t.Fatalf("behavior %q must attach the rewrite function to preserve forwarded host headers", "/auth/wallet/*")
 	}
 
 	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth")
@@ -59,6 +62,9 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	fn := findSingleCloudFrontFunction(t, resources)
 	code := extractCloudFrontFunctionCode(t, fn)
 	requireContainsAll(t, code, []string{
+		"var host = request.headers.host;",
+		"request.headers['x-forwarded-host'] = { value: host.value };",
+		"request.headers['x-forwarded-proto'] = { value: 'https' };",
 		"if (uri === '/l')",
 		"request.uri = '/l/';",
 		"if (uri === '/auth')",
@@ -166,6 +172,7 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
 			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
 			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+			FunctionAssociations: functionAssociations,
 		},
 		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100,
 	})
@@ -175,6 +182,7 @@ func synthClientFrontendResources(t *testing.T) map[string]any {
 		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
 		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
 		CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+		FunctionAssociations: functionAssociations,
 	})
 	dist.AddBehavior(jsii.String("/auth"), authOrigin, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,

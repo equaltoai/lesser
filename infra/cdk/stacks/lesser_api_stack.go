@@ -313,6 +313,12 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	// ClientFrontend/Distribution and ClientFrontend/AliasRecord*, so the SSR routing changes must stay
 	// under that construct path to update in place instead of triggering replacement.
 	clientFrontend := constructs.NewConstruct(s.Stack, jsii.String("ClientFrontend"))
+	functionAssociations := &[]*awscloudfront.FunctionAssociation{
+		{
+			EventType: awscloudfront.FunctionEventType_VIEWER_REQUEST,
+			Function:  rewriteFn,
+		},
+	}
 
 	dist := awscloudfront.NewDistribution(clientFrontend, jsii.String("Distribution"), &awscloudfront.DistributionProps{
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
@@ -321,6 +327,7 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
 			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
 			CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+			FunctionAssociations: functionAssociations,
 		},
 		DomainNames: &[]*string{jsii.String(domain)},
 		Certificate: s.CDNCertificate,
@@ -333,18 +340,13 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	clientSSROrigin := awscloudfrontorigins.FunctionUrlOrigin_WithOriginAccessControl(clientSSRFunctionURL, &awscloudfrontorigins.FunctionUrlOriginWithOACProps{
 		ReadTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
 	})
-	functionAssociations := &[]*awscloudfront.FunctionAssociation{
-		{
-			EventType: awscloudfront.FunctionEventType_VIEWER_REQUEST,
-			Function:  rewriteFn,
-		},
-	}
 
 	dist.AddBehavior(jsii.String("/auth/wallet/*"), apiOriginTarget, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
 		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
 		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
 		CachePolicy:          awscloudfront.CachePolicy_CACHING_DISABLED(),
+		FunctionAssociations: functionAssociations,
 	})
 	dist.AddBehavior(jsii.String("/auth"), authOrigin, &awscloudfront.AddBehaviorOptions{
 		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
@@ -485,6 +487,13 @@ func newClientFrontendRewriteFunction(scope constructs.Construct) awscloudfront.
 function handler(event) {
   var request = event.request;
   var uri = request.uri;
+  var host = request.headers.host;
+
+  if (host && host.value) {
+    request.headers['x-forwarded-host'] = { value: host.value };
+  }
+
+  request.headers['x-forwarded-proto'] = { value: 'https' };
 
   if (uri === '/l') {
     request.uri = '/l/';
