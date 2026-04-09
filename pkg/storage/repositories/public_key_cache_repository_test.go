@@ -285,6 +285,7 @@ func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementSuccess(t *testin
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockUpdateQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	logger := zap.NewNop()
 	repo := NewPublicKeyCacheRepository(mockDB, "test-table", logger, nil)
 
@@ -310,9 +311,11 @@ func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementSuccess(t *testin
 	// Set up mock expectations for Update
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockUpdateQuery).Once()
-	mockUpdateQuery.On("Where", "PK", "=", "PUBKEY_CACHE#https://mastodon.social/users/alice").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Where", "SK", "=", "KEY").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Update", mock.Anything).Return(nil)
+	mockUpdateQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "SuccessCount", 6).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "FailureCount", 2).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "LastUsed", mock.AnythingOfType("time.Time")).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Execute").Return(nil).Once()
 
 	// Execute - success == true
 	err := repo.UpdateStats(ctx, actorURL, true)
@@ -323,12 +326,14 @@ func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementSuccess(t *testin
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 	mockUpdateQuery.AssertExpectations(t)
+	mockUpdateBuilder.AssertExpectations(t)
 }
 
 func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementFailure(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockUpdateQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	logger := zap.NewNop()
 	repo := NewPublicKeyCacheRepository(mockDB, "test-table", logger, nil)
 
@@ -354,9 +359,10 @@ func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementFailure(t *testin
 	// Set up mock expectations for Update
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockUpdateQuery).Once()
-	mockUpdateQuery.On("Where", "PK", "=", "PUBKEY_CACHE#https://mastodon.social/users/alice").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Where", "SK", "=", "KEY").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Update", mock.Anything).Return(nil)
+	mockUpdateQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "SuccessCount", 5).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "FailureCount", 3).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Execute").Return(nil).Once()
 
 	// Execute - success == false (increment failure)
 	err := repo.UpdateStats(ctx, actorURL, false)
@@ -367,12 +373,14 @@ func TestPublicKeyCacheRepository_UpdateStats_Success_IncrementFailure(t *testin
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 	mockUpdateQuery.AssertExpectations(t)
+	mockUpdateBuilder.AssertExpectations(t)
 }
 
 func TestPublicKeyCacheRepository_UpdateStats_UpdateError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockUpdateQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	logger := zap.NewNop()
 	repo := NewPublicKeyCacheRepository(mockDB, "test-table", logger, nil)
 
@@ -397,9 +405,11 @@ func TestPublicKeyCacheRepository_UpdateStats_UpdateError(t *testing.T) {
 	// Set up mock expectations for Update - returns error
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockUpdateQuery).Once()
-	mockUpdateQuery.On("Where", "PK", "=", "PUBKEY_CACHE#https://mastodon.social/users/alice").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Where", "SK", "=", "KEY").Return(mockUpdateQuery)
-	mockUpdateQuery.On("Update", mock.Anything).Return(testErr)
+	mockUpdateQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "SuccessCount", 1).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "FailureCount", 0).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Set", "LastUsed", mock.AnythingOfType("time.Time")).Return(mockUpdateBuilder).Once()
+	mockUpdateBuilder.On("Execute").Return(testErr).Once()
 
 	// Execute
 	err := repo.UpdateStats(ctx, actorURL, true)
@@ -410,6 +420,7 @@ func TestPublicKeyCacheRepository_UpdateStats_UpdateError(t *testing.T) {
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 	mockUpdateQuery.AssertExpectations(t)
+	mockUpdateBuilder.AssertExpectations(t)
 }
 
 // ============================================================================

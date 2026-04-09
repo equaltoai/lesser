@@ -2,6 +2,7 @@
 package routing
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -1387,25 +1388,10 @@ func (ih *InboxHandler) isAddressedTo(activity *activitypub.Activity, actor *act
 
 // convertRequest converts an AppTheory request to an http.Request.
 func (ih *InboxHandler) convertRequest(ctx *apptheory.Context, body []byte) (*http.Request, error) {
-	host := headerValue(ctx, "Host")
-
-	// Build URL
-	u := &url.URL{
-		Scheme: "https",
-		Host:   host,
-		Path:   ctx.Request.Path,
-	}
-
-	q := u.Query()
-	for k, values := range ctx.Request.Query {
-		for _, v := range values {
-			q.Add(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
+	u := inboxRequestURL(ctx)
 
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -1419,12 +1405,47 @@ func (ih *InboxHandler) convertRequest(ctx *apptheory.Context, body []byte) (*ht
 	}
 
 	// Ensure Host is set (both in request and header), as signature verification depends on it.
-	if host != "" {
-		req.Host = host
-		req.Header.Set("Host", host)
+	if u.Host != "" {
+		req.Host = u.Host
+		req.Header.Set("Host", u.Host)
 	}
 
 	return req, nil
+}
+
+func inboxRequestURL(ctx *apptheory.Context) *url.URL {
+	if ctx == nil {
+		return &url.URL{Scheme: "https", Path: "/"}
+	}
+
+	origin := apptheory.OriginURL(ctx.Request.Headers)
+	if origin == "" {
+		if host := headerValue(ctx, "Host"); host != "" {
+			origin = "https://" + host
+		} else {
+			origin = "https://"
+		}
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		u = &url.URL{Scheme: "https"}
+	}
+	if u.Scheme == "" {
+		u.Scheme = "https"
+	}
+
+	u.Path = ctx.Request.Path
+
+	q := u.Query()
+	for k, values := range ctx.Request.Query {
+		for _, v := range values {
+			q.Add(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	return u
 }
 
 // getConfig returns the current configuration

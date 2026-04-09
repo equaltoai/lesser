@@ -1,6 +1,8 @@
 package federation
 
 import (
+	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -145,6 +147,32 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 		zap.String("path", req.URL.Path))
 
 	return nil
+}
+
+// BuildSignedActivityPubRequest creates a signed ActivityPub delivery request using Lesser's modern defaults.
+func BuildSignedActivityPubRequest(ctx context.Context, method, targetURL, userAgent string, body []byte, privateKey crypto.PrivateKey, keyID string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/activity+json")
+	req.Header.Set("Accept", "application/activity+json")
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+
+	if err := SignActivityPubRequest(req, privateKey, keyID); err != nil {
+		return req, err
+	}
+
+	return req, nil
+}
+
+// SignActivityPubRequest signs an outbound ActivityPub delivery request using Lesser's modern defaults.
+func SignActivityPubRequest(req *http.Request, privateKey crypto.PrivateKey, keyID string) error {
+	algorithm := DetermineSigningAlgorithm(privateKey, false)
+	return SignHTTPRequestWithAlgorithm(req, privateKey, keyID, algorithm)
 }
 
 // verifyWithKey verifies a signature with automatic algorithm detection based on key type
