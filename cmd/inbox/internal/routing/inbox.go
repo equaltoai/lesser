@@ -1438,35 +1438,7 @@ func inboxRequestURL(ctx *apptheory.Context) *url.URL {
 	if ctx == nil {
 		return &url.URL{Scheme: "https", Path: "/"}
 	}
-
-	origin := apptheory.OriginURL(ctx.Request.Headers)
-	if origin == "" {
-		if host := headerValue(ctx, "Host"); host != "" {
-			origin = "https://" + host
-		} else {
-			origin = "https://"
-		}
-	}
-
-	u, err := url.Parse(origin)
-	if err != nil {
-		u = &url.URL{Scheme: "https"}
-	}
-	if u.Scheme == "" {
-		u.Scheme = "https"
-	}
-
-	u.Path = ctx.Request.Path
-
-	q := u.Query()
-	for k, values := range ctx.Request.Query {
-		for _, v := range values {
-			q.Add(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
-
-	return u
+	return common.RequestURLFromHeaders(ctx.Request.Headers, ctx.Request.Path, ctx.Request.Query)
 }
 
 // getConfig returns the current configuration

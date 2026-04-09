@@ -520,8 +520,10 @@ func TestConvertAppTheoryRequest_Round12(t *testing.T) {
 			Method: http.MethodGet,
 			Path:   "/users/alice",
 			Headers: map[string][]string{
-				"host":   {"example.com"},
-				"x-test": {"1"},
+				"host":                     {"internal.execute-api.us-east-1.amazonaws.com"},
+				"x-lesser-forwarded-host":  {"example.com"},
+				"x-lesser-forwarded-proto": {"https"},
+				"x-test":                   {"1"},
 			},
 			Query: map[string][]string{"q": {"1"}},
 		},
@@ -530,5 +532,7 @@ func TestConvertAppTheoryRequest_Round12(t *testing.T) {
 	req, err := h.convertAppTheoryRequest(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/users/alice?q=1", req.URL.String())
+	require.Equal(t, "example.com", req.Host)
+	require.Equal(t, "example.com", req.Header.Get("Host"))
 	require.Equal(t, "1", req.Header.Get("X-Test"))
 }

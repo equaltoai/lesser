@@ -490,10 +490,10 @@ function handler(event) {
   var host = request.headers.host;
 
   if (host && host.value) {
-    request.headers['x-forwarded-host'] = { value: host.value };
+    request.headers['x-lesser-forwarded-host'] = { value: host.value };
   }
 
-  request.headers['x-forwarded-proto'] = { value: 'https' };
+  request.headers['x-lesser-forwarded-proto'] = { value: 'https' };
 
   if (uri === '/l') {
     request.uri = '/l/';

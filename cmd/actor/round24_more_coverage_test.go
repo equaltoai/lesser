@@ -31,9 +31,11 @@ func TestConvertAppTheoryRequest_Round24_SetsHostAndQuery(t *testing.T) {
 				"foo": {"bar"},
 			},
 			Headers: map[string][]string{
-				"host":           {"example.com"},
-				"x-extra-header": {"value"},
-				"x-empty":        {},
+				"host":                     {"internal.execute-api.us-east-1.amazonaws.com"},
+				"x-lesser-forwarded-host":  {"example.com"},
+				"x-lesser-forwarded-proto": {"https"},
+				"x-extra-header":           {"value"},
+				"x-empty":                  {},
 			},
 		},
 	}
