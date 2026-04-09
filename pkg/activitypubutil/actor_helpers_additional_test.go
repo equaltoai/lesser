@@ -77,6 +77,23 @@ func TestBuildLocalActor_CanonicalizesLocalPublicKeyIdentifiers(t *testing.T) {
 	require.Equal(t, "pem", actor.PublicKey.PublicKeyPem)
 }
 
+func TestBuildLocalActor_PreservesExistingLocalOriginWhenHostMatches(t *testing.T) {
+	t.Parallel()
+
+	existing := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID: "https://localhost/users/Alice",
+		},
+		PreferredUsername: "Alice",
+	}
+
+	actor := BuildLocalActor("alice", "http://localhost", nil, existing)
+	require.NotNil(t, actor)
+	require.Equal(t, "https://localhost/users/alice", actor.ID)
+	require.Equal(t, "https://localhost/@alice", actor.URL)
+	require.Equal(t, "https://localhost/users/alice/inbox", actor.Inbox)
+}
+
 func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	t.Parallel()
 
