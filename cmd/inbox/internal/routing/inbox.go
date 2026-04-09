@@ -960,6 +960,9 @@ func (ih *InboxHandler) checkDomainBlock(ctx *apptheory.Context, req *InboxReque
 // verifyAuthentication handles public key fetching and signature verification with enhanced security
 func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxRequest) error {
 	start := time.Now()
+	trace := ih.followTraceForRequest(req)
+
+	ih.logFollowTraceRawRequest(ctx, trace, req.Username)
 
 	// Convert the AppTheory request to http.Request for signature verification.
 	httpReq, err := ih.convertRequest(ctx, req.Body)
@@ -972,9 +975,14 @@ func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxR
 		return errors.ValidationFailed("request", "malformed request").WithInternalError(err)
 	}
 
+	if trace != nil {
+		httpReq = httpReq.WithContext(federation.WithFollowTrace(httpReq.Context(), trace))
+		ih.logFollowTraceReconstructedRequest(trace, httpReq)
+	}
+
 	// Enhanced signature verification with caching and retry logic
 	signatureVerifyStart := time.Now()
-	if err := ih.signatureService.VerifySignature(ctx.Context(), httpReq, req.Activity.Actor); err != nil {
+	if err := ih.signatureService.VerifySignature(httpReq.Context(), httpReq, req.Activity.Actor); err != nil {
 		signatureVerifyDuration := time.Since(signatureVerifyStart)
 		totalDuration := time.Since(start)
 
@@ -1139,11 +1147,17 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 // verifyDigestEnhanced verifies the digest header with enhanced compatibility support
 func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxRequest) error {
 	digestHeader := headerValue(ctx, "Digest")
+	trace := ih.followTraceForRequest(req)
 	if err := common.ValidateRequiredParam("digestHeader", digestHeader); err != nil {
+		ih.logFollowTrace(trace, "receiver.digest.missing")
 		// No digest header is acceptable for some implementations
 		ih.logger.Debug("no digest header present", zap.String("actor", req.Activity.Actor))
 		return nil
 	}
+
+	ih.logFollowTrace(trace, "receiver.digest.start",
+		zap.String("digest_header", digestHeader),
+	)
 
 	httpReq, err := ih.convertRequest(ctx, req.Body)
 	if err != nil {
@@ -1156,6 +1170,10 @@ func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxR
 
 	// Use the enhanced digest verification with compatibility support
 	if err := ih.signatureService.VerifyDigestWithCompatibility(httpReq, req.Body); err != nil {
+		ih.logFollowTrace(trace, "receiver.digest.failure",
+			zap.String("digest_header", digestHeader),
+			zap.String("digest_error", err.Error()),
+		)
 		ih.logger.Warn("digest verification failed",
 			zap.String("actor", req.Activity.Actor),
 			zap.String("digest_header", digestHeader),
@@ -1163,6 +1181,9 @@ func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxR
 		return err // Return the specific error from the service
 	}
 
+	ih.logFollowTrace(trace, "receiver.digest.success",
+		zap.String("digest_header", digestHeader),
+	)
 	ih.logger.Debug("digest verification successful",
 		zap.String("actor", req.Activity.Actor))
 	return nil
@@ -1467,6 +1488,7 @@ func generateActivityID() string {
 // processFollowActivity processes an incoming Follow activity
 func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
+	trace := federation.NewFollowTraceMetadata(activity, activity.Actor, targetActor.PreferredUsername)
 
 	// Check for block relationship before processing follow
 	if err := ih.checkBlockStatus(ctx, activity.Actor, targetActor.ID); err != nil {
@@ -1479,16 +1501,34 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 
 	// Extract follower username from actor ID
 	followerHandle := ih.extractHandleFromActorID(activity.Actor)
+	ih.logFollowTrace(trace, "receiver.follow.start",
+		zap.String("follower_handle", followerHandle),
+		zap.String("target_username", targetActor.PreferredUsername),
+	)
 
 	// Create the follow relationship with pending state
 	err := ih.relationshipRepository.CreateRelationship(ctx, followerHandle, targetActor.PreferredUsername, activity.ID)
 	if err != nil {
+		ih.logFollowTrace(trace, "receiver.follow.relationship_create_failed",
+			zap.String("follower_handle", followerHandle),
+			zap.String("target_username", targetActor.PreferredUsername),
+			zap.String("relationship_error", err.Error()),
+		)
 		log.Error("failed to create follow relationship", zap.Error(err))
 		return err
 	}
+	ih.logFollowTrace(trace, "receiver.follow.relationship_created",
+		zap.String("follower_handle", followerHandle),
+		zap.String("target_username", targetActor.PreferredUsername),
+		zap.String("relationship_result", "created_pending"),
+	)
 
 	// Check if the target actor requires manual approval for follows
 	if targetActor.ManuallyApprovesFollowers {
+		ih.logFollowTrace(trace, "receiver.follow.manual_pending",
+			zap.String("follower_handle", followerHandle),
+			zap.String("target_username", targetActor.PreferredUsername),
+		)
 		log.Info("follow request pending manual approval",
 			zap.String("follower", followerHandle),
 			zap.String("target", targetActor.PreferredUsername))
@@ -1540,14 +1580,32 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 		return nil // Don't fail the follow acceptance
 	}
 
+	ih.logFollowTrace(trace, "receiver.follow.accept_prepare",
+		zap.String("follower_handle", followerHandle),
+		zap.String("target_username", targetActor.PreferredUsername),
+		zap.String("accept_target_inbox", followerActor.Inbox),
+	)
+
 	// Send Accept activity back to the follower
 	if err := ih.deliveryService.DeliverActivity(ctx, acceptActivity, followerActor.Inbox, targetActor); err != nil {
+		ih.logFollowTrace(trace, "receiver.follow.accept_delivery_failed",
+			zap.String("follower_handle", followerHandle),
+			zap.String("target_username", targetActor.PreferredUsername),
+			zap.String("accept_target_inbox", followerActor.Inbox),
+			zap.String("accept_result", err.Error()),
+		)
 		log.Error("failed to deliver accept activity",
 			zap.String("to", activity.Actor),
 			zap.String("from", targetActor.ID),
 			zap.Error(err))
 		// Don't fail the whole operation if delivery fails
 	} else {
+		ih.logFollowTrace(trace, "receiver.follow.accept_delivered",
+			zap.String("follower_handle", followerHandle),
+			zap.String("target_username", targetActor.PreferredUsername),
+			zap.String("accept_target_inbox", followerActor.Inbox),
+			zap.String("accept_result", "delivered"),
+		)
 		log.Info("delivered accept activity",
 			zap.String("to", activity.Actor),
 			zap.String("from", targetActor.ID))

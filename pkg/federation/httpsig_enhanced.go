@@ -66,10 +66,19 @@ func VerifyHTTPSignatureV2(req *http.Request, publicKey crypto.PublicKey) error 
 // VerifyHTTPSignatureEnhanced verifies signatures with support for multiple algorithms
 func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, sig *HTTPSignature) error {
 	log := common.Logger()
+	trace, _ := FollowTraceFromContext(req.Context())
 
 	// Build signature string
 	sigString, err := buildSignatureString(req, sig.Headers)
 	if err != nil {
+		if trace != nil {
+			fields := append(FollowTraceFields(trace, "signature.verify.canonical_error"),
+				zap.String("verification_algorithm", sig.Algorithm),
+				zap.String("verification_key_id", sig.KeyID),
+				zap.String("canonical_error", err.Error()),
+			)
+			log.Info("federation follow trace", fields...)
+		}
 		return errors.Join(ErrBuildSignatureString, err)
 	}
 
@@ -137,6 +146,15 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	}
 
 	if verifyErr != nil {
+		if trace != nil {
+			fields := append(FollowTraceFields(trace, "signature.verify.crypto"),
+				zap.String("verification_algorithm", sig.Algorithm),
+				zap.String("verification_key_id", sig.KeyID),
+				zap.String("signature_canonical", sigString),
+				zap.String("verification_error_detail", verifyErr.Error()),
+			)
+			log.Info("federation follow trace", fields...)
+		}
 		return ErrSignatureFailed
 	}
 
@@ -164,6 +182,14 @@ func BuildSignedActivityPubRequest(ctx context.Context, method, targetURL, userA
 
 	if err := SignActivityPubRequest(req, privateKey, keyID); err != nil {
 		return req, err
+	}
+
+	if trace, ok := FollowTraceFromContext(ctx); ok {
+		fields := append(FollowTraceFields(trace, "sender.signed_request"),
+			zap.String("signing_public_key_id", keyID),
+		)
+		fields = append(fields, BuildSignatureTraceFields(req)...)
+		common.Logger().Info("federation follow trace", fields...)
 	}
 
 	return req, nil

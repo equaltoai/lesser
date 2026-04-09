@@ -143,7 +143,7 @@ func TestSignatureService_verifyWithAlgorithm_ParseSignatureHeaderError(t *testi
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 	req.Host = "example.com"
 
-	err := svc.verifyWithAlgorithm(req, struct{}{}, AlgorithmHS2019)
+	err := svc.verifyWithAlgorithm(context.Background(), req, struct{}{}, AlgorithmHS2019)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSignatureParseFailed)
 }

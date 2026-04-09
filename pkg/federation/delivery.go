@@ -142,6 +142,15 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		Timestamp:    startTime,
 	}
 
+	traceTarget := targetInbox
+	if objectID, ok := activity.Object.(string); ok && strings.TrimSpace(objectID) != "" {
+		traceTarget = objectID
+	}
+	trace := NewFollowTraceMetadata(activity, signingActor.PreferredUsername, traceTarget)
+	if trace != nil {
+		ctx = WithFollowTrace(ctx, trace)
+	}
+
 	// Get the actor's private key from storage
 	privateKeyPEM, err := d.store.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
@@ -164,7 +173,12 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		return errors.Join(ErrPrivateKeyParseFailed, err)
 	}
 
-	req, err := BuildSignedActivityPubRequest(ctx, http.MethodPost, targetInbox, "Lesser/1.0", body, privateKey, signingActor.PublicKey.ID)
+	signingKeyID := ""
+	if signingActor.PublicKey != nil {
+		signingKeyID = signingActor.PublicKey.ID
+	}
+
+	req, err := BuildSignedActivityPubRequest(ctx, http.MethodPost, targetInbox, "Lesser/1.0", body, privateKey, signingKeyID)
 	if err != nil {
 		log.Error("failed to sign request",
 			zap.Error(err))
@@ -176,6 +190,16 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 			return errors.Join(ErrRequestCreationFailed, err)
 		}
 		return errors.Join(ErrRequestSigningFailed, err)
+	}
+
+	if trace != nil {
+		fields := append(FollowTraceFields(trace, "sender.delivery"),
+			zap.String("signing_actor_id", signingActor.ID),
+			zap.String("signing_actor_public_key_id", signingKeyID),
+			zap.String("target_inbox", targetInbox),
+		)
+		fields = append(fields, BuildSignatureTraceFields(req)...)
+		d.logger.Info("federation follow trace", fields...)
 	}
 
 	// Send the request
