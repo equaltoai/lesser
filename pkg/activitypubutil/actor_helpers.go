@@ -12,9 +12,9 @@ import (
 )
 
 // BuildLocalActor returns a sanitized ActivityPub actor for a local account.
-// It merges existing actor data with defaults derived from the provided username,
-// base URL, and optional storage.User record. The returned actor is a deep copy
-// and safe for callers to mutate.
+// It merges existing actor data with canonical local identifiers derived from
+// the provided username, base URL, and optional storage.User record. The
+// returned actor is a deep copy and safe for callers to mutate.
 func BuildLocalActor(username string, baseURL string, user *storage.User, existing *activitypub.Actor) *activitypub.Actor {
 	clone := ensureActorInstance(existing)
 	resolvedUsername := resolveUsername(clone, user, username)
@@ -236,7 +236,7 @@ func resolveUsername(actor *activitypub.Actor, user *storage.User, fallback stri
 	if user != nil && candidate == "" {
 		candidate = strings.TrimSpace(user.Username)
 	}
-	return DerivePreferredUsername(actor, candidate)
+	return strings.ToLower(strings.TrimSpace(DerivePreferredUsername(actor, candidate)))
 }
 
 func chooseBaseURL(baseURL string, user *storage.User) string {
@@ -324,29 +324,24 @@ func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {
 		return
 	}
 
-	assignIfEmpty := func(target *string, format string) {
-		if *target == "" {
-			*target = fmt.Sprintf(format, base, username)
-		}
-	}
-
-	assignIfEmpty(&actor.ID, "%s/users/%s")
-	assignIfEmpty(&actor.URL, "%s/@%s")
-	assignIfEmpty(&actor.Inbox, "%s/users/%s/inbox")
-	assignIfEmpty(&actor.Outbox, "%s/users/%s/outbox")
-	assignIfEmpty(&actor.Followers, "%s/users/%s/followers")
-	assignIfEmpty(&actor.Following, "%s/users/%s/following")
-	assignIfEmpty(&actor.Liked, "%s/users/%s/liked")
+	actor.ID = fmt.Sprintf("%s/users/%s", base, username)
+	actor.URL = fmt.Sprintf("%s/@%s", base, username)
+	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", base, username)
+	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", base, username)
+	actor.Followers = fmt.Sprintf("%s/users/%s/followers", base, username)
+	actor.Following = fmt.Sprintf("%s/users/%s/following", base, username)
+	actor.Liked = fmt.Sprintf("%s/users/%s/liked", base, username)
 
 	if actor.Endpoints == nil {
 		actor.Endpoints = &activitypub.Endpoints{}
 	}
-	if actor.Endpoints.SharedInbox == "" {
-		actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
-	}
+	actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
 
-	if actor.PreferredUsername == "" {
-		actor.PreferredUsername = username
+	actor.PreferredUsername = username
+
+	if actor.PublicKey != nil {
+		actor.PublicKey.Owner = actor.ID
+		actor.PublicKey.ID = actor.ID + "#main-key"
 	}
 }
 

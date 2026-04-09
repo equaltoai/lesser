@@ -271,7 +271,7 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID string) error {
 	// Set date header if not present
 	if err := common.ValidateRequiredParam("date_header", req.Header.Get(DateHeader)); err != nil {
-		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
 	}
 
 	// Calculate and set digest header if there's a body

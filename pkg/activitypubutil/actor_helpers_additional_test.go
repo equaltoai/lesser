@@ -52,6 +52,31 @@ func TestBuildLocalActor_EmptyBaseAndUsernameBranches(t *testing.T) {
 	require.Equal(t, "sam", actor2.PreferredUsername)
 }
 
+func TestBuildLocalActor_CanonicalizesLocalPublicKeyIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	existing := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID: "https://app.example/users/Sam",
+		},
+		PreferredUsername: "Sam",
+		PublicKey: &activitypub.PublicKey{
+			ID:           "https://app.example/users/Sam#main-key",
+			Owner:        "https://app.example/users/Sam",
+			PublicKeyPem: "pem",
+		},
+	}
+
+	actor := BuildLocalActor("sam", "https://app.example", nil, existing)
+	require.NotNil(t, actor)
+	require.Equal(t, "https://app.example/users/sam", actor.ID)
+	require.Equal(t, "sam", actor.PreferredUsername)
+	require.NotNil(t, actor.PublicKey)
+	require.Equal(t, "https://app.example/users/sam", actor.PublicKey.Owner)
+	require.Equal(t, "https://app.example/users/sam#main-key", actor.PublicKey.ID)
+	require.Equal(t, "pem", actor.PublicKey.PublicKeyPem)
+}
+
 func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	t.Parallel()
 
