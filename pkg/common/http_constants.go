@@ -13,9 +13,12 @@ const (
 	XRequestIDHeader       = "X-Request-ID"
 	XRealIPHeader          = "X-Real-IP"
 	XForwardedForHeader    = "X-Forwarded-For"
+	XForwardedProtoHeader  = "X-Forwarded-Proto"
 	XProcessingDelayHeader = "X-Processing-Delay"
 	XNextCursorHeader      = "X-Next-Cursor"
 	XInboxBacklogHeader    = "X-Inbox-Backlog"
+	XLesserForwardedHost   = "X-Lesser-Forwarded-Host"
+	XLesserForwardedProto  = "X-Lesser-Forwarded-Proto"
 
 	// Security headers
 	XFrameOptionsHeader       = "X-Frame-Options"

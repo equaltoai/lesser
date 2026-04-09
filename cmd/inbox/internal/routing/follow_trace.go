@@ -3,6 +3,7 @@ package routing
 import (
 	"net/http"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
@@ -38,6 +39,8 @@ func (ih *InboxHandler) logFollowTraceRawRequest(ctx *apptheory.Context, trace *
 		zap.String("raw_path", ctx.Request.Path),
 		zap.Any("raw_query", ctx.Request.Query),
 		zap.String("raw_host", headerValue(ctx, "Host")),
+		zap.String("raw_x_lesser_forwarded_host", headerValue(ctx, common.XLesserForwardedHost)),
+		zap.String("raw_x_lesser_forwarded_proto", headerValue(ctx, common.XLesserForwardedProto)),
 		zap.String("raw_x_forwarded_host", headerValue(ctx, "X-Forwarded-Host")),
 		zap.String("raw_x_forwarded_proto", headerValue(ctx, "X-Forwarded-Proto")),
 		zap.String("raw_forwarded", headerValue(ctx, "Forwarded")),

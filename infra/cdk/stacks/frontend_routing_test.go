@@ -35,7 +35,7 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 		t.Fatalf("unexpected OriginRequestPolicyId: got %q want %q", gotPolicyID, *wantPolicyID)
 	}
 	if _, has := defaultBehavior["FunctionAssociations"]; !has {
-		t.Fatalf("default behavior must attach the rewrite function to preserve forwarded host headers")
+		t.Fatalf("default behavior must attach the rewrite function to preserve public host headers for API verification")
 	}
 
 	cacheBehaviors := extractCacheBehaviors(t, dist)
@@ -48,7 +48,7 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 		t.Fatalf("behavior %q unexpected OriginRequestPolicyId: got %q want %q", "/auth/wallet/*", got, *wantPolicyID)
 	}
 	if _, has := bypass["FunctionAssociations"]; !has {
-		t.Fatalf("behavior %q must attach the rewrite function to preserve forwarded host headers", "/auth/wallet/*")
+		t.Fatalf("behavior %q must attach the rewrite function to preserve public host headers for API verification", "/auth/wallet/*")
 	}
 
 	findCacheBehaviorByPathPattern(t, cacheBehaviors, "/auth")
@@ -63,8 +63,8 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 	code := extractCloudFrontFunctionCode(t, fn)
 	requireContainsAll(t, code, []string{
 		"var host = request.headers.host;",
-		"request.headers['x-forwarded-host'] = { value: host.value };",
-		"request.headers['x-forwarded-proto'] = { value: 'https' };",
+		"request.headers['x-lesser-forwarded-host'] = { value: host.value };",
+		"request.headers['x-lesser-forwarded-proto'] = { value: 'https' };",
 		"if (uri === '/l')",
 		"request.uri = '/l/';",
 		"if (uri === '/auth')",

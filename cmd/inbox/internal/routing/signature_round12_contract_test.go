@@ -23,8 +23,10 @@ func TestInboxHandler_convertRequest_PrefersForwardedOrigin(t *testing.T) {
 		"/users/alice/inbox",
 		map[string][]string{
 			"host":                      {"internal.execute-api.us-east-1.amazonaws.com"},
-			"x-forwarded-host":          {"theory.dev.example.com"},
+			"x-forwarded-host":          {"stale.theory.dev.example.com"},
 			"x-forwarded-proto":         {"https"},
+			"x-lesser-forwarded-host":   {"theory.dev.example.com"},
+			"x-lesser-forwarded-proto":  {"https"},
 			"x-custom-signature":        {"sig"},
 			"content-type":              {"application/activity+json"},
 			"cloudfront-viewer-address": {"198.51.100.20:443"},
@@ -53,11 +55,13 @@ func TestInboxRequestURL_OriginMatrix(t *testing.T) {
 		want    string
 	}{
 		{
-			name: "x-forwarded host wins",
+			name: "x-lesser-forwarded host wins",
 			headers: map[string][]string{
-				"host":              {"internal.execute-api.us-east-1.amazonaws.com"},
-				"x-forwarded-host":  {"theory.dev.example.com"},
-				"x-forwarded-proto": {"https"},
+				"host":                     {"internal.execute-api.us-east-1.amazonaws.com"},
+				"x-forwarded-host":         {"stale.theory.dev.example.com"},
+				"x-forwarded-proto":        {"https"},
+				"x-lesser-forwarded-host":  {"theory.dev.example.com"},
+				"x-lesser-forwarded-proto": {"https"},
 			},
 			query: map[string][]string{
 				"page": {"1"},
@@ -109,9 +113,9 @@ func TestInboxHandler_convertRequest_VerifiesClassicDeliveryAfterForwardedRecons
 		outboundReq.Method,
 		outboundReq.URL.Path,
 		lowercaseRequestHeaders(outboundReq.Header, map[string][]string{
-			"host":              {"internal.lambda-url.us-east-1.on.aws"},
-			"x-forwarded-host":  {outboundReq.URL.Host},
-			"x-forwarded-proto": {"https"},
+			"host":                     {"internal.lambda-url.us-east-1.on.aws"},
+			"x-lesser-forwarded-host":  {outboundReq.URL.Host},
+			"x-lesser-forwarded-proto": {"https"},
 		}),
 		outboundReq.URL.Query(),
 		outboundBody,

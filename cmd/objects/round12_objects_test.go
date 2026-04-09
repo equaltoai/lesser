@@ -582,8 +582,10 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 			Method: http.MethodGet,
 			Path:   "/objects/123",
 			Headers: map[string][]string{
-				"host": {"example.com"},
-				"some": {"Header"},
+				"host":                     {"internal.execute-api.us-east-1.amazonaws.com"},
+				"x-lesser-forwarded-host":  {"example.com"},
+				"x-lesser-forwarded-proto": {"https"},
+				"some":                     {"Header"},
 			},
 			Query: map[string][]string{"q": {"1"}},
 		},
@@ -591,6 +593,8 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 	req, err := h.convertAppTheoryRequest(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/objects/123?q=1", req.URL.String())
+	require.Equal(t, "example.com", req.Host)
+	require.Equal(t, "example.com", req.Header.Get("Host"))
 }
 
 func TestObjectsSecurityHeaders_Round12(t *testing.T) {

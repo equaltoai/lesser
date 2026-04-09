@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -692,20 +691,7 @@ func (h *Handler) convertAppTheoryRequest(ctx *apptheory.Context) (*http.Request
 		return nil, errors.New("nil context")
 	}
 
-	// Build URL
-	u := &url.URL{
-		Scheme: "https",
-		Host:   objectsHeaderValue(ctx, "host"),
-		Path:   ctx.Request.Path,
-	}
-
-	q := u.Query()
-	for key, values := range ctx.Request.Query {
-		for _, value := range values {
-			q.Add(key, value)
-		}
-	}
-	u.RawQuery = q.Encode()
+	u := common.RequestURLFromHeaders(ctx.Request.Headers, ctx.Request.Path, ctx.Request.Query)
 
 	// Create request with context (no body for GET requests)
 	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), nil)
@@ -723,9 +709,10 @@ func (h *Handler) convertAppTheoryRequest(ctx *apptheory.Context) (*http.Request
 		}
 	}
 
-	// Set host header if not present
-	if err := common.ValidateRequiredParam("host", req.Host); err != nil && objectsHeaderValue(ctx, "host") != "" {
-		req.Host = objectsHeaderValue(ctx, "host")
+	// Signature verification depends on the reconstructed public host.
+	if u.Host != "" {
+		req.Host = u.Host
+		req.Header.Set("Host", u.Host)
 	}
 
 	return req, nil
@@ -761,6 +748,8 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 				"User-Agent",
 				"X-Forwarded-For",
 				"X-Forwarded-Proto",
+				common.XLesserForwardedHost,
+				common.XLesserForwardedProto,
 			},
 		}),
 		apptheory.WithLimits(apptheory.Limits{
