@@ -67,20 +67,47 @@ func defaultSignatureSleep(ctx context.Context, d time.Duration) error {
 // VerifySignature verifies an HTTP request signature with caching and retry logic
 func (s *SignatureService) VerifySignature(ctx context.Context, req *http.Request, actorURL string) error {
 	log := s.logger.With(zap.String("actor_url", actorURL))
+	trace, ok := FollowTraceFromContext(ctx)
+	if !ok && req != nil {
+		trace, ok = FollowTraceFromContext(req.Context())
+	}
+
+	if ok {
+		fields := append(FollowTraceFields(trace, "signature.verify.entry"),
+			zap.String("actor_url", actorURL),
+		)
+		s.logger.Info("federation follow trace", fields...)
+	}
 
 	// Try to get cached public key first
 	publicKey, keyID, algorithm, err := s.getCachedPublicKey(ctx, actorURL, log)
 	if err != nil {
+		if ok {
+			fields := append(FollowTraceFields(trace, "signature.verify.cache_fetch"),
+				zap.String("actor_url", actorURL),
+				zap.String("cache_result", "fetch_required"),
+				zap.String("cache_error", err.Error()),
+			)
+			s.logger.Info("federation follow trace", fields...)
+		}
 		// Cache miss or error - fetch key with retry logic
 		publicKey, keyID, algorithm, err = s.fetchPublicKeyWithRetry(ctx, actorURL, log)
 		if err != nil {
 			log.Error("failed to fetch public key after retries", zap.Error(err))
 			return common.AuthenticationError{Message: "unable to fetch public key for verification"}
 		}
+	} else if ok {
+		fields := append(FollowTraceFields(trace, "signature.verify.cache_fetch"),
+			zap.String("actor_url", actorURL),
+			zap.String("cache_result", "hit"),
+			zap.String("cached_key_id", keyID),
+			zap.String("cached_algorithm", algorithm),
+		)
+		s.logger.Info("federation follow trace", fields...)
 	}
 
 	// Verify the signature
-	verifyErr := s.verifyWithAlgorithm(req, publicKey, algorithm)
+	verifyErr := s.verifyWithAlgorithm(ctx, req, publicKey, algorithm)
 
 	// Update cache statistics based on verification result
 	success := verifyErr == nil
@@ -129,6 +156,16 @@ func (s *SignatureService) getCachedPublicKey(ctx context.Context, actorURL stri
 		zap.String("algorithm", cache.Algorithm),
 		zap.Time("fetched_at", cache.FetchedAt))
 
+	if trace, ok := FollowTraceFromContext(ctx); ok {
+		fields := append(FollowTraceFields(trace, "signature.verify.cache_hit"),
+			zap.String("actor_url", actorURL),
+			zap.String("cached_key_id", cache.KeyID),
+			zap.String("cached_algorithm", cache.Algorithm),
+			zap.Time("cached_fetched_at", cache.FetchedAt),
+		)
+		s.logger.Info("federation follow trace", fields...)
+	}
+
 	return publicKey, cache.KeyID, cache.Algorithm, nil
 }
 
@@ -149,6 +186,15 @@ func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL
 		log.Debug("attempting to fetch public key",
 			zap.Int("attempt", attempt+1),
 			zap.Int("max_retries", maxRetries))
+
+		if trace, ok := FollowTraceFromContext(ctx); ok {
+			fields := append(FollowTraceFields(trace, "signature.verify.fetch_attempt"),
+				zap.String("actor_url", actorURL),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_retries", maxRetries),
+			)
+			s.logger.Info("federation follow trace", fields...)
+		}
 
 		publicKey, keyID, algorithm, pemData, err := s.fetchActorPublicKeyWithPEM(ctx, actorURL, log)
 		if err != nil {
@@ -257,11 +303,30 @@ func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actor
 		zap.String("key_id", actor.PublicKey.ID),
 		zap.String("algorithm", algorithm))
 
+	if trace, ok := FollowTraceFromContext(ctx); ok {
+		fields := append(FollowTraceFields(trace, "signature.verify.fetched_actor"),
+			zap.String("actor_url", actorURL),
+			zap.String("fetched_actor_id", actor.ID),
+			zap.String("fetched_public_key_id", actor.PublicKey.ID),
+			zap.String("fetched_public_key_owner", actor.PublicKey.Owner),
+			zap.String("fetched_algorithm", algorithm),
+		)
+		s.logger.Info("federation follow trace", fields...)
+	}
+
 	return publicKey, actor.PublicKey.ID, algorithm, actor.PublicKey.PublicKeyPem, nil
 }
 
 // verifyWithAlgorithm verifies the signature using the appropriate algorithm
-func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey crypto.PublicKey, algorithm string) error {
+func (s *SignatureService) verifyWithAlgorithm(ctx context.Context, req *http.Request, publicKey crypto.PublicKey, algorithm string) error {
+	if trace, ok := FollowTraceFromContext(ctx); ok {
+		fields := append(FollowTraceFields(trace, "signature.verify.algorithm"),
+			zap.String("selected_algorithm", algorithm),
+		)
+		fields = append(fields, BuildSignatureTraceFields(req)...)
+		s.logger.Info("federation follow trace", fields...)
+	}
+
 	// Use the enhanced verification if algorithm is specified, otherwise fall back to basic verification
 	if algorithm != "" && algorithm != "rsa-sha256" {
 		// Create a synthetic signature object for enhanced verification
@@ -275,11 +340,27 @@ func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey cryp
 			return errors.Join(ErrSignatureParseFailed, err)
 		}
 
-		return VerifyHTTPSignatureEnhanced(req, publicKey, sig)
+		err = VerifyHTTPSignatureEnhanced(req, publicKey, sig)
+		if trace, ok := FollowTraceFromContext(ctx); ok && err != nil {
+			fields := append(FollowTraceFields(trace, "signature.verify.result"),
+				zap.String("selected_algorithm", algorithm),
+				zap.String("verification_error", err.Error()),
+			)
+			s.logger.Info("federation follow trace", fields...)
+		}
+		return err
 	}
 
 	// Use basic verification for rsa-sha256
-	return VerifyHTTPSignature(req, publicKey)
+	err := VerifyHTTPSignature(req, publicKey)
+	if trace, ok := FollowTraceFromContext(ctx); ok && err != nil {
+		fields := append(FollowTraceFields(trace, "signature.verify.result"),
+			zap.String("selected_algorithm", AlgorithmRSASHA256),
+			zap.String("verification_error", err.Error()),
+		)
+		s.logger.Info("federation follow trace", fields...)
+	}
+	return err
 }
 
 // VerifyDigestWithCompatibility verifies digest with both SHA-256 and sha-256 prefixes for compatibility
