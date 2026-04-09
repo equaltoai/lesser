@@ -184,6 +184,43 @@ func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	require.NotNil(t, out.Updated)
 }
 
+func TestMergeUserProfile_FillsMissingURLUsernameAndFlags(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	actor := &activitypub.Actor{}
+	user := &storage.User{
+		Username:     "riley",
+		URL:          "https://app.example/@riley",
+		Locked:       true,
+		Discoverable: true,
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now,
+	}
+
+	mergeUserProfile(actor, user, "riley")
+
+	require.Equal(t, "https://app.example/@riley", actor.URL)
+	require.Equal(t, "riley", actor.PreferredUsername)
+	require.True(t, actor.ManuallyApprovesFollowers)
+	require.True(t, actor.Discoverable)
+	require.NotNil(t, actor.Published)
+	require.NotNil(t, actor.Updated)
+}
+
+func TestCopyEndpointFields_AdditionalBranches(t *testing.T) {
+	t.Parallel()
+
+	dst := &activitypub.Actor{Endpoints: &activitypub.Endpoints{}}
+	copyEndpointFields(dst, &activitypub.Actor{})
+	require.NotNil(t, dst.Endpoints)
+	require.Empty(t, dst.Endpoints.SharedInbox)
+
+	src := &activitypub.Actor{Endpoints: &activitypub.Endpoints{SharedInbox: "https://example.com/inbox"}}
+	copyEndpointFields(dst, src)
+	require.Equal(t, "https://example.com/inbox", dst.Endpoints.SharedInbox)
+}
+
 func TestMergeActorMetadata_ClonesCollections(t *testing.T) {
 	t.Parallel()
 
