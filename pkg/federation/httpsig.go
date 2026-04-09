@@ -149,6 +149,11 @@ func buildSignatureString(req *http.Request, headers []string) (string, error) {
 	return strings.Join(parts, "\n"), nil
 }
 
+// BuildHTTPSignatureString exposes the legacy HTTP signature canonical string for tests and diagnostics.
+func BuildHTTPSignatureString(req *http.Request, headers []string) (string, error) {
+	return buildSignatureString(req, headers)
+}
+
 // verifyTimestamp checks if the request date is within acceptable range
 func verifyTimestamp(dateStr string) error {
 	if err := common.ValidateRequiredParam("date_header", dateStr); err != nil {

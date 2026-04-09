@@ -131,11 +131,15 @@ func (r *PublicKeyCacheRepository) UpdateStats(ctx context.Context, actorURL str
 		cache.RecordFailure()
 	}
 
-	// Update the entry
-	err = r.db.WithContext(ctx).Model(&cache).
-		Where("PK", "=", cache.PK).
-		Where("SK", "=", cache.SK).
-		Update()
+	// Update only the mutable counters and timestamps to avoid rewriting the PEM payload.
+	update := r.db.WithContext(ctx).Model(&cache).UpdateBuilder().
+		Set("SuccessCount", cache.SuccessCount).
+		Set("FailureCount", cache.FailureCount)
+	if success {
+		update.Set("LastUsed", cache.LastUsed)
+	}
+
+	err = update.Execute()
 
 	if err != nil {
 		r.logger.Error("failed to update cache entry stats",
