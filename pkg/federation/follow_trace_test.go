@@ -86,12 +86,15 @@ func TestBuildSignatureTraceFields_ReportsCanonicalString(t *testing.T) {
 	assert.Equal(t, "https://theory.dev.example.com/users/steward/inbox?shared=true", fields["request_url"])
 	assert.Equal(t, "theory.dev.example.com", fields["request_host"])
 	assert.Equal(t, "https://sim.dev.example.com/users/ops#main-key", fields["signature_key_id"])
-	assert.Equal(t, AlgorithmHS2019, fields["signature_algorithm"])
+	assert.Equal(t, AlgorithmRSASHA256, fields["signature_algorithm"])
+	assert.NotEmpty(t, fields["request_digest"])
+	assert.Contains(t, fields["request_date"], "GMT")
 
 	canonical, ok := fields["signature_canonical"].(string)
 	require.True(t, ok)
 	assert.Contains(t, canonical, "(request-target): post /users/steward/inbox?shared=true")
 	assert.Contains(t, canonical, "host: theory.dev.example.com")
+	assert.Contains(t, canonical, "digest: SHA-256=")
 	assert.Contains(t, canonical, "content-type: application/activity+json")
 }
 

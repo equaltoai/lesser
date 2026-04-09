@@ -52,6 +52,99 @@ func TestBuildLocalActor_EmptyBaseAndUsernameBranches(t *testing.T) {
 	require.Equal(t, "sam", actor2.PreferredUsername)
 }
 
+func TestBuildLocalActor_CanonicalizesLocalPublicKeyIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	existing := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID: "https://app.example/users/Sam",
+		},
+		PreferredUsername: "Sam",
+		PublicKey: &activitypub.PublicKey{
+			ID:           "https://app.example/users/Sam#main-key",
+			Owner:        "https://app.example/users/Sam",
+			PublicKeyPem: "pem",
+		},
+	}
+
+	actor := BuildLocalActor("sam", "https://app.example", nil, existing)
+	require.NotNil(t, actor)
+	require.Equal(t, "https://app.example/users/sam", actor.ID)
+	require.Equal(t, "sam", actor.PreferredUsername)
+	require.NotNil(t, actor.PublicKey)
+	require.Equal(t, "https://app.example/users/sam", actor.PublicKey.Owner)
+	require.Equal(t, "https://app.example/users/sam#main-key", actor.PublicKey.ID)
+	require.Equal(t, "pem", actor.PublicKey.PublicKeyPem)
+}
+
+func TestBuildLocalActor_PreservesExistingLocalOriginWhenHostMatches(t *testing.T) {
+	t.Parallel()
+
+	existing := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID: "https://localhost/users/Alice",
+		},
+		PreferredUsername: "Alice",
+	}
+
+	actor := BuildLocalActor("alice", "http://localhost", nil, existing)
+	require.NotNil(t, actor)
+	require.Equal(t, "https://localhost/users/alice", actor.ID)
+	require.Equal(t, "https://localhost/@alice", actor.URL)
+	require.Equal(t, "https://localhost/users/alice/inbox", actor.Inbox)
+}
+
+func TestResolveLocalActorBaseURL_FallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns fallback when actor is nil or username is empty", func(t *testing.T) {
+		t.Parallel()
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(nil, "https://localhost", "alice"))
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(&activitypub.Actor{}, "https://localhost", ""))
+	})
+
+	t.Run("returns fallback when candidate host does not match", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/Alice"},
+			PreferredUsername: "Alice",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+
+	t.Run("returns fallback when actor identity belongs to another username", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://localhost/users/Bob"},
+			PreferredUsername: "Bob",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+
+	t.Run("skips malformed candidates and preserves fallback", func(t *testing.T) {
+		t.Parallel()
+
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://%zz"},
+			URL:        "/users/alice",
+		}
+
+		require.Equal(t, "https://localhost", resolveLocalActorBaseURL(actor, "https://localhost", "alice"))
+	})
+}
+
+func TestParsedURLHost_AdditionalBranches(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "localhost", parsedURLHost(" https://localhost/users/alice "))
+	require.Equal(t, "", parsedURLHost("https://%zz"))
+}
+
 func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +182,43 @@ func TestMergeUserProfile_AttachmentsAndImages(t *testing.T) {
 	require.Equal(t, "Website", out.Attachment[0].Name)
 	require.NotNil(t, out.Published)
 	require.NotNil(t, out.Updated)
+}
+
+func TestMergeUserProfile_FillsMissingURLUsernameAndFlags(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	actor := &activitypub.Actor{}
+	user := &storage.User{
+		Username:     "riley",
+		URL:          "https://app.example/@riley",
+		Locked:       true,
+		Discoverable: true,
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now,
+	}
+
+	mergeUserProfile(actor, user, "riley")
+
+	require.Equal(t, "https://app.example/@riley", actor.URL)
+	require.Equal(t, "riley", actor.PreferredUsername)
+	require.True(t, actor.ManuallyApprovesFollowers)
+	require.True(t, actor.Discoverable)
+	require.NotNil(t, actor.Published)
+	require.NotNil(t, actor.Updated)
+}
+
+func TestCopyEndpointFields_AdditionalBranches(t *testing.T) {
+	t.Parallel()
+
+	dst := &activitypub.Actor{Endpoints: &activitypub.Endpoints{}}
+	copyEndpointFields(dst, &activitypub.Actor{})
+	require.NotNil(t, dst.Endpoints)
+	require.Empty(t, dst.Endpoints.SharedInbox)
+
+	src := &activitypub.Actor{Endpoints: &activitypub.Endpoints{SharedInbox: "https://example.com/inbox"}}
+	copyEndpointFields(dst, src)
+	require.Equal(t, "https://example.com/inbox", dst.Endpoints.SharedInbox)
 }
 
 func TestMergeActorMetadata_ClonesCollections(t *testing.T) {

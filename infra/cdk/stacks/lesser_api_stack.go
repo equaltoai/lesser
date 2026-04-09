@@ -504,6 +504,11 @@ function handler(event) {
     uri = '/auth/';
   }
 
+  if (uri.indexOf('/auth/wallet/') === 0) {
+    request.uri = uri;
+    return request;
+  }
+
   if (uri.indexOf('/auth/') === 0) {
     var suffix = uri.substring('/auth/'.length);
     var lastSlash = suffix.lastIndexOf('/');

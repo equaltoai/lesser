@@ -12,13 +12,14 @@ import (
 )
 
 // BuildLocalActor returns a sanitized ActivityPub actor for a local account.
-// It merges existing actor data with defaults derived from the provided username,
-// base URL, and optional storage.User record. The returned actor is a deep copy
-// and safe for callers to mutate.
+// It merges existing actor data with canonical local identifiers derived from
+// the provided username, base URL, and optional storage.User record. The
+// returned actor is a deep copy and safe for callers to mutate.
 func BuildLocalActor(username string, baseURL string, user *storage.User, existing *activitypub.Actor) *activitypub.Actor {
 	clone := ensureActorInstance(existing)
 	resolvedUsername := resolveUsername(clone, user, username)
 	normalizedBase := chooseBaseURL(baseURL, user)
+	normalizedBase = resolveLocalActorBaseURL(clone, normalizedBase, resolvedUsername)
 
 	ensureActorType(clone, user)
 	applyActorIdentifiers(clone, normalizedBase, resolvedUsername)
@@ -236,7 +237,7 @@ func resolveUsername(actor *activitypub.Actor, user *storage.User, fallback stri
 	if user != nil && candidate == "" {
 		candidate = strings.TrimSpace(user.Username)
 	}
-	return DerivePreferredUsername(actor, candidate)
+	return strings.ToLower(strings.TrimSpace(DerivePreferredUsername(actor, candidate)))
 }
 
 func chooseBaseURL(baseURL string, user *storage.User) string {
@@ -248,6 +249,47 @@ func chooseBaseURL(baseURL string, user *storage.User) string {
 		return ""
 	}
 	return normalizeBaseURL(user.URL)
+}
+
+func resolveLocalActorBaseURL(actor *activitypub.Actor, fallbackBaseURL string, username string) string {
+	if actor == nil || username == "" {
+		return fallbackBaseURL
+	}
+
+	fallbackHost := parsedURLHost(fallbackBaseURL)
+	for _, candidate := range []string{actor.ID, actor.URL, actor.Inbox, actor.Outbox, actor.Followers, actor.Following, actor.Liked} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			continue
+		}
+
+		if fallbackHost != "" && !strings.EqualFold(parsed.Host, fallbackHost) {
+			continue
+		}
+
+		if !strings.EqualFold(DerivePreferredUsername(actor, username), username) &&
+			!strings.EqualFold(deriveFromID(candidate), username) &&
+			!strings.EqualFold(deriveFromURL(candidate), username) {
+			continue
+		}
+
+		return normalizeBaseURL(parsed.Scheme + "://" + parsed.Host)
+	}
+
+	return fallbackBaseURL
+}
+
+func parsedURLHost(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Host)
 }
 
 func ensureActorType(actor *activitypub.Actor, user *storage.User) {
@@ -324,29 +366,24 @@ func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {
 		return
 	}
 
-	assignIfEmpty := func(target *string, format string) {
-		if *target == "" {
-			*target = fmt.Sprintf(format, base, username)
-		}
-	}
-
-	assignIfEmpty(&actor.ID, "%s/users/%s")
-	assignIfEmpty(&actor.URL, "%s/@%s")
-	assignIfEmpty(&actor.Inbox, "%s/users/%s/inbox")
-	assignIfEmpty(&actor.Outbox, "%s/users/%s/outbox")
-	assignIfEmpty(&actor.Followers, "%s/users/%s/followers")
-	assignIfEmpty(&actor.Following, "%s/users/%s/following")
-	assignIfEmpty(&actor.Liked, "%s/users/%s/liked")
+	actor.ID = fmt.Sprintf("%s/users/%s", base, username)
+	actor.URL = fmt.Sprintf("%s/@%s", base, username)
+	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", base, username)
+	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", base, username)
+	actor.Followers = fmt.Sprintf("%s/users/%s/followers", base, username)
+	actor.Following = fmt.Sprintf("%s/users/%s/following", base, username)
+	actor.Liked = fmt.Sprintf("%s/users/%s/liked", base, username)
 
 	if actor.Endpoints == nil {
 		actor.Endpoints = &activitypub.Endpoints{}
 	}
-	if actor.Endpoints.SharedInbox == "" {
-		actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
-	}
+	actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
 
-	if actor.PreferredUsername == "" {
-		actor.PreferredUsername = username
+	actor.PreferredUsername = username
+
+	if actor.PublicKey != nil {
+		actor.PublicKey.Owner = actor.ID
+		actor.PublicKey.ID = actor.ID + "#main-key"
 	}
 }
 

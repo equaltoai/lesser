@@ -68,6 +68,7 @@ func TestFrontendDistributionForwardsOAuthQueryStringsAndHandlesBasePaths(t *tes
 		"if (uri === '/l')",
 		"request.uri = '/l/';",
 		"if (uri === '/auth')",
+		"if (uri.indexOf('/auth/wallet/') === 0)",
 		"if (uri.indexOf('/auth/') === 0)",
 		"request.uri = '/auth/index.html';",
 		"uri + '/index.html'",
