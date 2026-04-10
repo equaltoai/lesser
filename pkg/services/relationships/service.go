@@ -417,6 +417,35 @@ func (s *Service) resolveFollowStorageAccount(ctx context.Context, identifier st
 	return account, nil
 }
 
+func (s *Service) resolveFollowDecisionAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
+	if s.storage == nil {
+		return nil, NoRepositoryOrStorage()
+	}
+
+	resolution, err := federation.NewRemoteSearchService(s.storage).ResolveDeliverableActor(ctx, identifier, s.domainName)
+	if err != nil {
+		return nil, err
+	}
+	if resolution == nil || resolution.Actor == nil {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+	if requireLocal && resolution.IsRemote {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+
+	fallbackUsername := resolution.Username
+	if resolution.IsRemote && strings.TrimSpace(resolution.Acct) != "" {
+		fallbackUsername = resolution.Acct
+	}
+
+	account := s.buildAccountFromActor(ctx, resolution.Actor, fallbackUsername)
+	if account == nil {
+		return nil, common.ActorNotFoundError{Username: identifier}
+	}
+
+	return account, nil
+}
+
 // checkFollowPrerequisites checks if already following or blocked
 func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, followingID string) (*FollowResult, bool, error) {
 	followerID = s.normalizeActorIdentifier(followerID)
@@ -1933,28 +1962,17 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 		return nil, err
 	}
 
-	// Get accounts for events
+	// Resolve actors for events and later federation work without assuming the follower is local.
 	var follower, following *storage.Account
 	if s.storage != nil {
-		// Get accounts via Actor repository
-		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		follower, err = s.resolveFollowDecisionAccount(ctx, cmd.FollowerID, false)
 		if err != nil {
-			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
-		} else {
-			follower = &storage.Account{
-				User:  &storage.User{Username: followerActor.PreferredUsername},
-				Actor: followerActor,
-			}
+			s.logger.Warn("failed to resolve follower for events", zap.String("follower_id", cmd.FollowerID), zap.Error(err))
 		}
 
-		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		following, err = s.resolveFollowDecisionAccount(ctx, cmd.RequesterID, true)
 		if err != nil {
-			s.logger.Warn("failed to get following actor for events", zap.Error(err))
-		} else {
-			following = &storage.Account{
-				User:  &storage.User{Username: followingActor.PreferredUsername},
-				Actor: followingActor,
-			}
+			s.logger.Warn("failed to resolve requester for events", zap.String("requester_id", cmd.RequesterID), zap.Error(err))
 		}
 	}
 
@@ -2018,28 +2036,17 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 		return nil, err
 	}
 
-	// Get accounts for events (minimal events for rejection)
+	// Resolve actors for later federation work without forcing remote followers through local-only lookup.
 	var follower, following *storage.Account
 	if s.storage != nil {
-		// Get accounts via Actor repository
-		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		follower, err = s.resolveFollowDecisionAccount(ctx, cmd.FollowerID, false)
 		if err != nil {
-			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
-		} else {
-			follower = &storage.Account{
-				User:  &storage.User{Username: followerActor.PreferredUsername},
-				Actor: followerActor,
-			}
+			s.logger.Warn("failed to resolve follower for rejection", zap.String("follower_id", cmd.FollowerID), zap.Error(err))
 		}
 
-		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		following, err = s.resolveFollowDecisionAccount(ctx, cmd.RequesterID, true)
 		if err != nil {
-			s.logger.Warn("failed to get following actor for events", zap.Error(err))
-		} else {
-			following = &storage.Account{
-				User:  &storage.User{Username: followingActor.PreferredUsername},
-				Actor: followingActor,
-			}
+			s.logger.Warn("failed to resolve requester for rejection", zap.String("requester_id", cmd.RequesterID), zap.Error(err))
 		}
 	}
 
