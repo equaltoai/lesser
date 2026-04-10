@@ -226,6 +226,23 @@ func (s *RemoteSearchService) ResolveExactActor(ctx context.Context, input, loca
 	return buildExactActorResolution(result.Actor, localDomain, result.IsRemote, result.RemoteDomain), nil
 }
 
+// ResolveDeliverableActor resolves an actor through the exact-resolution seam
+// and verifies the result satisfies Lesser's minimum deliverable actor contract.
+func (s *RemoteSearchService) ResolveDeliverableActor(ctx context.Context, input, localDomain string) (*ExactActorResolution, error) {
+	resolution, err := s.ResolveExactActor(ctx, input, localDomain)
+	if err != nil {
+		return nil, err
+	}
+	if resolution == nil || resolution.Actor == nil {
+		return nil, common.ActorNotFoundError{Username: input}
+	}
+	if err := activitypub.ValidateResolvedActor(resolution.Actor); err != nil {
+		return nil, err
+	}
+
+	return resolution, nil
+}
+
 func (s *RemoteSearchService) resolveExactSearchResult(ctx context.Context, input, localDomain string) (*SearchResult, error) {
 	switch {
 	case isActorURL(input):

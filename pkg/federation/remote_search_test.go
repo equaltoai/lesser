@@ -475,6 +475,65 @@ func TestRemoteSearchService_ResolveExactActor_LocalAndRemote(t *testing.T) {
 	})
 }
 
+func TestRemoteSearchService_ResolveDeliverableActor(t *testing.T) {
+	t.Run("returns validated remote actor for exact handle and URL input", func(t *testing.T) {
+		remoteActor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://remote.example/users/bob",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "bob",
+			Inbox:             "https://remote.example/users/bob/inbox",
+			Outbox:            "https://remote.example/users/bob/outbox",
+		}
+
+		svc := &RemoteSearchService{
+			actorRepo: &fakeRemoteSearchActorRepo{
+				cachedByHandle: map[string]*activitypub.Actor{
+					"bob@remote.example": remoteActor,
+				},
+			},
+			userRepo:   &fakeRemoteSearchUserRepo{},
+			httpClient: &fakeHTTPMux{do: func(_ *http.Request) (*http.Response, error) { return nil, errors.New("unexpected") }},
+			logger:     common.Logger(),
+		}
+
+		byHandle, err := svc.ResolveDeliverableActor(context.Background(), "bob@remote.example", "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, byHandle)
+		require.True(t, byHandle.IsRemote)
+		require.Equal(t, remoteActor.ID, byHandle.Actor.ID)
+
+		byURL, err := svc.ResolveDeliverableActor(context.Background(), remoteActor.ID, "local.example")
+		require.NoError(t, err)
+		require.NotNil(t, byURL)
+		require.True(t, byURL.IsRemote)
+		require.Equal(t, remoteActor.ID, byURL.Actor.ID)
+	})
+
+	t.Run("rejects incomplete actor results", func(t *testing.T) {
+		svc := &RemoteSearchService{
+			actorRepo: &fakeRemoteSearchActorRepo{
+				localByUsername: map[string]*activitypub.Actor{
+					"alice": {
+						BaseObject: activitypub.BaseObject{
+							ID:   "https://local.example/users/alice",
+							Type: activitypub.PersonType,
+						},
+						PreferredUsername: "alice",
+					},
+				},
+			},
+			userRepo:   &fakeRemoteSearchUserRepo{},
+			httpClient: &fakeHTTPMux{do: func(_ *http.Request) (*http.Response, error) { return nil, errors.New("unexpected") }},
+			logger:     common.Logger(),
+		}
+
+		_, err := svc.ResolveDeliverableActor(context.Background(), "alice", "local.example")
+		require.Error(t, err)
+	})
+}
+
 func TestRemoteSearchService_SearchRemoteActors_FuzzySearch(t *testing.T) {
 	svc := &RemoteSearchService{
 		actorRepo: &fakeRemoteSearchActorRepo{},
