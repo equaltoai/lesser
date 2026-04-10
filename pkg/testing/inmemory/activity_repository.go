@@ -122,6 +122,27 @@ func (r *ActivityRepository) GetActivity(_ context.Context, id string) (*activit
 	return entry.activity, nil
 }
 
+// DeleteActivity removes an activity and updates the inbox/outbox indexes.
+func (r *ActivityRepository) DeleteActivity(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	entry, exists := r.activities[id]
+	if !exists {
+		return storage.ErrNotFound
+	}
+
+	delete(r.activities, id)
+
+	if entry.isInbox {
+		r.inboxByUser[entry.username] = removeActivityID(r.inboxByUser[entry.username], id)
+	} else {
+		r.outboxByUser[entry.username] = removeActivityID(r.outboxByUser[entry.username], id)
+	}
+
+	return nil
+}
+
 // ===== Inbox/Outbox Operations =====
 
 // GetInboxActivities retrieves inbox activities for a user with pagination
@@ -174,6 +195,18 @@ func (r *ActivityRepository) getActivitiesFromIDs(activityIDs []string, limit in
 	}
 
 	return results, nextCursor, nil
+}
+
+func removeActivityID(activityIDs []string, id string) []string {
+	for i, existingID := range activityIDs {
+		if existingID != id {
+			continue
+		}
+
+		return append(activityIDs[:i], activityIDs[i+1:]...)
+	}
+
+	return activityIDs
 }
 
 // ===== Collection Operations =====

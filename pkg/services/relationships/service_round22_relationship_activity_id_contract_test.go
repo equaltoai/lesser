@@ -2,14 +2,17 @@ package relationships
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -103,6 +106,15 @@ func (r *raceWinningRelationshipRepository) CreateRelationship(ctx context.Conte
 	return r.RelationshipRepository.CreateRelationship(ctx, followerUsername, followingUsername, r.winnerActivityID)
 }
 
+type relationshipLookupErrorRepo struct {
+	*inmemory.RelationshipRepository
+	err error
+}
+
+func (r *relationshipLookupErrorRepo) GetRelationship(context.Context, string, string) (*models.RelationshipRecord, error) {
+	return nil, r.err
+}
+
 func buildRemoteFollowPersistenceServiceWithRelationshipRepo(
 	t *testing.T,
 	activityRepo interfaces.ActivityRepository,
@@ -179,8 +191,173 @@ func TestService_Follow_AdoptsStoredCanonicalActivityIDWhenCreateWinsRace(t *tes
 	require.True(t, result.Relationship.Requested)
 	require.NotEqual(t, winnerRepo.winnerActivityID, winnerRepo.observedActivityID)
 	require.Empty(t, fed.Calls)
+	_, err = activityRepo.GetActivity(ctx, winnerRepo.observedActivityID)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	outboxActivities, nextCursor, err := activityRepo.GetOutboxActivities(ctx, "alice", 10, "")
+	require.NoError(t, err)
+	require.Empty(t, nextCursor)
+	require.Len(t, outboxActivities, 1)
+	require.Equal(t, winnerRepo.winnerActivityID, outboxActivities[0].ID)
 
 	record, err := winnerRepo.GetRelationship(ctx, "alice", "bob@remote.social")
 	require.NoError(t, err)
 	require.Equal(t, winnerRepo.winnerActivityID, record.ActivityID)
+}
+
+func TestService_ReconcileStoredFollowActivity_RebuildsWinnerWhenActivityMissing(t *testing.T) {
+	ctx := context.Background()
+	activityRepo := inmemory.NewActivityRepository()
+	service, relationshipRepo, localActor, remoteActor, _ := buildRemoteFollowPersistenceService(t, activityRepo)
+
+	storedWinnerID := "https://example.com/activities/winner-missing"
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "alice", "bob@remote.social", storedWinnerID))
+
+	loserActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			ID:      "https://example.com/activities/loser-missing",
+			Type:    activitypub.FollowType,
+			To:      []string{remoteActor.ID},
+		},
+		Actor:  localActor.ID,
+		Object: remoteActor.ID,
+	}
+	require.NoError(t, activityRepo.CreateActivity(ctx, loserActivity))
+
+	follower := &storage.Account{User: &storage.User{Username: "alice"}, Actor: localActor}
+	following := &storage.Account{User: &storage.User{Username: "bob@remote.social"}, Actor: remoteActor}
+
+	reconciledActivity, result, err := service.reconcileStoredFollowActivity(ctx, follower, following, "alice", "bob@remote.social", loserActivity)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, reconciledActivity)
+	require.Equal(t, storedWinnerID, reconciledActivity.ID)
+	require.Equal(t, storedWinnerID, result.RequestID)
+	require.True(t, result.Relationship.Requested)
+	_, err = activityRepo.GetActivity(ctx, loserActivity.ID)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+}
+
+func TestService_ReconcileStoredFollowActivity_AdoptsAcceptedWinnerState(t *testing.T) {
+	ctx := context.Background()
+	activityRepo := inmemory.NewActivityRepository()
+	service, relationshipRepo, localActor, remoteActor, _ := buildRemoteFollowPersistenceService(t, activityRepo)
+
+	storedWinnerID := "https://example.com/activities/winner-accepted"
+	require.NoError(t, relationshipRepo.CreateRelationship(ctx, "alice", "bob@remote.social", storedWinnerID))
+	require.NoError(t, relationshipRepo.AcceptFollowRequest(ctx, "alice", "bob@remote.social"))
+
+	loserActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			ID:      "https://example.com/activities/loser-accepted",
+			Type:    activitypub.FollowType,
+			To:      []string{remoteActor.ID},
+		},
+		Actor:  localActor.ID,
+		Object: remoteActor.ID,
+	}
+	require.NoError(t, activityRepo.CreateActivity(ctx, loserActivity))
+
+	follower := &storage.Account{User: &storage.User{Username: "alice"}, Actor: localActor}
+	following := &storage.Account{User: &storage.User{Username: "bob@remote.social"}, Actor: remoteActor}
+
+	reconciledActivity, result, err := service.reconcileStoredFollowActivity(ctx, follower, following, "alice", "bob@remote.social", loserActivity)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, reconciledActivity)
+	require.True(t, result.IsFollowing)
+	require.Empty(t, result.RequestID)
+	require.Equal(t, storedWinnerID, reconciledActivity.ID)
+}
+
+func TestService_DeleteSupersededFollowActivity_NoopBranches(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, "example.com")
+	require.NoError(t, service.deleteSupersededFollowActivity(ctx, "loser", "winner"))
+
+	serviceWithStorage, storageHarness := newServiceWithStorageHarness(t)
+	require.NoError(t, serviceWithStorage.deleteSupersededFollowActivity(ctx, "", "winner"))
+	require.NoError(t, serviceWithStorage.deleteSupersededFollowActivity(ctx, "same", "same"))
+	storageHarness.activityRepo = nil
+	require.NoError(t, serviceWithStorage.deleteSupersededFollowActivity(ctx, "loser", "winner"))
+
+	unsupportedRepo := testmocks.NewMockActivityRepository()
+	storageHarness.activityRepo = unsupportedRepo
+	require.NoError(t, serviceWithStorage.deleteSupersededFollowActivity(ctx, "loser", "winner"))
+
+	notFoundRepo := &deleteNotFoundActivityRepo{ActivityRepository: inmemory.NewActivityRepository()}
+	storageHarness.activityRepo = notFoundRepo
+	require.NoError(t, serviceWithStorage.deleteSupersededFollowActivity(ctx, "loser", "winner"))
+}
+
+type deleteNotFoundActivityRepo struct {
+	interfaces.ActivityRepository
+}
+
+func (r *deleteNotFoundActivityRepo) DeleteActivity(context.Context, string) error {
+	return storage.ErrNotFound
+}
+
+type deleteErrorActivityRepo struct {
+	interfaces.ActivityRepository
+}
+
+func (r *deleteErrorActivityRepo) DeleteActivity(context.Context, string) error {
+	return errors.New("delete boom")
+}
+
+func TestService_DeleteSupersededFollowActivity_DeleteErrorReturnsError(t *testing.T) {
+	ctx := context.Background()
+	service, storageHarness := newServiceWithStorageHarness(t)
+	storageHarness.activityRepo = &deleteErrorActivityRepo{ActivityRepository: inmemory.NewActivityRepository()}
+
+	err := service.deleteSupersededFollowActivity(ctx, "loser", "winner")
+	require.ErrorContains(t, err, "delete boom")
+}
+
+func TestService_LoadStoredFollowActivity_FallbackBranches(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, "example.com")
+	require.Nil(t, service.loadStoredFollowActivity(ctx, "winner"))
+
+	serviceWithStorage, storageHarness := newServiceWithStorageHarness(t)
+	storageHarness.activityRepo = nil
+	require.Nil(t, serviceWithStorage.loadStoredFollowActivity(ctx, "winner"))
+
+	lookupFailingRepo := testmocks.NewMockActivityRepository()
+	lookupFailingRepo.On("GetActivity", ctx, "winner").Return(nil, errors.New("lookup boom")).Once()
+	storageHarness.activityRepo = lookupFailingRepo
+	require.Nil(t, serviceWithStorage.loadStoredFollowActivity(ctx, "winner"))
+}
+
+func TestService_ReconcileStoredFollowActivity_RelationshipRepoFallbackBranches(t *testing.T) {
+	ctx := context.Background()
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/activities/loser",
+			Type: activitypub.FollowType,
+		},
+	}
+
+	serviceWithMissingRepo, missingRepoHarness := newServiceWithStorageHarness(t)
+	missingRepoHarness.relationshipRepo = nil
+	reconciledActivity, result, err := serviceWithMissingRepo.reconcileStoredFollowActivity(ctx, nil, nil, "alice", "bob@remote.social", followActivity)
+	require.Error(t, err)
+	require.Same(t, followActivity, reconciledActivity)
+	require.Nil(t, result)
+
+	lookupErr := errors.New("relationship lookup boom")
+	serviceWithLookupErr, lookupErrHarness := newServiceWithStorageHarness(t)
+	lookupErrHarness.relationshipRepo = &relationshipLookupErrorRepo{
+		RelationshipRepository: inmemory.NewRelationshipRepository(),
+		err:                    lookupErr,
+	}
+	reconciledActivity, result, err = serviceWithLookupErr.reconcileStoredFollowActivity(ctx, nil, nil, "alice", "bob@remote.social", followActivity)
+	require.ErrorIs(t, err, lookupErr)
+	require.Same(t, followActivity, reconciledActivity)
+	require.Nil(t, result)
 }

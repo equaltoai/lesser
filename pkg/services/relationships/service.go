@@ -6,6 +6,7 @@ package relationships
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -771,6 +772,9 @@ func (s *Service) reconcileStoredFollowActivity(
 	if generatedActivityID == "" || storedActivityID == "" || generatedActivityID == storedActivityID {
 		return followActivity, nil, nil
 	}
+	if err := s.deleteSupersededFollowActivity(ctx, generatedActivityID, storedActivityID); err != nil {
+		return nil, nil, err
+	}
 
 	relationship, err := s.GetRelationship(ctx, followerID, followingID)
 	if err != nil {
@@ -802,6 +806,46 @@ func (s *Service) reconcileStoredFollowActivity(
 		zap.String("relationship_state", relationshipRecord.State))
 
 	return canonicalActivity, result, nil
+}
+
+func (s *Service) deleteSupersededFollowActivity(ctx context.Context, generatedActivityID, storedActivityID string) error {
+	if s.storage == nil {
+		return nil
+	}
+
+	generatedActivityID = strings.TrimSpace(generatedActivityID)
+	storedActivityID = strings.TrimSpace(storedActivityID)
+	if generatedActivityID == "" || generatedActivityID == storedActivityID {
+		return nil
+	}
+
+	activityRepo := s.storage.Activity()
+	if activityRepo == nil {
+		return nil
+	}
+
+	deleteRepo, ok := activityRepo.(interface {
+		DeleteActivity(ctx context.Context, activityID string) error
+	})
+	if !ok {
+		s.logger.Debug("activity repository does not support deleting superseded follow activities",
+			zap.String("activity_id", generatedActivityID),
+			zap.String("stored_activity_id", storedActivityID))
+		return nil
+	}
+
+	if err := deleteRepo.DeleteActivity(ctx, generatedActivityID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil
+		}
+		s.logger.Error("failed to delete superseded follow activity",
+			zap.String("activity_id", generatedActivityID),
+			zap.String("stored_activity_id", storedActivityID),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) loadStoredFollowActivity(ctx context.Context, activityID string) *activitypub.Activity {

@@ -107,6 +107,69 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.Nil(t, missing)
 	})
 
+	t.Run("DeleteActivity deletes by activity ID and noops when missing", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.
+			On("All", mock.Anything).
+			Run(func(args mock.Arguments) {
+				out := args.Get(0).(*[]*models.Activity)
+				*out = append(*out, &models.Activity{
+					PK: "ACTOR#alice",
+					SK: "ACTIVITY#2025-01-01T00:00:00Z#act-1",
+				})
+			}).
+			Return(nil).
+			Once()
+		mockQuery.On("Delete").Return(nil).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
+		require.NoError(t, repo.DeleteActivity(ctx, "act-1"))
+
+		mockDBMissing := new(mocks.MockDB)
+		mockQueryMissing := new(mocks.MockQuery)
+		mockQueryMissing.
+			On("All", mock.Anything).
+			Run(func(args mock.Arguments) {
+				out := args.Get(0).(*[]*models.Activity)
+				*out = nil
+			}).
+			Return(nil).
+			Once()
+		setupPermissiveRound08Mocks(mockDBMissing, mockQueryMissing, nil, baseTime)
+
+		repoMissing := NewActivityRepository(mockDBMissing, "test-table", zap.NewNop(), nil)
+		require.NoError(t, repoMissing.DeleteActivity(ctx, "missing"))
+
+		mockDBLookupErr := new(mocks.MockDB)
+		mockQueryLookupErr := new(mocks.MockQuery)
+		mockQueryLookupErr.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		setupPermissiveRound08Mocks(mockDBLookupErr, mockQueryLookupErr, nil, baseTime)
+
+		repoLookupErr := NewActivityRepository(mockDBLookupErr, "test-table", zap.NewNop(), nil)
+		require.Error(t, repoLookupErr.DeleteActivity(ctx, "lookup-boom"))
+
+		mockDBDeleteErr := new(mocks.MockDB)
+		mockQueryDeleteErr := new(mocks.MockQuery)
+		mockQueryDeleteErr.
+			On("All", mock.Anything).
+			Run(func(args mock.Arguments) {
+				out := args.Get(0).(*[]*models.Activity)
+				*out = append(*out, &models.Activity{
+					PK: "ACTOR#alice",
+					SK: "ACTIVITY#2025-01-01T00:00:00Z#act-delete-boom",
+				})
+			}).
+			Return(nil).
+			Once()
+		mockQueryDeleteErr.On("Delete").Return(ErrTestMockError).Once()
+		setupPermissiveRound08Mocks(mockDBDeleteErr, mockQueryDeleteErr, nil, baseTime)
+
+		repoDeleteErr := NewActivityRepository(mockDBDeleteErr, "test-table", zap.NewNop(), nil)
+		require.Error(t, repoDeleteErr.DeleteActivity(ctx, "act-delete-boom"))
+	})
+
 	t.Run("Inbox/outbox pagination and GetCollection branches", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
