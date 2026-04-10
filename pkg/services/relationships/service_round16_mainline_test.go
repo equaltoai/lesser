@@ -678,7 +678,7 @@ func TestFederationQueueHelpers_HandleNilAndPanics(t *testing.T) {
 	service.federation = nil
 	service.queueFederationBlock(ctx, local, remote)
 	service.queueFederationUndo(ctx, local, remote, "Block")
-	service.queueFederationReject(ctx, remote, local)
+	service.queueFederationReject(ctx, remote, local, "")
 
 	// Typed nil should also be treated as nil.
 	var typedNil *MockFederationService
@@ -689,7 +689,7 @@ func TestFederationQueueHelpers_HandleNilAndPanics(t *testing.T) {
 	service.federation = panicFederationService{}
 	service.queueFederationBlock(ctx, local, remote)
 	service.queueFederationUndo(ctx, local, remote, "Block")
-	service.queueFederationReject(ctx, remote, local)
+	service.queueFederationReject(ctx, remote, local, "")
 }
 
 func TestService_RemoveRelationshipGeneric_StorageBranch(t *testing.T) {
@@ -1292,7 +1292,7 @@ func TestService_QueueFederationReject_ErrorPath(t *testing.T) {
 		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"}},
 	}
 
-	service.queueFederationReject(ctx, follower, following)
+	service.queueFederationReject(ctx, follower, following, "")
 }
 
 func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {

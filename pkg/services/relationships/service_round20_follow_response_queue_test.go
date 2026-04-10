@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func TestService_ManualFollowDecisions_RemoteAwareResolution(t *testing.T) {
+func TestService_ManualFollowDecisions_QueueTruthfulResponseActivities(t *testing.T) {
 	ctx := context.Background()
 
 	buildService := func(t *testing.T) (*Service, *inmemory.RelationshipRepository, *activitypub.Actor, *activitypub.Actor, *MockFederationService) {
@@ -65,57 +64,53 @@ func TestService_ManualFollowDecisions_RemoteAwareResolution(t *testing.T) {
 		return service, relationshipRepo, localActor, remoteActor, fed
 	}
 
-	t.Run("remote follower actor URL accepts without local hydration", func(t *testing.T) {
-		service, relationshipRepo, _, remoteActor, _ := buildService(t)
+	t.Run("manual accept queues Accept to the resolved remote follower", func(t *testing.T) {
+		service, relationshipRepo, localActor, remoteActor, fed := buildService(t)
 		require.NoError(t, relationshipRepo.CreateRelationship(ctx, "zoe@remote.social", "alice", "follow-remote-accept"))
 
-		result, err := service.AcceptFollowRequest(ctx, &AcceptFollowRequestCommand{
+		_, err := service.AcceptFollowRequest(ctx, &AcceptFollowRequestCommand{
 			RequesterID: "alice",
 			FollowerID:  remoteActor.ID,
 		})
 		require.NoError(t, err)
-		require.NotNil(t, result)
+		require.NotEmpty(t, fed.Calls)
 
-		record, err := relationshipRepo.GetRelationship(ctx, "zoe@remote.social", "alice")
-		require.NoError(t, err)
-		require.Equal(t, models.RelationshipAccepted, record.State)
+		activity, ok := fed.Calls[len(fed.Calls)-1].Arguments.Get(1).(*activitypub.Activity)
+		require.True(t, ok)
+		require.Equal(t, activitypub.AcceptType, activity.Type)
+		require.Equal(t, localActor.ID, activity.Actor)
+		require.Equal(t, []string{remoteActor.ID}, activity.To)
+		require.Equal(t, "follow-remote-accept", activity.Object)
 	})
 
-	t.Run("remote follower reject preserves remote actor identity", func(t *testing.T) {
-		service, relationshipRepo, _, remoteActor, fed := buildService(t)
+	t.Run("manual reject queues Reject to the resolved remote follower", func(t *testing.T) {
+		service, relationshipRepo, localActor, remoteActor, fed := buildService(t)
 		require.NoError(t, relationshipRepo.CreateRelationship(ctx, "zoe@remote.social", "alice", "follow-remote-reject"))
-		result, err := service.RejectFollowRequest(ctx, &RejectFollowRequestCommand{
+
+		_, err := service.RejectFollowRequest(ctx, &RejectFollowRequestCommand{
 			RequesterID: "alice",
 			FollowerID:  "zoe@remote.social",
 		})
 		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		record, err := relationshipRepo.GetRelationship(ctx, "zoe@remote.social", "alice")
-		require.NoError(t, err)
-		require.Equal(t, models.RelationshipRejected, record.State)
-
 		require.NotEmpty(t, fed.Calls)
+
 		activity, ok := fed.Calls[len(fed.Calls)-1].Arguments.Get(1).(*activitypub.Activity)
 		require.True(t, ok)
 		require.Equal(t, activitypub.RejectType, activity.Type)
+		require.Equal(t, localActor.ID, activity.Actor)
 		require.Equal(t, []string{remoteActor.ID}, activity.To)
 		require.Equal(t, "follow-remote-reject", activity.Object)
 	})
 
-	t.Run("local follower behavior remains stable", func(t *testing.T) {
-		service, relationshipRepo, _, _, _ := buildService(t)
+	t.Run("local manual accept does not queue outbound federation", func(t *testing.T) {
+		service, relationshipRepo, _, _, fed := buildService(t)
 		require.NoError(t, relationshipRepo.CreateRelationship(ctx, "bob", "alice", "follow-local-accept"))
 
-		result, err := service.AcceptFollowRequest(ctx, &AcceptFollowRequestCommand{
+		_, err := service.AcceptFollowRequest(ctx, &AcceptFollowRequestCommand{
 			RequesterID: "alice",
 			FollowerID:  "bob",
 		})
 		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		record, err := relationshipRepo.GetRelationship(ctx, "bob", "alice")
-		require.NoError(t, err)
-		require.Equal(t, models.RelationshipAccepted, record.State)
+		require.Empty(t, fed.Calls)
 	})
 }
