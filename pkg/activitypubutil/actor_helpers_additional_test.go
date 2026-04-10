@@ -82,16 +82,26 @@ func TestBuildLocalActor_PreservesExistingLocalOriginWhenHostMatches(t *testing.
 
 	existing := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			ID: "https://localhost/users/Alice",
+			ID: "https://localhost/users/alice",
 		},
-		PreferredUsername: "Alice",
+		URL:       "https://localhost/@alice",
+		Inbox:     "https://localhost/users/alice/inbox",
+		Outbox:    "https://localhost/users/alice/outbox",
+		Followers: "https://localhost/users/alice/followers",
+		Following: "https://localhost/users/alice/following",
+		Liked:     "https://localhost/users/alice/liked",
+	}
+	user := &storage.User{
+		Username: "alice",
+		URL:      "http://localhost/@alice",
 	}
 
-	actor := BuildLocalActor("alice", "http://localhost", nil, existing)
+	actor := BuildLocalActor("alice", "", user, existing)
 	require.NotNil(t, actor)
 	require.Equal(t, "https://localhost/users/alice", actor.ID)
 	require.Equal(t, "https://localhost/@alice", actor.URL)
 	require.Equal(t, "https://localhost/users/alice/inbox", actor.Inbox)
+	require.Equal(t, "https://localhost/users/alice/outbox", actor.Outbox)
 }
 
 func TestResolveLocalActorBaseURL_FallbackBranches(t *testing.T) {
@@ -108,7 +118,7 @@ func TestResolveLocalActorBaseURL_FallbackBranches(t *testing.T) {
 		t.Parallel()
 
 		actor := &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/Alice"},
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/Alice"},
 			PreferredUsername: "Alice",
 		}
 
@@ -119,7 +129,7 @@ func TestResolveLocalActorBaseURL_FallbackBranches(t *testing.T) {
 		t.Parallel()
 
 		actor := &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{ID: "https://localhost/users/Bob"},
+			BaseObject:        activitypub.BaseObject{ID: "https://localhost/users/Bob"},
 			PreferredUsername: "Bob",
 		}
 
@@ -262,4 +272,12 @@ func TestMergeActorMetadata_ClonesCollections(t *testing.T) {
 	require.NotSame(t, src.Icon, dst.Icon)
 	require.NotNil(t, dst.Published)
 	require.NotSame(t, src.Published, dst.Published)
+}
+
+func TestParsedURLHost(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "localhost", parsedURLHost("https://localhost/users/alice"))
+	require.Equal(t, "localhost:8080", parsedURLHost("http://localhost:8080"))
+	require.Empty(t, parsedURLHost("://bad"))
 }

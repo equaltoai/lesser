@@ -389,11 +389,29 @@ func (s *Service) getFollowAccounts(ctx context.Context, followerID, followingID
 }
 
 func (s *Service) resolveFollowStorageAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
+	return s.resolveStorageAccount(ctx, identifier, requireLocal, false)
+}
+
+func (s *Service) resolveFollowDecisionAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
+	return s.resolveStorageAccount(ctx, identifier, requireLocal, true)
+}
+
+func (s *Service) resolveStorageAccount(ctx context.Context, identifier string, requireLocal, requireDeliverable bool) (*storage.Account, error) {
 	if s.storage == nil {
 		return nil, NoRepositoryOrStorage()
 	}
 
-	resolution, err := federation.NewRemoteSearchService(s.storage).ResolveExactActor(ctx, identifier, s.domainName)
+	resolver := federation.NewRemoteSearchService(s.storage)
+
+	var (
+		resolution *federation.ExactActorResolution
+		err        error
+	)
+	if requireDeliverable {
+		resolution, err = resolver.ResolveDeliverableActor(ctx, identifier, s.domainName)
+	} else {
+		resolution, err = resolver.ResolveExactActor(ctx, identifier, s.domainName)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1921,8 +1939,8 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 		return nil, RepositoryNotAvailable("general")
 	}
 
-	// Check if the follow request exists
-	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	// Check if the follow request exists.
+	followRequest, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -1933,28 +1951,17 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 		return nil, err
 	}
 
-	// Get accounts for events
+	// Resolve actors for events and later federation work without assuming the follower is local.
 	var follower, following *storage.Account
 	if s.storage != nil {
-		// Get accounts via Actor repository
-		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		follower, err = s.resolveFollowDecisionAccount(ctx, cmd.FollowerID, false)
 		if err != nil {
-			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
-		} else {
-			follower = &storage.Account{
-				User:  &storage.User{Username: followerActor.PreferredUsername},
-				Actor: followerActor,
-			}
+			s.logger.Warn("failed to resolve follower for events", zap.String("follower_id", cmd.FollowerID), zap.Error(err))
 		}
 
-		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		following, err = s.resolveFollowDecisionAccount(ctx, cmd.RequesterID, true)
 		if err != nil {
-			s.logger.Warn("failed to get following actor for events", zap.Error(err))
-		} else {
-			following = &storage.Account{
-				User:  &storage.User{Username: followingActor.PreferredUsername},
-				Actor: followingActor,
-			}
+			s.logger.Warn("failed to resolve requester for events", zap.String("requester_id", cmd.RequesterID), zap.Error(err))
 		}
 	}
 
@@ -1963,7 +1970,7 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 	if follower != nil && following != nil {
 		activityID := uuid.New().String()
 		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
-		s.queueFederationFollowDirectly(ctx, follower, following, activityID)
+		s.queueFederationAccept(ctx, follower, following, followRequest.ActivityID)
 	}
 
 	// Get updated relationship data
@@ -2006,8 +2013,8 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 		return nil, RepositoryNotAvailable("general")
 	}
 
-	// Check if the follow request exists
-	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	// Check if the follow request exists.
+	followRequest, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -2018,28 +2025,17 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 		return nil, err
 	}
 
-	// Get accounts for events (minimal events for rejection)
+	// Resolve actors for later federation work without forcing remote followers through local-only lookup.
 	var follower, following *storage.Account
 	if s.storage != nil {
-		// Get accounts via Actor repository
-		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		follower, err = s.resolveFollowDecisionAccount(ctx, cmd.FollowerID, false)
 		if err != nil {
-			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
-		} else {
-			follower = &storage.Account{
-				User:  &storage.User{Username: followerActor.PreferredUsername},
-				Actor: followerActor,
-			}
+			s.logger.Warn("failed to resolve follower for rejection", zap.String("follower_id", cmd.FollowerID), zap.Error(err))
 		}
 
-		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		following, err = s.resolveFollowDecisionAccount(ctx, cmd.RequesterID, true)
 		if err != nil {
-			s.logger.Warn("failed to get following actor for events", zap.Error(err))
-		} else {
-			following = &storage.Account{
-				User:  &storage.User{Username: followingActor.PreferredUsername},
-				Actor: followingActor,
-			}
+			s.logger.Warn("failed to resolve requester for rejection", zap.String("requester_id", cmd.RequesterID), zap.Error(err))
 		}
 	}
 
@@ -2047,7 +2043,7 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 	var events []*streaming.Event
 	if follower != nil && following != nil {
 		// Queue rejection activity for federation
-		s.queueFederationReject(ctx, follower, following)
+		s.queueFederationReject(ctx, follower, following, followRequest.ActivityID)
 	}
 
 	// Get updated relationship data
@@ -2889,6 +2885,10 @@ func (s *Service) queueFederationFollowDirectly(ctx context.Context, follower, f
 	s.queueFederationFollow(ctx, follower, following, activityID, "follow")
 }
 
+func (s *Service) queueFederationAccept(ctx context.Context, follower, following *storage.Account, originalActivityID string) {
+	s.queueFederationFollowResponse(ctx, activitypub.AcceptType, follower, following, originalActivityID)
+}
+
 func (s *Service) queueFederationBlock(ctx context.Context, blocker, blocked *storage.Account) {
 	if isNilFederationService(s.federation) {
 		s.logger.Debug("federation service not available, skipping block")
@@ -2994,63 +2994,93 @@ func (s *Service) queueFederationUndo(ctx context.Context, actor, target *storag
 	}
 }
 
-func (s *Service) queueFederationReject(ctx context.Context, follower, following *storage.Account) {
+func (s *Service) queueFederationReject(ctx context.Context, follower, following *storage.Account, originalActivityID string) {
+	s.queueFederationFollowResponse(ctx, activitypub.RejectType, follower, following, originalActivityID)
+}
+
+func (s *Service) queueFederationFollowResponse(ctx context.Context, activityType string, follower, following *storage.Account, originalActivityID string) {
 	if isNilFederationService(s.federation) {
-		s.logger.Debug("federation service not available, skipping reject")
+		s.logger.Debug("federation service not available, skipping follow response",
+			zap.String("activity_type", activityType))
 		return
 	}
 
 	if strings.TrimSpace(s.domainName) == "" {
-		s.logger.Debug("domain name not configured, skipping reject")
+		s.logger.Debug("domain name not configured, skipping follow response",
+			zap.String("activity_type", activityType))
 		return
 	}
 
-	// Only federate to remote users
+	// Manual follow responses go to the remote follower.
 	if follower.Actor == nil || isLocalActor(follower.Actor, s.domainName) {
+		return
+	}
+	if following.Actor == nil || strings.TrimSpace(following.Actor.ID) == "" {
 		return
 	}
 
 	now := time.Now()
-	rejectID := uuid.New().String()
+	activityID := uuid.New().String()
 
-	// Create the original Follow activity being rejected
-	originalFollow := &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context,
-			Type:    "Follow",
-			ID:      fmt.Sprintf("https://%s/follows/%s", follower.Actor.ID, following.User.Username),
-		},
-		Actor:  follower.Actor.ID,
-		Object: following.Actor.ID,
-	}
-
-	// Create the Reject activity
-	rejectActivity := &activitypub.Activity{
+	responseActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,
-			Type:      "Reject",
-			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, rejectID),
+			Type:      activityType,
+			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, activityID),
 			Published: &now,
+			To:        []string{follower.Actor.ID},
 		},
 		Actor:  following.Actor.ID,
-		Object: originalFollow,
+		Object: followResponseObjectID(originalActivityID, follower, following),
 	}
 
 	defer func() {
 		if r := recover(); r != nil {
-			s.logger.Warn("federation queue panic suppressed during reject",
+			s.logger.Warn("federation queue panic suppressed during follow response",
 				zap.String("follower", follower.User.Username),
 				zap.String("following", following.User.Username),
+				zap.String("activity_type", activityType),
 				zap.Any("reason", r))
 		}
 	}()
 
-	if err := s.federation.QueueActivity(ctx, rejectActivity); err != nil {
-		s.logger.Error("failed to queue federation reject",
+	if err := s.federation.QueueActivity(ctx, responseActivity); err != nil {
+		s.logger.Error("failed to queue federation follow response",
 			zap.String("follower", follower.User.Username),
 			zap.String("following", following.User.Username),
+			zap.String("activity_type", activityType),
 			zap.Error(err))
 	}
+}
+
+func followResponseObjectID(originalActivityID string, follower, following *storage.Account) string {
+	if trimmed := strings.TrimSpace(originalActivityID); trimmed != "" {
+		return trimmed
+	}
+
+	baseActorID := ""
+	if follower != nil && follower.Actor != nil {
+		baseActorID = strings.TrimRight(strings.TrimSpace(follower.Actor.ID), "/")
+	}
+	if baseActorID == "" && following != nil && following.Actor != nil {
+		baseActorID = strings.TrimRight(strings.TrimSpace(following.Actor.ID), "/")
+	}
+
+	followingSlug := ""
+	switch {
+	case following != nil && following.User != nil && strings.TrimSpace(following.User.Username) != "":
+		followingSlug = strings.TrimSpace(following.User.Username)
+	case following != nil && following.Actor != nil && strings.TrimSpace(following.Actor.PreferredUsername) != "":
+		followingSlug = strings.TrimSpace(following.Actor.PreferredUsername)
+	default:
+		followingSlug = uuid.New().String()
+	}
+
+	if baseActorID == "" {
+		return fmt.Sprintf("https://example.invalid/activities/%s", uuid.New().String())
+	}
+
+	return fmt.Sprintf("%s/follows/%s", baseActorID, followingSlug)
 }
 
 // isLocalActor checks if an actor is local to this instance
