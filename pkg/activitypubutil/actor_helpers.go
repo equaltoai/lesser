@@ -18,7 +18,7 @@ import (
 func BuildLocalActor(username string, baseURL string, user *storage.User, existing *activitypub.Actor) *activitypub.Actor {
 	clone := ensureActorInstance(existing)
 	resolvedUsername := resolveUsername(clone, user, username)
-	normalizedBase := chooseBaseURL(baseURL, user)
+	normalizedBase := chooseBaseURL(baseURL, user, clone)
 
 	ensureActorType(clone, user)
 	applyActorIdentifiers(clone, normalizedBase, resolvedUsername)
@@ -239,15 +239,74 @@ func resolveUsername(actor *activitypub.Actor, user *storage.User, fallback stri
 	return strings.ToLower(strings.TrimSpace(DerivePreferredUsername(actor, candidate)))
 }
 
-func chooseBaseURL(baseURL string, user *storage.User) string {
+func chooseBaseURL(baseURL string, user *storage.User, existing *activitypub.Actor) string {
 	normalized := normalizeBaseURL(baseURL)
 	if normalized != "" {
+		if preserved := preserveExistingLocalOrigin(existing, normalized); preserved != "" {
+			return preserved
+		}
 		return normalized
 	}
-	if user == nil {
+
+	if user != nil {
+		userBase := normalizeBaseURL(user.URL)
+		if userBase != "" {
+			if preserved := preserveExistingLocalOrigin(existing, userBase); preserved != "" {
+				return preserved
+			}
+			return userBase
+		}
+	}
+
+	return existingLocalBaseURL(existing)
+}
+
+func preserveExistingLocalOrigin(existing *activitypub.Actor, candidateBase string) string {
+	existingBase := existingLocalBaseURL(existing)
+	if existingBase == "" {
 		return ""
 	}
-	return normalizeBaseURL(user.URL)
+	if parsedURLHost(existingBase) == "" || parsedURLHost(existingBase) != parsedURLHost(candidateBase) {
+		return ""
+	}
+	return existingBase
+}
+
+func existingLocalBaseURL(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+
+	candidates := []string{
+		strings.TrimSpace(actor.ID),
+		strings.TrimSpace(actor.URL),
+		strings.TrimSpace(actor.Inbox),
+		strings.TrimSpace(actor.Outbox),
+	}
+
+	for _, candidate := range candidates {
+		if base := actorBaseURL(candidate); base != "" {
+			return base
+		}
+	}
+
+	return ""
+}
+
+func actorBaseURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	return strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/")
+}
+
+func parsedURLHost(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Host))
 }
 
 func ensureActorType(actor *activitypub.Actor, user *storage.User) {

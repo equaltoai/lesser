@@ -389,40 +389,29 @@ func (s *Service) getFollowAccounts(ctx context.Context, followerID, followingID
 }
 
 func (s *Service) resolveFollowStorageAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
-	if s.storage == nil {
-		return nil, NoRepositoryOrStorage()
-	}
-
-	resolution, err := federation.NewRemoteSearchService(s.storage).ResolveExactActor(ctx, identifier, s.domainName)
-	if err != nil {
-		return nil, err
-	}
-	if resolution == nil || resolution.Actor == nil {
-		return nil, common.ActorNotFoundError{Username: identifier}
-	}
-	if requireLocal && resolution.IsRemote {
-		return nil, common.ActorNotFoundError{Username: identifier}
-	}
-
-	fallbackUsername := resolution.Username
-	if resolution.IsRemote && strings.TrimSpace(resolution.Acct) != "" {
-		fallbackUsername = resolution.Acct
-	}
-
-	account := s.buildAccountFromActor(ctx, resolution.Actor, fallbackUsername)
-	if account == nil {
-		return nil, common.ActorNotFoundError{Username: identifier}
-	}
-
-	return account, nil
+	return s.resolveStorageAccount(ctx, identifier, requireLocal, false)
 }
 
 func (s *Service) resolveFollowDecisionAccount(ctx context.Context, identifier string, requireLocal bool) (*storage.Account, error) {
+	return s.resolveStorageAccount(ctx, identifier, requireLocal, true)
+}
+
+func (s *Service) resolveStorageAccount(ctx context.Context, identifier string, requireLocal, requireDeliverable bool) (*storage.Account, error) {
 	if s.storage == nil {
 		return nil, NoRepositoryOrStorage()
 	}
 
-	resolution, err := federation.NewRemoteSearchService(s.storage).ResolveDeliverableActor(ctx, identifier, s.domainName)
+	resolver := federation.NewRemoteSearchService(s.storage)
+
+	var (
+		resolution *federation.ExactActorResolution
+		err        error
+	)
+	if requireDeliverable {
+		resolution, err = resolver.ResolveDeliverableActor(ctx, identifier, s.domainName)
+	} else {
+		resolution, err = resolver.ResolveExactActor(ctx, identifier, s.domainName)
+	}
 	if err != nil {
 		return nil, err
 	}
