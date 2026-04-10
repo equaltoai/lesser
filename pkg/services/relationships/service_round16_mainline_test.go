@@ -683,7 +683,16 @@ func TestFederationQueueHelpers_HandleNilAndPanics(t *testing.T) {
 	// Typed nil should also be treated as nil.
 	var typedNil *MockFederationService
 	service.federation = typedNil
-	service.queueFederationFollowDirectly(ctx, local, remote, "activity")
+	service.queueFederationFollowDirectly(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      "https://example.com/activities/test-follow",
+			To:      []string{remote.Actor.ID},
+		},
+		Actor:  local.Actor.ID,
+		Object: remote.Actor.ID,
+	}, local, remote)
 
 	// Panic in queue should be suppressed.
 	service.federation = panicFederationService{}
@@ -1171,7 +1180,7 @@ func TestService_BuildFollowActivity_CornerCases(t *testing.T) {
 	service := NewService(nil, nil, streaming.NewMockPublisher(), nil, zap.NewNop(), "example.com")
 
 	// Empty actor ID returns nil.
-	assert.Nil(t, service.buildFollowActivity(ctx, nil, nil, "", "bob", nil))
+	assert.Nil(t, service.buildFollowActivity(ctx, nil, nil, "", "bob", "", nil))
 
 	createdAt := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	relationship := &RelationshipData{CreatedAt: createdAt}
@@ -1182,12 +1191,13 @@ func TestService_BuildFollowActivity_CornerCases(t *testing.T) {
 		nil,
 		"alice",
 		"",
+		"",
 		relationship,
 	)
 	require.NotNil(t, activity)
 	require.NotNil(t, activity.Published)
 	assert.Equal(t, createdAt, *activity.Published)
-	assert.Equal(t, "alice", activity.Actor)
+	assert.Equal(t, "https://example.com/users/alice", activity.Actor)
 	assert.IsType(t, "", activity.Object)
 
 	// Actor.ID trimming fallback when baseActor becomes empty.
@@ -1196,6 +1206,7 @@ func TestService_BuildFollowActivity_CornerCases(t *testing.T) {
 		&storage.Account{User: &storage.User{Username: "bob"}, Actor: &activitypub.Actor{URL: "https://remote.social/users/bob"}},
 		"alice",
 		"bob",
+		"",
 		nil,
 	)
 	require.NotNil(t, activity)
@@ -1510,10 +1521,20 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 		Maybe()
 
 	service := NewService(nil, nil, publisher, fed, zap.NewNop(), "example.com")
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      "https://example.com/activities/follow-act",
+			To:      []string{followingRemote.Actor.ID},
+		},
+		Actor:  follower.Actor.ID,
+		Object: followingRemote.Actor.ID,
+	}
 
 	// Missing domain name.
 	service.domainName = ""
-	service.queueFederationFollow(ctx, follower, followingRemote, "act", "follow")
+	service.queueFederationFollow(ctx, followActivity, follower, followingRemote, "follow")
 
 	// Local actor is skipped.
 	service.domainName = "example.com"
@@ -1521,13 +1542,13 @@ func TestService_QueueFederationFollow_Branches(t *testing.T) {
 		User:  &storage.User{Username: "bob"},
 		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"}},
 	}
-	service.queueFederationFollow(ctx, follower, followingLocal, "act", "follow")
+	service.queueFederationFollow(ctx, followActivity, follower, followingLocal, "follow")
 
 	// Nil actor is skipped.
-	service.queueFederationFollow(ctx, follower, &storage.Account{User: &storage.User{Username: "bob"}}, "act", "follow")
+	service.queueFederationFollow(ctx, followActivity, follower, &storage.Account{User: &storage.User{Username: "bob"}}, "follow")
 
 	// Remote actor queues and handles QueueActivity errors.
-	service.queueFederationFollow(ctx, follower, followingRemote, "act", "follow")
+	service.queueFederationFollow(ctx, followActivity, follower, followingRemote, "follow")
 	require.Len(t, queued, 1)
 	require.Equal(t, followingRemote.Actor.ID, queued[0].Object)
 	require.Equal(t, []string{followingRemote.Actor.ID}, queued[0].To)

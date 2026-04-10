@@ -324,13 +324,13 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		s.logger.Info("follow request short-circuited by prerequisites",
 			zap.Bool("existing_relationship", existingResult != nil))
 		if existingResult != nil {
-			existingResult.Activity = s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, existingResult.Relationship)
+			existingResult.Activity = s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, existingResult.RequestID, existingResult.Relationship)
 		}
 		return existingResult, nil
 	}
 
 	// Create and process the follow
-	activityID := uuid.New().String()
+	activityID := s.newCanonicalLocalActivityID()
 	s.logger.Info("invoking createRelationship",
 		zap.String("follower_id", cmd.FollowerID),
 		zap.String("following_id", cmd.FollowingID),
@@ -342,7 +342,8 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	// Handle approval workflow
 	s.logger.Info("processing follow approval",
 		zap.Bool("requires_manual_approval", following != nil && following.Actor != nil && following.Actor.ManuallyApprovesFollowers))
-	result, err := s.processFollowApproval(ctx, follower, following, activityID, cmd.FollowerID, cmd.FollowingID)
+	followActivity := s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, activityID, nil)
+	result, err := s.processFollowApproval(ctx, follower, following, followActivity, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +468,7 @@ func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, foll
 			IsFollowing:  true,
 			Events:       []*streaming.Event{},
 		}
-		result.Activity = s.buildFollowActivity(ctx, nil, nil, followerID, followingID, relationship)
+		result.Activity = s.buildFollowActivity(ctx, nil, nil, followerID, followingID, "", relationship)
 		return result, true, nil
 	}
 
@@ -487,7 +488,7 @@ func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, foll
 			IsFollowing:  false,
 			Events:       []*streaming.Event{},
 		}
-		result.Activity = s.buildFollowActivity(ctx, nil, nil, followerID, followingID, relationship)
+		result.Activity = s.buildFollowActivity(ctx, nil, nil, followerID, followingID, requestID, relationship)
 		return result, true, nil
 	}
 
@@ -531,7 +532,7 @@ func (s *Service) pendingFollowState(ctx context.Context, followerID, followingI
 }
 
 // createRelationship creates the relationship record
-func (s *Service) buildFollowActivity(ctx context.Context, follower, following *storage.Account, followerID, followingID string, relationship *RelationshipData) *activitypub.Activity {
+func (s *Service) buildFollowActivity(ctx context.Context, follower, following *storage.Account, followerID, followingID, activityID string, relationship *RelationshipData) *activitypub.Activity {
 	followerID = s.normalizeActorIdentifier(followerID)
 	followingID = s.normalizeActorIdentifier(followingID)
 
@@ -555,6 +556,9 @@ func (s *Service) buildFollowActivity(ctx context.Context, follower, following *
 	if actorID == "" {
 		return nil
 	}
+	if !strings.Contains(actorID, "://") && s.baseURL() != "" {
+		actorID = fmt.Sprintf("%s/users/%s", s.baseURL(), url.PathEscape(actorID))
+	}
 
 	objectSlug := followingID
 	if following != nil {
@@ -577,13 +581,22 @@ func (s *Service) buildFollowActivity(ctx context.Context, follower, following *
 			objectIdentifier = following.Actor.URL
 		}
 	}
+	if objectIdentifier == "" {
+		objectIdentifier = objectSlug
+	}
+	if !strings.Contains(objectIdentifier, "://") && s.baseURL() != "" && !strings.Contains(objectIdentifier, "@") {
+		objectIdentifier = fmt.Sprintf("%s/users/%s", s.baseURL(), url.PathEscape(objectIdentifier))
+	}
 
 	baseActor := strings.TrimSuffix(actorID, "/")
 	if baseActor == "" {
 		baseActor = actorID
 	}
 
-	activityID := fmt.Sprintf("%s/follows/%s", baseActor, url.PathEscape(objectSlug))
+	canonicalActivityID := s.canonicalizeLocalActivityID(activityID)
+	if canonicalActivityID == "" {
+		canonicalActivityID = fmt.Sprintf("%s/follows/%s", baseActor, url.PathEscape(objectSlug))
+	}
 
 	published := time.Now().UTC()
 	if relationship != nil && !relationship.CreatedAt.IsZero() {
@@ -592,25 +605,45 @@ func (s *Service) buildFollowActivity(ctx context.Context, follower, following *
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			ID:        activityID,
+			Context:   activitypub.Context,
+			ID:        canonicalActivityID,
 			Type:      activitypub.FollowType,
 			Published: &published,
 		},
-		Actor: actorID,
+		Actor:  actorID,
+		Object: objectIdentifier,
 	}
-
-	fallbackObjectID := objectIdentifier
-	if fallbackObjectID == "" {
-		fallbackObjectID = objectSlug
-	}
-
-	if actorPayload := s.sanitizeActivityActor(ctx, following, objectSlug); actorPayload != nil {
-		activity.Object = actorPayload
-	} else {
-		activity.Object = fallbackObjectID
+	if objectIdentifier != "" {
+		activity.To = []string{objectIdentifier}
 	}
 
 	return activity
+}
+
+func (s *Service) newCanonicalLocalActivityID() string {
+	baseURL := s.baseURL()
+	if baseURL == "" {
+		baseURL = "https://example.invalid"
+	}
+
+	return fmt.Sprintf("%s/activities/%s", baseURL, uuid.New().String())
+}
+
+func (s *Service) canonicalizeLocalActivityID(activityID string) string {
+	trimmed := strings.TrimSpace(activityID)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+
+	baseURL := s.baseURL()
+	if baseURL == "" {
+		baseURL = "https://example.invalid"
+	}
+
+	return fmt.Sprintf("%s/activities/%s", baseURL, trimmed)
 }
 
 func (s *Service) ensureAccountForActivity(ctx context.Context, account *storage.Account, identifier string) *storage.Account {
@@ -730,25 +763,29 @@ func (s *Service) createRelationship(ctx context.Context, followerID, followingI
 }
 
 // processFollowApproval handles the approval workflow and emits events
-func (s *Service) processFollowApproval(ctx context.Context, follower, following *storage.Account, activityID, followerID, followingID string) (*FollowResult, error) {
+func (s *Service) processFollowApproval(ctx context.Context, follower, following *storage.Account, followActivity *activitypub.Activity, followerID, followingID string) (*FollowResult, error) {
 	requiresApproval := following.Actor != nil && following.Actor.ManuallyApprovesFollowers
 	requiresRemoteAcceptance := s.followRequiresRemoteAcceptance(following)
 
 	var events []*streaming.Event
 	var requestID string
 	isFollowingNow := false
+	activityID := ""
+	if followActivity != nil {
+		activityID = strings.TrimSpace(followActivity.ID)
+	}
 
 	if requiresApproval || requiresRemoteAcceptance {
 		requestID = activityID
 		events = s.emitFollowRequestedEvents(ctx, follower, following, activityID)
-		s.queueFederationFollowRequest(ctx, follower, following, activityID)
+		s.queueFederationFollowRequest(ctx, followActivity, follower, following)
 	} else {
 		if err := s.acceptFollowRequest(ctx, followerID, followingID); err != nil {
 			return nil, err
 		}
 		isFollowingNow = true
 		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
-		s.queueFederationFollowDirectly(ctx, follower, following, activityID)
+		s.queueFederationFollowDirectly(ctx, followActivity, follower, following)
 	}
 
 	relationship, err := s.GetRelationship(ctx, followerID, followingID)
@@ -761,7 +798,7 @@ func (s *Service) processFollowApproval(ctx context.Context, follower, following
 		RequestID:    requestID,
 		IsFollowing:  isFollowingNow,
 		Events:       events,
-		Activity:     s.buildFollowActivity(ctx, follower, following, followerID, followingID, relationship),
+		Activity:     followActivity,
 	}, nil
 }
 
@@ -2831,7 +2868,7 @@ func (s *Service) emitUnmuteEvents(ctx context.Context, muter, muted *storage.Ac
 // Federation queueing methods
 
 // queueFederationFollow queues a follow activity for federation
-func (s *Service) queueFederationFollow(ctx context.Context, follower, following *storage.Account, activityID string, actionType string) {
+func (s *Service) queueFederationFollow(ctx context.Context, activity *activitypub.Activity, follower, following *storage.Account, actionType string) {
 	if isNilFederationService(s.federation) {
 		s.logger.Debug(fmt.Sprintf("federation service not available, skipping %s", actionType))
 		return
@@ -2846,18 +2883,8 @@ func (s *Service) queueFederationFollow(ctx context.Context, follower, following
 	if following.Actor == nil || isLocalActor(following.Actor, s.domainName) {
 		return
 	}
-
-	now := time.Now()
-	activity := &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			Context:   activitypub.Context,
-			Type:      "Follow",
-			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, activityID),
-			Published: &now,
-			To:        []string{following.Actor.ID},
-		},
-		Actor:  follower.Actor.ID,
-		Object: following.Actor.ID,
+	if activity == nil {
+		return
 	}
 
 	defer func() {
@@ -2877,12 +2904,12 @@ func (s *Service) queueFederationFollow(ctx context.Context, follower, following
 	}
 }
 
-func (s *Service) queueFederationFollowRequest(ctx context.Context, follower, following *storage.Account, activityID string) {
-	s.queueFederationFollow(ctx, follower, following, activityID, "follow request")
+func (s *Service) queueFederationFollowRequest(ctx context.Context, activity *activitypub.Activity, follower, following *storage.Account) {
+	s.queueFederationFollow(ctx, activity, follower, following, "follow request")
 }
 
-func (s *Service) queueFederationFollowDirectly(ctx context.Context, follower, following *storage.Account, activityID string) {
-	s.queueFederationFollow(ctx, follower, following, activityID, "follow")
+func (s *Service) queueFederationFollowDirectly(ctx context.Context, activity *activitypub.Activity, follower, following *storage.Account) {
+	s.queueFederationFollow(ctx, activity, follower, following, "follow")
 }
 
 func (s *Service) queueFederationAccept(ctx context.Context, follower, following *storage.Account, originalActivityID string) {
