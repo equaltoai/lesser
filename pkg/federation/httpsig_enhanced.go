@@ -167,7 +167,8 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	return nil
 }
 
-// BuildSignedActivityPubRequest creates a signed ActivityPub delivery request using Lesser's modern defaults.
+// BuildSignedActivityPubRequest creates a signed ActivityPub delivery request using
+// Lesser's compatibility defaults for federation interoperability.
 func BuildSignedActivityPubRequest(ctx context.Context, method, targetURL, userAgent string, body []byte, privateKey crypto.PrivateKey, keyID string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -195,10 +196,10 @@ func BuildSignedActivityPubRequest(ctx context.Context, method, targetURL, userA
 	return req, nil
 }
 
-// SignActivityPubRequest signs an outbound ActivityPub delivery request using Lesser's modern defaults.
+// SignActivityPubRequest signs an outbound ActivityPub delivery request using
+// Lesser's compatibility defaults for federation interoperability.
 func SignActivityPubRequest(req *http.Request, privateKey crypto.PrivateKey, keyID string) error {
-	algorithm := DetermineSigningAlgorithm(privateKey, false)
-	return SignHTTPRequestWithAlgorithm(req, privateKey, keyID, algorithm)
+	return SignHTTPRequest(req, privateKey, keyID)
 }
 
 // verifyWithKey verifies a signature with automatic algorithm detection based on key type
@@ -232,7 +233,7 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 
 	// Set date header if not present
 	if err := common.ValidateRequiredParam("req.Header.Get(DateHeader)", req.Header.Get(DateHeader)); err != nil {
-		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
 	}
 
 	// Determine headers to sign
