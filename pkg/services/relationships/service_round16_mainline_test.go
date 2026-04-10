@@ -250,6 +250,7 @@ type testRepositoryStorage struct {
 	logger    *zap.Logger
 
 	actorRepo        interfaces.ActorRepository
+	activityRepo     interfaces.ActivityRepository
 	domainBlockRepo  *repositories.DomainBlockRepository
 	relationshipRepo interfaces.ConcreteRelationshipRepository
 	socialRepo       *repositories.SocialRepository
@@ -274,7 +275,7 @@ func (s *testRepositoryStorage) User() interfaces.UserRepository        { return
 func (s *testRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *testRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
 func (s *testRepositoryStorage) Object() interfaces.ObjectRepository                  { return nil }
-func (s *testRepositoryStorage) Activity() interfaces.ActivityRepository              { return nil }
+func (s *testRepositoryStorage) Activity() interfaces.ActivityRepository              { return s.activityRepo }
 func (s *testRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *testRepositoryStorage) Notification() interfaces.NotificationRepository      { return nil }
 func (s *testRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
@@ -384,6 +385,7 @@ func newServiceWithStorageHarness(t *testing.T) (*Service, *testRepositoryStorag
 		tableName:        tableName,
 		logger:           logger,
 		actorRepo:        repositories.NewActorRepository(db, tableName, logger),
+		activityRepo:     inmemory.NewActivityRepository(),
 		domainBlockRepo:  repositories.NewDomainBlockRepository(db, tableName, logger),
 		relationshipRepo: repositories.NewRelationshipRepository(db, tableName, logger),
 		socialRepo:       repositories.NewSocialRepository(db, tableName, logger, nil),
@@ -420,6 +422,7 @@ func newServiceWithStorageHarnessConfigured(
 		tableName:        tableName,
 		logger:           logger,
 		actorRepo:        repositories.NewActorRepository(db, tableName, logger),
+		activityRepo:     inmemory.NewActivityRepository(),
 		domainBlockRepo:  repositories.NewDomainBlockRepository(db, tableName, logger),
 		relationshipRepo: repositories.NewRelationshipRepository(db, tableName, logger),
 		socialRepo:       repositories.NewSocialRepository(db, tableName, logger, nil),

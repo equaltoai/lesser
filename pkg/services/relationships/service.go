@@ -343,6 +343,9 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	s.logger.Info("processing follow approval",
 		zap.Bool("requires_manual_approval", following != nil && following.Actor != nil && following.Actor.ManuallyApprovesFollowers))
 	followActivity := s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, activityID, nil)
+	if err := s.persistOutboundFollowActivity(ctx, followActivity); err != nil {
+		return nil, err
+	}
 	result, err := s.processFollowApproval(ctx, follower, following, followActivity, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
@@ -800,6 +803,19 @@ func (s *Service) processFollowApproval(ctx context.Context, follower, following
 		Events:       events,
 		Activity:     followActivity,
 	}, nil
+}
+
+func (s *Service) persistOutboundFollowActivity(ctx context.Context, followActivity *activitypub.Activity) error {
+	if followActivity == nil || s.storage == nil {
+		return nil
+	}
+
+	activityRepo := s.storage.Activity()
+	if activityRepo == nil {
+		return RepositoryNotAvailable("activity")
+	}
+
+	return activityRepo.CreateActivity(ctx, followActivity)
 }
 
 func (s *Service) followRequiresRemoteAcceptance(following *storage.Account) bool {
