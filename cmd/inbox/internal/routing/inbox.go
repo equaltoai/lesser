@@ -89,12 +89,22 @@ type InboxHandler struct {
 	costCalculator               *federation.CostCalculator
 	centralizedCostService       *costpkg.TrackingService
 	deliveryService              *federation.DeliveryService
+	remoteActorResolver          inboxRemoteActorResolver
+	activityDeliverer            inboxActivityDeliverer
 	tableName                    string
 	storageAdapter               storageCore.RepositoryStorage
 	baseURL                      string
 	emfMetrics                   *observability.EMFMetrics
 	alertManager                 *monitoring.AlertManager
 	startTime                    time.Time
+}
+
+type inboxRemoteActorResolver interface {
+	ResolveDeliverableActor(ctx context.Context, input, localDomain string) (*federation.ExactActorResolution, error)
+}
+
+type inboxActivityDeliverer interface {
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
 }
 
 // extractedServices holds services extracted from lambda context
@@ -398,6 +408,8 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		costCalculator:               federationServices.costCalculator,
 		centralizedCostService:       observabilityServices.centralizedCostService,
 		deliveryService:              federationServices.deliveryService,
+		remoteActorResolver:          federation.NewRemoteSearchService(repoFactory),
+		activityDeliverer:            federationServices.deliveryService,
 		tableName:                    cfg.DynamoTableName,
 		storageAdapter:               repoFactory,
 		baseURL:                      cfg.BaseURL(),
@@ -1457,6 +1469,43 @@ func generateActivityID() string {
 	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b)
 }
 
+func (ih *InboxHandler) resolveDeliverableActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
+	resolver := ih.remoteActorResolver
+	if resolver == nil && ih.storageAdapter != nil {
+		resolver = federation.NewRemoteSearchService(ih.storageAdapter)
+	}
+	if resolver == nil {
+		return nil, stdErrors.New("remote actor resolver unavailable")
+	}
+
+	localDomain := ""
+	if cfg := ih.getConfig(); cfg != nil {
+		localDomain = cfg.Domain
+	}
+
+	resolution, err := resolver.ResolveDeliverableActor(ctx, actorID, localDomain)
+	if err != nil {
+		return nil, err
+	}
+	if resolution == nil || resolution.Actor == nil {
+		return nil, common.ActorNotFoundError{Username: actorID}
+	}
+
+	return resolution.Actor, nil
+}
+
+func (ih *InboxHandler) deliverResolvedActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error {
+	deliverer := ih.activityDeliverer
+	if deliverer == nil {
+		deliverer = ih.deliveryService
+	}
+	if deliverer == nil {
+		return stdErrors.New("delivery service unavailable")
+	}
+
+	return deliverer.DeliverActivity(ctx, activity, targetInbox, signingActor)
+}
+
 // processFollowActivity processes an incoming Follow activity
 func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
@@ -1543,13 +1592,19 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 		Object: activity.ID,
 	}
 
-	// Get the follower's inbox URL
-	followerActor, err := ih.actorRepository.GetCachedRemoteActor(ctx, activity.Actor)
+	// Resolve a deliverable remote actor rather than depending on cache luck.
+	followerActor, err := ih.resolveDeliverableActor(ctx, activity.Actor)
 	if err != nil {
-		log.Error("failed to get follower actor for delivery",
+		ih.logFollowTrace(trace, "receiver.follow.accept_delivery_skipped",
+			zap.String("follower_handle", followerHandle),
+			zap.String("target_username", targetActor.PreferredUsername),
+			zap.String("accept_result", "remote_actor_resolution_failed"),
+			zap.String("resolution_error", err.Error()),
+		)
+		log.Warn("follow accepted but accept delivery was skipped because the remote actor could not be resolved",
 			zap.String("actor", activity.Actor),
 			zap.Error(err))
-		return nil // Don't fail the follow acceptance
+		return nil // Don't fail the persisted acceptance
 	}
 
 	ih.logFollowTrace(trace, "receiver.follow.accept_prepare",
@@ -1559,7 +1614,7 @@ func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *act
 	)
 
 	// Send Accept activity back to the follower
-	if err := ih.deliveryService.DeliverActivity(ctx, acceptActivity, followerActor.Inbox, targetActor); err != nil {
+	if err := ih.deliverResolvedActivity(ctx, acceptActivity, followerActor.Inbox, targetActor); err != nil {
 		ih.logFollowTrace(trace, "receiver.follow.accept_delivery_failed",
 			zap.String("follower_handle", followerHandle),
 			zap.String("target_username", targetActor.PreferredUsername),
