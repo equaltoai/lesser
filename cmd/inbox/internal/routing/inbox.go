@@ -1675,6 +1675,13 @@ func (ih *InboxHandler) processAcceptByActivityID(ctx context.Context, objectID 
 
 	if err != nil {
 		log.Warn("failed to find original activity", zap.String("id", objectID), zap.Error(err))
+		reconciled, fallbackErr := ih.reconcileFollowResponseFromRelationship(ctx, activitypub.AcceptType, objectID, targetActor, acceptorHandle)
+		if fallbackErr != nil {
+			return fallbackErr
+		}
+		if reconciled {
+			return nil
+		}
 		return nil
 	}
 
@@ -1731,6 +1738,111 @@ func (ih *InboxHandler) acceptFollowRelationship(ctx context.Context, followerHa
 	return nil
 }
 
+func (ih *InboxHandler) rejectFollowRelationship(ctx context.Context, followerHandle, rejectorHandle string) error {
+	if followerHandle == "" || rejectorHandle == "" {
+		return nil
+	}
+
+	if err := ih.relationshipRepository.RejectFollowRequest(ctx, followerHandle, rejectorHandle); err != nil {
+		common.WithContext(ctx).Error("failed to update follow rejection",
+			zap.String("follower", followerHandle),
+			zap.String("rejector", rejectorHandle),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func (ih *InboxHandler) reconcileFollowResponseFromRelationship(ctx context.Context, responseType, objectID string, targetActor *activitypub.Actor, remoteHandle string) (bool, error) {
+	log := common.WithContext(ctx)
+	if targetActor == nil || strings.TrimSpace(remoteHandle) == "" {
+		return false, nil
+	}
+	if _, ok := ih.localActivityIDSuffix(objectID); !ok {
+		return false, nil
+	}
+
+	followerHandle := strings.TrimSpace(targetActor.PreferredUsername)
+	if followerHandle == "" {
+		followerHandle = ih.extractHandleFromActorID(targetActor.ID)
+	}
+	if followerHandle == "" {
+		return false, nil
+	}
+
+	relationship, err := ih.relationshipRepository.GetRelationship(ctx, followerHandle, remoteHandle)
+	if err != nil {
+		log.Warn("failed to load pending relationship for follow response fallback",
+			zap.String("follower", followerHandle),
+			zap.String("remote", remoteHandle),
+			zap.Error(err))
+		return false, nil
+	}
+	if relationship == nil || relationship.State != models.RelationshipPending {
+		return false, nil
+	}
+	if !ih.followResponseActivityIDsMatch(objectID, relationship.ActivityID) {
+		log.Warn("follow response fallback activity id mismatch",
+			zap.String("object_id", objectID),
+			zap.String("stored_activity_id", relationship.ActivityID),
+			zap.String("follower", followerHandle),
+			zap.String("remote", remoteHandle))
+		return false, nil
+	}
+
+	switch responseType {
+	case activitypub.AcceptType:
+		return true, ih.acceptFollowRelationship(ctx, followerHandle, remoteHandle)
+	case activitypub.RejectType:
+		return true, ih.rejectFollowRelationship(ctx, followerHandle, remoteHandle)
+	default:
+		return false, nil
+	}
+}
+
+func (ih *InboxHandler) localActivityIDSuffix(activityID string) (string, bool) {
+	trimmed := strings.TrimSpace(activityID)
+	baseURL := strings.TrimSuffix(ih.getConfig().BaseURL(), "/")
+	if trimmed == "" || baseURL == "" {
+		return "", false
+	}
+
+	prefix := baseURL + "/activities/"
+	if !strings.HasPrefix(trimmed, prefix) {
+		return "", false
+	}
+
+	suffix := strings.TrimPrefix(trimmed, prefix)
+	if suffix == "" || strings.Contains(suffix, "/") {
+		return "", false
+	}
+
+	return suffix, true
+}
+
+func (ih *InboxHandler) followResponseActivityIDsMatch(objectID, storedActivityID string) bool {
+	objectID = strings.TrimSpace(objectID)
+	storedActivityID = strings.TrimSpace(storedActivityID)
+	if objectID == "" || storedActivityID == "" {
+		return false
+	}
+	if objectID == storedActivityID {
+		return true
+	}
+
+	objectSuffix, ok := ih.localActivityIDSuffix(objectID)
+	if !ok {
+		return false
+	}
+	if objectSuffix == storedActivityID {
+		return true
+	}
+
+	storedSuffix, storedIsLocal := ih.localActivityIDSuffix(storedActivityID)
+	return storedIsLocal && storedSuffix == objectSuffix
+}
+
 // processRejectActivity processes an incoming Reject activity
 func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
@@ -1766,6 +1878,13 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 		log.Warn("failed to find original activity for rejection",
 			zap.String("activity_id", objectID),
 			zap.Error(err))
+		reconciled, fallbackErr := ih.reconcileFollowResponseFromRelationship(ctx, activitypub.RejectType, objectID, targetActor, ih.extractHandleFromActorID(activity.Actor))
+		if fallbackErr != nil {
+			return fallbackErr
+		}
+		if reconciled {
+			return nil
+		}
 		return nil // Don't fail, just ignore unknown activities
 	}
 
@@ -1892,23 +2011,8 @@ func (ih *InboxHandler) processRejectFollow(ctx context.Context, rejectActivity 
 		zap.String("rejector", rejectorHandle),
 		zap.String("follow_id", followActivity.ID))
 
-	// Remove the pending follow relationship
-	if err := ih.relationshipRepository.DeleteRelationship(ctx, requesterHandle, rejectorHandle); err != nil {
-		log.Debug("no follow relationship to remove during rejection",
-			zap.String("requester", requesterHandle),
-			zap.String("rejector", rejectorHandle),
-			zap.Error(err))
-		// Don't fail - this is idempotent
-	}
-
-	// Optionally update the relationship state to explicitly rejected
-	// This allows tracking that the follow was explicitly rejected vs. just deleted
-	if err := ih.relationshipRepository.RejectFollowRequest(ctx, requesterHandle, rejectorHandle); err != nil {
-		log.Debug("could not mark follow as rejected",
-			zap.String("requester", requesterHandle),
-			zap.String("rejector", rejectorHandle),
-			zap.Error(err))
-		// This is not critical - the deletion above is the main action
+	if err := ih.rejectFollowRelationship(ctx, requesterHandle, rejectorHandle); err != nil {
+		return err
 	}
 
 	log.Info("successfully processed follow rejection",
