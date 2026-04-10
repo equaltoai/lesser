@@ -19,6 +19,7 @@ func BuildLocalActor(username string, baseURL string, user *storage.User, existi
 	clone := ensureActorInstance(existing)
 	resolvedUsername := resolveUsername(clone, user, username)
 	normalizedBase := chooseBaseURL(baseURL, user, clone)
+	normalizedBase = resolveLocalActorBaseURL(clone, normalizedBase, resolvedUsername)
 
 	ensureActorType(clone, user)
 	applyActorIdentifiers(clone, normalizedBase, resolvedUsername)
@@ -307,6 +308,39 @@ func parsedURLHost(raw string) string {
 		return ""
 	}
 	return strings.ToLower(strings.TrimSpace(parsed.Host))
+}
+
+func resolveLocalActorBaseURL(actor *activitypub.Actor, fallbackBaseURL string, username string) string {
+	if actor == nil || username == "" {
+		return fallbackBaseURL
+	}
+
+	fallbackHost := parsedURLHost(fallbackBaseURL)
+	for _, candidate := range []string{actor.ID, actor.URL, actor.Inbox, actor.Outbox, actor.Followers, actor.Following, actor.Liked} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			continue
+		}
+
+		if fallbackHost != "" && !strings.EqualFold(parsed.Host, fallbackHost) {
+			continue
+		}
+
+		if !strings.EqualFold(DerivePreferredUsername(actor, username), username) &&
+			!strings.EqualFold(deriveFromID(candidate), username) &&
+			!strings.EqualFold(deriveFromURL(candidate), username) {
+			continue
+		}
+
+		return normalizeBaseURL(parsed.Scheme + "://" + parsed.Host)
+	}
+
+	return fallbackBaseURL
 }
 
 func ensureActorType(actor *activitypub.Actor, user *storage.User) {
