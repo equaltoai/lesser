@@ -344,6 +344,13 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	if err := s.createRelationship(ctx, cmd.FollowerID, cmd.FollowingID, activityID); err != nil {
 		return nil, err
 	}
+	followActivity, existingResult, err = s.reconcileStoredFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, followActivity)
+	if err != nil {
+		return nil, err
+	}
+	if existingResult != nil {
+		return existingResult, nil
+	}
 
 	// Handle approval workflow
 	s.logger.Info("processing follow approval",
@@ -737,6 +744,85 @@ func (s *Service) createRelationship(ctx context.Context, followerID, followingI
 		return s.relationshipRepo.CreateFollowRequest(ctx, followerID, followingID)
 	}
 	return NoRepositoryOrStorage()
+}
+
+func (s *Service) reconcileStoredFollowActivity(
+	ctx context.Context,
+	follower, following *storage.Account,
+	followerID, followingID string,
+	followActivity *activitypub.Activity,
+) (*activitypub.Activity, *FollowResult, error) {
+	if followActivity == nil || s.storage == nil {
+		return followActivity, nil, nil
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return followActivity, nil, RepositoryNotAvailable("relationship")
+	}
+
+	relationshipRecord, err := relationshipRepo.GetRelationship(ctx, followerID, followingID)
+	if err != nil || relationshipRecord == nil {
+		return followActivity, nil, err
+	}
+
+	generatedActivityID := strings.TrimSpace(followActivity.ID)
+	storedActivityID := strings.TrimSpace(relationshipRecord.ActivityID)
+	if generatedActivityID == "" || storedActivityID == "" || generatedActivityID == storedActivityID {
+		return followActivity, nil, nil
+	}
+
+	relationship, err := s.GetRelationship(ctx, followerID, followingID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	canonicalActivity := s.loadStoredFollowActivity(ctx, storedActivityID)
+	if canonicalActivity == nil {
+		canonicalActivity = s.buildFollowActivity(ctx, follower, following, followerID, followingID, storedActivityID, relationship)
+	}
+
+	result := &FollowResult{
+		Relationship: relationship,
+		Events:       []*streaming.Event{},
+		Activity:     canonicalActivity,
+	}
+	switch relationshipRecord.State {
+	case models.RelationshipAccepted:
+		result.IsFollowing = true
+	case models.RelationshipPending:
+		result.RequestID = storedActivityID
+	}
+
+	s.logger.Info("follow request adopted existing canonical activity id",
+		zap.String("follower_id", followerID),
+		zap.String("following_id", followingID),
+		zap.String("generated_activity_id", generatedActivityID),
+		zap.String("stored_activity_id", storedActivityID),
+		zap.String("relationship_state", relationshipRecord.State))
+
+	return canonicalActivity, result, nil
+}
+
+func (s *Service) loadStoredFollowActivity(ctx context.Context, activityID string) *activitypub.Activity {
+	if s.storage == nil {
+		return nil
+	}
+
+	activityRepo := s.storage.Activity()
+	if activityRepo == nil {
+		return nil
+	}
+
+	activity, err := activityRepo.GetActivity(ctx, activityID)
+	if err != nil {
+		s.logger.Debug("failed to load stored follow activity, rebuilding from relationship state",
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+		return nil
+	}
+
+	return activity
 }
 
 // processFollowApproval handles the approval workflow and emits events
