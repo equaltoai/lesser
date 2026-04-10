@@ -1215,19 +1215,6 @@ func TestService_BuildFollowActivity_CornerCases(t *testing.T) {
 	require.NotNil(t, activity)
 }
 
-func TestService_SanitizeActivityActor_NilAndUserOnly(t *testing.T) {
-	ctx := context.Background()
-	service := NewService(nil, nil, streaming.NewMockPublisher(), nil, zap.NewNop(), "example.com")
-
-	assert.Nil(t, service.sanitizeActivityActor(ctx, nil, "bob"))
-
-	actor := service.sanitizeActivityActor(ctx, &storage.Account{User: &storage.User{Username: "alice"}}, "bob")
-	require.NotNil(t, actor)
-
-	actor = service.sanitizeActivityActor(ctx, &storage.Account{}, "bob")
-	require.NotNil(t, actor)
-}
-
 func TestService_Block_UnfollowWarningBranches(t *testing.T) {
 	ctx := context.Background()
 	service, _ := newServiceWithStorageHarness(t)

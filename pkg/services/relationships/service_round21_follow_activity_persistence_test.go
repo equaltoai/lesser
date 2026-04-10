@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
@@ -91,7 +92,7 @@ func TestService_Follow_PersistsOutboundLocalActivityBeforeQueueing(t *testing.T
 func TestService_Follow_PersistenceErrorStopsBeforeFederationQueueing(t *testing.T) {
 	ctx := context.Background()
 	activityRepo := testmocks.NewMockActivityRepository()
-	service, _, _, _, fed := buildRemoteFollowPersistenceService(t, activityRepo)
+	service, relationshipRepo, _, _, fed := buildRemoteFollowPersistenceService(t, activityRepo)
 
 	activityRepo.
 		On("CreateActivity", ctx, mock.MatchedBy(func(activity *activitypub.Activity) bool {
@@ -109,4 +110,7 @@ func TestService_Follow_PersistenceErrorStopsBeforeFederationQueueing(t *testing
 	require.Nil(t, result)
 	require.ErrorContains(t, err, "persist boom")
 	require.Empty(t, fed.Calls)
+
+	_, lookupErr := relationshipRepo.GetRelationship(ctx, "alice", "bob@remote.social")
+	require.ErrorIs(t, lookupErr, storage.ErrNotFound)
 }

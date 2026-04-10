@@ -329,8 +329,14 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		return existingResult, nil
 	}
 
-	// Create and process the follow
+	// Persist the outbound Follow before recording pending state so a transient
+	// activity write failure cannot wedge retries behind a stale relationship row.
 	activityID := s.newCanonicalLocalActivityID()
+	followActivity := s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, activityID, nil)
+	if err := s.persistOutboundFollowActivity(ctx, followActivity); err != nil {
+		return nil, err
+	}
+
 	s.logger.Info("invoking createRelationship",
 		zap.String("follower_id", cmd.FollowerID),
 		zap.String("following_id", cmd.FollowingID),
@@ -342,10 +348,6 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	// Handle approval workflow
 	s.logger.Info("processing follow approval",
 		zap.Bool("requires_manual_approval", following != nil && following.Actor != nil && following.Actor.ManuallyApprovesFollowers))
-	followActivity := s.buildFollowActivity(ctx, follower, following, cmd.FollowerID, cmd.FollowingID, activityID, nil)
-	if err := s.persistOutboundFollowActivity(ctx, followActivity); err != nil {
-		return nil, err
-	}
 	result, err := s.processFollowApproval(ctx, follower, following, followActivity, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
@@ -691,34 +693,6 @@ func (s *Service) ensureAccountForActivity(ctx context.Context, account *storage
 	}
 
 	return account
-}
-
-func (s *Service) sanitizeActivityActor(ctx context.Context, account *storage.Account, fallback string) *activitypub.Actor {
-	if account == nil {
-		return nil
-	}
-
-	baseURL := s.baseURL()
-	username := strings.TrimSpace(fallback)
-	if account.User != nil {
-		userName := strings.TrimSpace(account.User.Username)
-		if userName != "" {
-			username = userName
-		}
-	}
-	if account.Actor != nil {
-		username = activitypubutil.DerivePreferredUsername(account.Actor, username)
-	}
-
-	if account.Actor == nil {
-		return activitypubutil.BuildLocalActor(username, baseURL, account.User, nil)
-	}
-
-	if enriched := s.buildAccountFromActor(ctx, account.Actor, username); enriched != nil && enriched.Actor != nil {
-		return enriched.Actor
-	}
-
-	return activitypubutil.BuildLocalActor(username, baseURL, account.User, account.Actor)
 }
 
 func (s *Service) createRelationship(ctx context.Context, followerID, followingID, activityID string) error {
