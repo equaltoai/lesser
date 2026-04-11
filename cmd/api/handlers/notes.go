@@ -16,17 +16,13 @@ import (
 
 // authenticateNotesUser handles authentication for notes endpoints with userID formatting
 func (h *Handler) authenticateNotesUser(ctx *apptheory.Context) (string, *apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx)
-		return "", resp, respErr
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx)
-		return "", resp, respErr
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return "", resp, err
 	}
 
 	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), nil, nil
@@ -134,11 +130,8 @@ func (h *Handler) HandleGetNotesLift(ctx *apptheory.Context) (*apptheory.Respons
 
 	// Optional auth - for personalized scoring
 	userID := ""
-	if token := h.getBearerTokenLift(ctx); token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
-		}
+	if username := h.getOptionalAuthenticatedUser(ctx); username != "" {
+		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
 	}
 
 	// Get visible notes for the object using Notes service

@@ -80,27 +80,16 @@ func (h *Handler) handleFollowRequestOperation(ctx *apptheory.Context, actor *ac
 // HandleGetFollowRequestsLift handles GET /api/v1/follow_requests
 // Returns pending follow requests for locked accounts
 func (h *Handler) HandleGetFollowRequestsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-
-	// Extract token from Authorization header using centralized validation
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Check read:follows scope
-	if !claims.HasScope("read:follows") && !claims.HasScope(auth.ScopeRead) {
+	if !claimsHaveAnyScope(claims, "read:follows", auth.ScopeRead) {
 		return common.RespondInsufficientScope(ctx)
 	}
 
@@ -113,6 +102,22 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *apptheory.Context) (*apptheor
 	actor := result.Actor
 
 	return h.handleGetFollowRequestsLogic(ctx, actor, claims.Username)
+}
+
+func (h *Handler) handleFollowRequestClaims(ctx *apptheory.Context, requiredScopes ...string) (*auth.Claims, *apptheory.Response, error) {
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return nil, resp, err
+	}
+	if !claimsHaveAnyScope(claims, requiredScopes...) {
+		resp, err := common.RespondInsufficientScope(ctx)
+		return nil, resp, err
+	}
+	return claims, nil, nil
 }
 
 // handleGetFollowRequestsLogic contains the main follow requests logic, separated for testing
@@ -186,27 +191,9 @@ func (h *Handler) handleFollowRequestAction(ctx *apptheory.Context, _ string, lo
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Extract token from Authorization header using centralized validation
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Check write:follows scope
-	if !claims.HasScope(auth.WriteFollows) && !claims.HasScope(auth.ScopeWrite) {
-		return common.RespondInsufficientScope(ctx)
+	claims, resp, err := h.handleFollowRequestClaims(ctx, auth.WriteFollows, auth.ScopeWrite)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the user's actor

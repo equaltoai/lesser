@@ -17,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -42,10 +44,18 @@ var (
 	newSecretsManagerClientForTrustSecret = func(cfg aws.Config) trustSecretsManagerClient {
 		return secretsmanager.NewFromConfig(cfg)
 	}
+	validateLesserHostProxyURL = ssrf.ValidateURL
+	newLesserHostProxyClient   = func() lesserHostProxyHTTPClient {
+		return httpclient.NewSecureClient(httpclient.WithTimeout(lesserHostProxyTimeout))
+	}
 )
 
 type trustSecretsManagerClient interface {
 	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
+type lesserHostProxyHTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 type lesserHostProxyTarget struct {
@@ -338,6 +348,10 @@ func buildLesserHostProxyURL(ctx *apptheory.Context, base, path string) (*url.UR
 		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
 		return nil, resp
 	}
+	if err := validateLesserHostProxyURL(upstreamURL); err != nil {
+		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
+		return nil, resp
+	}
 
 	q := upstreamURL.Query()
 	appendLesserHostProxyQuery(q, ctx.Request.Query)
@@ -393,7 +407,7 @@ func resolveLesserHostProxyAccept(value string) string {
 }
 
 func executeLesserHostProxyRequest(ctx *apptheory.Context, req *http.Request) (int, http.Header, []byte, *apptheory.Response) {
-	client := &http.Client{Timeout: lesserHostProxyTimeout}
+	client := newLesserHostProxyClient()
 	upstreamResp, err := client.Do(req)
 	if err != nil {
 		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
@@ -472,11 +486,7 @@ func firstHeaderValue(headers map[string][]string, name string) string {
 	if headers == nil {
 		return ""
 	}
-	values := headers[strings.ToLower(strings.TrimSpace(name))]
-	if len(values) == 0 {
-		return ""
-	}
-	return strings.TrimSpace(values[0])
+	return firstStringValue(headers, strings.ToLower(strings.TrimSpace(name)))
 }
 
 func copyHeaderIfPresent(dst map[string][]string, src http.Header, name string) {

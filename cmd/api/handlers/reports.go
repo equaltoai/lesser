@@ -20,33 +20,19 @@ import (
 
 // HandleCreateReportLift handles POST /api/v1/reports
 func (h *Handler) HandleCreateReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	var username string
-	var claims *auth.Claims
-
-	// Extract token from Authorization header
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
-		return h.respondUnauthorized(ctx)
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return h.respondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return h.respondUnauthorized(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return h.respondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return h.respondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check write scope
 	if !claims.HasScope(auth.ScopeWrite) {
 		return h.respondInsufficientScope(ctx)
 	}
-
-	username = claims.Username
 
 	// Parse request body
 	req, err := h.parseReportRequest(ctx)
@@ -64,7 +50,7 @@ func (h *Handler) HandleCreateReportLift(ctx *apptheory.Context) (*apptheory.Res
 	// Create the report
 	report := &storage.Report{
 		ID:              uuid.New().String(),
-		ReporterID:      username,
+		ReporterID:      claims.Username,
 		TargetAccountID: req.AccountID,
 		StatusIDs:       req.StatusIDs,
 		Comment:         req.Comment,
@@ -80,7 +66,7 @@ func (h *Handler) HandleCreateReportLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	// Handle moderation event creation
-	h.handleModerationEvent(ctx.Context(), report, username)
+	h.handleModerationEvent(ctx.Context(), report, claims.Username)
 
 	// Convert to Mastodon API format
 	response := &models.Report{

@@ -93,16 +93,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *apptheory.Context) (*apptheory.R
 	}
 
 	// Get authenticated user (if any) using helper method
-	username := ""
-	authHeader := h.getAuthHeader(ctx)
-	if authHeader != "" {
-		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-				username = claims.Username
-			}
-		}
-	}
+	username := h.getOptionalAuthenticatedUser(ctx)
 
 	// Parse query parameters using improved helper
 	params, err := h.parseTagTimelineParams(ctx, hashtag)

@@ -19,13 +19,7 @@ import (
 
 // requireAdminLift validates admin authentication for Lift handlers
 func (h *Handler) requireAdminLift(ctx *apptheory.Context) (*auth.Claims, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, errors.New("missing authentication")
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return nil, err
 	}

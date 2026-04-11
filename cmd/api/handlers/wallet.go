@@ -395,6 +395,10 @@ func (h *Handler) HandleGetWalletsLift(ctx *apptheory.Context) (*apptheory.Respo
 
 // getAuthenticatedUserLift gets the authenticated user from the context
 func (h *Handler) getAuthenticatedUserLift(ctx *apptheory.Context) string {
+	if username := auth.UsernameFromAppTheoryContext(ctx); username != "" {
+		return username
+	}
+
 	// Get bearer token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
