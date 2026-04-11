@@ -112,6 +112,39 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	return activities[0].Activity, nil
 }
 
+// DeleteActivity removes an activity by ID.
+func (r *ActivityRepository) DeleteActivity(ctx context.Context, id string) error {
+	var activities []*models.Activity
+
+	err := r.db.WithContext(ctx).Model(&models.Activity{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", "ACTIVITYID#"+id).
+		Limit(1).
+		All(&activities)
+	if err != nil {
+		r.logger.Error("failed to find activity for delete",
+			zap.String("activity_id", id),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityActivity, id)
+	}
+
+	if len(activities) == 0 || activities[0] == nil {
+		return nil
+	}
+
+	if err := r.Delete(ctx, activities[0].PK, activities[0].SK); err != nil {
+		r.logger.Error("failed to delete activity",
+			zap.String("activity_id", id),
+			zap.String("pk", activities[0].PK),
+			zap.String("sk", activities[0].SK),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityActivity, id)
+	}
+
+	r.logger.Info("activity deleted successfully", zap.String("activity_id", id))
+	return nil
+}
+
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation
 const (
 	activityDefaultLimit = 20

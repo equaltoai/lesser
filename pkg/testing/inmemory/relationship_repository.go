@@ -83,7 +83,14 @@ func (r *RelationshipRepository) CreateRelationship(_ context.Context, followerU
 	}
 
 	// Check if relationship already exists
-	if _, exists := r.relationships[followerUsername][followingUsername]; exists {
+	if existing, exists := r.relationships[followerUsername][followingUsername]; exists {
+		if existing.State == models.RelationshipRejected {
+			existing.State = models.RelationshipPending
+			if activityID != "" {
+				existing.ActivityID = activityID
+			}
+			existing.UpdatedAt = time.Now()
+		}
 		return nil // Already exists, no error
 	}
 

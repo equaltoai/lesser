@@ -2,7 +2,6 @@ package relationships
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +52,8 @@ func TestService_Follow_AllowsRemoteFolloweeByHandle(t *testing.T) {
 	require.False(t, result.Relationship.Following)
 	require.True(t, result.Relationship.Requested)
 	require.NotNil(t, result.Activity)
-	require.True(t, strings.Contains(result.Activity.ID, url.PathEscape("bob@remote.social")))
+	require.True(t, strings.HasPrefix(result.Activity.ID, "https://example.com/activities/"))
+	require.Equal(t, result.Activity.ID, result.RequestID)
 
 	record, err := relationshipRepo.GetRelationship(ctx, "alice", "bob@remote.social")
 	require.NoError(t, err)
@@ -108,6 +108,8 @@ func TestService_Follow_AllowsRemoteFolloweeByActorURL(t *testing.T) {
 	require.NotNil(t, result.Relationship)
 	require.True(t, result.Relationship.Requested)
 	require.NotNil(t, result.Activity)
+	require.True(t, strings.HasPrefix(result.Activity.ID, "https://example.com/activities/"))
+	require.Equal(t, result.Activity.ID, result.RequestID)
 
 	record, err := relationshipRepo.GetRelationship(ctx, "alice", "bob@remote.social")
 	require.NoError(t, err)
@@ -161,6 +163,7 @@ func TestService_Follow_RemotePendingRequestIsIdempotent(t *testing.T) {
 	require.False(t, first.IsFollowing)
 	require.True(t, first.Relationship.Requested)
 	require.NotEmpty(t, first.RequestID)
+	require.True(t, strings.HasPrefix(first.RequestID, "https://example.com/activities/"))
 
 	second, err := service.Follow(ctx, &FollowCommand{
 		FollowerID:  "alice",
@@ -171,6 +174,7 @@ func TestService_Follow_RemotePendingRequestIsIdempotent(t *testing.T) {
 	require.False(t, second.IsFollowing)
 	require.True(t, second.Relationship.Requested)
 	require.Equal(t, first.RequestID, second.RequestID)
+	require.Equal(t, second.RequestID, second.Activity.ID)
 }
 
 func TestService_BuildAccountFromActor_PreservesRemoteIdentity(t *testing.T) {

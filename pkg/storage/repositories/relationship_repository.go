@@ -123,12 +123,7 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 	if err := r.ValidateAndCreate(ctx, relationship); err != nil {
 		// Check if it's a duplicate key error
 		if errors.IsConditionFailed(err) {
-			r.logger.Debug("follow relationship already exists",
-				zap.String("follower", followerUsername),
-				zap.String("following", followingUsername),
-				zap.Bool("validation_enabled", r.HasValidation()),
-				zap.Bool("events_enabled", r.HasEvents()))
-			return nil
+			return r.handleDuplicateRelationshipCreate(ctx, followerUsername, followingUsername, activityID)
 		}
 		r.logger.Error("failed to validate or create follow relationship",
 			zap.String("follower", followerUsername),
@@ -146,6 +141,50 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 		zap.Bool("validation_enabled", r.HasValidation()),
 		zap.Bool("events_enabled", r.HasEvents()),
 		zap.Bool("caching_enabled", r.HasCaching()))
+
+	return nil
+}
+
+func (r *RelationshipRepository) handleDuplicateRelationshipCreate(ctx context.Context, followerUsername, followingUsername, activityID string) error {
+	existing, err := r.getRelationshipRecord(ctx, followerUsername, followingUsername)
+	if err != nil {
+		r.logger.Error("failed to load existing follow relationship after duplicate create",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername),
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+		return ErrorHandler.HandleQueryError(err, EntityFollow, "duplicate check")
+	}
+
+	if existing.State != models.RelationshipRejected {
+		r.logger.Debug("follow relationship already exists",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername),
+			zap.String("state", existing.State),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()))
+		return nil
+	}
+
+	existing.State = models.RelationshipPending
+	if trimmedActivityID := strings.TrimSpace(activityID); trimmedActivityID != "" {
+		existing.ActivityID = trimmedActivityID
+	}
+	existing.UpdatedAt = time.Now()
+
+	if err := r.Update(ctx, existing); err != nil {
+		r.logger.Error("failed to reopen rejected follow relationship",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername),
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityFollow, "reopen")
+	}
+
+	r.logger.Info("reopened rejected follow relationship",
+		zap.String("follower", followerUsername),
+		zap.String("following", followingUsername),
+		zap.String("activity_id", existing.ActivityID))
 
 	return nil
 }

@@ -72,7 +72,19 @@ func TestRelationshipRepository_additional_zero_percent_methods(t *testing.T) {
 	mockQuery4 := new(mocks.MockQuery)
 	mockDB4.On("WithContext", mock.Anything).Return(mockDB4)
 	mockDB4.On("Model", mock.Anything).Return(mockQuery4)
+	mockQuery4.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery4).Maybe()
 	mockQuery4.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
+	mockQuery4.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.RelationshipRecord)
+		m.PK = "FOLLOW#alice"
+		m.SK = "FOLLOWING#bob"
+		m.GSI1PK = "FOLLOW#bob"
+		m.GSI1SK = "FOLLOWER#alice"
+		m.ActivityID = "act-existing"
+		m.State = models.RelationshipPending
+		m.CreatedAt = time.Now()
+		m.UpdatedAt = time.Now()
+	}).Once()
 	repo4 := NewRelationshipRepository(mockDB4, "test-table", logger)
 	repo4.EnhancedBaseRepository.SetValidationService(nil)
 	repo4.EnhancedBaseRepository.SetPermissionService(nil)
@@ -152,4 +164,43 @@ func TestRelationshipRepository_additional_zero_percent_methods(t *testing.T) {
 	repo9 := NewRelationshipRepository(mockDB9, "test-table", logger)
 	assert.Error(t, repo9.BlockUser(ctx, "", "bob"))
 	assert.NoError(t, repo9.BlockUser(ctx, "alice", "bob"))
+}
+
+func TestRelationshipRepository_CreateRelationship_ReopensRejectedDuplicate(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var lastModel *models.RelationshipRecord
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
+		if model, ok := args.Get(0).(*models.RelationshipRecord); ok {
+			lastModel = model
+		}
+	}).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
+	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		model := args.Get(0).(*models.RelationshipRecord)
+		*model = *models.NewRelationshipRecord("alice", "bob", "act-old")
+		model.State = models.RelationshipRejected
+	}).Once()
+	mockQuery.On("Update", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		model := lastModel
+		if assert.NotNil(t, model) {
+			assert.Equal(t, "FOLLOW#alice", model.PK)
+			assert.Equal(t, "FOLLOWING#bob", model.SK)
+			assert.Equal(t, models.RelationshipPending, model.State)
+			assert.Equal(t, "act-new", model.ActivityID)
+		}
+	}).Once()
+
+	repo := NewRelationshipRepository(mockDB, "test-table", logger)
+	repo.EnhancedBaseRepository.SetValidationService(nil)
+	repo.EnhancedBaseRepository.SetPermissionService(nil)
+	repo.EnhancedBaseRepository.SetCachingService(nil)
+	repo.EnhancedBaseRepository.SetEventService(nil)
+
+	assert.NoError(t, repo.CreateRelationship(ctx, "alice", "bob", "act-new"))
 }

@@ -1,0 +1,247 @@
+package routing
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	"github.com/stretchr/testify/require"
+)
+
+type rejectFollowErrorRepo struct {
+	*inmemory.RelationshipRepository
+	err error
+}
+
+func (r *rejectFollowErrorRepo) RejectFollowRequest(context.Context, string, string) error {
+	return r.err
+}
+
+func newFollowResponseReconciliationEnv(t *testing.T) *inboxTestEnv {
+	t.Helper()
+
+	env := newInboxTestEnv(t)
+	env.handler.activityRepository = inmemory.NewActivityRepository()
+	env.handler.relationshipRepository = inmemory.NewRelationshipRepository()
+
+	return env
+}
+
+func seedPendingLocalOutboundFollow(t *testing.T, env *inboxTestEnv, relationshipActivityID, storedActivityID string) {
+	t.Helper()
+
+	ctx := context.Background()
+	followerHandle := env.local.PreferredUsername
+	followeeHandle := env.handler.extractHandleFromActorID(env.remoteActorID)
+	require.NoError(t, env.handler.relationshipRepository.CreateRelationship(ctx, followerHandle, followeeHandle, relationshipActivityID))
+
+	if storedActivityID == "" {
+		return
+	}
+
+	require.NoError(t, env.handler.activityRepository.CreateActivity(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      storedActivityID,
+		},
+		Actor:  env.local.ID,
+		Object: env.remoteActorID,
+	}))
+}
+
+func relationshipState(t *testing.T, env *inboxTestEnv) string {
+	t.Helper()
+
+	record, err := env.handler.relationshipRepository.GetRelationship(
+		context.Background(),
+		env.local.PreferredUsername,
+		env.handler.extractHandleFromActorID(env.remoteActorID),
+	)
+	require.NoError(t, err)
+	return record.State
+}
+
+func TestInboxHandler_ProcessAcceptActivity_ReconcilesStoredOriginalFollow(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	followID := env.cfg.BaseURL() + "/activities/follow-stored-accept"
+	seedPendingLocalOutboundFollow(t, env, followID, followID)
+
+	accept := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.AcceptType,
+			ID:      env.cfg.BaseURL() + "/activities/accept-stored",
+		},
+		Actor:  env.remoteActorID,
+		Object: followID,
+	}
+
+	require.NoError(t, env.handler.processAcceptActivity(context.Background(), accept, env.local))
+	require.Equal(t, models.RelationshipAccepted, relationshipState(t, env))
+}
+
+func TestInboxHandler_ProcessAcceptActivity_FallbackReconcilesLegacyBareActivityID(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	followSuffix := "follow-legacy-accept"
+	seedPendingLocalOutboundFollow(t, env, followSuffix, "")
+
+	accept := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.AcceptType,
+			ID:      env.cfg.BaseURL() + "/activities/accept-fallback",
+		},
+		Actor:  env.remoteActorID,
+		Object: env.cfg.BaseURL() + "/activities/" + followSuffix,
+	}
+
+	require.NoError(t, env.handler.processAcceptActivity(context.Background(), accept, env.local))
+	require.Equal(t, models.RelationshipAccepted, relationshipState(t, env))
+}
+
+func TestInboxHandler_ProcessRejectActivity_ReconcilesStoredOriginalFollow(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	followID := env.cfg.BaseURL() + "/activities/follow-stored-reject"
+	seedPendingLocalOutboundFollow(t, env, followID, followID)
+
+	reject := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.RejectType,
+			ID:      env.cfg.BaseURL() + "/activities/reject-stored",
+		},
+		Actor:  env.remoteActorID,
+		Object: followID,
+	}
+
+	require.NoError(t, env.handler.processRejectActivity(context.Background(), reject, env.local))
+	require.Equal(t, models.RelationshipRejected, relationshipState(t, env))
+}
+
+func TestInboxHandler_ProcessRejectActivity_FallbackReconcilesLegacyBareActivityID(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	followSuffix := "follow-legacy-reject"
+	seedPendingLocalOutboundFollow(t, env, followSuffix, "")
+
+	reject := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.RejectType,
+			ID:      env.cfg.BaseURL() + "/activities/reject-fallback",
+		},
+		Actor:  env.remoteActorID,
+		Object: env.cfg.BaseURL() + "/activities/" + followSuffix,
+	}
+
+	require.NoError(t, env.handler.processRejectActivity(context.Background(), reject, env.local))
+	require.Equal(t, models.RelationshipRejected, relationshipState(t, env))
+}
+
+func TestInboxHandler_ProcessFollowResponses_DoNotMutateOnMismatchedObjectID(t *testing.T) {
+	for _, responseType := range []string{activitypub.AcceptType, activitypub.RejectType} {
+		t.Run(responseType, func(t *testing.T) {
+			env := newFollowResponseReconciliationEnv(t)
+			expectedID := env.cfg.BaseURL() + "/activities/follow-match"
+			seedPendingLocalOutboundFollow(t, env, expectedID, "")
+
+			response := &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					Type:    responseType,
+					ID:      fmt.Sprintf("%s/activities/%s-response", env.cfg.BaseURL(), responseType),
+				},
+				Actor:  env.remoteActorID,
+				Object: env.cfg.BaseURL() + "/activities/follow-mismatch",
+			}
+
+			if responseType == activitypub.AcceptType {
+				require.NoError(t, env.handler.processAcceptActivity(context.Background(), response, env.local))
+			} else {
+				require.NoError(t, env.handler.processRejectActivity(context.Background(), response, env.local))
+			}
+
+			require.Equal(t, models.RelationshipPending, relationshipState(t, env))
+		})
+	}
+}
+
+func TestInboxHandler_RejectFollowRelationship_GuardsAndErrors(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+
+	require.NoError(t, env.handler.rejectFollowRelationship(context.Background(), "", "bob@remote.social"))
+	require.NoError(t, env.handler.rejectFollowRelationship(context.Background(), "alice", ""))
+
+	rejectErr := errors.New("reject boom")
+	env.handler.relationshipRepository = &rejectFollowErrorRepo{
+		RelationshipRepository: inmemory.NewRelationshipRepository(),
+		err:                    rejectErr,
+	}
+	require.ErrorIs(t, env.handler.rejectFollowRelationship(context.Background(), "alice", "bob@remote.social"), rejectErr)
+}
+
+func TestInboxHandler_ReconcileFollowResponseFromRelationship_EarlyExitBranches(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	objectID := env.cfg.BaseURL() + "/activities/follow-fallback"
+
+	reconciled, err := env.handler.reconcileFollowResponseFromRelationship(context.Background(), activitypub.AcceptType, objectID, nil, "bob@remote.social")
+	require.NoError(t, err)
+	require.False(t, reconciled)
+
+	reconciled, err = env.handler.reconcileFollowResponseFromRelationship(context.Background(), activitypub.AcceptType, "https://remote.social/activities/follow-fallback", env.local, "bob@remote.social")
+	require.NoError(t, err)
+	require.False(t, reconciled)
+
+	anonymousLocal := &activitypub.Actor{}
+	reconciled, err = env.handler.reconcileFollowResponseFromRelationship(context.Background(), activitypub.AcceptType, objectID, anonymousLocal, "bob@remote.social")
+	require.NoError(t, err)
+	require.False(t, reconciled)
+}
+
+func TestInboxHandler_LocalActivityIDSuffix_InvalidShapes(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+
+	suffix, ok := env.handler.localActivityIDSuffix("")
+	require.False(t, ok)
+	require.Empty(t, suffix)
+
+	suffix, ok = env.handler.localActivityIDSuffix("https://remote.social/activities/follow-1")
+	require.False(t, ok)
+	require.Empty(t, suffix)
+
+	suffix, ok = env.handler.localActivityIDSuffix(env.cfg.BaseURL() + "/activities/follow/nested")
+	require.False(t, ok)
+	require.Empty(t, suffix)
+}
+
+func TestInboxHandler_ProcessRejectFollow_PropagatesRelationshipError(t *testing.T) {
+	env := newFollowResponseReconciliationEnv(t)
+	rejectErr := errors.New("reject follow failed")
+	env.handler.relationshipRepository = &rejectFollowErrorRepo{
+		RelationshipRepository: inmemory.NewRelationshipRepository(),
+		err:                    rejectErr,
+	}
+
+	rejectActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.RejectType,
+			ID:      env.cfg.BaseURL() + "/activities/reject-error",
+		},
+		Actor: env.remoteActorID,
+	}
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      env.cfg.BaseURL() + "/activities/follow-error",
+		},
+		Actor: env.local.ID,
+	}
+
+	require.ErrorIs(t, env.handler.processRejectFollow(context.Background(), rejectActivity, env.local, followActivity), rejectErr)
+}
