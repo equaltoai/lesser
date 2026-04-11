@@ -260,16 +260,6 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *apptheory.Context) (str
 	return h.authenticateTagRequest(ctx)
 }
 
-// getAuthorizationHeader extracts Authorization header with case variations
-func (h *Handler) getAuthorizationHeader(ctx *apptheory.Context) string {
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	return authHeader
-}
-
 // paginationParams holds pagination parameters
 type paginationParams struct {
 	limit  int
