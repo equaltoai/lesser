@@ -114,6 +114,8 @@ func TestGraphQLAuthMiddleware_Behavior_Round14(t *testing.T) {
 		require.Equal(t, true, ctx.Get("is_authenticated"))
 		require.NotNil(t, ctx.Get("claims"))
 		require.Equal(t, "alice", ctx.Get("username"))
+		require.NotNil(t, ctx.AuthPrincipal)
+		require.Equal(t, "alice", ctx.AuthIdentity)
 		require.Equal(t, 1, nextCalled)
 	})
 }

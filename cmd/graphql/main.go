@@ -110,22 +110,6 @@ var anonymousGraphQLPublicQueryFields = map[string]struct{}{
 	"timeline":         {},
 }
 
-type oauthMiddlewareAdapter struct {
-	service *auth.OAuthService
-}
-
-func (a *oauthMiddlewareAdapter) ValidateAccessToken(token string) (common.Claims, error) {
-	claims, err := a.service.ValidateAccessToken(token)
-	if err != nil {
-		logger.Warn("OAuthService.ValidateAccessToken failed",
-			zap.Error(err),
-			zap.String("error_type", fmt.Sprintf("%T", err)),
-		)
-		return nil, err
-	}
-	return claims, nil
-}
-
 func init() {
 	initializeGraphQLOnStart()
 }
@@ -488,7 +472,7 @@ func graphqlWithUser(requestCtx context.Context, ctx *apptheory.Context) context
 
 	requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
 
-	if username, ok := ctx.Get("username").(string); ok && username != "" {
+	if username := auth.GetAuthenticatedUsername(ctx); username != "" {
 		requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
 	}
 
@@ -505,7 +489,7 @@ func graphqlWithClaims(requestCtx context.Context, ctx *apptheory.Context) conte
 		return requestCtx
 	}
 
-	claimsVal := ctx.Get("claims")
+	claimsVal := auth.GetJWTClaims(ctx)
 	if claimsVal == nil {
 		logger.Info("GraphQL request without authentication context",
 			zap.String("path", ctx.Request.Path))
@@ -517,25 +501,18 @@ func graphqlWithClaims(requestCtx context.Context, ctx *apptheory.Context) conte
 		zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
 	)
 
-	if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
-		logger.Info("GraphQL claims type assertion successful",
-			zap.String("username", claims.GetUsername()),
-		)
-		requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
-
-		if username := claims.GetUsername(); username != "" {
-			requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
-		} else {
-			logger.Warn("GraphQL claims have empty username",
-				zap.String("claims_type", fmt.Sprintf("%T", claims)),
-			)
-		}
-		return requestCtx
-	}
-
-	logger.Warn("GraphQL claims type assertion failed",
-		zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
+	logger.Info("GraphQL claims type assertion successful",
+		zap.String("username", claimsVal.GetUsername()),
 	)
+	requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claimsVal)
+
+	if username := claimsVal.GetUsername(); username != "" {
+		requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+	} else {
+		logger.Warn("GraphQL claims have empty username",
+			zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
+		)
+	}
 	return requestCtx
 }
 
@@ -578,23 +555,7 @@ func graphqlLogQuoteLoaderMetrics(requestCtx context.Context) {
 }
 
 func graphqlRequestAuthenticated(ctx *apptheory.Context) bool {
-	if ctx == nil {
-		return false
-	}
-
-	if authenticated, ok := ctx.Get("is_authenticated").(bool); ok {
-		return authenticated
-	}
-
-	if username, ok := ctx.Get("username").(string); ok && strings.TrimSpace(username) != "" {
-		return true
-	}
-
-	if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil && strings.TrimSpace(claims.GetUsername()) != "" {
-		return true
-	}
-
-	return false
+	return auth.IsAuthenticated(ctx)
 }
 
 func graphqlAnonymousRequestAllowed(ctx *apptheory.Context) bool {
@@ -992,50 +953,31 @@ func createCostTrackingMiddleware() apptheory.Middleware {
 	}
 }
 
-// createAuthMiddleware creates authentication middleware using unified patterns
+// createAuthMiddleware creates authentication middleware using unified patterns.
+//
+//nolint:unused // Exercised directly in tests; buildApp uses createAuthMiddlewareWithService to reuse a shared service instance.
 func createAuthMiddleware() apptheory.Middleware {
-	// Create OAuth service matching REST authentication semantics
-	if cfg.JWTSecret == "" {
-		logger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware")
+	return createAuthMiddlewareWithService(newGraphQLOAuthService(logger), logger)
+}
+
+func createAuthMiddlewareWithService(oauthService *auth.OAuthService, serviceLogger *zap.Logger) apptheory.Middleware {
+	if oauthService == nil {
+		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
 
-	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
-	oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
-	adapter := &oauthMiddlewareAdapter{service: oauthService}
+	return auth.CreatePrincipalContextBridgeFromOAuthService(oauthService, serviceLogger, "graphql")
+}
 
-	return func(next apptheory.Handler) apptheory.Handler {
-		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
-			if ctx != nil {
-				authHeader := graphqlHeaderValue(ctx, "authorization")
-				token := strings.TrimSpace(authHeader)
-				if token != "" {
-					token = strings.TrimPrefix(token, "Bearer ")
-					token = strings.TrimPrefix(token, "bearer ")
-					token = strings.TrimSpace(token)
-				}
-
-				if token == "" {
-					ctx.Set("is_authenticated", false)
-				} else {
-					claims, err := adapter.ValidateAccessToken(token)
-					if err != nil || claims == nil {
-						ctx.Set("is_authenticated", false)
-						logger.Warn("optional authentication failed - header present but validation failed",
-							zap.String("service", "graphql"),
-							zap.String("path", ctx.Request.Path),
-							zap.Bool("has_auth_header", true),
-						)
-					} else {
-						ctx.Set("claims", claims)
-						ctx.Set("username", claims.GetUsername())
-						ctx.Set("is_authenticated", true)
-					}
-				}
-			}
-
-			return next(ctx)
+func newGraphQLOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
+	if cfg == nil || cfg.JWTSecret == "" {
+		if serviceLogger != nil {
+			serviceLogger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware")
 		}
+		return nil
 	}
+
+	auditLogger := auth.NewAuditLogger(repos, serviceLogger, auth.DefaultAuditConfig())
+	return auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
 }
 
 func main() {
@@ -1047,7 +989,9 @@ func main() {
 }
 
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
+	oauthService := newGraphQLOAuthService(lambdaLogger)
+
+	options := []apptheory.Option{
 		apptheory.WithCORS(apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
@@ -1064,7 +1008,13 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 			MaxRequestBytes:  1024 * 1024,
 			MaxResponseBytes: 0,
 		}),
-	)
+	}
+	if oauthService != nil {
+		options = append(options, apptheory.WithAuthPrincipalHook(
+			auth.NewAppTheoryPrincipalHookFromOAuthService(oauthService, lambdaLogger, "graphql"),
+		))
+	}
+	app := apptheory.New(options...)
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(graphqlPanicRecovery(lambdaLogger))
@@ -1086,7 +1036,7 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	app.Use(graphqlSecurityHeaders())
 
 	// Authentication middleware.
-	app.Use(createAuthMiddleware())
+	app.Use(createAuthMiddlewareWithService(oauthService, lambdaLogger))
 
 	// Cost tracking middleware.
 	app.Use(createCostTrackingMiddleware())

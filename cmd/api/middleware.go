@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -25,7 +26,7 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 
 			// Extract user and tenant context for correlation
 			userID := ""
-			if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil {
+			if claims := auth.GetJWTClaims(ctx); claims != nil {
 				userID = claims.GetUsername()
 			}
 			tenantID := ctx.TenantID
@@ -339,7 +340,7 @@ func createCostTrackingMiddleware(logger *zap.Logger) apptheory.Middleware {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Initialize unified cost tracking system
 			userID := ""
-			if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil {
+			if claims := auth.GetJWTClaims(ctx); claims != nil {
 				userID = claims.GetUsername()
 			}
 			unifiedTracker := cost.NewUnifiedTracker(nil, logger, userID, ctx.RequestID)
@@ -438,8 +439,8 @@ func createRBACMiddleware(requiredPermission string, repos core.RepositoryStorag
 // checkUserPermissions checks if the current user has the required permission level
 func checkUserPermissions(ctx *apptheory.Context, requiredPermission string, repos core.RepositoryStorage) error {
 	// Get user claims from context (set by auth middleware)
-	claims, ok := ctx.Get("claims").(common.Claims)
-	if !ok || claims == nil {
+	claims := auth.GetJWTClaims(ctx)
+	if claims == nil {
 		return errors.New(common.ErrorUnauthorizedNoValidClaims)
 	}
 

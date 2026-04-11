@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory"
@@ -266,9 +267,9 @@ func rateLimitKey(ctx *apptheory.Context) apptheoryLimited.RateLimitKey {
 	key.Operation = ctx.Request.Method
 
 	// Priority: user > tenant > ip.
-	if username, ok := ctx.Get("username").(string); ok && strings.TrimSpace(username) != "" {
-		key.Identifier = "user:" + strings.TrimSpace(username)
-		key.Metadata["user_id"] = strings.TrimSpace(username)
+	if username := strings.TrimSpace(auth.GetAuthenticatedUsername(ctx)); username != "" {
+		key.Identifier = "user:" + username
+		key.Metadata["user_id"] = username
 		return key
 	}
 
