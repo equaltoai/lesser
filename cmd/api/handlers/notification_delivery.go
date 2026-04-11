@@ -37,10 +37,7 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
 
-	authHeader := headerValue(ctx, "authorization")
-	if authHeader == "" {
-		authHeader = headerValue(ctx, "Authorization")
-	}
+	authHeader := ctx.Header("Authorization")
 
 	token, err := common.ExtractBearerToken(authHeader)
 	if err != nil {
@@ -50,9 +47,12 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondForbidden(ctx, "invalid instance api key")
 	}
 
-	var req apiModels.NotificationDeliveryRequest
-	if resp, err := common.ParseRequestStrictWithValidation(ctx, &req); resp != nil || err != nil {
-		return resp, err
+	req, err := apptheory.BindRequest[apiModels.NotificationDeliveryRequest](ctx, apptheory.BindConfig[apiModels.NotificationDeliveryRequest]{
+		Body:       true,
+		StrictJSON: true,
+	})
+	if err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	delivery, err := normalizeCommNotificationDeliveryRequest(&req)
@@ -118,7 +118,7 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	idempotent := createResult == nil
 	h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, true, "", idempotent)
 
-	return noContent(), nil
+	return apptheory.NoContent(), nil
 }
 
 func commNotificationData(delivery *commNotificationDelivery) map[string]interface{} {

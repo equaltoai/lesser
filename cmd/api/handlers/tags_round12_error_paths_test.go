@@ -23,10 +23,10 @@ func TestTags_Round12_ErrorPathsAndHeaderFallbacks(t *testing.T) {
 			require.Equal(t, "Bearer token", h.getAuthorizationHeader(ctx))
 		})
 
-		t.Run("mixed case header key", func(t *testing.T) {
+		t.Run("canonicalized header key", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/tags", nil, nil, nil)
 			require.NoError(t, err)
-			ctx.Request.Headers = map[string][]string{"AUTHORIZATION": []string{"Bearer token"}}
+			ctx.Request.Headers = map[string][]string{"authorization": {"Bearer token"}}
 			require.Equal(t, "Bearer token", h.getAuthorizationHeader(ctx))
 		})
 	})

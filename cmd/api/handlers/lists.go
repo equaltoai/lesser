@@ -56,8 +56,10 @@ func (h *Handler) HandleGetListsLift(ctx *apptheory.Context) (*apptheory.Respons
 
 // HandleCreateListLift handles POST /api/v1/lists
 func (h *Handler) HandleCreateListLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	var req models.CreateListRequest
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+	req, err := apptheory.BindRequest[models.CreateListRequest](ctx, apptheory.BindConfig[models.CreateListRequest]{
+		Body: true,
+	})
+	if err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
@@ -136,8 +138,10 @@ func (h *Handler) HandleUpdateListLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	var req models.UpdateListRequest
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+	req, err := apptheory.BindRequest[models.UpdateListRequest](ctx, apptheory.BindConfig[models.UpdateListRequest]{
+		Body: true,
+	})
+	if err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 

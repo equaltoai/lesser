@@ -52,9 +52,10 @@ func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondForbidden(ctx, "insufficient reputation to create notes")
 	}
 
-	// Parse request with fallback pattern
-	var req apimodels.CreateCommunityNoteRequest
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+	req, err := apptheory.BindRequest[apimodels.CreateCommunityNoteRequest](ctx, apptheory.BindConfig[apimodels.CreateCommunityNoteRequest]{
+		Body: true,
+	})
+	if err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
@@ -115,12 +116,12 @@ func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Respo
 		},
 	}
 
-	resp, err = createdJSON(response)
+	resp, err = apptheory.CreatedJSON(response)
 	if err != nil {
 		return nil, err
 	}
-	setHeader(resp, "X-Cost-Micros", "2000")
-	setHeader(resp, "X-Cost-Details", "DynamoDB: 2 writes")
+	resp.SetHeader("X-Cost-Micros", "2000")
+	resp.SetHeader("X-Cost-Details", "DynamoDB: 2 writes")
 	return resp, nil
 }
 
