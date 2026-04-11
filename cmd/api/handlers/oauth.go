@@ -496,28 +496,7 @@ func (h *Handler) oauthErrorLift(ctx *apptheory.Context, errorCode, errorDescrip
 
 // getUserFromSessionLift extracts the username from the session using Lift patterns
 func (h *Handler) getUserFromSessionLift(ctx *apptheory.Context) string {
-	// Check for authentication context from unified middleware
-	if username := ctx.Get("username"); username != nil {
-		if usernameStr, ok := username.(string); ok && usernameStr != "" {
-			return usernameStr
-		}
-	}
-
-	// Check for Bearer token in Authorization header (for cross-subdomain auth)
-	authHeader := headerValue(ctx, "Authorization")
-	if authHeader == "" {
-		authHeader = headerValue(ctx, "authorization")
-	}
-	if authHeader != "" {
-		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-				return claims.Username
-			}
-		}
-	}
-
-	return ""
+	return h.getOptionalAuthenticatedUser(ctx)
 }
 
 // redirectToConsentUI redirects to the hosted OAuth consent UI

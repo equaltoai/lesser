@@ -214,7 +214,40 @@ func (h *Handler) authenticatedClaimsLift(ctx *apptheory.Context) (*auth.Claims,
 	return claims, nil
 }
 
+func (h *Handler) optionalAuthenticatedClaimsLift(ctx *apptheory.Context) *auth.Claims {
+	if claims := auth.ClaimsFromAppTheoryContext(ctx); claims != nil {
+		if err := validateClaimsScopes(claims); err == nil {
+			return claims
+		}
+		return nil
+	}
+
+	token := h.getBearerTokenLift(ctx)
+	if strings.TrimSpace(token) == "" {
+		return nil
+	}
+
+	claims, err := h.authenticatedClaimsLift(ctx)
+	if err != nil {
+		h.logger.Debug("optional authentication failed, continuing anonymously", zap.Error(err))
+		return nil
+	}
+
+	return claims
+}
+
 func (h *Handler) authenticatedClaimsWithResponder(ctx *apptheory.Context, missingResponder, invalidResponder liftAuthResponder) (*auth.Claims, *apptheory.Response, error) {
+	if claims := auth.ClaimsFromAppTheoryContext(ctx); claims != nil {
+		if err := validateClaimsScopes(claims); err == nil {
+			return claims, nil, nil
+		}
+		if invalidResponder == nil {
+			return nil, nil, auth.ErrInvalidToken
+		}
+		resp, respErr := invalidResponder(ctx)
+		return nil, resp, respErr
+	}
+
 	if err := common.ValidateRequiredParam("token", h.getBearerTokenLift(ctx)); err != nil {
 		if missingResponder == nil {
 			return nil, nil, apperrors.Unauthorized("authentication required")
@@ -300,18 +333,9 @@ func (h *Handler) getOptionalAuthenticatedUser(ctx *apptheory.Context) string {
 		return username
 	}
 
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return ""
+	if claims := h.optionalAuthenticatedClaimsLift(ctx); claims != nil {
+		return claims.Username
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		// Token validation failed but we continue for public content
-		h.logger.Debug("Token validation failed, continuing for public content", zap.Error(err))
-		return ""
-	}
-
-	return claims.Username
+	return ""
 }
