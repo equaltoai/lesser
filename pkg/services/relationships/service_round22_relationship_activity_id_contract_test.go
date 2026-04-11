@@ -361,3 +361,81 @@ func TestService_ReconcileStoredFollowActivity_RelationshipRepoFallbackBranches(
 	require.Same(t, followActivity, reconciledActivity)
 	require.Nil(t, result)
 }
+
+func TestService_LocalActivityIDHelpers_FallbackBaseURL(t *testing.T) {
+	service := NewService(nil, nil, nil, nil, nil, "")
+
+	generatedID := service.newCanonicalLocalActivityID()
+	require.True(t, strings.HasPrefix(generatedID, "https://example.invalid/activities/"))
+	require.NotEmpty(t, strings.TrimPrefix(generatedID, "https://example.invalid/activities/"))
+
+	require.Equal(t, "", service.canonicalizeLocalActivityID("   "))
+	require.Equal(t, "https://remote.social/activities/follow-1", service.canonicalizeLocalActivityID("https://remote.social/activities/follow-1"))
+	require.Equal(t, "https://example.invalid/activities/follow-1", service.canonicalizeLocalActivityID(" follow-1 "))
+}
+
+func TestService_PersistOutboundFollowActivity_RepositoryBranches(t *testing.T) {
+	ctx := context.Background()
+	followActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			ID:      "https://example.com/activities/follow-persist",
+			Type:    activitypub.FollowType,
+		},
+		Actor:  "https://example.com/users/alice",
+		Object: "https://remote.social/users/bob",
+	}
+
+	service, storageHarness := newServiceWithStorageHarness(t)
+	storageHarness.activityRepo = nil
+	require.Error(t, service.persistOutboundFollowActivity(ctx, followActivity))
+
+	storageHarness.activityRepo = inmemory.NewActivityRepository()
+	require.NoError(t, service.persistOutboundFollowActivity(ctx, followActivity))
+}
+
+func TestService_CreateRelationship_StorageErrorBranch(t *testing.T) {
+	ctx := context.Background()
+	storageRepo := testmocks.NewMockRelationshipRepository()
+	storageRepo.On("CreateRelationship", ctx, "alice", "bob", "activity").Return(errors.New("create boom")).Once()
+
+	service, storageHarness := newServiceWithStorageHarness(t)
+	storageHarness.relationshipRepo = storageRepo
+
+	err := service.createRelationship(ctx, "alice", "bob", "activity")
+	require.ErrorContains(t, err, "create boom")
+}
+
+func TestService_GetRelationship_StorageFallbackBranches(t *testing.T) {
+	ctx := context.Background()
+
+	service, storageHarness := newServiceWithStorageHarness(t)
+	storageHarness.relationshipRepo = nil
+
+	relationship, err := service.GetRelationship(ctx, "alice", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, relationship)
+	require.Equal(t, "bob", relationship.ID)
+	require.False(t, relationship.Following)
+	require.False(t, relationship.Requested)
+
+	erroringRepo := testmocks.NewMockRelationshipRepository()
+	erroringRepo.On("IsFollowing", ctx, "alice", "bob").Return(false, errors.New("following boom")).Once()
+	erroringRepo.On("IsFollowing", ctx, "bob", "alice").Return(false, errors.New("followed_by boom")).Once()
+	erroringRepo.On("IsBlocked", ctx, "alice", "bob").Return(false, errors.New("blocking boom")).Once()
+	erroringRepo.On("IsBlocked", ctx, "bob", "alice").Return(false, errors.New("blocked_by boom")).Once()
+	erroringRepo.On("HasPendingFollowRequest", ctx, "alice", "bob").Return(false, errors.New("requested boom")).Once()
+	erroringRepo.On("HasPendingFollowRequest", ctx, "bob", "alice").Return(false, errors.New("requested_by boom")).Once()
+
+	storageHarness.relationshipRepo = erroringRepo
+
+	relationship, err = service.GetRelationship(ctx, "alice", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, relationship)
+	require.False(t, relationship.Following)
+	require.False(t, relationship.FollowedBy)
+	require.False(t, relationship.Blocking)
+	require.False(t, relationship.BlockedBy)
+	require.False(t, relationship.Requested)
+	require.False(t, relationship.RequestedBy)
+}
