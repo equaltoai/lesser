@@ -98,16 +98,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *apptheory.Context) (*apptheory
 	}
 
 	// Determine viewer context (used for both access control and shaping).
-	viewerUsername := ""
-	authHeader := h.extractHistoryAuthHeader(ctx)
-	if strings.TrimSpace(authHeader) != "" {
-		if token, err := auth.ExtractBearerToken(authHeader); err == nil && strings.TrimSpace(token) != "" {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
-				viewerUsername = claims.Username
-			}
-		}
-	}
+	viewerUsername := h.getOptionalAuthenticatedUser(ctx)
 
 	// If public history is not allowed, require authentication.
 	if !h.cfg.AllowPublicStatusHistory && strings.TrimSpace(viewerUsername) == "" {
@@ -160,15 +151,13 @@ func (h *Handler) performOptionalHistoryAuth(ctx *apptheory.Context, _ string) {
 	// Optional authentication
 	authHeader := h.extractHistoryAuthHeader(ctx)
 	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			_, _ = oauthSvc.ValidateAccessToken(token)
-		}
+		_ = h.getOptionalAuthenticatedUser(ctx)
 	}
 }
 
 // extractHistoryAuthHeader extracts the authorization header
+//
+//nolint:unused // Retained for targeted tests and future history auth policy hooks.
 func (h *Handler) extractHistoryAuthHeader(ctx *apptheory.Context) string {
 	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {

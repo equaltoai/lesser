@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -22,22 +21,12 @@ func (h *Handler) HandleGetReputationLift(ctx *apptheory.Context) (*apptheory.Re
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	_, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
+	if _, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	); authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Normalize actor ID
@@ -101,31 +90,17 @@ func (h *Handler) HandleGetReputationLift(ctx *apptheory.Context) (*apptheory.Re
 
 // HandleExportReputationLift handles POST /api/v1/reputation/export
 func (h *Handler) HandleExportReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	var username string
-	var claims *auth.Claims
-
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	username = claims.Username
 
 	// Get the actor ID for the authenticated user
-	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
+	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
 
 	// Initialize reputation service
 	repService, err := h.getReputationService()
@@ -151,22 +126,12 @@ func (h *Handler) HandleExportReputationLift(ctx *apptheory.Context) (*apptheory
 
 // HandleImportReputationLift handles POST /api/v1/reputation/import
 func (h *Handler) HandleImportReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	_, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
+	if _, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	); authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Parse request body
@@ -194,28 +159,14 @@ func (h *Handler) HandleImportReputationLift(ctx *apptheory.Context) (*apptheory
 
 // HandleCreateVouchLift handles POST /api/v1/vouches
 func (h *Handler) HandleCreateVouchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	var username string
-	var claims *auth.Claims
-
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	username = claims.Username
 
 	// Parse request body
 	var vouchReq apimodels.CreateVouchRequest
@@ -232,7 +183,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *apptheory.Context) (*apptheory.Resp
 	}
 
 	// Get the actor ID for the authenticated user
-	fromActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
+	fromActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
 
 	// Initialize reputation service
 	repService, err := h.getReputationService()
@@ -279,22 +230,12 @@ func (h *Handler) HandleGetVouchesLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	_, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
+	if _, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	); authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Normalize actor ID
@@ -352,31 +293,17 @@ func (h *Handler) HandleRevokeVouchLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondBadRequest(ctx, "missing vouch_id parameter")
 	}
 
-	var username string
-	var claims *auth.Claims
-
-	// Authentication required - extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err = oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	username = claims.Username
 
 	// Get the actor ID for the authenticated user
-	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
+	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
 
 	// Initialize reputation service
 	repService, err := h.getReputationService()

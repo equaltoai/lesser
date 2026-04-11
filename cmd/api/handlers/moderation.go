@@ -49,15 +49,15 @@ func parseSeverity(severity string) int {
 
 // HandleModerationFlagLift handles POST /api/v1/moderation/flag
 func (h *Handler) HandleModerationFlagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Parse request
@@ -150,15 +150,15 @@ func (h *Handler) HandleModerationFlagLift(ctx *apptheory.Context) (*apptheory.R
 
 // HandleModerationQueueLift handles GET /api/v1/moderation/queue
 func (h *Handler) HandleModerationQueueLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check if user is moderator or admin
@@ -216,15 +216,15 @@ func (h *Handler) HandleModerationQueueLift(ctx *apptheory.Context) (*apptheory.
 
 // HandleModerationReviewLift handles POST /api/v1/moderation/review
 func (h *Handler) HandleModerationReviewLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check if user is moderator or admin
@@ -298,16 +298,15 @@ func (h *Handler) HandleModerationReviewLift(ctx *apptheory.Context) (*apptheory
 
 // HandleModerationHistoryLift handles GET /api/v1/moderation/history/:object_id
 func (h *Handler) HandleModerationHistoryLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check if user is moderator or admin
@@ -360,16 +359,15 @@ func (h *Handler) HandleModerationHistoryLift(ctx *apptheory.Context) (*apptheor
 
 // HandleGetConsensusLift handles GET /api/v1/moderation/consensus/:event_id
 func (h *Handler) HandleGetConsensusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check if user is moderator or admin
@@ -443,16 +441,15 @@ func (h *Handler) HandleGetConsensusLift(ctx *apptheory.Context) (*apptheory.Res
 
 // HandleGetTrustRelationshipsLift handles GET /api/v1/moderation/trust
 func (h *Handler) HandleGetTrustRelationshipsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Get actor
@@ -515,16 +512,15 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *apptheory.Context) (*appt
 
 // HandleUpdateTrustLift handles PUT /api/v1/moderation/trust
 func (h *Handler) HandleUpdateTrustLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Parse request
@@ -598,16 +594,15 @@ func (h *Handler) HandleUpdateTrustLift(ctx *apptheory.Context) (*apptheory.Resp
 
 // HandleGetTrustScoreLift handles GET /api/v1/moderation/trust/:actor_id/score
 func (h *Handler) HandleGetTrustScoreLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check if user is moderator or admin

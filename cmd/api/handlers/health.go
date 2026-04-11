@@ -14,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	lconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/version"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -53,10 +55,14 @@ type CheckResult struct {
 type HealthChecker struct {
 	logger      *zap.Logger
 	repos       core.RepositoryStorage
-	httpClient  *http.Client
+	httpClient  healthHTTPClient
 	startTime   time.Time
 	version     string
 	environment string
+}
+
+type healthHTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // NewHealthChecker creates a new health checker
@@ -64,18 +70,35 @@ func NewHealthChecker(logger *zap.Logger, repos core.RepositoryStorage) *HealthC
 	return &HealthChecker{
 		logger:      logger,
 		repos:       repos,
-		httpClient:  &http.Client{Timeout: 5 * time.Second},
+		httpClient:  httpclient.NewSecureClient(httpclient.WithTimeout(5 * time.Second)),
 		startTime:   time.Now(),
 		version:     version.GetVersion(),
 		environment: lconfig.GetEnvironment(),
 	}
 }
 
-func (h *HealthChecker) httpClientOrDefault() *http.Client {
+func (h *HealthChecker) httpClientOrDefault() healthHTTPClient {
 	if h != nil && h.httpClient != nil {
 		return h.httpClient
 	}
-	return &http.Client{Timeout: 5 * time.Second}
+	return httpclient.NewSecureClient(httpclient.WithTimeout(5 * time.Second))
+}
+
+func (h *HealthChecker) performGET(ctx context.Context, rawURL string) (*http.Response, error) {
+	parsedURL, err := ssrf.ValidateURLString(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req := (&http.Request{
+		Method: http.MethodGet,
+		URL:    parsedURL,
+		Header: make(http.Header),
+	}).WithContext(ctx)
+
+	return h.httpClientOrDefault().Do(req)
 }
 
 // HandleLivenessCheck handles GET /health/live - basic liveness check
@@ -542,10 +565,11 @@ func (h *HealthChecker) checkExternalDependencies(ctx context.Context, checks ma
 }
 
 // checkWellKnownEndpoint checks if ActivityPub well-known endpoints are accessible
-func (h *HealthChecker) checkWellKnownEndpoint(_ context.Context, domain string) CheckResult {
+func (h *HealthChecker) checkWellKnownEndpoint(ctx context.Context, domain string) CheckResult {
 	start := time.Now()
+	endpoint := fmt.Sprintf("https://%s/.well-known/nodeinfo", domain)
 
-	resp, err := h.httpClientOrDefault().Get(fmt.Sprintf("https://%s/.well-known/nodeinfo", domain))
+	resp, err := h.performGET(ctx, endpoint)
 
 	duration := time.Since(start)
 
@@ -556,7 +580,7 @@ func (h *HealthChecker) checkWellKnownEndpoint(_ context.Context, domain string)
 			Duration: duration,
 			Error:    err.Error(),
 			Details: map[string]interface{}{
-				"endpoint": fmt.Sprintf("https://%s/.well-known/nodeinfo", domain),
+				"endpoint": endpoint,
 			},
 		}
 	}
@@ -578,18 +602,19 @@ func (h *HealthChecker) checkWellKnownEndpoint(_ context.Context, domain string)
 		Message:  message,
 		Duration: duration,
 		Details: map[string]interface{}{
-			"endpoint":    fmt.Sprintf("https://%s/.well-known/nodeinfo", domain),
+			"endpoint":    endpoint,
 			"status_code": resp.StatusCode,
 		},
 	}
 }
 
 // checkFederationConnectivity checks if federation services are reachable
-func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResult {
+func (h *HealthChecker) checkFederationConnectivity(ctx context.Context) CheckResult {
 	start := time.Now()
+	const endpoint = "https://mastodon.social/.well-known/nodeinfo"
 
 	// Check if we can connect to a well-known ActivityPub instance
-	resp, err := h.httpClientOrDefault().Get("https://mastodon.social/.well-known/nodeinfo")
+	resp, err := h.performGET(ctx, endpoint)
 
 	duration := time.Since(start)
 
@@ -600,7 +625,7 @@ func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResu
 			Duration: duration,
 			Error:    err.Error(),
 			Details: map[string]interface{}{
-				"test_endpoint": "https://mastodon.social/.well-known/nodeinfo",
+				"test_endpoint": endpoint,
 				"note":          "This may indicate network connectivity issues",
 			},
 		}
@@ -623,7 +648,7 @@ func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResu
 		Message:  message,
 		Duration: duration,
 		Details: map[string]interface{}{
-			"test_endpoint": "https://mastodon.social/.well-known/nodeinfo",
+			"test_endpoint": endpoint,
 			"status_code":   resp.StatusCode,
 		},
 	}

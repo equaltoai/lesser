@@ -5,13 +5,31 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
 )
 
+func allowLocalLesserHostProxyForTests(t *testing.T) {
+	t.Helper()
+
+	prevValidate := validateLesserHostProxyURL
+	prevClient := newLesserHostProxyClient
+	validateLesserHostProxyURL = func(*url.URL) error { return nil }
+	newLesserHostProxyClient = func() lesserHostProxyHTTPClient {
+		return &http.Client{Timeout: lesserHostProxyTimeout}
+	}
+	t.Cleanup(func() {
+		validateLesserHostProxyURL = prevValidate
+		newLesserHostProxyClient = prevClient
+	})
+}
+
 func TestLesserHostTrustProxyRound20(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
 	t.Run("forwards_instance_auth_and_rewrites_attestation_url", func(t *testing.T) {
 		const (
 			instanceKey    = "instance-key-raw"
@@ -571,6 +589,8 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 }
 
 func TestLesserHostTrustProxyHelpersRound20(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
 	t.Run("looks_like_json", func(t *testing.T) {
 		require.False(t, looksLikeJSON(nil))
 		require.False(t, looksLikeJSON([]byte(" \n\t")))

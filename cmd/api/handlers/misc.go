@@ -82,15 +82,9 @@ func (h *Handler) HandleSearchLift(ctx *apptheory.Context) (*apptheory.Response,
 
 // searchViewerUsername returns the optional authenticated viewer for search requests.
 func (h *Handler) searchViewerUsername(ctx *apptheory.Context) string {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return ""
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-		h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
-		return claims.Username
+	if username := h.getOptionalAuthenticatedUser(ctx); username != "" {
+		h.logger.Debug("Authenticated search", zap.String("username", username))
+		return username
 	}
 
 	return ""

@@ -835,17 +835,13 @@ func (h *Handler) HandleSuspendAgentLift(ctx *apptheory.Context) (*apptheory.Res
 }
 
 func (h *Handler) authenticateAgentOwner(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx)
-		return nil, resp, respErr
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx)
-		return nil, resp, respErr
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return nil, resp, err
 	}
 
 	// Creating/managing local agents is an account write action; accept either broad or granular scope.

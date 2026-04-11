@@ -437,22 +437,9 @@ func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*a
 		return nil, resp, err
 	}
 
-	// Extract and validate JWT token
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		resp, err := common.RespondMissingAuth(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
 		return nil, resp, err
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		resp, respErr := common.RespondInvalidToken(ctx)
-		if respErr != nil {
-			return nil, nil, respErr
-		}
-		return nil, resp, nil
 	}
 
 	// Check admin scope

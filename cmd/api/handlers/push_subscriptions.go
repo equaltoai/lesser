@@ -13,20 +13,19 @@ import (
 
 // HandleGetPushSubscriptionLift handles GET /api/v1/push/subscription
 func (h *Handler) HandleGetPushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check push scope
-	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeRead) {
+	if !claimsHaveAnyScope(claims, "push", auth.ScopeRead) {
 		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
@@ -100,20 +99,19 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *apptheory.Context) (*appthe
 
 // HandleCreatePushSubscriptionLift handles POST /api/v1/push/subscription
 func (h *Handler) HandleCreatePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check push scope
-	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
+	if !claimsHaveAnyScope(claims, "push", auth.ScopeWrite) {
 		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
@@ -197,20 +195,19 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *apptheory.Context) (*app
 
 // HandleUpdatePushSubscriptionLift handles PUT /api/v1/push/subscription
 func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check push scope
-	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
+	if !claimsHaveAnyScope(claims, "push", auth.ScopeWrite) {
 		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
@@ -278,20 +275,19 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *apptheory.Context) (*app
 
 // HandleDeletePushSubscriptionLift handles DELETE /api/v1/push/subscription
 func (h *Handler) HandleDeletePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx, "invalid token")
+	claims, authResp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		common.RespondMissingAuth,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if authResp != nil || err != nil {
+		return authResp, err
 	}
 
 	// Check push scope
-	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
+	if !claimsHaveAnyScope(claims, "push", auth.ScopeWrite) {
 		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 

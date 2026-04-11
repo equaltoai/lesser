@@ -47,6 +47,8 @@ type Handler struct {
 	legacyTipsConfigWarnOnce        sync.Once
 }
 
+type liftAuthResponder func(*apptheory.Context) (*apptheory.Response, error)
+
 // streamingEventEmitter adapts streaming.StreamQueueService to common.EventEmitter interface
 type streamingEventEmitter struct {
 	streamQueue streaming.StreamQueueService
@@ -155,16 +157,48 @@ func (h *Handler) getBearerTokenLift(ctx *apptheory.Context) string {
 	return token
 }
 
-// authenticateWithScope handles authentication and scope validation
-func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope string) (*auth.Claims, error) {
+func validateClaimsScopes(claims *auth.Claims) error {
+	if claims == nil {
+		return apperrors.Unauthorized("authentication required")
+	}
+
+	for _, scope := range claims.Scopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if err := common.ValidateApplicationScopes(scope); err == nil {
+			continue
+		}
+		if isLegacyLiftScope(scope) {
+			continue
+		}
+		return auth.ErrInvalidToken
+	}
+
+	return nil
+}
+
+func isLegacyLiftScope(scope string) bool {
+	switch strings.TrimSpace(scope) {
+	case "moderation", "debug", "admin:write", "admin:all":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) authenticatedClaimsLift(ctx *apptheory.Context) (*auth.Claims, error) {
+	if claims := auth.ClaimsFromAppTheoryContext(ctx); claims != nil {
+		if err := validateClaimsScopes(claims); err != nil {
+			return nil, err
+		}
+		return claims, nil
+	}
+
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, apperrors.Unauthorized("authentication required")
-	}
-
-	// Validate required scope format using centralized validation
-	if err := common.ValidateApplicationScopes(requiredScope); err != nil {
-		return nil, apperrors.InternalWithCause(err, fmt.Sprintf("invalid required scope: %v", err))
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
@@ -173,10 +207,55 @@ func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope st
 		return nil, err
 	}
 
-	// Validate token scopes using centralized validation
-	tokenScopes := strings.Join(claims.Scopes, " ")
-	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
-		return nil, auth.ErrInvalidToken
+	if err := validateClaimsScopes(claims); err != nil {
+		return nil, err
+	}
+
+	return claims, nil
+}
+
+func (h *Handler) authenticatedClaimsWithResponder(ctx *apptheory.Context, missingResponder, invalidResponder liftAuthResponder) (*auth.Claims, *apptheory.Response, error) {
+	if err := common.ValidateRequiredParam("token", h.getBearerTokenLift(ctx)); err != nil {
+		if missingResponder == nil {
+			return nil, nil, apperrors.Unauthorized("authentication required")
+		}
+		resp, respErr := missingResponder(ctx)
+		return nil, resp, respErr
+	}
+
+	claims, err := h.authenticatedClaimsLift(ctx)
+	if err == nil {
+		return claims, nil, nil
+	}
+	if invalidResponder == nil {
+		return nil, nil, err
+	}
+	resp, respErr := invalidResponder(ctx)
+	return nil, resp, respErr
+}
+
+func claimsHaveAnyScope(claims *auth.Claims, scopes ...string) bool {
+	if claims == nil {
+		return false
+	}
+	for _, scope := range scopes {
+		if claims.HasScope(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// authenticateWithScope handles authentication and scope validation
+func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope string) (*auth.Claims, error) {
+	// Validate required scope format using centralized validation
+	if err := common.ValidateApplicationScopes(requiredScope); err != nil {
+		return nil, apperrors.InternalWithCause(err, fmt.Sprintf("invalid required scope: %v", err))
+	}
+
+	claims, err := h.authenticatedClaimsLift(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if !claims.HasScope(requiredScope) {
@@ -190,11 +269,6 @@ func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope st
 // This is used for Mastodon-compatible endpoints where tokens may carry either broad
 // (`write`) or narrow (`follow`, `write:follows`, etc.) scopes.
 func (h *Handler) authenticateWithAnyScope(ctx *apptheory.Context, requiredScopes ...string) (*auth.Claims, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, apperrors.Unauthorized("authentication required")
-	}
-
 	if len(requiredScopes) == 0 {
 		return nil, apperrors.Internal("no required scopes provided")
 	}
@@ -205,15 +279,9 @@ func (h *Handler) authenticateWithAnyScope(ctx *apptheory.Context, requiredScope
 		}
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	tokenScopes := strings.Join(claims.Scopes, " ")
-	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
-		return nil, auth.ErrInvalidToken
 	}
 
 	for _, scope := range requiredScopes {
@@ -228,6 +296,10 @@ func (h *Handler) authenticateWithAnyScope(ctx *apptheory.Context, requiredScope
 // getOptionalAuthenticatedUser extracts user context if authentication is provided and valid
 // Returns empty string if not authenticated or token is invalid (for public content access)
 func (h *Handler) getOptionalAuthenticatedUser(ctx *apptheory.Context) string {
+	if username := auth.UsernameFromAppTheoryContext(ctx); username != "" {
+		return username
+	}
+
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ""
