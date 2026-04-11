@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -99,21 +98,9 @@ func (h *Handler) HandleGetTagLift(ctx *apptheory.Context) (*apptheory.Response,
 		History: history,
 	}
 
-	// Check if user is following this tag (if authenticated)
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err == nil {
-				// Check if following
-				following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context(), claims.Username, tagName)
-				tag.Following = &following
-				return okJSON(tag)
-			}
-		}
+	if claims := h.optionalAuthenticatedClaimsLift(ctx); claims != nil {
+		following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context(), claims.Username, tagName)
+		tag.Following = &following
 	}
 
 	return okJSON(tag)
@@ -129,17 +116,7 @@ const (
 
 // authenticateTagRequest handles authentication for tag operations
 func (h *Handler) authenticateTagRequest(ctx *apptheory.Context) (string, error) {
-	// Extract token from Authorization header
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", err
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -280,21 +257,7 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *apptheory.Context) (*apptheory.
 
 // extractUsernameFromContextForTags extracts username from OAuth token
 func (h *Handler) extractUsernameFromContextForTags(ctx *apptheory.Context) (string, error) {
-	// Extract and validate OAuth token
-	authHeader := h.getAuthorizationHeader(ctx)
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", err
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", err
-	}
-
-	return claims.Username, nil
+	return h.authenticateTagRequest(ctx)
 }
 
 // getAuthorizationHeader extracts Authorization header with case variations
@@ -384,17 +347,7 @@ func (h *Handler) getHashtagHistory(ctx context.Context, hashtag string) []hasht
 
 // HandleGetFeaturedTagsLift retrieves the user's featured tags
 func (h *Handler) HandleGetFeaturedTagsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -429,17 +382,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *apptheory.Context) (*apptheory.
 
 // HandleCreateFeaturedTagLift features a hashtag on the user's profile
 func (h *Handler) HandleCreateFeaturedTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -515,17 +458,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *apptheory.Context) (*apptheor
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Extract token from Authorization header
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -547,17 +480,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *apptheory.Context) (*apptheor
 
 // HandleGetFeaturedTagSuggestionsLift suggests hashtags to feature based on usage
 func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	authHeader := h.getAuthorizationHeader(ctx)
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}

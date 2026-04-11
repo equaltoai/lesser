@@ -790,16 +790,7 @@ func (h *Handler) HandleGetAccountFollowingLift(ctx *apptheory.Context) (*appthe
 
 // HandleGetFamiliarFollowersLift returns accounts that the requesting user follows and who also follow the given account
 func (h *Handler) HandleGetFamiliarFollowersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	authHeader := headerValue(ctx, "Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -1137,23 +1128,8 @@ func (h *Handler) handleActivityPubCollection(ctx *apptheory.Context, collection
 func (h *Handler) returnActivityPubCollection(ctx *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
 	// Check privacy settings for followers collection
 	if collectionType == string(relationshipFollowers) && actor.ManuallyApprovesFollowers {
-		// Check if the requester is authorized to view followers
-		authHeader := headerValue(ctx, "Authorization")
-		if authHeader != "" {
-			token, err := auth.ExtractBearerToken(authHeader)
-			if err == nil {
-				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-				claims, err := oauthSvc.ValidateAccessToken(token)
-				if err != nil || claims.Username != actor.PreferredUsername {
-					// Other users cannot see private followers
-					return h.returnEmptyCollection(ctx, actor, collectionType)
-				}
-			} else {
-				// No valid authentication, return empty collection
-				return h.returnEmptyCollection(ctx, actor, collectionType)
-			}
-		} else {
-			// No authentication, return empty collection for private accounts
+		claims := h.optionalAuthenticatedClaimsLift(ctx)
+		if claims == nil || claims.Username != actor.PreferredUsername {
 			return h.returnEmptyCollection(ctx, actor, collectionType)
 		}
 	}
@@ -1240,19 +1216,8 @@ func (h *Handler) checkCollectionAccess(ctx *apptheory.Context, actor *activityp
 		return nil, nil
 	}
 
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
-		return h.returnEmptyCollection(ctx, actor, collectionType)
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return h.returnEmptyCollection(ctx, actor, collectionType)
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil || claims.Username != actor.PreferredUsername {
+	claims := h.optionalAuthenticatedClaimsLift(ctx)
+	if claims == nil || claims.Username != actor.PreferredUsername {
 		return h.returnEmptyCollection(ctx, actor, collectionType)
 	}
 
