@@ -76,10 +76,6 @@ github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.20 h1:ru+
 github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.20/go.mod h1:ihZMtPTKoX/ugQRHbui6zNdSgVYN1KY2Dgwb2d3hXlc=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21 h1:c31//R3xgIJMSC8S6hEVq+38DcvUlgFY0FM6mSI5oto=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21/go.mod h1:r6+pf23ouCB718FUxaqzZdbpYFyDtehyZcmP5KL9FkA=
-github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20 h1:2HvVAIq+YqgGotK6EkMf+KIEqTISmTYh5zLpYyeTo1Y=
-github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20/go.mod h1:V4X406Y666khGa8ghKmphma/7C0DAtEQYhkq9z4vpbk=
-github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21 h1:c31//R3xgIJMSC8S6hEVq+38DcvUlgFY0FM6mSI5oto=
-github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21/go.mod h1:r6+pf23ouCB718FUxaqzZdbpYFyDtehyZcmP5KL9FkA=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.21 h1:ZlvrNcHSFFWURB8avufQq9gFsheUgjVD9536obIknfM=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.21/go.mod h1:cv3TNhVrssKR0O/xxLJVRfd2oazSnZnkUeTf6ctUwfQ=
 github.com/aws/aws-sdk-go-v2/service/kms v1.50.3 h1:s/zDSG/a/Su9aX+v0Ld9cimUCdkr5FWPmBV8owaEbZY=
@@ -259,14 +255,6 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/supranational/blst v0.3.16 h1:bTDadT+3fK497EvLdWRQEjiGnUtzJ7jjIUMF0jqwYhE=
 github.com/supranational/blst v0.3.16/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
-github.com/theory-cloud/apptheory v0.20.0 h1:P36xPf2AnEV0j/SzCLyC39RGz1pcYtdFlegM+9akPd0=
-github.com/theory-cloud/apptheory v0.20.0/go.mod h1:JrwPhMeUgF4fDbnnEubSWqSLvXMBsMJVzDgDvQxFTY0=
-github.com/theory-cloud/apptheory v0.19.1 h1:R8PVbgTMJ5IcRxhKwBDGss0hQnnASkPdnwErp/0qoAw=
-github.com/theory-cloud/apptheory v0.19.1/go.mod h1:VMmZLk5YSHB7NWj7OL8FgrWeI6+idTJGqYjaosn5nQc=
-github.com/theory-cloud/apptheory v0.21.0 h1:Oo2TVYM3uy6TkEMX7Og42kwuu9Iy0PcJG46C/Szy+JQ=
-github.com/theory-cloud/apptheory v0.21.0/go.mod h1:JrwPhMeUgF4fDbnnEubSWqSLvXMBsMJVzDgDvQxFTY0=
-github.com/theory-cloud/tabletheory v1.5.1 h1:2AQpln+cKQ8XCawL3cRsF4lDGkBkTEzEM18Nxbcv6r8=
-github.com/theory-cloud/tabletheory v1.5.1/go.mod h1:SvW/SkYjgmUFp051IrtKmp5T9KTyHfKJIYCtSgzSLEo=
 github.com/theory-cloud/apptheory v0.22.0 h1:2lpG+/8fvUsnInJud+9fA0vSkSxdQ49WldSpQa3GGg8=
 github.com/theory-cloud/apptheory v0.22.0/go.mod h1:JrwPhMeUgF4fDbnnEubSWqSLvXMBsMJVzDgDvQxFTY0=
 github.com/theory-cloud/tabletheory v1.5.3 h1:H3fVM+BsRLduWCH45t0cGfeoQPzzleCOm2CsDFLp7XU=
