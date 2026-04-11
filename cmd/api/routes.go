@@ -37,16 +37,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/auth/wallet/list", apiHandler.HandleGetWalletsLift)
 	app.Get("/auth/device", apiHandler.HandleOAuthDevicePageLift)
 
-	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
-	optionsHandler := func(*apptheory.Context) (*apptheory.Response, error) {
-		return apptheory.JSON(200, map[string]string{"message": "OK"})
-	}
-	app.Handle("OPTIONS", "/auth/wallet/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/auth/wallet/verify", optionsHandler)
-	app.Handle("OPTIONS", "/auth/wallet/login", optionsHandler)
-	app.Handle("OPTIONS", "/auth/wallet/link", optionsHandler)
-	app.Handle("OPTIONS", "/auth/wallet/unlink/{address}", optionsHandler)
-	app.Handle("OPTIONS", "/auth/wallet/list", optionsHandler)
+	// Real CORS preflights are handled centrally by AppTheory when WithCORS is enabled.
 
 	// WebAuthn (passkey) endpoints
 	// Registration begin/finish requires auth (binds a passkey to the logged-in user).
@@ -67,13 +58,6 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/auth/webauthn/credentials", apiHandler.HandleListWebAuthnCredentialsLift)
 	app.Delete("/api/v1/auth/webauthn/credentials/{credentialId}", apiHandler.HandleDeleteWebAuthnCredentialLift)
 	app.Put("/api/v1/auth/webauthn/credentials/{credentialId}", apiHandler.HandleUpdateWebAuthnCredentialNameLift)
-
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/register/begin", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/register/finish", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/login/begin", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/login/finish", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/credentials", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/auth/webauthn/credentials/{credentialId}", optionsHandler)
 
 	// OAuth endpoints with native Lift implementation + rate limiting
 	app.Get("/oauth/authorize", ratelimit.ApplyRateLimit(
@@ -102,17 +86,6 @@ func configureRoutes(app *apptheory.App) {
 		10, time.Minute, logger))
 	app.Get("/.well-known/oauth-authorization-server", apiHandler.HandleOAuthAuthorizationServerMetadataLift)
 
-	// OPTIONS handlers for OAuth endpoints (CORS preflight)
-	app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/device/code", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/device/verify", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/device/consent", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/register", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
-	app.Handle("OPTIONS", "/oauth/revoke", optionsHandler)
-	app.Handle("OPTIONS", "/.well-known/oauth-authorization-server", optionsHandler)
-
 	// NodeInfo endpoints with native Lift implementation
 	app.Get("/.well-known/nodeinfo", apiHandler.HandleNodeInfoWellKnownLift)
 	// lesser-soul HTTPS proof
@@ -137,12 +110,6 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/setup/admin", apiHandler.HandleSetupCreateAdminLift)
 	app.Post("/setup/finalize", apiHandler.HandleSetupFinalizeLift)
 
-	app.Handle("OPTIONS", "/setup/status", optionsHandler)
-	app.Handle("OPTIONS", "/setup/bootstrap/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/setup/bootstrap/verify", optionsHandler)
-	app.Handle("OPTIONS", "/setup/admin", optionsHandler)
-	app.Handle("OPTIONS", "/setup/finalize", optionsHandler)
-
 	// Account verification/update endpoints with native Lift implementation
 	// verify_credentials is NOT rate limited (read-only)
 	app.Get("/api/v1/accounts/verify_credentials", apiHandler.HandleVerifyCredentialsLift)
@@ -154,12 +121,6 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/accounts", ratelimit.ApplyRateLimit(
 		apiHandler.HandleRegistrationLift,
 		10, time.Hour, logger))
-
-	// OPTIONS handlers for account endpoints (CORS preflight)
-	app.Handle("OPTIONS", "/api/v1/accounts", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/accounts/verify_credentials", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/accounts/update_credentials", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/apps/{id}/rotate_secret", optionsHandler)
 
 	// Agent endpoints (LLM agent support)
 	app.Get("/api/v1/agents", apiHandler.HandleListAgentsLift)
@@ -188,32 +149,6 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/agents/memory/search", apiHandler.HandleAgentMemorySearchLift)
 	app.Post("/api/v1/agents/memory/search", apiHandler.HandleAgentMemorySearchLift)
 	app.Post("/api/v1/agents/{username}/suspend", apiHandler.HandleSuspendAgentLift)
-
-	app.Handle("OPTIONS", "/api/v1/agents", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/delegate", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/challenge/principal", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/challenge/agent", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/{leaseID}/revoke", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/{leaseID}/session-key", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/access-leases/{leaseID}/token", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/runtime-sessions", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/register/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/register", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/auth/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/auth/token", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/activity", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/rotate-key/challenge", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/rotate-key", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/memory/search", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/agents/{username}/suspend", optionsHandler)
-
-	app.Handle("OPTIONS", "/api/v1/souls/mine", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/souls/{agentId}/incorporate", optionsHandler)
 
 	app.Get("/api/v1/accounts/{id}/followers", apiHandler.HandleGetAccountFollowersLift)
 	app.Get("/api/v1/accounts/{id}/following", apiHandler.HandleGetAccountFollowingLift)
@@ -445,21 +380,6 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/trust/jwks.json", apiHandler.HandleTrustJWKSJSONLift)
 	app.Get("/api/v1/trust/attestations", apiHandler.HandleTrustLookupAttestationLift)
 	app.Get("/api/v1/trust/attestations/{id}", apiHandler.HandleTrustGetAttestationLift)
-
-	app.Handle("OPTIONS", "/api/v1/trust/previews", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/previews/{id}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/previews/images/{imageId}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/publish/jobs", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/publish/jobs/{jobId}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/renders", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}/thumbnail", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}/snapshot", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/ai/claims/verify", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/ai/jobs/{jobId}", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/jwks.json", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/attestations", optionsHandler)
-	app.Handle("OPTIONS", "/api/v1/trust/attestations/{id}", optionsHandler)
 
 	// Admin endpoints (always enabled for administration)
 	// Note: RBAC is handled within each handler's requireAdminLift() method
