@@ -73,8 +73,8 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	if err != nil {
 		if trace != nil {
 			fields := append(FollowTraceFields(trace, "signature.verify.canonical_error"),
-				zap.String("verification_algorithm", sig.Algorithm),
-				zap.String("verification_key_id", sig.KeyID),
+				zap.Bool("verification_algorithm_present", strings.TrimSpace(sig.Algorithm) != ""),
+				zap.Bool("verification_key_id_present", strings.TrimSpace(sig.KeyID) != ""),
 				zap.String("canonical_error", err.Error()),
 			)
 			log.Info("federation follow trace", fields...)
@@ -140,7 +140,9 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 			hash := sha256.Sum256([]byte(sigString))
 			verifyErr = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, hash[:], sig.Signature)
 		} else {
-			log.Error("unsupported signature algorithm", zap.String("algorithm", sig.Algorithm))
+			log.Error("unsupported signature algorithm",
+				zap.Bool("algorithm_present", strings.TrimSpace(sig.Algorithm) != ""),
+				zap.Int("algorithm_len", len(strings.TrimSpace(sig.Algorithm))))
 			return ErrUnsupportedAlgorithm
 		}
 	}
@@ -148,9 +150,9 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	if verifyErr != nil {
 		if trace != nil {
 			fields := append(FollowTraceFields(trace, "signature.verify.crypto"),
-				zap.String("verification_algorithm", sig.Algorithm),
-				zap.String("verification_key_id", sig.KeyID),
-				zap.String("signature_canonical", sigString),
+				zap.Bool("verification_algorithm_present", strings.TrimSpace(sig.Algorithm) != ""),
+				zap.Bool("verification_key_id_present", strings.TrimSpace(sig.KeyID) != ""),
+				zap.Int("signature_canonical_len", len(sigString)),
 				zap.String("verification_error_detail", verifyErr.Error()),
 			)
 			log.Info("federation follow trace", fields...)
@@ -158,11 +160,12 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 		return ErrSignatureFailed
 	}
 
-	log.Info("verified HTTP signature",
-		zap.String("key_id", sig.KeyID),
-		zap.String("algorithm", sig.Algorithm),
+	fields := appendTraceHeaderState([]zap.Field{
 		zap.String("method", req.Method),
-		zap.String("path", req.URL.Path))
+		zap.String("path", req.URL.Path),
+	}, "key_id", sig.KeyID)
+	fields = appendTraceHeaderState(fields, "algorithm", sig.Algorithm)
+	log.Info("verified HTTP signature", fields...)
 
 	return nil
 }

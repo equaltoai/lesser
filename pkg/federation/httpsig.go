@@ -92,7 +92,8 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 		case "signature":
 			decoded, err := base64.StdEncoding.DecodeString(value)
 			if err != nil {
-				common.Logger().Error("failed to decode base64 signature", zap.Error(err), zap.String("signature", value))
+				fields := appendTraceHeaderState([]zap.Field{zap.Error(err)}, "signature", value)
+				common.Logger().Error("failed to decode base64 signature", fields...)
 				return nil, errors.Join(ErrDecodeSignatureFailed, err)
 			}
 			sig.Signature = decoded
@@ -258,11 +259,12 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 		return err
 	}
 
-	log.Info("verified HTTP signature",
-		zap.String("key_id", sig.KeyID),
-		zap.String("algorithm", sig.Algorithm),
+	fields := appendTraceHeaderState([]zap.Field{
 		zap.String("method", req.Method),
-		zap.String("path", req.URL.Path))
+		zap.String("path", req.URL.Path),
+	}, "key_id", sig.KeyID)
+	fields = appendTraceHeaderState(fields, "algorithm", sig.Algorithm)
+	log.Info("verified HTTP signature", fields...)
 
 	return nil
 }

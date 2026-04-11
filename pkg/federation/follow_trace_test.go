@@ -84,18 +84,21 @@ func TestBuildSignatureTraceFields_ReportsCanonicalString(t *testing.T) {
 	fields := encodeTraceFields(t, BuildSignatureTraceFields(req))
 	assert.Equal(t, http.MethodPost, fields["request_method"])
 	assert.Equal(t, "https://theory.dev.example.com/users/steward/inbox?shared=true", fields["request_url"])
-	assert.Equal(t, "theory.dev.example.com", fields["request_host"])
-	assert.Equal(t, "https://sim.dev.example.com/users/ops#main-key", fields["signature_key_id"])
-	assert.Equal(t, AlgorithmRSASHA256, fields["signature_algorithm"])
-	assert.NotEmpty(t, fields["request_digest"])
-	assert.Contains(t, fields["request_date"], "GMT")
-
-	canonical, ok := fields["signature_canonical"].(string)
-	require.True(t, ok)
-	assert.Contains(t, canonical, "(request-target): post /users/steward/inbox?shared=true")
-	assert.Contains(t, canonical, "host: theory.dev.example.com")
-	assert.Contains(t, canonical, "digest: SHA-256=")
-	assert.Contains(t, canonical, "content-type: application/activity+json")
+	assert.True(t, fields["request_host_present"].(bool))
+	assert.Equal(t, "theory.dev.example.com", fields["request_url_host"])
+	assert.True(t, fields["request_digest_header_present"].(bool))
+	assert.True(t, fields["request_date_header_present"].(bool))
+	assert.True(t, fields["request_signature_header_present"].(bool))
+	assert.True(t, fields["signature_parsed"].(bool))
+	assert.True(t, fields["signature_key_id_present"].(bool))
+	assert.True(t, fields["signature_algorithm_present"].(bool))
+	assert.Equal(t, int64(5), fields["signature_header_count"])
+	assert.Greater(t, int(fields["signature_canonical_len"].(int64)), 0)
+	assert.NotContains(t, fields, "request_signature_header")
+	assert.NotContains(t, fields, "request_digest_header")
+	assert.NotContains(t, fields, "signature_key_id")
+	assert.NotContains(t, fields, "signature_algorithm")
+	assert.NotContains(t, fields, "signature_canonical_string")
 }
 
 func TestFollowTraceHelpers_AdditionalCoverage(t *testing.T) {
@@ -121,7 +124,8 @@ func TestFollowTraceHelpers_AdditionalCoverage(t *testing.T) {
 	req.Host = "theory.dev.example.com"
 	req.Header.Set(SignatureHeader, `not-valid`)
 	parseFields := encodeTraceFields(t, BuildSignatureTraceFields(req))
-	assert.Contains(t, parseFields["signature_parse_error"], "Invalid HTTP signature")
+	assert.True(t, parseFields["request_signature_header_present"].(bool))
+	assert.True(t, parseFields["signature_parse_failed"].(bool))
 
 	assert.Equal(t, "ops", normalizeFollowTraceIdentity("@Ops@sim.dev.example.com"))
 	assert.Equal(t, "steward", normalizeFollowTraceIdentity("https://theory.dev.example.com/users/steward/inbox"))

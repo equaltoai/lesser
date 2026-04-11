@@ -186,14 +186,16 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 	// Parse the signature
 	sig, err := ParseSignatureHeader(signature)
 	if err != nil {
-		f.logger.Error("failed to parse signature", zap.String("signature", signature), zap.Error(err))
+		fields := appendTraceHeaderState([]zap.Field{zap.Error(err)}, "signature_header", signature)
+		f.logger.Error("failed to parse signature", fields...)
 		return nil, errors.Join(ErrSignatureParseFailed, err)
 	}
 
 	// Extract actor ID from keyId
 	actorID := extractActorIDFromKeyID(sig.KeyID)
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
-		f.logger.Error("failed to extract actor ID from keyId", zap.String("key_id", sig.KeyID))
+		fields := appendTraceHeaderState(nil, "key_id", sig.KeyID)
+		f.logger.Error("failed to extract actor ID from keyId", fields...)
 		return nil, ErrExtractActorIDFailed
 	}
 

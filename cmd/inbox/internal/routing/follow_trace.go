@@ -30,6 +30,17 @@ func (ih *InboxHandler) logFollowTraceRawRequest(ctx *apptheory.Context, trace *
 		return
 	}
 
+	rawHost := headerValue(ctx, "Host")
+	rawXLesserForwardedHost := headerValue(ctx, common.XLesserForwardedHost)
+	rawXLesserForwardedProto := headerValue(ctx, common.XLesserForwardedProto)
+	rawXForwardedHost := headerValue(ctx, "X-Forwarded-Host")
+	rawXForwardedProto := headerValue(ctx, "X-Forwarded-Proto")
+	rawForwarded := headerValue(ctx, "Forwarded")
+	rawContentType := headerValue(ctx, "Content-Type")
+	rawDate := headerValue(ctx, "Date")
+	rawDigest := headerValue(ctx, "Digest")
+	rawSignature := headerValue(ctx, "Signature")
+
 	ih.logFollowTrace(
 		trace,
 		"receiver.raw_request",
@@ -38,16 +49,26 @@ func (ih *InboxHandler) logFollowTraceRawRequest(ctx *apptheory.Context, trace *
 		zap.String("raw_method", ctx.Request.Method),
 		zap.String("raw_path", ctx.Request.Path),
 		zap.Any("raw_query", ctx.Request.Query),
-		zap.String("raw_host", headerValue(ctx, "Host")),
-		zap.String("raw_x_lesser_forwarded_host", headerValue(ctx, common.XLesserForwardedHost)),
-		zap.String("raw_x_lesser_forwarded_proto", headerValue(ctx, common.XLesserForwardedProto)),
-		zap.String("raw_x_forwarded_host", headerValue(ctx, "X-Forwarded-Host")),
-		zap.String("raw_x_forwarded_proto", headerValue(ctx, "X-Forwarded-Proto")),
-		zap.String("raw_forwarded", headerValue(ctx, "Forwarded")),
-		zap.String("raw_content_type", headerValue(ctx, "Content-Type")),
-		zap.String("raw_date", headerValue(ctx, "Date")),
-		zap.String("raw_digest", headerValue(ctx, "Digest")),
-		zap.String("raw_signature", headerValue(ctx, "Signature")),
+		zap.Bool("raw_host_present", rawHost != ""),
+		zap.Int("raw_host_len", len(rawHost)),
+		zap.Bool("raw_x_lesser_forwarded_host_present", rawXLesserForwardedHost != ""),
+		zap.Int("raw_x_lesser_forwarded_host_len", len(rawXLesserForwardedHost)),
+		zap.Bool("raw_x_lesser_forwarded_proto_present", rawXLesserForwardedProto != ""),
+		zap.Int("raw_x_lesser_forwarded_proto_len", len(rawXLesserForwardedProto)),
+		zap.Bool("raw_x_forwarded_host_present", rawXForwardedHost != ""),
+		zap.Int("raw_x_forwarded_host_len", len(rawXForwardedHost)),
+		zap.Bool("raw_x_forwarded_proto_present", rawXForwardedProto != ""),
+		zap.Int("raw_x_forwarded_proto_len", len(rawXForwardedProto)),
+		zap.Bool("raw_forwarded_present", rawForwarded != ""),
+		zap.Int("raw_forwarded_len", len(rawForwarded)),
+		zap.Bool("raw_content_type_present", rawContentType != ""),
+		zap.Int("raw_content_type_len", len(rawContentType)),
+		zap.Bool("raw_date_present", rawDate != ""),
+		zap.Int("raw_date_len", len(rawDate)),
+		zap.Bool("raw_digest_present", rawDigest != ""),
+		zap.Int("raw_digest_len", len(rawDigest)),
+		zap.Bool("raw_signature_present", rawSignature != ""),
+		zap.Int("raw_signature_len", len(rawSignature)),
 	)
 }
 
