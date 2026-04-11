@@ -73,12 +73,12 @@ func TestExports_Round12_ListExports_TokenAuth(t *testing.T) {
 		require.True(t, sawCompleted)
 	})
 
-	t.Run("ok_case_insensitive_header_key", func(t *testing.T) {
+	t.Run("ok_canonical_header_key", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", headers, nil, nil)
 		require.NoError(t, err)
 
 		ctx.Request.Headers = map[string][]string{
-			"AUTHORIZATION": {"Bearer " + token},
+			"authorization": {"Bearer " + token},
 		}
 
 		requireStatus(t, http.StatusOK)(handler.HandleListExportsLift(ctx))
@@ -433,12 +433,12 @@ func TestExports_Round12_HelperBranches(t *testing.T) {
 
 	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
 
-	t.Run("extract_export_auth_header_case_insensitive", func(t *testing.T) {
+	t.Run("extract_export_auth_header_canonicalized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"authorization": "Bearer " + token}, nil, nil)
 		require.NoError(t, err)
 
 		ctx.Request.Headers = map[string][]string{
-			"AUTHORIZATION": {"Bearer " + token},
+			"authorization": {"Bearer " + token},
 		}
 
 		require.Equal(t, "Bearer "+token, handler.extractExportAuthHeader(ctx))

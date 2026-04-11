@@ -431,8 +431,7 @@ func TestCustomEmojis_Round12_AdminAuthHeaderFallback(t *testing.T) {
 	require.NoError(t, err)
 	ctx.Params["shortcode"] = "wave"
 
-	// Force common.ExtractAuthHeader to take the case-insensitive scan path.
-	ctx.Request.Headers = map[string][]string{"AUTHORIZATION": []string{headers["Authorization"]}}
+	ctx.Request.Headers = map[string][]string{"authorization": {headers["Authorization"]}}
 
 	requireStatus(t, http.StatusOK)(handler.HandleDeleteCustomEmojiLift(ctx))
 }

@@ -470,12 +470,7 @@ func headerValue(ctx *apptheory.Context, key string) string {
 	if ctx == nil {
 		return ""
 	}
-	key = strings.ToLower(strings.TrimSpace(key))
-	values := ctx.Request.Headers[key]
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
+	return ctx.Header(key)
 }
 
 // addLatencyContextValues adds latency tracking values to context
