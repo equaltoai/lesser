@@ -70,6 +70,60 @@ func TestHandler_authenticateUserOptional(t *testing.T) {
 		require.Error(t, err)
 		require.Empty(t, username)
 	})
+
+	t.Run("valid token with required scope returns username", func(t *testing.T) {
+		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead, auth.ScopeWrite})
+		require.NoError(t, err)
+
+		ctx, err := round10NewLiftContext("GET", "/api/v1/optional-auth", map[string]string{
+			"Authorization": "Bearer " + accessToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		username, err := h.authenticateUserOptional(ctx, []string{auth.ScopeWrite})
+		require.NoError(t, err)
+		require.Equal(t, "alice", username)
+	})
+
+	t.Run("principal claims return username without token parsing", func(t *testing.T) {
+		ctx, err := round10NewLiftContext("GET", "/api/v1/optional-auth", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.AuthPrincipal = auth.PrincipalFromClaims(&auth.Claims{
+			Username: "alice",
+			Scopes:   []string{auth.ScopeRead},
+		})
+
+		username, err := h.authenticateUserOptional(ctx, []string{auth.ScopeRead})
+		require.NoError(t, err)
+		require.Equal(t, "alice", username)
+	})
+
+	t.Run("principal claims with invalid scopes return unauthorized", func(t *testing.T) {
+		ctx, err := round10NewLiftContext("GET", "/api/v1/optional-auth", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.AuthPrincipal = auth.PrincipalFromClaims(&auth.Claims{
+			Username: "alice",
+			Scopes:   []string{"bogus:scope"},
+		})
+
+		username, err := h.authenticateUserOptional(ctx, nil)
+		require.Error(t, err)
+		require.Empty(t, username)
+	})
+
+	t.Run("principal claims without required scope return insufficient scope", func(t *testing.T) {
+		ctx, err := round10NewLiftContext("GET", "/api/v1/optional-auth", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.AuthPrincipal = auth.PrincipalFromClaims(&auth.Claims{
+			Username: "alice",
+			Scopes:   []string{auth.ScopeRead},
+		})
+
+		username, err := h.authenticateUserOptional(ctx, []string{auth.ScopeWrite})
+		require.Error(t, err)
+		require.Empty(t, username)
+	})
 }
 
 func TestHandler_authenticateWithClaims(t *testing.T) {

@@ -48,7 +48,7 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.11.1
-	github.com/theory-cloud/apptheory v0.21.0
+	github.com/theory-cloud/apptheory v0.22.0
 	github.com/theory-cloud/tabletheory v1.5.3
 	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
@@ -65,7 +65,7 @@ require (
 
 require github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9
 
-require github.com/aws/aws-sdk-go-v2/service/ssm v1.60.2 // indirect
+require github.com/aws/aws-sdk-go-v2/service/ssm v1.60.2
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect

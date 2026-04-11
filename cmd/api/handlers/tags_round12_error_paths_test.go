@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -15,19 +16,17 @@ func TestTags_Round12_ErrorPathsAndHeaderFallbacks(t *testing.T) {
 	cfg := round11TestConfig()
 
 	t.Run("getAuthorizationHeader supports lowercase and direct request headers", func(t *testing.T) {
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
-
 		t.Run("lowercase header key", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/tags", map[string]string{"authorization": "Bearer token"}, nil, nil)
 			require.NoError(t, err)
-			require.Equal(t, "Bearer token", h.getAuthorizationHeader(ctx))
+			require.Equal(t, "Bearer token", common.ExtractAuthHeader(ctx))
 		})
 
 		t.Run("canonicalized header key", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/tags", nil, nil, nil)
 			require.NoError(t, err)
 			ctx.Request.Headers = map[string][]string{"authorization": {"Bearer token"}}
-			require.Equal(t, "Bearer token", h.getAuthorizationHeader(ctx))
+			require.Equal(t, "Bearer token", common.ExtractAuthHeader(ctx))
 		})
 	})
 
