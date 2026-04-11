@@ -2,6 +2,7 @@ package auth
 
 import (
 	"os"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -199,19 +200,25 @@ func GetLegacyAuthContext(ctx *apptheory.Context) *common.AuthContext {
 	if authCtx, ok := ctx.Get("auth_context").(*common.AuthContext); ok {
 		return authCtx
 	}
-	return &common.AuthContext{} // Return empty context if not found
+	return LegacyAuthContextFromAppTheoryContext(ctx)
 }
 
 // GetAuthenticatedUsername retrieves the authenticated username or empty string
 func GetAuthenticatedUsername(ctx *apptheory.Context) string {
-	if username, ok := ctx.Get("username").(string); ok {
+	if username := UsernameFromAppTheoryContext(ctx); username != "" {
 		return username
+	}
+	if username, ok := ctx.Get("username").(string); ok {
+		return strings.TrimSpace(username)
 	}
 	return ""
 }
 
 // GetJWTClaims retrieves the JWT claims from context
 func GetJWTClaims(ctx *apptheory.Context) common.Claims {
+	if claims := ClaimsFromAppTheoryContext(ctx); claims != nil {
+		return claims
+	}
 	if claims, ok := ctx.Get("claims").(common.Claims); ok {
 		return claims
 	}
@@ -220,6 +227,9 @@ func GetJWTClaims(ctx *apptheory.Context) common.Claims {
 
 // IsAuthenticated returns true if the request is authenticated
 func IsAuthenticated(ctx *apptheory.Context) bool {
+	if IsAppTheoryContextAuthenticated(ctx) {
+		return true
+	}
 	if authenticated, ok := ctx.Get("is_authenticated").(bool); ok {
 		return authenticated
 	}

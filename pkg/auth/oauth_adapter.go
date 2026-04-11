@@ -31,18 +31,15 @@ func (a *OAuthServiceAdapter) ValidateAccessToken(token string) (common.Claims, 
 
 // CreateAPIAuthMiddlewareFromAuthService creates API auth middleware from AuthService
 func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
-	adapter := NewOAuthServiceAdapter(authService)
-	return CreateAPIAuthMiddleware(adapter, logger)
+	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "api")
 }
 
 // CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService
 func CreateGraphQLAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
-	adapter := NewOAuthServiceAdapter(authService)
-	return CreateGraphQLAuthMiddleware(adapter, logger)
+	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "graphql")
 }
 
 // CreateFederationAuthMiddlewareFromAuthService creates federation auth middleware from AuthService
 func CreateFederationAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
-	adapter := NewOAuthServiceAdapter(authService)
-	return CreateFederationAuthMiddleware(adapter, logger)
+	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "federation")
 }

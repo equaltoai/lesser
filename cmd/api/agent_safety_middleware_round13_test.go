@@ -151,6 +151,8 @@ func TestCreateOptionalOAuthAuthMiddleware_Round13(t *testing.T) {
 			stored, ok := c.Get("claims").(*auth.Claims)
 			require.True(t, ok)
 			require.Equal(t, "agent", stored.Username)
+			require.NotNil(t, c.AuthPrincipal)
+			require.Equal(t, "agent", c.AuthIdentity)
 			require.Equal(t, "agent", c.Get("username"))
 			require.Equal(t, true, c.Get("is_authenticated"))
 			return apptheory.Text(http.StatusOK, "ok"), nil
@@ -177,6 +179,8 @@ func TestCreateOptionalOAuthAuthMiddleware_Round13(t *testing.T) {
 		resp, err := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 			stored := c.Get("claims").(*auth.Claims)
 			require.Equal(t, "existing", stored.Username)
+			require.NotNil(t, c.AuthPrincipal)
+			require.Equal(t, "existing", c.AuthIdentity)
 			require.Equal(t, "existing", c.Get("username"))
 			return apptheory.Text(http.StatusOK, "ok"), nil
 		})(ctx)

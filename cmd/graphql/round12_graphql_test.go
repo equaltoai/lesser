@@ -49,14 +49,14 @@ func (f *fakeStreamQueue) QueueEventForFollowers(context.Context, string, string
 	return nil
 }
 
-func TestOAuthMiddlewareAdapter_ValidateAccessToken_Round12(t *testing.T) {
+func TestCreateAuthMiddlewareWithService_Round12(t *testing.T) {
 	originalLogger := logger
 	t.Cleanup(func() { logger = originalLogger })
 	logger = zaptest.NewLogger(t)
 
 	secret := "secret"
 	oauthService := auth.NewOAuthService(secret, &config.Config{}, nil, nil)
-	adapter := &oauthMiddlewareAdapter{service: oauthService}
+	mw := createAuthMiddlewareWithService(oauthService, logger)
 
 	claims := &auth.Claims{
 		Username: "alice",
@@ -70,12 +70,40 @@ func TestOAuthMiddlewareAdapter_ValidateAccessToken_Round12(t *testing.T) {
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 	require.NoError(t, err)
 
-	got, err := adapter.ValidateAccessToken(token)
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodPost,
+			Path:   "/graphql",
+			Headers: map[string][]string{
+				"authorization": {"Bearer " + token},
+			},
+		},
+	}
+	resp, err := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
+		require.NotNil(t, c.AuthPrincipal)
+		require.Equal(t, "alice", c.AuthIdentity)
+		require.Equal(t, "alice", auth.GetAuthenticatedUsername(c))
+		return &apptheory.Response{Status: http.StatusOK}, nil
+	})(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "alice", got.GetUsername())
+	require.Equal(t, http.StatusOK, resp.Status)
 
-	_, err = adapter.ValidateAccessToken("not-a-token")
-	require.Error(t, err)
+	ctx = &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodPost,
+			Path:   "/graphql",
+			Headers: map[string][]string{
+				"authorization": {"Bearer not-a-token"},
+			},
+		},
+	}
+	resp, err = mw(func(c *apptheory.Context) (*apptheory.Response, error) {
+		require.Nil(t, c.AuthPrincipal)
+		require.False(t, auth.IsAuthenticated(c))
+		return &apptheory.Response{Status: http.StatusOK}, nil
+	})(ctx)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
 }
 
 func TestGraphQLResponseWriter_AndBytesReader_Round12(t *testing.T) {
