@@ -1665,12 +1665,17 @@ func (ih *InboxHandler) processAcceptByActivityID(ctx context.Context, objectID 
 	log := common.WithContext(ctx)
 
 	originalActivity, err := ih.activityRepository.GetActivity(ctx, objectID)
-	if err == nil && originalActivity != nil && originalActivity.Type == activitypub.FollowType {
-		followerHandle := ih.extractHandleFromActorID(originalActivity.Actor)
-		if followerHandle == "" {
-			followerHandle = targetActor.PreferredUsername
+	if err == nil {
+		if validationErr := ih.ensureStoredActivityHydrated(ctx, objectID, originalActivity); validationErr != nil {
+			return validationErr
 		}
-		return ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle)
+		if originalActivity.Type == activitypub.FollowType {
+			followerHandle := ih.extractHandleFromActorID(originalActivity.Actor)
+			if followerHandle == "" {
+				followerHandle = targetActor.PreferredUsername
+			}
+			return ih.acceptFollowRelationship(ctx, followerHandle, acceptorHandle)
+		}
 	}
 
 	if err != nil {
@@ -1843,6 +1848,35 @@ func (ih *InboxHandler) followResponseActivityIDsMatch(objectID, storedActivityI
 	return storedIsLocal && storedSuffix == objectSuffix
 }
 
+func (ih *InboxHandler) ensureStoredActivityHydrated(ctx context.Context, objectID string, activity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	missingFields := make([]string, 0, 3)
+	if activity == nil {
+		missingFields = append(missingFields, "activity")
+	} else {
+		if strings.TrimSpace(activity.ID) == "" {
+			missingFields = append(missingFields, "id")
+		}
+		if strings.TrimSpace(activity.Type) == "" {
+			missingFields = append(missingFields, "type")
+		}
+	}
+
+	if len(missingFields) == 0 {
+		return nil
+	}
+
+	log.Error("stored activity missing required routing fields",
+		zap.String("id", objectID),
+		zap.Strings("missing_fields", missingFields))
+
+	return fmt.Errorf("%w: stored activity %q missing required routing fields: %s",
+		storage.ErrInvalidInput,
+		objectID,
+		strings.Join(missingFields, ", "))
+}
+
 // processRejectActivity processes an incoming Reject activity
 func (ih *InboxHandler) processRejectActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
 	log := common.WithContext(ctx)
@@ -1886,6 +1920,10 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 			return nil
 		}
 		return nil // Don't fail, just ignore unknown activities
+	}
+
+	if validationErr := ih.ensureStoredActivityHydrated(ctx, objectID, originalActivity); validationErr != nil {
+		return validationErr
 	}
 
 	log.Info("processing reject for original activity",
@@ -2815,6 +2853,9 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 		if err != nil {
 			log.Warn("failed to find activity to undo", zap.String("id", obj))
 			return nil
+		}
+		if validationErr := ih.ensureStoredActivityHydrated(ctx, obj, originalActivity); validationErr != nil {
+			return validationErr
 		}
 	case map[string]any:
 		// Convert to activity
