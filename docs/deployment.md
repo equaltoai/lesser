@@ -55,6 +55,26 @@ At a high level, `./lesser up`:
 - Uploads the auth UI payload and preserves CloudFront invalidation behavior
 - Writes local receipts under `~/.lesser/<app>/<base-domain>/`
 
+## Soul / `lesser-body` integration at deploy time
+
+Soul-related wiring is a **deployment concern** in Lesser.
+
+- The current deploy-time switch is `bodyEnabled`.
+- The legacy name `soulEnabled` is still accepted by the CDK stack for backward compatibility.
+- In current Lesser code, both names mean “wire the Lesser domain to the imported `lesser-body` MCP Lambda.”
+
+When that wiring is enabled, the stage stack fronts these routes on the Lesser domain:
+
+- `GET/POST/DELETE /mcp`
+- `GET/POST/DELETE /mcp/{actor}`
+- `GET /.well-known/mcp.json`
+- `GET /.well-known/oauth-protected-resource/mcp/{actor}`
+
+Those routes are served by `lesser-body`, not by Lesser’s core API Lambdas. Lesser still owns the rest of the
+ActivityPub, REST, GraphQL, and `/.well-known/lesser-soul-agent` surfaces.
+
+Use `docs/soul.md` for the canonical repo-boundary explanation.
+
 ## Deploy
 
 Build the CLI:
@@ -214,6 +234,8 @@ Account boundary:
 - `lesser-host` may orchestrate from its own account, but the actual `lesser up` stack update must run with credentials
   for the managed instance account.
 - Do not set `LESSER_USE_LEGACY_RELEASE_ASSEMBLY=1` in the managed runner. That escape hatch only exists for debugging.
+- When managed environments need soul/MCP wiring, treat that as part of the deployment input contract rather than as a
+  manual post-deploy patch.
 
 The current release trust signal for managed consumers is the artifact-driven deploy certification gate:
 

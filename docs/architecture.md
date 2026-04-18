@@ -44,6 +44,17 @@ If you need to understand a specific Lambda’s ownership or trigger wiring, sta
 - Actor/object/collections: `cmd/actor`, `cmd/objects`, `cmd/collections`
 - Inbox/outbox: `cmd/inbox`, `cmd/outbox`
 
+### Soul + managed-agent integration
+
+- Lesser-owned soul proof/discovery: `/.well-known/lesser-soul-agent` (`cmd/api`)
+- MCP routes fronted through Lesser when `bodyEnabled` / legacy `soulEnabled` wiring is enabled:
+  - `/mcp`
+  - `/mcp/{actor}`
+  - `/.well-known/mcp.json`
+  - `/.well-known/oauth-protected-resource/mcp/{actor}`
+- Runtime owner of those MCP routes: `lesser-body`
+- Canonical boundary doc: `docs/soul.md`
+
 ## Data layer
 
 ### DynamoDB
