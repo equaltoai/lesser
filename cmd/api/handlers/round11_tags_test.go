@@ -9,6 +9,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -93,7 +94,7 @@ func TestTags_Helpers(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/tags", headers, map[string]string{"limit": "bad", "max_id": "cursor"}, nil)
 	require.NoError(t, err)
 
-	authHeader := handler.getAuthorizationHeader(ctx)
+	authHeader := common.ExtractAuthHeader(ctx)
 	require.Equal(t, "Bearer token", authHeader)
 
 	params := handler.extractPaginationParams(ctx)

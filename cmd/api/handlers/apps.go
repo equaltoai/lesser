@@ -60,8 +60,11 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 
 	// First try to validate as an access token
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err == nil && claims.ClientID != "" {
+	claims := auth.ClaimsFromAppTheoryContext(ctx)
+	if claims == nil {
+		claims, err = oauthSvc.ValidateAccessToken(token)
+	}
+	if err == nil && claims != nil && claims.ClientID != "" {
 		// Valid access token, get the client
 		client, err := h.repos.Account().GetOAuthClient(ctx.Context(), claims.ClientID)
 		if err != nil {

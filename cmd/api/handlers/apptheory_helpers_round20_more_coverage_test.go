@@ -26,10 +26,10 @@ func TestAppTheoryHelpersRound20_QueryValues(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, []string{"a", "b"}, queryValues(ctx, "tags"))
+		require.Equal(t, []string{" a ", "", "  ", "b"}, queryValues(ctx, "tags"))
 	})
 
-	t.Run("case_insensitive_key_match", func(t *testing.T) {
+	t.Run("exact_key_match_only", func(t *testing.T) {
 		ctx := &apptheory.Context{
 			Request: apptheory.Request{
 				Query: map[string][]string{
@@ -37,7 +37,7 @@ func TestAppTheoryHelpersRound20_QueryValues(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, []string{"one", "two"}, queryValues(ctx, "tags"))
+		require.Nil(t, queryValues(ctx, "tags"))
 	})
 
 	t.Run("missing_key", func(t *testing.T) {

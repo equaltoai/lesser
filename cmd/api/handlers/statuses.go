@@ -504,18 +504,17 @@ func (h *Handler) HandleUpdateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 
 // authenticateStatusUpdate handles authentication for status updates
 func (h *Handler) authenticateStatusUpdate(ctx *apptheory.Context) (*auth.Claims, *activitypub.Actor, *apptheory.Response, error) {
-	// Extract and validate token
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx, "missing token")
-		return nil, nil, resp, respErr
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		resp, respErr := common.RespondUnauthorized(ctx, err.Error())
-		return nil, nil, resp, respErr
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "missing token")
+		},
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return common.RespondUnauthorized(ctx, "invalid token")
+		},
+	)
+	if resp != nil || err != nil {
+		return nil, nil, resp, err
 	}
 
 	// Check write scope
@@ -783,15 +782,7 @@ func (h *Handler) HandleGetStatusLift(ctx *apptheory.Context) (*apptheory.Respon
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Optional authentication (public statuses can be viewed without auth)
-	var viewerUsername string
-	token := h.getBearerTokenLift(ctx)
-	if token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			viewerUsername = claims.Username
-		}
-	}
+	viewerUsername := h.getOptionalAuthenticatedUser(ctx)
 
 	// Get status using Notes service
 	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
@@ -867,15 +858,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 
 // HandleGetPublicTimelineLift returns the public timeline using the Notes service
 func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Optional authentication (public timeline can be viewed without auth)
-	var viewerUsername string
-	token := h.getBearerTokenLift(ctx)
-	if token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			viewerUsername = claims.Username
-		}
-	}
+	viewerUsername := h.getOptionalAuthenticatedUser(ctx)
 
 	// Parse pagination parameters
 	limit, _ := common.ParseStatusTimelineLimit(queryValue(ctx, "limit"))
@@ -927,15 +910,11 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheor
 
 // HandleGetStatusContextLift retrieves the context (ancestors and descendants) of a status
 func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Optional authentication (public statuses can be viewed without auth).
 	var viewerUsername string
 	isAgent := false
-	if token := h.getBearerTokenLift(ctx); token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
-			viewerUsername = claims.Username
-			isAgent = claims.IsAgent
-		}
+	if claims := h.optionalAuthenticatedClaimsLift(ctx); claims != nil {
+		viewerUsername = claims.Username
+		isAgent = claims.IsAgent
 	}
 
 	root, resp, err := h.validateStatusIDForContext(ctx, viewerUsername)
@@ -1229,14 +1208,7 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *apptheory.Context) (*apptheo
 	// Parse query parameters
 	params := h.parseAccountStatusesParams(ctx)
 
-	// Optional authentication (user timeline can be viewed without auth, but visibility must be enforced).
-	var viewerUsername string
-	if token := h.getBearerTokenLift(ctx); token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
-			viewerUsername = claims.Username
-		}
-	}
+	viewerUsername := h.getOptionalAuthenticatedUser(ctx)
 
 	// Get user timeline with viewer-aware privacy enforcement.
 	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
@@ -1587,25 +1559,7 @@ func getStringFromMap(m map[string]any, key, defaultValue string) string {
 
 // extractUsernameFromToken extracts the username from authentication token
 func (h *Handler) extractUsernameFromToken(ctx *apptheory.Context) string {
-	// Get authorization header
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			// Validate token
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err == nil {
-				return claims.Username
-			}
-		}
-	}
-
-	return ""
+	return h.getOptionalAuthenticatedUser(ctx)
 }
 
 // enrichStatusWithUserInteractions adds user-specific interaction state to a status

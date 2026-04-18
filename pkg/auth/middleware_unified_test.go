@@ -183,4 +183,19 @@ func TestUnifiedAuthMiddleware_ContextHelpersAndAccessChecks(t *testing.T) {
 
 	require.Error(t, RequireWriteAccess(ctx))
 	require.NoError(t, RequireReadAccess(ctx))
+
+	principalOnly := &apptheory.Context{
+		AuthIdentity: "agent",
+		AuthPrincipal: PrincipalFromClaims(&Claims{
+			Username:       "agent",
+			Scopes:         []string{common.ScopeRead},
+			SessionID:      "sess-1",
+			IsAgent:        true,
+			ClientClass:    ClientClassAgent,
+			AgentSessionID: "sess-1",
+		}),
+	}
+	assert.Equal(t, "agent", GetAuthenticatedUsername(principalOnly))
+	assert.True(t, IsAuthenticated(principalOnly))
+	require.NotNil(t, GetJWTClaims(principalOnly))
 }

@@ -55,36 +55,7 @@ func createOptionalOAuthAuthMiddleware(cfg *config.Config, repos core.Repository
 	}
 
 	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, cfg, repos, nil)
-
-	return func(next apptheory.Handler) apptheory.Handler {
-		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
-			if ctx == nil {
-				return next(ctx)
-			}
-
-			// If the primary auth middleware already populated context, don't override it.
-			if ctx.Get("claims") != nil && ctx.Get("username") != nil {
-				return next(ctx)
-			}
-
-			authHeader := common.ExtractAuthHeader(ctx)
-			token, err := auth.ExtractBearerToken(authHeader)
-			if err != nil || strings.TrimSpace(token) == "" {
-				return next(ctx)
-			}
-
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err != nil || claims == nil {
-				return next(ctx)
-			}
-
-			ctx.Set("claims", claims)
-			ctx.Set("username", claims.Username)
-			ctx.Set("is_authenticated", true)
-
-			return next(ctx)
-		}
-	}
+	return auth.CreatePrincipalContextBridgeFromOAuthService(oauthSvc, nil, "api")
 }
 
 func createAgentSafetyRailsMiddleware(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) apptheory.Middleware {
@@ -330,15 +301,7 @@ func (l *agentConcurrencyLease) release(ctx context.Context, db dynamormCore.DB)
 }
 
 func agentClaimsFromContext(ctx *apptheory.Context) *auth.Claims {
-	if ctx == nil {
-		return nil
-	}
-
-	if claims, ok := ctx.Get("claims").(*auth.Claims); ok {
-		return claims
-	}
-
-	return nil
+	return auth.ClaimsFromAppTheoryContext(ctx)
 }
 
 func agentLockoutIdentifier(username string) string {

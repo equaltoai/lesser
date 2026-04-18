@@ -24,7 +24,7 @@ func (h *Handler) HandleGetMarkersLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	var timelines []string
-	for _, timelineParam := range queryValues(ctx, "timeline[]") {
+	for _, timelineParam := range ctx.QueryAll("timeline[]") {
 		for _, timeline := range strings.Split(timelineParam, ",") {
 			timeline = strings.TrimSpace(timeline)
 			if timeline != "" {
@@ -112,12 +112,7 @@ func (h *Handler) getMarkersTestUsername(ctx *apptheory.Context) string {
 		return ""
 	}
 
-	username := headerValue(ctx, "X-Test-Username")
-	if username == "" {
-		username = headerValue(ctx, "x-test-username")
-	}
-
-	return username
+	return ctx.Header("X-Test-Username")
 }
 
 // authenticateMarkersWithScope authenticates and checks for the required scope
@@ -139,11 +134,14 @@ func (h *Handler) authenticateMarkersWithScope(ctx *apptheory.Context, requiredS
 func (h *Handler) parseMarkersRequest(ctx *apptheory.Context) (map[string]struct {
 	LastReadID string `json:"last_read_id"`
 }, *apptheory.Response, error) {
-	var req map[string]struct {
+	req, err := apptheory.BindRequest[map[string]struct {
 		LastReadID string `json:"last_read_id"`
-	}
-
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+	}](ctx, apptheory.BindConfig[map[string]struct {
+		LastReadID string `json:"last_read_id"`
+	}]{
+		Body: true,
+	})
+	if err != nil {
 		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
 		return nil, resp, respErr
 	}

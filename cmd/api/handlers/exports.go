@@ -122,9 +122,12 @@ func (h *Handler) validateExportToken(ctx *apptheory.Context, token string) (str
 		return "", resp, respErr
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}
@@ -434,17 +437,17 @@ func (h *Handler) authenticateListExportsWithToken(ctx *apptheory.Context) (stri
 	// Extract auth header
 	authHeader := h.extractListExportsAuthHeader(ctx)
 
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}
 
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}
@@ -662,17 +665,17 @@ func (h *Handler) authenticateExportStatusRequest(ctx *apptheory.Context) (strin
 	// Extract auth header
 	authHeader := h.extractExportAuthHeader(ctx)
 
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}
 
-	// Validate token (no scope check needed for read operations)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}

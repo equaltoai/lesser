@@ -259,16 +259,7 @@ func normalizeLocalActorDomain(domain string) string {
 
 // authenticateUser handles the common pattern of extracting and validating user authentication
 func (h *Handler) authenticateUser(ctx *apptheory.Context, requiredScopes []string) (username string, err error) {
-
-	// Extract and validate token
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", helperUnauthorized()
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return "", helperUnauthorized()
 	}
@@ -295,6 +286,26 @@ func (h *Handler) authenticateUser(ctx *apptheory.Context, requiredScopes []stri
 //
 //nolint:unused // Utility function for optional authentication patterns
 func (h *Handler) authenticateUserOptional(ctx *apptheory.Context, requiredScopes []string) (username string, err error) {
+	if claims := auth.ClaimsFromAppTheoryContext(ctx); claims != nil {
+		if err := validateClaimsScopes(claims); err != nil {
+			return "", helperUnauthorized()
+		}
+
+		if err := common.ValidateSliceNotEmpty("required scopes", requiredScopes); err == nil {
+			hasScope := false
+			for _, scope := range requiredScopes {
+				if claims.HasScope(scope) {
+					hasScope = true
+					break
+				}
+			}
+			if !hasScope {
+				return "", helperInsufficientScope()
+			}
+		}
+
+		return claims.Username, nil
+	}
 
 	// Extract token - if none provided, return empty string (no error)
 	token := h.getBearerTokenLift(ctx)
@@ -302,14 +313,11 @@ func (h *Handler) authenticateUserOptional(ctx *apptheory.Context, requiredScope
 		return "", nil // No authentication provided, which is OK for optional auth
 	}
 
-	// If token is provided, it must be valid
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return "", helperUnauthorized()
 	}
 
-	// Check scopes if provided
 	if err := common.ValidateSliceNotEmpty("required scopes", requiredScopes); err == nil {
 		hasScope := false
 		for _, scope := range requiredScopes {
@@ -358,16 +366,6 @@ func (h *Handler) statusActionHandler(ctx *apptheory.Context, requiredScope stri
 	}
 
 	return okJSON(status)
-}
-
-// getAuthHeader extracts authorization header from request
-func (h *Handler) getAuthHeader(ctx *apptheory.Context) string {
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	return authHeader
 }
 
 // isLocal checks if a username belongs to the local instance
@@ -1384,15 +1382,7 @@ func (h *Handler) parseLimitParam(ctx *apptheory.Context, defaultLimit, maxLimit
 
 //nolint:unused // Part of comprehensive authentication helper set for complex auth scenarios
 func (h *Handler) authenticateWithClaims(ctx *apptheory.Context, requiredScopes []string) (*auth.Claims, error) {
-	// Extract and validate token
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, helperUnauthorized()
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
 		return nil, helperUnauthorized()
 	}

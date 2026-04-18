@@ -121,15 +121,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *apptheory.Context) (*apptheo
 	pinnedOnly := queryValue(ctx, "pinned") == boolTrue
 	tagged := queryValue(ctx, "tagged")
 
-	// Optional viewer authentication for private posts
-	var viewerID string
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err == nil {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			viewerID = claims.Username
-		}
-	}
+	viewerID := h.getOptionalAuthenticatedUser(ctx)
 
 	// Check if Notes service is available
 	notesService := h.registry.Notes()

@@ -335,7 +335,8 @@ func (s *SignatureService) verifyWithAlgorithm(ctx context.Context, req *http.Re
 		if err != nil {
 			s.logger.Error("failed to parse signature header for enhanced verification",
 				zap.String("algorithm", algorithm),
-				zap.String("signature_header", sigHeader),
+				zap.Bool("signature_header_present", strings.TrimSpace(sigHeader) != ""),
+				zap.Int("signature_header_len", len(strings.TrimSpace(sigHeader))),
 				zap.Error(err))
 			return errors.Join(ErrSignatureParseFailed, err)
 		}

@@ -35,16 +35,11 @@ func (h *Handler) HandleGetPollLift(ctx *apptheory.Context) (*apptheory.Response
 	// Test mode support
 	var userID string
 	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err == nil {
-				// Get the user's actor to get their ID
-				account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
-				if err == nil && account.Actor != nil {
-					userID = account.Actor.ID
-				}
+		if username := h.getOptionalAuthenticatedUser(ctx); username != "" {
+			// Get the user's actor to get their ID
+			account, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
+			if err == nil && account.Actor != nil {
+				userID = account.Actor.ID
 			}
 		}
 	}

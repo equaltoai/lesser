@@ -346,7 +346,7 @@ func main() {
 }
 
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
+	options := []apptheory.Option{
 		apptheory.WithCORS(apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
@@ -365,7 +365,13 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 			MaxRequestBytes:  512 * 1024,
 			MaxResponseBytes: 0,
 		}),
-	)
+	}
+	if authService != nil {
+		options = append(options, apptheory.WithAuthPrincipalHook(
+			auth.NewAppTheoryPrincipalHookFromAuthService(authService, lambdaLogger, "api"),
+		))
+	}
+	app := apptheory.New(options...)
 
 	// Timeout middleware (app-tier).
 	app.Use(apptheory.TimeoutMiddleware(apptheory.TimeoutConfig{
@@ -470,12 +476,7 @@ func headerValue(ctx *apptheory.Context, key string) string {
 	if ctx == nil {
 		return ""
 	}
-	key = strings.ToLower(strings.TrimSpace(key))
-	values := ctx.Request.Headers[key]
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
+	return ctx.Header(key)
 }
 
 // addLatencyContextValues adds latency tracking values to context

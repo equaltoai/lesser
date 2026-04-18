@@ -17,16 +17,8 @@ import (
 // GET /api/v1/ai/analysis/:object_id
 func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Auth - require read scope
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	_, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondInvalidToken(ctx)
+	if _, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get object ID from path parameters
@@ -65,16 +57,9 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Re
 // POST /api/v1/ai/analyze
 func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Auth - require moderation scope
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondInvalidToken(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check moderation scope

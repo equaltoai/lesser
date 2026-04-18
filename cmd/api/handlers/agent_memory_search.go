@@ -51,34 +51,37 @@ func (h *Handler) authenticateAgentMemorySearch(ctx *apptheory.Context) (*auth.C
 func parseAgentMemorySearchRequest(ctx *apptheory.Context) (models.AgentMemorySearchRequest, *apptheory.Response, error) {
 	req := models.AgentMemorySearchRequest{}
 	if strings.EqualFold(ctx.Request.Method, http.MethodGet) {
-		req.Query = queryValue(ctx, "query")
-		req.Mode = queryValue(ctx, "mode")
-		req.ThreadID = queryValue(ctx, "thread_id")
-		req.IncludeThreads = strings.EqualFold(queryValue(ctx, "include_threads"), "true")
-		if v, parseErr := common.ParseAndValidateIntWithBounds("limit", queryValue(ctx, "limit"), 0, agentMemorySearchMaxLimit, agentMemorySearchDefaultLimit); parseErr == nil {
+		req.Query = ctx.Query("query")
+		req.Mode = ctx.Query("mode")
+		req.ThreadID = ctx.Query("thread_id")
+		req.IncludeThreads = strings.EqualFold(ctx.Query("include_threads"), "true")
+		if v, parseErr := common.ParseAndValidateIntWithBounds("limit", ctx.Query("limit"), 0, agentMemorySearchMaxLimit, agentMemorySearchDefaultLimit); parseErr == nil {
 			req.Limit = v
 		} else {
 			req.Limit = agentMemorySearchDefaultLimit
 		}
 
-		if tagsRaw := strings.TrimSpace(queryValue(ctx, "tags")); tagsRaw != "" {
+		if tagsRaw := strings.TrimSpace(ctx.Query("tags")); tagsRaw != "" {
 			req.Tags = splitCommaList(tagsRaw)
 		}
 
-		since := strings.TrimSpace(queryValue(ctx, "since_date"))
-		until := strings.TrimSpace(queryValue(ctx, "until_date"))
+		since := strings.TrimSpace(ctx.Query("since_date"))
+		until := strings.TrimSpace(ctx.Query("until_date"))
 		if since != "" || until != "" {
 			req.DateRange = &models.DateRange{Start: since, End: until}
 		}
 		return req, nil, nil
 	}
 
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+	bound, err := apptheory.BindRequest[models.AgentMemorySearchRequest](ctx, apptheory.BindConfig[models.AgentMemorySearchRequest]{
+		Body: true,
+	})
+	if err != nil {
 		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
 		return models.AgentMemorySearchRequest{}, resp, respErr
 	}
 
-	return req, nil, nil
+	return bound, nil, nil
 }
 
 func normalizeAgentMemorySearchLimit(req models.AgentMemorySearchRequest) int {

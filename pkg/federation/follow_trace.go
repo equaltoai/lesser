@@ -117,37 +117,48 @@ func BuildSignatureTraceFields(req *http.Request) []zap.Field {
 		zap.String("request_url", requestURL),
 		zap.String("request_path", requestPath),
 		zap.String("request_raw_query", requestRawQuery),
-		zap.String("request_host", req.Host),
+		zap.Bool("request_host_present", strings.TrimSpace(req.Host) != ""),
+		zap.Int("request_host_len", len(strings.TrimSpace(req.Host))),
 		zap.String("request_url_host", requestURLHost),
-		zap.String("request_host_header", req.Header.Get("Host")),
-		zap.String("request_date", req.Header.Get(DateHeader)),
-		zap.String("request_content_type", req.Header.Get("Content-Type")),
-		zap.String("request_digest", req.Header.Get(DigestHeader)),
 	)
+	fields = appendTraceHeaderState(fields, "request_host_header", req.Header.Get("Host"))
+	fields = appendTraceHeaderState(fields, "request_date_header", req.Header.Get(DateHeader))
+	fields = appendTraceHeaderState(fields, "request_content_type_header", req.Header.Get("Content-Type"))
+	fields = appendTraceHeaderState(fields, "request_digest_header", req.Header.Get(DigestHeader))
 
 	signatureHeader := req.Header.Get(SignatureHeader)
-	fields = append(fields, zap.String("request_signature", signatureHeader))
+	fields = appendTraceHeaderState(fields, "request_signature_header", signatureHeader)
 	if signatureHeader == "" {
 		return fields
 	}
 
 	sig, err := ParseSignatureHeader(signatureHeader)
 	if err != nil {
-		return append(fields, zap.String("signature_parse_error", err.Error()))
+		return append(fields, zap.Bool("signature_parse_failed", true))
 	}
 
 	fields = append(fields,
-		zap.String("signature_key_id", sig.KeyID),
-		zap.String("signature_algorithm", sig.Algorithm),
-		zap.Strings("signature_headers", sig.Headers),
+		zap.Bool("signature_parsed", true),
+		zap.Bool("signature_key_id_present", strings.TrimSpace(sig.KeyID) != ""),
+		zap.Bool("signature_algorithm_present", strings.TrimSpace(sig.Algorithm) != ""),
+		zap.Int("signature_header_count", len(sig.Headers)),
 	)
 
 	sigString, err := BuildHTTPSignatureString(req, sig.Headers)
 	if err != nil {
-		return append(fields, zap.String("signature_canonical_error", err.Error()))
+		return append(fields, zap.Bool("signature_canonical_build_failed", true))
 	}
 
-	return append(fields, zap.String("signature_canonical", sigString))
+	return append(fields, zap.Int("signature_canonical_len", len(sigString)))
+}
+
+func appendTraceHeaderState(fields []zap.Field, fieldPrefix, value string) []zap.Field {
+	trimmed := strings.TrimSpace(value)
+
+	return append(fields,
+		zap.Bool(fieldPrefix+"_present", trimmed != ""),
+		zap.Int(fieldPrefix+"_len", len(trimmed)),
+	)
 }
 
 func followTraceEnabled() bool {

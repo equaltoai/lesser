@@ -80,6 +80,17 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) apptheory.Middleware 
 
 // handleRequestError processes errors from request handlers using centralized patterns
 func handleRequestError(ctx *apptheory.Context, err error, config ErrorMiddlewareConfig) (*apptheory.Response, error) {
+	if portableErr, ok := apptheory.AsAppTheoryError(err); ok {
+		status := portableErr.StatusCode
+		if status == 0 {
+			status = appTheoryStatusForErrorCode(portableErr.Code)
+		}
+		return apptheory.JSON(status, StandardErrorResponse{
+			Error: portableErr.Message,
+			Code:  errorCodeForHTTPStatus(status),
+		})
+	}
+
 	// AppTheory runtime errors (timeouts, rate limits, etc.) should be preserved.
 	var atErr *apptheory.AppError
 	if stdErrors.As(err, &atErr) {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
@@ -134,17 +133,17 @@ func (h *Handler) authenticateTranslationWithToken(ctx *apptheory.Context) (stri
 	// Extract auth header
 	authHeader := h.extractTranslationAuthHeader(ctx)
 
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}
 
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
 		resp, respErr := common.RespondUnauthorized(ctx)
 		return "", resp, respErr
 	}

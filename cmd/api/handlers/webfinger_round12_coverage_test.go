@@ -23,7 +23,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 		}
 	}
 
-	t.Run("case-insensitive query param access", func(t *testing.T) {
+	t.Run("canonical query param access", func(t *testing.T) {
 		h := newHandler(&AccountsServiceStub{
 			GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
 				return &storage.Account{
@@ -37,7 +37,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/webfinger", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.Request.Query = map[string][]string{"Resource": []string{"acct:alice@example.com"}}
+		ctx.Request.Query = map[string][]string{"resource": {"acct:alice@example.com"}}
 
 		requireStatus(t, http.StatusOK)(h.HandleWebFingerLift(ctx))
 	})

@@ -197,17 +197,9 @@ func (h *Handler) getActorAvatarURL(actor *activitypub.Actor) string {
 // HandleGetSuggestionsV1Lift handles GET /api/v1/suggestions
 // Returns follow suggestions (v1 format)
 func (h *Handler) HandleGetSuggestionsV1Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondInvalidToken(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get limit from query params
@@ -272,17 +264,9 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *apptheory.Context) (*apptheory
 // HandleGetSuggestionsV2Lift handles GET /api/v2/suggestions
 // Returns follow suggestions (v2 format with sources)
 func (h *Handler) HandleGetSuggestionsV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondInvalidToken(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get limit from query params
@@ -350,17 +334,9 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *apptheory.Context) (*apptheory
 // HandleRemoveSuggestionLift handles DELETE /api/v1/suggestions/:account_id
 // Removes an account from suggestions
 func (h *Handler) HandleRemoveSuggestionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return common.RespondMissingAuth(ctx)
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondInvalidToken(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get account ID from path

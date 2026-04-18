@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/emoji"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -19,21 +18,7 @@ import (
 
 // extractUsernameFromContext extracts the username from auth header
 func (h *Handler) extractUsernameFromContext(ctx *apptheory.Context) string {
-	var username string
-	authHeader := headerValue(ctx, "Authorization")
-
-	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			// Validate token
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err == nil {
-				username = claims.Username
-			}
-		}
-	}
-	return username
+	return h.getOptionalAuthenticatedUser(ctx)
 }
 
 // HandleGetAnnouncementsLift handles GET /api/v1/announcements
@@ -199,18 +184,13 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *apptheory.Context) (*appthe
 		return common.RespondBadRequest(ctx, "Announcement ID is required")
 	}
 
-	// Extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check if announcement exists
@@ -254,18 +234,13 @@ func (h *Handler) handleAnnouncementReaction(ctx *apptheory.Context, action stri
 		return common.RespondBadRequest(ctx, "Reaction name is required")
 	}
 
-	// Extract and validate token
-	authHeader := headerValue(ctx, "Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
+	claims, resp, err := h.authenticatedClaimsWithResponder(
+		ctx,
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return common.RespondUnauthorized(ctx) },
+	)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check if announcement exists
