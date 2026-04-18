@@ -2,8 +2,8 @@
 Mastodon.py>=1.8.1
 requests>=2.31.0
 python-dotenv==1.2.1
-pytest==9.0.2
-Pillow==12.1.1
+pytest==9.0.3
+Pillow==12.2.0
 cryptography==46.0.7
 # New dependencies for test data generation and federation testing
 faker>=20.0.0
