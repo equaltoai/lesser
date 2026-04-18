@@ -1,10 +1,13 @@
 # Lesser
 
-A serverless, cost-optimized ActivityPub implementation built with Go, AWS Lambda, and the Lift framework.
+A serverless, cost-optimized ActivityPub implementation built with Go, AWS Lambda, AppTheory, and TableTheory.
 
 ## Overview
 
 Lesser is a Mastodon-compatible federated social media platform that runs entirely on AWS serverless infrastructure. It provides full ActivityPub federation while maintaining costs at a fraction of traditional server-based implementations.
+
+For canonical operator and developer docs, start with `docs/README.md`. For soul and managed-agent boundaries, start with
+`docs/soul.md`.
 
 ## Key Features
 
@@ -19,10 +22,13 @@ Lesser is a Mastodon-compatible federated social media platform that runs entire
 
 ## Architecture
 
-Lesser uses AWS CDK with the Lift framework for infrastructure:
+Lesser uses AWS CDK plus Theory Cloud framework building blocks:
+
+- **AppTheory**: Runtime and CDK routing/middleware patterns
+- **TableTheory**: Single-table DynamoDB models and repositories
 
 - **Lambda Functions**: Event-driven compute for all operations
-- **DynamoDB**: Single-table design with 8 GSIs for efficient queries
+- **DynamoDB**: Single-table design with 9 generic GSIs for efficient queries
 - **S3 + CloudFront**: Global CDN for media delivery
 - **API Gateway**: HTTP API with custom domain support
 - **SQS**: Reliable message queuing for federation and async processing
@@ -66,12 +72,12 @@ lesser/
 │   ├── federation-delivery/ # ActivityPub delivery
 │   ├── inbox/             # ActivityPub inbox
 │   ├── outbox/            # ActivityPub outbox
-│   └── ...                # 18 more specialized functions
+│   └── ...                # Additional specialized functions
 ├── pkg/                    # Core packages
 │   ├── activitypub/       # ActivityPub protocol implementation
+│   ├── apptheory/         # AppTheory wiring and migration helpers
 │   ├── auth/              # Authentication (WebAuthn, OAuth, crypto wallets)
 │   ├── federation/        # Federation routing and optimization
-│   ├── lift/              # Lift framework extensions
 │   ├── services/          # Domain services (accounts, lists, etc.)
 │   ├── storage/           # DynamoDB repositories and models
 │   └── streaming/         # WebSocket and real-time updates
@@ -86,6 +92,9 @@ lesser/
 ## Configuration
 
 Infrastructure defaults (memory/timeouts, tables/buckets, CloudFront, etc.) live in `infra/cdk/stacks/` and `infra/cdk/inventory/`.
+
+Soul and managed-agent integration boundaries are documented in `docs/soul.md`. Public actor-scoped MCP access lives in
+`docs/mcp-remote-access.md`.
 
 ### Environment Variables
 

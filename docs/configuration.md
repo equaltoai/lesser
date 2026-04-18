@@ -18,6 +18,26 @@ Lesser runtime configuration is managed through:
 
 If a bootstrap mnemonic is generated on first deploy, `--out <path>` is required to persist it locally.
 
+## Deploy-time integration flags
+
+Some integration inputs are consumed by `./lesser up` and CDK synthesis rather than by the normal runtime config path.
+Treat these as deployment wiring, not as ordinary instance-owned feature flags.
+
+- `BODY_ENABLED` → deploy-runner input used by `lesser up`
+- `bodyEnabled` → current CDK context key for MCP/body route wiring
+- `soulEnabled` → legacy CDK context alias still accepted for backward compatibility
+
+In current Lesser code, `soulEnabled` means “use the historical soul name for the same Lesser ↔ lesser-body MCP
+wiring now controlled by `bodyEnabled`.”
+
+Related managed integration inputs:
+
+- `LESSER_HOST_URL`
+- `LESSER_HOST_ATTESTATIONS_URL`
+- `LESSER_HOST_INSTANCE_KEY_ARN`
+
+For the repo-boundary explanation of soul, see `docs/soul.md`.
+
 ## Instance-owned configuration (persistent)
 
 Certain feature flags and integration URLs are stored in DynamoDB under `PK="INSTANCE#CONFIG"` so they do **not**

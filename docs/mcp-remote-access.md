@@ -2,6 +2,12 @@
 
 Lesser's canonical remote MCP contract is actor-scoped and resource-bound.
 
+This page describes the **public MCP access contract** only. For what soul means in Lesser, what `soulEnabled` means,
+and how `lesser-body`, `lesser-host`, and `lesser-soul` relate, start with `docs/soul.md`.
+
+When Lesser is wired to `lesser-body`, the actor-scoped MCP routes documented here are fronted on the Lesser domain but
+served by the imported `lesser-body` MCP Lambda.
+
 For actor `{actor}` on Lesser domain `{domain}`, the normal public connection shape is:
 
 - MCP URL: `https://{domain}/mcp/{actor}`
@@ -72,6 +78,7 @@ second source of truth.
 
 ## Related docs
 
+- Soul boundary doc: [docs/soul.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/soul.md)
 - Actor-URL auth contract: [docs/specs/mcp-actor-url-auth-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/mcp-actor-url-auth-contract.md)
 - OAuth client guidance: [docs/oauth-agent-clients.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/oauth-agent-clients.md)
 - Dynamic registration contract: [docs/specs/oauth-dynamic-client-registration.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/oauth-dynamic-client-registration.md)

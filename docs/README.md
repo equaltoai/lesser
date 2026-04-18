@@ -45,6 +45,12 @@ go build -o lesser ./cmd/lesser
 - “How to use the APIs”: `docs/api-reference.md`
 - “How to build a Greater client UI”: `docs/guides/CLIENT_APP_GUIDE.md`
 
+## Start here (soul / managed-agent integrations)
+
+- Canonical soul boundary doc: `docs/soul.md`
+- Public remote MCP contract: `docs/mcp-remote-access.md`
+- Agent OAuth grant guidance: `docs/device-code-agent-auth.md`
+
 ## Command Convention
 
 All user-facing workflows are documented via the `lesser` CLI (`./lesser ...`). The `Makefile` is treated as
@@ -62,6 +68,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 
 - Deploy: `docs/deployment.md`
 - CLI workflows: `docs/lesser-cli.md`
+- Soul + managed-agent boundaries: `docs/soul.md`
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - CLI auth (device flow): `docs/cli/auth.md`
 - Configure: `docs/configuration.md`
@@ -74,6 +81,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 
 - Local dev: `docs/development.md`
 - Testing: `docs/testing.md`
+- Soul + managed-agent boundaries: `docs/soul.md`
 - CLI workflows: `docs/lesser-cli.md`
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - CLI auth (device flow): `docs/cli/auth.md`
@@ -82,6 +90,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 
 ### Client teams
 
+- Soul + MCP boundaries: `docs/soul.md`
 - API usage patterns: `docs/api-reference.md`
 - Remote MCP quickstart: `docs/mcp-remote-access.md`
 - Contracts: `docs/contracts/README.md`
@@ -116,6 +125,12 @@ After `./lesser up`:
 
 - Sensitive bootstrap material: `~/.lesser/<app>/<base-domain>/bootstrap.json` (0600)
 - Non-secret deployment receipt: `~/.lesser/<app>/<base-domain>/state.json`
+
+### Soul in Lesser
+
+Lesser is the ActivityPub platform runtime. Soul-related docs describe how Lesser integrates with `lesser-body`,
+`lesser-host`, and `lesser-soul`; they do not change Lesser into the MCP runtime or the managed control plane.
+Use `docs/soul.md` as the canonical boundary doc.
 
 ### Serverless Architecture
 Lesser runs entirely on AWS managed services, eliminating server management and reducing costs by up to 90% compared to traditional hosting.

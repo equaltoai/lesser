@@ -1,0 +1,9 @@
+model_instructions_file = "steward.md"
+
+  [mcp_servers.lesser_lab]
+  url = "https://lab.theorymcp.ai/equaltoai/agents/lesser/mcp"
+  oauth_resource = "https://lab.theorymcp.ai/equaltoai/agents/lesser/mcp"
+  scopes = ["mcp:tools", "ai.kb.query", "memory.append"]
+
+[mcp_servers.lesser_lab.tools.memory_append]
+approval_mode = "approve"
