@@ -42,6 +42,7 @@ var (
 	cdkBootstrapFn         = cdkBootstrap
 	cdkDeployWithOutputsFn = cdkDeployWithOutputs
 	cdkDestroyStackFn      = cdkDestroyStack
+	resolveStackOutputsFn  = resolveStackOutputs
 )
 
 func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accountID string, region string) error {
@@ -173,14 +174,17 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		return cdkDeployResult{}, fmt.Errorf("cdk deploy %s: %w", req.StackName, err)
 	}
 
-	out, err := parseCdkOutputs(outputsPath)
+	outputs, err := resolveStackOutputsFn(ctx, awsProfile, req)
 	if err != nil {
-		return cdkDeployResult{}, err
+		return cdkDeployResult{}, fmt.Errorf("resolve stack outputs for %s: %w", req.StackName, err)
+	}
+	if err := writeCdkOutputs(outputsPath, req.StackName, outputs); err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: persist cdk outputs for %s: %v\n", req.StackName, err)
 	}
 
 	return cdkDeployResult{
 		StackName: req.StackName,
-		Outputs:   out[req.StackName],
+		Outputs:   outputs,
 	}, nil
 }
 
@@ -224,15 +228,52 @@ func cdkDestroyStack(ctx context.Context, repoRoot string, awsProfile string, re
 	return nil
 }
 
-func parseCdkOutputs(path string) (map[string]map[string]string, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- file path is derived from repo root
+func writeCdkOutputs(path string, stackName string, outputs map[string]string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("cdk outputs path is required")
+	}
+	if strings.TrimSpace(stackName) == "" {
+		return fmt.Errorf("cdk stack name is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	serialized, err := json.MarshalIndent(map[string]map[string]string{
+		stackName: cloneStringMap(outputs),
+	}, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("read cdk outputs: %w", err)
+		return fmt.Errorf("marshal cdk outputs: %w", err)
+	}
+	serialized = append(serialized, '\n')
+	if err := os.WriteFile(path, serialized, 0o600); err != nil {
+		return fmt.Errorf("write cdk outputs: %w", err)
+	}
+	return nil
+}
+
+func resolveStackOutputs(ctx context.Context, awsProfile string, req cdkDeployRequest) (map[string]string, error) {
+	cfg, _, err := loadAWSConfigForCLIFn(ctx, awsProfile)
+	if err != nil {
+		return nil, err
+	}
+	if region := strings.TrimSpace(req.Region); region != "" {
+		cfg.Region = region
 	}
 
-	var out map[string]map[string]string
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("parse cdk outputs: %w", err)
+	outputs, err := describeCloudFormationOutputsFn(ctx, newCloudFormationClientFn(cfg), req.StackName)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	return cloneStringMap(outputs), nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }

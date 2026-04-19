@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,9 +34,26 @@ func TestParseCdkOutputs(t *testing.T) {
 	})
 }
 
+func parseCdkOutputs(path string) (map[string]map[string]string, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- test helper reads fixture paths
+	if err != nil {
+		return nil, err
+	}
+
+	out := map[string]map[string]string{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func TestCdkDeployWithOutputs_UsesRunCommand(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	repoRoot := t.TempDir()
 	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
@@ -47,7 +67,10 @@ func TestCdkDeployWithOutputs_UsesRunCommand(t *testing.T) {
 		if outputsPath == "" {
 			return nil
 		}
-		return os.WriteFile(outputsPath, []byte(`{"demo-stack":{"Foo":"Bar"}}`), 0o644)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Foo": "Bar"}, nil
 	}
 
 	res, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
@@ -64,23 +87,20 @@ func TestCdkDeployWithOutputs_UsesRunCommand(t *testing.T) {
 
 func TestCdkDeployWithOutputs_IncludesStageAndStagingFlags(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	repoRoot := t.TempDir()
 	var gotArgs []string
 	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
 		gotArgs = append([]string(nil), args...)
-		outputsPath := ""
-		for i := 0; i < len(args)-1; i++ {
-			if args[i] == "--outputs-file" {
-				outputsPath = args[i+1]
-				break
-			}
-		}
-		if outputsPath != "" {
-			return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
-		}
 		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
@@ -102,10 +122,18 @@ func TestCdkDeployWithOutputs_IncludesStageAndStagingFlags(t *testing.T) {
 
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	runCommandFn = func(context.Context, string, []string, execOptions) error {
 		return os.ErrNotExist
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		t.Fatal("resolveStackOutputsFn should not be called when deploy fails")
+		return nil, nil
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), t.TempDir(), "profile", cdkDeployRequest{
@@ -121,14 +149,21 @@ func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 
 func TestCdkDeployWithOutputs_UsesExplicitOutputsPath(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	repoRoot := t.TempDir()
 	outputsPath := filepath.Join(t.TempDir(), "deploy", "cdk-outputs", "demo.json")
 	var gotArgs []string
 	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
 		gotArgs = append([]string(nil), args...)
-		return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
 	}
 
 	res, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
@@ -142,11 +177,18 @@ func TestCdkDeployWithOutputs_UsesExplicitOutputsPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"Key": "Value"}, res.Outputs)
 	require.Contains(t, gotArgs, outputsPath)
+	out, err := parseCdkOutputs(outputsPath)
+	require.NoError(t, err)
+	require.Equal(t, map[string]map[string]string{"demo": {"Key": "Value"}}, out)
 }
 
 func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	t.Setenv("LESSER_HOST_URL", "https://env.lesser.host")
 	t.Setenv("TRANSLATION_ENABLED", "true")
@@ -155,17 +197,10 @@ func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {
 	var gotArgs []string
 	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
 		gotArgs = append([]string(nil), args...)
-		outputsPath := ""
-		for i := 0; i < len(args)-1; i++ {
-			if args[i] == "--outputs-file" {
-				outputsPath = args[i+1]
-				break
-			}
-		}
-		if outputsPath != "" {
-			return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
-		}
 		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
@@ -188,11 +223,19 @@ func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {
 
 func TestCdkDeployWithOutputs_RejectsLambdaFunctionURLHost(t *testing.T) {
 	previousRunCommand := runCommandFn
-	t.Cleanup(func() { runCommandFn = previousRunCommand })
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
 
 	runCommandFn = func(context.Context, string, []string, execOptions) error {
 		t.Fatal("runCommandFn should not be called when contexts are invalid")
 		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		t.Fatal("resolveStackOutputsFn should not be called when contexts are invalid")
+		return nil, nil
 	}
 
 	_, err := cdkDeployWithOutputs(context.Background(), t.TempDir(), "profile", cdkDeployRequest{
@@ -207,6 +250,94 @@ func TestCdkDeployWithOutputs_RejectsLambdaFunctionURLHost(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "LESSER_HOST_URL")
+}
+
+func TestCdkDeployWithOutputs_PersistsResolvedOutputsWhenCDKOmitsOutputsFile(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+
+	repoRoot := t.TempDir()
+	runCommandFn = func(_ context.Context, _ string, _ []string, _ execOptions) error {
+		return nil
+	}
+
+	outputsPath := filepath.Join(repoRoot, "deploy", "cdk-outputs", "demo-stack.json")
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"ReleaseAssetBucketName": "bucket"}, nil
+	}
+
+	res, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo-stack",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		OutputsPath:  outputsPath,
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"ReleaseAssetBucketName": "bucket"}, res.Outputs)
+
+	out, err := parseCdkOutputs(outputsPath)
+	require.NoError(t, err)
+	require.Equal(t, map[string]map[string]string{
+		"demo-stack": {
+			"ReleaseAssetBucketName": "bucket",
+		},
+	}, out)
+}
+
+func TestResolveStackOutputs_UsesConfiguredProfileAndRegion(t *testing.T) {
+	previousLoadAWS := loadAWSConfigForCLIFn
+	previousNewCloudFormationClient := newCloudFormationClientFn
+	previousDescribeOutputs := describeCloudFormationOutputsFn
+	t.Cleanup(func() {
+		loadAWSConfigForCLIFn = previousLoadAWS
+		newCloudFormationClientFn = previousNewCloudFormationClient
+		describeCloudFormationOutputsFn = previousDescribeOutputs
+	})
+
+	loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
+		return aws.Config{Region: "us-west-2"}, "profile", nil
+	}
+
+	var gotCfg aws.Config
+	newCloudFormationClientFn = func(cfg aws.Config, _ ...func(*cloudformation.Options)) *cloudformation.Client {
+		gotCfg = cfg
+		return nil
+	}
+
+	describeCloudFormationOutputsFn = func(_ context.Context, _ *cloudformation.Client, stackName string) (map[string]string, error) {
+		require.Equal(t, "demo-stack", stackName)
+		return map[string]string{"Key": "Value"}, nil
+	}
+
+	out, err := resolveStackOutputs(context.Background(), "profile", cdkDeployRequest{
+		StackName: "demo-stack",
+		Region:    "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "us-east-1", gotCfg.Region)
+	require.Equal(t, map[string]string{"Key": "Value"}, out)
+}
+
+func TestWriteCdkOutputs_ValidatesRequiredInputs(t *testing.T) {
+	err := writeCdkOutputs("   ", "demo", map[string]string{"Key": "Value"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cdk outputs path is required")
+
+	err = writeCdkOutputs(filepath.Join(t.TempDir(), "outputs.json"), "   ", map[string]string{"Key": "Value"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cdk stack name is required")
+}
+
+func TestCloneStringMap_NilInputReturnsEmptyMap(t *testing.T) {
+	cloned := cloneStringMap(nil)
+	require.NotNil(t, cloned)
+	require.Empty(t, cloned)
 }
 
 func TestCdkBootstrap_RunsCdkBootstrap(t *testing.T) {
