@@ -77,8 +77,8 @@ var (
 	newAuthService = auth.NewAuthService
 	newStreamQueue = streaming.NewDynamoStreamQueue
 
-	createAPIAuthMiddlewareFromAuthService = auth.CreateAPIAuthMiddlewareFromAuthService
-	newAPIHandler                          = apiHandlers.NewHandler
+	createAPIAuthMiddlewareFromOAuthService = auth.CreateAPIAuthMiddlewareFromOAuthService
+	newAPIHandler                           = apiHandlers.NewHandler
 
 	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
 	configureRoutesFn              = configureRoutes
@@ -345,7 +345,21 @@ func main() {
 	lambdaStart(lambdaHandler)
 }
 
+func newAPIOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
+	if cfg == nil || cfg.JWTSecret == "" {
+		if serviceLogger != nil {
+			serviceLogger.Warn("JWT secret is not configured; API auth principal hook disabled")
+		}
+		return nil
+	}
+
+	auditLogger := auth.NewAuditLogger(repos, serviceLogger, auth.DefaultAuditConfig())
+	return auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
+}
+
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+	oauthService := newAPIOAuthService(lambdaLogger)
+
 	options := []apptheory.Option{
 		apptheory.WithCORS(apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
@@ -366,9 +380,9 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 			MaxResponseBytes: 0,
 		}),
 	}
-	if authService != nil {
+	if authService != nil && oauthService != nil {
 		options = append(options, apptheory.WithAuthPrincipalHook(
-			auth.NewAppTheoryPrincipalHookFromAuthService(authService, lambdaLogger, "api"),
+			auth.NewAppTheoryPrincipalHookFromOAuthService(oauthService, lambdaLogger, "api"),
 		))
 	}
 	app := apptheory.New(options...)
@@ -385,8 +399,8 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	app.Use(createInstanceLockMiddlewareFn(repos, lambdaLogger))
 
 	// Optional auth (enables user context for public endpoints).
-	if authService != nil {
-		app.Use(createAPIAuthMiddlewareFromAuthService(authService, lambdaLogger))
+	if authService != nil && oauthService != nil {
+		app.Use(createAPIAuthMiddlewareFromOAuthService(oauthService, lambdaLogger))
 	}
 	// Optional OAuth auth fallback (enables user context for OAuth/agent tokens too).
 	// This allows downstream middleware (rate limits, logging) to key by username for agents.
