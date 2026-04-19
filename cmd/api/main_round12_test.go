@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -392,6 +393,80 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for cost tracking")
 	}
+}
+
+func TestBuildApp_PublicOAuthBearerAuthenticatesProtectedAndOptionalRoutes(t *testing.T) {
+	origRoutes := configureRoutesFn
+	origLock := createInstanceLockMiddlewareFn
+	t.Cleanup(func() {
+		configureRoutesFn = origRoutes
+		createInstanceLockMiddlewareFn = origLock
+	})
+
+	cfg = &config.Config{
+		Domain:          "example.com",
+		Region:          "us-east-1",
+		Stage:           "development",
+		Version:         "test",
+		DynamoTableName: "test-table",
+		JWTSecret:       "a-very-strong-jwt-key-without-weak-patterns-9876543210",
+	}
+	logger = zap.NewNop()
+	repos = nil
+	authService = &auth.AuthService{}
+
+	// Exercise OAuth-only API auth behavior without a backing session row.
+	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
+		return func(next apptheory.Handler) apptheory.Handler { return next }
+	}
+	configureRoutesFn = func(app *apptheory.App) {
+		app.Get("/protected", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.JSON(http.StatusOK, map[string]string{
+				"username": auth.UsernameFromAppTheoryContext(ctx),
+			})
+		}, apptheory.RequireScope(auth.ScopeRead))
+		app.Get("/optional", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.JSON(http.StatusOK, map[string]string{
+				"username": auth.UsernameFromAppTheoryContext(ctx),
+			})
+		}, apptheory.OptionalAuth())
+	}
+
+	oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
+	token, _, err := oauthService.GenerateTokensWithAccessTokenTTLAndClientContext(
+		context.Background(),
+		"alice",
+		"client-agent",
+		"",
+		[]string{auth.ScopeRead},
+		time.Hour,
+		auth.ClientClassAgent,
+		"sid-public-oauth",
+	)
+	require.NoError(t, err)
+
+	app := buildApp(logger)
+	headers := map[string][]string{"Authorization": {"Bearer " + token}}
+
+	protectedResp := app.Serve(context.Background(), apptheory.Request{
+		Method:  http.MethodGet,
+		Path:    "/protected",
+		Headers: headers,
+	})
+	require.Equal(t, http.StatusOK, protectedResp.Status)
+	var protectedBody map[string]string
+	require.NoError(t, json.Unmarshal(protectedResp.Body, &protectedBody))
+	require.Equal(t, "alice", protectedBody["username"])
+
+	optionalResp := app.Serve(context.Background(), apptheory.Request{
+		Method:  http.MethodGet,
+		Path:    "/optional",
+		Headers: headers,
+	})
+	require.Equal(t, http.StatusOK, optionalResp.Status)
+	var optionalBody map[string]string
+	require.NoError(t, json.Unmarshal(optionalResp.Body, &optionalBody))
+	require.Equal(t, "alice", optionalBody["username"])
 }
 
 func TestMainRound12(t *testing.T) {
