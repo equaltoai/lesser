@@ -29,17 +29,23 @@ func (a *OAuthServiceAdapter) ValidateAccessToken(token string) (common.Claims, 
 	return enhancedClaims, nil
 }
 
-// CreateAPIAuthMiddlewareFromAuthService creates API auth middleware from AuthService
+// CreateAPIAuthMiddlewareFromAuthService creates API auth middleware from AuthService.
 func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "api")
 }
 
-// CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService
+// CreateAPIAuthMiddlewareFromAuthAndOAuthServices creates API auth middleware that preserves
+// native session validation while also accepting OAuth-issued tokens.
+func CreateAPIAuthMiddlewareFromAuthAndOAuthServices(authService *AuthService, oauthService *OAuthService, logger *zap.Logger) apptheory.Middleware {
+	return CreatePrincipalContextBridgeFromAuthAndOAuthServices(authService, oauthService, logger, "api")
+}
+
+// CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService.
 func CreateGraphQLAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "graphql")
 }
 
-// CreateFederationAuthMiddlewareFromAuthService creates federation auth middleware from AuthService
+// CreateFederationAuthMiddlewareFromAuthService creates federation auth middleware from AuthService.
 func CreateFederationAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "federation")
 }

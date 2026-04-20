@@ -1,10 +1,14 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +16,53 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+type compositeAuthAccountRepo struct {
+	session *storage.Session
+}
+
+func (r compositeAuthAccountRepo) GetUser(_ context.Context, _ string) (*storage.User, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) UpdateUser(_ context.Context, _ string, _ map[string]any) error {
+	return errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) GetActor(_ context.Context, _ string) (*activitypub.Actor, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) GetDevice(_ context.Context, _ string) (*storage.Device, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) GetSession(_ context.Context, _ string) (*storage.Session, error) {
+	if r.session == nil {
+		return nil, errors.New("missing session")
+	}
+	return r.session, nil
+}
+
+func (r compositeAuthAccountRepo) GetUserWalletCredentials(_ context.Context, _ string) ([]*storage.WalletCredential, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) MarkWalletChallengeSpent(_ context.Context, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) ResetWalletChallengeSpent(_ context.Context, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) GetWalletChallenge(_ context.Context, _ string) (*storage.WalletChallenge, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r compositeAuthAccountRepo) StoreRecoveryToken(_ context.Context, _ string, _ map[string]any) error {
+	return errors.New("not implemented")
+}
 
 func testAppTheoryClaims() *Claims {
 	return &Claims{
@@ -60,7 +111,7 @@ func TestAppTheoryPrincipalResolverResolve(t *testing.T) {
 		assert.Nil(t, principal)
 		assert.True(t, principalResolutionAttempted(ctx))
 
-		entries := observed.FilterMessage("optional auth: invalid bearer token format").AllUntimed()
+		entries := observed.FilterMessage("principal authentication skipped - invalid bearer token format").AllUntimed()
 		require.Len(t, entries, 1)
 		assert.Equal(t, "api", entries[0].ContextMap()["service"])
 		assert.Equal(t, "/api/v1/statuses", entries[0].ContextMap()["path"])
@@ -83,7 +134,7 @@ func TestAppTheoryPrincipalResolverResolve(t *testing.T) {
 		assert.Nil(t, principal)
 		assert.True(t, principalResolutionAttempted(ctx))
 
-		entries := observed.FilterMessage("optional authentication failed - header present but validation failed").AllUntimed()
+		entries := observed.FilterMessage("principal authentication failed - header present but validation failed").AllUntimed()
 		require.Len(t, entries, 1)
 		assert.Equal(t, "graphql", entries[0].ContextMap()["service"])
 		assert.Equal(t, "/graphql", entries[0].ContextMap()["path"])
@@ -301,6 +352,7 @@ func TestAppTheoryPrincipalContextHelpers(t *testing.T) {
 
 func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthService(nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api"))
 
 	noOpAuthBridge := CreatePrincipalContextBridgeFromAuthService(nil, zap.NewNop(), "api")
 	nextCalled := false
@@ -312,6 +364,14 @@ func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	assert.True(t, nextCalled)
 
 	assert.Nil(t, NewAppTheoryPrincipalHookFromOAuthService(nil, zap.NewNop(), "api"))
+	noOpCompositeBridge := CreatePrincipalContextBridgeFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api")
+	nextCalled = false
+	_, err = noOpCompositeBridge(func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		nextCalled = true
+		return &apptheory.Response{Status: 204}, nil
+	})(newTestContext("GET", "/api/v1/public"))
+	require.NoError(t, err)
+	assert.True(t, nextCalled)
 
 	noOpOAuthBridge := CreatePrincipalContextBridgeFromOAuthService(nil, zap.NewNop(), "api")
 	nextCalled = false
@@ -365,4 +425,71 @@ func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, principal)
 	assert.Equal(t, "alice", principal.Identity)
+
+	sessionToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "alice"},
+		Username:         "alice",
+		Scopes:           []string{"read"},
+		SessionID:        "session-1",
+	}).SignedString([]byte("test-secret"))
+	require.NoError(t, err)
+	assert.Equal(t, principalTokenFamilySession, inferPrincipalTokenFamily(sessionToken))
+	assert.Equal(t, principalTokenFamilyUnknown, inferPrincipalTokenFamily("not-a-jwt"))
+
+	oauthToken, err := oauthService.generateAccessTokenWithMetadata("Alice", "web", []string{"read"}, accessTokenMetadata{
+		SessionID: "session-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, principalTokenFamilyOAuth, inferPrincipalTokenFamily(oauthToken))
+}
+
+func TestCompositePrincipalClaimsValidatorRoutesByTokenFamily(t *testing.T) {
+	authService := &AuthService{
+		jwtSecret: []byte("test-secret"),
+		accountRepo: compositeAuthAccountRepo{
+			session: &storage.Session{
+				SessionID: "session-1",
+				ExpiresAt: time.Now().Add(time.Hour),
+			},
+		},
+	}
+	oauthService := &OAuthService{jwtSecret: []byte("test-secret")}
+
+	validator := newCompositePrincipalClaimsValidator(authService, oauthService)
+	require.NotNil(t, validator)
+
+	sessionToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "alice",
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+		Username:  "alice",
+		Scopes:    []string{"read"},
+		SessionID: "session-1",
+	}).SignedString([]byte("test-secret"))
+	require.NoError(t, err)
+
+	sessionClaims, err := validator(sessionToken)
+	require.NoError(t, err)
+	require.NotNil(t, sessionClaims)
+	assert.Equal(t, "alice", sessionClaims.GetUsername())
+	assert.Equal(t, "session-1", sessionClaims.SessionID)
+
+	oauthToken, err := oauthService.generateAccessTokenWithMetadata("alice", "client-agent", []string{"read"}, accessTokenMetadata{
+		SessionID: "session-oauth",
+	})
+	require.NoError(t, err)
+
+	oauthClaims, err := validator(oauthToken)
+	require.NoError(t, err)
+	require.NotNil(t, oauthClaims)
+	assert.Equal(t, "alice", oauthClaims.GetUsername())
+	assert.Equal(t, "session-oauth", oauthClaims.SessionID)
+	assert.NotEmpty(t, oauthClaims.ID)
+
+	authService.accountRepo = compositeAuthAccountRepo{}
+	_, err = validator(sessionToken)
+	require.ErrorIs(t, err, ErrInvalidToken)
 }
