@@ -49,15 +49,6 @@ const (
 
 var errAgentConcurrencyExceeded = errors.New("agent concurrency exceeded")
 
-func createOptionalOAuthAuthMiddleware(cfg *config.Config, repos core.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
-	if cfg == nil || strings.TrimSpace(cfg.JWTSecret) == "" || repos == nil {
-		return func(next apptheory.Handler) apptheory.Handler { return next }
-	}
-
-	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, cfg, repos, nil)
-	return auth.CreatePrincipalContextBridgeFromOAuthService(oauthSvc, nil, "api")
-}
-
 func createAgentSafetyRailsMiddleware(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) apptheory.Middleware {
 	if cfg == nil || repos == nil {
 		return func(next apptheory.Handler) apptheory.Handler { return next }

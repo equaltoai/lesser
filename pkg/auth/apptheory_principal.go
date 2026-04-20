@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/golang-jwt/jwt/v5"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -14,6 +15,14 @@ const (
 )
 
 type principalClaimsValidator func(string) (*Claims, error)
+
+type principalTokenFamily string
+
+const (
+	principalTokenFamilyUnknown principalTokenFamily = "unknown"
+	principalTokenFamilySession principalTokenFamily = "session"
+	principalTokenFamilyOAuth   principalTokenFamily = "oauth"
+)
 
 type appTheoryPrincipalResolver struct {
 	validate    principalClaimsValidator
@@ -52,6 +61,17 @@ func NewAppTheoryPrincipalHookFromOAuthService(oauthService *OAuthService, logge
 	return resolver.Resolve
 }
 
+// NewAppTheoryPrincipalHookFromAuthAndOAuthServices builds an AppTheory principal hook that preserves
+// native session validation while also accepting OAuth-issued access tokens on the same API surface.
+func NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService *AuthService, oauthService *OAuthService, logger *zap.Logger, serviceName string) apptheory.PrincipalAuthHook {
+	resolver := newCompositeAppTheoryPrincipalResolver(authService, oauthService, logger, serviceName)
+	if resolver == nil {
+		return nil
+	}
+
+	return resolver.Resolve
+}
+
 // CreatePrincipalContextBridgeFromAuthService mirrors AuthService-backed principal data into the legacy request context.
 func CreatePrincipalContextBridgeFromAuthService(authService *AuthService, logger *zap.Logger, serviceName string) apptheory.Middleware {
 	if authService == nil {
@@ -73,6 +93,72 @@ func CreatePrincipalContextBridgeFromOAuthService(oauthService *OAuthService, lo
 
 	resolver := newAppTheoryPrincipalResolver(oauthService.ValidateAccessToken, logger, serviceName)
 	return createPrincipalContextBridge(resolver)
+}
+
+// CreatePrincipalContextBridgeFromAuthAndOAuthServices mirrors principal data for both native
+// session-backed tokens and OAuth-issued tokens into the legacy request context.
+func CreatePrincipalContextBridgeFromAuthAndOAuthServices(authService *AuthService, oauthService *OAuthService, logger *zap.Logger, serviceName string) apptheory.Middleware {
+	resolver := newCompositeAppTheoryPrincipalResolver(authService, oauthService, logger, serviceName)
+	if resolver == nil {
+		return func(next apptheory.Handler) apptheory.Handler { return next }
+	}
+
+	return createPrincipalContextBridge(resolver)
+}
+
+func newCompositeAppTheoryPrincipalResolver(authService *AuthService, oauthService *OAuthService, logger *zap.Logger, serviceName string) *appTheoryPrincipalResolver {
+	validate := newCompositePrincipalClaimsValidator(authService, oauthService)
+	if validate == nil {
+		return nil
+	}
+
+	return newAppTheoryPrincipalResolver(validate, logger, serviceName)
+}
+
+func newCompositePrincipalClaimsValidator(authService *AuthService, oauthService *OAuthService) principalClaimsValidator {
+	if authService == nil && oauthService == nil {
+		return nil
+	}
+
+	return func(token string) (*Claims, error) {
+		switch inferPrincipalTokenFamily(token) {
+		case principalTokenFamilyOAuth:
+			if oauthService == nil {
+				return nil, ErrInvalidToken
+			}
+			return oauthService.ValidateAccessToken(token)
+		case principalTokenFamilySession:
+			if authService == nil {
+				return nil, ErrInvalidToken
+			}
+			return authService.ValidateAccessToken(token)
+		default:
+			return nil, ErrInvalidToken
+		}
+	}
+}
+
+func inferPrincipalTokenFamily(token string) principalTokenFamily {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return principalTokenFamilyUnknown
+	}
+
+	claims := &Claims{}
+	parser := jwt.NewParser()
+	if _, _, err := parser.ParseUnverified(token, claims); err != nil {
+		return principalTokenFamilyUnknown
+	}
+
+	// API route auth deliberately distinguishes Lesser's two current bearer families:
+	// OAuthService-issued access tokens always carry a JWT ID (`jti`) because revocation is keyed by JTI,
+	// while AuthService's short-lived native session tokens intentionally omit `jti` and remain anchored
+	// to backing session rows. If either family changes, revisit this classifier and the route-matrix tests.
+	if strings.TrimSpace(claims.ID) != "" {
+		return principalTokenFamilyOAuth
+	}
+
+	return principalTokenFamilySession
 }
 
 func createPrincipalContextBridge(resolver *appTheoryPrincipalResolver) apptheory.Middleware {
@@ -115,13 +201,13 @@ func (r *appTheoryPrincipalResolver) Resolve(ctx *apptheory.Context) (*apptheory
 
 	token, err := ExtractBearerToken(authHeader)
 	if err != nil || strings.TrimSpace(token) == "" {
-		r.logDebug(ctx, "optional auth: invalid bearer token format", zap.Error(err))
+		r.logDebug(ctx, "principal authentication skipped - invalid bearer token format", zap.Error(err))
 		return nil, nil
 	}
 
 	claims, err := r.validate(token)
 	if err != nil || claims == nil {
-		r.logWarn(ctx, "optional authentication failed - header present but validation failed", zap.Error(err))
+		r.logWarn(ctx, "principal authentication failed - header present but validation failed", zap.Error(err))
 		return nil, nil
 	}
 
