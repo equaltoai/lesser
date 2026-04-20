@@ -1006,6 +1006,55 @@ func TestService_round15_create_note_keeps_status_audience_aligned_after_mention
 	})
 }
 
+func TestService_round15_create_note_keeps_truthful_explicit_recipients_stable(t *testing.T) {
+	service, _, federation, _, _ := newNotesServiceHarness(t)
+
+	expectedTo := []string{activitypub.PublicAddress}
+	expectedCC := []string{
+		"https://example.com/users/alice/followers",
+		"https://remote.example/users/carol",
+	}
+	expectedBTo := []string{"https://remote.example/users/dave"}
+	expectedBCC := []string{"https://remote.example/users/erin"}
+
+	created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+		AuthorID:      "alice",
+		Content:       "hello world",
+		Visibility:    VisibilityPublic,
+		ToRecipients:  append([]string(nil), expectedTo...),
+		CcRecipients:  append([]string(nil), expectedCC...),
+		BtoRecipients: append([]string(nil), expectedBTo...),
+		BccRecipients: append([]string(nil), expectedBCC...),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+	require.NotNil(t, created.Note.Note)
+
+	assert.Equal(t, expectedTo, created.Note.ToRecipients)
+	assert.Equal(t, expectedCC, created.Note.CcRecipients)
+	assert.Equal(t, expectedBTo, created.Note.BtoRecipients)
+	assert.Equal(t, expectedBCC, created.Note.BccRecipients)
+
+	assert.Equal(t, expectedTo, created.Note.Note.To)
+	assert.Equal(t, expectedCC, created.Note.Note.CC)
+	assert.Equal(t, expectedBTo, created.Note.Note.BTo)
+	assert.Equal(t, expectedBCC, created.Note.Note.BCC)
+
+	require.Len(t, federation.activities, 1)
+	assert.Equal(t, expectedTo, federation.activities[0].To)
+	assert.Equal(t, expectedCC, federation.activities[0].CC)
+	assert.Equal(t, expectedBTo, federation.activities[0].BTo)
+	assert.Equal(t, expectedBCC, federation.activities[0].BCC)
+
+	federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+	require.True(t, ok)
+	assert.Equal(t, expectedTo, federatedNote.To)
+	assert.Equal(t, expectedCC, federatedNote.CC)
+	assert.Equal(t, expectedBTo, federatedNote.BTo)
+	assert.Equal(t, expectedBCC, federatedNote.BCC)
+}
+
 func TestService_round15_create_note_resolves_remote_mentions_for_federation(t *testing.T) {
 	t.Run("public mentions remote actor in cc", func(t *testing.T) {
 		service, _, federation, notifier, _ := newNotesServiceHarness(t)
