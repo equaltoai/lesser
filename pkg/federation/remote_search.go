@@ -307,12 +307,16 @@ func exactHandle(username, domain string) string {
 
 // webFingerLookup performs a WebFinger query to find an actor's ActivityPub URL
 func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, domain string) (string, error) {
+	return webFingerLookupWithClient(ctx, s.httpClient, s.logger, username, domain)
+}
+
+func webFingerLookupWithClient(ctx context.Context, client httpDoer, logger *zap.Logger, username, domain string) (string, error) {
 	// Build WebFinger URL
 	resource := fmt.Sprintf("acct:%s@%s", username, domain)
 	webfingerURL := fmt.Sprintf("https://%s/.well-known/webfinger?resource=%s",
 		domain, url.QueryEscape(resource))
 
-	s.logger.Debug("performing webfinger lookup",
+	logger.Debug("performing webfinger lookup",
 		zap.String("url", webfingerURL))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", webfingerURL, nil)
@@ -322,9 +326,9 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 
 	req.Header.Set("Accept", "application/jrd+json")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		s.logger.Error("webfinger request failed",
+		logger.Error("webfinger request failed",
 			zap.String("url", webfingerURL),
 			zap.Error(err))
 		return "", errors.Join(ErrWebFingerRequestFailed, err)
@@ -332,7 +336,7 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		s.logger.Error("webfinger returned non-2xx status",
+		logger.Error("webfinger returned non-2xx status",
 			zap.String("url", webfingerURL),
 			zap.Int("status_code", resp.StatusCode))
 		return "", ErrWebFingerNon2xxStatus
@@ -341,7 +345,7 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 	// Parse WebFinger response
 	var webfingerResp activitypub.WebFingerResource
 	if err := common.ParseHTTPResponse(resp.Body, &webfingerResp); err != nil {
-		s.logger.Error("failed to parse webfinger response",
+		logger.Error("failed to parse webfinger response",
 			zap.String("url", webfingerURL),
 			zap.Error(err))
 		return "", errors.Join(ErrWebFingerResponseParseFailed, err)
@@ -354,7 +358,7 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 		}
 	}
 
-	s.logger.Error("no ActivityPub link found in webfinger response",
+	logger.Error("no ActivityPub link found in webfinger response",
 		zap.String("url", webfingerURL))
 	return "", ErrNoActivityPubLinkFound
 }
