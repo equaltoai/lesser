@@ -34,9 +34,10 @@ func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *za
 	return CreatePrincipalContextBridgeFromAuthService(authService, logger, "api")
 }
 
-// CreateAPIAuthMiddlewareFromOAuthService creates API auth middleware from OAuthService.
-func CreateAPIAuthMiddlewareFromOAuthService(oauthService *OAuthService, logger *zap.Logger) apptheory.Middleware {
-	return CreatePrincipalContextBridgeFromOAuthService(oauthService, logger, "api")
+// CreateAPIAuthMiddlewareFromAuthAndOAuthServices creates API auth middleware that preserves
+// native session validation while also accepting OAuth-issued tokens.
+func CreateAPIAuthMiddlewareFromAuthAndOAuthServices(authService *AuthService, oauthService *OAuthService, logger *zap.Logger) apptheory.Middleware {
+	return CreatePrincipalContextBridgeFromAuthAndOAuthServices(authService, oauthService, logger, "api")
 }
 
 // CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService.

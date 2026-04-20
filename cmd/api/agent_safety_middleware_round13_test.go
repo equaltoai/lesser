@@ -11,9 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -100,93 +98,6 @@ func newRateLimitRepoForCLISafety(t *testing.T) (*storageRepos.RateLimitReposito
 	q.On("Delete").Return(nil).Maybe()
 
 	return storageRepos.NewRateLimitRepository(db, "test-table", zap.NewNop(), nil), update
-}
-
-func TestCreateOptionalOAuthAuthMiddleware_Round13(t *testing.T) {
-	t.Run("no-op when config or repos missing", func(t *testing.T) {
-		mw := createOptionalOAuthAuthMiddleware(nil, nil, nil)
-		called := false
-		next := func(*apptheory.Context) (*apptheory.Response, error) {
-			called = true
-			return apptheory.Text(http.StatusOK, "ok"), nil
-		}
-		_, err := mw(next)(&apptheory.Context{})
-		require.NoError(t, err)
-		require.True(t, called)
-	})
-
-	t.Run("sets claims when bearer token validates", func(t *testing.T) {
-		cfg := &config.Config{JWTSecret: "secret"}
-		repos := &apiHandlers.MockRepositoryStorage{}
-		repos.On("Account").Return((*repositories.AccountRepository)(nil)).Maybe()
-		mw := createOptionalOAuthAuthMiddleware(cfg, repos, zap.NewNop())
-
-		now := time.Now()
-		claims := auth.Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:   "agent",
-				IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
-				NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
-				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
-			},
-			Username:  "agent",
-			Scopes:    []string{auth.ScopeRead},
-			SessionID: "sess-1",
-			IsAgent:   true,
-		}
-		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.JWTSecret))
-		require.NoError(t, err)
-
-		ctx := &apptheory.Context{
-			Request: apptheory.Request{
-				Method: http.MethodGet,
-				Path:   "/",
-				Headers: map[string][]string{
-					"authorization": {"Bearer " + token},
-				},
-			},
-		}
-
-		resp, err := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
-			stored, ok := c.Get("claims").(*auth.Claims)
-			require.True(t, ok)
-			require.Equal(t, "agent", stored.Username)
-			require.NotNil(t, c.AuthPrincipal)
-			require.Equal(t, "agent", c.AuthIdentity)
-			require.Equal(t, "agent", c.Get("username"))
-			require.Equal(t, true, c.Get("is_authenticated"))
-			return apptheory.Text(http.StatusOK, "ok"), nil
-		})(ctx)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.Status)
-	})
-
-	t.Run("does not override existing auth context", func(t *testing.T) {
-		cfg := &config.Config{JWTSecret: "secret"}
-		repos := &apiHandlers.MockRepositoryStorage{}
-		repos.On("Account").Return((*repositories.AccountRepository)(nil)).Maybe()
-		mw := createOptionalOAuthAuthMiddleware(cfg, repos, zap.NewNop())
-
-		ctx := &apptheory.Context{
-			Request: apptheory.Request{
-				Method: http.MethodGet,
-				Path:   "/",
-			},
-		}
-		ctx.Set("claims", &auth.Claims{Username: "existing"})
-		ctx.Set("username", "existing")
-
-		resp, err := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
-			stored := c.Get("claims").(*auth.Claims)
-			require.Equal(t, "existing", stored.Username)
-			require.NotNil(t, c.AuthPrincipal)
-			require.Equal(t, "existing", c.AuthIdentity)
-			require.Equal(t, "existing", c.Get("username"))
-			return apptheory.Text(http.StatusOK, "ok"), nil
-		})(ctx)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.Status)
-	})
 }
 
 func TestAcquireAgentConcurrencyLease_Round13(t *testing.T) {

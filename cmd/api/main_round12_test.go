@@ -20,13 +20,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
+	storageinterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -395,12 +398,140 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	}
 }
 
-func TestBuildApp_PublicOAuthBearerAuthenticatesProtectedAndOptionalRoutes(t *testing.T) {
+type apiRouteAuthTestConfig struct {
+	session            *storagemodels.Session
+	revokedAccessToken *storagemodels.RevokedAccessToken
+}
+
+func newAPIRouteAuthRepos(t *testing.T, cfg apiRouteAuthTestConfig) *mainTestRepos {
+	t.Helper()
+
+	mockDB := new(mocks.MockDB)
+	sessionQuery := new(mocks.MockQuery)
+	revokedQuery := new(mocks.MockQuery)
+	metricQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		_, ok := model.(*storagemodels.Session)
+		return ok
+	})).Return(sessionQuery).Maybe()
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		_, ok := model.(*storagemodels.RevokedAccessToken)
+		return ok
+	})).Return(revokedQuery).Maybe()
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		_, ok := model.(*storagemodels.MetricRecord)
+		return ok
+	})).Return(metricQuery).Maybe()
+
+	sessionQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(sessionQuery).Maybe()
+	if cfg.session != nil {
+		sessionQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*storagemodels.Session)
+			return ok
+		})).Return(nil).Run(func(args mock.Arguments) {
+			*args.Get(0).(*storagemodels.Session) = *cfg.session
+		}).Maybe()
+	} else {
+		sessionQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*storagemodels.Session)
+			return ok
+		})).Return(dynamormErrors.ErrItemNotFound).Maybe()
+	}
+
+	revokedQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(revokedQuery).Maybe()
+	revokedQuery.On("ConsistentRead").Return(revokedQuery).Maybe()
+	if cfg.revokedAccessToken != nil {
+		revokedQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*storagemodels.RevokedAccessToken)
+			return ok
+		})).Return(nil).Run(func(args mock.Arguments) {
+			*args.Get(0).(*storagemodels.RevokedAccessToken) = *cfg.revokedAccessToken
+		}).Maybe()
+	} else {
+		revokedQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*storagemodels.RevokedAccessToken)
+			return ok
+		})).Return(dynamormErrors.ErrItemNotFound).Maybe()
+	}
+
+	metricQuery.On("Create").Return(nil).Maybe()
+
+	logger := zap.NewNop()
+	account := repositories.NewAccountRepository(mockDB, "test-table", "example.com", logger)
+	metric := repositories.NewMetricRecordRepository(mockDB, "test-table", logger, nil)
+
+	mockRepos := &apiHandlers.MockRepositoryStorage{}
+	mockRepos.On("Activity").Return((storageinterfaces.ActivityRepository)(nil)).Maybe()
+	mockRepos.On("Notification").Return((storageinterfaces.NotificationRepository)(nil)).Maybe()
+	mockRepos.On("Recovery").Return((*repositories.RecoveryRepository)(nil)).Maybe()
+	mockRepos.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
+	mockRepos.On("PushSubscription").Return((*repositories.PushSubscriptionRepository)(nil)).Maybe()
+
+	return &mainTestRepos{
+		MockRepositoryStorage: mockRepos,
+		account:               account,
+		metricRecord:          metric,
+	}
+}
+
+func signNativeSessionAccessToken(t *testing.T, jwtSecret, username, sessionID string, scopes []string) string {
+	t.Helper()
+
+	now := time.Now().UTC()
+	claims := auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
+			NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+		Username:  username,
+		ClientID:  "web",
+		Scopes:    scopes,
+		SessionID: sessionID,
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtSecret))
+	require.NoError(t, err)
+	return token
+}
+
+func parseAccessTokenClaims(t *testing.T, jwtSecret, token string) *auth.Claims {
+	t.Helper()
+
+	parsed, err := jwt.ParseWithClaims(token, &auth.Claims{}, func(token *jwt.Token) (any, error) {
+		return []byte(jwtSecret), nil
+	})
+	require.NoError(t, err)
+
+	claims, ok := parsed.Claims.(*auth.Claims)
+	require.True(t, ok)
+	require.True(t, parsed.Valid)
+	return claims
+}
+
+func TestBuildApp_APIAuthRouteMatrix(t *testing.T) {
 	origRoutes := configureRoutesFn
 	origLock := createInstanceLockMiddlewareFn
+	origCfg := cfg
+	origLogger := logger
+	origRepos := repos
+	origAuthService := authService
+	origEMF := emfMetrics
+	origTracing := tracingManager
+	origCost := costTrackingService
 	t.Cleanup(func() {
 		configureRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
+		cfg = origCfg
+		logger = origLogger
+		repos = origRepos
+		authService = origAuthService
+		emfMetrics = origEMF
+		tracingManager = origTracing
+		costTrackingService = origCost
 	})
 
 	cfg = &config.Config{
@@ -412,10 +543,10 @@ func TestBuildApp_PublicOAuthBearerAuthenticatesProtectedAndOptionalRoutes(t *te
 		JWTSecret:       "a-very-strong-jwt-key-without-weak-patterns-9876543210",
 	}
 	logger = zap.NewNop()
-	repos = nil
-	authService = &auth.AuthService{}
+	emfMetrics = nil
+	tracingManager = nil
+	costTrackingService = nil
 
-	// Exercise OAuth-only API auth behavior without a backing session row.
 	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
@@ -432,41 +563,137 @@ func TestBuildApp_PublicOAuthBearerAuthenticatesProtectedAndOptionalRoutes(t *te
 		}, apptheory.OptionalAuth())
 	}
 
-	oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
-	token, _, err := oauthService.GenerateTokensWithAccessTokenTTLAndClientContext(
-		context.Background(),
-		"alice",
-		"client-agent",
-		"",
-		[]string{auth.ScopeRead},
-		time.Hour,
-		auth.ClientClassAgent,
-		"sid-public-oauth",
-	)
-	require.NoError(t, err)
+	now := time.Now().UTC()
+	validNativeSession := &storagemodels.Session{
+		PK:          "session#sid-native",
+		SK:          "session#sid-native",
+		SessionID:   "sid-native",
+		UserID:      "USER#alice",
+		AccessToken: "native-access",
+		CreatedAt:   now.Add(-time.Hour),
+		LastUsedAt:  now.Add(-time.Minute),
+		ExpiresAt:   now.Add(time.Hour).Unix(),
+		Version:     1,
+	}
 
-	app := buildApp(logger)
-	headers := map[string][]string{"Authorization": {"Bearer " + token}}
+	testCases := []struct {
+		name                  string
+		build                 func(t *testing.T) (string, *mainTestRepos)
+		wantProtectedStatus   int
+		wantProtectedUsername string
+		checkOptional         bool
+		wantOptionalUsername  string
+	}{
+		{
+			name: "public OAuth bearer without session row authenticates protected and optional routes",
+			build: func(t *testing.T) (string, *mainTestRepos) {
+				t.Helper()
+				oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
+				token, _, err := oauthService.GenerateTokensWithAccessTokenTTLAndClientContext(
+					context.Background(),
+					"alice",
+					"client-agent",
+					"",
+					[]string{auth.ScopeRead},
+					time.Hour,
+					auth.ClientClassAgent,
+					"sid-public-oauth",
+				)
+				require.NoError(t, err)
+				return token, newAPIRouteAuthRepos(t, apiRouteAuthTestConfig{})
+			},
+			wantProtectedStatus:   http.StatusOK,
+			wantProtectedUsername: "alice",
+			checkOptional:         true,
+			wantOptionalUsername:  "alice",
+		},
+		{
+			name: "native session bearer with valid session row authenticates protected and optional routes",
+			build: func(t *testing.T) (string, *mainTestRepos) {
+				t.Helper()
+				token := signNativeSessionAccessToken(t, cfg.JWTSecret, "alice", "sid-native", []string{auth.ScopeRead})
+				return token, newAPIRouteAuthRepos(t, apiRouteAuthTestConfig{session: validNativeSession})
+			},
+			wantProtectedStatus:   http.StatusOK,
+			wantProtectedUsername: "alice",
+			checkOptional:         true,
+			wantOptionalUsername:  "alice",
+		},
+		{
+			name: "native session bearer without session row is rejected at protected route gate",
+			build: func(t *testing.T) (string, *mainTestRepos) {
+				t.Helper()
+				token := signNativeSessionAccessToken(t, cfg.JWTSecret, "alice", "sid-missing", []string{auth.ScopeRead})
+				return token, newAPIRouteAuthRepos(t, apiRouteAuthTestConfig{})
+			},
+			wantProtectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "revoked OAuth access token is rejected at protected route gate",
+			build: func(t *testing.T) (string, *mainTestRepos) {
+				t.Helper()
+				oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
+				token, _, err := oauthService.GenerateTokensWithAccessTokenTTLAndClientContext(
+					context.Background(),
+					"alice",
+					"client-agent",
+					"",
+					[]string{auth.ScopeRead},
+					time.Hour,
+					auth.ClientClassAgent,
+					"sid-revoked-oauth",
+				)
+				require.NoError(t, err)
+				claims := parseAccessTokenClaims(t, cfg.JWTSecret, token)
+				revoked := &storagemodels.RevokedAccessToken{
+					JTI:       claims.ID,
+					ExpiresAt: now.Add(time.Hour),
+					RevokedAt: now,
+				}
+				require.NoError(t, revoked.BeforeCreate())
+				return token, newAPIRouteAuthRepos(t, apiRouteAuthTestConfig{revokedAccessToken: revoked})
+			},
+			wantProtectedStatus: http.StatusUnauthorized,
+		},
+	}
 
-	protectedResp := app.Serve(context.Background(), apptheory.Request{
-		Method:  http.MethodGet,
-		Path:    "/protected",
-		Headers: headers,
-	})
-	require.Equal(t, http.StatusOK, protectedResp.Status)
-	var protectedBody map[string]string
-	require.NoError(t, json.Unmarshal(protectedResp.Body, &protectedBody))
-	require.Equal(t, "alice", protectedBody["username"])
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			token, routeRepos := tc.build(t)
+			repos = routeRepos
 
-	optionalResp := app.Serve(context.Background(), apptheory.Request{
-		Method:  http.MethodGet,
-		Path:    "/optional",
-		Headers: headers,
-	})
-	require.Equal(t, http.StatusOK, optionalResp.Status)
-	var optionalBody map[string]string
-	require.NoError(t, json.Unmarshal(optionalResp.Body, &optionalBody))
-	require.Equal(t, "alice", optionalBody["username"])
+			var err error
+			authService, err = auth.NewAuthService(cfg, repos)
+			require.NoError(t, err)
+
+			app := buildApp(logger)
+			headers := map[string][]string{"Authorization": {"Bearer " + token}}
+
+			protectedResp := app.Serve(context.Background(), apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/protected",
+				Headers: headers,
+			})
+			require.Equal(t, tc.wantProtectedStatus, protectedResp.Status)
+			if tc.wantProtectedUsername != "" {
+				var protectedBody map[string]string
+				require.NoError(t, json.Unmarshal(protectedResp.Body, &protectedBody))
+				require.Equal(t, tc.wantProtectedUsername, protectedBody["username"])
+			}
+
+			if tc.checkOptional {
+				optionalResp := app.Serve(context.Background(), apptheory.Request{
+					Method:  http.MethodGet,
+					Path:    "/optional",
+					Headers: headers,
+				})
+				require.Equal(t, http.StatusOK, optionalResp.Status)
+				var optionalBody map[string]string
+				require.NoError(t, json.Unmarshal(optionalResp.Body, &optionalBody))
+				require.Equal(t, tc.wantOptionalUsername, optionalBody["username"])
+			}
+		})
+	}
 }
 
 func TestMainRound12(t *testing.T) {

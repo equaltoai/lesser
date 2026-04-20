@@ -77,8 +77,8 @@ var (
 	newAuthService = auth.NewAuthService
 	newStreamQueue = streaming.NewDynamoStreamQueue
 
-	createAPIAuthMiddlewareFromOAuthService = auth.CreateAPIAuthMiddlewareFromOAuthService
-	newAPIHandler                           = apiHandlers.NewHandler
+	createAPIAuthMiddlewareFromAuthAndOAuthServices = auth.CreateAPIAuthMiddlewareFromAuthAndOAuthServices
+	newAPIHandler                                   = apiHandlers.NewHandler
 
 	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
 	configureRoutesFn              = configureRoutes
@@ -382,7 +382,7 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	}
 	if authService != nil && oauthService != nil {
 		options = append(options, apptheory.WithAuthPrincipalHook(
-			auth.NewAppTheoryPrincipalHookFromOAuthService(oauthService, lambdaLogger, "api"),
+			auth.NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService, oauthService, lambdaLogger, "api"),
 		))
 	}
 	app := apptheory.New(options...)
@@ -400,11 +400,8 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 
 	// Optional auth (enables user context for public endpoints).
 	if authService != nil && oauthService != nil {
-		app.Use(createAPIAuthMiddlewareFromOAuthService(oauthService, lambdaLogger))
+		app.Use(createAPIAuthMiddlewareFromAuthAndOAuthServices(authService, oauthService, lambdaLogger))
 	}
-	// Optional OAuth auth fallback (enables user context for OAuth/agent tokens too).
-	// This allows downstream middleware (rate limits, logging) to key by username for agents.
-	app.Use(createOptionalOAuthAuthMiddleware(cfg, repos, lambdaLogger))
 
 	// Enforce default-deny public surface policy.
 	app.Use(createPublicSurfaceMiddleware())
