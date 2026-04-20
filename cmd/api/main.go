@@ -86,6 +86,9 @@ var (
 	trackLambdaInvocation = func(ctx context.Context, service *cost.TrackingService, operation cost.LambdaOperation) error {
 		return service.TrackLambdaInvocation(ctx, operation)
 	}
+	launchAsyncTask = func(fn func()) {
+		go fn()
+	}
 )
 
 func init() {
@@ -960,9 +963,12 @@ func recordLatencyMetricWithRepos(ctx context.Context, repo core.RepositoryStora
 func createCentralizedCostTrackingMiddleware() apptheory.Middleware {
 	return func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
-			if costTrackingService == nil {
+			service := costTrackingService
+			if service == nil {
 				return next(ctx)
 			}
+			tracker := trackLambdaInvocation
+			log := logger
 
 			startTime := time.Now()
 
@@ -985,11 +991,11 @@ func createCentralizedCostTrackingMiddleware() apptheory.Middleware {
 			}
 
 			// Track the operation asynchronously to avoid blocking the response
-			go func() {
-				if trackErr := trackLambdaInvocation(context.Background(), costTrackingService, lambdaOp); trackErr != nil {
-					logger.Warn("failed to track Lambda cost", zap.Error(trackErr))
+			launchAsyncTask(func() {
+				if trackErr := tracker(context.Background(), service, lambdaOp); trackErr != nil && log != nil {
+					log.Warn("failed to track Lambda cost", zap.Error(trackErr))
 				}
-			}()
+			})
 
 			return resp, err
 		}

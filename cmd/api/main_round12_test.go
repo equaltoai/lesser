@@ -365,23 +365,33 @@ func TestDetermineErrorTypeRound12(t *testing.T) {
 
 func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	logger = zap.NewNop()
+	origService := costTrackingService
+	origTrack := trackLambdaInvocation
+	origLaunch := launchAsyncTask
+	t.Cleanup(func() {
+		costTrackingService = origService
+		trackLambdaInvocation = origTrack
+		launchAsyncTask = origLaunch
+	})
 
+	costTrackingService = nil
 	mw := createCentralizedCostTrackingMiddleware()
 	ctx := &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
 	_, err := mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
 	require.NoError(t, err)
 
-	costTrackingService = cost.NewTrackingService(nil, logger, cost.DefaultTrackingServiceConfig())
-	t.Cleanup(func() { _ = costTrackingService.Close(context.Background()) })
+	service := cost.NewTrackingService(nil, logger, cost.DefaultTrackingServiceConfig())
+	costTrackingService = service
+	t.Cleanup(func() { _ = service.Close(context.Background()) })
 
-	origTrack := trackLambdaInvocation
-	t.Cleanup(func() { trackLambdaInvocation = origTrack })
-
-	done := make(chan struct{}, 1)
-	trackLambdaInvocation = func(_ context.Context, _ *cost.TrackingService, _ cost.LambdaOperation) error {
-		done <- struct{}{}
+	done := make(chan *cost.TrackingService, 1)
+	trackLambdaInvocation = func(_ context.Context, svc *cost.TrackingService, op cost.LambdaOperation) error {
+		require.Equal(t, int64(256), op.MemoryMB)
+		done <- svc
 		return nil
 	}
+	var queued func()
+	launchAsyncTask = func(fn func()) { queued = fn }
 
 	require.NoError(t, os.Setenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "256"))
 	t.Cleanup(func() { _ = os.Unsetenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE") })
@@ -390,9 +400,16 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	ctx = &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
 	_, err = mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
 	require.NoError(t, err)
+	require.NotNil(t, queued)
+
+	trackLambdaInvocation = origTrack
+	costTrackingService = nil
+
+	require.NotPanics(t, queued)
 
 	select {
-	case <-done:
+	case trackedService := <-done:
+		require.Same(t, service, trackedService)
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for cost tracking")
 	}
