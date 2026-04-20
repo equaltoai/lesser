@@ -861,6 +861,151 @@ func TestService_round15_create_note_reply_creates_notification_for_parent_autho
 	assert.Equal(t, created.Note.StatusID, replyNotification.TargetID)
 }
 
+func TestService_round15_create_note_derives_canonical_audience_defaults(t *testing.T) {
+	followers := "https://example.com/users/alice/followers"
+
+	tests := []struct {
+		name       string
+		visibility string
+		wantTo     []string
+		wantCC     []string
+	}{
+		{
+			name:       "public",
+			visibility: VisibilityPublic,
+			wantTo:     []string{activitypub.PublicAddress},
+			wantCC:     []string{followers},
+		},
+		{
+			name:       "unlisted",
+			visibility: models.VisibilityUnlisted,
+			wantTo:     []string{followers},
+			wantCC:     []string{activitypub.PublicAddress},
+		},
+		{
+			name:       "private",
+			visibility: models.VisibilityPrivate,
+			wantTo:     []string{followers},
+			wantCC:     nil,
+		},
+		{
+			name:       "direct stays explicit only",
+			visibility: models.VisibilityDirect,
+			wantTo:     nil,
+			wantCC:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _, federation, _, _ := newNotesServiceHarness(t)
+
+			created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+				AuthorID:   "alice",
+				Content:    "hello world",
+				Visibility: tt.visibility,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, created)
+			require.NotNil(t, created.Note)
+			require.NotNil(t, created.Note.Note)
+
+			assert.Equal(t, tt.wantTo, created.Note.ToRecipients)
+			assert.Equal(t, tt.wantCC, created.Note.CcRecipients)
+			assert.Equal(t, tt.wantTo, created.Note.Note.To)
+			assert.Equal(t, tt.wantCC, created.Note.Note.CC)
+
+			require.Len(t, federation.activities, 1)
+			assert.Equal(t, tt.wantTo, federation.activities[0].To)
+			assert.Equal(t, tt.wantCC, federation.activities[0].CC)
+		})
+	}
+}
+
+func TestService_round15_create_note_keeps_status_audience_aligned_after_mention_merge(t *testing.T) {
+	t.Run("public remote mention aligns status note and queued activity", func(t *testing.T) {
+		service, _, federation, notifier, _ := newNotesServiceHarness(t)
+		service.accountRepo = &stubAccountRepo{
+			domain:  "example.com",
+			missing: map[string]bool{"carol@remote.example": true},
+		}
+		federation.resolved = map[string]*activitypub.Actor{
+			"carol@remote.example": {
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
+				PreferredUsername: "carol",
+			},
+		}
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:   "alice",
+			Content:    "hello @carol@remote.example",
+			Visibility: VisibilityPublic,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Len(t, notifier.cmds, 0)
+
+		expectedTo := []string{activitypub.PublicAddress}
+		expectedCC := []string{
+			"https://example.com/users/alice/followers",
+			"https://remote.example/users/carol",
+		}
+
+		assert.Equal(t, expectedTo, created.Note.ToRecipients)
+		assert.Equal(t, expectedCC, created.Note.CcRecipients)
+		assert.Equal(t, expectedTo, created.Note.Note.To)
+		assert.Equal(t, expectedCC, created.Note.Note.CC)
+
+		require.Len(t, federation.activities, 1)
+		assert.Equal(t, expectedTo, federation.activities[0].To)
+		assert.Equal(t, expectedCC, federation.activities[0].CC)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, expectedTo, federatedNote.To)
+		assert.Equal(t, expectedCC, federatedNote.CC)
+	})
+
+	t.Run("direct remote mention aligns status note and queued activity", func(t *testing.T) {
+		service, _, federation, notifier, _ := newNotesServiceHarness(t)
+		service.accountRepo = &stubAccountRepo{
+			domain:  "example.com",
+			missing: map[string]bool{"carol@remote.example": true},
+		}
+		federation.resolved = map[string]*activitypub.Actor{
+			"carol@remote.example": {
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
+				PreferredUsername: "carol",
+			},
+		}
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:   "alice",
+			Content:    "hello @carol@remote.example",
+			Visibility: models.VisibilityDirect,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Len(t, notifier.cmds, 0)
+
+		expectedTo := []string{"https://remote.example/users/carol"}
+
+		assert.Equal(t, expectedTo, created.Note.ToRecipients)
+		assert.Empty(t, created.Note.CcRecipients)
+		assert.Equal(t, expectedTo, created.Note.Note.To)
+		assert.Empty(t, created.Note.Note.CC)
+
+		require.Len(t, federation.activities, 1)
+		assert.Equal(t, expectedTo, federation.activities[0].To)
+		assert.Empty(t, federation.activities[0].CC)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, expectedTo, federatedNote.To)
+		assert.Empty(t, federatedNote.CC)
+	})
+}
+
 func TestService_round15_create_note_resolves_remote_mentions_for_federation(t *testing.T) {
 	t.Run("public mentions remote actor in cc", func(t *testing.T) {
 		service, _, federation, notifier, _ := newNotesServiceHarness(t)
