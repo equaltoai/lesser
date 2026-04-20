@@ -170,7 +170,7 @@ func TestHandleAdminSetSoulWellKnownProofLift(t *testing.T) {
 
 		expiresIn := 0
 		ctx, err = round10NewLiftContext(http.MethodPut, "/api/v1/admin/soul/well-known", headers, nil, map[string]any{
-			"proof_value":         "abc",
+			"proof_value":        "abc",
 			"expires_in_seconds": &expiresIn,
 		})
 		require.NoError(t, err)
@@ -213,7 +213,7 @@ func TestHandleAdminSetSoulWellKnownProofLift(t *testing.T) {
 
 		expiresIn := 60
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/soul/well-known", headers, nil, map[string]any{
-			"proof_value":         "abc",
+			"proof_value":        "abc",
 			"expires_in_seconds": &expiresIn,
 		})
 		require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestHandleAdminSetSoulWellKnownProofLift(t *testing.T) {
 
 		expiresIn := 60
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/soul/well-known", headers, nil, map[string]any{
-			"proof_value":         "lesser-soul-agent=abc",
+			"proof_value":        "lesser-soul-agent=abc",
 			"expires_in_seconds": &expiresIn,
 		})
 		require.NoError(t, err)

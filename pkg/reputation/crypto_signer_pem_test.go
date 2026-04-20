@@ -2,8 +2,8 @@ package reputation
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
@@ -116,4 +116,3 @@ func TestNewSigner_ReturnsErrorOnNonEd25519PKCS8Key(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "private key is not an Ed25519 key")
 }
-

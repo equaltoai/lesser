@@ -14,4 +14,3 @@ func TestLegacyConfigWarnings_NilHandlerDoesNotPanic(t *testing.T) {
 	require.NotPanics(t, func() { (*Handler)(nil).warnLegacyTipsConfig() })
 	require.NotPanics(t, func() { (*Handler)(nil).warnTrustMigrationSkippedMissingSecretARN() })
 }
-

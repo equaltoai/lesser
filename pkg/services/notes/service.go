@@ -332,6 +332,8 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		return nil, ErrGetAuthorAccount
 	}
 
+	s.normalizeCreateAudience(&sanitizedCmd, author)
+
 	// Generate unique status ID
 	statusID := uuid.New().String()
 
@@ -401,6 +403,18 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 }
 
 func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
+	toRecipients := appendUniqueAudience(nil, cmd.ToRecipients...)
+	ccRecipients := appendUniqueAudience(nil, cmd.CcRecipients...)
+	btoRecipients := appendUniqueAudience(nil, cmd.BtoRecipients...)
+	bccRecipients := appendUniqueAudience(nil, cmd.BccRecipients...)
+
+	if note != nil {
+		toRecipients = appendUniqueAudience(nil, note.To...)
+		ccRecipients = appendUniqueAudience(nil, note.CC...)
+		btoRecipients = appendUniqueAudience(nil, note.BTo...)
+		bccRecipients = appendUniqueAudience(nil, note.BCC...)
+	}
+
 	status := &models.Status{
 		StatusID:            statusID,
 		Note:                note,
@@ -412,10 +426,10 @@ func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account,
 		Language:            cmd.Language,
 		InReplyToID:         cmd.InReplyToID,
 		ConversationID:      cmd.ConversationID,
-		ToRecipients:        cmd.ToRecipients,
-		CcRecipients:        cmd.CcRecipients,
-		BtoRecipients:       cmd.BtoRecipients,
-		BccRecipients:       cmd.BccRecipients,
+		ToRecipients:        toRecipients,
+		CcRecipients:        ccRecipients,
+		BtoRecipients:       btoRecipients,
+		BccRecipients:       bccRecipients,
 		QuoteTargetStatusID: cmd.QuoteTargetStatusID,
 		QuoteTargetAuthorID: cmd.QuoteTargetAuthorID,
 		PublishedAt:         timestamp,
@@ -1251,6 +1265,42 @@ func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateNoteComman
 	return nil
 }
 
+func (s *Service) normalizeCreateAudience(cmd *CreateNoteCommand, author *storage.Account) {
+	if cmd == nil {
+		return
+	}
+
+	toRecipients := appendUniqueAudience(nil, cmd.ToRecipients...)
+	ccRecipients := appendUniqueAudience(nil, cmd.CcRecipients...)
+	btoRecipients := appendUniqueAudience(nil, cmd.BtoRecipients...)
+	bccRecipients := appendUniqueAudience(nil, cmd.BccRecipients...)
+	followersCollection := s.followersCollectionForAuthor(author)
+
+	switch cmd.Visibility {
+	case models.VisibilityPublic:
+		toRecipients = appendUniqueAudience(toRecipients, activitypub.PublicAddress)
+		if followersCollection != "" {
+			ccRecipients = appendUniqueAudience(ccRecipients, followersCollection)
+		}
+	case models.VisibilityUnlisted:
+		if followersCollection != "" {
+			toRecipients = appendUniqueAudience(toRecipients, followersCollection)
+		}
+		ccRecipients = appendUniqueAudience(ccRecipients, activitypub.PublicAddress)
+	case models.VisibilityPrivate:
+		if followersCollection != "" {
+			toRecipients = appendUniqueAudience(toRecipients, followersCollection)
+		}
+	case models.VisibilityDirect:
+		// Direct visibility never invents recipients.
+	}
+
+	cmd.ToRecipients = toRecipients
+	cmd.CcRecipients = ccRecipients
+	cmd.BtoRecipients = btoRecipients
+	cmd.BccRecipients = bccRecipients
+}
+
 func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, author *storage.Account) *activitypub.Note {
 	now := time.Now()
 
@@ -1605,6 +1655,33 @@ func (s *Service) addMentionAudience(note *activitypub.Note, mentionTags []activ
 	case models.VisibilityDirect:
 		note.To = appendUniqueAudience(note.To, recipients...)
 	}
+}
+
+func (s *Service) followersCollectionForAuthor(author *storage.Account) string {
+	if author == nil {
+		return ""
+	}
+
+	if author.Actor != nil {
+		if followers := strings.TrimSpace(author.Actor.Followers); followers != "" {
+			return followers
+		}
+
+		if actorID := strings.TrimSpace(author.Actor.ID); actorID != "" {
+			return strings.TrimRight(actorID, "/") + "/followers"
+		}
+	}
+
+	if author.User == nil {
+		return ""
+	}
+
+	username := strings.TrimSpace(author.User.Username)
+	if username == "" || strings.TrimSpace(s.domainName) == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://%s/users/%s/followers", s.domainName, username)
 }
 
 func mentionActorIDs(tags []activitypub.Tag) []string {

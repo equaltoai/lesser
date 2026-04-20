@@ -9,13 +9,13 @@ import (
 type HealthCheckResult struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK            string                 `theorydb:"pk,attr:PK" json:"pk"`                     // HEALTH_CHECK#timestamp
-	SK            string                 `theorydb:"sk,attr:SK" json:"sk"`                     // RESULT#component_type#identifier
+	PK            string                 `theorydb:"pk,attr:PK" json:"pk"`                               // HEALTH_CHECK#timestamp
+	SK            string                 `theorydb:"sk,attr:SK" json:"sk"`                               // RESULT#component_type#identifier
 	GSI1PK        string                 `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // COMPONENT#component_type#identifier
 	GSI1SK        string                 `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // timestamp
-	Component     string                 `theorydb:"attr:component" json:"component"`          // component identifier
-	ComponentType string                 `theorydb:"attr:componentType" json:"component_type"` // "dynamodb", "lambda", "sqs"
-	Status        string                 `theorydb:"attr:status" json:"status"`                // "healthy", "warning", "critical", "unknown"
+	Component     string                 `theorydb:"attr:component" json:"component"`                    // component identifier
+	ComponentType string                 `theorydb:"attr:componentType" json:"component_type"`           // "dynamodb", "lambda", "sqs"
+	Status        string                 `theorydb:"attr:status" json:"status"`                          // "healthy", "warning", "critical", "unknown"
 	CheckTime     time.Time              `theorydb:"attr:checkTime" json:"check_time"`
 	LatencyMs     int64                  `theorydb:"attr:latencyMs" json:"latency_ms"`
 	Error         string                 `theorydb:"attr:error" json:"error,omitempty"`
@@ -67,12 +67,12 @@ func NewHealthCheckResult(componentType, component, status, requestID string, ch
 type HealthCheckSummaryResult struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK             string    `theorydb:"pk,attr:PK" json:"pk"`                     // HEALTH_SUMMARY#date
-	SK             string    `theorydb:"sk,attr:SK" json:"sk"`                     // SUMMARY#hour
+	PK             string    `theorydb:"pk,attr:PK" json:"pk"`                               // HEALTH_SUMMARY#date
+	SK             string    `theorydb:"sk,attr:SK" json:"sk"`                               // SUMMARY#hour
 	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // DATE#date
 	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // HOUR#hour
-	Date           string    `theorydb:"attr:date" json:"date"`                    // YYYY-MM-DD
-	Hour           int       `theorydb:"attr:hour" json:"hour"`                    // 0-23
+	Date           string    `theorydb:"attr:date" json:"date"`                              // YYYY-MM-DD
+	Hour           int       `theorydb:"attr:hour" json:"hour"`                              // 0-23
 	TotalChecks    int       `theorydb:"attr:totalChecks" json:"total_checks"`
 	HealthyChecks  int       `theorydb:"attr:healthyChecks" json:"healthy_checks"`
 	WarningChecks  int       `theorydb:"attr:warningChecks" json:"warning_checks"`

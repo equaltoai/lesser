@@ -86,4 +86,3 @@ func TestSecureClient_checkRedirect_AllowsSafeRedirect(t *testing.T) {
 
 	require.NoError(t, client.checkRedirect(req, nil))
 }
-

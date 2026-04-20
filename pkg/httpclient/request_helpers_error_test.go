@@ -42,4 +42,3 @@ func TestSecureTransport_dialIP_UsesNetDialerWhenUnset(t *testing.T) {
 	_, err := transport.dialIP(ctx, "tcp", "127.0.0.1:80")
 	require.ErrorIs(t, err, context.Canceled)
 }
-
