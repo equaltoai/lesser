@@ -217,13 +217,12 @@ func TestParseCIDRAllowlistFromEnv(t *testing.T) {
 }
 
 func TestNewLimiterFunc(t *testing.T) {
-	originalLimiterDBOnce := limiterDBOnce
 	originalLimiterDB := limiterDB
 	originalLimiterDBErr := limiterDBErr
 	originalNewLimiterDBFunc := newLimiterDBFunc
 
 	t.Cleanup(func() {
-		limiterDBOnce = originalLimiterDBOnce
+		limiterDBOnce = sync.Once{}
 		limiterDB = originalLimiterDB
 		limiterDBErr = originalLimiterDBErr
 		newLimiterDBFunc = originalNewLimiterDBFunc

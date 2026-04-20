@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/99designs/gqlgen/graphql/executor"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/99designs/gqlgen/graphql/executor"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"

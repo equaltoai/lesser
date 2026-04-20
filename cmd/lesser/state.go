@@ -53,16 +53,16 @@ type hostedZoneReceipt struct {
 }
 
 type stageReceipt struct {
-	Stage            string            `json:"stage"`
-	Domain           string            `json:"domain"`
-	StackName        string            `json:"stack_name"`
-	TableName        string            `json:"table_name"`
-	BootstrapAddress string            `json:"bootstrap_address"`
-	Locked           bool              `json:"locked"`
-	URLs             map[string]string `json:"urls"`
-	StackOutputs     map[string]string `json:"stack_outputs,omitempty"`
+	Stage            string                `json:"stage"`
+	Domain           string                `json:"domain"`
+	StackName        string                `json:"stack_name"`
+	TableName        string                `json:"table_name"`
+	BootstrapAddress string                `json:"bootstrap_address"`
+	Locked           bool                  `json:"locked"`
+	URLs             map[string]string     `json:"urls"`
+	StackOutputs     map[string]string     `json:"stack_outputs,omitempty"`
 	ClientInstall    *clientInstallReceipt `json:"client_install,omitempty"`
-	BootstrappedAt   time.Time         `json:"bootstrapped_at"`
+	BootstrappedAt   time.Time             `json:"bootstrapped_at"`
 }
 
 type clientInstallReceipt struct {

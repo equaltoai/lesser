@@ -195,8 +195,8 @@ type PopularQueryCounter struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields for atomic counter operations
-	PK     string `theorydb:"pk,attr:PK"`                // POPULAR_QUERY#query_hash
-	SK     string `theorydb:"sk,attr:SK"`                // COUNTER#time_bucket (daily, weekly, monthly)
+	PK     string `theorydb:"pk,attr:PK"`                          // POPULAR_QUERY#query_hash
+	SK     string `theorydb:"sk,attr:SK"`                          // COUNTER#time_bucket (daily, weekly, monthly)
 	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"` // For time-based queries
 	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"` // For ranking by count
 

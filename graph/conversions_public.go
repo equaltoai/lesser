@@ -22,4 +22,3 @@ func (r *Resolver) ConvertStatusToGraphQLObject(ctx context.Context, status *mod
 func (r *Resolver) ConvertConversationToGraphQL(ctx context.Context, conv *models.Conversation) *model.Conversation {
 	return r.convertConversationToGraphQL(ctx, conv)
 }
-

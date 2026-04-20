@@ -14,7 +14,7 @@ type UserModelTestSuite struct {
 }
 
 // TableName returns the DynamoDB table backing UserModelTestSuite.
-func (UserModelTestSuite) TableName() string {
+func (*UserModelTestSuite) TableName() string {
 	return MainTableName
 }
 

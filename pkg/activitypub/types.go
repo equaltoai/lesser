@@ -105,7 +105,7 @@ var Context = ContextValue{
 			"@id":   "lessersoul:agentAttribution",
 			"@type": "@json",
 		},
-		"agentManifest":             "https://lesser.social/ns/agentManifest",
+		"agentManifest": "https://lesser.social/ns/agentManifest",
 	},
 }
 

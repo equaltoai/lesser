@@ -93,4 +93,3 @@ func TestHandleCreateScheduledStatus(t *testing.T) {
 		require.Equal(t, http.StatusCreated, resp.Status)
 	})
 }
-

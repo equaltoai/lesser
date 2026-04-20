@@ -140,11 +140,11 @@ func (m *ManifestService) GenerateHLSMasterPlaylist(ctx context.Context, mediaID
 
 	for _, variant := range variants {
 		// Write stream info
-			_, _ = fmt.Fprintf(&content, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"%s\"\n",
-				variant.Bitrate,
-				variant.Width,
-				variant.Height,
-				variant.Codec)
+		_, _ = fmt.Fprintf(&content, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"%s\"\n",
+			variant.Bitrate,
+			variant.Width,
+			variant.Height,
+			variant.Codec)
 
 		// Write variant playlist filename
 		_, _ = fmt.Fprintf(&content, "%s.m3u8\n", variant.Quality)
@@ -186,16 +186,16 @@ func (m *ManifestService) GenerateDASHManifest(ctx context.Context, mediaID stri
 
 	// Add video adaptation set
 	content.WriteString("    <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\n")
-		for _, variant := range variants {
-			_, _ = fmt.Fprintf(&content, "      <Representation id=\"%s\" bandwidth=\"%d\" width=\"%d\" height=\"%d\" codecs=\"%s\">\n",
-				variant.Quality,
-				variant.Bitrate,
-				variant.Width,
-				variant.Height,
-				variant.Codec)
-			_, _ = fmt.Fprintf(&content, "        <BaseURL>%s.mp4</BaseURL>\n", variant.Quality)
-			content.WriteString("      </Representation>\n")
-		}
+	for _, variant := range variants {
+		_, _ = fmt.Fprintf(&content, "      <Representation id=\"%s\" bandwidth=\"%d\" width=\"%d\" height=\"%d\" codecs=\"%s\">\n",
+			variant.Quality,
+			variant.Bitrate,
+			variant.Width,
+			variant.Height,
+			variant.Codec)
+		_, _ = fmt.Fprintf(&content, "        <BaseURL>%s.mp4</BaseURL>\n", variant.Quality)
+		content.WriteString("      </Representation>\n")
+	}
 	content.WriteString("    </AdaptationSet>\n")
 
 	content.WriteString("  </Period>\n")

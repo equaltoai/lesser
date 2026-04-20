@@ -236,4 +236,3 @@ func TestGraphQLStreamSubscriptionRepository_DeleteSubscriptionAndConnection(t *
 		testDB.AssertExpectations(t)
 	})
 }
-

@@ -25,7 +25,7 @@ func (suite *StatusModelTestSuite) TearDownTest() {
 }
 
 // TableName returns the DynamoDB table backing StatusModelTestSuite.
-func (StatusModelTestSuite) TableName() string {
+func (*StatusModelTestSuite) TableName() string {
 	return MainTableName
 }
 
