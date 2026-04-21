@@ -866,15 +866,6 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	return nil
 }
 
-// isLocalRecipient checks if a recipient is local to this instance
-func (d *DeliveryService) isLocalRecipient(recipientID, signingActorID string) bool {
-	// Extract domain from both IDs to compare
-	recipientDomain := extractDomainFromURL(recipientID)
-	signingActorDomain := extractDomainFromURL(signingActorID)
-
-	return recipientDomain == signingActorDomain
-}
-
 // calculateDeliveryPriority calculates delivery priority based on activity type and target health
 func (d *DeliveryService) calculateDeliveryPriority(ctx context.Context, activity *activitypub.Activity, targetInbox string) int {
 	priority := 5 // Default priority
