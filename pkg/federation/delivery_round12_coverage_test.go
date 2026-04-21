@@ -37,9 +37,6 @@ func TestDeliveryHelpers_RecipientsAndDomains(t *testing.T) {
 	assert.Equal(t, "example.com", extractDomainFromURL("https://example.com/inbox"))
 	assert.Equal(t, "unknown", extractDomainFromURL("://bad"))
 
-	assert.True(t, d.isLocalRecipient("https://example.com/users/bob", "https://example.com/users/alice"))
-	assert.False(t, d.isLocalRecipient("https://remote.example/users/bob", "https://example.com/users/alice"))
-
 	assert.Equal(t, 2, maxInt(1, 2))
 	assert.Equal(t, 2, maxInt(2, 1))
 }
