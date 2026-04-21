@@ -31,8 +31,8 @@ import (
 	"github.com/theory-cloud/tabletheory/pkg/session"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation/surface"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -603,7 +603,7 @@ func buildActorModel(username, domain, publicKeyPEM, encryptedPrivateKeyB64 stri
 		Owner:        actorID,
 		PublicKeyPem: publicKeyPEM,
 	}
-	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", domain), username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", domain), username)
 
 	model := &storagemodels.Actor{
 		Actor:          actor,

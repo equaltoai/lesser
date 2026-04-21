@@ -16,10 +16,10 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
-	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -227,7 +227,7 @@ func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username s
 		Owner:        actorID,
 		PublicKeyPem: string(publicKeyPEM),
 	}
-	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", cfg.Domain), username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", cfg.Domain), username)
 
 	if err := wh.actorRepo.CreateActor(ctx, actor, string(privateKeyPEM)); err != nil {
 		if _, ok := err.(common.ConflictError); ok {

@@ -6,7 +6,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation/surface"
 )
 
 func canonicalNumericMappingUsername(username string) string {
@@ -81,7 +80,7 @@ func normalizeLocalActorIdentityForStorage(username, baseURL string, actor *acti
 		return normalized
 	}
 
-	surface.ApplyLocalActorIdentifiers(normalized, normalizedBaseURL, canonical)
+	activitypubutil.ApplyLocalActorIdentifiers(normalized, normalizedBaseURL, canonical)
 
 	return normalized
 }

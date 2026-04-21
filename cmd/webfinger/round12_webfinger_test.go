@@ -213,6 +213,41 @@ func TestWebFingerHandler_ensureBootstrapActor_Branches(t *testing.T) {
 	require.Error(t, handler.ensureBootstrapActor(context.Background(), "bootstrap4"))
 }
 
+func TestWebFingerHandler_EnsureBootstrapActor_CreatesManifestDrivenActor(t *testing.T) {
+	origGenerate := rsaGenerateKeyFn
+	origNow := timeNowFn
+	origCfg := cfg
+	t.Cleanup(func() {
+		rsaGenerateKeyFn = origGenerate
+		timeNowFn = origNow
+		cfg = origCfg
+	})
+
+	cfg = &config.Config{Domain: "example.com"}
+	timeNowFn = func() time.Time { return time.Unix(2, 0) }
+	rsaGenerateKeyFn = func(_ io.Reader, _ int) (*rsa.PrivateKey, error) {
+		return rsa.GenerateKey(rand.Reader, 2048)
+	}
+
+	actorRepo := testingmocks.NewMockActorRepository()
+	handler := &WebFingerHandler{
+		actorRepo: actorRepo,
+		logger:    zap.NewNop(),
+	}
+
+	var created *activitypub.Actor
+	actorRepo.On("GetActor", mock.Anything, "bootstrap").Return(nil, common.ActorNotFoundError{Username: "bootstrap"}).Once()
+	actorRepo.On("CreateActor", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		created = args.Get(1).(*activitypub.Actor)
+	}).Return(nil).Once()
+
+	require.NoError(t, handler.ensureBootstrapActor(context.Background(), "bootstrap"))
+	require.NotNil(t, created)
+	require.Equal(t, "https://example.com/inbox", created.Endpoints.SharedInbox)
+	require.Equal(t, "https://example.com/users/bootstrap/inbox", created.Inbox)
+	require.Equal(t, "https://example.com/users/bootstrap/outbox", created.Outbox)
+}
+
 func TestBuildApp_WebFingerRoute(t *testing.T) {
 	origCfg := cfg
 	origLogger := logger

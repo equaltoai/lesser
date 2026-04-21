@@ -55,7 +55,7 @@ The inventory set is enforced by:
 | graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | graphql-ws | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | import-processor | processor-sqs | SQS: queue=import-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| inbox | api-http | HTTP: GET /inbox<br>HTTP: POST /inbox<br>HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| inbox | api-http | HTTP: POST /inbox<br>HTTP: GET /inbox<br>HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | media-processor | processor-sqs | SQS: queue=media-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |

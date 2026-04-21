@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -1394,72 +1396,39 @@ func ensureResponseRef(responses map[string]response, statusCode string, compone
 }
 
 func extractInventoryHTTPRoutes(repoRoot string) ([]routeDef, error) {
-	path := filepath.Join(repoRoot, "infra", "cdk", "inventory", "lambdas.go")
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
+	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
+	cmd := exec.Command("go", "run", "./cmd/generate-inventory", "-print-http-routes")
+	cmd.Dir = cdkDir
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("extract inventory routes: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
-	inventoryLit, err := findInventoryComposite(file)
-	if err != nil {
-		return nil, fmt.Errorf("extract inventory routes: %w", err)
+	var inventoryRoutes []struct {
+		Lambda string `json:"lambda"`
+		Method string `json:"method"`
+		Path   string `json:"path"`
 	}
-
-	lambdasLit, err := findCompositeField(inventoryLit, "Lambdas")
-	if err != nil {
-		return nil, fmt.Errorf("extract inventory routes: %w", err)
+	if err := json.Unmarshal(output, &inventoryRoutes); err != nil {
+		return nil, fmt.Errorf("extract inventory routes: decode generator output: %w", err)
 	}
 
 	var routes []routeDef
-	for _, elt := range lambdasLit.Elts {
-		lambdaLit, ok := elt.(*ast.CompositeLit)
-		if !ok {
+	for _, route := range inventoryRoutes {
+		method := strings.ToUpper(strings.TrimSpace(route.Method))
+		routePath := normalizePath(route.Path)
+		if method == "ANY" {
+			continue
+		}
+		if strings.Contains(routePath, "{proxy+}") {
 			continue
 		}
 
-		name, ok := findStringField(lambdaLit, "Name")
-		if !ok {
-			return nil, fmt.Errorf("extract inventory routes: lambda spec missing Name in %s", path)
-		}
-
-		httpRoutesLit, err := findCompositeFieldOptional(lambdaLit, "HTTPRoutes")
-		if err != nil {
-			return nil, fmt.Errorf("extract inventory routes: %w", err)
-		}
-		if httpRoutesLit == nil {
-			continue
-		}
-
-		for _, routeElt := range httpRoutesLit.Elts {
-			routeLit, ok := routeElt.(*ast.CompositeLit)
-			if !ok {
-				continue
-			}
-			method, ok := findStringField(routeLit, "Method")
-			if !ok {
-				return nil, fmt.Errorf("extract inventory routes: HTTPRoute missing Method for lambda %q", name)
-			}
-			routePath, ok := findStringField(routeLit, "Path")
-			if !ok {
-				return nil, fmt.Errorf("extract inventory routes: HTTPRoute missing Path for lambda %q", name)
-			}
-
-			method = strings.ToUpper(strings.TrimSpace(method))
-			routePath = normalizePath(routePath)
-			if method == "ANY" {
-				continue
-			}
-			if strings.Contains(routePath, "{proxy+}") {
-				continue
-			}
-
-			routes = append(routes, routeDef{
-				Method: method,
-				Path:   routePath,
-				Lambda: name,
-			})
-		}
+		routes = append(routes, routeDef{
+			Method: method,
+			Path:   routePath,
+			Lambda: route.Lambda,
+		})
 	}
 
 	sortRoutes(routes)
@@ -2117,111 +2086,4 @@ func applyAuthOverrides(method, path, handler, lambda string, current authMode) 
 	_ = method
 	_ = handler
 	return current
-}
-
-func findInventoryComposite(file *ast.File) (*ast.CompositeLit, error) {
-	if file == nil {
-		return nil, errors.New("inventory file is nil")
-	}
-
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.VAR {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			valSpec, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for i, name := range valSpec.Names {
-				if name == nil || name.Name != "LambdaInventory" {
-					continue
-				}
-				if i >= len(valSpec.Values) {
-					continue
-				}
-				if lit := unwrapComposite(valSpec.Values[i]); lit != nil {
-					return lit, nil
-				}
-			}
-		}
-	}
-	return nil, errors.New("LambdaInventory variable not found")
-}
-
-func unwrapComposite(expr ast.Expr) *ast.CompositeLit {
-	switch v := expr.(type) {
-	case *ast.CompositeLit:
-		return v
-	case *ast.UnaryExpr:
-		if v.Op == token.AND {
-			if lit, ok := v.X.(*ast.CompositeLit); ok {
-				return lit
-			}
-		}
-	}
-	return nil
-}
-
-func findCompositeField(lit *ast.CompositeLit, field string) (*ast.CompositeLit, error) {
-	value, ok := findKeyValueExpr(lit, field)
-	if !ok {
-		return nil, fmt.Errorf("missing %s field", field)
-	}
-	comp := unwrapComposite(value)
-	if comp == nil {
-		return nil, fmt.Errorf("%s field is not a composite literal", field)
-	}
-	return comp, nil
-}
-
-func findCompositeFieldOptional(lit *ast.CompositeLit, field string) (*ast.CompositeLit, error) {
-	value, ok := findKeyValueExpr(lit, field)
-	if !ok {
-		return nil, nil
-	}
-	comp := unwrapComposite(value)
-	if comp == nil {
-		return nil, fmt.Errorf("%s field is not a composite literal", field)
-	}
-	return comp, nil
-}
-
-func findKeyValueExpr(lit *ast.CompositeLit, field string) (ast.Expr, bool) {
-	if lit == nil {
-		return nil, false
-	}
-	for _, elt := range lit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		keyIdent, ok := kv.Key.(*ast.Ident)
-		if !ok || keyIdent.Name != field {
-			continue
-		}
-		return kv.Value, true
-	}
-	return nil, false
-}
-
-func findStringField(lit *ast.CompositeLit, field string) (string, bool) {
-	value, ok := findKeyValueExpr(lit, field)
-	if !ok {
-		return "", false
-	}
-
-	switch v := value.(type) {
-	case *ast.BasicLit:
-		if v.Kind != token.STRING {
-			return "", false
-		}
-		parsed, err := strconv.Unquote(v.Value)
-		if err != nil {
-			return "", false
-		}
-		return parsed, true
-	}
-	return "", false
 }

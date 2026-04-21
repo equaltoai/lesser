@@ -15,7 +15,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -1873,7 +1872,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Set manifest-driven local actor identifiers.
-	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), cmd.Username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), cmd.Username)
 
 	// Create account with actor
 	account := &storage.Account{

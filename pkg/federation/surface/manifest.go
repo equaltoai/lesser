@@ -2,11 +2,8 @@
 package surface
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 // MethodPolicy describes how a served federation endpoint handles an HTTP method.
@@ -108,37 +105,4 @@ func SharedInboxURL(baseURL string) string {
 		return ""
 	}
 	return base + endpoint.Path
-}
-
-// ApplyLocalActorIdentifiers sets canonical local identifiers derived from the manifest.
-func ApplyLocalActorIdentifiers(actor *activitypub.Actor, baseURL, username string) {
-	if actor == nil {
-		return
-	}
-
-	base := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	canonicalUsername := strings.TrimSpace(username)
-	if base == "" || canonicalUsername == "" {
-		return
-	}
-
-	actor.ID = fmt.Sprintf("%s/users/%s", base, canonicalUsername)
-	actor.URL = fmt.Sprintf("%s/@%s", base, canonicalUsername)
-	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", base, canonicalUsername)
-	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", base, canonicalUsername)
-	actor.Followers = fmt.Sprintf("%s/users/%s/followers", base, canonicalUsername)
-	actor.Following = fmt.Sprintf("%s/users/%s/following", base, canonicalUsername)
-	actor.Liked = fmt.Sprintf("%s/users/%s/liked", base, canonicalUsername)
-
-	if actor.Endpoints == nil {
-		actor.Endpoints = &activitypub.Endpoints{}
-	}
-	actor.Endpoints.SharedInbox = SharedInboxURL(base)
-
-	actor.PreferredUsername = canonicalUsername
-
-	if actor.PublicKey != nil {
-		actor.PublicKey.Owner = actor.ID
-		actor.PublicKey.ID = actor.ID + "#main-key"
-	}
 }

@@ -18673,6 +18673,43 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/main.go
+    /inbox:
+        get:
+            operationId: get_inbox
+            tags:
+                - activitypub
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "405":
+                    description: Method Not Allowed
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-lambda: inbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:inbox
+        post:
+            operationId: post_inbox
+            tags:
+                - activitypub
+            responses:
+                "200":
+                    description: OK
+                "202":
+                    description: Accepted
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-lambda: inbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:inbox
     /nodeinfo/2.0:
         get:
             operationId: get_nodeinfo_2_0
@@ -19406,35 +19443,6 @@ paths:
             x-lesser-lambda: collections
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:collections
-    /inbox:
-        get:
-            operationId: get_inbox
-            tags:
-                - activitypub
-            responses:
-                "405":
-                    description: Method Not Allowed
-            x-lesser-lambda: inbox
-            x-lesser-routeSources:
-                - infra/cdk/inventory/lambdas.go:inbox
-        post:
-            operationId: post_inbox
-            tags:
-                - activitypub
-            responses:
-                "202":
-                    description: Accepted
-                "400":
-                    $ref: '#/components/responses/BadRequest'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
-            x-lesser-lambda: inbox
-            x-lesser-routeSources:
-                - infra/cdk/inventory/lambdas.go:inbox
     /users/{username}/inbox:
         get:
             operationId: get_users_by_username_inbox

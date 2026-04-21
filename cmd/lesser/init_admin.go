@@ -17,9 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	"github.com/equaltoai/lesser/pkg/federation/surface"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -622,7 +622,7 @@ func buildActorModel(username, domain, publicKeyPEM, encryptedPrivateKeyB64 stri
 		Owner:        actorID,
 		PublicKeyPem: publicKeyPEM,
 	}
-	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", domain), username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", domain), username)
 
 	model := &storagemodels.Actor{
 		Actor:          actor,

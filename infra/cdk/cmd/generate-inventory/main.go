@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -28,10 +29,25 @@ type row struct {
 	operations  string
 }
 
+type httpRouteOutput struct {
+	Lambda string `json:"lambda"`
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
 func main() {
 	outPath := flag.String("out", targetRelPath, "target path for generated inventory doc")
 	checkOnly := flag.Bool("check", false, "fail if the generated content would differ without writing")
+	printHTTPRoutes := flag.Bool("print-http-routes", false, "print inventory HTTP routes as JSON and exit")
 	flag.Parse()
+
+	if *printHTTPRoutes {
+		if err := emitHTTPRoutes(os.Stdout, inventory.LambdaInventory); err != nil {
+			fmt.Fprintf(os.Stderr, "generate-inventory: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	targetPath := filepath.Clean(*outPath)
 	if err := writeInventoryTable(targetPath, *checkOnly); err != nil {
@@ -67,6 +83,27 @@ func writeInventoryTable(targetPath string, checkOnly bool) error {
 		return fmt.Errorf("write target file %s: %w", targetPath, err)
 	}
 	return nil
+}
+
+func emitHTTPRoutes(out *os.File, inv inventory.Inventory) error {
+	routes := collectHTTPRoutes(inv)
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(routes)
+}
+
+func collectHTTPRoutes(inv inventory.Inventory) []httpRouteOutput {
+	routes := make([]httpRouteOutput, 0)
+	for _, spec := range inv.Lambdas {
+		for _, route := range spec.HTTPRoutes {
+			routes = append(routes, httpRouteOutput{
+				Lambda: spec.Name,
+				Method: route.Method,
+				Path:   route.Path,
+			})
+		}
+	}
+	return routes
 }
 
 func splice(existing, replacement string) (string, error) {
