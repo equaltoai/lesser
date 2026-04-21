@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/config"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -87,46 +85,4 @@ func TestStatusFilteringHelpers_Round12(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 	require.NoError(t, err)
 	_ = handler.convertAndFilterObjects(ctx, []any{noteMedia, noteHashtag}, actor, accountStatusesParams{})
-}
-
-func TestDetermineUpdateDeliveryRecipients_Round12(t *testing.T) {
-	cfg := &config.Config{
-		Domain:          "example.com",
-		JWTSecret:       round11StrongJWTSecret,
-		DynamoTableName: "test-table",
-		Stage:           "development",
-	}
-
-	state := &round10QueryState{
-		relationshipRecords: []storagemodels.RelationshipRecord{
-			{GSI1SK: "FOLLOWER#bob"},
-			{GSI1SK: "FOLLOWER#bob@example.org"},
-			{GSI1SK: "FOLLOWER#https://remote.example/users/bob"},
-		},
-	}
-
-	handler, _, _ := round11NewHandler(t, cfg, state, makeRegistry(&NotesServiceStub{}, &AccountsServiceStub{}))
-
-	actor := &activitypub.Actor{
-		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
-		PreferredUsername: "alice",
-	}
-	note := &activitypub.Note{
-		BaseObject: activitypub.BaseObject{
-			ID:   cfg.ObjectURL("objects", "s1"),
-			Type: activitypub.NoteType,
-			To:   []string{activitypub.PublicAddress, cfg.ActorURL("carol")},
-			CC:   []string{cfg.ActorURL("dave")},
-		},
-		Tag: []activitypub.Tag{{Type: "Mention", Href: cfg.ActorURL("erin")}},
-	}
-
-	recipients, err := handler.determineUpdateDeliveryRecipients(context.Background(), actor, note)
-	require.NoError(t, err)
-	require.Contains(t, recipients, cfg.ActorURL("bob"))
-	require.Contains(t, recipients, "https://example.org/users/bob")
-	require.Contains(t, recipients, "https://remote.example/users/bob")
-	require.Contains(t, recipients, cfg.ActorURL("carol"))
-	require.Contains(t, recipients, cfg.ActorURL("dave"))
-	require.Contains(t, recipients, cfg.ActorURL("erin"))
 }

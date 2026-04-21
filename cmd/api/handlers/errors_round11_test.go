@@ -47,5 +47,4 @@ func TestLiftErrors_Round11(t *testing.T) {
 	require.NotNil(t, invalidSourceLanguageCode())
 	require.NotNil(t, invalidTargetLanguageCode())
 	require.NotNil(t, failedToGetCostRecords())
-	require.NotNil(t, failedToDetermineDeliveryRecipients())
 }

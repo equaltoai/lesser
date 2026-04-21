@@ -436,82 +436,111 @@ func (d *DeliveryService) resolveFollowerTargets(ctx context.Context, actor *act
 	return targets, nil
 }
 
-func (d *DeliveryService) resolveRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, log *zap.Logger) (map[string]*activitypub.Actor, error) {
+func recipientResolutionPolicy(activity *activitypub.Activity) (expandFollowers bool, skipFollowersCollections bool) {
 	addressingValidator := activitypub.NewAddressingValidator()
-	shouldExpandFollowers := addressingValidator.IsPrivateMessage(activity)
-	skipFollowersCollections := addressingValidator.IsPublicMessage(activity) || addressingValidator.IsUnlistedMessage(activity)
+	return addressingValidator.IsPrivateMessage(activity),
+		addressingValidator.IsPublicMessage(activity) || addressingValidator.IsUnlistedMessage(activity)
+}
+
+func (d *DeliveryService) addResolvedRecipientTarget(
+	ctx context.Context,
+	recipient string,
+	actor *activitypub.Actor,
+	expandFollowers bool,
+	skipFollowersCollections bool,
+	targets map[string]*activitypub.Actor,
+	log *zap.Logger,
+) error {
+	if strings.Contains(recipient, "/followers") {
+		if !isFollowersCollectionForActor(actor, recipient) || skipFollowersCollections || !expandFollowers {
+			return nil
+		}
+
+		followerTargets, err := d.resolveFollowerTargets(ctx, actor, log)
+		if err != nil {
+			return err
+		}
+		for actorID, follower := range followerTargets {
+			targets[actorID] = follower
+		}
+		return nil
+	}
+
+	target, err := d.resolveDeliverableTarget(ctx, recipient)
+	if err != nil {
+		if log != nil {
+			log.Warn("failed to resolve recipient actor",
+				zap.String("recipient", recipient),
+				zap.Error(err))
+		}
+		return nil
+	}
+	if target.isLocal || target.actor == nil || strings.TrimSpace(target.actor.ID) == "" {
+		return nil
+	}
+
+	targets[target.actor.ID] = target.actor
+	return nil
+}
+
+func (d *DeliveryService) resolveRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, log *zap.Logger) (map[string]*activitypub.Actor, error) {
+	shouldExpandFollowers, skipFollowersCollections := recipientResolutionPolicy(activity)
 
 	targets := make(map[string]*activitypub.Actor)
 	for _, recipient := range orderedUniqueRecipients(activity) {
-		if strings.Contains(recipient, "/followers") {
-			if isFollowersCollectionForActor(actor, recipient) {
-				if skipFollowersCollections {
-					continue
-				}
-				if !shouldExpandFollowers {
-					continue
-				}
-
-				followerTargets, err := d.resolveFollowerTargets(ctx, actor, log)
-				if err != nil {
-					return nil, err
-				}
-				for actorID, follower := range followerTargets {
-					targets[actorID] = follower
-				}
-			}
-			continue
+		if err := d.addResolvedRecipientTarget(ctx, recipient, actor, shouldExpandFollowers, skipFollowersCollections, targets, log); err != nil {
+			return nil, err
 		}
-
-		target, err := d.resolveDeliverableTarget(ctx, recipient)
-		if err != nil {
-			if log != nil {
-				log.Warn("failed to resolve recipient actor",
-					zap.String("recipient", recipient),
-					zap.Error(err))
-			}
-			continue
-		}
-		if target.isLocal || target.actor == nil || strings.TrimSpace(target.actor.ID) == "" {
-			continue
-		}
-
-		targets[target.actor.ID] = target.actor
 	}
 
 	return targets, nil
 }
 
-func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, targets map[string]*activitypub.Actor, log *zap.Logger) error {
-	if len(targets) == 0 {
-		return nil
-	}
+type resolvedRecipientGroups struct {
+	actorsByID        map[string]*activitypub.Actor
+	individualTargets map[string]*activitypub.Actor
+	sharedInboxGroups map[string][]string
+}
 
-	sharedInboxGroups := make(map[string][]string)
-	actorsByID := make(map[string]*activitypub.Actor, len(targets))
-	individualTargets := make(map[string]*activitypub.Actor)
+func groupResolvedRecipientTargets(targets map[string]*activitypub.Actor) resolvedRecipientGroups {
+	groups := resolvedRecipientGroups{
+		actorsByID:        make(map[string]*activitypub.Actor, len(targets)),
+		individualTargets: make(map[string]*activitypub.Actor),
+		sharedInboxGroups: make(map[string][]string),
+	}
 
 	for actorID, recipient := range targets {
 		if recipient == nil {
 			continue
 		}
-		actorsByID[actorID] = recipient
+		groups.actorsByID[actorID] = recipient
 
 		if recipient.Endpoints != nil && strings.TrimSpace(recipient.Endpoints.SharedInbox) != "" {
 			sharedInbox := strings.TrimSpace(recipient.Endpoints.SharedInbox)
-			sharedInboxGroups[sharedInbox] = append(sharedInboxGroups[sharedInbox], actorID)
+			groups.sharedInboxGroups[sharedInbox] = append(groups.sharedInboxGroups[sharedInbox], actorID)
 			continue
 		}
 
-		individualTargets[actorID] = recipient
+		groups.individualTargets[actorID] = recipient
 	}
 
+	return groups
+}
+
+func (d *DeliveryService) deliverSharedInboxGroups(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	actor *activitypub.Actor,
+	groups resolvedRecipientGroups,
+	log *zap.Logger,
+) []error {
 	var deliveryErrors []error
-	for sharedInbox, recipientIDs := range sharedInboxGroups {
+
+	for sharedInbox, recipientIDs := range groups.sharedInboxGroups {
 		if len(recipientIDs) < 2 {
-			recipient := actorsByID[recipientIDs[0]]
+			recipient := groups.actorsByID[recipientIDs[0]]
 			if recipient != nil {
-				individualTargets[recipientIDs[0]] = recipient
+				groups.individualTargets[recipientIDs[0]] = recipient
 			}
 			continue
 		}
@@ -523,13 +552,24 @@ func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, a
 					zap.Error(err))
 			}
 			for _, recipientID := range recipientIDs {
-				if recipient := actorsByID[recipientID]; recipient != nil {
-					individualTargets[recipientID] = recipient
+				if recipient := groups.actorsByID[recipientID]; recipient != nil {
+					groups.individualTargets[recipientID] = recipient
 				}
 			}
-			continue
 		}
 	}
+
+	return deliveryErrors
+}
+
+func (d *DeliveryService) deliverResolvedIndividualTargets(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	actor *activitypub.Actor,
+	individualTargets map[string]*activitypub.Actor,
+	log *zap.Logger,
+) []error {
+	var deliveryErrors []error
 
 	for recipientID, recipientActor := range individualTargets {
 		inboxURL := strings.TrimSpace(recipientActor.Inbox)
@@ -547,6 +587,18 @@ func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, a
 			deliveryErrors = append(deliveryErrors, err)
 		}
 	}
+
+	return deliveryErrors
+}
+
+func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, targets map[string]*activitypub.Actor, log *zap.Logger) error {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	groups := groupResolvedRecipientTargets(targets)
+	deliveryErrors := d.deliverSharedInboxGroups(ctx, activity, actor, groups, log)
+	deliveryErrors = append(deliveryErrors, d.deliverResolvedIndividualTargets(ctx, activity, actor, groups.individualTargets, log)...)
 
 	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
 		if log != nil {
@@ -649,68 +701,6 @@ func (d *DeliveryService) deliverToSharedInbox(ctx context.Context, activity *ac
 
 	log.Info("delivering to shared inbox")
 	return d.DeliverActivity(ctx, sanitizedActivity, sharedInbox, actor)
-}
-
-// deliverToIndividualRecipients delivers to individual recipient inboxes
-func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, recipients []string) error {
-	var errors []error
-
-	for _, recipientID := range recipients {
-		// Fetch the recipient's actor document
-		recipientActor, err := d.fetchRemoteActor(ctx, recipientID)
-		if err != nil {
-			log := common.WithContext(ctx)
-			log.Warn("failed to fetch recipient actor",
-				zap.String("recipient", recipientID),
-				zap.Error(err))
-			continue
-		}
-
-		// Use individual inbox
-		inboxURL := recipientActor.Inbox
-
-		// Deliver with privacy controls for this specific recipient
-		if err := d.DeliverActivityWithPrivacy(ctx, activity, inboxURL, actor, recipientID); err != nil {
-			log := common.WithContext(ctx)
-			log.Error("failed to deliver to individual inbox",
-				zap.String("recipient", recipientID),
-				zap.String("inbox", inboxURL),
-				zap.Error(err))
-			errors = append(errors, err)
-		}
-	}
-
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		log := common.WithContext(ctx)
-		log.Error("failed to deliver to multiple recipients",
-			zap.Int("failed_recipient_count", len(errors)))
-		return ErrDeliveryToRecipientsFailed
-	}
-
-	return nil
-}
-
-// getSharedInboxForDomain attempts to find a shared inbox for a domain
-func (d *DeliveryService) getSharedInboxForDomain(ctx context.Context, domain string, sampleRecipient string) (string, error) {
-	// Fetch a sample actor to get the shared inbox
-	actor, err := d.fetchRemoteActor(ctx, sampleRecipient)
-	if err != nil {
-		return "", err
-	}
-
-	if actor.Endpoints != nil && actor.Endpoints.SharedInbox != "" {
-		return actor.Endpoints.SharedInbox, nil
-	}
-
-	d.logger.Debug("no shared inbox found for domain",
-		zap.String("domain", domain))
-	return "", ErrNoSharedInboxFound
-}
-
-// isLocalDomain checks if a domain is local to this instance
-func (d *DeliveryService) isLocalDomain(domain string) bool {
-	localDomain := d.cfg.Domain
-	return domain == localDomain
 }
 
 // fetchRemoteActor fetches a remote actor by their ID
@@ -1008,15 +998,6 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	}
 
 	return nil
-}
-
-// isLocalRecipient checks if a recipient is local to this instance
-func (d *DeliveryService) isLocalRecipient(recipientID, signingActorID string) bool {
-	// Extract domain from both IDs to compare
-	recipientDomain := extractDomainFromURL(recipientID)
-	signingActorDomain := extractDomainFromURL(signingActorID)
-
-	return recipientDomain == signingActorDomain
 }
 
 // calculateDeliveryPriority calculates delivery priority based on activity type and target health
