@@ -44,6 +44,11 @@ curl -s "https://example.com/setup/status" | jq .
 - Protocol HTTP Lambdas: `cmd/actor`, `cmd/inbox`, `cmd/outbox`, `cmd/objects`, `cmd/collections`, `cmd/webfinger`
 - Core logic: `pkg/activitypub/`, `pkg/services/federation/`
 
+## Validation checklists
+
+- Follow-establishment proof contract: `docs/development/federation-follow-establishment-validation.md`
+- Outbound delivery proof contract: `docs/development/federation-outbound-delivery-validation.md`
+
 ## Troubleshooting
 
 - If discovery works but delivery doesn’t: tail `federation-delivery` logs:

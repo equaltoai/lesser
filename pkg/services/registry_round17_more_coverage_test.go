@@ -934,6 +934,31 @@ func TestRegistry_Adapters_And_JobQueueImplementations(t *testing.T) {
 		assert.Equal(t, 1, fed.deliverRecipientsCalls)
 	})
 
+	t.Run("queueFederationAdapter_delivers_followers_only_to_recipients_only", func(t *testing.T) {
+		fed := &stubFederationService{}
+		storage := newPermissiveRegistryStorage(t, "example.com", logger)
+		adapter := &queueFederationAdapter{
+			federation: fed,
+			storage:    storage,
+			logger:     logger,
+		}
+
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Type: "Create",
+				To: []string{
+					"https://example.com/users/alice/followers",
+					"https://remote.example/users/bob",
+				},
+			},
+			Actor: "https://example.com/users/alice",
+		}
+
+		require.NoError(t, adapter.QueueActivity(context.Background(), activity))
+		assert.Equal(t, 0, fed.deliverFollowersCalls)
+		assert.Equal(t, 1, fed.deliverRecipientsCalls)
+	})
+
 	t.Run("simpleFederationService_queue_activity_noop", func(t *testing.T) {
 		svc := &simpleFederationService{logger: logger}
 		assert.NoError(t, svc.QueueActivity(context.Background(), &activitypub.Activity{
