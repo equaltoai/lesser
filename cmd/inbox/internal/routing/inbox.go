@@ -24,6 +24,7 @@ import (
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -422,6 +423,17 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 // RegisterRoutes registers all inbox routes
 func (ih *InboxHandler) RegisterRoutes(app *apptheory.App) {
 	// ActivityPub inbox endpoints
+	sharedInbox := surface.SharedInbox()
+	for _, method := range sharedInbox.ServedMethods() {
+		switch method {
+		case http.MethodGet:
+			app.Get(sharedInbox.Path, ih.handleGetSharedInbox)
+		case http.MethodPost:
+			app.Post(sharedInbox.Path, ih.handlePostSharedInbox)
+		default:
+			panic(fmt.Sprintf("unsupported shared inbox method in federation surface manifest: %s", method))
+		}
+	}
 	app.Get("/users/:username/inbox", ih.handleGetInbox)
 	app.Post("/users/:username/inbox", ih.handlePostInbox)
 }
@@ -493,7 +505,7 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *apptheory.Context, usernam
 	// Get and validate actor
 	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
-		if err.Error() == "actor not found" {
+		if err.Error() == actorNotFoundError {
 			return nil, errors.NotFound("actor")
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
@@ -632,135 +644,38 @@ func (ih *InboxHandler) buildCollectionPage(actor *activitypub.Actor, activities
 
 // InboxRequest represents an incoming ActivityPub request
 type InboxRequest struct {
-	Username    string
-	Activity    *activitypub.Activity
-	Actor       *activitypub.Actor
-	Body        []byte
-	ActorDomain string
-	StartTime   time.Time
-	CostParams  *federation.CostCalculationParams
+	Username     string
+	Activity     *activitypub.Activity
+	Actor        *activitypub.Actor
+	TargetActors []*activitypub.Actor
+	Body         []byte
+	ActorDomain  string
+	StartTime    time.Time
+	CostParams   *federation.CostCalculationParams
 }
 
 // handlePostInbox handles POST requests to receive activities
 func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Initialize and validate request
-	req, err := ih.initializeInboxRequest(ctx)
+	req, err := ih.initializeActorInboxRequest(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Perform security checks (rate limiting, domain blocks)
 	if err := ih.performSecurityChecks(ctx, req); err != nil {
 		return nil, err
 	}
-
-	// Verify authentication (signature verification)
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
 		return nil, err
 	}
-
-	// Validate addressing fields and privacy compliance
-	if err := ih.validateAddressingAndPrivacy(ctx, req); err != nil {
+	if err := ih.validateActorInboxAddressingAndPrivacy(req); err != nil {
 		return nil, err
 	}
-
-	// Store and process the activity
 	if err := ih.storeAndProcessActivity(ctx, req); err != nil {
 		return nil, err
 	}
 
-	// Record success and complete
 	ih.recordSuccessAndComplete(ctx, req)
-
 	return apptheory.Text(http.StatusAccepted, ""), nil
-}
-
-// initializeInboxRequest creates and validates the basic request structure
-func (ih *InboxHandler) initializeInboxRequest(ctx *apptheory.Context) (*InboxRequest, error) {
-	username := ctx.Param("username")
-	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, errors.ValidationFailed("username", "missing username parameter")
-	}
-
-	// Prevent federation to the bootstrap actor until activation completes.
-	if ih.instanceRepository != nil {
-		state, err := ih.instanceRepository.GetInstanceState(ctx.Context())
-		bootstrapUsername := models.DefaultBootstrapUsername
-		if err == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
-			bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
-		}
-
-		if (err != nil && strings.EqualFold(username, bootstrapUsername)) ||
-			(err == nil && state.Locked && strings.EqualFold(username, bootstrapUsername)) {
-			return nil, errors.Forbidden("bootstrap actor does not accept federation while instance is locked")
-		}
-	}
-
-	ih.logger.Info("received inbox POST request",
-		zap.String("username", username),
-		zap.String("content_type", headerValue(ctx, "Content-Type")),
-		zap.String("user_agent", headerValue(ctx, "User-Agent")),
-		zap.String("request_id", ctx.RequestID))
-
-	// Validate Content-Type using centralized validation
-	contentType := headerValue(ctx, "Content-Type")
-	if err := common.ValidateActivityPubContentType(contentType); err != nil {
-		ih.logger.Warn("invalid content type", zap.String("content_type", contentType), zap.Error(err))
-		return nil, errors.ValidationFailed("Content-Type", fmt.Sprintf("invalid Content-Type: %v", err))
-	}
-
-	// Verify the actor exists
-	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
-	if err != nil {
-		if err.Error() == "actor not found" {
-			return nil, errors.NotFound("actor")
-		}
-		ih.logger.Error("failed to get actor", zap.Error(err))
-		return nil, errors.InternalWithCause(err, "internal server error")
-	}
-
-	// Validate and parse request body
-	body := ctx.Request.Body
-	if err := ih.validateRequestBody(body); err != nil {
-		return nil, err
-	}
-
-	activity, err := ih.parseActivity(body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate activity and addressing
-	if err := ih.validateActivity(activity, actor); err != nil {
-		return nil, err
-	}
-
-	// Initialize request structure
-	startTime := time.Now()
-	actorDomain := ih.extractDomainFromURL(activity.Actor)
-
-	req := &InboxRequest{
-		Username:    username,
-		Activity:    activity,
-		Actor:       actor,
-		Body:        body,
-		ActorDomain: actorDomain,
-		StartTime:   startTime,
-		CostParams: &federation.CostCalculationParams{
-			ActivityID:         activity.ID,
-			Domain:             actorDomain,
-			ActivityType:       activity.Type,
-			Direction:          "inbound",
-			OperationType:      "inbox_processing",
-			Timestamp:          startTime,
-			PayloadSize:        int64(len(body)),
-			LambdaMemoryMB:     512,
-			DynamoDBReadCount:  1, // Actor verification
-			DynamoDBWriteCount: 0,
-		},
-	}
-
-	return req, nil
 }
 
 // validateRequestBody validates the request body size and content
@@ -771,51 +686,6 @@ func (ih *InboxHandler) validateRequestBody(body []byte) error {
 // parseActivity parses and sanitizes the ActivityPub activity
 func (ih *InboxHandler) parseActivity(body []byte) (*activitypub.Activity, error) {
 	return inboxvalidation.ParseActivity(ih.logger, body)
-}
-
-// validateActivity validates required activity fields and addressing
-func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *activitypub.Actor) error {
-	// Validate basic activity structure
-	if err := ih.validateBasicActivity(activity); err != nil {
-		return err
-	}
-
-	// Validate actor structure
-	if err := ih.validateBasicActor(actor); err != nil {
-		return err
-	}
-
-	// Validate addressing fields
-	if err := ih.validateActivityAddressing(activity); err != nil {
-		return err
-	}
-
-	// Validate actor username
-	if err := ih.validateActorUsername(activity.Actor); err != nil {
-		return err
-	}
-
-	// Validate actor public key if present
-	if err := ih.validateActorPublicKey(actor); err != nil {
-		return err
-	}
-
-	// Validate Create activity objects if applicable
-	if err := ih.validateCreateActivityObject(activity); err != nil {
-		return err
-	}
-
-	// Validate comprehensive addressing
-	if err := ih.validateComprehensiveAddressing(activity); err != nil {
-		return err
-	}
-
-	// Check if activity is addressed to this actor
-	if err := ih.validateActivityTargeting(activity, actor); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func stringSliceToInterfaceSlice(values []string) []interface{} {
@@ -1048,66 +918,6 @@ func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxR
 	return nil
 }
 
-// validateAddressingAndPrivacy validates addressing fields and privacy compliance
-func (ih *InboxHandler) validateAddressingAndPrivacy(_ *apptheory.Context, req *InboxRequest) error {
-	start := time.Now()
-	addressingValidator := activitypub.NewAddressingValidator()
-
-	// Validate addressing fields are properly formatted
-	if err := addressingValidator.ValidateAddressing(req.Activity); err != nil {
-		ih.logger.Warn("activity has invalid addressing fields",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("activity_id", req.Activity.ID),
-			zap.Error(err))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, fmt.Sprintf("Invalid addressing: %v", err), 1)
-		return errors.ValidationFailed("addressing", "invalid addressing fields").WithInternalError(err)
-	}
-
-	// Validate privacy compliance (e.g., direct messages don't have public addressing)
-	if err := addressingValidator.ValidatePrivacyCompliance(req.Activity); err != nil {
-		ih.logger.Warn("activity violates privacy compliance",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("activity_id", req.Activity.ID),
-			zap.Error(err))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, fmt.Sprintf("Privacy violation: %v", err), 1)
-		return errors.ValidationFailed("privacy", "privacy compliance violation").WithInternalError(err)
-	}
-
-	// Check if the activity is actually addressed to this actor
-	if !ih.isAddressedTo(req.Activity, req.Actor) {
-		ih.logger.Warn("activity not addressed to this actor",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("target_actor", req.Actor.ID),
-			zap.String("activity_id", req.Activity.ID))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, "Activity not addressed to target actor", 1)
-		// Return 404 instead of 403 to maintain privacy (don't leak that actor exists)
-		return errors.NotFound("resource")
-	}
-
-	// For direct messages, perform additional validation
-	if addressingValidator.IsDirectMessage(req.Activity) {
-		if err := ih.validateDirectMessage(req.Activity, req.Actor); err != nil {
-			ih.logger.Warn("direct message validation failed",
-				zap.String("actor", req.Activity.Actor),
-				zap.String("activity_id", req.Activity.ID),
-				zap.Error(err))
-			req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-			ih.recordFailureCost(req, fmt.Sprintf("Direct message validation failed: %v", err), 1)
-			return errors.ValidationFailed("direct_message", "direct message validation failed").WithInternalError(err)
-		}
-	}
-
-	req.CostParams.ProcessingTimeMs += time.Since(start).Milliseconds()
-	ih.logger.Debug("addressing and privacy validation successful",
-		zap.String("actor", req.Activity.Actor),
-		zap.String("visibility", addressingValidator.GetVisibilityLevel(req.Activity)))
-
-	return nil
-}
-
 // validateDirectMessage performs additional validation for direct messages
 func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ *activitypub.Actor) error {
 	// Validate all addressing fields using ActivityPub validators
@@ -1212,13 +1022,26 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 
 	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
 
-	// Process by activity type
+	targetActors := req.TargetActors
+	if len(targetActors) == 0 && req.Actor != nil {
+		targetActors = []*activitypub.Actor{req.Actor}
+	}
+	if len(targetActors) == 0 {
+		ih.recordFailureCost(req, "No local target actors resolved", 1)
+		return errors.NotFound("resource")
+	}
+
 	processingStart := time.Now()
-	if err := ih.processActivityByType(ctx.Context(), req); err != nil {
-		processingDuration := time.Since(processingStart)
-		req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
-		ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
-		return errors.InternalWithCause(err, fmt.Sprintf("failed to process %s activity", req.Activity.Type))
+	for _, targetActor := range targetActors {
+		if targetActor == nil {
+			continue
+		}
+		if err := ih.processActivityByTypeForTarget(ctx.Context(), req.Activity, targetActor, req.CostParams); err != nil {
+			processingDuration := time.Since(processingStart)
+			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
+			ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
+			return errors.InternalWithCause(err, fmt.Sprintf("failed to process %s activity", req.Activity.Type))
+		}
 	}
 
 	processingDuration := time.Since(processingStart)
@@ -1226,128 +1049,126 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 	return nil
 }
 
-// processActivityByType processes the activity based on its type
-func (ih *InboxHandler) processActivityByType(ctx context.Context, req *InboxRequest) error {
-	switch req.Activity.Type {
+func (ih *InboxHandler) processActivityByTypeForTarget(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor, costParams *federation.CostCalculationParams) error {
+	switch activity.Type {
 	case activitypub.FollowType:
-		if err := ih.processFollowActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processFollowActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process follow activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++ // Relationship creation
-		req.CostParams.DynamoDBReadCount++  // Follow approval check
+		costParams.DynamoDBWriteCount++ // Relationship creation
+		costParams.DynamoDBReadCount++  // Follow approval check
 
 	case activitypub.AcceptType:
-		if err := ih.processAcceptActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processAcceptActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process accept activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++ // Relationship update
-		req.CostParams.DynamoDBReadCount++  // Original activity lookup
+		costParams.DynamoDBWriteCount++ // Relationship update
+		costParams.DynamoDBReadCount++  // Original activity lookup
 
 	case activitypub.RejectType:
-		if err := ih.processRejectActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processRejectActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process reject activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++ // Relationship deletion
-		req.CostParams.DynamoDBReadCount++  // Original activity lookup
+		costParams.DynamoDBWriteCount++ // Relationship deletion
+		costParams.DynamoDBReadCount++  // Original activity lookup
 
 	case activitypub.CreateType:
-		if err := ih.processRemoteCreateActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processRemoteCreateActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process create activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount += 2 // Object creation + timeline entry
-		req.CostParams.DynamoDBReadCount++     // Content validation
+		costParams.DynamoDBWriteCount += 2 // Object creation + timeline entry
+		costParams.DynamoDBReadCount++     // Content validation
 
 	case activitypub.UpdateType:
-		if err := ih.processRemoteUpdateActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processRemoteUpdateActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process update activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++ // Object update
-		req.CostParams.DynamoDBReadCount++  // Object lookup
+		costParams.DynamoDBWriteCount++ // Object update
+		costParams.DynamoDBReadCount++  // Object lookup
 
 	case activitypub.DeleteType:
-		if err := ih.processRemoteDeleteActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processRemoteDeleteActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process delete activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++ // Object deletion
-		req.CostParams.DynamoDBReadCount++  // Object lookup
+		costParams.DynamoDBWriteCount++ // Object deletion
+		costParams.DynamoDBReadCount++  // Object lookup
 
 	case activitypub.LikeType:
-		if err := ih.processLikeActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processLikeActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process like activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount += 2 // Like creation + notification
-		req.CostParams.DynamoDBReadCount++     // Object verification
+		costParams.DynamoDBWriteCount += 2 // Like creation + notification
+		costParams.DynamoDBReadCount++     // Object verification
 
 	case activitypub.AnnounceType:
-		if err := ih.processAnnounceActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processAnnounceActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process announce activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount += 2 // Announce creation + notification
-		req.CostParams.DynamoDBReadCount++     // Object verification
+		costParams.DynamoDBWriteCount += 2 // Announce creation + notification
+		costParams.DynamoDBReadCount++     // Object verification
 
 	case activitypub.UndoType:
-		if err := ih.processUndoActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processUndoActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process undo activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++   // Undo operation
-		req.CostParams.DynamoDBReadCount += 2 // Original activity + target lookup
+		costParams.DynamoDBWriteCount++   // Undo operation
+		costParams.DynamoDBReadCount += 2 // Original activity + target lookup
 
 	case activitypub.BlockType:
-		if err := ih.processBlockActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processBlockActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process block activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount += 2 // Block creation + remove follow relationships
-		req.CostParams.DynamoDBReadCount++     // Relationship check
+		costParams.DynamoDBWriteCount += 2 // Block creation + remove follow relationships
+		costParams.DynamoDBReadCount++     // Relationship check
 
 	case activitypub.AddType:
-		if err := ih.processAddActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processAddActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process add activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++   // Collection item creation
-		req.CostParams.DynamoDBReadCount += 2 // Target collection + authorization check
+		costParams.DynamoDBWriteCount++   // Collection item creation
+		costParams.DynamoDBReadCount += 2 // Target collection + authorization check
 
 	case activitypub.RemoveType:
-		if err := ih.processRemoveActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processRemoveActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process remove activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++   // Collection item removal
-		req.CostParams.DynamoDBReadCount += 2 // Target collection + authorization check
+		costParams.DynamoDBWriteCount++   // Collection item removal
+		costParams.DynamoDBReadCount += 2 // Target collection + authorization check
 
 	case activitypub.FlagType:
-		if err := ih.processFlagActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processFlagActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process flag activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount += 2 // Report creation + moderation queue
-		req.CostParams.DynamoDBReadCount++     // Authorization check
+		costParams.DynamoDBWriteCount += 2 // Report creation + moderation queue
+		costParams.DynamoDBReadCount++     // Authorization check
 
 	case activitypub.MoveType:
-		if err := ih.processMoveActivity(ctx, req.Activity, req.Actor); err != nil {
+		if err := ih.processMoveActivity(ctx, activity, targetActor); err != nil {
 			ih.logger.Error("failed to process move activity", zap.Error(err))
 			return err
 		}
-		req.CostParams.DynamoDBWriteCount++   // Migration record
-		req.CostParams.DynamoDBReadCount += 2 // Actor validation + authorization check
+		costParams.DynamoDBWriteCount++   // Migration record
+		costParams.DynamoDBReadCount += 2 // Actor validation + authorization check
 
 	default:
 		ih.logger.Info("ignoring unsupported activity type in inbox",
-			zap.String("type", req.Activity.Type),
-			zap.String("actor", req.Activity.Actor),
-			zap.String("id", req.Activity.ID),
+			zap.String("type", activity.Type),
+			zap.String("actor", activity.Actor),
+			zap.String("id", activity.ID),
 		)
-		// Not an error - just unsupported activity type
 	}
 
 	return nil

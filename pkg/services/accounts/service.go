@@ -1871,14 +1871,8 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		PublicKeyPem: string(publicKeyPEM),
 	}
 
-	// Set default endpoints
-	actor.Endpoints = &activitypub.Endpoints{
-		SharedInbox: fmt.Sprintf("https://%s/inbox", s.domainName),
-	}
-	actor.Inbox = fmt.Sprintf("%s/inbox", actorID)
-	actor.Outbox = fmt.Sprintf("%s/outbox", actorID)
-	actor.Followers = fmt.Sprintf("%s/followers", actorID)
-	actor.Following = fmt.Sprintf("%s/following", actorID)
+	// Set manifest-driven local actor identifiers.
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), cmd.Username)
 
 	// Create account with actor
 	account := &storage.Account{

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,6 +251,84 @@ func TestSecretExists_CreateAndDeleteSecret(t *testing.T) {
 	require.NoError(t, deleteSecretImmediate(context.Background(), sm, "name"))
 	require.Len(t, sm.deleteInputs, 1)
 	require.True(t, aws.ToBool(sm.deleteInputs[0].ForceDeleteWithoutRecovery))
+}
+
+func TestBuildActorModel_UsesManifestSharedInbox(t *testing.T) {
+	now := time.Now().UTC()
+
+	model, err := buildActorModel("alice", "example.com", "PUBLIC", "ENCRYPTED", now)
+	require.NoError(t, err)
+	require.NotNil(t, model.Actor)
+	require.Equal(t, "https://example.com/inbox", model.Actor.Endpoints.SharedInbox)
+	require.Equal(t, "https://example.com/users/alice/inbox", model.Actor.Inbox)
+	require.Equal(t, "https://example.com/users/alice/outbox", model.Actor.Outbox)
+	require.True(t, strings.HasPrefix(model.PK, "ACTOR#"))
+	require.Equal(t, storagemodels.SKProfile, model.SK)
+	require.Equal(t, "DOMAIN#example.com", model.GSI3PK)
+	require.Equal(t, "alice", model.GSI3SK)
+}
+
+func TestBuildUserModel_SetsAdminDefaults(t *testing.T) {
+	now := time.Now().UTC()
+
+	model, err := buildUserModel("alice", now)
+	require.NoError(t, err)
+	require.Equal(t, "alice", model.Username)
+	require.True(t, model.Approved)
+	require.Equal(t, "admin", model.Role)
+	require.False(t, model.Locked)
+	require.False(t, model.Discoverable)
+	require.False(t, model.AllowNSFW)
+	require.True(t, model.RequireNSFWWarning)
+	require.Equal(t, []string{"wallet"}, model.RecoveryMethods)
+	require.Equal(t, storagemodels.SKMetadata, model.SK)
+}
+
+func TestGenerateOAuthClientCredentials_ProduceURLSafeRandomValues(t *testing.T) {
+	clientID, err := generateOAuthClientID()
+	require.NoError(t, err)
+	require.NotEmpty(t, clientID)
+	decodedID, err := base64.URLEncoding.DecodeString(clientID)
+	require.NoError(t, err)
+	require.Len(t, decodedID, 16)
+
+	clientSecret, err := generateOAuthClientSecret()
+	require.NoError(t, err)
+	require.NotEmpty(t, clientSecret)
+	decodedSecret, err := base64.URLEncoding.DecodeString(clientSecret)
+	require.NoError(t, err)
+	require.Len(t, decodedSecret, 32)
+}
+
+func TestBuildWalletCredentialModel_SetsKeysAndDefaults(t *testing.T) {
+	now := time.Now().UTC()
+
+	model, err := buildWalletCredentialModel("alice", "0xabc", 1, now)
+	require.NoError(t, err)
+	require.Equal(t, "alice", model.Username)
+	require.Equal(t, "0xabc", model.Address)
+	require.Equal(t, 1, model.ChainID)
+	require.Equal(t, "ethereum", model.Type)
+	require.Equal(t, now, model.LinkedAt)
+	require.Equal(t, now, model.LastUsed)
+	require.NotEmpty(t, model.PK)
+	require.NotEmpty(t, model.SK)
+}
+
+func TestBuildOAuthClientModel_HashesSecretAndSetsDefaults(t *testing.T) {
+	now := time.Now().UTC()
+
+	model, err := buildOAuthClientModel("owner-1", "client-1", "super-secret", []string{"https://example.com/callback"}, now)
+	require.NoError(t, err)
+	require.Equal(t, "client-1", model.ClientID)
+	require.NotEqual(t, "super-secret", model.ClientSecret)
+	require.Equal(t, []string{"https://example.com/callback"}, model.RedirectURIs)
+	require.Equal(t, []string{"authorization_code", "refresh_token"}, model.GrantTypes)
+	require.Equal(t, []string{"read", "write", "admin"}, model.Scopes)
+	require.Equal(t, "owner-1", model.OwnerID)
+	require.True(t, model.Confidential)
+	require.NotEmpty(t, model.PK)
+	require.NotEmpty(t, model.SK)
 }
 
 func TestEncryptWithKMS(t *testing.T) {

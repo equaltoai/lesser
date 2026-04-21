@@ -1,7 +1,6 @@
 package repositories
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -81,17 +80,7 @@ func normalizeLocalActorIdentityForStorage(username, baseURL string, actor *acti
 		return normalized
 	}
 
-	normalized.ID = fmt.Sprintf("%s/users/%s", normalizedBaseURL, canonical)
-	normalized.URL = fmt.Sprintf("%s/@%s", normalizedBaseURL, canonical)
-	normalized.Inbox = fmt.Sprintf("%s/users/%s/inbox", normalizedBaseURL, canonical)
-	normalized.Outbox = fmt.Sprintf("%s/users/%s/outbox", normalizedBaseURL, canonical)
-	normalized.Followers = fmt.Sprintf("%s/users/%s/followers", normalizedBaseURL, canonical)
-	normalized.Following = fmt.Sprintf("%s/users/%s/following", normalizedBaseURL, canonical)
-	normalized.Liked = fmt.Sprintf("%s/users/%s/liked", normalizedBaseURL, canonical)
-	if normalized.Endpoints == nil {
-		normalized.Endpoints = &activitypub.Endpoints{}
-	}
-	normalized.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", normalizedBaseURL)
+	activitypubutil.ApplyLocalActorIdentifiers(normalized, normalizedBaseURL, canonical)
 
 	return normalized
 }

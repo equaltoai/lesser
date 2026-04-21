@@ -23,6 +23,19 @@ curl -s -H "Accept: application/activity+json" "https://example.com/users/alice"
 curl -s -H "Accept: application/activity+json" "https://example.com/objects/<id>" | jq .
 ```
 
+### Inbox surface truth
+
+```bash
+curl -i -X GET "https://example.com/inbox"
+curl -i -X OPTIONS "https://example.com/inbox"
+```
+
+Expected after the shared inbox repair:
+
+- `GET /inbox` returns `405 Method Not Allowed`
+- `POST /inbox` is the real shared-inbox federation ingress
+- `/users/{username}/inbox` continues to serve actor-scoped inbox flows
+
 ## Locked deployments (expected behavior)
 
 New deployments come up **locked but reachable**.
@@ -42,6 +55,7 @@ curl -s "https://example.com/setup/status" | jq .
 ## Where federation lives in this repo
 
 - Protocol HTTP Lambdas: `cmd/actor`, `cmd/inbox`, `cmd/outbox`, `cmd/objects`, `cmd/collections`, `cmd/webfinger`
+- Labs validation checklist: `docs/development/shared-inbox-validation.md`
 - Core logic: `pkg/activitypub/`, `pkg/services/federation/`
 
 ## Troubleshooting

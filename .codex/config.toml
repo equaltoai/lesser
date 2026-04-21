@@ -7,3 +7,6 @@ model_instructions_file = "steward.md"
 
 [mcp_servers.lesser_lab.tools.memory_append]
 approval_mode = "approve"
+
+[mcp_servers.lesser_lab.tools.email_mark_read]
+approval_mode = "approve"

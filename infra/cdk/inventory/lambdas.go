@@ -1,5 +1,20 @@
 package inventory
 
+import "github.com/equaltoai/lesser/pkg/federation/surface"
+
+func inboxHTTPRoutes() []HTTPRoute {
+	sharedInbox := surface.SharedInbox()
+	routes := make([]HTTPRoute, 0, len(sharedInbox.ServedMethods())+2)
+	for _, method := range sharedInbox.ServedMethods() {
+		routes = append(routes, HTTPRoute{Method: method, Path: sharedInbox.Path})
+	}
+	routes = append(routes,
+		HTTPRoute{Method: "GET", Path: "/users/{username}/inbox"},
+		HTTPRoute{Method: "POST", Path: "/users/{username}/inbox"},
+	)
+	return routes
+}
+
 // LambdaInventory is the canonical machine-readable source for all product Lambdas.
 // It must stay in lockstep with Makefile LAMBDAS and Spec 01.
 var LambdaInventory = Inventory{
@@ -214,13 +229,10 @@ var LambdaInventory = Inventory{
 			},
 		},
 		{
-			Name: "inbox",
-			Type: LambdaTypeAPIHTTP,
-			Role: RoleClassEncryption,
-			HTTPRoutes: []HTTPRoute{
-				{Method: "GET", Path: "/users/{username}/inbox"},
-				{Method: "POST", Path: "/users/{username}/inbox"},
-			},
+			Name:       "inbox",
+			Type:       LambdaTypeAPIHTTP,
+			Role:       RoleClassEncryption,
+			HTTPRoutes: inboxHTTPRoutes(),
 		},
 		{
 			Name: "media-processor",

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
@@ -412,30 +413,42 @@ func normalizeOperatedBy(value string) string {
 	return "@" + trimmed
 }
 
-func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {
-	if base == "" || username == "" {
+// ApplyLocalActorIdentifiers sets canonical local ActivityPub identifiers
+// derived from the federation surface manifest.
+func ApplyLocalActorIdentifiers(actor *activitypub.Actor, base, username string) {
+	if actor == nil {
 		return
 	}
 
-	actor.ID = fmt.Sprintf("%s/users/%s", base, username)
-	actor.URL = fmt.Sprintf("%s/@%s", base, username)
-	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", base, username)
-	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", base, username)
-	actor.Followers = fmt.Sprintf("%s/users/%s/followers", base, username)
-	actor.Following = fmt.Sprintf("%s/users/%s/following", base, username)
-	actor.Liked = fmt.Sprintf("%s/users/%s/liked", base, username)
+	normalizedBase := strings.TrimSuffix(strings.TrimSpace(base), "/")
+	canonicalUsername := strings.TrimSpace(username)
+	if normalizedBase == "" || canonicalUsername == "" {
+		return
+	}
+
+	actor.ID = fmt.Sprintf("%s/users/%s", normalizedBase, canonicalUsername)
+	actor.URL = fmt.Sprintf("%s/@%s", normalizedBase, canonicalUsername)
+	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", normalizedBase, canonicalUsername)
+	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", normalizedBase, canonicalUsername)
+	actor.Followers = fmt.Sprintf("%s/users/%s/followers", normalizedBase, canonicalUsername)
+	actor.Following = fmt.Sprintf("%s/users/%s/following", normalizedBase, canonicalUsername)
+	actor.Liked = fmt.Sprintf("%s/users/%s/liked", normalizedBase, canonicalUsername)
 
 	if actor.Endpoints == nil {
 		actor.Endpoints = &activitypub.Endpoints{}
 	}
-	actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
+	actor.Endpoints.SharedInbox = surface.SharedInboxURL(normalizedBase)
 
-	actor.PreferredUsername = username
+	actor.PreferredUsername = canonicalUsername
 
 	if actor.PublicKey != nil {
 		actor.PublicKey.Owner = actor.ID
 		actor.PublicKey.ID = actor.ID + "#main-key"
 	}
+}
+
+func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {
+	ApplyLocalActorIdentifiers(actor, base, username)
 }
 
 func mergeUserProfile(actor *activitypub.Actor, user *storage.User, username string) {
