@@ -1,5 +1,7 @@
 package inventory
 
+import "github.com/equaltoai/lesser/pkg/federation/surface"
+
 // LambdaInventory is the canonical machine-readable source for all product Lambdas.
 // It must stay in lockstep with Makefile LAMBDAS and Spec 01.
 var LambdaInventory = Inventory{
@@ -218,6 +220,8 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeAPIHTTP,
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
+				{Method: "GET", Path: surface.SharedInbox().Path},
+				{Method: "POST", Path: surface.SharedInbox().Path},
 				{Method: "GET", Path: "/users/{username}/inbox"},
 				{Method: "POST", Path: "/users/{username}/inbox"},
 			},
