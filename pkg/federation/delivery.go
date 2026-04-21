@@ -253,6 +253,103 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	return ErrDeliveryHTTPStatusFailed
 }
 
+type resolvedDeliveryTarget struct {
+	actor   *activitypub.Actor
+	isLocal bool
+}
+
+func (d *DeliveryService) resolveDeliverableTarget(ctx context.Context, identifier string) (*resolvedDeliveryTarget, error) {
+	identifier = strings.TrimSpace(identifier)
+	if err := common.ValidateRequiredParam("identifier", identifier); err != nil {
+		return nil, err
+	}
+
+	localDomain := ""
+	if d.cfg != nil {
+		localDomain = normalizeActorDomain(d.cfg.Domain)
+	}
+
+	if isActorURL(identifier) {
+		parsed, err := url.Parse(identifier)
+		if err != nil {
+			return nil, err
+		}
+
+		host := normalizeActorDomain(parsed.Hostname())
+		if localDomain != "" && host == localDomain {
+			username := usernameFromActorPath(parsed.Path)
+			if username == "" {
+				return nil, common.ActorNotFoundError{Username: identifier}
+			}
+
+			actor, err := d.store.GetActor(ctx, username)
+			if err != nil {
+				return nil, err
+			}
+			return &resolvedDeliveryTarget{actor: actor, isLocal: true}, nil
+		}
+
+		actor, err := d.fetchRemoteActor(ctx, identifier)
+		if err != nil {
+			return nil, err
+		}
+		return &resolvedDeliveryTarget{actor: actor}, nil
+	}
+
+	username, domain, err := parseHandle(identifier)
+	if err != nil {
+		return nil, err
+	}
+
+	if domain == "" || (localDomain != "" && domain == localDomain) {
+		actor, err := d.store.GetActor(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		return &resolvedDeliveryTarget{actor: actor, isLocal: true}, nil
+	}
+
+	handle := exactHandle(username, domain)
+	actor, err := d.resolveRemoteHandleTarget(ctx, handle)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resolvedDeliveryTarget{actor: actor}, nil
+}
+
+func (d *DeliveryService) resolveRemoteHandleTarget(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	if cached, err := d.store.GetCachedRemoteActor(ctx, handle); err == nil && cached != nil {
+		if err := activitypub.ValidateResolvedActor(cached); err == nil && cachedRemoteActorMatchesHandle(cached, handle) {
+			return cached, nil
+		}
+	}
+
+	username, domain, err := parseHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+
+	actorURL, err := webFingerLookupWithClient(ctx, d.httpClient, d.logger, username, domain)
+	if err != nil {
+		return nil, errors.Join(ErrWebFingerLookupFailed, err)
+	}
+
+	actor, err := d.fetchRemoteActor(ctx, actorURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := d.store.CacheRemoteActor(ctx, handle, actor, 24*time.Hour); err != nil {
+		d.logger.Warn("failed to cache remote actor resolved by handle",
+			zap.String("handle", handle),
+			zap.String("actor_id", strings.TrimSpace(actor.ID)),
+			zap.Error(err))
+	}
+
+	return actor, nil
+}
+
 // DeliverToFollowers delivers an activity to all followers of an actor
 func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	log := common.WithContext(ctx).With(
@@ -275,17 +372,17 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 	inboxMap := make(map[string][]string) // inbox URL -> follower IDs
 
 	for _, followerUsername := range followerUsernames {
-		// Get follower actor details
-		follower, err := d.store.GetActor(ctx, followerUsername)
+		target, err := d.resolveDeliverableTarget(ctx, followerUsername)
 		if err != nil {
 			log.Warn("failed to get follower actor",
 				zap.String("username", followerUsername),
 				zap.Error(err))
 			continue
 		}
+		follower := target.actor
 
 		// Skip local followers (they already have the activity via fan-out)
-		if isLocalActor(follower.ID, actor.ID) {
+		if target.isLocal || isLocalActor(follower.ID, actor.ID) {
 			continue
 		}
 
@@ -721,19 +818,17 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	inboxMap := make(map[string][]string) // inbox URL -> recipient IDs
 
 	for recipientID := range targets.DirectRecipients {
-		// Skip local recipients
-		if d.isLocalRecipient(recipientID, signingActor.ID) {
-			continue
-		}
-
-		// Get recipient actor to find their inbox
-		recipient, err := d.store.GetActor(ctx, recipientID)
+		target, err := d.resolveDeliverableTarget(ctx, recipientID)
 		if err != nil {
 			log.Warn("failed to get recipient actor",
 				zap.String("recipient_id", recipientID),
 				zap.Error(err))
 			continue
 		}
+		if target.isLocal {
+			continue
+		}
+		recipient := target.actor
 
 		// Determine inbox URL (prefer shared inbox for efficiency)
 		inboxURL := recipient.Inbox
@@ -769,15 +864,6 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	}
 
 	return nil
-}
-
-// isLocalRecipient checks if a recipient is local to this instance
-func (d *DeliveryService) isLocalRecipient(recipientID, signingActorID string) bool {
-	// Extract domain from both IDs to compare
-	recipientDomain := extractDomainFromURL(recipientID)
-	signingActorDomain := extractDomainFromURL(signingActorID)
-
-	return recipientDomain == signingActorDomain
 }
 
 // calculateDeliveryPriority calculates delivery priority based on activity type and target health
