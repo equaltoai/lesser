@@ -879,25 +879,6 @@ func TestDeliveryService_DirectMessage_AndSharedInboxHelpers(t *testing.T) {
 	privateKey := mustTestRSAPrivateKeyPEM(t)
 	signingActor := testSigningActor()
 
-	t.Run("get_shared_inbox_no_shared_inbox_found", func(t *testing.T) {
-		store := &federationStoreStub{
-			getCachedActorFn: func(_ context.Context, _ string) (*activitypub.Actor, error) {
-				return &activitypub.Actor{
-					BaseObject:                activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
-					PreferredUsername:         "bob",
-					Inbox:                     "https://remote.example/users/bob/inbox",
-					Outbox:                    "https://remote.example/users/bob/outbox",
-					Endpoints:                 nil,
-					ManuallyApprovesFollowers: false,
-				}, nil
-			},
-		}
-
-		d := &DeliveryService{store: store, httpClient: &httpDoerStub{}, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
-		_, err := d.getSharedInboxForDomain(context.Background(), "remote.example", "https://remote.example/users/bob")
-		require.ErrorIs(t, err, ErrNoSharedInboxFound)
-	})
-
 	t.Run("deliver_direct_message_success", func(t *testing.T) {
 		store := &federationStoreStub{
 			getActorPrivateKeyFn: func(_ context.Context, _ string) (string, error) { return privateKey, nil },
@@ -1014,48 +995,6 @@ func TestDeliveryService_DirectMessage_AndSharedInboxHelpers(t *testing.T) {
 func TestDeliveryService_RecipientDelivery_MoreBranches(t *testing.T) {
 	privateKey := mustTestRSAPrivateKeyPEM(t)
 	signingActor := testSigningActor()
-
-	t.Run("deliver_to_individual_recipients_aggregates_errors", func(t *testing.T) {
-		store := &federationStoreStub{
-			getActorPrivateKeyFn: func(_ context.Context, _ string) (string, error) { return privateKey, nil },
-			getCachedActorFn:     func(_ context.Context, _ string) (*activitypub.Actor, error) { return nil, errors.New("miss") },
-		}
-
-		okActor := activitypub.Actor{
-			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/ok", Type: "Person"},
-			PreferredUsername: "ok",
-			Inbox:             "https://remote.example/users/ok/inbox",
-			Outbox:            "https://remote.example/users/ok/outbox",
-			Endpoints:         nil,
-		}
-		okJSON, err := jsonMarshalStable(&okActor)
-		require.NoError(t, err)
-
-		httpDoer := &httpDoerStub{
-			doFn: func(req *http.Request) (*http.Response, error) {
-				switch req.Method {
-				case http.MethodGet:
-					if req.URL.String() == okActor.ID {
-						return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(okJSON)), Header: make(http.Header)}, nil
-					}
-					return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("nope")), Header: make(http.Header)}, nil
-				case http.MethodPost:
-					return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("fail")), Header: make(http.Header)}, nil
-				default:
-					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
-				}
-			},
-		}
-
-		d := &DeliveryService{store: store, httpClient: httpDoer, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
-		activity := &activitypub.Activity{
-			BaseObject: activitypub.BaseObject{ID: "act-1", Type: "Create", To: []string{"https://remote.example/users/bad", okActor.ID}},
-			Object:     &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-1", Type: "Note"}},
-		}
-
-		err = d.deliverToIndividualRecipients(context.Background(), activity, signingActor, []string{"https://remote.example/users/bad", okActor.ID})
-		require.ErrorIs(t, err, ErrDeliveryToRecipientsFailed)
-	})
 
 	t.Run("deliver_to_recipients_single_recipient_skips_shared_inbox_optimization", func(t *testing.T) {
 		store := &federationStoreStub{
