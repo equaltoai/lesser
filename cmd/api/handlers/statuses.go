@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -1622,44 +1621,47 @@ func (h *Handler) deliverUpdateActivity(ctx context.Context, updateActivity *act
 		zap.String("activity_id", updateActivity.ID),
 		zap.String("actor", actor.ID))
 
-	// Determine delivery recipients based on the updated note
-	recipients, err := h.determineUpdateDeliveryRecipients(ctx, actor, note)
-	if err != nil {
-		h.logger.Error("failed to determine delivery recipients",
-			zap.String("activity_id", updateActivity.ID),
-			zap.String("actor_id", actor.ID),
-			zap.Error(err))
-		return errors.Join(failedToDetermineDeliveryRecipients(), err)
+	if note != nil {
+		updateActivity.To = append([]string(nil), note.To...)
+		updateActivity.CC = append([]string(nil), note.CC...)
 	}
 
-	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {
-		h.logger.Info("no recipients for update activity delivery", zap.String("activity_id", updateActivity.ID))
-		return nil
-	}
+	federationStorage := federation.NewDynamORMFederationStorage(h.repos.GetDB(), h.repos.GetTableName(), h.cfg.Domain, h.logger)
+	deliveryService := federation.NewDeliveryService(federationStorage, h.cfg)
 
-	// Deliver to each recipient
-	deliveredCount := 0
-	failedCount := 0
-
-	for _, recipient := range recipients {
-		if err := h.deliverUpdateToRecipient(ctx, updateActivity, actor, recipient); err != nil {
-			h.logger.Warn("failed to deliver update activity to recipient",
-				zap.String("recipient", recipient),
+	if isActivityPublicOrUnlisted(updateActivity) {
+		if err := deliveryService.DeliverToFollowers(ctx, updateActivity, actor); err != nil {
+			h.logger.Warn("failed to deliver update activity to followers",
 				zap.String("activity_id", updateActivity.ID),
 				zap.Error(err))
-			failedCount++
-		} else {
-			deliveredCount++
 		}
 	}
 
+	if err := deliveryService.DeliverToRecipients(ctx, updateActivity, actor); err != nil {
+		h.logger.Error("failed to deliver update activity to recipients",
+			zap.String("activity_id", updateActivity.ID),
+			zap.Error(err))
+		return err
+	}
+
 	h.logger.Info("completed update activity delivery",
-		zap.String("activity_id", updateActivity.ID),
-		zap.Int("delivered", deliveredCount),
-		zap.Int("failed", failedCount),
-		zap.Int("total_recipients", len(recipients)))
+		zap.String("activity_id", updateActivity.ID))
 
 	return nil
+}
+
+func isActivityPublicOrUnlisted(activity *activitypub.Activity) bool {
+	if activity == nil {
+		return false
+	}
+
+	for _, recipient := range append(activity.To, activity.CC...) {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
 }
 
 // determineUpdateDeliveryRecipients determines who should receive the Update activity
