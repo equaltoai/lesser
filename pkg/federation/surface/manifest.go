@@ -1,3 +1,4 @@
+// Package surface defines the deploy-time ActivityPub federation surface contract.
 package surface
 
 import (
