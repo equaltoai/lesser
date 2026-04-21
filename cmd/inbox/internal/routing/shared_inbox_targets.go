@@ -45,7 +45,7 @@ func (r sharedInboxTargetResolver) Resolve(ctx context.Context, activity *activi
 
 	switch activity.Type {
 	case activitypub.FollowType:
-		r.addObjectTargets(ctx, usernames, followerHandles, activity.Object)
+		r.addObjectTargets(usernames, followerHandles, activity.Object)
 	case activitypub.AcceptType, activitypub.RejectType:
 		if err := r.addStoredActivityTargets(ctx, usernames, activity.Object); err != nil {
 			return nil, err
@@ -55,7 +55,7 @@ func (r sharedInboxTargetResolver) Resolve(ctx context.Context, activity *activi
 			return nil, err
 		}
 	case activitypub.CreateType, activitypub.UpdateType, activitypub.DeleteType:
-		r.addObjectTargets(ctx, usernames, followerHandles, activity.Object)
+		r.addObjectTargets(usernames, followerHandles, activity.Object)
 	case activitypub.LikeType, activitypub.AnnounceType:
 		if err := r.addObjectOwnerTargets(ctx, usernames, activity.Object); err != nil {
 			return nil, err
@@ -105,7 +105,7 @@ func (r sharedInboxTargetResolver) addStoredActivityTargets(ctx context.Context,
 	return nil
 }
 
-func (r sharedInboxTargetResolver) addObjectTargets(ctx context.Context, usernames map[string]struct{}, followerHandles map[string]struct{}, object any) {
+func (r sharedInboxTargetResolver) addObjectTargets(usernames map[string]struct{}, followerHandles map[string]struct{}, object any) {
 	if username := r.localUsername(extractObjectID(object)); username != "" {
 		usernames[username] = struct{}{}
 	}

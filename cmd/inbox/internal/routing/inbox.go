@@ -505,7 +505,7 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *apptheory.Context, usernam
 	// Get and validate actor
 	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
-		if err.Error() == "actor not found" {
+		if err.Error() == actorNotFoundError {
 			return nil, errors.NotFound("actor")
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
@@ -678,94 +678,6 @@ func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Resp
 	return apptheory.Text(http.StatusAccepted, ""), nil
 }
 
-// initializeInboxRequest creates and validates the basic request structure
-func (ih *InboxHandler) initializeInboxRequest(ctx *apptheory.Context) (*InboxRequest, error) {
-	username := ctx.Param("username")
-	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, errors.ValidationFailed("username", "missing username parameter")
-	}
-
-	// Prevent federation to the bootstrap actor until activation completes.
-	if ih.instanceRepository != nil {
-		state, err := ih.instanceRepository.GetInstanceState(ctx.Context())
-		bootstrapUsername := models.DefaultBootstrapUsername
-		if err == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
-			bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
-		}
-
-		if (err != nil && strings.EqualFold(username, bootstrapUsername)) ||
-			(err == nil && state.Locked && strings.EqualFold(username, bootstrapUsername)) {
-			return nil, errors.Forbidden("bootstrap actor does not accept federation while instance is locked")
-		}
-	}
-
-	ih.logger.Info("received inbox POST request",
-		zap.String("username", username),
-		zap.String("content_type", headerValue(ctx, "Content-Type")),
-		zap.String("user_agent", headerValue(ctx, "User-Agent")),
-		zap.String("request_id", ctx.RequestID))
-
-	// Validate Content-Type using centralized validation
-	contentType := headerValue(ctx, "Content-Type")
-	if err := common.ValidateActivityPubContentType(contentType); err != nil {
-		ih.logger.Warn("invalid content type", zap.String("content_type", contentType), zap.Error(err))
-		return nil, errors.ValidationFailed("Content-Type", fmt.Sprintf("invalid Content-Type: %v", err))
-	}
-
-	// Verify the actor exists
-	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
-	if err != nil {
-		if err.Error() == "actor not found" {
-			return nil, errors.NotFound("actor")
-		}
-		ih.logger.Error("failed to get actor", zap.Error(err))
-		return nil, errors.InternalWithCause(err, "internal server error")
-	}
-
-	// Validate and parse request body
-	body := ctx.Request.Body
-	if err := ih.validateRequestBody(body); err != nil {
-		return nil, err
-	}
-
-	activity, err := ih.parseActivity(body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate activity and addressing
-	if err := ih.validateActivity(activity, actor); err != nil {
-		return nil, err
-	}
-
-	// Initialize request structure
-	startTime := time.Now()
-	actorDomain := ih.extractDomainFromURL(activity.Actor)
-
-	req := &InboxRequest{
-		Username:    username,
-		Activity:    activity,
-		Actor:       actor,
-		Body:        body,
-		ActorDomain: actorDomain,
-		StartTime:   startTime,
-		CostParams: &federation.CostCalculationParams{
-			ActivityID:         activity.ID,
-			Domain:             actorDomain,
-			ActivityType:       activity.Type,
-			Direction:          "inbound",
-			OperationType:      "inbox_processing",
-			Timestamp:          startTime,
-			PayloadSize:        int64(len(body)),
-			LambdaMemoryMB:     512,
-			DynamoDBReadCount:  1, // Actor verification
-			DynamoDBWriteCount: 0,
-		},
-	}
-
-	return req, nil
-}
-
 // validateRequestBody validates the request body size and content
 func (ih *InboxHandler) validateRequestBody(body []byte) error {
 	return inboxvalidation.ValidateRequestBody(ih.logger, body)
@@ -774,51 +686,6 @@ func (ih *InboxHandler) validateRequestBody(body []byte) error {
 // parseActivity parses and sanitizes the ActivityPub activity
 func (ih *InboxHandler) parseActivity(body []byte) (*activitypub.Activity, error) {
 	return inboxvalidation.ParseActivity(ih.logger, body)
-}
-
-// validateActivity validates required activity fields and addressing
-func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *activitypub.Actor) error {
-	// Validate basic activity structure
-	if err := ih.validateBasicActivity(activity); err != nil {
-		return err
-	}
-
-	// Validate actor structure
-	if err := ih.validateBasicActor(actor); err != nil {
-		return err
-	}
-
-	// Validate addressing fields
-	if err := ih.validateActivityAddressing(activity); err != nil {
-		return err
-	}
-
-	// Validate actor username
-	if err := ih.validateActorUsername(activity.Actor); err != nil {
-		return err
-	}
-
-	// Validate actor public key if present
-	if err := ih.validateActorPublicKey(actor); err != nil {
-		return err
-	}
-
-	// Validate Create activity objects if applicable
-	if err := ih.validateCreateActivityObject(activity); err != nil {
-		return err
-	}
-
-	// Validate comprehensive addressing
-	if err := ih.validateComprehensiveAddressing(activity); err != nil {
-		return err
-	}
-
-	// Check if activity is addressed to this actor
-	if err := ih.validateActivityTargeting(activity, actor); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func stringSliceToInterfaceSlice(values []string) []interface{} {
@@ -1051,66 +918,6 @@ func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxR
 	return nil
 }
 
-// validateAddressingAndPrivacy validates addressing fields and privacy compliance
-func (ih *InboxHandler) validateAddressingAndPrivacy(_ *apptheory.Context, req *InboxRequest) error {
-	start := time.Now()
-	addressingValidator := activitypub.NewAddressingValidator()
-
-	// Validate addressing fields are properly formatted
-	if err := addressingValidator.ValidateAddressing(req.Activity); err != nil {
-		ih.logger.Warn("activity has invalid addressing fields",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("activity_id", req.Activity.ID),
-			zap.Error(err))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, fmt.Sprintf("Invalid addressing: %v", err), 1)
-		return errors.ValidationFailed("addressing", "invalid addressing fields").WithInternalError(err)
-	}
-
-	// Validate privacy compliance (e.g., direct messages don't have public addressing)
-	if err := addressingValidator.ValidatePrivacyCompliance(req.Activity); err != nil {
-		ih.logger.Warn("activity violates privacy compliance",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("activity_id", req.Activity.ID),
-			zap.Error(err))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, fmt.Sprintf("Privacy violation: %v", err), 1)
-		return errors.ValidationFailed("privacy", "privacy compliance violation").WithInternalError(err)
-	}
-
-	// Check if the activity is actually addressed to this actor
-	if !ih.isAddressedTo(req.Activity, req.Actor) {
-		ih.logger.Warn("activity not addressed to this actor",
-			zap.String("actor", req.Activity.Actor),
-			zap.String("target_actor", req.Actor.ID),
-			zap.String("activity_id", req.Activity.ID))
-		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-		ih.recordFailureCost(req, "Activity not addressed to target actor", 1)
-		// Return 404 instead of 403 to maintain privacy (don't leak that actor exists)
-		return errors.NotFound("resource")
-	}
-
-	// For direct messages, perform additional validation
-	if addressingValidator.IsDirectMessage(req.Activity) {
-		if err := ih.validateDirectMessage(req.Activity, req.Actor); err != nil {
-			ih.logger.Warn("direct message validation failed",
-				zap.String("actor", req.Activity.Actor),
-				zap.String("activity_id", req.Activity.ID),
-				zap.Error(err))
-			req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
-			ih.recordFailureCost(req, fmt.Sprintf("Direct message validation failed: %v", err), 1)
-			return errors.ValidationFailed("direct_message", "direct message validation failed").WithInternalError(err)
-		}
-	}
-
-	req.CostParams.ProcessingTimeMs += time.Since(start).Milliseconds()
-	ih.logger.Debug("addressing and privacy validation successful",
-		zap.String("actor", req.Activity.Actor),
-		zap.String("visibility", addressingValidator.GetVisibilityLevel(req.Activity)))
-
-	return nil
-}
-
 // validateDirectMessage performs additional validation for direct messages
 func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ *activitypub.Actor) error {
 	// Validate all addressing fields using ActivityPub validators
@@ -1240,15 +1047,6 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 	processingDuration := time.Since(processingStart)
 	req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 	return nil
-}
-
-// processActivityByType processes the activity based on its type.
-func (ih *InboxHandler) processActivityByType(ctx context.Context, req *InboxRequest) error {
-	targetActor := req.Actor
-	if targetActor == nil && len(req.TargetActors) > 0 {
-		targetActor = req.TargetActors[0]
-	}
-	return ih.processActivityByTypeForTarget(ctx, req.Activity, targetActor, req.CostParams)
 }
 
 func (ih *InboxHandler) processActivityByTypeForTarget(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor, costParams *federation.CostCalculationParams) error {

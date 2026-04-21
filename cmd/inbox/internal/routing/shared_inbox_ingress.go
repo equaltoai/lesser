@@ -16,6 +16,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const actorNotFoundError = "actor not found"
+
 func (ih *InboxHandler) handleGetSharedInbox(*apptheory.Context) (*apptheory.Response, error) {
 	return apptheory.Text(http.StatusMethodNotAllowed, ""), nil
 }
@@ -66,7 +68,7 @@ func (ih *InboxHandler) initializeActorInboxRequest(ctx *apptheory.Context) (*In
 
 	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
-		if err.Error() == "actor not found" {
+		if err.Error() == actorNotFoundError {
 			return nil, errors.NotFound("actor")
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
