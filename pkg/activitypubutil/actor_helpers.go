@@ -2,12 +2,12 @@
 package activitypubutil
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
@@ -413,29 +413,7 @@ func normalizeOperatedBy(value string) string {
 }
 
 func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {
-	if base == "" || username == "" {
-		return
-	}
-
-	actor.ID = fmt.Sprintf("%s/users/%s", base, username)
-	actor.URL = fmt.Sprintf("%s/@%s", base, username)
-	actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", base, username)
-	actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", base, username)
-	actor.Followers = fmt.Sprintf("%s/users/%s/followers", base, username)
-	actor.Following = fmt.Sprintf("%s/users/%s/following", base, username)
-	actor.Liked = fmt.Sprintf("%s/users/%s/liked", base, username)
-
-	if actor.Endpoints == nil {
-		actor.Endpoints = &activitypub.Endpoints{}
-	}
-	actor.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", base)
-
-	actor.PreferredUsername = username
-
-	if actor.PublicKey != nil {
-		actor.PublicKey.Owner = actor.ID
-		actor.PublicKey.ID = actor.ID + "#main-key"
-	}
+	surface.ApplyLocalActorIdentifiers(actor, base, username)
 }
 
 func mergeUserProfile(actor *activitypub.Actor, user *storage.User, username string) {

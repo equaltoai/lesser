@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -621,13 +622,7 @@ func buildActorModel(username, domain, publicKeyPEM, encryptedPrivateKeyB64 stri
 		Owner:        actorID,
 		PublicKeyPem: publicKeyPEM,
 	}
-	actor.Endpoints = &activitypub.Endpoints{
-		SharedInbox: fmt.Sprintf("https://%s/inbox", domain),
-	}
-	actor.Inbox = fmt.Sprintf("%s/inbox", actorID)
-	actor.Outbox = fmt.Sprintf("%s/outbox", actorID)
-	actor.Followers = fmt.Sprintf("%s/followers", actorID)
-	actor.Following = fmt.Sprintf("%s/following", actorID)
+	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", domain), username)
 
 	model := &storagemodels.Actor{
 		Actor:          actor,

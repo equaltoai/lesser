@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -381,6 +382,10 @@ func canonicalLocalActorRepairNeeded(actor *activitypub.Actor) bool {
 		strings.TrimSpace(actor.Following) == "" ||
 		strings.TrimSpace(actor.Liked) == "" {
 		return true
+	}
+
+	if !surface.SharedInbox().Advertised {
+		return false
 	}
 
 	return actor.Endpoints == nil || strings.TrimSpace(actor.Endpoints.SharedInbox) == ""

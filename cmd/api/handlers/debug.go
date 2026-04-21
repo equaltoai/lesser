@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -331,7 +332,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *apptheory.Context) (*appt
 	response.LastContact = time.Now().Add(-1 * time.Hour)
 
 	// Add shared inbox if known
-	response.SharedInbox = fmt.Sprintf("https://%s/inbox", domain)
+	response.SharedInbox = surface.SharedInboxURL(fmt.Sprintf("https://%s", domain))
 
 	return okJSON(response)
 }

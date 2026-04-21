@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
+	"github.com/equaltoai/lesser/pkg/federation/surface"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -226,13 +227,7 @@ func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username s
 		Owner:        actorID,
 		PublicKeyPem: string(publicKeyPEM),
 	}
-	actor.Endpoints = &activitypub.Endpoints{
-		SharedInbox: fmt.Sprintf("https://%s/inbox", cfg.Domain),
-	}
-	actor.Inbox = fmt.Sprintf("%s/inbox", actorID)
-	actor.Outbox = fmt.Sprintf("%s/outbox", actorID)
-	actor.Followers = fmt.Sprintf("%s/followers", actorID)
-	actor.Following = fmt.Sprintf("%s/following", actorID)
+	surface.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", cfg.Domain), username)
 
 	if err := wh.actorRepo.CreateActor(ctx, actor, string(privateKeyPEM)); err != nil {
 		if _, ok := err.(common.ConflictError); ok {
