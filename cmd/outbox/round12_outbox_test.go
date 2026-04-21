@@ -487,6 +487,91 @@ func TestOutboxProcessor_TriggerFederationDelivery_Round12(t *testing.T) {
 	}, actor))
 }
 
+func TestOutboxProcessor_TriggerFederationDelivery_OutboundFamilies_Round12(t *testing.T) {
+	actor := &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}
+
+	tests := []struct {
+		name           string
+		activity       *activitypub.Activity
+		wantFollowers  int
+		wantRecipients int
+	}{
+		{
+			name: "public create fans out and still delivers recipients",
+			activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Type: activitypub.CreateType,
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://example.com/users/alice/followers"},
+				},
+			},
+			wantFollowers:  1,
+			wantRecipients: 1,
+		},
+		{
+			name: "public update fans out and still delivers recipients",
+			activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Type: activitypub.UpdateType,
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://example.com/users/alice/followers"},
+				},
+			},
+			wantFollowers:  1,
+			wantRecipients: 1,
+		},
+		{
+			name: "public announce fans out and still delivers recipients",
+			activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Type: activitypub.AnnounceType,
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://example.com/users/alice/followers"},
+				},
+			},
+			wantFollowers:  1,
+			wantRecipients: 1,
+		},
+		{
+			name: "public delete fans out and still delivers recipients",
+			activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Type: activitypub.DeleteType,
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://example.com/users/alice/followers"},
+				},
+			},
+			wantFollowers:  1,
+			wantRecipients: 1,
+		},
+		{
+			name: "followers only create stays on recipients path",
+			activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{
+					Type: activitypub.CreateType,
+					To:   []string{"https://example.com/users/alice/followers"},
+				},
+			},
+			wantFollowers:  0,
+			wantRecipients: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fedSvc := &round12FederationService{}
+			op := &OutboxProcessor{
+				federationService: fedSvc,
+				logger:            zap.NewNop(),
+			}
+
+			require.NoError(t, op.triggerFederationDelivery(context.Background(), tt.activity, actor))
+			require.Equal(t, tt.wantFollowers, fedSvc.followersCalls)
+			require.Equal(t, tt.wantRecipients, fedSvc.recipientsCalls)
+		})
+	}
+}
+
 func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
 	mockDB := new(dynamock.MockDB)
 	mockQuery := new(dynamock.MockQuery)

@@ -58,6 +58,11 @@ curl -s "https://example.com/setup/status" | jq .
 - Labs validation checklist: `docs/development/shared-inbox-validation.md`
 - Core logic: `pkg/activitypub/`, `pkg/services/federation/`
 
+## Validation checklists
+
+- Follow-establishment proof contract: `docs/development/federation-follow-establishment-validation.md`
+- Outbound delivery proof contract: `docs/development/federation-outbound-delivery-validation.md`
+
 ## Troubleshooting
 
 - If discovery works but delivery doesn’t: tail `federation-delivery` logs:
