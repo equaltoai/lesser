@@ -258,6 +258,51 @@ type resolvedDeliveryTarget struct {
 	isLocal bool
 }
 
+func orderedUniqueRecipients(activity *activitypub.Activity) []string {
+	if activity == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	recipients := make([]string, 0, len(activity.To)+len(activity.CC)+len(activity.BTo)+len(activity.BCC))
+
+	appendRecipients := func(values []string) {
+		for _, value := range values {
+			recipient := strings.TrimSpace(value)
+			if recipient == "" || recipient == activitypub.PublicAddress || seen[recipient] {
+				continue
+			}
+			seen[recipient] = true
+			recipients = append(recipients, recipient)
+		}
+	}
+
+	appendRecipients(activity.To)
+	appendRecipients(activity.CC)
+	appendRecipients(activity.BTo)
+	appendRecipients(activity.BCC)
+
+	return recipients
+}
+
+func followersCollectionForActor(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+	if followers := strings.TrimSpace(actor.Followers); followers != "" {
+		return followers
+	}
+	if actorID := strings.TrimSpace(actor.ID); actorID != "" {
+		return strings.TrimRight(actorID, "/") + "/followers"
+	}
+	return ""
+}
+
+func isFollowersCollectionForActor(actor *activitypub.Actor, recipient string) bool {
+	followersCollection := followersCollectionForActor(actor)
+	return followersCollection != "" && strings.EqualFold(strings.TrimSpace(recipient), followersCollection)
+}
+
 func (d *DeliveryService) resolveDeliverableTarget(ctx context.Context, identifier string) (*resolvedDeliveryTarget, error) {
 	identifier = strings.TrimSpace(identifier)
 	if err := common.ValidateRequiredParam("identifier", identifier); err != nil {
@@ -350,6 +395,222 @@ func (d *DeliveryService) resolveRemoteHandleTarget(ctx context.Context, handle 
 	return actor, nil
 }
 
+func (d *DeliveryService) resolveFollowerTargets(ctx context.Context, actor *activitypub.Actor, log *zap.Logger) (map[string]*activitypub.Actor, error) {
+	followerUsernames, _, err := d.store.GetFollowers(ctx, actor.PreferredUsername, 1000, "")
+	if err != nil {
+		if log != nil {
+			log.Error("failed to get followers", zap.Error(err))
+		}
+		return nil, errors.Join(ErrGetFollowersFailed, err)
+	}
+
+	if log != nil {
+		log.Info("found followers", zap.Int("count", len(followerUsernames)))
+	}
+
+	targets := make(map[string]*activitypub.Actor)
+	for _, followerUsername := range followerUsernames {
+		target, err := d.resolveDeliverableTarget(ctx, followerUsername)
+		if err != nil {
+			if log != nil {
+				log.Warn("failed to get follower actor",
+					zap.String("username", followerUsername),
+					zap.Error(err))
+			}
+			continue
+		}
+
+		follower := target.actor
+		if follower == nil || strings.TrimSpace(follower.ID) == "" {
+			continue
+		}
+
+		// Skip local followers (they already have the activity via fan-out)
+		if target.isLocal || isLocalActor(follower.ID, actor.ID) {
+			continue
+		}
+
+		targets[follower.ID] = follower
+	}
+
+	return targets, nil
+}
+
+func recipientResolutionPolicy(activity *activitypub.Activity) (expandFollowers bool, skipFollowersCollections bool) {
+	addressingValidator := activitypub.NewAddressingValidator()
+	return addressingValidator.IsPrivateMessage(activity),
+		addressingValidator.IsPublicMessage(activity) || addressingValidator.IsUnlistedMessage(activity)
+}
+
+func (d *DeliveryService) addResolvedRecipientTarget(
+	ctx context.Context,
+	recipient string,
+	actor *activitypub.Actor,
+	expandFollowers bool,
+	skipFollowersCollections bool,
+	targets map[string]*activitypub.Actor,
+	log *zap.Logger,
+) error {
+	if strings.Contains(recipient, "/followers") {
+		if !isFollowersCollectionForActor(actor, recipient) || skipFollowersCollections || !expandFollowers {
+			return nil
+		}
+
+		followerTargets, err := d.resolveFollowerTargets(ctx, actor, log)
+		if err != nil {
+			return err
+		}
+		for actorID, follower := range followerTargets {
+			targets[actorID] = follower
+		}
+		return nil
+	}
+
+	target, err := d.resolveDeliverableTarget(ctx, recipient)
+	if err != nil {
+		if log != nil {
+			log.Warn("failed to resolve recipient actor",
+				zap.String("recipient", recipient),
+				zap.Error(err))
+		}
+		return nil
+	}
+	if target.isLocal || target.actor == nil || strings.TrimSpace(target.actor.ID) == "" {
+		return nil
+	}
+
+	targets[target.actor.ID] = target.actor
+	return nil
+}
+
+func (d *DeliveryService) resolveRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, log *zap.Logger) (map[string]*activitypub.Actor, error) {
+	shouldExpandFollowers, skipFollowersCollections := recipientResolutionPolicy(activity)
+
+	targets := make(map[string]*activitypub.Actor)
+	for _, recipient := range orderedUniqueRecipients(activity) {
+		if err := d.addResolvedRecipientTarget(ctx, recipient, actor, shouldExpandFollowers, skipFollowersCollections, targets, log); err != nil {
+			return nil, err
+		}
+	}
+
+	return targets, nil
+}
+
+type resolvedRecipientGroups struct {
+	actorsByID        map[string]*activitypub.Actor
+	individualTargets map[string]*activitypub.Actor
+	sharedInboxGroups map[string][]string
+}
+
+func groupResolvedRecipientTargets(targets map[string]*activitypub.Actor) resolvedRecipientGroups {
+	groups := resolvedRecipientGroups{
+		actorsByID:        make(map[string]*activitypub.Actor, len(targets)),
+		individualTargets: make(map[string]*activitypub.Actor),
+		sharedInboxGroups: make(map[string][]string),
+	}
+
+	for actorID, recipient := range targets {
+		if recipient == nil {
+			continue
+		}
+		groups.actorsByID[actorID] = recipient
+
+		if recipient.Endpoints != nil && strings.TrimSpace(recipient.Endpoints.SharedInbox) != "" {
+			sharedInbox := strings.TrimSpace(recipient.Endpoints.SharedInbox)
+			groups.sharedInboxGroups[sharedInbox] = append(groups.sharedInboxGroups[sharedInbox], actorID)
+			continue
+		}
+
+		groups.individualTargets[actorID] = recipient
+	}
+
+	return groups
+}
+
+func (d *DeliveryService) deliverSharedInboxGroups(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	actor *activitypub.Actor,
+	groups resolvedRecipientGroups,
+	log *zap.Logger,
+) []error {
+	var deliveryErrors []error
+
+	for sharedInbox, recipientIDs := range groups.sharedInboxGroups {
+		if len(recipientIDs) < 2 {
+			recipient := groups.actorsByID[recipientIDs[0]]
+			if recipient != nil {
+				groups.individualTargets[recipientIDs[0]] = recipient
+			}
+			continue
+		}
+
+		if err := d.deliverToSharedInbox(ctx, activity, sharedInbox, actor, recipientIDs); err != nil {
+			if log != nil {
+				log.Warn("shared inbox delivery failed, falling back to individual inboxes",
+					zap.String("shared_inbox", sharedInbox),
+					zap.Error(err))
+			}
+			for _, recipientID := range recipientIDs {
+				if recipient := groups.actorsByID[recipientID]; recipient != nil {
+					groups.individualTargets[recipientID] = recipient
+				}
+			}
+		}
+	}
+
+	return deliveryErrors
+}
+
+func (d *DeliveryService) deliverResolvedIndividualTargets(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	actor *activitypub.Actor,
+	individualTargets map[string]*activitypub.Actor,
+	log *zap.Logger,
+) []error {
+	var deliveryErrors []error
+
+	for recipientID, recipientActor := range individualTargets {
+		inboxURL := strings.TrimSpace(recipientActor.Inbox)
+		if inboxURL == "" {
+			continue
+		}
+
+		if err := d.DeliverActivityWithPrivacy(ctx, activity, inboxURL, actor, recipientID); err != nil {
+			if log != nil {
+				log.Error("failed to deliver to individual inbox",
+					zap.String("recipient", recipientID),
+					zap.String("inbox", inboxURL),
+					zap.Error(err))
+			}
+			deliveryErrors = append(deliveryErrors, err)
+		}
+	}
+
+	return deliveryErrors
+}
+
+func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, targets map[string]*activitypub.Actor, log *zap.Logger) error {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	groups := groupResolvedRecipientTargets(targets)
+	deliveryErrors := d.deliverSharedInboxGroups(ctx, activity, actor, groups, log)
+	deliveryErrors = append(deliveryErrors, d.deliverResolvedIndividualTargets(ctx, activity, actor, groups.individualTargets, log)...)
+
+	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
+		if log != nil {
+			log.Error("failed to deliver to multiple recipients",
+				zap.Int("failed_recipient_count", len(deliveryErrors)))
+		}
+		return ErrDeliveryToDomainsFailed
+	}
+
+	return nil
+}
+
 // DeliverToFollowers delivers an activity to all followers of an actor
 func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	log := common.WithContext(ctx).With(
@@ -359,44 +620,25 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 
 	log.Info("delivering activity to followers")
 
-	// Get all followers (usernames)
-	followerUsernames, _, err := d.store.GetFollowers(ctx, actor.PreferredUsername, 1000, "")
+	targets, err := d.resolveFollowerTargets(ctx, actor, log)
 	if err != nil {
-		log.Error("failed to get followers", zap.Error(err))
-		return errors.Join(ErrGetFollowersFailed, err)
-	}
-
-	log.Info("found followers", zap.Int("count", len(followerUsernames)))
-
-	// Group followers by shared inbox
-	inboxMap := make(map[string][]string) // inbox URL -> follower IDs
-
-	for _, followerUsername := range followerUsernames {
-		target, err := d.resolveDeliverableTarget(ctx, followerUsername)
-		if err != nil {
-			log.Warn("failed to get follower actor",
-				zap.String("username", followerUsername),
-				zap.Error(err))
-			continue
-		}
-		follower := target.actor
-
-		// Skip local followers (they already have the activity via fan-out)
-		if target.isLocal || isLocalActor(follower.ID, actor.ID) {
-			continue
-		}
-
-		// Determine inbox URL (prefer shared inbox)
-		inboxURL := follower.Inbox
-		if follower.Endpoints != nil && follower.Endpoints.SharedInbox != "" {
-			inboxURL = follower.Endpoints.SharedInbox
-		}
-
-		inboxMap[inboxURL] = append(inboxMap[inboxURL], follower.ID)
+		return err
 	}
 
 	// Deliver to each unique inbox
 	var deliveryErrors []error
+	inboxMap := make(map[string][]string)
+	for actorID, follower := range targets {
+		inboxURL := strings.TrimSpace(follower.Inbox)
+		if follower.Endpoints != nil && strings.TrimSpace(follower.Endpoints.SharedInbox) != "" {
+			inboxURL = strings.TrimSpace(follower.Endpoints.SharedInbox)
+		}
+		if inboxURL == "" {
+			continue
+		}
+		inboxMap[inboxURL] = append(inboxMap[inboxURL], actorID)
+	}
+
 	for inbox, followerIDs := range inboxMap {
 		log.Info("delivering to inbox",
 			zap.String("inbox", inbox),
@@ -434,61 +676,15 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 		zap.String("actor", actor.ID),
 	)
 
-	// Create addressing validator for privacy controls
-	addressingValidator := activitypub.NewAddressingValidator()
-
-	// Get delivery targets with domain grouping for shared inbox optimization
-	deliveryTargets := addressingValidator.DetermineDeliveryRecipients(activity)
+	resolvedTargets, err := d.resolveRecipientTargets(ctx, activity, actor, log)
+	if err != nil {
+		return err
+	}
 
 	log.Info("delivering to recipients with privacy controls",
-		zap.Int("direct_recipients", len(deliveryTargets.DirectRecipients)),
-		zap.Int("domain_groups", len(deliveryTargets.DomainGroups)))
+		zap.Int("resolved_recipients", len(resolvedTargets)))
 
-	// Process each domain group for shared inbox optimization
-	var deliveryErrors []error
-	for domain, recipients := range deliveryTargets.DomainGroups {
-		// Skip local domain
-		if d.isLocalDomain(domain) {
-			continue
-		}
-
-		log.Debug("processing domain group",
-			zap.String("domain", domain),
-			zap.Int("recipient_count", len(recipients)))
-
-		// Try shared inbox first if multiple recipients on same domain
-		if err := common.ValidateIntRange("recipient_count", len(recipients), 2, 1000); err == nil {
-			sharedInbox, err := d.getSharedInboxForDomain(ctx, domain, recipients[0])
-			if err == nil && sharedInbox != "" {
-				// Use shared inbox with privacy sanitization
-				if err := d.deliverToSharedInbox(ctx, activity, sharedInbox, actor, recipients); err != nil {
-					log.Warn("shared inbox delivery failed, falling back to individual inboxes",
-						zap.String("shared_inbox", sharedInbox),
-						zap.Error(err))
-					// Fall back to individual delivery
-				} else {
-					// Shared inbox delivery succeeded, continue to next domain
-					continue
-				}
-			}
-		}
-
-		// Deliver to individual inboxes (fallback or single recipient)
-		if err := d.deliverToIndividualRecipients(ctx, activity, actor, recipients); err != nil {
-			log.Error("failed to deliver to domain",
-				zap.String("domain", domain),
-				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, err)
-		}
-	}
-
-	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
-		log.Error("failed to deliver to multiple domains",
-			zap.Int("failed_domain_count", len(deliveryErrors)))
-		return ErrDeliveryToDomainsFailed
-	}
-
-	return nil
+	return d.deliverResolvedRecipientTargets(ctx, activity, actor, resolvedTargets, log)
 }
 
 // deliverToSharedInbox delivers to a shared inbox with proper privacy controls
@@ -505,68 +701,6 @@ func (d *DeliveryService) deliverToSharedInbox(ctx context.Context, activity *ac
 
 	log.Info("delivering to shared inbox")
 	return d.DeliverActivity(ctx, sanitizedActivity, sharedInbox, actor)
-}
-
-// deliverToIndividualRecipients delivers to individual recipient inboxes
-func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, recipients []string) error {
-	var errors []error
-
-	for _, recipientID := range recipients {
-		// Fetch the recipient's actor document
-		recipientActor, err := d.fetchRemoteActor(ctx, recipientID)
-		if err != nil {
-			log := common.WithContext(ctx)
-			log.Warn("failed to fetch recipient actor",
-				zap.String("recipient", recipientID),
-				zap.Error(err))
-			continue
-		}
-
-		// Use individual inbox
-		inboxURL := recipientActor.Inbox
-
-		// Deliver with privacy controls for this specific recipient
-		if err := d.DeliverActivityWithPrivacy(ctx, activity, inboxURL, actor, recipientID); err != nil {
-			log := common.WithContext(ctx)
-			log.Error("failed to deliver to individual inbox",
-				zap.String("recipient", recipientID),
-				zap.String("inbox", inboxURL),
-				zap.Error(err))
-			errors = append(errors, err)
-		}
-	}
-
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		log := common.WithContext(ctx)
-		log.Error("failed to deliver to multiple recipients",
-			zap.Int("failed_recipient_count", len(errors)))
-		return ErrDeliveryToRecipientsFailed
-	}
-
-	return nil
-}
-
-// getSharedInboxForDomain attempts to find a shared inbox for a domain
-func (d *DeliveryService) getSharedInboxForDomain(ctx context.Context, domain string, sampleRecipient string) (string, error) {
-	// Fetch a sample actor to get the shared inbox
-	actor, err := d.fetchRemoteActor(ctx, sampleRecipient)
-	if err != nil {
-		return "", err
-	}
-
-	if actor.Endpoints != nil && actor.Endpoints.SharedInbox != "" {
-		return actor.Endpoints.SharedInbox, nil
-	}
-
-	d.logger.Debug("no shared inbox found for domain",
-		zap.String("domain", domain))
-	return "", ErrNoSharedInboxFound
-}
-
-// isLocalDomain checks if a domain is local to this instance
-func (d *DeliveryService) isLocalDomain(domain string) bool {
-	localDomain := d.cfg.Domain
-	return domain == localDomain
 }
 
 // fetchRemoteActor fetches a remote actor by their ID

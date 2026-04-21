@@ -90,12 +90,18 @@ func (f fakeActorRepo) GetActor(_ context.Context, _ string) (*activitypub.Actor
 }
 
 type fakeFederation struct {
-	calls atomic.Int32
-	err   error
+	followerCalls  atomic.Int32
+	recipientCalls atomic.Int32
+	err            error
 }
 
 func (f *fakeFederation) DeliverToFollowers(_ context.Context, _ *activitypub.Activity, _ *activitypub.Actor) error {
-	f.calls.Add(1)
+	f.followerCalls.Add(1)
+	return f.err
+}
+
+func (f *fakeFederation) DeliverToRecipients(_ context.Context, _ *activitypub.Activity, _ *activitypub.Actor) error {
+	f.recipientCalls.Add(1)
 	return f.err
 }
 
@@ -299,12 +305,33 @@ func TestArticleService_Round25_federationHelpersAndUsernameExtraction(t *testin
 			Content:      "<p>hello</p>",
 			Published:    time.Now(),
 			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+			CC:           []string{"https://example.com/users/alice/followers"},
 		},
 		Slug: "slug",
 	}
 
 	svc.federateArticleWriteActivity(ctx, article, activitypub.CreateType, "create")
-	assert.GreaterOrEqual(t, fed.calls.Load(), int32(1))
+	assert.GreaterOrEqual(t, fed.followerCalls.Load(), int32(1))
+	assert.GreaterOrEqual(t, fed.recipientCalls.Load(), int32(1))
+
+	privateFed := &fakeFederation{}
+	svc.federation = privateFed
+	privateArticle := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/2",
+			Name:         "private title",
+			Content:      "<p>secret</p>",
+			Published:    time.Now(),
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{"https://example.com/users/alice/followers"},
+		},
+		Slug: "private-slug",
+	}
+
+	svc.federateArticleWriteActivity(ctx, privateArticle, activitypub.CreateType, "create")
+	assert.Equal(t, int32(0), privateFed.followerCalls.Load())
+	assert.Equal(t, int32(1), privateFed.recipientCalls.Load())
 
 	fed.err = errors.New("deliver failed")
 	svc.federateArticleDeletion(ctx, article)

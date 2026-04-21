@@ -22,6 +22,7 @@ import (
 // FederationService interface to avoid circular imports with pkg/services
 type FederationService interface {
 	DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+	DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
 }
 
 type articleServiceRepository interface {
@@ -381,7 +382,7 @@ func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, artic
 		Object: apArticle,
 	}
 
-	if err := s.federation.DeliverToFollowers(ctx, activity, apActor); err != nil {
+	if err := s.deliverFederatedArticleActivity(ctx, activity, apActor); err != nil {
 		s.logger.Error("failed to deliver article activity",
 			zap.String("label", label),
 			zap.String("activity_id", activityID),
@@ -427,7 +428,7 @@ func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *m
 		Object: article.ID,
 	}
 
-	if err := s.federation.DeliverToFollowers(ctx, activity, apActor); err != nil {
+	if err := s.deliverFederatedArticleActivity(ctx, activity, apActor); err != nil {
 		s.logger.Error("failed to deliver article delete activity",
 			zap.String("activity_id", activityID),
 			zap.Error(err))
@@ -436,6 +437,32 @@ func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *m
 			zap.String("article_id", article.ID),
 			zap.String("activity_id", activityID))
 	}
+}
+
+func (s *ArticleService) deliverFederatedArticleActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	if articleActivityHasPublicAddressing(activity) {
+		if err := s.federation.DeliverToFollowers(ctx, activity, actor); err != nil {
+			s.logger.Error("failed to deliver article activity to followers",
+				zap.String("activity_id", activity.ID),
+				zap.Error(err))
+		}
+	}
+
+	return s.federation.DeliverToRecipients(ctx, activity, actor)
+}
+
+func articleActivityHasPublicAddressing(activity *activitypub.Activity) bool {
+	if activity == nil {
+		return false
+	}
+
+	for _, recipient := range append(activity.To, activity.CC...) {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
 }
 
 // extractUsernameFromActorID extracts username from an actor ID URL
