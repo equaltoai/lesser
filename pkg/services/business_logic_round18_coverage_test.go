@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -364,22 +365,26 @@ func (t *round18TimelineService) RemoveFromTimelines(ctx context.Context, object
 }
 
 type round18FederationService struct {
-	deliverToFollowersErr   error
-	deliverToRecipientsErr  error
-	determineRecipientsErr  error
-	determineRecipientsList []string
+	deliverToFollowersErr    error
+	deliverToRecipientsErr   error
+	determineRecipientsErr   error
+	determineRecipientsList  []string
+	deliverToFollowersCalls  atomic.Int32
+	deliverToRecipientsCalls atomic.Int32
 }
 
 func (f *round18FederationService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	_ = ctx
 	_ = activity
 	_ = actor
+	f.deliverToFollowersCalls.Add(1)
 	return f.deliverToFollowersErr
 }
 func (f *round18FederationService) DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	_ = ctx
 	_ = activity
 	_ = actor
+	f.deliverToRecipientsCalls.Add(1)
 	return f.deliverToRecipientsErr
 }
 func (f *round18FederationService) DetermineRecipients(ctx context.Context, activity *activitypub.Activity, visibility string) ([]string, error) {
@@ -637,6 +642,24 @@ func TestBusinessLogicService_Round18_MainFlows(t *testing.T) {
 		_ = svc2.handleReplyProcessing(context.Background(), "https://example.com/objects/reply1", actor.ID)
 	})
 
+	t.Run("DeliverActivity_routes_public_through_followers_and_recipients", func(t *testing.T) {
+		svc2, _ := newBusinessLogicServiceForRound18Test(t)
+		federation := &round18FederationService{}
+		svc2.federation = federation
+
+		err := svc2.DeliverActivity(context.Background(), &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/create-1",
+				Type: activitypub.CreateType,
+				To:   []string{activitypub.PublicAddress},
+				CC:   []string{"https://example.com/users/alice/followers"},
+			},
+		}, &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, VisibilityPublic)
+		require.NoError(t, err)
+		require.Equal(t, int32(1), federation.deliverToFollowersCalls.Load())
+		require.Equal(t, int32(1), federation.deliverToRecipientsCalls.Load())
+	})
+
 	t.Run("DeletePost_follow_like_update_unfollow_unlike", func(t *testing.T) {
 		actor, err := storageAdapter.GetActor(context.Background(), "alice")
 		require.NoError(t, err)
@@ -644,6 +667,8 @@ func TestBusinessLogicService_Round18_MainFlows(t *testing.T) {
 		existing := &activitypub.Note{
 			BaseObject: activitypub.BaseObject{
 				ID:        "https://example.com/objects/obj1",
+				To:        []string{activitypub.PublicAddress},
+				CC:        []string{"https://example.com/users/alice/followers"},
 				Published: round18PtrTime(time.Now()),
 			},
 			AttributedTo: actor.ID,
@@ -654,8 +679,10 @@ func TestBusinessLogicService_Round18_MainFlows(t *testing.T) {
 		storageAdapter.db = &round18CascadeDB{likeRepo: &round18LikeCascadeRepo{}}
 
 		// Delete
-		_, err = svc.DeletePost(context.Background(), user, &DeletePostInput{ObjectID: existing.ID})
+		deleteResult, err := svc.DeletePost(context.Background(), user, &DeletePostInput{ObjectID: existing.ID})
 		require.NoError(t, err)
+		require.Equal(t, existing.To, deleteResult.Activity.To)
+		require.Equal(t, existing.CC, deleteResult.Activity.CC)
 
 		// Follow (requested)
 		targetActor, err := storageAdapter.GetActor(context.Background(), "bob")
