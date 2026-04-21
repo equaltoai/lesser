@@ -16,11 +16,26 @@ func (s *sharedInboxActorRepoStub) GetActorByUsername(_ context.Context, usernam
 	return s.actors[username], nil
 }
 
-type sharedInboxRelationshipRepoStub struct {
-	followers map[string][]string
+type sharedInboxFollowerPage struct {
+	followers  []string
+	nextCursor string
 }
 
-func (s *sharedInboxRelationshipRepoStub) GetFollowers(_ context.Context, username string, _ int, _ string) ([]string, string, error) {
+type sharedInboxRelationshipRepoStub struct {
+	followers map[string][]string
+	pages     map[string]map[string]sharedInboxFollowerPage
+}
+
+func (s *sharedInboxRelationshipRepoStub) GetFollowers(_ context.Context, username string, _ int, cursor string) ([]string, string, error) {
+	if s.pages != nil {
+		if handlePages, ok := s.pages[username]; ok {
+			page, ok := handlePages[cursor]
+			if !ok {
+				return nil, "", nil
+			}
+			return append([]string(nil), page.followers...), page.nextCursor, nil
+		}
+	}
 	return append([]string(nil), s.followers[username]...), "", nil
 }
 
@@ -93,6 +108,44 @@ func TestSharedInboxTargetResolver_PublicCreateResolvesFollowerSetWithoutTreatin
 	require.NoError(t, err)
 	require.Len(t, actors, 2)
 	require.ElementsMatch(t, []string{"alice", "carol"}, []string{actors[0].PreferredUsername, actors[1].PreferredUsername})
+}
+
+func TestSharedInboxTargetResolver_PublicCreateResolvesFollowerPages(t *testing.T) {
+	t.Parallel()
+
+	resolver := sharedInboxTargetResolver{
+		actorRepository: &sharedInboxActorRepoStub{actors: map[string]*activitypub.Actor{
+			"alice": {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice"},
+			"carol": {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/carol"}, PreferredUsername: "carol"},
+			"dave":  {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/dave"}, PreferredUsername: "dave"},
+		}},
+		relationshipRepository: &sharedInboxRelationshipRepoStub{pages: map[string]map[string]sharedInboxFollowerPage{
+			"bob@remote.example": {
+				"":       {followers: []string{"alice", "carol"}, nextCursor: "page-2"},
+				"page-2": {followers: []string{"dave"}},
+			},
+		}},
+		localDomain: "example.com",
+	}
+
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.CreateType,
+			To:   []string{activitypub.PublicAddress},
+			CC:   []string{"https://remote.example/users/bob/followers"},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/notes/2",
+			"type":         activitypub.NoteType,
+			"attributedTo": "https://remote.example/users/bob",
+		},
+	}
+
+	actors, err := resolver.Resolve(context.Background(), activity)
+	require.NoError(t, err)
+	require.Len(t, actors, 3)
+	require.ElementsMatch(t, []string{"alice", "carol", "dave"}, []string{actors[0].PreferredUsername, actors[1].PreferredUsername, actors[2].PreferredUsername})
 }
 
 func TestSharedInboxTargetResolver_AcceptUsesStoredFollowActor(t *testing.T) {

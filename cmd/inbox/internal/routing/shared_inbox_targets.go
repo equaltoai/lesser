@@ -144,14 +144,21 @@ func (r sharedInboxTargetResolver) expandFollowerHandles(ctx context.Context, us
 	}
 
 	for handle := range followerHandles {
-		followers, _, err := r.relationshipRepository.GetFollowers(ctx, handle, sharedInboxFollowersLookupLimit, "")
-		if err != nil {
-			return err
-		}
-		for _, follower := range followers {
-			if username := r.localUsername(follower); username != "" {
-				usernames[username] = struct{}{}
+		cursor := ""
+		for {
+			followers, nextCursor, err := r.relationshipRepository.GetFollowers(ctx, handle, sharedInboxFollowersLookupLimit, cursor)
+			if err != nil {
+				return err
 			}
+			for _, follower := range followers {
+				if username := r.localUsername(follower); username != "" {
+					usernames[username] = struct{}{}
+				}
+			}
+			if nextCursor == "" {
+				break
+			}
+			cursor = nextCursor
 		}
 	}
 
