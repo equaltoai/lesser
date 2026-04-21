@@ -48,6 +48,23 @@ func SharedInbox() EndpointManifest {
 	return Current().SharedInbox
 }
 
+// ServedMethods returns the ordered list of explicitly served methods for the endpoint.
+func (e EndpointManifest) ServedMethods() []string {
+	methods := make([]string, 0, len(e.Policies))
+	seen := make(map[string]struct{}, len(e.Policies))
+	for _, policy := range e.Policies {
+		if !policy.Served {
+			continue
+		}
+		if _, ok := seen[policy.Method]; ok {
+			continue
+		}
+		seen[policy.Method] = struct{}{}
+		methods = append(methods, policy.Method)
+	}
+	return methods
+}
+
 // ServesMethod reports whether the endpoint is explicitly served for the given method.
 func (e EndpointManifest) ServesMethod(method string) bool {
 	_, ok := e.policy(method)

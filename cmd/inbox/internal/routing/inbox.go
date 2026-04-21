@@ -423,8 +423,17 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 // RegisterRoutes registers all inbox routes
 func (ih *InboxHandler) RegisterRoutes(app *apptheory.App) {
 	// ActivityPub inbox endpoints
-	app.Get(surface.SharedInbox().Path, ih.handleGetSharedInbox)
-	app.Post(surface.SharedInbox().Path, ih.handlePostSharedInbox)
+	sharedInbox := surface.SharedInbox()
+	for _, method := range sharedInbox.ServedMethods() {
+		switch method {
+		case http.MethodGet:
+			app.Get(sharedInbox.Path, ih.handleGetSharedInbox)
+		case http.MethodPost:
+			app.Post(sharedInbox.Path, ih.handlePostSharedInbox)
+		default:
+			panic(fmt.Sprintf("unsupported shared inbox method in federation surface manifest: %s", method))
+		}
+	}
 	app.Get("/users/:username/inbox", ih.handleGetInbox)
 	app.Post("/users/:username/inbox", ih.handlePostInbox)
 }

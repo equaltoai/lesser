@@ -14,6 +14,7 @@ func TestSharedInboxManifest_DefaultContract(t *testing.T) {
 	manifest := Current()
 	require.Equal(t, "/inbox", manifest.SharedInbox.Path)
 	require.True(t, manifest.SharedInbox.Advertised)
+	require.Equal(t, []string{http.MethodPost, http.MethodGet}, manifest.SharedInbox.ServedMethods())
 	require.True(t, manifest.SharedInbox.ServesMethod(http.MethodPost))
 	require.True(t, manifest.SharedInbox.AllowsMethod(http.MethodPost))
 	require.True(t, manifest.SharedInbox.ServesMethod(http.MethodGet))
