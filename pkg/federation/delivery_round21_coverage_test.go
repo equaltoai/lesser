@@ -18,6 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -1158,6 +1159,60 @@ func TestDeliveryHelpers_RecipientDedupAndFollowersCollection(t *testing.T) {
 	}
 	require.Equal(t, "https://remote.example/users/bob/followers", followersCollectionForActor(actorWithFallback))
 	require.False(t, isFollowersCollectionForActor(actorWithFallback, "https://remote.example/users/alice/followers"))
+
+	actorWithoutFollowers := &activitypub.Actor{}
+	require.Empty(t, followersCollectionForActor(actorWithoutFollowers))
+	require.False(t, isFollowersCollectionForActor(actorWithoutFollowers, "https://remote.example/users/bob/followers"))
+}
+
+func TestDeliveryService_ResolveDeliverableTarget_EdgeCases(t *testing.T) {
+	store := &federationStoreStub{
+		getActorFn: func(_ context.Context, username string) (*activitypub.Actor, error) {
+			return &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/" + username, Type: "Person"},
+				PreferredUsername: username,
+			}, nil
+		},
+	}
+	d := &DeliveryService{
+		store:  store,
+		logger: zap.NewNop(),
+		cfg:    &appConfig.Config{Domain: "example.com"},
+	}
+
+	t.Run("rejects empty identifier", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "   ")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("rejects malformed actor url", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "https://%zz")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("rejects local actor url without username", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "https://example.com/")
+		require.Error(t, err)
+		require.Nil(t, target)
+		var notFound common.ActorNotFoundError
+		require.ErrorAs(t, err, &notFound)
+	})
+
+	t.Run("rejects invalid handle format", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "alice@remote@example.com")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("resolves local handle as local target", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "alice")
+		require.NoError(t, err)
+		require.NotNil(t, target)
+		require.True(t, target.isLocal)
+		require.Equal(t, "https://example.com/users/alice", target.actor.ID)
+	})
 }
 
 func jsonMarshalStable(v any) ([]byte, error) {
