@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -95,6 +96,75 @@ func TestStatusesRound19_UnusedHelpers(t *testing.T) {
 			Content:      "hello",
 		})
 		require.NotNil(t, replyStatus)
+	})
+
+	t.Run("loadStatusWithActor and convertReplyToStatus use stored remote author seam", func(t *testing.T) {
+		now := time.Now().UTC()
+		remoteActor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://remote.example/users/steward",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "steward",
+			Name:              "Steward Remote",
+			URL:               "https://remote.example/@steward",
+			Inbox:             "https://remote.example/users/steward/inbox",
+			Outbox:            "https://remote.example/users/steward/outbox",
+		}
+		cachedRemote := storagemodels.RemoteActor{
+			Handle:    "steward@remote.example",
+			Actor:     remoteActor,
+			CachedAt:  now,
+			UpdatedAt: now,
+			ExpiresAt: now.Add(time.Hour),
+		}
+		cachedRemote.UpdateKeys()
+
+		remoteStatus := &storagemodels.Status{
+			StatusID:       "remote-status",
+			AuthorUsername: "steward@remote.example",
+			AuthorID:       remoteActor.ID,
+			Content:        "remote content",
+			Visibility:     storagemodels.VisibilityPublic,
+			PublishedAt:    now,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://remote.example/users/steward/statuses/remote-status",
+					Type:      activitypub.NoteType,
+					Published: &now,
+				},
+				AttributedTo: remoteActor.ID,
+				Content:      "remote content",
+			},
+		}
+
+		notesStub := &NotesServiceStub{
+			GetNoteFunc: func(_ context.Context, statusID string) (*storagemodels.Status, error) {
+				if statusID == remoteStatus.StatusID {
+					return remoteStatus, nil
+				}
+				return nil, errors.New("not found")
+			},
+		}
+
+		state := &round10QueryState{
+			remoteActorsByPK: map[string]storagemodels.RemoteActor{
+				cachedRemote.PK: cachedRemote,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: notesStub})
+
+		loaded := h.loadStatusWithActor(context.Background(), remoteStatus.StatusID)
+		require.NotNil(t, loaded)
+		require.Equal(t, remoteActor.ID, loaded.Account.ID)
+		require.Equal(t, "steward@remote.example", loaded.Account.Acct)
+
+		replyStatus := h.convertReplyToStatus(context.Background(), remoteStatus)
+		require.NotNil(t, replyStatus)
+		require.Equal(t, remoteActor.ID, replyStatus.Account.ID)
+		require.Equal(t, "steward@remote.example", replyStatus.Account.Acct)
 	})
 
 	t.Run("extractInReplyTo and extractFromGenericMap cover common branches", func(t *testing.T) {

@@ -425,6 +425,20 @@ func TestHelpersRound34_LoadStoredStatusAuthorAccount_RemotePaths(t *testing.T) 
 	})
 }
 
+func TestHelpersRound34_LocalUsernameForStoredActorCandidate(t *testing.T) {
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	require.Equal(t, "alice", h.localUsernameForStoredActorCandidate(cfg.ActorURL("alice")))
+	require.Equal(t, "alice", h.localUsernameForStoredActorCandidate("alice@"+cfg.Domain))
+	require.Equal(t, "alice", h.localUsernameForStoredActorCandidate("alice"))
+	require.Empty(t, h.localUsernameForStoredActorCandidate("https://remote.example/users/alice"))
+	require.Empty(t, h.localUsernameForStoredActorCandidate("alice@remote.example"))
+	require.Empty(t, h.localUsernameForStoredActorCandidate("nested/path"))
+	require.Empty(t, h.localUsernameForStoredActorCandidate("https://"+cfg.Domain+"/actors/alice"))
+	require.Empty(t, (&Handler{}).localUsernameForStoredActorCandidate("alice"))
+}
+
 func TestHelpersRound18_ResponseDefaults(t *testing.T) {
 	h := &Handler{logger: round10TestLogger(t)}
 
