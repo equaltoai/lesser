@@ -362,6 +362,69 @@ func TestHelpersRound18_StatusHelpersHandleNilInputs(t *testing.T) {
 	require.Nil(t, h.loadReblogStatus(context.Background(), nil, "alice"))
 }
 
+func TestHelpersRound34_LoadStoredStatusAuthorAccount_RemotePaths(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now()
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/alice",
+			Type: "Person",
+		},
+		PreferredUsername: "alice",
+		Name:              "Alice Remote",
+		URL:               "https://remote.example/@alice",
+		Inbox:             "https://remote.example/users/alice/inbox",
+		Outbox:            "https://remote.example/users/alice/outbox",
+	}
+
+	cached := storagemodels.RemoteActor{
+		Handle:    "alice@remote.example",
+		Actor:     remoteActor,
+		ExpiresAt: now.Add(1 * time.Hour),
+		CachedAt:  now.Add(-1 * time.Minute),
+		UpdatedAt: now.Add(-1 * time.Minute),
+	}
+	cached.UpdateKeys()
+
+	t.Run("uses cached remote actor without local account projection", func(t *testing.T) {
+		state := &round10QueryState{
+			remoteActorsByPK: map[string]storagemodels.RemoteActor{
+				cached.PK: cached,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		account := h.loadStoredStatusAuthorAccount(context.Background(), &storagemodels.Status{
+			StatusID:       "status-1",
+			AuthorID:       remoteActor.ID,
+			AuthorUsername: "alice@remote.example",
+			Note:           &activitypub.Note{AttributedTo: remoteActor.ID},
+		})
+
+		require.NotNil(t, account)
+		require.NotNil(t, account.Actor)
+		require.Equal(t, remoteActor.ID, account.Actor.ID)
+		require.Equal(t, "alice@remote.example", account.User.Username)
+	})
+
+	t.Run("degrades from stored identity when remote actor cache is absent", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		account := h.loadStoredStatusAuthorAccount(context.Background(), &storagemodels.Status{
+			StatusID:       "status-2",
+			AuthorID:       "https://remote.example/users/bob",
+			AuthorUsername: "bob@remote.example",
+			Note:           &activitypub.Note{AttributedTo: "https://remote.example/users/bob"},
+		})
+
+		require.NotNil(t, account)
+		require.NotNil(t, account.User)
+		require.Equal(t, "bob@remote.example", account.User.Username)
+		require.Equal(t, "bob@remote.example", account.User.DisplayName)
+		require.Nil(t, account.Actor)
+	})
+}
+
 func TestHelpersRound18_ResponseDefaults(t *testing.T) {
 	h := &Handler{logger: round10TestLogger(t)}
 

@@ -1013,9 +1013,11 @@ func (h *Handler) getStatusAncestors(ctx context.Context, root *storageMods.Stat
 
 	ancestors := make([]models.Status, 0, len(parents))
 	for i := len(parents) - 1; i >= 0; i-- {
-		actor := h.getActorForObject(ctx, parents[i])
-		status := transformations.ObjectToStatusAny(parents[i], actor, h.cfg.BaseURL())
-		ancestors = append(ancestors, status)
+		apiStatus, err := h.convertStorageStatusToAPIWithStoredAuthorContext(ctx, parents[i], viewerUsername)
+		if err != nil || apiStatus == nil {
+			continue
+		}
+		ancestors = append(ancestors, *apiStatus)
 	}
 
 	return ancestors
@@ -1107,6 +1109,11 @@ func (h *Handler) loadStatusWithActor(ctx context.Context, objectID string) *mod
 		return nil
 	}
 
+	apiStatus, convErr := h.convertStorageStatusToAPIWithStoredAuthorContext(ctx, obj, "")
+	if convErr == nil {
+		return apiStatus
+	}
+
 	actor := h.getActorForObject(ctx, obj)
 	status := transformations.ObjectToStatusAny(obj, actor, h.cfg.BaseURL())
 	return &status
@@ -1159,9 +1166,11 @@ func (h *Handler) getStatusDescendants(ctx context.Context, root *storageMods.St
 			continue
 		}
 
-		actor := h.getActorForObject(ctx, status)
-		apiStatus := transformations.ObjectToStatusAny(status, actor, h.cfg.BaseURL())
-		descendants = append(descendants, apiStatus)
+		apiStatus, convErr := h.convertStorageStatusToAPIWithStoredAuthorContext(ctx, status, viewerUsername)
+		if convErr != nil || apiStatus == nil {
+			continue
+		}
+		descendants = append(descendants, *apiStatus)
 	}
 
 	h.logger.Debug("fetched descendants for context",
@@ -1175,6 +1184,13 @@ func (h *Handler) getStatusDescendants(ctx context.Context, root *storageMods.St
 //
 //nolint:unused // Retained for future thread/context refactors.
 func (h *Handler) convertReplyToStatus(ctx context.Context, reply interface{}) *models.Status {
+	if status, ok := reply.(*storageMods.Status); ok {
+		apiStatus, err := h.convertStorageStatusToAPIWithStoredAuthorContext(ctx, status, "")
+		if err == nil {
+			return apiStatus
+		}
+	}
+
 	actor := h.getActorForObject(ctx, reply)
 	status := transformations.ObjectToStatusAny(reply, actor, h.cfg.BaseURL())
 	return &status
