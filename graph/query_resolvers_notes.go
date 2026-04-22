@@ -196,16 +196,13 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 // Search is the resolver for the search field.
 func (r *queryResolver) Search(ctx context.Context, query string, searchType *string, first *int, after *model.Cursor) (*model.SearchResult, error) {
 	viewerUsername := r.optionalAuth(ctx)
+	normalizedSearchType := normalizeGraphQLSearchType(searchType)
 
 	searchQuery := &search.Query{
 		Query:     query,
 		AccountID: viewerUsername,
-		Type:      "all",
+		Type:      normalizedSearchType,
 		Limit:     20,
-	}
-
-	if searchType != nil {
-		searchQuery.Type = *searchType
 	}
 
 	if first != nil && *first > 0 && *first <= 100 {
@@ -217,7 +214,7 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 		searchQuery.Offset = 20
 	}
 
-	if exact, handled, err := r.searchExactActorQuery(ctx, query, searchQuery.Type); handled {
+	if exact, handled, err := r.searchExactActorQuery(ctx, query, normalizedSearchType); handled {
 		return exact, err
 	}
 
@@ -230,6 +227,29 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 	}
 
 	return r.searchResultToGraphQL(ctx, result, viewerUsername), nil
+}
+
+func normalizeGraphQLSearchType(searchType *string) string {
+	if searchType == nil {
+		return QueryTypeAll
+	}
+
+	return canonicalGraphQLSearchType(*searchType)
+}
+
+func canonicalGraphQLSearchType(searchType string) string {
+	switch strings.ToLower(strings.TrimSpace(searchType)) {
+	case "", QueryTypeAll:
+		return QueryTypeAll
+	case AccountType, QueryTypeAccounts:
+		return QueryTypeAccounts
+	case trendTypeStatus, QueryTypeStatuses:
+		return QueryTypeStatuses
+	case trendTypeHashtag, QueryTypeHashtags:
+		return QueryTypeHashtags
+	default:
+		return strings.ToLower(strings.TrimSpace(searchType))
+	}
 }
 
 func (r *queryResolver) searchExactActorQuery(ctx context.Context, query string, searchType string) (*model.SearchResult, bool, error) {

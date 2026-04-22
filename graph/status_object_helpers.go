@@ -2,13 +2,13 @@ package graph
 
 import (
 	"context"
+	neturl "net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/notes"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -123,12 +123,14 @@ func (r *Resolver) viewerBoostState(ctx context.Context, status *models.Status, 
 }
 
 func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Status, convertLogger *zap.Logger) *activitypub.Actor {
-	if status == nil || r.Registry == nil {
+	if status == nil {
 		return nil
 	}
 
 	username := resolveStatusAuthorUsername(status)
-	if username == "" {
+	lookupCandidates := statusActorLookupCandidates(status)
+	authorIsRemote := statusAuthorIsRemote(status, r.localActorDomain())
+	if len(lookupCandidates) == 0 {
 		if convertLogger != nil {
 			convertLogger.Warn("status missing author username",
 				zap.String("status_id", status.StatusID),
@@ -137,27 +139,56 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 		return nil
 	}
 
-	if r.Registry.Accounts() == nil {
-		if convertLogger != nil {
-			convertLogger.Warn("account service unavailable while resolving actor",
-				zap.String("status_id", status.StatusID),
-				zap.String("username", username))
+	if !authorIsRemote {
+		if prefetched := prefetchedConversationAccount(ctx, username); prefetched != nil {
+			return r.convertAccountToActor(prefetched)
 		}
+	}
+
+	for _, candidate := range lookupCandidates {
+		lookupStart := time.Now()
+		resolution, err := r.resolveStoredActorLookup(ctx, candidate)
+		if convertLogger != nil {
+			convertLogger.Info("convertStatusToObject stored actor lookup",
+				zap.String("status_id", status.StatusID),
+				zap.String("actor_lookup", candidate),
+				zap.Duration("duration", time.Since(lookupStart)),
+				zap.Bool("found", err == nil && resolution != nil && resolution.Actor != nil),
+				zap.Error(err))
+		}
+		if err != nil || resolution == nil {
+			continue
+		}
+
+		if actor := r.materializeActorResolution(ctx, resolution); actor != nil {
+			return actor
+		}
+	}
+
+	if authorIsRemote {
+		placeholderID := statusActorPlaceholderIdentifier(status)
+		if placeholderID == "" {
+			return nil
+		}
+
+		placeholder := r.buildPlaceholderActor(placeholderID, "")
+		if convertLogger != nil {
+			convertLogger.Info("convertStatusToObject remote placeholder actor",
+				zap.String("status_id", status.StatusID),
+				zap.String("actor_lookup", placeholderID),
+				zap.Bool("found", placeholder != nil))
+		}
+		return placeholder
+	}
+
+	if r.Registry == nil || r.Registry.Accounts() == nil || username == "" {
 		return nil
 	}
 
-	if prefetched := prefetchedConversationAccount(ctx, username); prefetched != nil {
-		return r.convertAccountToActor(prefetched)
-	}
-
 	accountStart := time.Now()
-	var (
-		result *storage.Account
-		err    error
-	)
-	result, err = r.Registry.Accounts().GetAccount(ctx, username)
+	result, err := r.Registry.Accounts().GetAccount(ctx, username)
 	if convertLogger != nil {
-		convertLogger.Info("convertStatusToObject account lookup",
+		convertLogger.Info("convertStatusToObject account lookup fallback",
 			zap.String("status_id", status.StatusID),
 			zap.String("author_username", username),
 			zap.Duration("duration", time.Since(accountStart)),
@@ -261,4 +292,97 @@ func resolveStatusAuthorUsername(status *models.Status) string {
 	}
 
 	return extractUsernameFromActorIdentifier(status.AuthorID)
+}
+
+func statusActorLookupCandidates(status *models.Status) []string {
+	if status == nil {
+		return nil
+	}
+
+	candidates := make([]string, 0, 3)
+	appendStatusActorLookupCandidate(&candidates, status.AuthorID)
+	if status.Note != nil {
+		appendStatusActorLookupCandidate(&candidates, status.Note.AttributedTo)
+	}
+	appendStatusActorLookupCandidate(&candidates, status.AuthorUsername)
+
+	return candidates
+}
+
+func appendStatusActorLookupCandidate(dst *[]string, candidate string) {
+	trimmed := strings.TrimSpace(candidate)
+	if trimmed == "" {
+		return
+	}
+
+	for _, existing := range *dst {
+		if strings.EqualFold(existing, trimmed) {
+			return
+		}
+	}
+
+	*dst = append(*dst, trimmed)
+}
+
+func statusActorPlaceholderIdentifier(status *models.Status) string {
+	for _, candidate := range statusActorLookupCandidates(status) {
+		if strings.TrimSpace(candidate) != "" {
+			return strings.TrimSpace(candidate)
+		}
+	}
+
+	return resolveStatusAuthorUsername(status)
+}
+
+func statusAuthorIsRemote(status *models.Status, localDomain string) bool {
+	for _, candidate := range statusActorLookupCandidates(status) {
+		if actorIdentifierLooksRemote(candidate, localDomain) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func actorIdentifierLooksRemote(identifier, localDomain string) bool {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return false
+	}
+
+	localDomain = strings.TrimSpace(strings.ToLower(localDomain))
+	lowerIdentifier := strings.ToLower(identifier)
+	if strings.HasPrefix(lowerIdentifier, "http://") || strings.HasPrefix(lowerIdentifier, "https://") {
+		parsed, err := neturl.Parse(identifier)
+		if err != nil {
+			return false
+		}
+		host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+		if host == "" {
+			return false
+		}
+		if localDomain == "" {
+			return true
+		}
+		return host != localDomain
+	}
+
+	handle := strings.TrimPrefix(identifier, "@")
+	if strings.Count(handle, "@") != 1 {
+		return false
+	}
+
+	parts := strings.Split(handle, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	domain := strings.TrimSpace(strings.ToLower(parts[1]))
+	if domain == "" {
+		return false
+	}
+	if localDomain == "" {
+		return true
+	}
+	return domain != localDomain
 }
