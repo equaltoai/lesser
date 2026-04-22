@@ -264,7 +264,7 @@ func orderedUniqueRecipients(activity *activitypub.Activity) []string {
 	}
 
 	seen := make(map[string]bool)
-	recipients := make([]string, 0, len(activity.To)+len(activity.CC)+len(activity.BTo)+len(activity.BCC))
+	var recipients []string
 
 	appendRecipients := func(values []string) {
 		for _, value := range values {
