@@ -58,6 +58,7 @@ type Service struct {
 	logger            *zap.Logger
 	domainName        string
 	federation        FederationService // Interface to be defined
+	replyParents      ReplyParentResolver
 	notifications     notificationsService
 
 	// Business logic services
@@ -118,6 +119,21 @@ type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
 }
 
+// ReplyParentResolver resolves and materializes reply parents for note creation.
+type ReplyParentResolver interface {
+	ResolveReplyParent(ctx context.Context, author *storage.Account, rawInReplyTo string, requestedVisibility string) (*ResolvedReplyParent, error)
+}
+
+// ResolvedReplyParent describes a reply parent resolved for a single create-note request.
+type ResolvedReplyParent struct {
+	Status             *models.Status `json:"status,omitempty"`
+	CanonicalObjectURL string         `json:"canonical_object_url,omitempty"`
+	CanonicalStatusID  string         `json:"canonical_status_id,omitempty"`
+	Visibility         string         `json:"visibility,omitempty"`
+	Fetched            bool           `json:"fetched"`
+	Remote             bool           `json:"remote"`
+}
+
 // AnalyticsService defines the interface for analytics operations needed by the notes service
 type AnalyticsService interface {
 	RecordStatusCreation(ctx context.Context, actorID string, timestamp time.Time) error
@@ -173,6 +189,7 @@ func NewService(
 	publisher streaming.Publisher,
 	analytics AnalyticsService,
 	federation FederationService,
+	replyParents ReplyParentResolver,
 	notifier notificationsService,
 	logger *zap.Logger,
 	domainName string,
@@ -213,6 +230,7 @@ func NewService(
 		publisher:         publisher,
 		analytics:         analytics,
 		federation:        federation,
+		replyParents:      replyParents,
 		notifications:     notifier,
 		logger:            logger,
 		domainName:        domainName,
@@ -296,8 +314,9 @@ type ListNotesQuery struct {
 
 // NoteResult contains a note and associated events that were emitted
 type NoteResult struct {
-	Note   *models.Status     `json:"note"`
-	Events []*streaming.Event `json:"events"`
+	Note                   *models.Status       `json:"note"`
+	Events                 []*streaming.Event   `json:"events"`
+	ReplyParentAcquisition *ResolvedReplyParent `json:"reply_parent_acquisition,omitempty"`
 }
 
 // Result contains multiple notes and pagination information
@@ -321,7 +340,14 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		return nil, err
 	}
 
-	replyParent, err := s.resolveCreateReplyParent(ctx, cmd)
+	// Get author account before reply-parent resolution so protected remote parents
+	// can be fetched in the local replying-actor context when needed.
+	author, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID)
+	if err != nil {
+		return nil, ErrGetAuthorAccount
+	}
+
+	replyParent, err := s.resolveCreateReplyParent(ctx, author, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -330,11 +356,8 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	sanitizedCmd := *cmd
 	sanitizedCmd.Content = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
 	sanitizedCmd.SpoilerText = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
-
-	// Get author account
-	author, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID)
-	if err != nil {
-		return nil, ErrGetAuthorAccount
+	if replyParent != nil && strings.TrimSpace(replyParent.CanonicalStatusID) != "" {
+		sanitizedCmd.InReplyToID = strings.TrimSpace(replyParent.CanonicalStatusID)
 	}
 
 	s.normalizeCreateAudience(&sanitizedCmd, author)
@@ -343,11 +366,11 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	statusID := uuid.New().String()
 
 	if replyParent != nil && strings.TrimSpace(sanitizedCmd.ConversationID) == "" {
-		sanitizedCmd.ConversationID = replyConversationID(&sanitizedCmd, replyParent)
+		sanitizedCmd.ConversationID = replyConversationID(&sanitizedCmd, replyParent.Status)
 	}
 
 	// Create ActivityPub Note
-	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author, replyParent)
+	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author, replyParentStatus(replyParent))
 
 	publishedAt := time.Now()
 	note.Published = &publishedAt
@@ -363,7 +386,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Tag = append(note.Tag, mentionTags...)
 		s.addMentionAudience(note, mentionTags)
 	}
-	s.addReplyAudience(note, replyParent)
+	s.addReplyAudience(note, replyParentStatus(replyParent))
 
 	// Attach media if provided
 	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
@@ -376,10 +399,10 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	status := s.composeStatus(&sanitizedCmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
 	status.ConversationID = resolveConversationID(ctx, status, func(context.Context, string) (*models.Status, error) {
-		if replyParent == nil {
+		if replyParent == nil || replyParent.Status == nil {
 			return nil, fmt.Errorf("reply parent unavailable")
 		}
-		return replyParent, nil
+		return replyParent.Status, nil
 	})
 
 	// Store the status
@@ -404,7 +427,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Ensure AuthorUsername is populated before emitting events
 	s.ensureAuthorUsername(ctx, status)
-	s.notifyReply(ctx, status, replyParent)
+	s.notifyReply(ctx, status, replyParentStatus(replyParent))
 	s.notifyMentions(ctx, status, mentionedUsers)
 
 	// Emit events and queue federation
@@ -412,8 +435,9 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	s.queueFederationDelivery(ctx, status, "Create")
 
 	return &NoteResult{
-		Note:   status,
-		Events: events,
+		Note:                   status,
+		Events:                 events,
+		ReplyParentAcquisition: replyParent,
 	}, nil
 }
 
@@ -494,12 +518,28 @@ func (s *Service) lookupParentStatus(ctx context.Context, statusID string) (*mod
 	if s.noteRepo == nil || statusID == "" {
 		return nil, fmt.Errorf("note repository unavailable")
 	}
-	return s.noteRepo.GetStatus(ctx, statusID)
+	return s.resolveStatusForRead(ctx, statusID)
 }
 
-func (s *Service) resolveCreateReplyParent(ctx context.Context, cmd *CreateNoteCommand) (*models.Status, error) {
+func (s *Service) resolveCreateReplyParent(ctx context.Context, author *storage.Account, cmd *CreateNoteCommand) (*ResolvedReplyParent, error) {
 	if cmd == nil || strings.TrimSpace(cmd.InReplyToID) == "" {
 		return nil, nil
+	}
+
+	if s.replyParents != nil {
+		parent, err := s.replyParents.ResolveReplyParent(ctx, author, cmd.InReplyToID, cmd.Visibility)
+		if err != nil {
+			return nil, err
+		}
+		if parent != nil && parent.Status != nil {
+			if parent.CanonicalStatusID == "" {
+				parent.CanonicalStatusID = parent.Status.StatusID
+			}
+			if parent.CanonicalObjectURL == "" {
+				parent.CanonicalObjectURL = s.replyParentObjectID(parent.Status)
+			}
+			return parent, nil
+		}
 	}
 
 	parent, err := s.lookupParentStatus(ctx, cmd.InReplyToID)
@@ -507,7 +547,13 @@ func (s *Service) resolveCreateReplyParent(ctx context.Context, cmd *CreateNoteC
 		return nil, ErrInvalidInReplyToID
 	}
 
-	return parent, nil
+	return &ResolvedReplyParent{
+		Status:             parent,
+		CanonicalObjectURL: s.replyParentObjectID(parent),
+		CanonicalStatusID:  parent.StatusID,
+		Visibility:         parent.Visibility,
+		Remote:             !s.replyParentIsLocal(parent),
+	}, nil
 }
 
 func replyConversationID(cmd *CreateNoteCommand, parent *models.Status) string {
@@ -526,6 +572,13 @@ func replyConversationID(cmd *CreateNoteCommand, parent *models.Status) string {
 	}
 
 	return strings.TrimSpace(cmd.InReplyToID)
+}
+
+func replyParentStatus(parent *ResolvedReplyParent) *models.Status {
+	if parent == nil {
+		return nil
+	}
+	return parent.Status
 }
 
 func (s *Service) markMediaAsUsed(ctx context.Context, statusID string, mediaIDs []string) {

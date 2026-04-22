@@ -74,6 +74,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/federation/remotenotes"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
@@ -1224,6 +1225,7 @@ func (r *Registry) Notes() *notes.Service {
 				r.publisherOrNoop(),
 				analyticsService,                         // Analytics service
 				r.createNotesFederationAdapterUnlocked(), // Federation service adapter
+				r.createNotesReplyParentResolverUnlocked(domainName),
 				notificationsService,
 				r.logger,
 				domainName,
@@ -2221,6 +2223,21 @@ func (r *Registry) createAccountsFederationAdapterUnlocked() *queueFederationAda
 
 func (r *Registry) createNotesFederationAdapterUnlocked() *queueFederationAdapter {
 	return r.createFederationAdapterUnlocked()
+}
+
+func (r *Registry) createNotesReplyParentResolverUnlocked(domainName string) notes.ReplyParentResolver {
+	if r == nil || r.storage == nil {
+		return nil
+	}
+
+	return remotenotes.NewReplyParentResolver(
+		r.storage.Status(),
+		r.storage.Object(),
+		r.storage.DomainBlock(),
+		federation.NewAuthorizedFetchService(r.storage, domainName, r.logger),
+		domainName,
+		r.logger,
+	)
 }
 
 func (r *Registry) createRelationshipsFederationAdapterUnlocked() *queueFederationAdapter {

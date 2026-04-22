@@ -136,7 +136,7 @@ func TestStatusNoteContractAcrossEntryPoints(t *testing.T) {
 		DirectMessagesFrom: "ANYONE",
 	}))
 
-	notesService := notessvc.NewService(statusRepo, accountRepo, nil, nil, nil, nil, nil, conversationRepo, nil, nil, nil, userRepo, nil, publisher, nil, nil, nil, logger, domain)
+	notesService := notessvc.NewService(statusRepo, accountRepo, nil, nil, nil, nil, nil, conversationRepo, nil, nil, nil, userRepo, nil, publisher, nil, nil, nil, nil, logger, domain)
 	conversationService := conversationsvc.NewService(conversationRepo, statusRepo, nil, accountRepo, nil, userRepo, nil, nil, publisher, nil, logger, domain)
 
 	publicResult, err := notesService.CreateNote(ctx, &notessvc.CreateNoteCommand{
