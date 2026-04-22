@@ -1124,6 +1124,42 @@ func TestDeliveryService_GenerateDeliveryID(t *testing.T) {
 	require.NotEmpty(t, id)
 }
 
+func TestDeliveryHelpers_RecipientDedupAndFollowersCollection(t *testing.T) {
+	require.Nil(t, orderedUniqueRecipients(nil))
+
+	recipients := orderedUniqueRecipients(&activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			To:   []string{"  https://remote.example/users/alice  ", activitypub.PublicAddress, "https://remote.example/users/alice"},
+			CC:   []string{"", "https://remote.example/users/bob"},
+			BTo:  []string{"https://remote.example/users/bob", "https://remote.example/users/carol"},
+			BCC:  []string{"https://remote.example/users/carol", "https://remote.example/users/dave"},
+			Type: activitypub.CreateType,
+		},
+	})
+	require.Equal(t, []string{
+		"https://remote.example/users/alice",
+		"https://remote.example/users/bob",
+		"https://remote.example/users/carol",
+		"https://remote.example/users/dave",
+	}, recipients)
+
+	require.Empty(t, followersCollectionForActor(nil))
+	require.False(t, isFollowersCollectionForActor(nil, "https://remote.example/users/alice/followers"))
+
+	actorWithFollowers := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/alice"},
+		Followers:  "https://remote.example/users/alice/custom-followers",
+	}
+	require.Equal(t, "https://remote.example/users/alice/custom-followers", followersCollectionForActor(actorWithFollowers))
+	require.True(t, isFollowersCollectionForActor(actorWithFollowers, " https://remote.example/users/alice/custom-followers "))
+
+	actorWithFallback := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob/"},
+	}
+	require.Equal(t, "https://remote.example/users/bob/followers", followersCollectionForActor(actorWithFallback))
+	require.False(t, isFollowersCollectionForActor(actorWithFallback, "https://remote.example/users/alice/followers"))
+}
+
 func jsonMarshalStable(v any) ([]byte, error) {
 	// Local helper to keep these tests focused; the exact JSON shape isn't critical.
 	var buf bytes.Buffer
