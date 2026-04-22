@@ -134,7 +134,7 @@ func validateStatusBasicFields(params map[string]interface{}) error {
 	// Validate in_reply_to_id
 	if replyToID, exists := params["in_reply_to_id"]; exists {
 		if replyStr, ok := replyToID.(string); ok && replyStr != "" {
-			if err := ValidateMastodonStatusID(replyStr); err != nil {
+			if err := ValidateMastodonStatusReference(replyStr); err != nil {
 				return err
 			}
 		}
@@ -566,6 +566,32 @@ func ValidateMastodonStatusID(statusID string) error {
 
 	if !MastodonStatusIDPattern.MatchString(statusID) {
 		return ValidationError{Field: "status_id", Message: "invalid format"}
+	}
+
+	return nil
+}
+
+// ValidateMastodonStatusReference validates create-status reply parent references.
+// It accepts traditional Mastodon status IDs plus canonical remote status URLs.
+func ValidateMastodonStatusReference(reference string) error {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return ValidationError{Field: "in_reply_to_id", Message: "cannot be empty"}
+	}
+
+	if strings.HasPrefix(strings.ToLower(reference), "http://") || strings.HasPrefix(strings.ToLower(reference), "https://") {
+		if err := ValidateURL(reference, "in_reply_to_id"); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if err := ValidateMastodonStatusID(reference); err != nil {
+		if validationErr, ok := err.(ValidationError); ok {
+			validationErr.Field = "in_reply_to_id"
+			return validationErr
+		}
+		return err
 	}
 
 	return nil

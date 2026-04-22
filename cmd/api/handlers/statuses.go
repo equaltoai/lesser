@@ -77,6 +77,9 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	result, err := h.registry.Notes().CreateNote(ctx.Context(), createCmd)
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
+		if appErr, ok := commonerrors.AsAppError(err); ok {
+			return common.RespondWithAppError(ctx, appErr)
+		}
 		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
 
@@ -95,7 +98,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		zap.String("id", result.Note.StatusID),
 		zap.String("content", req.Status))
 
-	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Note.StatusID, map[string]any{
+	auditMetadata := map[string]any{
 		"visibility":       req.Visibility,
 		"in_reply_to_id":   req.InReplyToID,
 		"has_media":        len(req.MediaIDs) > 0,
@@ -106,7 +109,9 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		"sensitive":        req.Sensitive,
 		"scheduled":        req.ScheduledAt != nil,
 		"requested_scopes": strings.Join(claims.Scopes, " "),
-	})
+	}
+	appendReplyParentAuditMetadata(auditMetadata, result)
+	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Note.StatusID, auditMetadata)
 
 	return createdJSON(apiStatus)
 }
@@ -212,6 +217,21 @@ func buildStatusValidationParams(req *models.CreateStatusRequest) map[string]any
 	}
 
 	return statusParams
+}
+
+func appendReplyParentAuditMetadata(metadata map[string]any, result *notes.NoteResult) {
+	if metadata == nil || result == nil || result.ReplyParentAcquisition == nil {
+		return
+	}
+
+	parent := result.ReplyParentAcquisition
+	metadata["reply_parent"] = map[string]any{
+		"canonical_status_id":  parent.CanonicalStatusID,
+		"canonical_object_url": parent.CanonicalObjectURL,
+		"visibility":           parent.Visibility,
+		"fetched":              parent.Fetched,
+		"remote":               parent.Remote,
+	}
 }
 
 func (h *Handler) authenticateCreateStatus(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {

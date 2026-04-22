@@ -67,6 +67,14 @@ func TestValidateStatusParams(t *testing.T) {
 			expectErr: false,
 		},
 		{
+			name: "valid status with canonical remote reply parent url",
+			params: map[string]interface{}{
+				"status":         "Great post!",
+				"in_reply_to_id": "https://remote.example/users/steward/statuses/seed-1",
+			},
+			expectErr: false,
+		},
+		{
 			name:      "missing content and media",
 			params:    map[string]interface{}{},
 			expectErr: true,
@@ -120,6 +128,15 @@ func TestValidateStatusParams(t *testing.T) {
 			},
 			expectErr: true,
 			errField:  "visibility",
+		},
+		{
+			name: "invalid reply parent url scheme",
+			params: map[string]interface{}{
+				"status":         "Hello",
+				"in_reply_to_id": "ftp://remote.example/statuses/seed-1",
+			},
+			expectErr: true,
+			errField:  "in_reply_to_id",
 		},
 		{
 			name: "valid private visibility",
