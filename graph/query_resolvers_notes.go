@@ -241,12 +241,12 @@ func canonicalGraphQLSearchType(searchType string) string {
 	switch strings.ToLower(strings.TrimSpace(searchType)) {
 	case "", QueryTypeAll:
 		return QueryTypeAll
-	case "account", QueryTypeAccounts:
+	case AccountType, QueryTypeAccounts:
 		return QueryTypeAccounts
-	case "status", "statuses":
-		return "statuses"
-	case "hashtag", "hashtags":
-		return "hashtags"
+	case trendTypeStatus, QueryTypeStatuses:
+		return QueryTypeStatuses
+	case trendTypeHashtag, QueryTypeHashtags:
+		return QueryTypeHashtags
 	default:
 		return strings.ToLower(strings.TrimSpace(searchType))
 	}

@@ -106,6 +106,8 @@ const (
 	QueryTypeActor    = "actor"
 	QueryTypeAll      = "all"
 	QueryTypeAccounts = "accounts"
+	QueryTypeStatuses = "statuses"
+	QueryTypeHashtags = "hashtags"
 )
 
 // Pattern type constants
