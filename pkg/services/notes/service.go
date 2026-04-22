@@ -321,6 +321,11 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		return nil, err
 	}
 
+	replyParent, err := s.resolveCreateReplyParent(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	// Enforce "HTML-by-contract" invariants at write time. (Mastodon-compatible clients render `content` as HTML.)
 	sanitizedCmd := *cmd
 	sanitizedCmd.Content = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
@@ -337,8 +342,12 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	// Generate unique status ID
 	statusID := uuid.New().String()
 
+	if replyParent != nil && strings.TrimSpace(sanitizedCmd.ConversationID) == "" {
+		sanitizedCmd.ConversationID = replyConversationID(&sanitizedCmd, replyParent)
+	}
+
 	// Create ActivityPub Note
-	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author)
+	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author, replyParent)
 
 	publishedAt := time.Now()
 	note.Published = &publishedAt
@@ -354,6 +363,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Tag = append(note.Tag, mentionTags...)
 		s.addMentionAudience(note, mentionTags)
 	}
+	s.addReplyAudience(note, replyParent)
 
 	// Attach media if provided
 	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
@@ -365,7 +375,12 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	}
 
 	status := s.composeStatus(&sanitizedCmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
-	status.ConversationID = resolveConversationID(ctx, status, s.lookupParentStatus)
+	status.ConversationID = resolveConversationID(ctx, status, func(context.Context, string) (*models.Status, error) {
+		if replyParent == nil {
+			return nil, fmt.Errorf("reply parent unavailable")
+		}
+		return replyParent, nil
+	})
 
 	// Store the status
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
@@ -389,7 +404,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Ensure AuthorUsername is populated before emitting events
 	s.ensureAuthorUsername(ctx, status)
-	s.notifyReply(ctx, status)
+	s.notifyReply(ctx, status, replyParent)
 	s.notifyMentions(ctx, status, mentionedUsers)
 
 	// Emit events and queue federation
@@ -480,6 +495,37 @@ func (s *Service) lookupParentStatus(ctx context.Context, statusID string) (*mod
 		return nil, fmt.Errorf("note repository unavailable")
 	}
 	return s.noteRepo.GetStatus(ctx, statusID)
+}
+
+func (s *Service) resolveCreateReplyParent(ctx context.Context, cmd *CreateNoteCommand) (*models.Status, error) {
+	if cmd == nil || strings.TrimSpace(cmd.InReplyToID) == "" {
+		return nil, nil
+	}
+
+	parent, err := s.lookupParentStatus(ctx, cmd.InReplyToID)
+	if err != nil || parent == nil {
+		return nil, ErrInvalidInReplyToID
+	}
+
+	return parent, nil
+}
+
+func replyConversationID(cmd *CreateNoteCommand, parent *models.Status) string {
+	if cmd == nil {
+		return ""
+	}
+
+	if conversationID := strings.TrimSpace(cmd.ConversationID); conversationID != "" {
+		return conversationID
+	}
+
+	if parent != nil {
+		if conversationID := strings.TrimSpace(parent.ConversationID); conversationID != "" {
+			return conversationID
+		}
+	}
+
+	return strings.TrimSpace(cmd.InReplyToID)
 }
 
 func (s *Service) markMediaAsUsed(ctx context.Context, statusID string, mediaIDs []string) {
@@ -1230,14 +1276,6 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 		}
 	}
 
-	// Validate in_reply_to_id if provided
-	if cmd.InReplyToID != "" {
-		_, err := s.noteRepo.GetStatus(ctx, cmd.InReplyToID)
-		if err != nil {
-			return ErrInvalidInReplyToID
-		}
-	}
-
 	return nil
 }
 
@@ -1301,7 +1339,7 @@ func (s *Service) normalizeCreateAudience(cmd *CreateNoteCommand, author *storag
 	cmd.BccRecipients = bccRecipients
 }
 
-func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, author *storage.Account) *activitypub.Note {
+func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, author *storage.Account, replyParent *models.Status) *activitypub.Note {
 	now := time.Now()
 
 	note := &activitypub.Note{
@@ -1330,7 +1368,11 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 
 	// Set in reply to
 	if cmd.InReplyToID != "" {
-		note.InReplyTo = fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, author.User.Username, cmd.InReplyToID)
+		if parentObjectID := s.replyParentObjectID(replyParent); parentObjectID != "" {
+			note.InReplyTo = parentObjectID
+		} else {
+			note.InReplyTo = fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, author.User.Username, cmd.InReplyToID)
+		}
 	}
 
 	return note
@@ -1639,6 +1681,67 @@ func formatMentionTagName(username, domain, localDomain string) string {
 	return "@" + username + "@" + domain
 }
 
+func (s *Service) replyParentObjectID(parent *models.Status) string {
+	if parent == nil {
+		return ""
+	}
+
+	if parent.Note != nil {
+		if noteID := strings.TrimSpace(parent.Note.ID); noteID != "" {
+			return noteID
+		}
+	}
+
+	for _, value := range parent.URLs {
+		value = strings.TrimSpace(value)
+		if strings.HasPrefix(strings.ToLower(value), "http://") || strings.HasPrefix(strings.ToLower(value), "https://") {
+			return value
+		}
+	}
+
+	if statusID := strings.TrimSpace(parent.StatusID); strings.HasPrefix(strings.ToLower(statusID), "http://") || strings.HasPrefix(strings.ToLower(statusID), "https://") {
+		return statusID
+	}
+
+	if s.replyParentIsLocal(parent) {
+		return s.buildStatusURL(parent)
+	}
+
+	return ""
+}
+
+func (s *Service) replyParentActorID(parent *models.Status) string {
+	if parent == nil {
+		return ""
+	}
+
+	if actorID := strings.TrimSpace(parent.AuthorID); actorID != "" {
+		return actorID
+	}
+
+	if parent.Note != nil {
+		return strings.TrimSpace(parent.Note.AttributedTo)
+	}
+
+	return ""
+}
+
+func (s *Service) replyParentIsLocal(parent *models.Status) bool {
+	actorID := s.replyParentActorID(parent)
+	if actorID == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(actorID)
+	if err != nil || parsed == nil {
+		return false
+	}
+
+	host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	localDomain := strings.TrimSpace(strings.ToLower(s.domainName))
+	return host != "" && localDomain != "" && host == localDomain
+}
+
 func (s *Service) addMentionAudience(note *activitypub.Note, mentionTags []activitypub.Tag) {
 	if note == nil || len(mentionTags) == 0 {
 		return
@@ -1654,6 +1757,24 @@ func (s *Service) addMentionAudience(note *activitypub.Note, mentionTags []activ
 		note.CC = appendUniqueAudience(note.CC, recipients...)
 	case models.VisibilityDirect:
 		note.To = appendUniqueAudience(note.To, recipients...)
+	}
+}
+
+func (s *Service) addReplyAudience(note *activitypub.Note, parent *models.Status) {
+	if note == nil || parent == nil || s.replyParentIsLocal(parent) {
+		return
+	}
+
+	recipient := s.replyParentActorID(parent)
+	if recipient == "" || recipient == strings.TrimSpace(note.AttributedTo) {
+		return
+	}
+
+	switch note.Visibility {
+	case models.VisibilityPublic, models.VisibilityUnlisted:
+		note.CC = appendUniqueAudience(note.CC, recipient)
+	case models.VisibilityPrivate:
+		note.BTo = appendUniqueAudience(note.BTo, recipient)
 	}
 }
 
@@ -3398,7 +3519,7 @@ func (s *Service) notifyBoost(ctx context.Context, status *models.Status, booste
 	}
 }
 
-func (s *Service) notifyReply(ctx context.Context, status *models.Status) {
+func (s *Service) notifyReply(ctx context.Context, status *models.Status, parent *models.Status) {
 	if s.notifications == nil || status == nil {
 		return
 	}
@@ -3408,8 +3529,10 @@ func (s *Service) notifyReply(ctx context.Context, status *models.Status) {
 		return
 	}
 
-	parent, err := s.lookupParentStatus(ctx, parentID)
-	if err != nil || parent == nil {
+	if parent == nil {
+		return
+	}
+	if !s.replyParentIsLocal(parent) {
 		return
 	}
 

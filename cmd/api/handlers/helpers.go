@@ -383,12 +383,25 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	return h.convertStorageStatusToAPIWithContext(h.statusConversionContext(), storageStatus, currentUsername)
 }
 
+type statusAuthorAccountLoader func(context.Context, *storageModels.Status) *storage.Account
+
 func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
+	return h.convertStorageStatusToAPIWithAuthorLoader(ctx, storageStatus, currentUsername, h.loadStatusAuthorAccount)
+}
+
+func (h *Handler) convertStorageStatusToAPIWithStoredAuthorContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
+	return h.convertStorageStatusToAPIWithAuthorLoader(ctx, storageStatus, currentUsername, h.loadStoredStatusAuthorAccount)
+}
+
+func (h *Handler) convertStorageStatusToAPIWithAuthorLoader(ctx context.Context, storageStatus *storageModels.Status, currentUsername string, loadAuthor statusAuthorAccountLoader) (*models.Status, error) {
 	if ctx == nil {
 		ctx = h.statusConversionContext()
 	}
+	if loadAuthor == nil {
+		loadAuthor = h.loadStatusAuthorAccount
+	}
 	inReplyToID, inReplyToAccountID := h.statusReplyReferences(ctx, storageStatus)
-	authorAccount := h.loadStatusAuthorAccount(ctx, storageStatus)
+	authorAccount := loadAuthor(ctx, storageStatus)
 	counts := h.statusEngagementCounts(ctx, storageStatus)
 	interactions := h.statusInteractionState(ctx, storageStatus, currentUsername)
 	reblogStatus := h.loadReblogStatus(ctx, storageStatus, currentUsername)
@@ -514,6 +527,41 @@ func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *st
 	return authorAccount
 }
 
+func (h *Handler) loadStoredStatusAuthorAccount(ctx context.Context, storageStatus *storageModels.Status) *storage.Account {
+	if storageStatus == nil {
+		return &storage.Account{User: &storage.User{}}
+	}
+
+	if prefetched := prefetchedConversationAccount(ctx, storageStatus.AuthorUsername); prefetched != nil {
+		return prefetched
+	}
+
+	if !h.statusAppearsRemote(storageStatus) {
+		return h.loadStatusAuthorAccount(ctx, storageStatus)
+	}
+
+	if actor := h.loadStoredStatusAuthorActor(ctx, storageStatus); actor != nil {
+		account := storageAccountFromActor(actor, h.cfg.Domain)
+		if account != nil {
+			if account.User == nil {
+				account.User = &storage.User{}
+			}
+			if strings.TrimSpace(account.User.DisplayName) == "" {
+				account.User.DisplayName = strings.TrimSpace(storageStatus.AuthorUsername)
+			}
+			return account
+		}
+	}
+
+	displayName := strings.TrimSpace(storageStatus.AuthorUsername)
+	return &storage.Account{
+		User: &storage.User{
+			Username:    strings.TrimSpace(storageStatus.AuthorUsername),
+			DisplayName: displayName,
+		},
+	}
+}
+
 func (h *Handler) resolveStatusAuthorAccount(ctx context.Context, storageStatus *storageModels.Status) *storage.Account {
 	actor := h.resolveStatusAuthorActor(ctx, storageStatus)
 	if actor == nil {
@@ -532,6 +580,82 @@ func (h *Handler) resolveStatusAuthorAccount(ctx context.Context, storageStatus 
 	}
 
 	return account
+}
+
+func (h *Handler) loadStoredStatusAuthorActor(ctx context.Context, storageStatus *storageModels.Status) *activitypub.Actor {
+	if storageStatus == nil {
+		return nil
+	}
+
+	candidates := []string{
+		strings.TrimSpace(storageStatus.AuthorID),
+		strings.TrimSpace(storageStatus.AuthorUsername),
+	}
+	if storageStatus.Note != nil {
+		candidates = append(candidates, strings.TrimSpace(storageStatus.Note.AttributedTo))
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = normalizeResolvedAccountID(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		if localUsername := h.localUsernameForStoredActorCandidate(candidate); localUsername != "" {
+			actor, err := h.repos.Actor().GetActor(ctx, localUsername)
+			if err == nil && actor != nil {
+				return actor
+			}
+		}
+
+		actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
+		if err == nil && actor != nil {
+			return actor
+		}
+	}
+
+	return nil
+}
+
+func (h *Handler) localUsernameForStoredActorCandidate(candidate string) string {
+	candidate = normalizeResolvedAccountID(candidate)
+	if candidate == "" || h == nil || h.cfg == nil {
+		return ""
+	}
+
+	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed == nil || !strings.EqualFold(parsed.Hostname(), h.cfg.Domain) {
+			return ""
+		}
+
+		path := strings.Trim(parsed.Path, "/")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 2 && parts[0] == actorUsersPathSegment && strings.TrimSpace(parts[1]) != "" {
+			return strings.TrimSpace(parts[1])
+		}
+		return ""
+	}
+
+	if strings.Contains(candidate, "@") {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(candidate, "@"))
+		parts := strings.Split(trimmed, "@")
+		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[1]), h.cfg.Domain) {
+			return strings.TrimSpace(parts[0])
+		}
+		return ""
+	}
+
+	if strings.Contains(candidate, "/") {
+		return ""
+	}
+
+	return strings.TrimSpace(candidate)
 }
 
 func (h *Handler) resolveStatusAuthorActor(ctx context.Context, storageStatus *storageModels.Status) *activitypub.Actor {
