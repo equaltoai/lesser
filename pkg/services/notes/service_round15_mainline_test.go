@@ -709,6 +709,7 @@ func newNotesServiceHarness(t *testing.T) (*Service, *stubPublisher, *stubFedera
 		publisher,
 		analytics,
 		federation,
+		nil,
 		notifier,
 		logger,
 		domain,
@@ -756,6 +757,7 @@ func newNotesServiceHarnessWithDB(t *testing.T, db core.DB) *Service {
 		&stubPublisher{},
 		&stubAnalytics{},
 		&stubFederation{},
+		nil,
 		&stubNotificationService{},
 		logger,
 		domain,
@@ -1069,6 +1071,155 @@ func TestService_round15_create_note_reply_to_remote_parent_skips_local_notifica
 	for _, cmd := range notifier.cmds {
 		require.NotEqual(t, common.NotificationTypeReply, cmd.Type)
 	}
+}
+
+func TestService_round15_create_note_remote_parent_resolver_reuses_resolved_parent(t *testing.T) {
+	t.Run("public unresolved remote parent url is canonicalized once", func(t *testing.T) {
+		service, _, federation, notifier, _ := newNotesServiceHarness(t)
+
+		parentURL := "https://remote.example/users/steward/statuses/unresolved-parent-public"
+		remoteParent := &models.Status{
+			StatusID:       models.CanonicalStatusIDForDomain(parentURL, "example.com"),
+			AuthorID:       "https://remote.example/users/steward",
+			AuthorUsername: "steward@remote.example",
+			ConversationID: "remote-conversation-public",
+			Visibility:     models.VisibilityPublic,
+			ToRecipients:   []string{activitypub.PublicAddress},
+			CcRecipients:   []string{"https://remote.example/users/steward/followers"},
+			PublishedAt:    time.Now().UTC(),
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+			ModifiedAt:     time.Now().UTC(),
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   parentURL,
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://remote.example/users/steward/followers"},
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: "https://remote.example/users/steward",
+				Content:      "seed",
+				Visibility:   models.VisibilityPublic,
+			},
+		}
+
+		resolver := &stubReplyParentResolver{
+			resolved: map[string]*ResolvedReplyParent{
+				parentURL: {
+					Status:             remoteParent,
+					CanonicalObjectURL: parentURL,
+					CanonicalStatusID:  remoteParent.StatusID,
+					Visibility:         remoteParent.Visibility,
+					Fetched:            true,
+					Remote:             true,
+				},
+			},
+		}
+		service.replyParents = resolver
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:    "alice",
+			Content:     "reply without mention",
+			Visibility:  VisibilityPublic,
+			InReplyToID: parentURL,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.NotNil(t, created.ReplyParentAcquisition)
+		require.Len(t, resolver.calls, 1)
+		require.Len(t, federation.activities, 1)
+
+		assert.Equal(t, "alice", resolver.calls[0].username)
+		assert.Equal(t, parentURL, resolver.calls[0].raw)
+		assert.Equal(t, VisibilityPublic, resolver.calls[0].visibility)
+		assert.Equal(t, remoteParent.StatusID, created.Note.InReplyToID)
+		assert.Equal(t, parentURL, created.Note.Note.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.ConversationID)
+		assert.True(t, created.ReplyParentAcquisition.Fetched)
+		assert.True(t, created.ReplyParentAcquisition.Remote)
+		assert.Equal(t, remoteParent.StatusID, created.ReplyParentAcquisition.CanonicalStatusID)
+
+		expectedCC := []string{
+			"https://example.com/users/alice/followers",
+			remoteParent.AuthorID,
+		}
+		assert.Equal(t, []string{activitypub.PublicAddress}, created.Note.ToRecipients)
+		assert.Equal(t, expectedCC, created.Note.CcRecipients)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, parentURL, federatedNote.InReplyTo)
+		assert.Equal(t, expectedCC, federatedNote.CC)
+
+		for _, cmd := range notifier.cmds {
+			require.NotEqual(t, common.NotificationTypeReply, cmd.Type)
+		}
+	})
+
+	t.Run("private unresolved remote parent url preserves protected audience", func(t *testing.T) {
+		service, _, federation, _, _ := newNotesServiceHarness(t)
+
+		parentURL := "https://remote.example/users/steward/statuses/unresolved-parent-private"
+		remoteParent := &models.Status{
+			StatusID:       models.CanonicalStatusIDForDomain(parentURL, "example.com"),
+			AuthorID:       "https://remote.example/users/steward",
+			AuthorUsername: "steward@remote.example",
+			ConversationID: "remote-conversation-private",
+			Visibility:     models.VisibilityPrivate,
+			ToRecipients:   []string{"https://remote.example/users/steward/followers"},
+			PublishedAt:    time.Now().UTC(),
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+			ModifiedAt:     time.Now().UTC(),
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   parentURL,
+					To:   []string{"https://remote.example/users/steward/followers"},
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: "https://remote.example/users/steward",
+				Content:      "seed",
+				Visibility:   models.VisibilityPrivate,
+			},
+		}
+
+		service.replyParents = &stubReplyParentResolver{
+			resolved: map[string]*ResolvedReplyParent{
+				parentURL: {
+					Status:             remoteParent,
+					CanonicalObjectURL: parentURL,
+					CanonicalStatusID:  remoteParent.StatusID,
+					Visibility:         remoteParent.Visibility,
+					Fetched:            true,
+					Remote:             true,
+				},
+			},
+		}
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:    "alice",
+			Content:     "private reply without mention",
+			Visibility:  models.VisibilityPrivate,
+			InReplyToID: parentURL,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Len(t, federation.activities, 1)
+
+		expectedTo := []string{"https://example.com/users/alice/followers"}
+		expectedBTo := []string{remoteParent.AuthorID}
+
+		assert.Equal(t, remoteParent.StatusID, created.Note.InReplyToID)
+		assert.Equal(t, parentURL, created.Note.Note.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.ConversationID)
+		assert.Equal(t, expectedTo, created.Note.ToRecipients)
+		assert.Equal(t, expectedBTo, created.Note.BtoRecipients)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, parentURL, federatedNote.InReplyTo)
+		assert.Equal(t, expectedBTo, federatedNote.BTo)
+	})
 }
 
 func TestService_round15_create_note_derives_canonical_audience_defaults(t *testing.T) {

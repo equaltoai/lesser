@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -99,7 +102,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		f.logger.Error("failed to send request", zap.String("url", objectURL), zap.Error(err))
-		return nil, errors.Join(ErrHTTPRequestFailed, err)
+		return nil, errors.Join(classifyFetchRequestError(objectURL, err), ErrHTTPRequestFailed)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -108,7 +111,7 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 		f.logger.Error("object fetch failed with non-2xx status",
 			zap.String("url", objectURL),
 			zap.Int("status_code", resp.StatusCode))
-		return nil, ErrFetchObjectHTTPFailed
+		return nil, errors.Join(classifyFetchHTTPStatus(objectURL, resp.StatusCode), ErrFetchObjectHTTPFailed)
 	}
 
 	// Decode the response
@@ -125,6 +128,55 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	}
 
 	return result, nil
+}
+
+func classifyFetchRequestError(objectURL string, err error) error {
+	if err == nil {
+		return pkgerrors.RemoteFetchFailed(objectURL, errors.New("remote fetch failed"))
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return pkgerrors.RemoteFetchTimeout(objectURL).WithInternalError(err)
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return pkgerrors.RemoteFetchTimeout(objectURL).WithInternalError(err)
+	}
+
+	return pkgerrors.NewAppError(pkgerrors.CodeExternalServiceUnavailable, pkgerrors.CategoryExternal, "Remote resource temporarily unavailable").
+		WithInternalError(err).
+		WithMetadata("url", objectURL).
+		AsRetryable()
+}
+
+func classifyFetchHTTPStatus(objectURL string, statusCode int) error {
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return pkgerrors.RemoteFetchUnauthorized(objectURL).WithMetadata("status_code", statusCode)
+	case http.StatusNotFound:
+		return pkgerrors.RemoteFetchNotFound(objectURL).WithMetadata("status_code", statusCode)
+	case http.StatusGone:
+		return pkgerrors.NewAppError(pkgerrors.CodeGone, pkgerrors.CategoryFederation, "Remote resource no longer available").
+			WithMetadata("url", objectURL).
+			WithMetadata("status_code", statusCode)
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		return pkgerrors.RemoteFetchTimeout(objectURL).WithMetadata("status_code", statusCode)
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable:
+		return pkgerrors.NewAppError(pkgerrors.CodeExternalServiceUnavailable, pkgerrors.CategoryExternal, "Remote resource temporarily unavailable").
+			WithMetadata("url", objectURL).
+			WithMetadata("status_code", statusCode).
+			AsRetryable()
+	default:
+		if statusCode >= http.StatusInternalServerError {
+			return pkgerrors.NewAppError(pkgerrors.CodeExternalServiceUnavailable, pkgerrors.CategoryExternal, "Remote resource temporarily unavailable").
+				WithMetadata("url", objectURL).
+				WithMetadata("status_code", statusCode).
+				AsRetryable()
+		}
+		return pkgerrors.RemoteFetchFailed(objectURL, fmt.Errorf("unexpected http status %d", statusCode)).
+			WithMetadata("status_code", statusCode)
+	}
 }
 
 // FetchActor fetches an ActivityPub actor with authorization

@@ -52,6 +52,7 @@ func TestServiceRound16_CreateNote_LogsRootCausesForStatusPersistenceFailures(t 
 		nil,
 		nil,
 		nil,
+		nil,
 		logger,
 		"example.com",
 	)

@@ -656,6 +656,7 @@ func ensureFoundationResponses(spec *openAPISpec) {
 	addResponse("Forbidden", "Forbidden", errorContent)
 	addResponse("NotFound", "Not Found", errorContent)
 	addResponse("Conflict", "Conflict", errorContent)
+	addResponse("RequestTimeout", "Request Timeout", errorContent)
 	addResponse("UnprocessableEntity", "Unprocessable Entity", errorContent)
 	desiredTooMany := response{
 		Description: "Too Many Requests",

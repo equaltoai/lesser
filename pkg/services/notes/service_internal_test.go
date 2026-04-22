@@ -353,6 +353,43 @@ func (s *stubFederation) ResolveActor(_ context.Context, handle string) (*activi
 	return nil, errors.New("not found")
 }
 
+type replyParentResolutionCall struct {
+	raw        string
+	visibility string
+	authorID   string
+	username   string
+}
+
+type stubReplyParentResolver struct {
+	resolved map[string]*ResolvedReplyParent
+	err      error
+	calls    []replyParentResolutionCall
+}
+
+func (s *stubReplyParentResolver) ResolveReplyParent(_ context.Context, author *storage.Account, rawInReplyTo string, requestedVisibility string) (*ResolvedReplyParent, error) {
+	call := replyParentResolutionCall{
+		raw:        rawInReplyTo,
+		visibility: requestedVisibility,
+	}
+	if author != nil {
+		if author.User != nil {
+			call.username = author.User.Username
+		}
+		if author.Actor != nil {
+			call.authorID = author.Actor.ID
+		}
+	}
+	s.calls = append(s.calls, call)
+
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.resolved != nil {
+		return s.resolved[rawInReplyTo], nil
+	}
+	return nil, nil
+}
+
 func TestEmitReblogEventsPublishesBoostedEvents(t *testing.T) {
 	publisher := &stubPublisher{}
 	service := &Service{

@@ -12,6 +12,7 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applyOAuthOverrides(op, route)
 	applyAppRegistrationOverrides(op, route)
 	applyMediaOverrides(op, route)
+	applyStatusOverrides(op, route)
 }
 
 func applyGraphQLOverrides(op *operation, route routeDef) {
@@ -78,6 +79,24 @@ func applyOAuthOverrides(op *operation, route routeDef) {
 	case route.Method == methodGET && route.Path == "/oauth/login":
 		applyOAuthLoginOverrides(op)
 	}
+}
+
+func applyStatusOverrides(op *operation, route routeDef) {
+	if op == nil {
+		return
+	}
+
+	if route.Method != methodPOST || route.Path != "/api/v1/statuses" {
+		return
+	}
+
+	op.Description = "Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service."
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+
+	ensureResponseRef(op.Responses, "408", "RequestTimeout")
+	ensureResponseRef(op.Responses, "503", "ServiceUnavailable")
 }
 
 func applyOAuthTokenOverrides(op *operation) {

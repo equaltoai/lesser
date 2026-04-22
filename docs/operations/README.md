@@ -8,6 +8,7 @@ This directory contains the operator runbooks and workflows for deployed environ
 
 - Runbook: `docs/operations/runbook.md`
 - CloudWatch workflow: `docs/operations/cloudwatch-debugging.md`
+- Release notes: `docs/operations/release-notes.md`
 
 ## Common ops commands (CLI-first)
 

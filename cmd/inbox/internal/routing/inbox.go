@@ -2138,23 +2138,8 @@ func (ih *InboxHandler) buildCanonicalRemoteStatus(note *activitypub.Note) *mode
 }
 
 func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
-	if ih.statusRepository == nil {
-		return fmt.Errorf("status repository not configured")
-	}
-
-	status := ih.buildCanonicalRemoteStatus(note)
-	if status == nil {
-		return fmt.Errorf("canonical remote status payload is invalid")
-	}
-
-	if err := ih.statusRepository.CreateStatus(ctx, status); err != nil {
-		if dynamormerrors.IsConditionFailed(err) {
-			return nil
-		}
-		return err
-	}
-
-	return nil
+	_, err := federation.MaterializeRemoteNote(ctx, ih.objectRepository, ih.statusRepository, note, ih.baseURL)
+	return err
 }
 
 func (ih *InboxHandler) upsertRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {

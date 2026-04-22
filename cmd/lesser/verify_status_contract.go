@@ -117,7 +117,7 @@ var (
 		return statusContractVerifierDeps{
 			accountWriter:           accountRepo,
 			userPreferenceWriter:    userRepo,
-			noteCreator:             notessvc.NewService(statusRepo, accountRepo, nil, nil, nil, nil, nil, conversationRepo, nil, nil, nil, userRepo, nil, noops, nil, nil, nil, logger, domain),
+			noteCreator:             notessvc.NewService(statusRepo, accountRepo, nil, nil, nil, nil, nil, conversationRepo, nil, nil, nil, userRepo, nil, noops, nil, nil, nil, nil, logger, domain),
 			conversationSender:      conversationsvc.NewService(conversationRepo, statusRepo, nil, accountRepo, nil, userRepo, nil, nil, noops, nil, logger, domain),
 			statusReader:            statusRepo,
 			conversationStateReader: conversationRepo,
