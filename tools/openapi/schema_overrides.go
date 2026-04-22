@@ -10,6 +10,14 @@ func applySchemaOverrides(spec *openAPISpec) {
 }
 
 func overrideCreateStatusRequest(schemas map[string]any) {
+	overrideSchemaProperty(
+		schemas,
+		"CreateStatusRequest",
+		"in_reply_to_id",
+		"Reply parent reference. Accepts a local status ID or a canonical remote status URL. Canonical remote URLs are resolved locally first and materialized on the create path when needed. Direct replies remain conversations-owned.",
+		false,
+	)
+
 	raw, ok := schemas["CreateStatusRequest"]
 	if !ok {
 		return

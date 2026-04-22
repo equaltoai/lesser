@@ -15,7 +15,6 @@ func bindPayloadSchemas(repoRoot string, spec *openAPISpec, routes []routeDef) e
 	if err != nil {
 		return err
 	}
-	applySchemaOverrides(spec)
 
 	liftPkg := builder.pkgs[packagePathLift]
 	if liftPkg == nil {
@@ -33,6 +32,7 @@ func bindPayloadSchemas(repoRoot string, spec *openAPISpec, routes []routeDef) e
 		}
 	}
 
+	applySchemaOverrides(spec)
 	overrideOAuthClientSchemas(spec.Components.Schemas)
 	applyScopeDefaults(routes)
 

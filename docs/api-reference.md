@@ -206,6 +206,33 @@ curl -s \
   "https://<stage-domain>/api/v1/accounts/verify_credentials" | jq .
 ```
 
+### Pattern: reply to a remote status by canonical URL
+
+`POST /api/v1/statuses` accepts either a local status ID or a canonical remote status URL in `in_reply_to_id`.
+
+For canonical remote URLs, Lesser:
+
+- resolves locally first
+- performs request-scoped remote parent acquisition only if the parent is still unresolved
+- uses the resolved parent for reply threading, audience derivation, and delivery targeting
+
+This acquisition behavior is write-path only. It does **not** introduce live remote fetches on read paths such as
+timelines, thread context, or GraphQL public reads.
+
+Direct / DM replies remain conversations-owned and are out of scope for this Notes-service path.
+
+```bash
+curl -s -X POST "https://<stage-domain>/api/v1/statuses" \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "replying across instances",
+    "visibility": "public",
+    "sensitive": false,
+    "in_reply_to_id": "https://remote.example/users/steward/statuses/seed-1"
+  }' | jq .
+```
+
 ### Pattern: paginate list endpoints (Link header)
 
 Mastodon-compatible list endpoints return RFC 8288 `Link` headers.
@@ -233,6 +260,13 @@ Common responses:
 - `403 Forbidden`: locked instance or insufficient privilege
 - `422 Unprocessable Entity`: validation error (common on write endpoints)
 - `429 Too Many Requests`: rate limiting (see `X-RateLimit-*` headers)
+
+Create-status reply-parent acquisition can also return:
+
+- `400 Bad Request`: invalid `in_reply_to_id` shape or unsupported identifier form
+- `408 Request Timeout`: remote parent acquisition timed out
+- `422 Unprocessable Entity`: the remote parent resolved but cannot be used as a reply parent
+- `503 Service Unavailable`: remote parent acquisition could not reach a usable upstream
 
 ## GraphQL
 

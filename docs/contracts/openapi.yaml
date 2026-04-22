@@ -2279,6 +2279,7 @@ components:
                         - $ref: '#/components/schemas/AgentPostAttribution'
                         - type: "null"
                 in_reply_to_id:
+                    description: Reply parent reference. Accepts a local status ID or a canonical remote status URL. Canonical remote URLs are resolved locally first and materialized on the create path when needed. Direct replies remain conversations-owned.
                     type: string
                 language:
                     type: string
@@ -2305,6 +2306,12 @@ components:
                 status:
                     type: string
                 visibility:
+                    description: Status visibility. `direct` messages must mention exactly one recipient using an @mention in the status content.
+                    enum:
+                        - public
+                        - unlisted
+                        - private
+                        - direct
                     type: string
             required:
                 - sensitive
@@ -8076,6 +8083,12 @@ components:
                         $ref: '#/components/schemas/Error'
         NotFound:
             description: Not Found
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/Error'
+        RequestTimeout:
+            description: Request Timeout
             content:
                 application/json:
                     schema:
@@ -15289,6 +15302,7 @@ paths:
     /api/v1/statuses:
         post:
             operationId: post_api_v1_statuses
+            description: Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service.
             tags:
                 - statuses
             security:
@@ -15327,12 +15341,16 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
+                "408":
+                    $ref: '#/components/responses/RequestTimeout'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
             x-lesser-handler: HandleCreateStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
