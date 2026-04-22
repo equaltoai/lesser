@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -128,6 +129,7 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 
 	username := resolveStatusAuthorUsername(status)
 	lookupCandidates := statusActorLookupCandidates(status)
+	authorIsRemote := statusAuthorIsRemote(status, r.localActorDomain())
 	if len(lookupCandidates) == 0 {
 		if convertLogger != nil {
 			convertLogger.Warn("status missing author username",
@@ -137,15 +139,17 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 		return nil
 	}
 
-	if prefetched := prefetchedConversationAccount(ctx, username); prefetched != nil {
-		return r.convertAccountToActor(prefetched)
+	if !authorIsRemote {
+		if prefetched := prefetchedConversationAccount(ctx, username); prefetched != nil {
+			return r.convertAccountToActor(prefetched)
+		}
 	}
 
 	for _, candidate := range lookupCandidates {
 		lookupStart := time.Now()
-		resolution, err := r.resolveExactActorLookup(ctx, candidate)
+		resolution, err := r.resolveStoredActorLookup(ctx, candidate)
 		if convertLogger != nil {
-			convertLogger.Info("convertStatusToObject exact actor lookup",
+			convertLogger.Info("convertStatusToObject stored actor lookup",
 				zap.String("status_id", status.StatusID),
 				zap.String("actor_lookup", candidate),
 				zap.Duration("duration", time.Since(lookupStart)),
@@ -159,6 +163,22 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 		if actor := r.materializeActorResolution(ctx, resolution); actor != nil {
 			return actor
 		}
+	}
+
+	if authorIsRemote {
+		placeholderID := statusActorPlaceholderIdentifier(status)
+		if placeholderID == "" {
+			return nil
+		}
+
+		placeholder := r.buildPlaceholderActor(placeholderID, "")
+		if convertLogger != nil {
+			convertLogger.Info("convertStatusToObject remote placeholder actor",
+				zap.String("status_id", status.StatusID),
+				zap.String("actor_lookup", placeholderID),
+				zap.Bool("found", placeholder != nil))
+		}
+		return placeholder
 	}
 
 	if r.Registry == nil || r.Registry.Accounts() == nil || username == "" {
@@ -279,13 +299,12 @@ func statusActorLookupCandidates(status *models.Status) []string {
 		return nil
 	}
 
-	candidates := make([]string, 0, 4)
+	candidates := make([]string, 0, 3)
 	appendStatusActorLookupCandidate(&candidates, status.AuthorID)
 	if status.Note != nil {
 		appendStatusActorLookupCandidate(&candidates, status.Note.AttributedTo)
 	}
 	appendStatusActorLookupCandidate(&candidates, status.AuthorUsername)
-	appendStatusActorLookupCandidate(&candidates, resolveStatusAuthorUsername(status))
 
 	return candidates
 }
@@ -303,4 +322,67 @@ func appendStatusActorLookupCandidate(dst *[]string, candidate string) {
 	}
 
 	*dst = append(*dst, trimmed)
+}
+
+func statusActorPlaceholderIdentifier(status *models.Status) string {
+	for _, candidate := range statusActorLookupCandidates(status) {
+		if strings.TrimSpace(candidate) != "" {
+			return strings.TrimSpace(candidate)
+		}
+	}
+
+	return resolveStatusAuthorUsername(status)
+}
+
+func statusAuthorIsRemote(status *models.Status, localDomain string) bool {
+	for _, candidate := range statusActorLookupCandidates(status) {
+		if actorIdentifierLooksRemote(candidate, localDomain) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func actorIdentifierLooksRemote(identifier, localDomain string) bool {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return false
+	}
+
+	localDomain = strings.TrimSpace(strings.ToLower(localDomain))
+	lowerIdentifier := strings.ToLower(identifier)
+	if strings.HasPrefix(lowerIdentifier, "http://") || strings.HasPrefix(lowerIdentifier, "https://") {
+		parsed, err := neturl.Parse(identifier)
+		if err != nil {
+			return false
+		}
+		host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+		if host == "" {
+			return false
+		}
+		if localDomain == "" {
+			return true
+		}
+		return host != localDomain
+	}
+
+	handle := strings.TrimPrefix(identifier, "@")
+	if strings.Count(handle, "@") != 1 {
+		return false
+	}
+
+	parts := strings.Split(handle, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	domain := strings.TrimSpace(strings.ToLower(parts[1]))
+	if domain == "" {
+		return false
+	}
+	if localDomain == "" {
+		return true
+	}
+	return domain != localDomain
 }

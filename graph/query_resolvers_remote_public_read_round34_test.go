@@ -107,6 +107,58 @@ func TestRound34QueryResolvers_RemotePublicReadHydratesRemoteActors(t *testing.T
 	require.Equal(t, remoteActor.ID, thread.Descendants[0].Actor.ID)
 }
 
+func TestRound34QueryResolvers_RemotePublicReadUsesPlaceholderWhenCacheMisses(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+
+	now := time.Now().UTC()
+	remoteActorID := "https://127.0.0.1:1/users/alice"
+	root := &storageModels.Status{
+		StatusID:    "status-remote-root-uncached",
+		AuthorID:    remoteActorID,
+		Content:     "remote root uncached",
+		CreatedAt:   now.Add(-2 * time.Minute),
+		UpdatedAt:   now.Add(-2 * time.Minute),
+		PublishedAt: now.Add(-2 * time.Minute),
+		Visibility:  storageModels.VisibilityPublic,
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://127.0.0.1:1/notes/root",
+				Type:      activitypub.NoteType,
+				Published: pointTime(now.Add(-2 * time.Minute)),
+			},
+			AttributedTo: remoteActorID,
+			Content:      "remote root uncached",
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	require.NoError(t, storage.Status().CreateStatus(ctx, root))
+
+	q := resolver.Query()
+
+	obj, err := q.Object(ctx, root.StatusID)
+	require.NoError(t, err)
+	require.NotNil(t, obj)
+	require.NotNil(t, obj.Actor)
+	require.Equal(t, remoteActorID, obj.Actor.ID)
+	require.Equal(t, "alice", obj.Actor.PreferredUsername)
+
+	first := 10
+	publicTimeline, err := q.Timeline(ctx, model.TimelineTypePublic, nil, nil, nil, &first, nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, publicTimeline)
+	require.Equal(t, remoteActorID, findTimelineNodeByID(t, publicTimeline, root.StatusID).Actor.ID)
+
+	thread, err := q.ThreadContext(ctx, root.StatusID)
+	require.NoError(t, err)
+	require.NotNil(t, thread)
+	require.NotNil(t, thread.RootNote)
+	require.NotNil(t, thread.RootNote.Actor)
+	require.Equal(t, remoteActorID, thread.RootNote.Actor.ID)
+}
+
 func findTimelineNodeByID(t *testing.T, conn *model.ObjectConnection, statusID string) *model.Object {
 	t.Helper()
 

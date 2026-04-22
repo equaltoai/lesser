@@ -66,3 +66,36 @@ func TestRound34ConvertStatusToGraphQLObject_HydratesRemoteActorThroughExactReso
 	require.Equal(t, remoteActor.PreferredUsername, obj.Actor.PreferredUsername)
 	require.Equal(t, remoteActor.Inbox, obj.Actor.Inbox)
 }
+
+func TestRound34ConvertStatusToGraphQLObject_DegradesToRemotePlaceholderWithoutCache(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	now := time.Now().UTC()
+	status := &storageModels.Status{
+		StatusID:   "status-remote-uncached",
+		AuthorID:   "https://127.0.0.1:1/users/alice",
+		Content:    "hello from uncached remote alice",
+		CreatedAt:  now.Add(-time.Minute),
+		UpdatedAt:  now,
+		Visibility: storageModels.VisibilityPublic,
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://127.0.0.1:1/notes/1",
+				Type:      activitypub.NoteType,
+				Published: &now,
+			},
+			AttributedTo: "https://127.0.0.1:1/users/alice",
+			Content:      "hello from uncached remote alice",
+		},
+	}
+
+	obj := resolver.ConvertStatusToGraphQLObject(ctx, status)
+	require.NotNil(t, obj)
+	require.NotNil(t, obj.Actor)
+	require.Equal(t, status.AuthorID, obj.Actor.ID)
+	require.Equal(t, "alice", obj.Actor.PreferredUsername)
+	require.NotEqual(t, config.Get().ActorURL("alice"), obj.Actor.ID)
+}

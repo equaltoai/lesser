@@ -79,6 +79,44 @@ func (r *Resolver) resolveExactActorLookup(ctx context.Context, actorID string) 
 	}, nil
 }
 
+func (r *Resolver) resolveStoredActorLookup(ctx context.Context, actorID string) (*federation.ExactActorResolution, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, common.ActorNotFoundError{Username: actorID}
+	}
+
+	store := r.getStorageForResolution()
+	if store == nil || store.Actor() == nil {
+		return nil, common.ActorNotFoundError{Username: actorID}
+	}
+
+	if username := r.localUsernameForLookup(actorID); username != "" {
+		actor, err := store.Actor().GetActorByUsername(ctx, username)
+		if err == nil && actor != nil {
+			return &federation.ExactActorResolution{
+				Actor:         actor,
+				ActorIdentity: federation.DescribeActorIdentity(actor, r.localActorDomain()),
+			}, nil
+		}
+		if err != nil && !graphActorLookupNotFound(err) {
+			return nil, err
+		}
+	}
+
+	actor, err := store.Actor().GetCachedRemoteActor(ctx, actorID)
+	if err == nil && actor != nil {
+		return &federation.ExactActorResolution{
+			Actor:         actor,
+			ActorIdentity: federation.DescribeActorIdentity(actor, r.localActorDomain()),
+		}, nil
+	}
+	if err != nil && !graphActorLookupNotFound(err) {
+		return nil, err
+	}
+
+	return nil, common.ActorNotFoundError{Username: actorID}
+}
+
 func graphActorLookupNotFound(err error) bool {
 	if err == nil {
 		return false
