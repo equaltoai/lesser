@@ -1120,6 +1120,8 @@ func (h *Handler) loadStatusWithActor(ctx context.Context, objectID string) *mod
 }
 
 // getActorForObject retrieves the actor associated with an object
+//
+//nolint:unused // Retained for non-storage object fallbacks in thread/context helpers.
 func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activitypub.Actor {
 	attributedTo := h.extractAttributedTo(obj)
 	if err := common.ValidateRequiredParam("attributed_to", attributedTo); err != nil {

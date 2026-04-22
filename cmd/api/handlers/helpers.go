@@ -636,7 +636,7 @@ func (h *Handler) localUsernameForStoredActorCandidate(candidate string) string 
 
 		path := strings.Trim(parsed.Path, "/")
 		parts := strings.Split(path, "/")
-		if len(parts) >= 2 && parts[0] == "users" && strings.TrimSpace(parts[1]) != "" {
+		if len(parts) >= 2 && parts[0] == actorUsersPathSegment && strings.TrimSpace(parts[1]) != "" {
 			return strings.TrimSpace(parts[1])
 		}
 		return ""
