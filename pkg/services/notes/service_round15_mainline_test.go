@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -351,6 +352,18 @@ func (r *fixedAccountRepo) GetAccount(context.Context, string) (*storage.Account
 		username = "fallback"
 	}
 	return &storage.Account{User: &storage.User{Username: username}}, nil
+}
+
+type delegatingStatusRepo struct {
+	interfaces.StatusRepository
+	getStatus func(context.Context, string) (*models.Status, error)
+}
+
+func (r *delegatingStatusRepo) GetStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	if r != nil && r.getStatus != nil {
+		return r.getStatus(ctx, statusID)
+	}
+	return r.StatusRepository.GetStatus(ctx, statusID)
 }
 
 type stubAnalytics struct {
@@ -859,6 +872,203 @@ func TestService_round15_create_note_reply_creates_notification_for_parent_autho
 	assert.Equal(t, "alice", replyNotification.UserID)
 	assert.Equal(t, "bob", replyNotification.ActorID)
 	assert.Equal(t, created.Note.StatusID, replyNotification.TargetID)
+}
+
+func TestService_round15_create_note_reply_to_remote_parent_preserves_canonical_remote_identity(t *testing.T) {
+	t.Run("public reply derives remote parent recipient in cc", func(t *testing.T) {
+		service, _, federation, _, _ := newNotesServiceHarness(t)
+		originalRepo := service.noteRepo
+
+		remoteParent := &models.Status{
+			StatusID:       "remote-parent-public",
+			AuthorID:       "https://remote.example/users/steward",
+			AuthorUsername: "steward@remote.example",
+			ConversationID: "remote-conversation-public",
+			Visibility:     models.VisibilityPublic,
+			ToRecipients:   []string{activitypub.PublicAddress},
+			CcRecipients:   []string{"https://remote.example/users/steward/followers"},
+			PublishedAt:    time.Now().UTC(),
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+			ModifiedAt:     time.Now().UTC(),
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/steward/statuses/remote-parent-public",
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://remote.example/users/steward/followers"},
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: "https://remote.example/users/steward",
+				Content:      "seed",
+				Visibility:   models.VisibilityPublic,
+			},
+		}
+
+		service.noteRepo = &delegatingStatusRepo{
+			StatusRepository: originalRepo,
+			getStatus: func(_ context.Context, statusID string) (*models.Status, error) {
+				if statusID == remoteParent.StatusID {
+					return remoteParent, nil
+				}
+				return originalRepo.GetStatus(context.Background(), statusID)
+			},
+		}
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:    "alice",
+			Content:     "reply without mention",
+			Visibility:  VisibilityPublic,
+			InReplyToID: remoteParent.StatusID,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.NotNil(t, created.Note)
+		require.NotNil(t, created.Note.Note)
+		require.Len(t, federation.activities, 1)
+
+		expectedCC := []string{
+			"https://example.com/users/alice/followers",
+			remoteParent.AuthorID,
+		}
+
+		assert.Equal(t, remoteParent.Note.ID, created.Note.Note.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.ConversationID)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.Note.ConversationID)
+		assert.Equal(t, []string{activitypub.PublicAddress}, created.Note.ToRecipients)
+		assert.Equal(t, expectedCC, created.Note.CcRecipients)
+		assert.Empty(t, created.Note.BtoRecipients)
+
+		assert.Equal(t, []string{activitypub.PublicAddress}, federation.activities[0].To)
+		assert.Equal(t, expectedCC, federation.activities[0].CC)
+		assert.Empty(t, federation.activities[0].BTo)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, remoteParent.Note.ID, federatedNote.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, federatedNote.ConversationID)
+		assert.Equal(t, expectedCC, federatedNote.CC)
+	})
+
+	t.Run("private reply derives remote parent recipient in bto", func(t *testing.T) {
+		service, _, federation, _, _ := newNotesServiceHarness(t)
+		originalRepo := service.noteRepo
+
+		remoteParent := &models.Status{
+			StatusID:       "remote-parent-private",
+			AuthorID:       "https://remote.example/users/steward",
+			AuthorUsername: "steward@remote.example",
+			ConversationID: "remote-conversation-private",
+			Visibility:     models.VisibilityPublic,
+			ToRecipients:   []string{activitypub.PublicAddress},
+			CcRecipients:   []string{"https://remote.example/users/steward/followers"},
+			PublishedAt:    time.Now().UTC(),
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+			ModifiedAt:     time.Now().UTC(),
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/steward/statuses/remote-parent-private",
+					To:   []string{activitypub.PublicAddress},
+					CC:   []string{"https://remote.example/users/steward/followers"},
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: "https://remote.example/users/steward",
+				Content:      "seed",
+				Visibility:   models.VisibilityPublic,
+			},
+		}
+
+		service.noteRepo = &delegatingStatusRepo{
+			StatusRepository: originalRepo,
+			getStatus: func(_ context.Context, statusID string) (*models.Status, error) {
+				if statusID == remoteParent.StatusID {
+					return remoteParent, nil
+				}
+				return originalRepo.GetStatus(context.Background(), statusID)
+			},
+		}
+
+		created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+			AuthorID:    "alice",
+			Content:     "private reply without mention",
+			Visibility:  models.VisibilityPrivate,
+			InReplyToID: remoteParent.StatusID,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.NotNil(t, created.Note)
+		require.NotNil(t, created.Note.Note)
+		require.Len(t, federation.activities, 1)
+
+		expectedTo := []string{"https://example.com/users/alice/followers"}
+		expectedBTo := []string{remoteParent.AuthorID}
+
+		assert.Equal(t, remoteParent.Note.ID, created.Note.Note.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.ConversationID)
+		assert.Equal(t, remoteParent.ConversationID, created.Note.Note.ConversationID)
+		assert.Equal(t, expectedTo, created.Note.ToRecipients)
+		assert.Empty(t, created.Note.CcRecipients)
+		assert.Equal(t, expectedBTo, created.Note.BtoRecipients)
+
+		assert.Equal(t, expectedTo, federation.activities[0].To)
+		assert.Empty(t, federation.activities[0].CC)
+		assert.Equal(t, expectedBTo, federation.activities[0].BTo)
+
+		federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+		require.True(t, ok)
+		assert.Equal(t, remoteParent.Note.ID, federatedNote.InReplyTo)
+		assert.Equal(t, remoteParent.ConversationID, federatedNote.ConversationID)
+		assert.Equal(t, expectedBTo, federatedNote.BTo)
+	})
+}
+
+func TestService_round15_create_note_reply_to_remote_parent_skips_local_notification(t *testing.T) {
+	service, _, _, notifier, _ := newNotesServiceHarness(t)
+	originalRepo := service.noteRepo
+
+	remoteParent := &models.Status{
+		StatusID:       "remote-parent-notify",
+		AuthorID:       "https://remote.example/users/steward",
+		AuthorUsername: "steward@remote.example",
+		ConversationID: "remote-conversation-notify",
+		Visibility:     models.VisibilityPublic,
+		PublishedAt:    time.Now().UTC(),
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		ModifiedAt:     time.Now().UTC(),
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://remote.example/users/steward/statuses/remote-parent-notify",
+				Type: activitypub.NoteType,
+			},
+			AttributedTo: "https://remote.example/users/steward",
+			Content:      "seed",
+			Visibility:   models.VisibilityPublic,
+		},
+	}
+
+	service.noteRepo = &delegatingStatusRepo{
+		StatusRepository: originalRepo,
+		getStatus: func(_ context.Context, statusID string) (*models.Status, error) {
+			if statusID == remoteParent.StatusID {
+				return remoteParent, nil
+			}
+			return originalRepo.GetStatus(context.Background(), statusID)
+		},
+	}
+
+	created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+		AuthorID:    "alice",
+		Content:     "reply without mention",
+		Visibility:  VisibilityPublic,
+		InReplyToID: remoteParent.StatusID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+
+	for _, cmd := range notifier.cmds {
+		require.NotEqual(t, common.NotificationTypeReply, cmd.Type)
+	}
 }
 
 func TestService_round15_create_note_derives_canonical_audience_defaults(t *testing.T) {

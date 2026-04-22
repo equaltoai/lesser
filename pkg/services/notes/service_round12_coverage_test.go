@@ -374,7 +374,7 @@ func TestService_buildActivityPubNote(t *testing.T) {
 		ToRecipients: []string{"https://www.w3.org/ns/activitystreams#Public"},
 	}
 
-	note := service.buildActivityPubNote(cmd, "status-1", author)
+	note := service.buildActivityPubNote(cmd, "status-1", author, nil)
 	if assert.NotNil(t, note) {
 		assert.Equal(t, "Note", note.Type)
 		assert.Equal(t, "https://example.com/users/alice/statuses/status-1", note.ID)
