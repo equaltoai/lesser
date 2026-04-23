@@ -396,6 +396,72 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Equal(t, 200, resp.Status)
 		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
 	})
+
+	t.Run("canonical status route resolves published status url", func(t *testing.T) {
+		now := time.Now().UTC()
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://example.com/users/alice/statuses/123",
+				Type:      activitypub.NoteType,
+				Published: &now,
+			},
+			Content:      "hello from canonical route",
+			AttributedTo: "https://example.com/users/alice",
+		}
+
+		objRepo := &fakeObjectRepo{obj: note}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice/statuses/123",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{
+				"username": "alice",
+				"id":       "123",
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, "https://example.com/users/alice/statuses/123", objRepo.gotID)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://example.com/users/alice/statuses/123", body["id"])
+	})
+
+	t.Run("canonical status route preserves authorized fetch behavior", func(t *testing.T) {
+		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "https://example.com/users/alice/statuses/123", "type": "Note"}}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("missing signature")},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/123",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{
+				"username": "alice",
+				"id":       "123",
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 401, resp.Status)
+		require.Empty(t, objRepo.gotID)
+	})
 }
 
 func TestExtractObjectData_Round12(t *testing.T) {
@@ -567,6 +633,40 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		main()
 		require.True(t, called)
 		require.Contains(t, fakeRepo.gotID, "https://example.com/objects/123")
+	})
+
+	t.Run("build app serves canonical status routes", func(t *testing.T) {
+		fakeRepo := &fakeObjectRepo{obj: map[string]any{"id": "https://example.com/users/alice/statuses/123", "type": "Note"}}
+		app := buildApp(&Handler{
+			objectRepo:             fakeRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+		}, zap.NewNop())
+
+		event := events.APIGatewayV2HTTPRequest{
+			Version:  "2.0",
+			RouteKey: "GET /users/alice/statuses/123",
+			RawPath:  "/users/alice/statuses/123",
+			Headers:  map[string]string{"accept": "application/activity+json"},
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				RequestID: "req-canonical",
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: "GET",
+					Path:   "/users/alice/statuses/123",
+				},
+			},
+		}
+
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		resp, err := app.HandleLambda(context.Background(), raw)
+		require.NoError(t, err)
+		lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
+		require.True(t, ok)
+		require.Equal(t, 200, lambdaResp.StatusCode)
+		require.Equal(t, "https://example.com/users/alice/statuses/123", fakeRepo.gotID)
+		require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
 	})
 }
 
