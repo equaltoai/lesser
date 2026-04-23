@@ -405,8 +405,18 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		return replyParent.Status, nil
 	})
 
+	if err := s.projectLocalNoteObjectOnCreate(ctx, status); err != nil {
+		requestErr := errors.Join(ErrCreateStatus, err)
+		s.logger.Error("failed to project created note object",
+			zap.String("status_id", statusID),
+			zap.Strings("root_causes", common.ErrorLeafMessages(err)),
+			zap.Error(requestErr))
+		return nil, requestErr
+	}
+
 	// Store the status
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
+		s.cleanupFailedLocalNoteObjectProjection(ctx, status)
 		requestErr := errors.Join(ErrCreateStatus, err)
 		s.logger.Error("failed to persist created status",
 			zap.String("status_id", statusID),
@@ -485,6 +495,73 @@ func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account,
 	}
 
 	return status
+}
+
+func (s *Service) localNoteProjectionPayload(status *models.Status) (*activitypub.Note, string, error) {
+	if status == nil {
+		return nil, "", fmt.Errorf("status is required")
+	}
+	if s.objectRepo == nil {
+		return nil, "", fmt.Errorf("object repository unavailable")
+	}
+	if status.Note == nil {
+		return nil, "", fmt.Errorf("status %s missing ActivityPub note", status.StatusID)
+	}
+
+	objectID := strings.TrimSpace(status.Note.ID)
+	if objectID == "" {
+		return nil, "", fmt.Errorf("status %s missing ActivityPub note id", status.StatusID)
+	}
+
+	return status.Note, objectID, nil
+}
+
+func (s *Service) projectLocalNoteObjectOnCreate(ctx context.Context, status *models.Status) error {
+	note, _, err := s.localNoteProjectionPayload(status)
+	if err != nil {
+		return err
+	}
+	return s.objectRepo.CreateObject(ctx, note)
+}
+
+func (s *Service) cleanupFailedLocalNoteObjectProjection(ctx context.Context, status *models.Status) {
+	if s.objectRepo == nil || status == nil || status.Note == nil {
+		return
+	}
+	objectID := strings.TrimSpace(status.Note.ID)
+	if objectID == "" {
+		return
+	}
+	if err := s.objectRepo.DeleteObject(ctx, objectID); err != nil && s.logger != nil {
+		s.logger.Warn("failed to clean up projected note object after status create failure",
+			zap.String("status_id", status.StatusID),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) syncLocalNoteObjectProjectionOnUpdate(ctx context.Context, status *models.Status, updaterID string) error {
+	note, _, err := s.localNoteProjectionPayload(status)
+	if err != nil {
+		return err
+	}
+	return s.objectRepo.UpdateObjectWithHistory(ctx, note, s.localActorID(updaterID))
+}
+
+func (s *Service) replaceLocalNoteObjectProjectionWithTombstone(ctx context.Context, status *models.Status, deleterID string) error {
+	_, objectID, err := s.localNoteProjectionPayload(status)
+	if err != nil {
+		return err
+	}
+	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID))
+}
+
+func (s *Service) localActorID(username string) string {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://%s/users/%s", s.domainName, trimmed)
 }
 
 type parentStatusFetcher func(context.Context, string) (*models.Status, error)
@@ -685,6 +762,9 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
 		return nil, ErrUpdateStatus
 	}
+	if err := s.syncLocalNoteObjectProjectionOnUpdate(ctx, status, cmd.UpdaterID); err != nil {
+		return nil, errors.Join(ErrUpdateStatus, err)
+	}
 
 	s.logger.Info("updated note successfully",
 		zap.String("status_id", cmd.StatusID))
@@ -756,6 +836,9 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	// No need to call UpdateKeys() here - keys are already set from creation and we're only updating Deleted flag
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
 		return ErrDeleteStatus
+	}
+	if err := s.replaceLocalNoteObjectProjectionWithTombstone(ctx, status, cmd.DeleterID); err != nil {
+		return errors.Join(ErrDeleteStatus, err)
 	}
 
 	s.logger.Info("deleted note successfully",

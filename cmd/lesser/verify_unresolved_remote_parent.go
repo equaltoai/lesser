@@ -29,15 +29,17 @@ type verifyUnresolvedRemoteParentConfig struct {
 }
 
 type verifyUnresolvedRemoteParentSummary struct {
-	BaseURL         string
-	Stage           string
-	ParentURL       string
-	Visibility      string
-	Expected        string
-	Classification  string
-	HTTPStatus      int
-	CreatedStatusID string
-	ErrorCode       string
+	BaseURL                  string
+	Stage                    string
+	ParentURL                string
+	Visibility               string
+	Expected                 string
+	Classification           string
+	HTTPStatus               int
+	CreatedStatusID          string
+	CanonicalObjectURL       string
+	CanonicalFetchHTTPStatus int
+	ErrorCode                string
 }
 
 type verifyUnresolvedRemoteParentErrorResponse struct {
@@ -47,7 +49,8 @@ type verifyUnresolvedRemoteParentErrorResponse struct {
 }
 
 type verifyUnresolvedRemoteParentCreateResponse struct {
-	ID string `json:"id"`
+	ID  string `json:"id"`
+	URI string `json:"uri"`
 }
 
 var (
@@ -94,6 +97,12 @@ func runVerifyUnresolvedRemoteParent(argv []string) error {
 	fmt.Printf("http_status: %d\n", summary.HTTPStatus)
 	if summary.CreatedStatusID != "" {
 		fmt.Printf("created_status_id: %s\n", summary.CreatedStatusID)
+	}
+	if summary.CanonicalObjectURL != "" {
+		fmt.Printf("canonical_object_url: %s\n", summary.CanonicalObjectURL)
+	}
+	if summary.CanonicalFetchHTTPStatus != 0 {
+		fmt.Printf("canonical_fetch_http_status: %d\n", summary.CanonicalFetchHTTPStatus)
 	}
 	if summary.ErrorCode != "" {
 		fmt.Printf("error_code: %s\n", summary.ErrorCode)
@@ -219,6 +228,32 @@ func executeVerifyUnresolvedRemoteParent(ctx context.Context, client *http.Clien
 		return summary, fmt.Errorf("create-status response missing id")
 	}
 	summary.CreatedStatusID = strings.TrimSpace(created.ID)
+
+	canonicalObjectURL := strings.TrimSpace(created.URI)
+	if canonicalObjectURL == "" {
+		return summary, fmt.Errorf("create-status response missing canonical uri")
+	}
+	summary.CanonicalObjectURL = canonicalObjectURL
+
+	fetchStatus, fetchBody, err := verifyUnresolvedRemoteParentFetchCanonicalObject(ctx, client, canonicalObjectURL)
+	if err != nil {
+		return summary, err
+	}
+	summary.CanonicalFetchHTTPStatus = fetchStatus
+	if fetchStatus != http.StatusOK {
+		return summary, fmt.Errorf("canonical object fetch returned %d: %s", fetchStatus, verifyUnresolvedRemoteParentBodyMessage(fetchBody))
+	}
+
+	var fetched struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(fetchBody, &fetched); err != nil {
+		return summary, fmt.Errorf("decode canonical object response: %w", err)
+	}
+	if strings.TrimSpace(fetched.ID) != canonicalObjectURL {
+		return summary, fmt.Errorf("canonical object fetch returned mismatched id %q", strings.TrimSpace(fetched.ID))
+	}
+
 	return summary, nil
 }
 
@@ -240,6 +275,26 @@ func verifyUnresolvedRemoteParentDoRequest(ctx context.Context, client *http.Cli
 	if strings.TrimSpace(token) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, raw, nil
+}
+
+func verifyUnresolvedRemoteParentFetchCanonicalObject(ctx context.Context, client *http.Client, endpoint string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Accept", "application/activity+json")
 
 	resp, err := client.Do(req)
 	if err != nil {
