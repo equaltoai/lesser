@@ -27,6 +27,7 @@ const (
 )
 
 var runVerifyRemoteNoteMaterializationFn = runVerifyRemoteNoteMaterialization
+var runVerifyUnresolvedRemoteParentFn = runVerifyUnresolvedRemoteParent
 
 func runVerify(argv []string) error {
 	if len(argv) == 0 {
@@ -63,6 +64,8 @@ func runVerify(argv []string) error {
 		return runVerifyStatusContract(argv[1:])
 	case "remote-note-materialization":
 		return runVerifyRemoteNoteMaterializationFn(argv[1:])
+	case "unresolved-remote-parent":
+		return runVerifyUnresolvedRemoteParentFn(argv[1:])
 	case "artifact-deploy":
 		return runVerifyArtifactDeployFn(argv[1:])
 	case "inventory":
