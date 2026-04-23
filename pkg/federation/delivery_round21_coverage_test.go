@@ -18,6 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -681,6 +682,121 @@ func TestDeliveryService_RecipientsAndQueueing(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("deliver_to_recipients_expands_private_followers_collection_once", func(t *testing.T) {
+		signingActor := testSigningActor()
+		followersCollection := followersCollectionForActor(signingActor)
+
+		carol := activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol", Type: "Person"},
+			PreferredUsername: "carol",
+			Inbox:             "https://remote.example/users/carol/inbox",
+			Outbox:            "https://remote.example/users/carol/outbox",
+			Endpoints:         &activitypub.Endpoints{SharedInbox: "https://remote.example/inbox"},
+		}
+		dave := activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/dave", Type: "Person"},
+			PreferredUsername: "dave",
+			Inbox:             "https://remote.example/users/dave/inbox",
+			Outbox:            "https://remote.example/users/dave/outbox",
+			Endpoints:         &activitypub.Endpoints{SharedInbox: "https://remote.example/inbox"},
+		}
+
+		store := &federationStoreStub{
+			getActorPrivateKeyFn: func(_ context.Context, _ string) (string, error) { return privateKey, nil },
+			getFollowersFn: func(_ context.Context, _ string, _ int, _ string) ([]string, string, error) {
+				return []string{"carol@remote.example", "dave@remote.example"}, "", nil
+			},
+			getCachedActorFn: func(_ context.Context, identifier string) (*activitypub.Actor, error) {
+				switch identifier {
+				case "carol@remote.example", carol.ID:
+					return &carol, nil
+				case "dave@remote.example", dave.ID:
+					return &dave, nil
+				default:
+					return nil, errors.New("cache miss")
+				}
+			},
+			getActorFn: func(_ context.Context, _ string) (*activitypub.Actor, error) {
+				return nil, errors.New("unexpected local actor lookup")
+			},
+		}
+
+		httpDoer := &httpDoerStub{
+			doFn: func(req *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodPost, req.Method)
+				require.Equal(t, "https://remote.example/inbox", req.URL.String())
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+			},
+		}
+
+		d := &DeliveryService{store: store, httpClient: httpDoer, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "act-private-followers",
+				Type: "Create",
+				To:   []string{followersCollection, carol.ID},
+			},
+			Object: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-private", Type: "Note"}},
+		}
+
+		require.NoError(t, d.DeliverToRecipientsWithPrivacy(context.Background(), activity, signingActor))
+
+		httpDoer.mu.Lock()
+		requests := append([]*http.Request(nil), httpDoer.requests...)
+		httpDoer.mu.Unlock()
+		require.Len(t, requests, 1)
+		require.Equal(t, "https://remote.example/inbox", requests[0].URL.String())
+	})
+
+	t.Run("deliver_to_recipients_skips_public_followers_collection_expansion", func(t *testing.T) {
+		signingActor := testSigningActor()
+		followersCollection := followersCollectionForActor(signingActor)
+
+		bob := activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
+			PreferredUsername: "bob",
+			Inbox:             "https://remote.example/users/bob/inbox",
+			Outbox:            "https://remote.example/users/bob/outbox",
+		}
+
+		followerLookups := 0
+		store := &federationStoreStub{
+			getActorPrivateKeyFn: func(_ context.Context, _ string) (string, error) { return privateKey, nil },
+			getFollowersFn: func(_ context.Context, _ string, _ int, _ string) ([]string, string, error) {
+				followerLookups++
+				return []string{"bob@remote.example"}, "", nil
+			},
+			getCachedActorFn: func(_ context.Context, identifier string) (*activitypub.Actor, error) {
+				if identifier == bob.ID {
+					return &bob, nil
+				}
+				return nil, errors.New("cache miss")
+			},
+		}
+
+		httpDoer := &httpDoerStub{
+			doFn: func(req *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodPost, req.Method)
+				require.Equal(t, bob.Inbox, req.URL.String())
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+			},
+		}
+
+		d := &DeliveryService{store: store, httpClient: httpDoer, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "act-public-followers",
+				Type: "Create",
+				To:   []string{activitypub.PublicAddress, bob.ID},
+				CC:   []string{followersCollection},
+			},
+			Object: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-public", Type: "Note"}},
+		}
+
+		require.NoError(t, d.DeliverToRecipientsWithPrivacy(context.Background(), activity, signingActor))
+		require.Equal(t, 0, followerLookups)
+	})
+
 	t.Run("queue_delivery_falls_back_to_sync_on_marshal_error_and_on_sqs_error", func(t *testing.T) {
 		ctx := context.Background()
 		signingActor := testSigningActor()
@@ -740,7 +856,20 @@ func TestDeliveryService_NewAndWrappers(t *testing.T) {
 	require.NotNil(t, svc)
 
 	// DeliverToRecipients is a thin wrapper around DeliverToRecipientsWithPrivacy.
-	d := &DeliveryService{logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
+	d := &DeliveryService{
+		store: &federationStoreStub{
+			getActorFn: func(_ context.Context, username string) (*activitypub.Actor, error) {
+				return &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/" + username, Type: "Person"},
+					PreferredUsername: username,
+					Inbox:             "https://example.com/users/" + username + "/inbox",
+					Outbox:            "https://example.com/users/" + username + "/outbox",
+				}, nil
+			},
+		},
+		logger: zap.NewNop(),
+		cfg:    &appConfig.Config{Domain: "example.com"},
+	}
 	err := d.DeliverToRecipients(context.Background(), &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{ID: "act-1", Type: "Create", To: []string{"https://example.com/users/local"}},
 	}, testSigningActor())
@@ -750,25 +879,6 @@ func TestDeliveryService_NewAndWrappers(t *testing.T) {
 func TestDeliveryService_DirectMessage_AndSharedInboxHelpers(t *testing.T) {
 	privateKey := mustTestRSAPrivateKeyPEM(t)
 	signingActor := testSigningActor()
-
-	t.Run("get_shared_inbox_no_shared_inbox_found", func(t *testing.T) {
-		store := &federationStoreStub{
-			getCachedActorFn: func(_ context.Context, _ string) (*activitypub.Actor, error) {
-				return &activitypub.Actor{
-					BaseObject:                activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
-					PreferredUsername:         "bob",
-					Inbox:                     "https://remote.example/users/bob/inbox",
-					Outbox:                    "https://remote.example/users/bob/outbox",
-					Endpoints:                 nil,
-					ManuallyApprovesFollowers: false,
-				}, nil
-			},
-		}
-
-		d := &DeliveryService{store: store, httpClient: &httpDoerStub{}, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
-		_, err := d.getSharedInboxForDomain(context.Background(), "remote.example", "https://remote.example/users/bob")
-		require.ErrorIs(t, err, ErrNoSharedInboxFound)
-	})
 
 	t.Run("deliver_direct_message_success", func(t *testing.T) {
 		store := &federationStoreStub{
@@ -886,48 +996,6 @@ func TestDeliveryService_DirectMessage_AndSharedInboxHelpers(t *testing.T) {
 func TestDeliveryService_RecipientDelivery_MoreBranches(t *testing.T) {
 	privateKey := mustTestRSAPrivateKeyPEM(t)
 	signingActor := testSigningActor()
-
-	t.Run("deliver_to_individual_recipients_aggregates_errors", func(t *testing.T) {
-		store := &federationStoreStub{
-			getActorPrivateKeyFn: func(_ context.Context, _ string) (string, error) { return privateKey, nil },
-			getCachedActorFn:     func(_ context.Context, _ string) (*activitypub.Actor, error) { return nil, errors.New("miss") },
-		}
-
-		okActor := activitypub.Actor{
-			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/ok", Type: "Person"},
-			PreferredUsername: "ok",
-			Inbox:             "https://remote.example/users/ok/inbox",
-			Outbox:            "https://remote.example/users/ok/outbox",
-			Endpoints:         nil,
-		}
-		okJSON, err := jsonMarshalStable(&okActor)
-		require.NoError(t, err)
-
-		httpDoer := &httpDoerStub{
-			doFn: func(req *http.Request) (*http.Response, error) {
-				switch req.Method {
-				case http.MethodGet:
-					if req.URL.String() == okActor.ID {
-						return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(okJSON)), Header: make(http.Header)}, nil
-					}
-					return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("nope")), Header: make(http.Header)}, nil
-				case http.MethodPost:
-					return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("fail")), Header: make(http.Header)}, nil
-				default:
-					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
-				}
-			},
-		}
-
-		d := &DeliveryService{store: store, httpClient: httpDoer, logger: zap.NewNop(), cfg: &appConfig.Config{Domain: "example.com"}}
-		activity := &activitypub.Activity{
-			BaseObject: activitypub.BaseObject{ID: "act-1", Type: "Create", To: []string{"https://remote.example/users/bad", okActor.ID}},
-			Object:     &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-1", Type: "Note"}},
-		}
-
-		err = d.deliverToIndividualRecipients(context.Background(), activity, signingActor, []string{"https://remote.example/users/bad", okActor.ID})
-		require.ErrorIs(t, err, ErrDeliveryToRecipientsFailed)
-	})
 
 	t.Run("deliver_to_recipients_single_recipient_skips_shared_inbox_optimization", func(t *testing.T) {
 		store := &federationStoreStub{
@@ -1055,6 +1123,96 @@ func TestDeliveryService_CalculateDeliveryPriority_CoversActivityTypes(t *testin
 func TestDeliveryService_GenerateDeliveryID(t *testing.T) {
 	id := generateDeliveryID()
 	require.NotEmpty(t, id)
+}
+
+func TestDeliveryHelpers_RecipientDedupAndFollowersCollection(t *testing.T) {
+	require.Nil(t, orderedUniqueRecipients(nil))
+
+	recipients := orderedUniqueRecipients(&activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			To:   []string{"  https://remote.example/users/alice  ", activitypub.PublicAddress, "https://remote.example/users/alice"},
+			CC:   []string{"", "https://remote.example/users/bob"},
+			BTo:  []string{"https://remote.example/users/bob", "https://remote.example/users/carol"},
+			BCC:  []string{"https://remote.example/users/carol", "https://remote.example/users/dave"},
+			Type: activitypub.CreateType,
+		},
+	})
+	require.Equal(t, []string{
+		"https://remote.example/users/alice",
+		"https://remote.example/users/bob",
+		"https://remote.example/users/carol",
+		"https://remote.example/users/dave",
+	}, recipients)
+
+	require.Empty(t, followersCollectionForActor(nil))
+	require.False(t, isFollowersCollectionForActor(nil, "https://remote.example/users/alice/followers"))
+
+	actorWithFollowers := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/alice"},
+		Followers:  "https://remote.example/users/alice/custom-followers",
+	}
+	require.Equal(t, "https://remote.example/users/alice/custom-followers", followersCollectionForActor(actorWithFollowers))
+	require.True(t, isFollowersCollectionForActor(actorWithFollowers, " https://remote.example/users/alice/custom-followers "))
+
+	actorWithFallback := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/bob/"},
+	}
+	require.Equal(t, "https://remote.example/users/bob/followers", followersCollectionForActor(actorWithFallback))
+	require.False(t, isFollowersCollectionForActor(actorWithFallback, "https://remote.example/users/alice/followers"))
+
+	actorWithoutFollowers := &activitypub.Actor{}
+	require.Empty(t, followersCollectionForActor(actorWithoutFollowers))
+	require.False(t, isFollowersCollectionForActor(actorWithoutFollowers, "https://remote.example/users/bob/followers"))
+}
+
+func TestDeliveryService_ResolveDeliverableTarget_EdgeCases(t *testing.T) {
+	store := &federationStoreStub{
+		getActorFn: func(_ context.Context, username string) (*activitypub.Actor, error) {
+			return &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/" + username, Type: "Person"},
+				PreferredUsername: username,
+			}, nil
+		},
+	}
+	d := &DeliveryService{
+		store:  store,
+		logger: zap.NewNop(),
+		cfg:    &appConfig.Config{Domain: "example.com"},
+	}
+
+	t.Run("rejects empty identifier", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "   ")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("rejects malformed actor url", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "https://%zz")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("rejects local actor url without username", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "https://example.com/")
+		require.Error(t, err)
+		require.Nil(t, target)
+		var notFound common.ActorNotFoundError
+		require.ErrorAs(t, err, &notFound)
+	})
+
+	t.Run("rejects invalid handle format", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "alice@remote@example.com")
+		require.Error(t, err)
+		require.Nil(t, target)
+	})
+
+	t.Run("resolves local handle as local target", func(t *testing.T) {
+		target, err := d.resolveDeliverableTarget(context.Background(), "alice")
+		require.NoError(t, err)
+		require.NotNil(t, target)
+		require.True(t, target.isLocal)
+		require.Equal(t, "https://example.com/users/alice", target.actor.ID)
+	})
 }
 
 func jsonMarshalStable(v any) ([]byte, error) {

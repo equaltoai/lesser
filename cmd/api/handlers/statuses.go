@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -1642,129 +1641,47 @@ func (h *Handler) deliverUpdateActivity(ctx context.Context, updateActivity *act
 		zap.String("activity_id", updateActivity.ID),
 		zap.String("actor", actor.ID))
 
-	// Determine delivery recipients based on the updated note
-	recipients, err := h.determineUpdateDeliveryRecipients(ctx, actor, note)
-	if err != nil {
-		h.logger.Error("failed to determine delivery recipients",
-			zap.String("activity_id", updateActivity.ID),
-			zap.String("actor_id", actor.ID),
-			zap.Error(err))
-		return errors.Join(failedToDetermineDeliveryRecipients(), err)
+	if note != nil {
+		updateActivity.To = append([]string(nil), note.To...)
+		updateActivity.CC = append([]string(nil), note.CC...)
 	}
 
-	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {
-		h.logger.Info("no recipients for update activity delivery", zap.String("activity_id", updateActivity.ID))
-		return nil
-	}
-
-	// Deliver to each recipient
-	deliveredCount := 0
-	failedCount := 0
-
-	for _, recipient := range recipients {
-		if err := h.deliverUpdateToRecipient(ctx, updateActivity, actor, recipient); err != nil {
-			h.logger.Warn("failed to deliver update activity to recipient",
-				zap.String("recipient", recipient),
-				zap.String("activity_id", updateActivity.ID),
-				zap.Error(err))
-			failedCount++
-		} else {
-			deliveredCount++
-		}
-	}
-
-	h.logger.Info("completed update activity delivery",
-		zap.String("activity_id", updateActivity.ID),
-		zap.Int("delivered", deliveredCount),
-		zap.Int("failed", failedCount),
-		zap.Int("total_recipients", len(recipients)))
-
-	return nil
-}
-
-// determineUpdateDeliveryRecipients determines who should receive the Update activity
-func (h *Handler) determineUpdateDeliveryRecipients(ctx context.Context, actor *activitypub.Actor, note *activitypub.Note) ([]string, error) {
-	recipients := make(map[string]bool)
-
-	// Add followers to recipients (they should be notified of edits)
-	followers, _, err := h.repos.Relationship().GetFollowers(ctx, actor.PreferredUsername, 1000, "")
-	if err != nil {
-		h.logger.Warn("failed to get followers for update delivery", zap.Error(err))
-	} else {
-		for _, follower := range followers {
-			if strings.HasPrefix(follower, "https://") || strings.HasPrefix(follower, "http://") {
-				recipients[follower] = true
-				continue
-			}
-
-			// Stored relationship IDs are typically usernames or federated handles; normalize to actor IDs.
-			if strings.Contains(follower, "@") {
-				parts := strings.SplitN(follower, "@", 2)
-				if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-					recipients[fmt.Sprintf("https://%s/users/%s", parts[1], parts[0])] = true
-					continue
-				}
-			}
-
-			recipients[h.cfg.ActorURL(follower)] = true
-		}
-	}
-
-	// Add mentioned users from the updated note
-	for _, tag := range note.Tag {
-		if tag.Type == "Mention" && tag.Href != "" {
-			recipients[tag.Href] = true
-		}
-	}
-
-	// Add users in To/CC fields
-	for _, user := range note.To {
-		if user != activitypub.PublicAddress {
-			recipients[user] = true
-		}
-	}
-	for _, user := range note.CC {
-		if user != activitypub.PublicAddress {
-			recipients[user] = true
-		}
-	}
-
-	// Convert to slice
-	recipientList := make([]string, 0, len(recipients))
-	for recipient := range recipients {
-		recipientList = append(recipientList, recipient)
-	}
-
-	return recipientList, nil
-}
-
-// deliverUpdateToRecipient delivers the Update activity to a specific recipient
-func (h *Handler) deliverUpdateToRecipient(ctx context.Context, updateActivity *activitypub.Activity, actor *activitypub.Actor, recipientID string) error {
-	h.logger.Debug("delivering update activity to recipient",
-		zap.String("recipient_id", recipientID),
-		zap.String("activity_id", updateActivity.ID))
-
-	// Create federation storage and delivery service
 	federationStorage := federation.NewDynamORMFederationStorage(h.repos.GetDB(), h.repos.GetTableName(), h.cfg.Domain, h.logger)
 	deliveryService := federation.NewDeliveryService(federationStorage, h.cfg)
 
-	// Set recipient in activity To field for delivery
-	updateActivity.To = []string{recipientID}
+	if isActivityPublicOrUnlisted(updateActivity) {
+		if err := deliveryService.DeliverToFollowers(ctx, updateActivity, actor); err != nil {
+			h.logger.Warn("failed to deliver update activity to followers",
+				zap.String("activity_id", updateActivity.ID),
+				zap.Error(err))
+		}
+	}
 
-	// Deliver using federation service
 	if err := deliveryService.DeliverToRecipients(ctx, updateActivity, actor); err != nil {
-		h.logger.Error("failed to deliver update activity to recipient",
-			zap.String("recipient_id", recipientID),
+		h.logger.Error("failed to deliver update activity to recipients",
 			zap.String("activity_id", updateActivity.ID),
 			zap.Error(err))
 		return err
 	}
 
-	h.logger.Info("update activity delivered successfully",
-		zap.String("recipient_id", recipientID),
+	h.logger.Info("completed update activity delivery",
 		zap.String("activity_id", updateActivity.ID))
 
 	return nil
+}
+
+func isActivityPublicOrUnlisted(activity *activitypub.Activity) bool {
+	if activity == nil {
+		return false
+	}
+
+	for _, recipient := range append(activity.To, activity.CC...) {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
 }
 
 // deliverCreateActivity delivers a Create activity to relevant recipients for federation

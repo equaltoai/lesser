@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
@@ -166,11 +167,11 @@ func (s *businessLogicService) DeletePost(ctx context.Context, user *UserContext
 			Context: activitypub.Context,
 			Type:    activitypub.DeleteType,
 			ID:      fmt.Sprintf("%s/activities/delete-%d-%s", actor.ID, time.Now().Unix(), s.generateRandomID()),
-			To:      []string{activitypub.PublicAddress},
 		},
 		Actor:  actor.ID,
 		Object: objectID,
 	}
+	deleteActivity.To, deleteActivity.CC = deleteActivityAudience(object)
 	now := time.Now()
 	deleteActivity.Published = &now
 
@@ -198,7 +199,7 @@ func (s *businessLogicService) DeletePost(ctx context.Context, user *UserContext
 	// - Original recipients (for replies)
 	// This ensures proper tombstone propagation across the fediverse
 	go func() {
-		if err := s.federation.DeliverToRecipients(context.Background(), deleteActivity, actor); err != nil {
+		if err := s.deliverFederatedActivity(context.Background(), deleteActivity, actor); err != nil {
 			s.logger.Error("failed to deliver delete activity", zap.Error(err))
 		}
 	}()
@@ -954,7 +955,7 @@ func (s *businessLogicService) FanOutPost(ctx context.Context, activity *activit
 }
 
 func (s *businessLogicService) DeliverActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, _ string) error {
-	return s.federation.DeliverToFollowers(ctx, activity, actor)
+	return s.deliverFederatedActivity(ctx, activity, actor)
 }
 
 // Helper methods for specific operations
@@ -1022,6 +1023,60 @@ func (s *businessLogicService) performCascadeDeletion(ctx context.Context, objec
 		zap.String("object_id", objectID))
 
 	return nil
+}
+
+func (s *businessLogicService) deliverFederatedActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	if s.isPublicOrUnlistedActivity(activity) {
+		if err := s.federation.DeliverToFollowers(ctx, activity, actor); err != nil {
+			s.logger.Error("failed to deliver activity to followers", zap.Error(err))
+		}
+	}
+
+	if err := s.federation.DeliverToRecipients(ctx, activity, actor); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *businessLogicService) isPublicOrUnlistedActivity(activity *activitypub.Activity) bool {
+	if activity == nil {
+		return false
+	}
+
+	for _, recipient := range append(activity.To, activity.CC...) {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
+}
+
+func deleteActivityAudience(object interface{}) ([]string, []string) {
+	switch typed := object.(type) {
+	case *activitypub.Note:
+		return cloneRecipients(typed.To, []string{activitypub.PublicAddress}), cloneRecipients(typed.CC, nil)
+	case *activitypub.Article:
+		return cloneRecipients(typed.To, []string{activitypub.PublicAddress}), cloneRecipients(typed.CC, nil)
+	case *storagemodels.Object:
+		return cloneRecipients(typed.To, []string{activitypub.PublicAddress}), cloneRecipients(typed.CC, nil)
+	case *storagemodels.Status:
+		return cloneRecipients(typed.ToRecipients, []string{activitypub.PublicAddress}), cloneRecipients(typed.CcRecipients, nil)
+	default:
+		return []string{activitypub.PublicAddress}, nil
+	}
+}
+
+func cloneRecipients(values []string, fallback []string) []string {
+	if len(values) == 0 {
+		if len(fallback) == 0 {
+			return nil
+		}
+		return append([]string(nil), fallback...)
+	}
+
+	return append([]string(nil), values...)
 }
 
 // cascadeDeleteLikes removes all likes on the deleted object

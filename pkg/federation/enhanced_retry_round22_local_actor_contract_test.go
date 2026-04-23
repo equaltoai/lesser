@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
@@ -40,7 +42,7 @@ func TestEnhancedRetryProcessor_Round22_UsesCanonicalLocalActorFromRepositoryAda
 		backing:    actorRepo,
 		privateKey: string(privateKeyPEM),
 	}
-	federationRepo := &storageAdapterFederationRepoStub{}
+	federationRepo := &enhancedRetryFederationRepoStub{}
 
 	store := &RepositoryStorageAdapter{
 		actorRepo:      stub,
@@ -86,14 +88,41 @@ func TestEnhancedRetryProcessor_Round22_UsesCanonicalLocalActorFromRepositoryAda
 	require.Equal(t, "https://example.com/users/alice#main-key", stub.lastActor.PublicKey.ID)
 	require.NotNil(t, stub.lastActor.Endpoints)
 	require.Equal(t, "https://example.com/inbox", stub.lastActor.Endpoints.SharedInbox)
-	require.NotNil(t, federationRepo.got)
-	require.Equal(t, "delivered_with_retry", federationRepo.got.Status)
+	recorded := federationRepo.snapshot()
+	require.NotEmpty(t, recorded)
+
+	foundFinalSuccess := false
+	for _, activity := range recorded {
+		if activity != nil && activity.ID == "retry-1" && activity.Status == "delivered_with_retry" {
+			foundFinalSuccess = true
+			break
+		}
+	}
+	require.True(t, foundFinalSuccess, "expected delivered_with_retry record for retry-1")
 }
 
 type canonicalActorReadbackStub struct {
 	backing    *repositories.ActorRepository
 	privateKey string
 	lastActor  *activitypub.Actor
+}
+
+type enhancedRetryFederationRepoStub struct {
+	mu         sync.Mutex
+	activities []*storage.FederationActivity
+}
+
+func (s *enhancedRetryFederationRepoStub) RecordFederationActivity(_ context.Context, activity *storage.FederationActivity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activities = append(s.activities, activity)
+	return nil
+}
+
+func (s *enhancedRetryFederationRepoStub) snapshot() []*storage.FederationActivity {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*storage.FederationActivity(nil), s.activities...)
 }
 
 func (s *canonicalActorReadbackStub) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {

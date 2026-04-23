@@ -231,13 +231,6 @@ func failedToGetCostRecords() *errors.AppError {
 	return errors.FailedToGet("cost records", nil)
 }
 
-// Status delivery operations errors - using API domain functions
-
-// failedToDetermineDeliveryRecipients creates an error when delivery recipients determination fails.
-func failedToDetermineDeliveryRecipients() *errors.AppError {
-	return errors.ProcessingFailed("delivery recipients determination", stdErrors.New("failed to determine delivery recipients"))
-}
-
 // Status conversion operations errors - using API domain functions
 
 // failedToConvertStatus creates an error when status conversion fails.
