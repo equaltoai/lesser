@@ -502,7 +502,7 @@ func (s *Service) localNoteProjectionPayload(status *models.Status) (*activitypu
 		return nil, "", fmt.Errorf("status is required")
 	}
 	if s.objectRepo == nil {
-		return nil, "", fmt.Errorf("object repository unavailable")
+		return nil, "", nil
 	}
 	if status.Note == nil {
 		return nil, "", fmt.Errorf("status %s missing ActivityPub note", status.StatusID)
@@ -520,6 +520,9 @@ func (s *Service) projectLocalNoteObjectOnCreate(ctx context.Context, status *mo
 	note, _, err := s.localNoteProjectionPayload(status)
 	if err != nil {
 		return err
+	}
+	if note == nil {
+		return nil
 	}
 	return s.objectRepo.CreateObject(ctx, note)
 }
@@ -545,6 +548,9 @@ func (s *Service) syncLocalNoteObjectProjectionOnUpdate(ctx context.Context, sta
 	if err != nil {
 		return err
 	}
+	if note == nil {
+		return nil
+	}
 	return s.objectRepo.UpdateObjectWithHistory(ctx, note, s.localActorID(updaterID))
 }
 
@@ -552,6 +558,9 @@ func (s *Service) replaceLocalNoteObjectProjectionWithTombstone(ctx context.Cont
 	_, objectID, err := s.localNoteProjectionPayload(status)
 	if err != nil {
 		return err
+	}
+	if objectID == "" {
+		return nil
 	}
 	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID))
 }
