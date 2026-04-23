@@ -212,13 +212,37 @@ func TestReplyParentResolver_ResolveReplyParent(t *testing.T) {
 		assert.Equal(t, 503, appErr.HTTPStatusCode)
 	})
 
-	t.Run("fetched but unusable parent maps to 422", func(t *testing.T) {
+	t.Run("not found parent maps to 503", func(t *testing.T) {
 		parentURL := "https://remote.example/users/steward/statuses/missing"
 		resolver := NewReplyParentResolver(
 			&stubStatusRepo{},
 			&stubObjectRepo{},
 			&stubDomainBlockRepo{},
 			&stubFetcher{err: commonerrors.RemoteFetchNotFound(parentURL)},
+			"example.com",
+			zap.NewNop(),
+		)
+
+		_, err := resolver.ResolveReplyParent(context.Background(), localAuthorAccount("alice"), parentURL, models.VisibilityPublic)
+		appErr, ok := commonerrors.AsAppError(err)
+		require.True(t, ok)
+		assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, appErr.Code)
+		assert.Equal(t, 503, appErr.HTTPStatusCode)
+	})
+
+	t.Run("fetched but semantically unusable parent maps to 422", func(t *testing.T) {
+		parentURL := "https://remote.example/users/steward/statuses/article"
+		resolver := NewReplyParentResolver(
+			&stubStatusRepo{},
+			&stubObjectRepo{},
+			&stubDomainBlockRepo{},
+			&stubFetcher{obj: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           parentURL,
+				"type":         "Article",
+				"content":      "not a note",
+				"attributedTo": "https://remote.example/users/steward",
+			}},
 			"example.com",
 			zap.NewNop(),
 		)
