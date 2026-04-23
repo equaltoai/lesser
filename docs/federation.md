@@ -20,8 +20,12 @@ curl -s "https://example.com/.well-known/webfinger?resource=acct:alice@example.c
 
 ```bash
 curl -s -H "Accept: application/activity+json" "https://example.com/users/alice" | jq .
+curl -s -H "Accept: application/activity+json" "https://example.com/users/alice/statuses/<id>" | jq .
 curl -s -H "Accept: application/activity+json" "https://example.com/objects/<id>" | jq .
 ```
+
+`/users/{username}/statuses/{id}` is the canonical local Note object URL Lesser publishes. `/objects/{id}` remains an
+additional object route.
 
 ### Inbox surface truth
 

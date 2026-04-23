@@ -15302,7 +15302,7 @@ paths:
     /api/v1/statuses:
         post:
             operationId: post_api_v1_statuses
-            description: Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service.
+            description: Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service. Failure classes distinguish invalid references (400), acquisition timeouts (408), fetched-but-unusable parents (422), and upstream unavailability (503).
             tags:
                 - statuses
             security:
@@ -19578,4 +19578,32 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
+    /users/{username}/statuses/{id}:
+        get:
+            operationId: get_users_by_username_statuses_by_id
+            tags:
+                - activitypub
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-lambda: objects
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:objects
 
