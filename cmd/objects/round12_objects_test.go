@@ -24,9 +24,12 @@ import (
 )
 
 type fakeObjectRepo struct {
-	obj   any
-	err   error
-	gotID string
+	obj        any
+	err        error
+	gotID      string
+	tombstoned bool
+	tombErr    error
+	tombstone  *storageModels.Tombstone
 }
 
 func (f *fakeObjectRepo) GetObject(_ context.Context, id string) (any, error) {
@@ -35,6 +38,25 @@ func (f *fakeObjectRepo) GetObject(_ context.Context, id string) (any, error) {
 		return nil, f.err
 	}
 	return f.obj, nil
+}
+
+func (f *fakeObjectRepo) GetTombstone(_ context.Context, id string) (*storageModels.Tombstone, error) {
+	f.gotID = id
+	if f.tombErr != nil {
+		return nil, f.tombErr
+	}
+	if f.tombstone == nil {
+		return nil, errors.New("not found")
+	}
+	return f.tombstone, nil
+}
+
+func (f *fakeObjectRepo) IsTombstoned(_ context.Context, id string) (bool, error) {
+	f.gotID = id
+	if f.tombErr != nil {
+		return false, f.tombErr
+	}
+	return f.tombstoned, nil
 }
 
 type fakeAuthorizedFetch struct {
@@ -461,6 +483,46 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, 401, resp.Status)
 		require.Empty(t, objRepo.gotID)
+	})
+
+	t.Run("canonical status route returns tombstone when object was deleted", func(t *testing.T) {
+		deletedAt := time.Date(2026, time.April, 23, 10, 0, 0, 0, time.UTC)
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:         "https://example.com/users/alice/statuses/123",
+				FormerType: activitypub.NoteType,
+				Deleted:    deletedAt,
+				DeletedBy:  "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice/statuses/123",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{
+				"username": "alice",
+				"id":       "123",
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Tombstone", body["type"])
+		require.Equal(t, "https://example.com/users/alice/statuses/123", body["id"])
+		require.Equal(t, activitypub.NoteType, body["formerType"])
 	})
 }
 

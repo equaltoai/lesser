@@ -17,6 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testinginmemory "github.com/equaltoai/lesser/pkg/testing/inmemory"
+	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1529,6 +1531,248 @@ func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.
 	require.NotContains(t, updated.Note.Content, "onerror=")
 	require.NotContains(t, updated.Note.Content, "onclick=")
 	require.NotContains(t, updated.Note.Content, "javascript:")
+}
+
+func TestService_round15_local_note_object_projection_lifecycle(t *testing.T) {
+	ctx := context.Background()
+	statusRepo := testinginmemory.NewStatusRepository()
+	objectRepo := testingmocks.NewMockObjectRepository()
+	accountRepo := &stubAccountRepo{domain: "example.com"}
+	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil).Once()
+	objectRepo.On("UpdateObjectWithHistory", mock.Anything, mock.Anything, "https://example.com/users/alice").Return(nil).Once()
+	objectRepo.On("ReplaceObjectWithTombstone", mock.Anything, mock.Anything, activitypub.NoteType, "https://example.com/users/alice").Return(nil).Once()
+	service := NewService(
+		statusRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		objectRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&stubPublisher{},
+		&stubAnalytics{},
+		&stubFederation{},
+		nil,
+		&stubNotificationService{},
+		zap.NewNop(),
+		"example.com",
+	)
+
+	created, err := service.CreateNote(ctx, &CreateNoteCommand{
+		AuthorID:     "alice",
+		Content:      "fresh local projection",
+		Visibility:   VisibilityPublic,
+		ToRecipients: []string{activitypub.PublicAddress},
+		CcRecipients: []string{"https://example.com/users/alice/followers"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+	require.NotNil(t, created.Note.Note)
+
+	objectID := created.Note.Note.ID
+	objectRepo.AssertCalled(t, "CreateObject", mock.Anything, mock.MatchedBy(func(value any) bool {
+		note, ok := value.(*activitypub.Note)
+		return ok && note.ID == objectID && note.Content == "fresh local projection"
+	}))
+
+	updated, err := service.UpdateNote(ctx, &UpdateNoteCommand{
+		StatusID:    created.Note.StatusID,
+		Content:     "edited local projection",
+		Sensitive:   true,
+		SpoilerText: "cw",
+		Language:    "en",
+		UpdaterID:   "alice",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	objectRepo.AssertCalled(t, "UpdateObjectWithHistory", mock.Anything, mock.MatchedBy(func(value any) bool {
+		note, ok := value.(*activitypub.Note)
+		return ok && note.ID == objectID && note.Content == "edited local projection" && note.Sensitive && note.Summary == "cw"
+	}), "https://example.com/users/alice")
+
+	require.NoError(t, service.DeleteNote(ctx, &DeleteNoteCommand{
+		StatusID:  created.Note.StatusID,
+		DeleterID: "alice",
+	}))
+	objectRepo.AssertCalled(t, "ReplaceObjectWithTombstone", mock.Anything, objectID, activitypub.NoteType, "https://example.com/users/alice")
+	objectRepo.AssertExpectations(t)
+}
+
+func TestService_round15_local_note_projection_helpers_noop_without_object_repo(t *testing.T) {
+	service := &Service{domainName: "example.com"}
+	status := &models.Status{
+		StatusID:       "status-1",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/status-1",
+				Type: activitypub.NoteType,
+			},
+			Content:      "hello",
+			AttributedTo: "https://example.com/users/alice",
+		},
+	}
+
+	projected, objectID, err := service.localNoteProjectionPayload(status)
+	require.NoError(t, err)
+	require.Nil(t, projected)
+	require.Empty(t, objectID)
+
+	require.NoError(t, service.projectLocalNoteObjectOnCreate(context.Background(), status))
+	require.NoError(t, service.syncLocalNoteObjectProjectionOnUpdate(context.Background(), status, "alice"))
+	require.NoError(t, service.replaceLocalNoteObjectProjectionWithTombstone(context.Background(), status, "alice"))
+}
+
+func TestService_round15_local_note_projection_payload_validation(t *testing.T) {
+	service := &Service{
+		domainName: "example.com",
+		objectRepo: testingmocks.NewMockObjectRepository(),
+	}
+
+	note, objectID, err := service.localNoteProjectionPayload(nil)
+	require.Error(t, err)
+	require.Nil(t, note)
+	require.Empty(t, objectID)
+
+	statusWithoutNote := &models.Status{StatusID: "status-1"}
+	note, objectID, err = service.localNoteProjectionPayload(statusWithoutNote)
+	require.Error(t, err)
+	require.Nil(t, note)
+	require.Empty(t, objectID)
+
+	statusWithoutID := &models.Status{
+		StatusID: "status-2",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{Type: activitypub.NoteType},
+		},
+	}
+	note, objectID, err = service.localNoteProjectionPayload(statusWithoutID)
+	require.Error(t, err)
+	require.Nil(t, note)
+	require.Empty(t, objectID)
+
+	validStatus := &models.Status{
+		StatusID: "status-3",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/status-3",
+				Type: activitypub.NoteType,
+			},
+			Content:      "hello",
+			AttributedTo: "https://example.com/users/alice",
+		},
+	}
+	note, objectID, err = service.localNoteProjectionPayload(validStatus)
+	require.NoError(t, err)
+	require.NotNil(t, note)
+	require.Equal(t, validStatus.Note.ID, objectID)
+}
+
+func TestService_round15_local_actor_id_helper(t *testing.T) {
+	service := &Service{domainName: "example.com"}
+	require.Empty(t, service.localActorID(""))
+	require.Equal(t, "https://example.com/users/alice", service.localActorID("alice"))
+}
+
+func TestService_round15_cleanup_failed_local_projection_and_parent_helpers(t *testing.T) {
+	ctx := context.Background()
+	objectRepo := testingmocks.NewMockObjectRepository()
+	service := &Service{
+		domainName: "example.com",
+		objectRepo: objectRepo,
+		logger:     zap.NewNop(),
+	}
+
+	objectRepo.On("DeleteObject", mock.Anything, "https://example.com/users/alice/statuses/status-1").Return(nil).Once()
+	service.cleanupFailedLocalNoteObjectProjection(ctx, &models.Status{
+		StatusID: "status-1",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/status-1",
+				Type: activitypub.NoteType,
+			},
+			AttributedTo: "https://example.com/users/alice",
+		},
+	})
+	service.cleanupFailedLocalNoteObjectProjection(ctx, &models.Status{StatusID: "status-2"})
+	service.cleanupFailedLocalNoteObjectProjection(ctx, &models.Status{
+		StatusID: "status-3",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{Type: activitypub.NoteType},
+		},
+	})
+	objectRepo.AssertExpectations(t)
+
+	parentFromNote := &models.Status{
+		StatusID: "status-1",
+		AuthorID: "https://example.com/users/alice",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/status-1",
+				Type: activitypub.NoteType,
+			},
+			AttributedTo: "https://example.com/users/alice",
+		},
+	}
+	require.Equal(t, parentFromNote.Note.ID, service.replyParentObjectID(parentFromNote))
+	require.Equal(t, "https://example.com/users/alice", service.replyParentActorID(parentFromNote))
+
+	parentFromURL := &models.Status{
+		StatusID: "status-2",
+		URLs:     []string{"mailto:ignore", "https://remote.example/objects/2"},
+		AuthorID: "https://remote.example/users/bob",
+	}
+	require.Equal(t, "https://remote.example/objects/2", service.replyParentObjectID(parentFromURL))
+	require.Equal(t, "https://remote.example/users/bob", service.replyParentActorID(parentFromURL))
+
+	parentFromStatusID := &models.Status{
+		StatusID: "https://remote.example/objects/3",
+		Note:     &activitypub.Note{},
+	}
+	require.Equal(t, "https://remote.example/objects/3", service.replyParentObjectID(parentFromStatusID))
+
+	localFallback := &models.Status{
+		StatusID:       "status-4",
+		AuthorUsername: "alice",
+		AuthorID:       "https://example.com/users/alice",
+	}
+	require.Equal(t, "https://example.com/users/alice/statuses/status-4", service.replyParentObjectID(localFallback))
+
+	require.Empty(t, service.replyParentObjectID(&models.Status{StatusID: "status-5"}))
+	require.Empty(t, service.replyParentActorID(&models.Status{}))
+}
+
+func TestService_round15_resolve_viewer_actor_id_variants(t *testing.T) {
+	service := &Service{domainName: "example.com"}
+
+	username, actorID := service.resolveViewerActorID("")
+	require.Empty(t, username)
+	require.Empty(t, actorID)
+
+	username, actorID = service.resolveViewerActorID("alice")
+	require.Equal(t, "alice", username)
+	require.Equal(t, "https://example.com/users/alice", actorID)
+
+	username, actorID = service.resolveViewerActorID("https://remote.example/users/bob/")
+	require.Equal(t, "bob", username)
+	require.Equal(t, "https://remote.example/users/bob", actorID)
+
+	username, actorID = service.resolveViewerActorID("https://remote.example")
+	require.Equal(t, "https://remote.example", username)
+	require.Equal(t, "https://remote.example", actorID)
+
+	noDomain := &Service{}
+	username, actorID = noDomain.resolveViewerActorID("carol")
+	require.Equal(t, "carol", username)
+	require.Equal(t, "carol", actorID)
 }
 
 func TestService_round15_community_note_content_is_escaped_at_write_time(t *testing.T) {

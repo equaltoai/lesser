@@ -24,8 +24,10 @@ curl -s -H "Accept: application/activity+json" "https://example.com/users/alice/
 curl -s -H "Accept: application/activity+json" "https://example.com/objects/<id>" | jq .
 ```
 
-`/users/{username}/statuses/{id}` is the canonical local Note object URL Lesser publishes. `/objects/{id}` remains an
-additional object route.
+`/users/{username}/statuses/{id}` is the canonical local Note object URL Lesser publishes. Local note create/edit/delete
+now maintain the backing object projection for that canonical route, including tombstone replacement on delete.
+`/objects/{id}` remains a separate object route; use the canonical `/users/{username}/statuses/{id}` URL when proving
+fresh local-note fetchability.
 
 ### Inbox surface truth
 

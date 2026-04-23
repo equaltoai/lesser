@@ -2,9 +2,15 @@
 
 ## Canonical local status-object fetchability
 
-Local Lesser-authored Note IDs published as `https://<domain>/users/{username}/statuses/{id}` are now fetchable as
-ActivityPub objects at that same canonical URL. `GET /objects/{id}` remains available as a secondary route, but the
-published Note ID is now truthful and dereferenceable as published.
+Fresh local Lesser-authored Note IDs published as `https://<domain>/users/{username}/statuses/{id}` now stay backed by
+companion object rows through the local note lifecycle:
+
+- create projects the local Note into object storage
+- edit keeps the object row aligned and preserves edit-history semantics
+- delete replaces the object row with a tombstone rather than leaving stale Note state behind
+
+The canonical published Note ID is now truthful and dereferenceable as published. `GET /objects/{id}` remains a
+separate object route; the canonical proof surface for local notes is `/users/{username}/statuses/{id}`.
 
 ## Remote reply-parent acquisition on create-status
 

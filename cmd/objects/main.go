@@ -117,6 +117,8 @@ type Handler struct {
 
 type objectGetter interface {
 	GetObject(ctx context.Context, id string) (any, error)
+	IsTombstoned(ctx context.Context, id string) (bool, error)
+	GetTombstone(ctx context.Context, objectID string) (*storageModels.Tombstone, error)
 }
 
 type authorizedFetchVerifier interface {
@@ -244,6 +246,9 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	objInterface, err := h.objectRepo.GetObject(runCtx, lookupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if tombstoneResp, handled, tombErr := h.handleTombstonedObject(runCtx, lookupID, objectID, requestID, wantsHTML); handled {
+				return tombstoneResp, tombErr
+			}
 			logger.Debug("object not found",
 				zap.String("object_id", objectID),
 				zap.String("request_id", requestID),
@@ -290,6 +295,47 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		zap.String("request_id", requestID),
 	)
 	return objectsActivityJSON(http.StatusOK, objInterface)
+}
+
+func (h *Handler) handleTombstonedObject(ctx context.Context, lookupID, objectID, requestID string, wantsHTML bool) (*apptheory.Response, bool, error) {
+	if h.objectRepo == nil {
+		return nil, false, nil
+	}
+
+	tombstoned, err := h.objectRepo.IsTombstoned(ctx, lookupID)
+	if err != nil || !tombstoned {
+		return nil, false, nil
+	}
+
+	tombstone, err := h.objectRepo.GetTombstone(ctx, lookupID)
+	if err != nil {
+		logger.Warn("failed to load tombstone details for deleted object",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return objectsJSONError(http.StatusGone, fmt.Sprintf("object %s deleted", objectID)), true, nil
+	}
+
+	logger.Debug("returning tombstone for deleted object",
+		zap.String("object_id", objectID),
+		zap.String("request_id", requestID),
+	)
+
+	if wantsHTML {
+		return objectsJSONError(http.StatusGone, fmt.Sprintf("object %s deleted", objectID)), true, nil
+	}
+
+	resp, err := objectsActivityJSON(http.StatusGone, &activitypub.Tombstone{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			ID:      tombstone.ID,
+			Type:    "Tombstone",
+		},
+		FormerType: tombstone.FormerType,
+		Deleted:    tombstone.Deleted.Format(time.RFC3339),
+	})
+	return resp, true, err
 }
 
 func (h *Handler) resolveObjectLookup(ctx *apptheory.Context) (string, string) {

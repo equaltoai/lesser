@@ -282,6 +282,10 @@ Create-status reply-parent acquisition can also return:
 - `422 Unprocessable Entity`: the remote parent was fetched but cannot be used as a reply parent
 - `503 Service Unavailable`: Lesser could not dereference or fetch a usable upstream parent
 
+Successful create-status responses continue to include the status `uri`, which is the canonical ActivityPub object URL
+for the created local note. The `lesser verify unresolved-remote-parent` probe now treats that canonical `uri` as the
+required fetchability evidence for local-note proof runs.
+
 ## GraphQL
 
 GraphQL HTTP is served from:

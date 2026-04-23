@@ -3,6 +3,7 @@ package inmemory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -154,7 +155,24 @@ func (r *ObjectRepository) UpdateObject(_ context.Context, object any) error {
 
 	entry, exists := r.objects[objectID]
 	if !exists {
-		return storage.ErrNotFound
+		now := time.Now()
+		objectType, actorID, inReplyTo := "", "", ""
+		_, objectType, actorID, inReplyTo = extractObjectMetadata(object)
+		r.objects[objectID] = &objectEntry{
+			object:     object,
+			objectType: objectType,
+			actorID:    actorID,
+			inReplyTo:  inReplyTo,
+			createdAt:  now,
+			updatedAt:  now,
+		}
+		if actorID != "" {
+			r.objectsByActor[actorID] = append(r.objectsByActor[actorID], objectID)
+		}
+		if inReplyTo != "" {
+			r.repliesByParent[inReplyTo] = append(r.repliesByParent[inReplyTo], objectID)
+		}
+		return nil
 	}
 
 	entry.object = object
@@ -171,14 +189,29 @@ func (r *ObjectRepository) UpdateObjectWithHistory(_ context.Context, object any
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	objectID, _, _, _ := extractObjectMetadata(object)
+	objectID, objectType, actorID, inReplyTo := extractObjectMetadata(object)
 	if objectID == "" {
 		return fmt.Errorf("object ID is required")
 	}
 
 	entry, exists := r.objects[objectID]
 	if !exists {
-		return storage.ErrNotFound
+		now := time.Now()
+		r.objects[objectID] = &objectEntry{
+			object:     object,
+			objectType: objectType,
+			actorID:    actorID,
+			inReplyTo:  inReplyTo,
+			createdAt:  now,
+			updatedAt:  now,
+		}
+		if actorID != "" {
+			r.objectsByActor[actorID] = append(r.objectsByActor[actorID], objectID)
+		}
+		if inReplyTo != "" {
+			r.repliesByParent[inReplyTo] = append(r.repliesByParent[inReplyTo], objectID)
+		}
+		return nil
 	}
 
 	// Store previous state in history
@@ -195,6 +228,9 @@ func (r *ObjectRepository) UpdateObjectWithHistory(_ context.Context, object any
 
 	// Update the object
 	entry.object = object
+	entry.objectType = objectType
+	entry.actorID = actorID
+	entry.inReplyTo = inReplyTo
 	entry.updatedAt = time.Now()
 
 	return nil
@@ -1049,9 +1085,22 @@ func extractObjectMetadata(object any) (id, objectType, actorID, inReplyTo strin
 		return
 	}
 
-	// Try to extract using reflection for struct types
-	// This is a simplified version - real implementation would use reflection
-	return "", "", "", ""
+	var payload struct {
+		ID           string `json:"id"`
+		Type         string `json:"type"`
+		AttributedTo string `json:"attributedTo"`
+		InReplyTo    string `json:"inReplyTo"`
+	}
+
+	raw, err := json.Marshal(object)
+	if err != nil {
+		return "", "", "", ""
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", "", ""
+	}
+
+	return payload.ID, payload.Type, payload.AttributedTo, payload.InReplyTo
 }
 
 // removeString removes a string from a slice
