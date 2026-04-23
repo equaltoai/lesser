@@ -226,3 +226,90 @@ func TestVerifyUnresolvedRemoteParentBodyMessage(t *testing.T) {
 func jsonNewDecoder(r io.Reader) *json.Decoder {
 	return json.NewDecoder(r)
 }
+
+func TestValidateVerifyUnresolvedRemoteParentTarget(t *testing.T) {
+	require.ErrorContains(t, validateVerifyUnresolvedRemoteParentTarget(valueDev, "://bad"), "absolute URL")
+	require.NoError(t, validateVerifyUnresolvedRemoteParentTarget(valueStaging, "https://staging.example.com"))
+	require.ErrorContains(t, validateVerifyUnresolvedRemoteParentTarget("qa", "https://dev.example.com"), "--stage must be dev or staging")
+}
+
+func TestNewVerifyUnresolvedRemoteParentHTTPClient_DefaultTimeout(t *testing.T) {
+	client := newVerifyUnresolvedRemoteParentHTTPClient(0)
+	require.Equal(t, defaultHTTPTimeout, client.Timeout)
+}
+
+func TestExecuteVerifyUnresolvedRemoteParent_EdgeCases(t *testing.T) {
+	t.Run("invalid endpoint bubbles up", func(t *testing.T) {
+		_, err := executeVerifyUnresolvedRemoteParent(context.Background(), http.DefaultClient, verifyUnresolvedRemoteParentConfig{
+			BaseURL:    "://bad",
+			Stage:      valueDev,
+			Token:      "tok",
+			ParentURL:  "https://remote.example/users/alice/statuses/1",
+			Visibility: "public",
+			Expected:   "success",
+			Content:    "hello",
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("success without id fails", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"url":"https://dev.example.com/users/alice/statuses/1"}`))
+		}))
+		defer server.Close()
+
+		_, err := executeVerifyUnresolvedRemoteParent(context.Background(), server.Client(), verifyUnresolvedRemoteParentConfig{
+			BaseURL:    server.URL,
+			Stage:      valueDev,
+			Token:      "tok",
+			ParentURL:  "https://remote.example/users/alice/statuses/1",
+			Visibility: "public",
+			Expected:   "success",
+			Content:    "hello",
+		})
+		require.ErrorContains(t, err, "missing id")
+	})
+
+	t.Run("success with malformed json fails", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`not-json`))
+		}))
+		defer server.Close()
+
+		_, err := executeVerifyUnresolvedRemoteParent(context.Background(), server.Client(), verifyUnresolvedRemoteParentConfig{
+			BaseURL:    server.URL,
+			Stage:      valueDev,
+			Token:      "tok",
+			ParentURL:  "https://remote.example/users/alice/statuses/1",
+			Visibility: "public",
+			Expected:   "success",
+			Content:    "hello",
+		})
+		require.ErrorContains(t, err, "decode create-status response")
+	})
+}
+
+func TestVerifyUnresolvedRemoteParentDoRequest_WithoutAuthHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Empty(t, r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`ok`))
+	}))
+	defer server.Close()
+
+	status, body, err := verifyUnresolvedRemoteParentDoRequest(context.Background(), server.Client(), http.MethodGet, server.URL, "", nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, []byte("ok"), body)
+}
+
+func TestDecodeVerifyUnresolvedRemoteParentErrorAndContentHelpers(t *testing.T) {
+	_, ok := decodeVerifyUnresolvedRemoteParentError(nil)
+	require.False(t, ok)
+	_, ok = decodeVerifyUnresolvedRemoteParentError([]byte(`not-json`))
+	require.False(t, ok)
+	require.Equal(t, "empty response body", verifyUnresolvedRemoteParentBodyMessage(nil))
+	require.Equal(t, "custom", resolveVerifyUnresolvedRemoteParentContent("custom", "ignored"))
+	require.Equal(t, "verify unresolved remote parent suffix", resolveVerifyUnresolvedRemoteParentContent("", "suffix"))
+}
