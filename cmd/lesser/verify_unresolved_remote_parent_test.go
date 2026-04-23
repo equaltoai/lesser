@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -108,14 +109,16 @@ func TestRunVerifyUnresolvedRemoteParent_Success(t *testing.T) {
 	executeVerifyUnresolvedRemoteParentFn = func(_ context.Context, _ *http.Client, cfg verifyUnresolvedRemoteParentConfig) (verifyUnresolvedRemoteParentSummary, error) {
 		require.Equal(t, "verify unresolved remote parent 2026-04-22T23:15:00Z", cfg.Content)
 		return verifyUnresolvedRemoteParentSummary{
-			BaseURL:         "https://dev.example.com",
-			Stage:           valueDev,
-			ParentURL:       cfg.ParentURL,
-			Visibility:      cfg.Visibility,
-			Expected:        cfg.Expected,
-			Classification:  "success",
-			HTTPStatus:      http.StatusCreated,
-			CreatedStatusID: "123",
+			BaseURL:                  "https://dev.example.com",
+			Stage:                    valueDev,
+			ParentURL:                cfg.ParentURL,
+			Visibility:               cfg.Visibility,
+			Expected:                 cfg.Expected,
+			Classification:           "success",
+			HTTPStatus:               http.StatusCreated,
+			CreatedStatusID:          "123",
+			CanonicalObjectURL:       "https://dev.example.com/users/alice/statuses/123",
+			CanonicalFetchHTTPStatus: http.StatusOK,
 		}, nil
 	}
 
@@ -137,21 +140,31 @@ func TestRunVerifyUnresolvedRemoteParent_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "verify unresolved-remote-parent complete")
 	require.Contains(t, out.String(), "created_status_id: 123")
+	require.Contains(t, out.String(), "canonical_object_url: https://dev.example.com/users/alice/statuses/123")
+	require.Contains(t, out.String(), "canonical_fetch_http_status: 200")
 }
 
 func TestExecuteVerifyUnresolvedRemoteParent(t *testing.T) {
 	t.Run("success captures created status id", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			require.Equal(t, http.MethodPost, r.Method)
-			require.Equal(t, "/api/v1/statuses", r.URL.Path)
-			require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
-			var payload map[string]any
-			require.NoError(t, jsonNewDecoder(r.Body).Decode(&payload))
-			require.Equal(t, "hello", payload["status"])
-			require.Equal(t, "public", payload["visibility"])
-			require.Equal(t, "https://remote.example/users/alice/statuses/1", payload["in_reply_to_id"])
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id":"status-1"}`))
+		var server *httptest.Server
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/statuses":
+				require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
+				var payload map[string]any
+				require.NoError(t, jsonNewDecoder(r.Body).Decode(&payload))
+				require.Equal(t, "hello", payload["status"])
+				require.Equal(t, "public", payload["visibility"])
+				require.Equal(t, "https://remote.example/users/alice/statuses/1", payload["in_reply_to_id"])
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"id":"status-1","uri":"%s/users/alice/statuses/status-1"}`, server.URL)))
+			case r.Method == http.MethodGet && r.URL.Path == "/users/alice/statuses/status-1":
+				require.Equal(t, "application/activity+json", r.Header.Get("Accept"))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"id":"%s/users/alice/statuses/status-1","type":"Note"}`, server.URL)))
+			default:
+				http.NotFound(w, r)
+			}
 		}))
 		defer server.Close()
 
@@ -167,6 +180,8 @@ func TestExecuteVerifyUnresolvedRemoteParent(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "success", summary.Classification)
 		require.Equal(t, "status-1", summary.CreatedStatusID)
+		require.Equal(t, server.URL+"/users/alice/statuses/status-1", summary.CanonicalObjectURL)
+		require.Equal(t, http.StatusOK, summary.CanonicalFetchHTTPStatus)
 	})
 
 	t.Run("unusable response preserves error code", func(t *testing.T) {
@@ -252,10 +267,10 @@ func TestExecuteVerifyUnresolvedRemoteParent_EdgeCases(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("success without id fails", func(t *testing.T) {
+	t.Run("success without canonical uri fails", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"url":"https://dev.example.com/users/alice/statuses/1"}`))
+			_, _ = w.Write([]byte(`{"id":"status-1","url":"https://dev.example.com/users/alice/statuses/1"}`))
 		}))
 		defer server.Close()
 
@@ -268,7 +283,7 @@ func TestExecuteVerifyUnresolvedRemoteParent_EdgeCases(t *testing.T) {
 			Expected:   "success",
 			Content:    "hello",
 		})
-		require.ErrorContains(t, err, "missing id")
+		require.ErrorContains(t, err, "missing canonical uri")
 	})
 
 	t.Run("success with malformed json fails", func(t *testing.T) {

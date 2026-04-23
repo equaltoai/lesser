@@ -17,6 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testinginmemory "github.com/equaltoai/lesser/pkg/testing/inmemory"
+	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1529,6 +1531,78 @@ func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.
 	require.NotContains(t, updated.Note.Content, "onerror=")
 	require.NotContains(t, updated.Note.Content, "onclick=")
 	require.NotContains(t, updated.Note.Content, "javascript:")
+}
+
+func TestService_round15_local_note_object_projection_lifecycle(t *testing.T) {
+	ctx := context.Background()
+	statusRepo := testinginmemory.NewStatusRepository()
+	objectRepo := testingmocks.NewMockObjectRepository()
+	accountRepo := &stubAccountRepo{domain: "example.com"}
+	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil).Once()
+	objectRepo.On("UpdateObjectWithHistory", mock.Anything, mock.Anything, "https://example.com/users/alice").Return(nil).Once()
+	objectRepo.On("ReplaceObjectWithTombstone", mock.Anything, mock.Anything, activitypub.NoteType, "https://example.com/users/alice").Return(nil).Once()
+	service := NewService(
+		statusRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		objectRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&stubPublisher{},
+		&stubAnalytics{},
+		&stubFederation{},
+		nil,
+		&stubNotificationService{},
+		zap.NewNop(),
+		"example.com",
+	)
+
+	created, err := service.CreateNote(ctx, &CreateNoteCommand{
+		AuthorID:     "alice",
+		Content:      "fresh local projection",
+		Visibility:   VisibilityPublic,
+		ToRecipients: []string{activitypub.PublicAddress},
+		CcRecipients: []string{"https://example.com/users/alice/followers"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+	require.NotNil(t, created.Note.Note)
+
+	objectID := created.Note.Note.ID
+	objectRepo.AssertCalled(t, "CreateObject", mock.Anything, mock.MatchedBy(func(value any) bool {
+		note, ok := value.(*activitypub.Note)
+		return ok && note.ID == objectID && note.Content == "fresh local projection"
+	}))
+
+	updated, err := service.UpdateNote(ctx, &UpdateNoteCommand{
+		StatusID:    created.Note.StatusID,
+		Content:     "edited local projection",
+		Sensitive:   true,
+		SpoilerText: "cw",
+		Language:    "en",
+		UpdaterID:   "alice",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	objectRepo.AssertCalled(t, "UpdateObjectWithHistory", mock.Anything, mock.MatchedBy(func(value any) bool {
+		note, ok := value.(*activitypub.Note)
+		return ok && note.ID == objectID && note.Content == "edited local projection" && note.Sensitive && note.Summary == "cw"
+	}), "https://example.com/users/alice")
+
+	require.NoError(t, service.DeleteNote(ctx, &DeleteNoteCommand{
+		StatusID:  created.Note.StatusID,
+		DeleterID: "alice",
+	}))
+	objectRepo.AssertCalled(t, "ReplaceObjectWithTombstone", mock.Anything, objectID, activitypub.NoteType, "https://example.com/users/alice")
+	objectRepo.AssertExpectations(t)
 }
 
 func TestService_round15_community_note_content_is_escaped_at_write_time(t *testing.T) {

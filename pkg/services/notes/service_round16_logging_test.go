@@ -33,6 +33,15 @@ func TestServiceRound16_CreateNote_LogsRootCausesForStatusPersistenceFailures(t 
 		On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
 		Return(apperrors.FailedToCreate("item", stdErrors.New("dynamo conditional check failed"))).
 		Once()
+	objectRepo := testingmocks.NewMockObjectRepository()
+	objectRepo.
+		On("CreateObject", ctx, mock.Anything).
+		Return(nil).
+		Once()
+	objectRepo.
+		On("DeleteObject", ctx, mock.AnythingOfType("string")).
+		Return(nil).
+		Once()
 
 	service := NewService(
 		noteRepo,
@@ -43,7 +52,7 @@ func TestServiceRound16_CreateNote_LogsRootCausesForStatusPersistenceFailures(t 
 		nil,
 		nil,
 		nil,
-		nil,
+		objectRepo,
 		nil,
 		nil,
 		nil,
