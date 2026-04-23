@@ -1605,6 +1605,32 @@ func TestService_round15_local_note_object_projection_lifecycle(t *testing.T) {
 	objectRepo.AssertExpectations(t)
 }
 
+func TestService_round15_local_note_projection_helpers_noop_without_object_repo(t *testing.T) {
+	service := &Service{domainName: "example.com"}
+	status := &models.Status{
+		StatusID:       "status-1",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/status-1",
+				Type: activitypub.NoteType,
+			},
+			Content:      "hello",
+			AttributedTo: "https://example.com/users/alice",
+		},
+	}
+
+	projected, objectID, err := service.localNoteProjectionPayload(status)
+	require.NoError(t, err)
+	require.Nil(t, projected)
+	require.Empty(t, objectID)
+
+	require.NoError(t, service.projectLocalNoteObjectOnCreate(context.Background(), status))
+	require.NoError(t, service.syncLocalNoteObjectProjectionOnUpdate(context.Background(), status, "alice"))
+	require.NoError(t, service.replaceLocalNoteObjectProjectionWithTombstone(context.Background(), status, "alice"))
+}
+
 func TestService_round15_community_note_content_is_escaped_at_write_time(t *testing.T) {
 	service, _, _, _, _ := newNotesServiceHarness(t)
 	ctx := context.Background()
