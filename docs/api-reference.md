@@ -217,7 +217,9 @@ For canonical remote URLs, Lesser:
 - uses the resolved parent for reply threading, audience derivation, and delivery targeting
 
 This acquisition behavior is write-path only. It does **not** introduce live remote fetches on read paths such as
-timelines, thread context, or GraphQL public reads.
+timelines, thread context, or GraphQL public reads. Local statuses published by Lesser are also dereferenceable as
+ActivityPub objects at their canonical `/users/{username}/statuses/{id}` URLs, so unresolved reply-parent acquisition
+can fetch the exact object ID that Lesser publishes.
 
 Direct / DM replies remain conversations-owned and are out of scope for this Notes-service path.
 
@@ -232,6 +234,18 @@ curl -s -X POST "https://<stage-domain>/api/v1/statuses" \
     "in_reply_to_id": "https://remote.example/users/steward/statuses/seed-1"
   }' | jq .
 ```
+
+### Pattern: fetch a published local Note by canonical ActivityPub URL
+
+For Lesser-authored notes, the published object ID is fetchable as published:
+
+```bash
+curl -s -H "Accept: application/activity+json" \
+  "https://<stage-domain>/users/alice/statuses/<status-id>" | jq .
+```
+
+`GET /objects/{id}` remains available, but remote peers should be able to dereference the canonical published Note URL
+directly.
 
 ### Pattern: paginate list endpoints (Link header)
 
@@ -265,8 +279,8 @@ Create-status reply-parent acquisition can also return:
 
 - `400 Bad Request`: invalid `in_reply_to_id` shape or unsupported identifier form
 - `408 Request Timeout`: remote parent acquisition timed out
-- `422 Unprocessable Entity`: the remote parent resolved but cannot be used as a reply parent
-- `503 Service Unavailable`: remote parent acquisition could not reach a usable upstream
+- `422 Unprocessable Entity`: the remote parent was fetched but cannot be used as a reply parent
+- `503 Service Unavailable`: Lesser could not dereference or fetch a usable upstream parent
 
 ## GraphQL
 

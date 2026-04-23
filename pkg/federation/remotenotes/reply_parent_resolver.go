@@ -422,7 +422,7 @@ func mapReplyParentFetchError(parentURL string, err error) error {
 			commonerrors.CodeUnprocessableEntity, commonerrors.CodeValidationFailed,
 			commonerrors.CodeInvalidInput, commonerrors.CodeInvalidFormat,
 			commonerrors.CodeActivityParsingFailed, commonerrors.CodeRemoteFetchFailed:
-			return unusableReplyParent(parentURL, appErr.Message)
+			return serviceUnavailableReplyParent(parentURL, err)
 		}
 	}
 

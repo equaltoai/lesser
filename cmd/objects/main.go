@@ -152,11 +152,7 @@ func NewHandler() *Handler {
 
 // HandleGetObject handles GET requests for ActivityPub objects
 func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Extract object ID from path parameters
-	objectID := ""
-	if ctx != nil {
-		objectID = ctx.Param("id")
-	}
+	objectID, lookupID := h.resolveObjectLookup(ctx)
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return objectsJSONError(http.StatusUnprocessableEntity, "missing object id"), nil
 	}
@@ -244,11 +240,6 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		zap.String("request_id", requestID),
 	)
 
-	lookupID := objectID
-	if !strings.HasPrefix(lookupID, "http://") && !strings.HasPrefix(lookupID, "https://") {
-		lookupID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), objectID)
-	}
-
 	// Get the object from storage
 	objInterface, err := h.objectRepo.GetObject(runCtx, lookupID)
 	if err != nil {
@@ -299,6 +290,30 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		zap.String("request_id", requestID),
 	)
 	return objectsActivityJSON(http.StatusOK, objInterface)
+}
+
+func (h *Handler) resolveObjectLookup(ctx *apptheory.Context) (string, string) {
+	if ctx == nil {
+		return "", ""
+	}
+
+	objectID := strings.TrimSpace(ctx.Param("id"))
+	if objectID == "" {
+		return "", ""
+	}
+
+	username := strings.TrimSpace(ctx.Param("username"))
+	if username != "" {
+		canonicalID := fmt.Sprintf("%s/users/%s/statuses/%s", cfg.BaseURL(), username, objectID)
+		return canonicalID, canonicalID
+	}
+
+	lookupID := objectID
+	if !strings.HasPrefix(lookupID, "http://") && !strings.HasPrefix(lookupID, "https://") {
+		lookupID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), objectID)
+	}
+
+	return objectID, lookupID
 }
 
 // generateObjectHTML creates HTML representation of an ActivityPub object
@@ -815,8 +830,9 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 		}
 	})
 
-	// ActivityPub federation endpoint.
+	// ActivityPub federation endpoints.
 	app.Get("/objects/:id", handler.HandleGetObject)
+	app.Get("/users/:username/statuses/:id", handler.HandleGetObject)
 
 	return app
 }

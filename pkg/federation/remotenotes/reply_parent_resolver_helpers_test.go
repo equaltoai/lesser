@@ -136,12 +136,19 @@ func TestReplyParentErrorMappingAndHelpers(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, serviceUnavailable.Code)
 
-		unusable, ok := commonerrors.AsAppError(mapReplyParentFetchError(
+		notFound, ok := commonerrors.AsAppError(mapReplyParentFetchError(
 			"https://remote.example/statuses/seed-1",
 			commonerrors.RemoteFetchNotFound("https://remote.example/statuses/seed-1"),
 		))
 		require.True(t, ok)
-		assert.Equal(t, commonerrors.CodeUnprocessableEntity, unusable.Code)
+		assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, notFound.Code)
+
+		unauthorized, ok := commonerrors.AsAppError(mapReplyParentFetchError(
+			"https://remote.example/statuses/seed-1",
+			commonerrors.RemoteFetchUnauthorized("https://remote.example/statuses/seed-1"),
+		))
+		require.True(t, ok)
+		assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, unauthorized.Code)
 	})
 
 	t.Run("falls back to service unavailable for unknown fetch failures", func(t *testing.T) {
