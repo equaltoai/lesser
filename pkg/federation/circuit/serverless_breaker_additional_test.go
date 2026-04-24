@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -111,7 +112,7 @@ func TestServerlessCircuitBreaker_IsOpen_EvaluatesStates(t *testing.T) {
 		repo := NewMockCircuitBreakerRepository()
 		repo.updateErr = errors.New("update failed")
 
-		cb := NewServerlessCircuitBreaker(repo, models.DefaultCircuitBreakerConfig(), logger)
+		cb := NewServerlessCircuitBreaker(repo, models.DefaultCircuitBreakerConfig(), zap.NewNop())
 		instanceID := "half.timeout.err"
 
 		require.NoError(t, repo.SaveCircuitState(ctx, &models.CircuitBreakerState{
@@ -240,7 +241,7 @@ func TestServerlessCircuitBreaker_RecordSuccess_TransitionsAndAsyncMetrics(t *te
 		repo.recordStateErr = errors.New("state change failed")
 		repo.recordMetricErr = errors.New("metric failed")
 
-		cb := NewServerlessCircuitBreaker(repo, config, logger)
+		cb := NewServerlessCircuitBreaker(repo, config, zap.NewNop())
 		instanceID := "success.half.close"
 
 		require.NoError(t, repo.SaveCircuitState(ctx, &models.CircuitBreakerState{
