@@ -727,6 +727,22 @@ func TestFederationService_round27_coverage(t *testing.T) {
 		require.ErrorIs(t, err, ErrUnsupportedDatabaseType)
 	})
 
+	t.Run("DeliverToFollowersAndRecipients_no_db", func(t *testing.T) {
+		err := svc.DeliverToFollowersAndRecipients(ctx, &activitypub.Activity{}, actor)
+		require.ErrorIs(t, err, ErrNoDatabaseAvailable)
+	})
+
+	t.Run("DeliverToFollowersAndRecipients_unsupported_db", func(t *testing.T) {
+		withDB := &federationService{
+			deps:    svc.deps,
+			storage: &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{rawDB: struct{}{}, table: "tbl", logger: zap.NewNop()}},
+			logger:  zap.NewNop(),
+		}
+
+		err := withDB.DeliverToFollowersAndRecipients(ctx, &activitypub.Activity{}, actor)
+		require.ErrorIs(t, err, ErrUnsupportedDatabaseType)
+	})
+
 	t.Run("DetermineRecipients_missing_actor_returns_error", func(t *testing.T) {
 		_, err := svc.DetermineRecipients(ctx, &activitypub.Activity{}, "public")
 		require.ErrorIs(t, err, ErrActivityMissingActor)

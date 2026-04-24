@@ -912,6 +912,33 @@ func TestRegistry_Adapters_And_JobQueueImplementations(t *testing.T) {
 		assert.Equal(t, 1, fed.deliverRecipientsCalls)
 	})
 
+	t.Run("queueFederationAdapter_uses_combined_sender_dedupe_when_available", func(t *testing.T) {
+		fed := &combinedStubFederationService{}
+		storage := newPermissiveRegistryStorage(t, "example.com", logger)
+		adapter := &queueFederationAdapter{
+			federation: fed,
+			storage:    storage,
+			logger:     logger,
+		}
+
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Type: "Create",
+				To:   []string{activitypub.PublicAddress, "https://remote.example/users/bob"},
+				CC:   []string{"https://example.com/users/alice/followers"},
+			},
+			Actor: "https://example.com/users/alice",
+		}
+
+		require.NoError(t, adapter.QueueActivity(context.Background(), activity))
+		assert.Equal(t, 1, fed.deliverCombinedCalls)
+		assert.Equal(t, 0, fed.deliverFollowersCalls)
+		assert.Equal(t, 0, fed.deliverRecipientsCalls)
+		require.NotNil(t, fed.lastActor)
+		assert.Equal(t, activity.Actor, fed.lastActor.ID)
+		assert.Equal(t, activity, fed.lastActivity)
+	})
+
 	t.Run("queueFederationAdapter_delivers_direct_mentions_to_recipients_only", func(t *testing.T) {
 		fed := &stubFederationService{}
 		storage := newPermissiveRegistryStorage(t, "example.com", logger)
@@ -1018,6 +1045,18 @@ func (s *stubFederationService) DetermineRecipients(context.Context, *activitypu
 }
 func (s *stubFederationService) GetInstanceRelationships(context.Context, string) (*model.InstanceRelations, error) {
 	return nil, nil
+}
+
+type combinedStubFederationService struct {
+	stubFederationService
+	deliverCombinedCalls int
+}
+
+func (s *combinedStubFederationService) DeliverToFollowersAndRecipients(_ context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	s.deliverCombinedCalls++
+	s.lastActivity = activity
+	s.lastActor = actor
+	return nil
 }
 
 type noopNotificationService struct{}

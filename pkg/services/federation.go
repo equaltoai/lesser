@@ -28,8 +28,7 @@ func NewFederationService(deps *ServiceDependencies) FederationService {
 	}
 }
 
-// DeliverToFollowers delivers an activity to all followers of the actor
-func (f *federationService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+func (f *federationService) newDeliveryService() (*federation.DeliveryService, error) {
 	// Use storage directly if it implements FederationStorage
 	var federationStorage federation.FederationStorage
 
@@ -40,37 +39,43 @@ func (f *federationService) DeliverToFollowers(ctx context.Context, activity *ac
 			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Config.Config.Domain, f.deps.Logger.(*zap.Logger))
 		} else {
 			// Fall back to a basic implementation or return error
-			return ErrUnsupportedDatabaseType
+			return nil, ErrUnsupportedDatabaseType
 		}
 	} else {
-		return ErrNoDatabaseAvailable
+		return nil, ErrNoDatabaseAvailable
 	}
 
 	deliveryService := federation.NewDeliveryService(federationStorage, f.deps.Config.Config)
+	return deliveryService, nil
+}
+
+// DeliverToFollowers delivers an activity to all followers of the actor
+func (f *federationService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	deliveryService, err := f.newDeliveryService()
+	if err != nil {
+		return err
+	}
 	return deliveryService.DeliverToFollowers(ctx, activity, actor)
 }
 
 // DeliverToRecipients delivers an activity to specific recipients
 func (f *federationService) DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
-	// Use storage directly if it implements FederationStorage
-	var federationStorage federation.FederationStorage
-
-	// Try to get DB from storage for DynamORM federation storage
-	if db := f.storage.GetDB(); db != nil {
-		// Check if it's a core.DB type
-		if coreDB, ok := db.(core.DB); ok {
-			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName(), f.deps.Config.Config.Domain, f.deps.Logger.(*zap.Logger))
-		} else {
-			// Fall back to a basic implementation or return error
-			return ErrUnsupportedDatabaseType
-		}
-	} else {
-		return ErrNoDatabaseAvailable
+	deliveryService, err := f.newDeliveryService()
+	if err != nil {
+		return err
 	}
-
-	deliveryService := federation.NewDeliveryService(federationStorage, f.deps.Config.Config)
-
 	return deliveryService.DeliverToRecipients(ctx, activity, actor)
+}
+
+// DeliverToFollowersAndRecipients delivers public/unlisted activities through
+// the shared federation delivery path that de-dupes follower fanout against
+// explicit recipients before sending.
+func (f *federationService) DeliverToFollowersAndRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	deliveryService, err := f.newDeliveryService()
+	if err != nil {
+		return err
+	}
+	return deliveryService.DeliverToFollowersAndRecipients(ctx, activity, actor)
 }
 
 // DetermineRecipients determines who should receive an activity based on its type and visibility
