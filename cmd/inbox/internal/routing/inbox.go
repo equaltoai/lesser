@@ -2541,13 +2541,15 @@ func remoteCreateNotificationCreatedAt(activity *activitypub.Activity, note *act
 }
 
 func deterministicRemoteCreateNotificationID(kind string, parts ...string) string {
-	normalized := make([]string, 0, len(parts)+1)
-	normalized = append(normalized, strings.ToLower(strings.TrimSpace(kind)))
+	normalizedKind := strings.ToLower(strings.TrimSpace(kind))
+	var normalized strings.Builder
+	normalized.WriteString(normalizedKind)
 	for _, part := range parts {
-		normalized = append(normalized, strings.TrimSpace(part))
+		normalized.WriteByte('\x00')
+		normalized.WriteString(strings.TrimSpace(part))
 	}
-	sum := sha256.Sum256([]byte(strings.Join(normalized, "\x00")))
-	return fmt.Sprintf("remote-create-%s-%s", strings.ToLower(strings.TrimSpace(kind)), hex.EncodeToString(sum[:]))
+	sum := sha256.Sum256([]byte(normalized.String()))
+	return fmt.Sprintf("remote-create-%s-%s", normalizedKind, hex.EncodeToString(sum[:]))
 }
 
 func remoteCreatePostSnapshot(note *activitypub.Note, status *models.Status) map[string]interface{} {
