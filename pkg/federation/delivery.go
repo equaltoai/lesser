@@ -611,21 +611,12 @@ func (d *DeliveryService) deliverResolvedRecipientTargets(ctx context.Context, a
 	return nil
 }
 
-// DeliverToFollowers delivers an activity to all followers of an actor
-func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
-	log := common.WithContext(ctx).With(
-		zap.String("activity_id", activity.ID),
-		zap.String("actor", actor.ID),
-	)
-
-	log.Info("delivering activity to followers")
-
-	targets, err := d.resolveFollowerTargets(ctx, actor, log)
-	if err != nil {
-		return err
+func (d *DeliveryService) deliverResolvedFollowerTargets(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, targets map[string]*activitypub.Actor, log *zap.Logger) error {
+	if len(targets) == 0 {
+		return nil
 	}
 
-	// Deliver to each unique inbox
+	// Deliver to each unique inbox.
 	var deliveryErrors []error
 	inboxMap := make(map[string][]string)
 	for actorID, follower := range targets {
@@ -640,28 +631,103 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 	}
 
 	for inbox, followerIDs := range inboxMap {
-		log.Info("delivering to inbox",
-			zap.String("inbox", inbox),
-			zap.Int("follower_count", len(followerIDs)))
+		if log != nil {
+			log.Info("delivering to inbox",
+				zap.String("inbox", inbox),
+				zap.Int("follower_count", len(followerIDs)))
+		}
 
-		// For shared inboxes, use the first follower as the target actor ID for privacy checks
+		// For shared inboxes, use the first follower as the target actor ID for privacy checks.
 		targetActorID := followerIDs[0]
 		if err := d.DeliverActivityWithPrivacy(ctx, activity, inbox, actor, targetActorID); err != nil {
-			log.Error("failed to deliver to inbox",
-				zap.String("inbox", inbox),
-				zap.Error(err))
+			if log != nil {
+				log.Error("failed to deliver to inbox",
+					zap.String("inbox", inbox),
+					zap.Error(err))
+			}
 			deliveryErrors = append(deliveryErrors, err)
-			// Continue delivering to other inboxes
+			// Continue delivering to other inboxes.
 		}
 	}
 
 	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
-		log.Error("failed to deliver to multiple inboxes",
-			zap.Int("failed_inbox_count", len(deliveryErrors)))
+		if log != nil {
+			log.Error("failed to deliver to multiple inboxes",
+				zap.Int("failed_inbox_count", len(deliveryErrors)))
+		}
 		return ErrDeliveryToInboxesFailed
 	}
 
 	return nil
+}
+
+// DeliverToFollowers delivers an activity to all followers of an actor
+func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	log := common.WithContext(ctx).With(
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", actor.ID),
+	)
+
+	log.Info("delivering activity to followers")
+
+	targets, err := d.resolveFollowerTargets(ctx, actor, log)
+	if err != nil {
+		return err
+	}
+
+	return d.deliverResolvedFollowerTargets(ctx, activity, actor, targets, log)
+}
+
+// DeliverToFollowersAndRecipients delivers public/unlisted activities to
+// followers and explicit recipients while suppressing duplicate deliveries to
+// actors that appear in both target sets.
+func (d *DeliveryService) DeliverToFollowersAndRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	log := common.WithContext(ctx).With(
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", actor.ID),
+	)
+
+	log.Info("delivering activity to followers and explicit recipients")
+
+	followerTargets, err := d.resolveFollowerTargets(ctx, actor, log)
+	if err != nil {
+		log.Error("failed to resolve followers for activity delivery",
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activity.Type),
+			zap.Error(err))
+		followerTargets = map[string]*activitypub.Actor{}
+	}
+
+	if err == nil {
+		if err := d.deliverResolvedFollowerTargets(ctx, activity, actor, followerTargets, log); err != nil {
+			log.Error("failed to deliver activity to followers",
+				zap.String("activity_id", activity.ID),
+				zap.String("activity_type", activity.Type),
+				zap.Error(err))
+		}
+	}
+
+	recipientTargets, err := d.resolveRecipientTargets(ctx, activity, actor, log)
+	if err != nil {
+		return err
+	}
+
+	duplicateRecipientCount := 0
+	for actorID := range followerTargets {
+		if _, exists := recipientTargets[actorID]; exists {
+			delete(recipientTargets, actorID)
+			duplicateRecipientCount++
+		}
+	}
+	if duplicateRecipientCount > 0 {
+		log.Info("suppressed duplicate explicit deliveries already covered by follower fanout",
+			zap.Int("duplicate_recipient_count", duplicateRecipientCount))
+	}
+
+	log.Info("delivering to remaining explicit recipients with privacy controls",
+		zap.Int("resolved_recipients", len(recipientTargets)))
+
+	return d.deliverResolvedRecipientTargets(ctx, activity, actor, recipientTargets, log)
 }
 
 // DeliverToRecipients delivers an activity to specific recipients (to, cc, bto, bcc)

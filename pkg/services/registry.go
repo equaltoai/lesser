@@ -2498,6 +2498,10 @@ type queueFederationAdapter struct {
 	logger     *zap.Logger
 }
 
+type followerRecipientFederationService interface {
+	DeliverToFollowersAndRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+}
+
 // severanceFederationAdapter adapts FederationService to severance.FederationService
 type severanceFederationAdapter struct {
 	federation FederationService
@@ -2626,6 +2630,17 @@ func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *ac
 	}
 
 	if a.isPublicOrUnlisted(activity) {
+		if combined, ok := a.federation.(followerRecipientFederationService); ok {
+			if err := combined.DeliverToFollowersAndRecipients(ctx, activity, actor); err != nil {
+				a.logger.Error("failed to deliver activity to followers and explicit recipients",
+					zap.String("activity_id", activity.ID),
+					zap.String("activity_type", activity.Type),
+					zap.Error(err))
+				return err
+			}
+			return nil
+		}
+
 		if err := a.federation.DeliverToFollowers(ctx, activity, actor); err != nil {
 			a.logger.Error("failed to deliver activity to followers",
 				zap.String("activity_id", activity.ID),
