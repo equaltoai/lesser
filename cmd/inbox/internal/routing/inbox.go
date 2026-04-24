@@ -2473,21 +2473,16 @@ func (ih *InboxHandler) processLikeActivity(ctx context.Context, activity *activ
 		return nil
 	}
 
-	// Extract the object being liked
-	var objectID string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]any:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
+	// Extract and canonicalize the object being liked when it maps to a local
+	// known status. Unknown remote objects remain permissive and are stored as
+	// received.
+	objectID := extractObjectID(activity.Object)
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("like activity has no object ID")
 		return nil // Don't fail, just ignore malformed likes
 	}
+	objectID, obj := ih.canonicalizeKnownInteractionObject(ctx, objectID)
 
 	// Extract actor handle from actor ID
 	actorHandle := ih.extractHandleFromActorID(activity.Actor)
@@ -2498,17 +2493,8 @@ func (ih *InboxHandler) processLikeActivity(ctx context.Context, activity *activ
 		zap.String("object", objectID),
 		zap.String("activity_id", activity.ID))
 
-	// Verify the object exists (optional - could be remote object)
-	obj, err := ih.objectRepository.GetObject(ctx, objectID)
-	if err != nil {
-		log.Debug("object not found for like, assuming remote object",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Continue processing - this could be a remote object we don't have
-	}
-
 	// Store the like
-	_, err = ih.likeRepository.CreateLike(ctx, activity.Actor, objectID, targetActor.ID)
+	_, err := ih.likeRepository.CreateLike(ctx, activity.Actor, objectID, targetActor.ID)
 	if err != nil {
 		log.Error("failed to create like",
 			zap.String("actor", activity.Actor),
@@ -2556,21 +2542,16 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 		return nil
 	}
 
-	// Extract the object being announced
-	var objectID string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]any:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
+	// Extract and canonicalize the object being announced when it maps to a
+	// local known status. Unknown remote objects remain permissive and are
+	// stored as received.
+	objectID := extractObjectID(activity.Object)
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("announce activity has no object ID")
 		return nil // Don't fail, just ignore malformed announces
 	}
+	objectID, obj := ih.canonicalizeKnownInteractionObject(ctx, objectID)
 
 	// Extract actor handle from actor ID
 	actorHandle := ih.extractHandleFromActorID(activity.Actor)
@@ -2580,15 +2561,6 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 		zap.String("actor_handle", actorHandle),
 		zap.String("object", objectID),
 		zap.String("activity_id", activity.ID))
-
-	// Verify the object exists (optional - could be remote object)
-	obj, err := ih.objectRepository.GetObject(ctx, objectID)
-	if err != nil {
-		log.Debug("object not found for announce, assuming remote object",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Continue processing - this could be a remote object we don't have
-	}
 
 	// Create storage.Announce struct for SocialRepository
 	announce := &storage.Announce{
@@ -2602,7 +2574,7 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 	}
 
 	// Store the announce using social repository
-	err = ih.socialRepository.CreateAnnounce(ctx, announce)
+	err := ih.socialRepository.CreateAnnounce(ctx, announce)
 	if err != nil {
 		// Handle duplicate announces gracefully
 		if strings.Contains(err.Error(), "already announced") {
@@ -2640,6 +2612,55 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 	log.Info("successfully processed announce activity",
 		zap.String("actor", activity.Actor),
 		zap.String("object", objectID))
+
+	return nil
+}
+
+func (ih *InboxHandler) canonicalizeKnownInteractionObject(ctx context.Context, objectID string) (string, any) {
+	objectID = strings.TrimSpace(objectID)
+	if objectID == "" {
+		return "", nil
+	}
+
+	if status := ih.resolveKnownInteractionStatus(ctx, objectID); status != nil {
+		if canonical := models.CanonicalActivityPubObjectIDForStatus(status, ih.baseURL); canonical != "" {
+			if status.Note != nil {
+				return canonical, status.Note
+			}
+			return canonical, status
+		}
+	}
+
+	if ih.objectRepository == nil {
+		return objectID, nil
+	}
+	obj, err := ih.objectRepository.GetObject(ctx, objectID)
+	if err != nil {
+		common.WithContext(ctx).Debug("object not found for interaction, assuming unknown remote object",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return objectID, nil
+	}
+
+	return objectID, obj
+}
+
+func (ih *InboxHandler) resolveKnownInteractionStatus(ctx context.Context, objectID string) *models.Status {
+	if ih.statusRepository == nil {
+		return nil
+	}
+
+	if status, err := ih.statusRepository.GetStatusByURL(ctx, objectID); err == nil &&
+		models.CanonicalActivityPubObjectIDForStatus(status, ih.baseURL) != "" {
+		return status
+	}
+
+	for _, candidate := range models.StatusLookupCandidatesForDomain(objectID, ih.baseURL) {
+		status, err := ih.statusRepository.GetStatus(ctx, candidate)
+		if err == nil && models.CanonicalActivityPubObjectIDForStatus(status, ih.baseURL) != "" {
+			return status
+		}
+	}
 
 	return nil
 }
@@ -2691,7 +2712,8 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 		}
 	case activitypub.LikeType:
 		// Undo like
-		if objectID, ok := originalActivity.Object.(string); ok {
+		if objectID := extractObjectID(originalActivity.Object); objectID != "" {
+			objectID, _ = ih.canonicalizeKnownInteractionObject(ctx, objectID)
 			err := ih.likeRepository.DeleteLike(ctx, activity.Actor, objectID)
 			if err != nil {
 				log.Warn("failed to remove like", zap.Error(err))
@@ -2700,7 +2722,8 @@ func (ih *InboxHandler) processUndoActivity(ctx context.Context, activity *activ
 		}
 	case activitypub.AnnounceType:
 		// Undo announce (boost/reblog)
-		if objectID, ok := originalActivity.Object.(string); ok {
+		if objectID := extractObjectID(originalActivity.Object); objectID != "" {
+			objectID, _ = ih.canonicalizeKnownInteractionObject(ctx, objectID)
 			err := ih.socialRepository.DeleteAnnounce(ctx, activity.Actor, objectID)
 			if err != nil {
 				log.Warn("failed to remove announce", zap.Error(err))
