@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
@@ -83,6 +85,7 @@ type InboxHandler struct {
 	instanceRepository           *repositories.InstanceRepository
 	publicKeyCacheRepository     *repositories.PublicKeyCacheRepository
 	notificationRepository       interfaces.NotificationRepository
+	inboxProcessingRepository    inboxProcessingRecorder
 	signatureService             *federation.SignatureService
 	logger                       *zap.Logger
 	authMiddleware               *auth.Middleware
@@ -106,6 +109,11 @@ type inboxRemoteActorResolver interface {
 
 type inboxActivityDeliverer interface {
 	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
+}
+
+type inboxProcessingRecorder interface {
+	TryRecordTarget(ctx context.Context, activityID, targetActorID, activityType string) (bool, error)
+	ForgetTarget(ctx context.Context, activityID, targetActorID string) error
 }
 
 // extractedServices holds services extracted from lambda context
@@ -153,6 +161,7 @@ type repositoryCollection struct {
 	instanceRepo           *repositories.InstanceRepository
 	publicKeyCacheRepo     *repositories.PublicKeyCacheRepository
 	notificationRepo       interfaces.NotificationRepository
+	inboxProcessingRepo    inboxProcessingRecorder
 }
 
 // extractServicesFromContext extracts services from lambda context
@@ -325,6 +334,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 	// Initialize legacy repositories that don't use factory pattern yet
 	repos.socialRepo = repositories.NewSocialRepository(coreDB, cfg.DynamoTableName, logger, nil)
 	repos.federationActivityRepo = repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger, nil)
+	repos.inboxProcessingRepo = repositories.NewInboxProcessingRepository(coreDB, cfg.DynamoTableName, logger, nil)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](coreDB, cfg.DynamoTableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](coreDB, cfg.DynamoTableName, logger)
 	repos.federationCostRepo = repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
@@ -402,6 +412,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		instanceRepository:           repositories.instanceRepo,
 		publicKeyCacheRepository:     repositories.publicKeyCacheRepo,
 		notificationRepository:       repositories.notificationRepo,
+		inboxProcessingRepository:    repositories.inboxProcessingRepo,
 		signatureService:             federationServices.signatureService,
 		logger:                       logger,
 		authMiddleware:               federationServices.authMiddleware,
@@ -1013,15 +1024,6 @@ func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxR
 
 // storeAndProcessActivity stores the activity and processes it based on type
 func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *InboxRequest) error {
-	// Store the activity
-	if err := ih.activityRepository.CreateActivity(ctx.Context(), req.Activity); err != nil {
-		ih.logger.Error("failed to store activity", zap.Error(err))
-		ih.recordFailureCost(req, fmt.Sprintf("Failed to store activity: %v", err), 3)
-		return errors.InternalWithCause(err, "failed to store activity")
-	}
-
-	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
-
 	targetActors := req.TargetActors
 	if len(targetActors) == 0 && req.Actor != nil {
 		targetActors = []*activitypub.Actor{req.Actor}
@@ -1032,11 +1034,48 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 	}
 
 	processingStart := time.Now()
+	targetsToProcess := make([]*activitypub.Actor, 0, len(targetActors))
 	for _, targetActor := range targetActors {
 		if targetActor == nil {
 			continue
 		}
+		shouldProcess, err := ih.shouldProcessInboundActivityTarget(ctx.Context(), req.Activity, targetActor)
+		if err != nil {
+			processingDuration := time.Since(processingStart)
+			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
+			ih.recordFailureCost(req, fmt.Sprintf("Failed to claim %s activity for idempotent processing: %v", req.Activity.Type, err), 0)
+			return errors.InternalWithCause(err, fmt.Sprintf("failed to claim %s activity", req.Activity.Type))
+		}
+		if !shouldProcess {
+			continue
+		}
+		targetsToProcess = append(targetsToProcess, targetActor)
+	}
+
+	if len(targetsToProcess) == 0 {
+		processingDuration := time.Since(processingStart)
+		req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
+		return nil
+	}
+
+	// Store the activity after target idempotency has confirmed there is at
+	// least one local actor that still needs this activity processed. Duplicate
+	// deliveries that race through shared-inbox and actor-inbox lanes therefore
+	// do not create duplicate activity rows.
+	if err := ih.activityRepository.CreateActivity(ctx.Context(), req.Activity); err != nil {
+		for _, targetActor := range targetsToProcess {
+			ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, targetActor)
+		}
+		ih.logger.Error("failed to store activity", zap.Error(err))
+		ih.recordFailureCost(req, fmt.Sprintf("Failed to store activity: %v", err), 3)
+		return errors.InternalWithCause(err, "failed to store activity")
+	}
+
+	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
+
+	for _, targetActor := range targetsToProcess {
 		if err := ih.processActivityByTypeForTarget(ctx.Context(), req.Activity, targetActor, req.CostParams); err != nil {
+			ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, targetActor)
 			processingDuration := time.Since(processingStart)
 			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
@@ -1047,6 +1086,57 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 	processingDuration := time.Since(processingStart)
 	req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 	return nil
+}
+
+func (ih *InboxHandler) shouldProcessInboundActivityTarget(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) (bool, error) {
+	if ih.inboxProcessingRepository == nil || activity == nil || targetActor == nil {
+		return true, nil
+	}
+
+	activityID := strings.TrimSpace(activity.ID)
+	targetActorID := strings.TrimSpace(targetActor.ID)
+	if activityID == "" || targetActorID == "" {
+		return true, nil
+	}
+
+	created, err := ih.inboxProcessingRepository.TryRecordTarget(ctx, activityID, targetActorID, activity.Type)
+	if err != nil {
+		ih.logger.Error("failed to record inbound activity processing receipt",
+			zap.String("activity_id", activityID),
+			zap.String("activity_type", activity.Type),
+			zap.String("target_actor", targetActorID),
+			zap.Error(err))
+		return false, err
+	}
+	if !created {
+		ih.logger.Info("duplicate inbound activity target processing skipped",
+			zap.String("activity_id", activityID),
+			zap.String("activity_type", activity.Type),
+			zap.String("target_actor", targetActorID))
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (ih *InboxHandler) releaseInboundActivityTargetClaim(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) {
+	if ih.inboxProcessingRepository == nil || activity == nil || targetActor == nil {
+		return
+	}
+
+	activityID := strings.TrimSpace(activity.ID)
+	targetActorID := strings.TrimSpace(targetActor.ID)
+	if activityID == "" || targetActorID == "" {
+		return
+	}
+
+	if err := ih.inboxProcessingRepository.ForgetTarget(ctx, activityID, targetActorID); err != nil {
+		ih.logger.Warn("failed to release inbound activity processing receipt after processing error",
+			zap.String("activity_id", activityID),
+			zap.String("activity_type", activity.Type),
+			zap.String("target_actor", targetActorID),
+			zap.Error(err))
+	}
 }
 
 func (ih *InboxHandler) processActivityByTypeForTarget(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor, costParams *federation.CostCalculationParams) error {
@@ -2137,9 +2227,8 @@ func (ih *InboxHandler) buildCanonicalRemoteStatus(note *activitypub.Note) *mode
 	return federation.BuildCanonicalRemoteStatus(note, ih.baseURL)
 }
 
-func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
-	_, err := federation.MaterializeRemoteNote(ctx, ih.objectRepository, ih.statusRepository, note, ih.baseURL)
-	return err
+func (ih *InboxHandler) materializeRemoteNoteStatus(ctx context.Context, note *activitypub.Note) (*models.Status, error) {
+	return federation.MaterializeRemoteNote(ctx, ih.objectRepository, ih.statusRepository, note, ih.baseURL)
 }
 
 func (ih *InboxHandler) upsertRemoteNoteStatus(ctx context.Context, note *activitypub.Note) error {
@@ -2155,7 +2244,8 @@ func (ih *InboxHandler) upsertRemoteNoteStatus(ctx context.Context, note *activi
 	existing, err := ih.statusRepository.GetStatus(ctx, status.StatusID)
 	if err != nil {
 		if isRemoteStatusNotFound(err) {
-			return ih.materializeRemoteNoteStatus(ctx, note)
+			_, materializeErr := ih.materializeRemoteNoteStatus(ctx, note)
+			return materializeErr
 		}
 		return err
 	}
@@ -2287,15 +2377,356 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 			}
 		}
 
-		if err := ih.materializeRemoteNoteStatus(ctx, &note); err != nil {
+		status, err := ih.materializeRemoteNoteStatus(ctx, &note)
+		if err != nil {
 			log.Error("failed to materialize remote note status",
 				zap.String("note_id", note.ID),
 				zap.Error(err))
 			return err
 		}
+		ih.createRemoteCreateNotifications(ctx, activity, targetActor, &note, status)
 	}
 
 	return nil
+}
+
+func (ih *InboxHandler) createRemoteCreateNotifications(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	targetActor *activitypub.Actor,
+	note *activitypub.Note,
+	status *models.Status,
+) {
+	if ih.notificationRepository == nil || activity == nil || targetActor == nil || note == nil || status == nil {
+		return
+	}
+
+	recipient := strings.TrimSpace(targetActor.PreferredUsername)
+	if recipient == "" {
+		recipient = ih.extractUsernameFromActorID(targetActor.ID)
+	}
+	if recipient == "" {
+		return
+	}
+
+	actorID := strings.TrimSpace(activity.Actor)
+	if actorID == "" {
+		actorID = strings.TrimSpace(note.AttributedTo)
+	}
+	if actorID == "" || strings.EqualFold(actorID, strings.TrimSpace(targetActor.ID)) {
+		return
+	}
+
+	if ih.remoteNoteMentionsTargetActor(note, targetActor) {
+		ih.createRemoteCreateNotification(ctx, remoteCreateNotificationInput{
+			kind:        common.NotificationTypeMention,
+			recipient:   recipient,
+			actorID:     actorID,
+			activity:    activity,
+			note:        note,
+			status:      status,
+			title:       fmt.Sprintf("%s mentioned you", ih.remoteNotificationActorLabel(actorID)),
+			body:        fmt.Sprintf("%s mentioned you", ih.remoteNotificationActorLabel(actorID)),
+			groupKey:    fmt.Sprintf("remote-mention:%s:%s", recipient, status.StatusID),
+			extraData:   map[string]interface{}{"mentioner": actorID},
+			stableParts: []string{recipient, actorID, strings.TrimSpace(activity.ID), strings.TrimSpace(note.ID), status.StatusID},
+		})
+	}
+
+	parentStatus, parentID := ih.remoteCreateReplyParent(ctx, note, targetActor)
+	if parentStatus == nil || parentID == "" {
+		return
+	}
+
+	ih.createRemoteCreateNotification(ctx, remoteCreateNotificationInput{
+		kind:      common.NotificationTypeReply,
+		recipient: recipient,
+		actorID:   actorID,
+		activity:  activity,
+		note:      note,
+		status:    status,
+		title:     fmt.Sprintf("%s replied to your post", ih.remoteNotificationActorLabel(actorID)),
+		body:      fmt.Sprintf("%s replied to your post", ih.remoteNotificationActorLabel(actorID)),
+		groupKey:  fmt.Sprintf("remote-reply:%s:%s:%s", recipient, parentID, status.StatusID),
+		extraData: map[string]interface{}{
+			"parent_status_id": parentID,
+			"replier":          actorID,
+		},
+		stableParts: []string{recipient, actorID, strings.TrimSpace(activity.ID), strings.TrimSpace(note.ID), status.StatusID, parentID},
+	})
+}
+
+type remoteCreateNotificationInput struct {
+	kind        string
+	recipient   string
+	actorID     string
+	activity    *activitypub.Activity
+	note        *activitypub.Note
+	status      *models.Status
+	title       string
+	body        string
+	groupKey    string
+	extraData   map[string]interface{}
+	stableParts []string
+}
+
+func (ih *InboxHandler) createRemoteCreateNotification(ctx context.Context, input remoteCreateNotificationInput) {
+	if input.status == nil || input.note == nil || input.activity == nil {
+		return
+	}
+
+	createdAt := remoteCreateNotificationCreatedAt(input.activity, input.note, input.status)
+	notification := models.NewNotificationBuilder().
+		ForUser(input.recipient).
+		OfType(input.kind).
+		FromActor(input.actorID, "remote_actor").
+		AboutTarget(input.status.StatusID, "status").
+		WithContent(input.title, input.body).
+		WithGroupKey(input.groupKey).
+		Build()
+	notification.ID = deterministicRemoteCreateNotificationID(input.kind, input.stableParts...)
+	notification.CreatedAt = createdAt
+	notification.UpdatedAt = createdAt
+
+	if notification.Data == nil {
+		notification.Data = make(map[string]interface{})
+	}
+	for key, value := range input.extraData {
+		notification.Data[key] = value
+	}
+	notification.Data["activity_id"] = strings.TrimSpace(input.activity.ID)
+	notification.Data["remote_actor_id"] = input.actorID
+	notification.Data["remote_note_id"] = strings.TrimSpace(input.note.ID)
+	notification.Data["status_id"] = input.status.StatusID
+	notification.Data["status_url"] = strings.TrimSpace(input.note.ID)
+	notification.Data["postSnapshot"] = remoteCreatePostSnapshot(input.note, input.status)
+
+	if err := ih.notificationRepository.CreateNotification(ctx, notification); err != nil {
+		if isRemoteCreateNotificationDuplicate(err) {
+			ih.logger.Debug("remote create notification already exists",
+				zap.String("notification_id", notification.ID),
+				zap.String("notification_type", input.kind),
+				zap.String("recipient", input.recipient))
+			return
+		}
+		ih.logger.Warn("failed to create remote create notification",
+			zap.String("notification_id", notification.ID),
+			zap.String("notification_type", input.kind),
+			zap.String("recipient", input.recipient),
+			zap.String("activity_id", input.activity.ID),
+			zap.Error(err))
+		return
+	}
+
+	ih.logger.Info("created remote create notification",
+		zap.String("notification_id", notification.ID),
+		zap.String("notification_type", input.kind),
+		zap.String("recipient", input.recipient),
+		zap.String("activity_id", input.activity.ID))
+}
+
+func remoteCreateNotificationCreatedAt(activity *activitypub.Activity, note *activitypub.Note, status *models.Status) time.Time {
+	switch {
+	case note != nil && note.Published != nil && !note.Published.IsZero():
+		return note.Published.UTC()
+	case activity != nil && activity.Published != nil && !activity.Published.IsZero():
+		return activity.Published.UTC()
+	case status != nil && !status.PublishedAt.IsZero():
+		return status.PublishedAt.UTC()
+	case status != nil && !status.CreatedAt.IsZero():
+		return status.CreatedAt.UTC()
+	default:
+		return time.Now().UTC()
+	}
+}
+
+func deterministicRemoteCreateNotificationID(kind string, parts ...string) string {
+	normalizedKind := strings.ToLower(strings.TrimSpace(kind))
+	var normalized strings.Builder
+	normalized.WriteString(normalizedKind)
+	for _, part := range parts {
+		normalized.WriteByte('\x00')
+		normalized.WriteString(strings.TrimSpace(part))
+	}
+	sum := sha256.Sum256([]byte(normalized.String()))
+	return fmt.Sprintf("remote-create-%s-%s", normalizedKind, hex.EncodeToString(sum[:]))
+}
+
+func remoteCreatePostSnapshot(note *activitypub.Note, status *models.Status) map[string]interface{} {
+	snapshot := map[string]interface{}{}
+	if note != nil {
+		snapshot["id"] = strings.TrimSpace(note.ID)
+		snapshot["content"] = note.Content
+		snapshot["attributedTo"] = strings.TrimSpace(note.AttributedTo)
+		snapshot["url"] = strings.TrimSpace(note.ID)
+		if note.InReplyTo != "" {
+			snapshot["inReplyToId"] = strings.TrimSpace(note.InReplyTo)
+		}
+		if note.Visibility != "" {
+			snapshot["visibility"] = strings.TrimSpace(note.Visibility)
+		}
+		if note.Published != nil && !note.Published.IsZero() {
+			snapshot["createdAt"] = note.Published.UTC().Format(time.RFC3339)
+		}
+	}
+	if status != nil {
+		snapshot["statusId"] = status.StatusID
+		if snapshot["visibility"] == nil && status.Visibility != "" {
+			snapshot["visibility"] = status.Visibility
+		}
+		if snapshot["createdAt"] == nil && !status.PublishedAt.IsZero() {
+			snapshot["createdAt"] = status.PublishedAt.UTC().Format(time.RFC3339)
+		}
+	}
+	return snapshot
+}
+
+func (ih *InboxHandler) remoteNoteMentionsTargetActor(note *activitypub.Note, targetActor *activitypub.Actor) bool {
+	if note == nil || targetActor == nil {
+		return false
+	}
+
+	targetIDs := ih.localTargetActorIDs(targetActor)
+	targetUsername := strings.ToLower(strings.TrimSpace(targetActor.PreferredUsername))
+	targetDomain := ih.localDomain()
+
+	for _, tag := range note.Tag {
+		if !strings.EqualFold(strings.TrimSpace(tag.Type), "Mention") {
+			continue
+		}
+
+		href := strings.TrimSpace(tag.Href)
+		if href != "" {
+			if _, ok := targetIDs[strings.ToLower(strings.TrimRight(href, "/"))]; ok {
+				return true
+			}
+			if username, domain := actorURLUsernameDomain(href); username != "" &&
+				strings.EqualFold(username, targetUsername) &&
+				(targetDomain == "" || strings.EqualFold(domain, targetDomain)) {
+				return true
+			}
+		}
+
+		name := strings.TrimSpace(tag.Name)
+		if name == "" || targetUsername == "" {
+			continue
+		}
+		name = strings.TrimPrefix(name, "@")
+		parts := strings.Split(name, "@")
+		if len(parts) == 1 && strings.EqualFold(parts[0], targetUsername) {
+			return true
+		}
+		if len(parts) >= 2 && strings.EqualFold(parts[0], targetUsername) &&
+			(targetDomain == "" || strings.EqualFold(parts[len(parts)-1], targetDomain)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (ih *InboxHandler) localTargetActorIDs(targetActor *activitypub.Actor) map[string]struct{} {
+	targets := make(map[string]struct{}, 2)
+	add := func(value string) {
+		value = strings.ToLower(strings.TrimRight(strings.TrimSpace(value), "/"))
+		if value != "" {
+			targets[value] = struct{}{}
+		}
+	}
+	if targetActor != nil {
+		add(targetActor.ID)
+		if username := strings.TrimSpace(targetActor.PreferredUsername); username != "" {
+			add(strings.TrimRight(ih.baseURL, "/") + "/users/" + username)
+		}
+	}
+	return targets
+}
+
+func (ih *InboxHandler) remoteCreateReplyParent(ctx context.Context, note *activitypub.Note, targetActor *activitypub.Actor) (*models.Status, string) {
+	if ih.statusRepository == nil || note == nil || strings.TrimSpace(note.InReplyTo) == "" || targetActor == nil {
+		return nil, ""
+	}
+
+	for _, candidate := range models.StatusLookupCandidatesForDomain(note.InReplyTo, ih.localDomain()) {
+		parent, err := ih.statusRepository.GetStatus(ctx, candidate)
+		if err != nil {
+			if !isRemoteStatusNotFound(err) {
+				ih.logger.Debug("failed to resolve remote create reply parent for notification",
+					zap.String("in_reply_to", note.InReplyTo),
+					zap.String("candidate", candidate),
+					zap.Error(err))
+			}
+			continue
+		}
+		if ih.replyParentBelongsToTarget(parent, targetActor) {
+			return parent, parent.StatusID
+		}
+	}
+
+	return nil, ""
+}
+
+func (ih *InboxHandler) replyParentBelongsToTarget(parent *models.Status, targetActor *activitypub.Actor) bool {
+	if parent == nil || targetActor == nil {
+		return false
+	}
+
+	targetID := strings.TrimRight(strings.TrimSpace(targetActor.ID), "/")
+	targetUsername := strings.TrimSpace(targetActor.PreferredUsername)
+	if targetID != "" && strings.EqualFold(strings.TrimRight(strings.TrimSpace(parent.AuthorID), "/"), targetID) {
+		return true
+	}
+	if parent.Note != nil && targetID != "" && strings.EqualFold(strings.TrimRight(strings.TrimSpace(parent.Note.AttributedTo), "/"), targetID) {
+		return true
+	}
+	if targetUsername != "" && strings.EqualFold(strings.TrimSpace(parent.AuthorUsername), targetUsername) {
+		return true
+	}
+	return false
+}
+
+func (ih *InboxHandler) remoteNotificationActorLabel(actorID string) string {
+	if handle := ih.extractHandleFromActorID(actorID); handle != "" {
+		return handle
+	}
+	if username := ih.extractUsernameFromActorID(actorID); username != "" {
+		return username
+	}
+	return strings.TrimSpace(actorID)
+}
+
+func (ih *InboxHandler) localDomain() string {
+	if cfg := ih.getConfig(); cfg != nil && strings.TrimSpace(cfg.Domain) != "" {
+		return strings.TrimSpace(cfg.Domain)
+	}
+	if parsed, err := url.Parse(strings.TrimSpace(ih.baseURL)); err == nil && parsed != nil {
+		return parsed.Hostname()
+	}
+	return ""
+}
+
+func actorURLUsernameDomain(raw string) (string, string) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil || parsed.Hostname() == "" {
+		return "", ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 0 {
+		return "", parsed.Hostname()
+	}
+	username := strings.TrimPrefix(parts[len(parts)-1], "@")
+	return username, parsed.Hostname()
+}
+
+func isRemoteCreateNotificationDuplicate(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.HasCode(err, errors.CodeAlreadyExists) ||
+		errors.HasCode(err, errors.CodeConflict) ||
+		stdErrors.Is(err, storage.ErrAlreadyExists) ||
+		dynamormerrors.IsConditionFailed(err) ||
+		strings.Contains(strings.ToLower(err.Error()), "already exists")
 }
 
 // processRemoteUpdateActivity processes an incoming Update activity from a remote instance
