@@ -113,6 +113,7 @@ type Handler struct {
 	objectRepo             objectGetter
 	authorizedFetchService authorizedFetchVerifier
 	instanceRepo           instanceStateGetter
+	relationshipRepo       relationshipChecker
 }
 
 type objectGetter interface {
@@ -128,6 +129,10 @@ type authorizedFetchVerifier interface {
 
 type instanceStateGetter interface {
 	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
+}
+
+type relationshipChecker interface {
+	IsFollowing(ctx context.Context, followerUsername, targetActorID string) (bool, error)
 }
 
 // NewHandler creates a new objects handler using standardized services
@@ -149,6 +154,7 @@ func NewHandler() *Handler {
 		objectRepo:             objectRepo,
 		authorizedFetchService: authorizedFetchService,
 		instanceRepo:           repos.Instance(),
+		relationshipRepo:       repos.Relationship(),
 	}
 }
 
@@ -192,6 +198,7 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	wantsHTML := strings.Contains(acceptHeader, "text/html")
 
 	authorizedFetchEnabled := h.authorizedFetchService != nil && h.authorizedFetchService.IsAuthorizedFetchEnabled(runCtx)
+	var verifiedFetchActor *activitypub.Actor
 
 	// Enforce authorized fetch whenever this handler would return ActivityPub JSON.
 	// Do not rely on client-controlled Accept header substring checks as a security gate.
@@ -213,7 +220,7 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		}
 
 		// Verify authorized fetch
-		_, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
+		verifiedFetchActor, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
 		if err != nil {
 			// Check if signature is missing vs invalid
 			if strings.Contains(err.Error(), "missing signature") {
@@ -265,10 +272,10 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 
 	// Return HTML for browsers
 	if wantsHTML {
-		if authorizedFetchEnabled && !objectsIsPubliclyAddressed(objInterface) {
-			// When Authorized Fetch is enabled, do not expose HTML renderings for non-public objects.
-			// This avoids leaking followers-only (or otherwise restricted) content to unauthenticated browsers.
-			logger.Debug("suppressing HTML response for non-public object while authorized fetch is enabled",
+		if !objectsIsPubliclyAddressed(objInterface) {
+			// Never expose browser HTML renderings for non-public objects.
+			// This avoids leaking followers-only, direct, or otherwise restricted content.
+			logger.Debug("suppressing HTML response for non-public object",
 				zap.String("object_id", objectID),
 				zap.String("request_id", requestID),
 			)
@@ -289,12 +296,87 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		}, nil
 	}
 
+	if !objectsIsPubliclyAddressed(objInterface) {
+		if verifiedFetchActor == nil {
+			var resp *apptheory.Response
+			var err error
+			verifiedFetchActor, resp, err = h.verifyObjectAuthorizedFetch(runCtx, ctx, objectID, requestID, true)
+			if err != nil {
+				return nil, err
+			}
+			if resp != nil {
+				return resp, nil
+			}
+		}
+
+		allowed, err := h.authorizedActorCanFetchObject(runCtx, objInterface, verifiedFetchActor)
+		if err != nil {
+			logger.Warn("failed to evaluate non-public object fetch authorization",
+				zap.String("object_id", objectID),
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
+		}
+		if err != nil || !allowed {
+			logger.Debug("suppressing ActivityPub JSON response for unauthorized non-public object fetch",
+				zap.String("object_id", objectID),
+				zap.String("request_id", requestID),
+			)
+			return objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+		}
+	}
+
 	// Return ActivityPub JSON (default)
 	logger.Debug("returning ActivityPub JSON representation",
 		zap.String("object_id", objectID),
 		zap.String("request_id", requestID),
 	)
 	return objectsActivityJSON(http.StatusOK, objInterface)
+}
+
+func (h *Handler) verifyObjectAuthorizedFetch(
+	ctx context.Context,
+	reqCtx *apptheory.Context,
+	objectID string,
+	requestID string,
+	hideUnauthorized bool,
+) (*activitypub.Actor, *apptheory.Response, error) {
+	if h.authorizedFetchService == nil {
+		return nil, objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+	}
+
+	httpReq, err := h.convertAppTheoryRequest(reqCtx)
+	if err != nil {
+		logger.Error("failed to convert request for authorized object fetch",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		if hideUnauthorized {
+			return nil, objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+		}
+		return nil, objectsJSONError(http.StatusBadRequest, "malformed request"), nil
+	}
+
+	actor, err := h.authorizedFetchService.VerifyAuthorizedFetch(ctx, httpReq)
+	if err == nil {
+		return actor, nil, nil
+	}
+
+	if hideUnauthorized {
+		logger.Debug("authorized object fetch verification failed for non-public object",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return nil, objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+	}
+
+	if strings.Contains(err.Error(), "missing signature") {
+		return nil, objectsJSONError(http.StatusUnauthorized, "signature required for authorized fetch"), nil
+	}
+
+	return nil, objectsJSONError(http.StatusForbidden, "signature verification failed"), nil
 }
 
 func (h *Handler) handleTombstonedObject(ctx context.Context, lookupID, objectID, requestID string, wantsHTML bool) (*apptheory.Response, bool, error) {
@@ -975,6 +1057,138 @@ func objectsIsPubliclyAddressed(obj any) bool {
 	return objectsRecipientsContainPublic(addressing.To) || objectsRecipientsContainPublic(addressing.CC)
 }
 
+func (h *Handler) authorizedActorCanFetchObject(ctx context.Context, obj any, actor *activitypub.Actor) (bool, error) {
+	if objectsIsPubliclyAddressed(obj) {
+		return true, nil
+	}
+	if actor == nil {
+		return false, nil
+	}
+
+	actorID := objectsActorID(actor)
+	if actorID == "" {
+		return false, nil
+	}
+
+	objectActorID := objectsAttributedActorID(obj)
+	if objectActorID != "" && objectsActorIdentifiersMatch(actorID, objectActorID) {
+		return true, nil
+	}
+
+	recipients := objectsAllRecipients(obj)
+	if objectsRecipientsContainActor(recipients, actor) {
+		return true, nil
+	}
+
+	if objectActorID == "" || !objectsRecipientsContainFollowersCollection(recipients, objectActorID) {
+		return false, nil
+	}
+	if h.relationshipRepo == nil {
+		return false, nil
+	}
+
+	return h.relationshipRepo.IsFollowing(ctx, actorID, objectActorID)
+}
+
+func objectsActorID(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+	if actorID := strings.TrimSpace(actor.ID); actorID != "" {
+		return actorID
+	}
+	if actorURL := strings.TrimSpace(actor.URL); actorURL != "" {
+		return actorURL
+	}
+	return strings.TrimSpace(actor.PreferredUsername)
+}
+
+func objectsAttributedActorID(obj any) string {
+	if obj == nil {
+		return ""
+	}
+
+	if note, ok := obj.(*activitypub.Note); ok {
+		return strings.TrimSpace(note.AttributedTo)
+	}
+	if activity, ok := obj.(*activitypub.Activity); ok {
+		return strings.TrimSpace(activity.Actor)
+	}
+	if objMap, ok := obj.(map[string]any); ok {
+		if attributedTo, ok := objMap["attributedTo"].(string); ok && strings.TrimSpace(attributedTo) != "" {
+			return strings.TrimSpace(attributedTo)
+		}
+		if actor, ok := objMap["actor"].(string); ok && strings.TrimSpace(actor) != "" {
+			return strings.TrimSpace(actor)
+		}
+	}
+
+	body, err := json.Marshal(obj)
+	if err != nil {
+		return ""
+	}
+	var actorFields struct {
+		AttributedTo string `json:"attributedTo"`
+		Actor        string `json:"actor"`
+	}
+	if err := json.Unmarshal(body, &actorFields); err != nil {
+		return ""
+	}
+	if strings.TrimSpace(actorFields.AttributedTo) != "" {
+		return strings.TrimSpace(actorFields.AttributedTo)
+	}
+	return strings.TrimSpace(actorFields.Actor)
+}
+
+func objectsAllRecipients(obj any) []string {
+	if obj == nil {
+		return nil
+	}
+
+	if note, ok := obj.(*activitypub.Note); ok {
+		return objectsAppendRecipients(nil, note.To, note.CC, note.BTo, note.BCC)
+	}
+	if activity, ok := obj.(*activitypub.Activity); ok {
+		return objectsAppendRecipients(nil, activity.To, activity.CC, activity.BTo, activity.BCC)
+	}
+	if objMap, ok := obj.(map[string]any); ok {
+		return objectsAppendRecipients(nil,
+			objectsStringSliceFromAny(objMap["to"]),
+			objectsStringSliceFromAny(objMap["cc"]),
+			objectsStringSliceFromAny(objMap["bto"]),
+			objectsStringSliceFromAny(objMap["bcc"]),
+		)
+	}
+
+	body, err := json.Marshal(obj)
+	if err != nil {
+		return nil
+	}
+	var addressing struct {
+		To  []string `json:"to"`
+		CC  []string `json:"cc"`
+		BTo []string `json:"bto"`
+		BCC []string `json:"bcc"`
+	}
+	if err := json.Unmarshal(body, &addressing); err != nil {
+		return nil
+	}
+	return objectsAppendRecipients(nil, addressing.To, addressing.CC, addressing.BTo, addressing.BCC)
+}
+
+func objectsAppendRecipients(base []string, recipientSets ...[]string) []string {
+	for _, recipients := range recipientSets {
+		for _, recipient := range recipients {
+			recipient = strings.TrimSpace(recipient)
+			if recipient == "" {
+				continue
+			}
+			base = append(base, recipient)
+		}
+	}
+	return base
+}
+
 func objectsRecipientsContainPublic(recipients []string) bool {
 	for _, recipient := range recipients {
 		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
@@ -982,6 +1196,56 @@ func objectsRecipientsContainPublic(recipients []string) bool {
 		}
 	}
 	return false
+}
+
+func objectsRecipientsContainActor(recipients []string, actor *activitypub.Actor) bool {
+	actorID := objectsActorID(actor)
+	if actorID == "" {
+		return false
+	}
+	for _, recipient := range recipients {
+		if objectsActorIdentifiersMatch(recipient, actorID) {
+			return true
+		}
+	}
+	return false
+}
+
+func objectsRecipientsContainFollowersCollection(recipients []string, authorActorID string) bool {
+	followersCollection := strings.TrimRight(strings.TrimSpace(authorActorID), "/") + "/followers"
+	if followersCollection == "/followers" {
+		return false
+	}
+	for _, recipient := range recipients {
+		if strings.TrimRight(strings.TrimSpace(recipient), "/") == followersCollection {
+			return true
+		}
+	}
+	return false
+}
+
+func objectsActorIdentifiersMatch(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	if strings.TrimRight(left, "/") == strings.TrimRight(right, "/") {
+		return true
+	}
+
+	leftNormalized := storageModels.NormalizeRelationshipIdentity(left, objectsLocalDomain())
+	rightNormalized := storageModels.NormalizeRelationshipIdentity(right, objectsLocalDomain())
+	return leftNormalized != "" && leftNormalized == rightNormalized
+}
+
+func objectsLocalDomain() string {
+	if cfg != nil {
+		if domain := strings.TrimSpace(cfg.Domain); domain != "" {
+			return domain
+		}
+	}
+	return strings.TrimSpace(config.Get().Domain)
 }
 
 func objectsStringSliceFromAny(value any) []string {

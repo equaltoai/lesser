@@ -62,12 +62,29 @@ func (f *fakeObjectRepo) IsTombstoned(_ context.Context, id string) (bool, error
 type fakeAuthorizedFetch struct {
 	enabled   bool
 	verifyErr error
+	actor     *activitypub.Actor
+	calls     int
 }
 
 func (f *fakeAuthorizedFetch) IsAuthorizedFetchEnabled(context.Context) bool { return f.enabled }
 
 func (f *fakeAuthorizedFetch) VerifyAuthorizedFetch(context.Context, *http.Request) (*activitypub.Actor, error) {
-	return nil, f.verifyErr
+	f.calls++
+	return f.actor, f.verifyErr
+}
+
+type fakeRelationshipChecker struct {
+	following map[string]bool
+	err       error
+	calls     int
+}
+
+func (f *fakeRelationshipChecker) IsFollowing(_ context.Context, followerUsername, targetActorID string) (bool, error) {
+	f.calls++
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.following[followerUsername+"|"+targetActorID], nil
 }
 
 type fakeInstanceRepo struct {
@@ -305,6 +322,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 				Sensitive: true,
 				Published: &now,
 				Updated:   &now,
+				To:        []string{activitypub.PublicAddress},
 			},
 			Content:      "Hello <b>world</b>",
 			AttributedTo: "https://example.com/users/alice",
@@ -399,7 +417,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 	})
 
 	t.Run("activitypub json response", func(t *testing.T) {
-		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note"}}
+		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note", "to": []any{activitypub.PublicAddress}}}
 		h := &Handler{
 			instanceRepo:           instanceRepo,
 			objectRepo:             objRepo,
@@ -426,6 +444,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 				ID:        "https://example.com/users/alice/statuses/123",
 				Type:      activitypub.NoteType,
 				Published: &now,
+				To:        []string{activitypub.PublicAddress},
 			},
 			Content:      "hello from canonical route",
 			AttributedTo: "https://example.com/users/alice",
@@ -636,6 +655,7 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		require.NotNil(t, h.objectRepo)
 		require.NotNil(t, h.authorizedFetchService)
 		require.NotNil(t, h.instanceRepo)
+		require.NotNil(t, h.relationshipRepo)
 	})
 
 	t.Run("initializeObjects + main register routes", func(t *testing.T) {
@@ -653,7 +673,7 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		require.NotNil(t, lambdaCtx)
 		require.NotNil(t, repos)
 
-		fakeRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note"}}
+		fakeRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note", "to": []any{activitypub.PublicAddress}}}
 		newHandlerFn = func() *Handler {
 			return &Handler{
 				objectRepo:             fakeRepo,
@@ -698,7 +718,11 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 	})
 
 	t.Run("build app serves canonical status routes", func(t *testing.T) {
-		fakeRepo := &fakeObjectRepo{obj: map[string]any{"id": "https://example.com/users/alice/statuses/123", "type": "Note"}}
+		fakeRepo := &fakeObjectRepo{obj: map[string]any{
+			"id":   "https://example.com/users/alice/statuses/123",
+			"type": "Note",
+			"to":   []any{activitypub.PublicAddress},
+		}}
 		app := buildApp(&Handler{
 			objectRepo:             fakeRepo,
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
@@ -729,6 +753,323 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		require.Equal(t, 200, lambdaResp.StatusCode)
 		require.Equal(t, "https://example.com/users/alice/statuses/123", fakeRepo.gotID)
 		require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
+	})
+}
+
+func TestHandleGetObject_PrivateVisibilityGate_Round29(t *testing.T) {
+	origCfg := cfg
+	origLogger := logger
+	t.Cleanup(func() {
+		cfg = origCfg
+		logger = origLogger
+	})
+
+	cfg = &config.Config{Domain: "example.com"}
+	logger = zap.NewNop()
+
+	instanceRepo := &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}}
+	authorID := "https://example.com/users/alice"
+	followersCollection := authorID + "/followers"
+	privateNote := func() *activitypub.Note {
+		return &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice/statuses/private-1",
+				Type: activitypub.NoteType,
+				To:   []string{followersCollection},
+			},
+			Content:      "followers only",
+			AttributedTo: authorID,
+		}
+	}
+	requestCtx := func() *apptheory.Context {
+		return &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/private-1",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{
+				"username": "alice",
+				"id":       "private-1",
+			},
+		}
+	}
+
+	t.Run("non-public canonical object is hidden from unsigned fetch even when authorized fetch is globally disabled", func(t *testing.T) {
+		authFetch := &fakeAuthorizedFetch{enabled: false, verifyErr: errors.New("missing signature")}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: privateNote()},
+			authorizedFetchService: authFetch,
+		}
+
+		resp, err := h.HandleGetObject(requestCtx())
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+		require.Equal(t, 1, authFetch.calls)
+	})
+
+	t.Run("signed unrelated actor remains hidden from followers-only object", func(t *testing.T) {
+		authFetch := &fakeAuthorizedFetch{
+			enabled: true,
+			actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/charlie"},
+				PreferredUsername: "charlie",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: privateNote()},
+			authorizedFetchService: authFetch,
+			relationshipRepo:       &fakeRelationshipChecker{},
+		}
+
+		resp, err := h.HandleGetObject(requestCtx())
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+		require.Equal(t, 1, authFetch.calls)
+	})
+
+	t.Run("accepted follower can fetch followers-only object", func(t *testing.T) {
+		actorID := "https://remote.example/users/bob"
+		authFetch := &fakeAuthorizedFetch{
+			enabled: true,
+			actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: actorID},
+				PreferredUsername: "bob",
+			},
+		}
+		relationships := &fakeRelationshipChecker{
+			following: map[string]bool{actorID + "|" + authorID: true},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: privateNote()},
+			authorizedFetchService: authFetch,
+			relationshipRepo:       relationships,
+		}
+
+		resp, err := h.HandleGetObject(requestCtx())
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+		require.Equal(t, 1, relationships.calls)
+	})
+
+	t.Run("explicitly addressed actor can fetch non-public object without follower lookup", func(t *testing.T) {
+		actorID := "https://remote.example/users/bob"
+		note := privateNote()
+		note.To = []string{actorID}
+		relationships := &fakeRelationshipChecker{}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   &fakeObjectRepo{obj: note},
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled: true,
+				actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: actorID},
+					PreferredUsername: "bob",
+				},
+			},
+			relationshipRepo: relationships,
+		}
+
+		resp, err := h.HandleGetObject(requestCtx())
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, 0, relationships.calls)
+	})
+
+	t.Run("author can fetch own non-public object", func(t *testing.T) {
+		relationships := &fakeRelationshipChecker{}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   &fakeObjectRepo{obj: privateNote()},
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled: true,
+				actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: authorID},
+					PreferredUsername: "alice",
+				},
+			},
+			relationshipRepo: relationships,
+		}
+
+		resp, err := h.HandleGetObject(requestCtx())
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, 0, relationships.calls)
+	})
+}
+
+func TestObjectAuthorizationHelpers_Round29(t *testing.T) {
+	origCfg := cfg
+	origLogger := logger
+	t.Cleanup(func() {
+		cfg = origCfg
+		logger = origLogger
+	})
+	cfg = &config.Config{Domain: "example.com"}
+	logger = zap.NewNop()
+
+	authorID := "https://example.com/users/alice"
+	bobID := "https://remote.example/users/bob"
+	publicNote := &activitypub.Note{
+		BaseObject:   activitypub.BaseObject{ID: "public", Type: activitypub.NoteType, To: []string{activitypub.PublicAddress}},
+		AttributedTo: authorID,
+	}
+	privateNote := &activitypub.Note{
+		BaseObject:   activitypub.BaseObject{ID: "private", Type: activitypub.NoteType, To: []string{authorID + "/followers"}},
+		AttributedTo: authorID,
+	}
+
+	t.Run("authorized actor helper covers deny and allow branches", func(t *testing.T) {
+		h := &Handler{}
+		allowed, err := h.authorizedActorCanFetchObject(context.Background(), publicNote, nil)
+		require.NoError(t, err)
+		require.True(t, allowed)
+
+		allowed, err = h.authorizedActorCanFetchObject(context.Background(), privateNote, nil)
+		require.NoError(t, err)
+		require.False(t, allowed)
+
+		allowed, err = h.authorizedActorCanFetchObject(context.Background(), privateNote, &activitypub.Actor{})
+		require.NoError(t, err)
+		require.False(t, allowed)
+
+		allowed, err = h.authorizedActorCanFetchObject(context.Background(), privateNote, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: authorID + "/"},
+		})
+		require.NoError(t, err)
+		require.True(t, allowed)
+
+		allowed, err = h.authorizedActorCanFetchObject(context.Background(), map[string]any{
+			"id":           "direct",
+			"type":         "Note",
+			"attributedTo": authorID,
+			"to":           []any{bobID},
+		}, &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: bobID}})
+		require.NoError(t, err)
+		require.True(t, allowed)
+
+		allowed, err = h.authorizedActorCanFetchObject(context.Background(), privateNote, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: bobID},
+		})
+		require.NoError(t, err)
+		require.False(t, allowed)
+
+		relErr := errors.New("relationship down")
+		allowed, err = (&Handler{relationshipRepo: &fakeRelationshipChecker{err: relErr}}).
+			authorizedActorCanFetchObject(context.Background(), privateNote, &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: bobID},
+			})
+		require.ErrorIs(t, err, relErr)
+		require.False(t, allowed)
+	})
+
+	t.Run("authorized fetch helper covers response branches", func(t *testing.T) {
+		reqCtx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/private",
+				Headers: map[string][]string{"host": {"example.com"}},
+			},
+		}
+
+		actor, resp, err := (&Handler{}).verifyObjectAuthorizedFetch(context.Background(), reqCtx, "private", "req", true)
+		require.NoError(t, err)
+		require.Nil(t, actor)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+
+		actor, resp, err = (&Handler{authorizedFetchService: &fakeAuthorizedFetch{actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: bobID},
+		}}}).verifyObjectAuthorizedFetch(context.Background(), reqCtx, "private", "req", false)
+		require.NoError(t, err)
+		require.NotNil(t, actor)
+		require.Nil(t, resp)
+
+		_, resp, err = (&Handler{authorizedFetchService: &fakeAuthorizedFetch{verifyErr: errors.New("missing signature")}}).
+			verifyObjectAuthorizedFetch(context.Background(), reqCtx, "private", "req", false)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+
+		_, resp, err = (&Handler{authorizedFetchService: &fakeAuthorizedFetch{verifyErr: errors.New("bad signature")}}).
+			verifyObjectAuthorizedFetch(context.Background(), reqCtx, "private", "req", false)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusForbidden, resp.Status)
+
+		badCtx := &apptheory.Context{Request: apptheory.Request{Method: "bad method", Path: "/objects/private"}}
+		_, resp, err = (&Handler{authorizedFetchService: &fakeAuthorizedFetch{}}).
+			verifyObjectAuthorizedFetch(context.Background(), badCtx, "private", "req", false)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+
+		_, resp, err = (&Handler{authorizedFetchService: &fakeAuthorizedFetch{}}).
+			verifyObjectAuthorizedFetch(context.Background(), badCtx, "private", "req", true)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+	})
+
+	t.Run("identity and recipient extraction helpers cover object shapes", func(t *testing.T) {
+		require.Empty(t, objectsActorID(nil))
+		require.Equal(t, "https://example.com/users/carol", objectsActorID(&activitypub.Actor{
+			URL: "https://example.com/users/carol",
+		}))
+		require.Equal(t, "dana", objectsActorID(&activitypub.Actor{PreferredUsername: "dana"}))
+
+		require.Empty(t, objectsAttributedActorID(nil))
+		require.Equal(t, authorID, objectsAttributedActorID(privateNote))
+		require.Equal(t, authorID, objectsAttributedActorID(&activitypub.Activity{Actor: authorID}))
+		require.Equal(t, authorID, objectsAttributedActorID(map[string]any{"attributedTo": authorID}))
+		require.Equal(t, bobID, objectsAttributedActorID(map[string]any{"actor": bobID}))
+		require.Equal(t, authorID, objectsAttributedActorID(struct {
+			AttributedTo string `json:"attributedTo"`
+		}{AttributedTo: authorID}))
+		require.Empty(t, objectsAttributedActorID(map[string]any{"bad": make(chan int)}))
+
+		require.Empty(t, objectsAllRecipients(nil))
+		require.Equal(t, []string{authorID + "/followers"}, objectsAllRecipients(privateNote))
+		require.Equal(t, []string{bobID}, objectsAllRecipients(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{BTo: []string{bobID}},
+		}))
+		require.Equal(t, []string{bobID, authorID}, objectsAllRecipients(map[string]any{
+			"to":  bobID,
+			"bcc": []any{authorID, ""},
+		}))
+		require.Equal(t, []string{bobID}, objectsAllRecipients(struct {
+			CC []string `json:"cc"`
+		}{CC: []string{bobID}}))
+		require.Empty(t, objectsAllRecipients(map[string]any{"bad": make(chan int)}))
+	})
+
+	t.Run("recipient matching helpers cover edge cases", func(t *testing.T) {
+		require.False(t, objectsRecipientsContainActor([]string{bobID}, nil))
+		require.True(t, objectsRecipientsContainActor([]string{"bob@remote.example"}, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: bobID},
+		}))
+		require.False(t, objectsRecipientsContainFollowersCollection([]string{"/followers"}, ""))
+		require.True(t, objectsRecipientsContainFollowersCollection([]string{authorID + "/followers/"}, authorID))
+		require.False(t, objectsActorIdentifiersMatch("", authorID))
+		require.True(t, objectsActorIdentifiersMatch("https://example.com/users/Alice", "alice"))
+
+		oldCfg := cfg
+		cfg = nil
+		require.NotEmpty(t, objectsLocalDomain())
+		cfg = oldCfg
 	})
 }
 
