@@ -3,6 +3,7 @@ package models
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -24,6 +25,36 @@ func CanonicalStatusID(raw string) string {
 // attempted for a direct status read against the current local domain.
 func StatusLookupCandidates(raw string) []string {
 	return StatusLookupCandidatesForDomain(raw, config.Get().Domain)
+}
+
+// CanonicalActivityPubObjectIDForStatus returns the ActivityPub object ID that
+// should be used when a federated interaction refers to a status. This is
+// intentionally distinct from StatusID: remote statuses use a local remote_*
+// StatusID for storage and counters, while their ActivityPub object identity
+// remains the source instance's Note ID.
+func CanonicalActivityPubObjectIDForStatus(status *Status, localDomain string) string {
+	if status == nil {
+		return ""
+	}
+
+	if status.Note != nil {
+		if noteID := strings.TrimSpace(status.Note.ID); noteID != "" {
+			return noteID
+		}
+	}
+
+	for _, rawURL := range status.URLs {
+		rawURL = strings.TrimSpace(rawURL)
+		if isHTTPStatusURL(rawURL) {
+			return rawURL
+		}
+	}
+
+	if statusAppearsRemote(status, localDomain) {
+		return ""
+	}
+
+	return localActivityPubObjectIDForStatus(status, localDomain)
 }
 
 // StatusLookupCandidatesForDomain returns the meaningful status identifiers that
@@ -64,6 +95,91 @@ func StatusLookupCandidatesForDomain(raw string, localDomain string) []string {
 
 	appendCandidate(raw)
 	return candidates
+}
+
+func isHTTPStatusURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil {
+		return false
+	}
+	return (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+}
+
+func statusAppearsRemote(status *Status, localDomain string) bool {
+	if status == nil {
+		return false
+	}
+	if IsCanonicalRemoteStatusID(status.StatusID) {
+		return true
+	}
+	if strings.Contains(strings.TrimSpace(status.AuthorUsername), "@") {
+		return true
+	}
+
+	actorID := strings.TrimSpace(status.AuthorID)
+	if actorID == "" && status.Note != nil {
+		actorID = strings.TrimSpace(status.Note.AttributedTo)
+	}
+	if actorID == "" {
+		return false
+	}
+
+	_, parsed, ok := normalizeStatusIdentifierURL(actorID)
+	if !ok {
+		return false
+	}
+	return !isLocalStatusIdentifierHostForDomain(parsed.Hostname(), localDomain)
+}
+
+func localActivityPubObjectIDForStatus(status *Status, localDomain string) string {
+	if status == nil {
+		return ""
+	}
+
+	statusID := strings.TrimSpace(status.StatusID)
+	if statusID == "" {
+		return ""
+	}
+
+	domain := normalizedLocalDomain(localDomain)
+	if domain == "" {
+		return ""
+	}
+
+	author := strings.TrimSpace(status.AuthorUsername)
+	if author == "" {
+		author = usernameFromActorIDForStatusIdentity(status.AuthorID)
+	}
+	if author == "" && status.Note != nil {
+		author = usernameFromActorIDForStatusIdentity(status.Note.AttributedTo)
+	}
+	if author == "" || strings.Contains(author, "@") {
+		return ""
+	}
+
+	return fmt.Sprintf("https://%s/users/%s/statuses/%s", domain, author, statusID)
+}
+
+func usernameFromActorIDForStatusIdentity(actorID string) string {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(actorID)
+	if err == nil && parsed != nil && parsed.Path != "" {
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+	}
+
+	trimmed := strings.TrimSuffix(actorID, "/")
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, "/")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 // CanonicalStatusIDForDomain normalizes a status identifier against the
@@ -177,6 +293,15 @@ func isLocalStatusIdentifierHostForDomain(host string, localDomain string) bool 
 		return false
 	}
 
+	localDomain = normalizedLocalDomain(localDomain)
+	if localDomain == "" {
+		return false
+	}
+
+	return host == localDomain
+}
+
+func normalizedLocalDomain(localDomain string) string {
 	localDomain = strings.ToLower(strings.TrimSpace(localDomain))
 	localDomain = strings.TrimPrefix(strings.TrimPrefix(localDomain, "https://"), "http://")
 	if idx := strings.Index(localDomain, "/"); idx >= 0 {
@@ -185,9 +310,5 @@ func isLocalStatusIdentifierHostForDomain(host string, localDomain string) bool 
 	if idx := strings.Index(localDomain, ":"); idx >= 0 {
 		localDomain = localDomain[:idx]
 	}
-	if localDomain == "" {
-		return false
-	}
-
-	return host == localDomain
+	return localDomain
 }

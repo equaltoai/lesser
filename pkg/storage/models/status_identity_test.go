@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -57,6 +58,124 @@ func TestStatusLookupCandidatesForDomain(t *testing.T) {
 	config.ResetForTests()
 	t.Cleanup(config.ResetForTests)
 	assert.Equal(t, []string{"123"}, StatusLookupCandidates(localURL))
+}
+
+func TestCanonicalActivityPubObjectIDForStatus(t *testing.T) {
+	t.Run("nil status has no object id", func(t *testing.T) {
+		assert.Empty(t, CanonicalActivityPubObjectIDForStatus(nil, "example.com"))
+	})
+
+	t.Run("prefers remote note id over local remote status id", func(t *testing.T) {
+		remoteURL := "https://remote.example/users/alice/statuses/123"
+		status := &Status{
+			StatusID:       CanonicalStatusIDForDomain(remoteURL, "example.com"),
+			AuthorID:       "https://remote.example/users/alice",
+			AuthorUsername: "alice@remote.example",
+			Note:           &activitypub.Note{BaseObject: activitypub.BaseObject{ID: remoteURL}},
+		}
+
+		assert.Equal(t, remoteURL, CanonicalActivityPubObjectIDForStatus(status, "example.com"))
+	})
+
+	t.Run("uses explicit url when note id is absent", func(t *testing.T) {
+		remoteURL := "https://remote.example/users/alice/statuses/456"
+		status := &Status{
+			StatusID:       CanonicalStatusIDForDomain(remoteURL, "example.com"),
+			AuthorID:       "https://remote.example/users/alice",
+			AuthorUsername: "alice@remote.example",
+			URLs:           []string{remoteURL},
+		}
+
+		assert.Equal(t, remoteURL, CanonicalActivityPubObjectIDForStatus(status, "example.com"))
+	})
+
+	t.Run("builds local canonical fallback only for local statuses", func(t *testing.T) {
+		status := &Status{
+			StatusID:       "local-1",
+			AuthorID:       "https://example.com/users/alice",
+			AuthorUsername: "alice",
+		}
+
+		assert.Equal(t,
+			"https://example.com/users/alice/statuses/local-1",
+			CanonicalActivityPubObjectIDForStatus(status, "https://example.com"),
+		)
+	})
+
+	t.Run("does not synthesize a local object id for remote statuses", func(t *testing.T) {
+		status := &Status{
+			StatusID:       "remote_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			AuthorID:       "https://remote.example/users/alice",
+			AuthorUsername: "alice@remote.example",
+		}
+
+		assert.Empty(t, CanonicalActivityPubObjectIDForStatus(status, "example.com"))
+	})
+}
+
+func TestStatusInteractionIdentityHelpers(t *testing.T) {
+	t.Run("status appears remote from canonical remote id", func(t *testing.T) {
+		status := &Status{StatusID: "remote_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+		assert.True(t, statusAppearsRemote(status, "example.com"))
+	})
+
+	t.Run("status appears remote from acct author", func(t *testing.T) {
+		status := &Status{StatusID: "status-1", AuthorUsername: "alice@remote.example"}
+		assert.True(t, statusAppearsRemote(status, "example.com"))
+	})
+
+	t.Run("status appears remote from actor host", func(t *testing.T) {
+		status := &Status{StatusID: "status-1", AuthorID: "https://remote.example/users/alice"}
+		assert.True(t, statusAppearsRemote(status, "https://example.com"))
+	})
+
+	t.Run("status appears local from actor host", func(t *testing.T) {
+		status := &Status{StatusID: "status-1", AuthorID: "https://example.com/users/alice"}
+		assert.False(t, statusAppearsRemote(status, "https://example.com"))
+	})
+
+	t.Run("local object id derives author from note attribution", func(t *testing.T) {
+		status := &Status{
+			StatusID: "status-1",
+			Note: &activitypub.Note{
+				AttributedTo: "https://example.com/users/alice",
+			},
+		}
+		assert.Equal(t,
+			"https://example.com/users/alice/statuses/status-1",
+			localActivityPubObjectIDForStatus(status, "example.com"),
+		)
+	})
+
+	t.Run("local object id refuses acct-style remote author", func(t *testing.T) {
+		status := &Status{StatusID: "status-1", AuthorUsername: "alice@remote.example"}
+		assert.Empty(t, localActivityPubObjectIDForStatus(status, "example.com"))
+	})
+
+	t.Run("local object id handles missing essentials", func(t *testing.T) {
+		assert.Empty(t, localActivityPubObjectIDForStatus(nil, "example.com"))
+		assert.Empty(t, localActivityPubObjectIDForStatus(&Status{AuthorUsername: "alice"}, "example.com"))
+		assert.Empty(t, localActivityPubObjectIDForStatus(&Status{StatusID: "status-1", AuthorUsername: "alice"}, ""))
+		assert.Empty(t, localActivityPubObjectIDForStatus(&Status{StatusID: "status-1"}, "example.com"))
+	})
+
+	t.Run("username extraction handles urls and raw identifiers", func(t *testing.T) {
+		assert.Empty(t, usernameFromActorIDForStatusIdentity(""))
+		assert.Equal(t, "alice", usernameFromActorIDForStatusIdentity("https://example.com/users/alice"))
+		assert.Equal(t, "urn:actor:alice", usernameFromActorIDForStatusIdentity("urn:actor:alice"))
+	})
+
+	t.Run("http status url detection", func(t *testing.T) {
+		assert.True(t, isHTTPStatusURL("https://example.com/users/alice/statuses/1"))
+		assert.True(t, isHTTPStatusURL("http://example.com/users/alice/statuses/1"))
+		assert.False(t, isHTTPStatusURL("mailto:alice@example.com"))
+		assert.False(t, isHTTPStatusURL("not a url"))
+	})
+
+	t.Run("normalized local domain strips scheme port and path", func(t *testing.T) {
+		assert.Equal(t, "example.com", normalizedLocalDomain("https://Example.com:443/base"))
+		assert.Equal(t, "example.com", normalizedLocalDomain("http://Example.com:80"))
+	})
 }
 
 func TestIsCanonicalRemoteStatusID(t *testing.T) {

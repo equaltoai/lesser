@@ -2508,58 +2508,8 @@ func TestService_round15_bookmarks_update_history_and_boost_delete_edges(t *test
 	}
 }
 
-func TestService_round15_executeNoteAction_and_mute_errors(t *testing.T) {
+func TestService_round15_mute_errors(t *testing.T) {
 	ctx := context.Background()
-
-	// executeNoteActionGeneric: account lookup error.
-	{
-		service, _, _, _, _ := newNotesServiceHarness(t)
-		service.accountRepo = &stubAccountRepoError{err: fmt.Errorf("boom")}
-
-		_, err := service.executeNoteActionGeneric(ctx, noteActionParams{
-			statusID:     "status-1",
-			actorID:      "alice",
-			actorType:    "liker",
-			actionFn:     func(context.Context, string, string, string) error { return nil },
-			emitEventsFn: func(context.Context, *models.Status, string) []*streaming.Event { return nil },
-			errorMsg:     "boom",
-		})
-		assert.Error(t, err)
-	}
-
-	// executeNoteActionGeneric: action error.
-	{
-		service, _, _, _, _ := newNotesServiceHarness(t)
-		_, err := service.executeNoteActionGeneric(ctx, noteActionParams{
-			statusID:     "status-1",
-			actorID:      "alice",
-			actorType:    "liker",
-			actionFn:     func(context.Context, string, string, string) error { return fmt.Errorf("boom") },
-			emitEventsFn: func(context.Context, *models.Status, string) []*streaming.Event { return nil },
-			errorMsg:     "boom",
-		})
-		assert.Error(t, err)
-	}
-
-	// executeNoteActionGeneric: status not found.
-	{
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockUpdateBuilder := new(mocks.MockUpdateBuilder)
-		mockQuery.On("First", mock.Anything).Return(fmt.Errorf("boom")).Once()
-		setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder, &permissiveQueryState{})
-
-		service := newNotesServiceHarnessWithDB(t, transactionalMockDB{MockDB: mockDB})
-		_, err := service.executeNoteActionGeneric(ctx, noteActionParams{
-			statusID:     "status-1",
-			actorID:      "alice",
-			actorType:    "liker",
-			actionFn:     func(context.Context, string, string, string) error { return nil },
-			emitEventsFn: func(context.Context, *models.Status, string) []*streaming.Event { return nil },
-			errorMsg:     "boom",
-		})
-		assert.ErrorIs(t, err, ErrStatusNotFound)
-	}
 
 	// muteStatus/unmuteStatus: repo missing and hard errors.
 	{

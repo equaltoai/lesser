@@ -2976,53 +2976,46 @@ type UsersResult struct {
 	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
 }
 
-// noteActionParams contains parameters for note actions
-type noteActionParams struct {
-	statusID     string
-	actorID      string
-	actorType    string
-	actionFn     func(context.Context, string, string, string) error
-	emitEventsFn func(context.Context, *models.Status, string) []*streaming.Event
-	errorMsg     string
+type statusInteractionIdentity struct {
+	localStatusID    string
+	activityObjectID string
+	actorURL         string
+	targetActorID    string
+	statusAuthorID   string
 }
 
-// executeNoteActionGeneric handles the common pattern for note actions
-func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActionParams) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, params.statusID)
+// LikeNote adds a like to a status
+func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
+	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.LikerID, "liker")
 	if err != nil {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
-	// Get actor's account
-	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
+	like, err := s.createLike(ctx, identity.actorURL, identity.activityObjectID, identity.statusAuthorID)
 	if err != nil {
-		s.logger.Error("failed to get actor account",
-			zap.String("actor_id", params.actorID),
-			zap.String("actor_type", params.actorType),
-			zap.Error(err))
-		return nil, errors.Join(ErrGetAuthorAccount, err)
-	}
-
-	// Create actor and object URLs
-	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, actor.User.Username)
-	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, params.statusID)
-
-	// Execute the action through repository interface
-	if err := params.actionFn(ctx, actorURL, objectURL, note.AuthorUsername); err != nil {
-		s.logger.Error("action execution failed",
-			zap.String("error_msg", params.errorMsg),
-			zap.String("actor_id", params.actorID),
-			zap.String("status_id", params.statusID),
+		s.logger.Error("failed to like status",
+			zap.String("actor_id", cmd.LikerID),
+			zap.String("status_id", cmd.StatusID),
+			zap.String("activity_object_id", identity.activityObjectID),
 			zap.Error(err))
 		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
-	// Refresh status so counters and derived state stay consistent
-	note = s.refreshStatus(ctx, params.statusID, note)
+	if s.noteRepo == nil {
+		return nil, ErrStatusRepositoryUnavailable
+	}
 
-	// Emit events
-	events := params.emitEventsFn(ctx, note, params.actorID)
+	if err := s.noteRepo.LikeStatus(ctx, cmd.LikerID, identity.localStatusID); err != nil {
+		s.logger.Error("failed to increment like counter",
+			zap.String("status_id", identity.localStatusID),
+			zap.String("liker", cmd.LikerID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
+	}
+
+	note = s.refreshStatus(ctx, identity.localStatusID, note)
+	events := s.emitLikeEvents(ctx, note, cmd.LikerID)
+	s.queueLikeActivity(ctx, note, like, identity)
 
 	return &LikeResult{
 		Status: note,
@@ -3030,62 +3023,43 @@ func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActio
 	}, nil
 }
 
-// LikeNote adds a like to a status
-func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
-	result, err := s.executeNoteActionGeneric(ctx, noteActionParams{
-		statusID:     cmd.StatusID,
-		actorID:      cmd.LikerID,
-		actorType:    "liker",
-		actionFn:     s.createLike,
-		emitEventsFn: s.emitLikeEvents,
-		errorMsg:     "failed to like status",
-	})
+// UnlikeNote removes a like from a status
+func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*LikeResult, error) {
+	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnlikerID, "unliker")
 	if err != nil {
 		return nil, err
 	}
 
-	if s.noteRepo == nil {
-		return nil, ErrStatusRepositoryUnavailable
-	}
-
-	if err := s.noteRepo.LikeStatus(ctx, cmd.LikerID, cmd.StatusID); err != nil {
-		s.logger.Error("failed to increment like counter",
+	like := s.getLikeForUndo(ctx, identity.actorURL, identity.activityObjectID)
+	if err := s.deleteLike(ctx, identity.actorURL, identity.activityObjectID, ""); err != nil {
+		s.logger.Error("failed to unlike status",
+			zap.String("actor_id", cmd.UnlikerID),
 			zap.String("status_id", cmd.StatusID),
-			zap.String("liker", cmd.LikerID),
+			zap.String("activity_object_id", identity.activityObjectID),
 			zap.Error(err))
 		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
-	return result, nil
-}
-
-// UnlikeNote removes a like from a status
-func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*LikeResult, error) {
-	result, err := s.executeNoteActionGeneric(ctx, noteActionParams{
-		statusID:     cmd.StatusID,
-		actorID:      cmd.UnlikerID,
-		actorType:    "unliker",
-		actionFn:     s.deleteLike,
-		emitEventsFn: s.emitUnlikeEvents,
-		errorMsg:     "failed to unlike status",
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	if s.noteRepo == nil {
 		return nil, ErrStatusRepositoryUnavailable
 	}
 
-	if err := s.noteRepo.UnlikeStatus(ctx, cmd.UnlikerID, cmd.StatusID); err != nil {
+	if err := s.noteRepo.UnlikeStatus(ctx, cmd.UnlikerID, identity.localStatusID); err != nil {
 		s.logger.Error("failed to decrement like counter",
-			zap.String("status_id", cmd.StatusID),
+			zap.String("status_id", identity.localStatusID),
 			zap.String("unliker", cmd.UnlikerID),
 			zap.Error(err))
 		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
-	return result, nil
+	note = s.refreshStatus(ctx, identity.localStatusID, note)
+	events := s.emitUnlikeEvents(ctx, note, cmd.UnlikerID)
+	s.queueUndoLikeActivity(ctx, note, like, identity)
+
+	return &LikeResult{
+		Status: note,
+		Events: events,
+	}, nil
 }
 
 // GetLikers retrieves users who liked a status
@@ -3106,6 +3080,150 @@ func (s *Service) GetLikers(ctx context.Context, query *GetLikersQuery) (*UsersR
 		Users:      users,
 		Pagination: pagination,
 	}, nil
+}
+
+func (s *Service) prepareStatusInteraction(
+	ctx context.Context,
+	statusID string,
+	actorID string,
+	actorType string,
+) (*models.Status, *storage.Account, statusInteractionIdentity, error) {
+	note, err := s.noteRepo.GetStatus(ctx, statusID)
+	if err != nil {
+		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+	}
+
+	actor, err := s.accountRepo.GetAccount(ctx, actorID)
+	if err != nil {
+		s.logger.Error("failed to get actor account",
+			zap.String("actor_id", actorID),
+			zap.String("actor_type", actorType),
+			zap.Error(err))
+		return nil, nil, statusInteractionIdentity{}, errors.Join(ErrGetAuthorAccount, err)
+	}
+
+	identity, err := s.statusInteractionIdentity(note, actor)
+	if err != nil {
+		s.logger.Error("failed to resolve status interaction identity",
+			zap.String("actor_id", actorID),
+			zap.String("actor_type", actorType),
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		return nil, nil, statusInteractionIdentity{}, errors.Join(ErrExecuteAction, err)
+	}
+
+	return note, actor, identity, nil
+}
+
+func (s *Service) statusInteractionIdentity(status *models.Status, actor *storage.Account) (statusInteractionIdentity, error) {
+	if status == nil {
+		return statusInteractionIdentity{}, errors.New("status is required")
+	}
+
+	localStatusID := strings.TrimSpace(status.StatusID)
+	if localStatusID == "" {
+		return statusInteractionIdentity{}, errors.New("status id is required")
+	}
+
+	actorURL := s.accountActorURL(actor)
+	if actorURL == "" {
+		return statusInteractionIdentity{}, errors.New("actor url is required")
+	}
+
+	activityObjectID := models.CanonicalActivityPubObjectIDForStatus(status, s.domainName)
+	if activityObjectID == "" {
+		return statusInteractionIdentity{}, fmt.Errorf("canonical ActivityPub object id is required for status %s", localStatusID)
+	}
+
+	statusAuthorID := strings.TrimSpace(status.AuthorUsername)
+	if statusAuthorID == "" {
+		statusAuthorID = strings.TrimSpace(status.AuthorID)
+	}
+
+	return statusInteractionIdentity{
+		localStatusID:    localStatusID,
+		activityObjectID: activityObjectID,
+		actorURL:         actorURL,
+		targetActorID:    s.statusAuthorActorID(status),
+		statusAuthorID:   statusAuthorID,
+	}, nil
+}
+
+func (s *Service) accountActorURL(account *storage.Account) string {
+	if account == nil {
+		return ""
+	}
+	if account.Actor != nil {
+		if actorID := strings.TrimSpace(account.Actor.ID); actorID != "" {
+			return actorID
+		}
+	}
+	if account.User == nil {
+		return ""
+	}
+	username := strings.TrimSpace(account.User.Username)
+	if username == "" {
+		return ""
+	}
+	return s.localActorID(username)
+}
+
+func (s *Service) statusAuthorActorID(status *models.Status) string {
+	if status == nil {
+		return ""
+	}
+	if status.Note != nil {
+		if actorID := strings.TrimSpace(status.Note.AttributedTo); actorID != "" {
+			return actorID
+		}
+	}
+	if actorID := strings.TrimSpace(status.AuthorID); actorID != "" {
+		return actorID
+	}
+	if author := strings.TrimSpace(status.AuthorUsername); author != "" && !strings.Contains(author, "@") {
+		return s.localActorID(author)
+	}
+	return ""
+}
+
+func interactionToRecipients(identity statusInteractionIdentity) []string {
+	return appendUniqueStrings(nil, identity.targetActorID)
+}
+
+func interactionAnnounceToRecipients(status *models.Status, identity statusInteractionIdentity) []string {
+	recipients := appendUniqueStrings(nil, identity.targetActorID)
+	if status != nil {
+		recipients = appendUniqueStrings(recipients, status.ToRecipients...)
+	}
+	return recipients
+}
+
+func appendUniqueStrings(values []string, candidates ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(candidates))
+	result := make([]string, 0, len(values)+len(candidates))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	for _, value := range candidates {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // Reblog/Announce Commands and Queries
@@ -3150,12 +3268,16 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 		return nil, ErrGetRebloggerAccount
 	}
 
-	// Create actor and object URLs for the reblog
-	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, reblogger.User.Username)
-	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
+	identity, err := s.statusInteractionIdentity(note, reblogger)
+	if err != nil {
+		s.logger.Error("failed to resolve reblog object identity",
+			zap.String("status_id", cmd.StatusID),
+			zap.Error(err))
+		return nil, ErrReblogStatus
+	}
 
 	// Create the reblog through repository interface
-	announce, err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID)
+	announce, err := s.createReblog(ctx, identity.actorURL, identity.activityObjectID, cmd.RebloggerID, identity.localStatusID)
 	if err != nil {
 		return nil, ErrReblogStatus
 	}
@@ -3181,14 +3303,30 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 
 // UnreblogNote removes a reblog/announce of a status
 func (s *Service) UnreblogNote(ctx context.Context, cmd *UnreblogNoteCommand) (*LikeResult, error) {
-	return s.executeNoteActionGeneric(ctx, noteActionParams{
-		statusID:     cmd.StatusID,
-		actorID:      cmd.UnrebloggerID,
-		actorType:    "unreblogger",
-		actionFn:     s.deleteReblog,
-		emitEventsFn: s.emitUnreblogEvents,
-		errorMsg:     "failed to unreblog status",
-	})
+	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnrebloggerID, "unreblogger")
+	if err != nil {
+		return nil, err
+	}
+
+	announce := s.getAnnounceForUndo(ctx, identity.actorURL, identity.activityObjectID)
+	if err := s.deleteReblog(ctx, identity.actorURL, identity.activityObjectID, identity.localStatusID); err != nil {
+		s.logger.Error("failed to unreblog status",
+			zap.String("actor_id", cmd.UnrebloggerID),
+			zap.String("status_id", cmd.StatusID),
+			zap.String("activity_object_id", identity.activityObjectID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
+	}
+
+	note = s.refreshStatus(ctx, identity.localStatusID, note)
+	events := s.emitUnreblogEvents(ctx, note, cmd.UnrebloggerID)
+	s.queueUndoAnnounceActivity(ctx, note, announce, identity)
+
+	return &LikeResult{
+		Status:   note,
+		Events:   events,
+		Announce: announce,
+	}, nil
 }
 
 // GetRebloggers retrieves users who reblogged a status
@@ -3400,12 +3538,12 @@ func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*Like
 
 // Private helper methods - these need to be implemented to interface with repositories
 
-func (s *Service) createLike(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
-	_, err := s.likeRepo.CreateLike(ctx, actorURL, objectURL, statusAuthorID)
+func (s *Service) createLike(ctx context.Context, actorURL, objectURL, statusAuthorID string) (*models.Like, error) {
+	like, err := s.likeRepo.CreateLike(ctx, actorURL, objectURL, statusAuthorID)
 	if err != nil {
-		return ErrCreateLike
+		return nil, ErrCreateLike
 	}
-	return nil
+	return like, nil
 }
 
 func (s *Service) deleteLike(ctx context.Context, actorURL, objectURL, _ string) error {
@@ -3443,7 +3581,7 @@ func (s *Service) getLikers(ctx context.Context, statusID string, pagination int
 	return accounts, result, nil
 }
 
-func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) (*storage.Announce, error) {
+func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, localStatusID string) (*storage.Announce, error) {
 	// Idempotency: if an announce already exists for this actor/object, skip creating duplicates
 	if existing, err := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL); err == nil {
 		s.logger.Debug("announce already persisted, skipping duplicate reblog",
@@ -3515,9 +3653,11 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 		return nil, ErrCreateReblog
 	}
 
-	statusID := extractStatusIDFromObjectURL(objectURL)
+	if strings.TrimSpace(localStatusID) == "" {
+		localStatusID = extractStatusIDFromObjectURL(objectURL)
+	}
 
-	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+	if err := common.ValidateRequiredParam("reblog_status_id", localStatusID); err != nil {
 		s.logger.Error("failed to resolve status id from object url",
 			zap.String("object_url", objectURL),
 			zap.Error(err))
@@ -3525,16 +3665,16 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 	}
 
 	engagementCreated := true
-	if err := s.noteRepo.ReblogStatus(ctx, actorURL, statusID, announce.ID); err != nil {
+	if err := s.noteRepo.ReblogStatus(ctx, actorURL, localStatusID, announce.ID); err != nil {
 		if isAlreadyExistsError(err) {
 			s.logger.Debug("reblog engagement already recorded",
 				zap.String("actor_url", actorURL),
-				zap.String("status_id", statusID))
+				zap.String("status_id", localStatusID))
 			engagementCreated = false
 		} else {
 			s.logger.Error("failed to record reblog engagement",
 				zap.String("actor_url", actorURL),
-				zap.String("status_id", statusID),
+				zap.String("status_id", localStatusID),
 				zap.Error(err))
 			return nil, ErrReblogStatus
 		}
@@ -3548,7 +3688,7 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 	return announce, nil
 }
 
-func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ string) error {
+func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, localStatusID string) error {
 	if err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL); err != nil {
 		return ErrDeleteReblog
 	}
@@ -3560,24 +3700,26 @@ func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ strin
 		return nil
 	}
 
-	statusID := extractStatusIDFromObjectURL(objectURL)
+	if strings.TrimSpace(localStatusID) == "" {
+		localStatusID = extractStatusIDFromObjectURL(objectURL)
+	}
 
-	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+	if err := common.ValidateRequiredParam("reblog_status_id", localStatusID); err != nil {
 		s.logger.Error("failed to resolve status id from object url for unreblog",
 			zap.String("object_url", objectURL),
 			zap.Error(err))
 		return ErrDeleteReblog
 	}
 
-	if err := s.noteRepo.UnreblogStatus(ctx, actorURL, statusID); err != nil {
+	if err := s.noteRepo.UnreblogStatus(ctx, actorURL, localStatusID); err != nil {
 		s.logger.Error("failed to remove reblog engagement",
 			zap.String("actor_url", actorURL),
-			zap.String("status_id", statusID),
+			zap.String("status_id", localStatusID),
 			zap.Error(err))
 		return ErrDeleteReblog
 	}
 
-	s.deleteBoostStatus(ctx, actorURL, statusID)
+	s.deleteBoostStatus(ctx, actorURL, localStatusID)
 
 	return nil
 }
@@ -3799,6 +3941,81 @@ func (s *Service) buildStatusURL(status *models.Status) string {
 	return fmt.Sprintf("https://%s/users/%s/statuses/%s", domain, author, status.StatusID)
 }
 
+func (s *Service) getLikeForUndo(ctx context.Context, actorURL, objectURL string) *models.Like {
+	if s.likeRepo == nil {
+		return nil
+	}
+	like, err := s.likeRepo.GetLike(ctx, actorURL, objectURL)
+	if err != nil {
+		s.logger.Debug("like activity unavailable for undo delivery",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return nil
+	}
+	if like == nil || strings.TrimSpace(like.ID) == "" {
+		return nil
+	}
+	return like
+}
+
+func (s *Service) getAnnounceForUndo(ctx context.Context, actorURL, objectURL string) *storage.Announce {
+	if s.socialRepo == nil {
+		return nil
+	}
+	announce, err := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL)
+	if err != nil {
+		s.logger.Debug("announce activity unavailable for undo delivery",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return nil
+	}
+	if announce == nil || strings.TrimSpace(announce.ID) == "" {
+		return nil
+	}
+	return announce
+}
+
+func (s *Service) queueLikeActivity(ctx context.Context, status *models.Status, like *models.Like, identity statusInteractionIdentity) {
+	if s.federation == nil || status == nil || like == nil {
+		return
+	}
+	if strings.TrimSpace(like.ID) == "" || strings.TrimSpace(identity.activityObjectID) == "" {
+		return
+	}
+
+	published := like.Published
+	if published.IsZero() {
+		published = time.Now()
+	}
+	publishedCopy := published
+
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.LikeType,
+			ID:        like.ID,
+			Published: &publishedCopy,
+			To:        interactionToRecipients(identity),
+		},
+		Actor:  identity.actorURL,
+		Object: identity.activityObjectID,
+	}
+
+	if err := s.federation.QueueActivity(ctx, activity); err != nil {
+		s.logger.Error("failed to queue like activity",
+			zap.String("status_id", status.StatusID),
+			zap.String("actor", identity.actorURL),
+			zap.Error(err))
+		return
+	}
+
+	s.logger.Debug("queued like activity",
+		zap.String("status_id", status.StatusID),
+		zap.String("like_id", like.ID))
+}
+
 func (s *Service) queueAnnounceActivity(ctx context.Context, status *models.Status, announce *storage.Announce) {
 	if s.federation == nil || status == nil || announce == nil {
 		return
@@ -3816,8 +4033,10 @@ func (s *Service) queueAnnounceActivity(ctx context.Context, status *models.Stat
 			Type:      activitypub.AnnounceType,
 			ID:        announce.ID,
 			Published: &publishedCopy,
-			To:        status.ToRecipients,
-			CC:        status.CcRecipients,
+			To: interactionAnnounceToRecipients(status, statusInteractionIdentity{
+				targetActorID: s.statusAuthorActorID(status),
+			}),
+			CC: status.CcRecipients,
 		},
 		Actor:  announce.Actor,
 		Object: announce.Object,
@@ -3834,6 +4053,146 @@ func (s *Service) queueAnnounceActivity(ctx context.Context, status *models.Stat
 	s.logger.Debug("queued announce activity",
 		zap.String("status_id", status.StatusID),
 		zap.String("announce_id", announce.ID))
+}
+
+func (s *Service) queueUndoLikeActivity(ctx context.Context, status *models.Status, like *models.Like, identity statusInteractionIdentity) {
+	if s.federation == nil || status == nil || like == nil {
+		return
+	}
+	likeActivity := s.likeActivityForUndo(like, identity)
+	if likeActivity == nil {
+		return
+	}
+	s.queueUndoInteractionActivity(ctx, status, likeActivity, interactionToRecipients(identity), "like")
+}
+
+func (s *Service) queueUndoAnnounceActivity(
+	ctx context.Context,
+	status *models.Status,
+	announce *storage.Announce,
+	identity statusInteractionIdentity,
+) {
+	if s.federation == nil || status == nil || announce == nil {
+		return
+	}
+	announceActivity := s.announceActivityForUndo(status, announce, identity)
+	if announceActivity == nil {
+		return
+	}
+	s.queueUndoInteractionActivity(ctx, status, announceActivity, announceActivity.To, "announce")
+}
+
+func (s *Service) likeActivityForUndo(like *models.Like, identity statusInteractionIdentity) *activitypub.Activity {
+	if like == nil {
+		return nil
+	}
+	activityID := strings.TrimSpace(like.ID)
+	objectID := strings.TrimSpace(like.Object)
+	if objectID == "" {
+		objectID = strings.TrimSpace(identity.activityObjectID)
+	}
+	actorURL := strings.TrimSpace(like.Actor)
+	if actorURL == "" {
+		actorURL = strings.TrimSpace(identity.actorURL)
+	}
+	if activityID == "" || objectID == "" || actorURL == "" {
+		return nil
+	}
+
+	published := like.Published
+	if published.IsZero() {
+		published = time.Now()
+	}
+	publishedCopy := published
+
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.LikeType,
+			ID:        activityID,
+			Published: &publishedCopy,
+			To:        interactionToRecipients(identity),
+		},
+		Actor:  actorURL,
+		Object: objectID,
+	}
+}
+
+func (s *Service) announceActivityForUndo(
+	status *models.Status,
+	announce *storage.Announce,
+	identity statusInteractionIdentity,
+) *activitypub.Activity {
+	if announce == nil {
+		return nil
+	}
+	activityID := strings.TrimSpace(announce.ID)
+	objectID := strings.TrimSpace(announce.Object)
+	actorURL := strings.TrimSpace(announce.Actor)
+	if actorURL == "" {
+		actorURL = strings.TrimSpace(identity.actorURL)
+	}
+	if activityID == "" || objectID == "" || actorURL == "" {
+		return nil
+	}
+
+	published := announce.Published
+	if published.IsZero() {
+		published = time.Now()
+	}
+	publishedCopy := published
+
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.AnnounceType,
+			ID:        activityID,
+			Published: &publishedCopy,
+			To:        interactionAnnounceToRecipients(status, identity),
+			CC:        status.CcRecipients,
+		},
+		Actor:  actorURL,
+		Object: objectID,
+	}
+}
+
+func (s *Service) queueUndoInteractionActivity(
+	ctx context.Context,
+	status *models.Status,
+	original *activitypub.Activity,
+	recipients []string,
+	interactionType string,
+) {
+	if original == nil || strings.TrimSpace(original.ID) == "" {
+		return
+	}
+
+	published := time.Now()
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.UndoType,
+			ID:        fmt.Sprintf("%s#undo", strings.TrimSpace(original.ID)),
+			Published: &published,
+			To:        recipients,
+		},
+		Actor:  original.Actor,
+		Object: original,
+	}
+
+	if err := s.federation.QueueActivity(ctx, activity); err != nil {
+		s.logger.Error("failed to queue undo interaction activity",
+			zap.String("status_id", status.StatusID),
+			zap.String("interaction_type", interactionType),
+			zap.String("actor", original.Actor),
+			zap.Error(err))
+		return
+	}
+
+	s.logger.Debug("queued undo interaction activity",
+		zap.String("status_id", status.StatusID),
+		zap.String("interaction_type", interactionType),
+		zap.String("activity_id", activity.ID))
 }
 
 func (s *Service) pinStatus(ctx context.Context, userID, statusID string) error {
