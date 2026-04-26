@@ -83,6 +83,7 @@ graph/model/models_gen.go
 # Reports
 test-reports*
 report/
+reports/
 *.json.report
 jscpd-report.json
 
