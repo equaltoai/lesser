@@ -53,7 +53,7 @@ func TestActivityProcessor_AnnounceFanoutAndObjectReferencePaths(t *testing.T) {
 	}).Return(nil)
 
 	announce := &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{ID: "announce-1", Type: activitypub.AnnounceType},
+		BaseObject: activitypub.BaseObject{ID: "announce-1", Type: activitypub.AnnounceType, To: []string{activitypub.PublicAddress}},
 		Actor:      "https://example.com/users/alice",
 		Object:     "https://example.com/objects/1",
 	}
@@ -105,4 +105,63 @@ func TestActivityProcessor_StoreRemoteObject(t *testing.T) {
 	ap.storeRemoteObject(ctx, note)
 
 	objectRepo.AssertExpectations(t)
+}
+
+func TestActivityProcessor_AnnounceFanoutPreservesPrivateVisibility(t *testing.T) {
+	ctx := context.Background()
+
+	mockDB := new(dynamock.MockDB)
+	mockQuery := new(dynamock.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
+
+	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
+	objectRepo := testmocks.NewMockObjectRepository()
+	actorRepo := testmocks.NewMockActorRepository()
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+
+	ap := &ActivityProcessor{
+		db:               mockDB,
+		logger:           zap.NewNop(),
+		timelineRepo:     timelineRepo,
+		objectRepo:       objectRepo,
+		actorRepo:        actorRepo,
+		relationshipRepo: relationshipRepo,
+		baseURL:          "https://example.com",
+	}
+
+	objectRepo.On("GetObject", mock.Anything, "https://example.com/objects/private").Return(&models.Object{Content: "private boost"}, nil).Once()
+	actorRepo.On("GetActor", mock.Anything, "alice").Return(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, nil).Once()
+	relationshipRepo.On("GetFollowers", mock.Anything, "alice", 1000, "").Return([]string{"bob"}, "", nil).Once()
+
+	var entries []*models.Timeline
+	timelineRepo.On("CreateTimelineEntries", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		entries = args.Get(1).([]*models.Timeline)
+	}).Return(nil).Once()
+
+	announce := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/activities/private-announce",
+			Type: activitypub.AnnounceType,
+			To:   []string{"https://example.com/users/alice/followers"},
+		},
+		Actor:  "https://example.com/users/alice",
+		Object: "https://example.com/objects/private",
+	}
+
+	require.NoError(t, ap.fanOutAnnounceToTimelines(ctx, announce, "alice"))
+	require.Len(t, entries, 2)
+	require.ElementsMatch(t, []string{"alice", "bob"}, []string{entries[0].TimelineID, entries[1].TimelineID})
+	for _, entry := range entries {
+		require.Equal(t, VisibilityPrivate, entry.Visibility)
+		require.Equal(t, timelineHome, entry.TimelineType)
+	}
+
+	timelineRepo.AssertExpectations(t)
+	objectRepo.AssertExpectations(t)
+	actorRepo.AssertExpectations(t)
+	relationshipRepo.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+	mockDB.AssertExpectations(t)
 }

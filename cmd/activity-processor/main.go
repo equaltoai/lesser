@@ -790,7 +790,7 @@ func (ap *ActivityProcessor) createAllTimelineEntries(ctx context.Context, activ
 
 // createPublicTimelineEntries creates public timeline entries if applicable
 func (ap *ActivityProcessor) createPublicTimelineEntries(activity *activitypub.Activity, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
-	if visibility != "public" {
+	if visibility != VisibilityPublic {
 		return nil
 	}
 
@@ -817,7 +817,7 @@ func (ap *ActivityProcessor) createPublicTimelineEntries(activity *activitypub.A
 
 // createFollowerTimelineEntries creates timeline entries for followers
 func (ap *ActivityProcessor) createFollowerTimelineEntries(ctx context.Context, username string, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
-	if visibility == "direct" {
+	if visibility == VisibilityDirect {
 		return nil
 	}
 
@@ -1013,27 +1013,32 @@ func (ap *ActivityProcessor) createAnnounceTimelineEntries(ctx context.Context, 
 	var entries []*models.Timeline
 	now := time.Now()
 
-	baseEntry := ap.createBaseAnnounceEntry(activity, username, announcedContent, now)
+	visibility := ap.determineAnnounceVisibility(activity)
+	baseEntry := ap.createBaseAnnounceEntry(activity, username, announcedContent, visibility, now)
 
-	// Add to public timelines
-	entries = append(entries, ap.createPublicTimelineEntry(baseEntry, now, activity.ID))
+	if visibility == VisibilityPublic {
+		// Add to public timelines
+		entries = append(entries, ap.createPublicTimelineEntry(baseEntry, now, activity.ID))
 
-	// Add local timeline entry if applicable
-	if ap.isLocalActor(activity.Actor) {
-		entries = append(entries, ap.createLocalTimelineEntry(baseEntry, now, activity.ID))
+		// Add local timeline entry if applicable
+		if ap.isLocalActor(activity.Actor) {
+			entries = append(entries, ap.createLocalTimelineEntry(baseEntry, now, activity.ID))
+		}
 	}
 
 	// Add to author's home timeline
 	entries = append(entries, ap.createHomeTimelineEntry(baseEntry, username, now, activity.ID))
 
-	// Fan out to followers
-	ap.addFollowerEntries(ctx, &entries, baseEntry, username, now, activity.ID)
+	// Fan out to followers unless this boost is direct-only.
+	if visibility != VisibilityDirect {
+		ap.addFollowerEntries(ctx, &entries, baseEntry, username, now, activity.ID)
+	}
 
 	return entries
 }
 
 // createBaseAnnounceEntry creates the base timeline entry for an announce
-func (ap *ActivityProcessor) createBaseAnnounceEntry(activity *activitypub.Activity, username, announcedContent string, now time.Time) models.Timeline {
+func (ap *ActivityProcessor) createBaseAnnounceEntry(activity *activitypub.Activity, username, announcedContent, visibility string, now time.Time) models.Timeline {
 	return models.Timeline{
 		PostID:      activity.ID,
 		ActorID:     activity.Actor,
@@ -1042,7 +1047,7 @@ func (ap *ActivityProcessor) createBaseAnnounceEntry(activity *activitypub.Activ
 		ContentType: "Announce",
 		IsBoost:     true,
 		BoostedBy:   username,
-		Visibility:  "public", // Announces are typically public
+		Visibility:  visibility,
 		CreatedAt:   ap.extractPublishedTime(activity),
 		TimelineAt:  now,
 	}
@@ -1117,15 +1122,35 @@ func (ap *ActivityProcessor) recordAnnounceMetrics(ctx context.Context, activity
 
 // Helper functions
 
+func (ap *ActivityProcessor) determineAnnounceVisibility(activity *activitypub.Activity) string {
+	visibility := ap.determineVisibility(activity.To, activity.CC)
+	if visibility == VisibilityDirect && containsFollowersAddress(activity.To, activity.CC) {
+		return VisibilityPrivate
+	}
+	return visibility
+}
+
+func containsFollowersAddress(groups ...[]string) bool {
+	for _, addresses := range groups {
+		for _, address := range addresses {
+			trimmed := strings.TrimSuffix(strings.TrimSpace(address), "/")
+			if strings.HasSuffix(trimmed, "/followers") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
 	// Direct message - no public addressing
 	if !containsPublicAddress(to) && !containsPublicAddress(cc) {
-		return "direct"
+		return VisibilityDirect
 	}
 
 	// Public - addressed to public in 'to'
 	if containsPublicAddress(to) {
-		return "public"
+		return VisibilityPublic
 	}
 
 	// Unlisted - public in 'cc'
@@ -1134,7 +1159,7 @@ func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
 	}
 
 	// Private - followers only
-	return "private"
+	return VisibilityPrivate
 }
 
 func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {

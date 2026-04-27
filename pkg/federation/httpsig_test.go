@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -620,6 +621,65 @@ func TestRequireSignedBodyIntegrity(t *testing.T) {
 		req.Header.Set("Content-Type", "application/activity+json")
 		require.NoError(t, SignHTTPRequest(req, privateKey, "https://example.com/users/alice#main-key"))
 		req.URL.Host = "attacker.example"
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+}
+
+func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
+	dummySignature := func(headers string) string {
+		return `keyId="https://example.com/users/alice#main-key",algorithm="rsa-sha256",headers="` + headers + `",signature="dGVzdA=="`
+	}
+
+	require.Error(t, RequireSignedBodyIntegrity(nil))
+
+	t.Run("missing required signed host header is rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) date"))
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("get without body or digest does not require digest", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
+
+		require.NoError(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("get with digest header requires digest to be signed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.Header.Set(DigestHeader, calculateDigest([]byte("body")))
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("host header fallback is accepted", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = ""
+		req.Header.Set(common.HostHeader, "example.com")
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
+
+		require.NoError(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("invalid signed host authority is rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com/path"
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("missing request url host is rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.URL.Host = ""
+		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
 		require.Error(t, RequireSignedBodyIntegrity(req))
 	})

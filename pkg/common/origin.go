@@ -124,31 +124,6 @@ func lesserForwardedOriginURL(headers map[string][]string) string {
 	return proto + "://" + host
 }
 
-func validatedOriginURL(origin string) string {
-	origin = strings.TrimSpace(origin)
-	if origin == "" {
-		return ""
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u == nil {
-		return ""
-	}
-	if u.Scheme != SchemeHTTP && u.Scheme != SchemeHTTPS {
-		return ""
-	}
-	host, ok := normalizeForwardedHost(u.Host)
-	if !ok {
-		return ""
-	}
-	u.Host = host
-	u.User = nil
-	u.Path = ""
-	u.RawPath = ""
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String()
-}
-
 func normalizeForwardedHost(raw string) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.ContainsAny(raw, "\r\n\t /\\?#@") {

@@ -77,6 +77,8 @@ const (
 	VisibilityPublic = "public"
 	// VisibilityDirect represents a direct message visibility level
 	VisibilityDirect = "direct"
+	// VisibilityPrivate represents a followers-only visibility level
+	VisibilityPrivate = "private"
 
 	// ModerationEventTypeFlagCreated represents a flag creation event
 	ModerationEventTypeFlagCreated = "flag_created"
@@ -813,7 +815,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 			// Don't fail the entire operation - continue processing
 		}
 
-	case "private":
+	case VisibilityPrivate:
 		h.Logger.Debug("Status is private, adding to followers' home timelines",
 			zap.String("status_id", status.StatusID))
 		// Private posts only go to followers' home timelines
@@ -1817,12 +1819,14 @@ func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *a
 	return nil
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 type undoRejectFollowState struct {
 	ID     string
 	Actor  string
 	Target string
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func (h *ActivityHandler) extractRejectStateForUndoReject(rejectActivity interface{}) (string, interface{}, error) {
 	switch reject := rejectActivity.(type) {
 	case *activitypub.Activity:
@@ -1844,6 +1848,7 @@ func (h *ActivityHandler) extractRejectStateForUndoReject(rejectActivity interfa
 	}
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func (h *ActivityHandler) resolveUndoRejectFollowState(ctx context.Context, followActivity interface{}) (undoRejectFollowState, error) {
 	switch follow := followActivity.(type) {
 	case string:
@@ -1869,6 +1874,7 @@ func (h *ActivityHandler) resolveUndoRejectFollowState(ctx context.Context, foll
 	}
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func (h *ActivityHandler) followStateFromActivity(activity *activitypub.Activity) (undoRejectFollowState, error) {
 	if activity == nil || activity.Type != ActivityTypeFollow {
 		return undoRejectFollowState{}, services.ErrExtractActivityTypeFromUndo
@@ -1881,6 +1887,7 @@ func (h *ActivityHandler) followStateFromActivity(activity *activitypub.Activity
 	return validateUndoRejectFollowState(state)
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func (h *ActivityHandler) followStateFromMap(activity map[string]interface{}) (undoRejectFollowState, error) {
 	activityType, _ := activity["type"].(string)
 	if activityType != ActivityTypeFollow {
@@ -1897,6 +1904,7 @@ func (h *ActivityHandler) followStateFromMap(activity map[string]interface{}) (u
 	return validateUndoRejectFollowState(state)
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func (h *ActivityHandler) followTargetFromObject(object interface{}) string {
 	switch obj := object.(type) {
 	case string:
@@ -1909,6 +1917,7 @@ func (h *ActivityHandler) followTargetFromObject(object interface{}) string {
 	return ""
 }
 
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
 func validateUndoRejectFollowState(state undoRejectFollowState) (undoRejectFollowState, error) {
 	if err := common.ValidateRequiredParam("followActivityID", state.ID); err != nil {
 		return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject

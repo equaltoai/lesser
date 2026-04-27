@@ -106,6 +106,129 @@ func TestActivityProcessor_ObjectExtractionHelpers_Branches(t *testing.T) {
 	require.Nil(t, ap.extractAddressingField(map[string]any{"to": "not-a-slice"}, "to"))
 }
 
+func TestActivityProcessor_VisibilityContentAndHostBranches(t *testing.T) {
+	ap := &ActivityProcessor{logger: zap.NewNop()}
+
+	require.Equal(t, VisibilityDirect, ap.determineVisibility(nil, nil))
+	require.Equal(t, VisibilityPublic, ap.determineVisibility([]string{activitypub.PublicAddress}, nil))
+	require.Equal(t, "unlisted", ap.determineVisibility(nil, []string{activitypub.PublicAddress}))
+	require.Equal(t, VisibilityDirect, ap.determineVisibility([]string{"https://example.com/users/alice/followers"}, nil))
+
+	fromDefaultAddressing := ap.createObjectFromContent("object-1", "<p> el mundo de la prueba </p>", &activitypub.Activity{})
+	require.Equal(t, VisibilityPublic, fromDefaultAddressing.Visibility)
+	require.Equal(t, "es", fromDefaultAddressing.Language)
+
+	fromActivityAddressing := ap.createObjectFromContent("object-2", " le monde de une chose ", &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{CC: []string{activitypub.PublicAddress}},
+	})
+	require.Equal(t, "unlisted", fromActivityAddressing.Visibility)
+	require.Equal(t, "fr", fromActivityAddressing.Language)
+
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://example.com/objects/note-1",
+			InReplyTo: "https://example.com/objects/root",
+			Sensitive: true,
+			Summary:   "cw",
+		},
+		Content:    "ciao mondo",
+		Attachment: []activitypub.Attachment{{Type: "Document"}},
+	}
+	processed := ap.processNoteObject(&activitypub.Activity{
+		BaseObject: activitypub.BaseObject{To: []string{activitypub.PublicAddress}},
+	}, note)
+	require.True(t, processed.HasMedia)
+	require.True(t, processed.IsReply)
+	require.True(t, processed.Sensitive)
+	require.Equal(t, VisibilityPublic, processed.Visibility)
+	require.Equal(t, "cw", processed.SpoilerText)
+
+	converted, err := ap.convertMapToNote(map[string]any{
+		"id":           "https://remote.example/objects/converted",
+		"type":         "Note",
+		"content":      "converted content",
+		"attributedTo": "https://remote.example/users/bob",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "converted content", converted.Content)
+	_, err = ap.convertMapToNote(map[string]any{"bad": make(chan int)})
+	require.Error(t, err)
+	_, err = ap.convertMapToNote(map[string]any{"to": "not-an-array"})
+	require.Error(t, err)
+
+	require.Equal(t, UnknownValue, ap.extractRemoteHost(""))
+	require.Equal(t, "remote.example", ap.extractRemoteHost("https://remote.example:8443/objects/1"))
+	require.Equal(t, "remote.example", ap.extractRemoteHost("http://remote.example/users/alice"))
+	require.Equal(t, "remote.example", ap.extractRemoteHost("remote.example/path"))
+}
+
+func TestActivityProcessor_BackoffAndHTMLBranches(t *testing.T) {
+	ap := &ActivityProcessor{retryDelay: time.Second}
+
+	oddDelay := ap.calculateBackoffDelay(1)
+	require.Positive(t, oddDelay)
+	require.Less(t, oddDelay, time.Second)
+
+	evenDelay := ap.calculateBackoffDelay(2)
+	require.Greater(t, evenDelay, 2*time.Second)
+
+	cappedDelay := ap.calculateBackoffDelay(10)
+	require.Greater(t, cappedDelay, 30*time.Second)
+	require.Less(t, cappedDelay, 31*time.Second)
+
+	require.Equal(t, " hello  world ", stripHTMLTags("<p>hello</p><b>world</b>"))
+	require.Equal(t, "unterminated <tag", stripHTMLTags("unterminated <tag"))
+}
+
+func TestActivityProcessor_DeletionHandlerAdditionalBranches(t *testing.T) {
+	ctx := context.Background()
+
+	mockDB := new(dynamock.MockDB)
+	mockQuery := new(dynamock.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
+
+	ap := &ActivityProcessor{
+		db:     mockDB,
+		logger: zap.NewNop(),
+	}
+
+	require.NoError(t, ap.handleCreateActivityDeletion(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "act-map", Type: activitypub.CreateType},
+		Actor:      "https://example.com/users/alice",
+		Object: map[string]any{
+			"id": "https://example.com/objects/map",
+		},
+	}, "alice"))
+
+	require.NoError(t, ap.handleCreateActivityDeletion(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "act-note", Type: activitypub.CreateType},
+		Actor:      "https://example.com/users/alice",
+		Object: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/objects/note"},
+		},
+	}, "alice"))
+
+	require.NoError(t, ap.handleCreateActivityDeletion(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "act-missing-map", Type: activitypub.CreateType},
+		Object:     map[string]any{"name": "missing id"},
+	}, "alice"))
+
+	require.NoError(t, ap.handleCreateActivityDeletion(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "act-invalid-object", Type: activitypub.CreateType},
+		Object:     123,
+	}, "alice"))
+
+	require.NoError(t, ap.handleFollowActivityDeletion(ctx, &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "act-follow-invalid", Type: activitypub.FollowType},
+		Object:     map[string]any{"id": "https://remote.example/users/bob"},
+	}))
+
+	mockQuery.AssertExpectations(t)
+	mockDB.AssertExpectations(t)
+}
+
 func TestActivityProcessor_ConvertToNote_MarshalError(t *testing.T) {
 	ap := &ActivityProcessor{logger: zap.NewNop()}
 
@@ -309,7 +432,7 @@ func TestActivityProcessor_ProcessRecord_Insert_Outbox_CreateAndAnnounce(t *test
 				"username":  events.NewStringAttribute("alice"),
 				"actor_id":  events.NewStringAttribute("https://example.com/users/alice"),
 				"type":      events.NewStringAttribute("Announce"),
-				"activity":  events.NewStringAttribute(`{"id":"https://example.com/activities/act-announce","type":"Announce","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
+				"activity":  events.NewStringAttribute(`{"id":"https://example.com/activities/act-announce","type":"Announce","actor":"https://example.com/users/alice","to":["https://www.w3.org/ns/activitystreams#Public"],"object":"https://example.com/objects/1"}`),
 			},
 		},
 	})

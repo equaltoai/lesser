@@ -251,6 +251,102 @@ func TestActivityHandler_ProcessUndoReject_Branches(t *testing.T) {
 	})
 }
 
+func TestActivityHandler_UndoRejectHelperBranches(t *testing.T) {
+	ctx := context.Background()
+	h := &ActivityHandler{Logger: zap.NewNop()}
+
+	t.Run("extract rejects non reject activity", func(t *testing.T) {
+		_, _, err := h.extractRejectStateForUndoReject(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: ActivityTypeFollow},
+		})
+		require.ErrorIs(t, err, services.ErrExtractActivityTypeFromUndo)
+	})
+
+	t.Run("extracts valid activity reject state", func(t *testing.T) {
+		actor, follow, err := h.extractRejectStateForUndoReject(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: ActivityTypeReject},
+			Actor:      "https://example.com/users/alice",
+			Object:     "follow-1",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com/users/alice", actor)
+		require.Equal(t, "follow-1", follow)
+	})
+
+	t.Run("extract rejects non reject map", func(t *testing.T) {
+		_, _, err := h.extractRejectStateForUndoReject(map[string]any{
+			"type": ActivityTypeFollow,
+		})
+		require.ErrorIs(t, err, services.ErrExtractActivityTypeFromUndo)
+	})
+
+	t.Run("resolves stored follow state", func(t *testing.T) {
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-success").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "follow-success",
+				Type: ActivityTypeFollow,
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/users/alice",
+		}, nil).Once()
+
+		h := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo}
+		state, err := h.resolveUndoRejectFollowState(ctx, "follow-success")
+		require.NoError(t, err)
+		require.Equal(t, undoRejectFollowState{
+			ID:     "follow-success",
+			Actor:  "https://remote.example/users/bob",
+			Target: "https://example.com/users/alice",
+		}, state)
+		activityRepo.AssertExpectations(t)
+	})
+
+	t.Run("resolves embedded follow map with object id", func(t *testing.T) {
+		state, err := h.resolveUndoRejectFollowState(ctx, map[string]any{
+			"id":    "follow-embedded",
+			"type":  ActivityTypeFollow,
+			"actor": "https://remote.example/users/bob",
+			"object": map[string]any{
+				"id": "https://example.com/users/alice",
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com/users/alice", state.Target)
+	})
+
+	t.Run("empty follow id string is rejected", func(t *testing.T) {
+		_, err := h.resolveUndoRejectFollowState(ctx, "")
+		require.ErrorIs(t, err, services.ErrExtractUsernamesFromReject)
+	})
+
+	t.Run("nil or wrong activity type is rejected", func(t *testing.T) {
+		_, err := h.followStateFromActivity(nil)
+		require.ErrorIs(t, err, services.ErrExtractActivityTypeFromUndo)
+
+		_, err = h.followStateFromActivity(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: ActivityTypeAccept},
+		})
+		require.ErrorIs(t, err, services.ErrExtractActivityTypeFromUndo)
+	})
+
+	t.Run("missing required follow fields are rejected", func(t *testing.T) {
+		_, err := h.followStateFromMap(map[string]any{
+			"id":     "follow-missing-target",
+			"type":   ActivityTypeFollow,
+			"actor":  "https://remote.example/users/bob",
+			"object": map[string]any{},
+		})
+		require.ErrorIs(t, err, services.ErrExtractUsernamesFromReject)
+
+		_, err = validateUndoRejectFollowState(undoRejectFollowState{
+			ID:     "follow-missing-actor",
+			Target: "https://example.com/users/alice",
+		})
+		require.ErrorIs(t, err, services.ErrExtractUsernamesFromReject)
+	})
+}
+
 func TestActivityHandler_ProcessUndoFlag_Branches(t *testing.T) {
 	t.Setenv("DOMAIN", "example.com")
 	config.ResetForTests()
