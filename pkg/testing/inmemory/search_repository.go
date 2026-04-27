@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // SearchRepository is a thread-safe in-memory implementation of interfaces.SearchRepository.
@@ -106,12 +107,24 @@ func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Contex
 
 // SearchStatusesWithPrivacy searches for statuses with privacy enforcement
 func (r *SearchRepository) SearchStatusesWithPrivacy(ctx context.Context, query string, options storage.StatusSearchOptions, _ string) ([]*storage.StatusSearchResult, error) {
-	return r.SearchStatuses(ctx, query, options.Limit)
+	results, err := r.SearchStatuses(ctx, query, options.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return filterPublicStatusSearchResults(results), nil
 }
 
 // SearchStatusesWithPrivacyPaginated searches for statuses with privacy and pagination
 func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Context, query string, options storage.StatusSearchOptions, _ string) ([]*storage.StatusSearchResult, *interfaces.PaginationResult, error) {
-	return r.SearchStatusesWithOptionsPaginated(ctx, query, options)
+	results, _, err := r.SearchStatusesWithOptionsPaginated(ctx, query, options)
+	if err != nil {
+		return nil, nil, err
+	}
+	results = filterPublicStatusSearchResults(results)
+	return results, &interfaces.PaginationResult{
+		HasNextPage: false,
+		TotalCount:  len(results),
+	}, nil
 }
 
 // SearchStatusesAdvanced searches for statuses with advanced filtering
@@ -146,6 +159,20 @@ func (r *SearchRepository) Clear() {
 	defer r.mu.Unlock()
 	r.actors = make(map[string]*activitypub.Actor)
 	r.statuses = make(map[string]*storage.StatusSearchResult)
+}
+
+func filterPublicStatusSearchResults(results []*storage.StatusSearchResult) []*storage.StatusSearchResult {
+	filtered := make([]*storage.StatusSearchResult, 0, len(results))
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		switch strings.TrimSpace(strings.ToLower(result.Visibility)) {
+		case models.VisibilityPublic, models.VisibilityUnlisted:
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
 }
 
 // Ensure SearchRepository implements interfaces.SearchRepository

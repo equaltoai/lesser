@@ -178,6 +178,9 @@ func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.
 // searchStatusByURL searches for a status by direct URL
 func (h *Handler) searchStatusByURL(ctx *apptheory.Context, statusURL string, viewerUsername string, result *models.SearchResult) {
 	if fullStatus, err := h.resolveStatusBySearchURL(ctx.Context(), statusURL); err == nil && fullStatus != nil {
+		if !h.statusVisibleInSearch(fullStatus, viewerUsername) {
+			return
+		}
 		apiStatus, convErr := h.convertStorageStatusToAPI(fullStatus, viewerUsername)
 		if convErr == nil && apiStatus != nil {
 			result.Statuses = append(result.Statuses, *apiStatus)
@@ -192,7 +195,7 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 		AccountID: params.AccountID,
 	}
 
-	statusResults, err := h.repos.Search().SearchStatusesWithOptions(ctx.Context(), params.Query, searchOptions)
+	statusResults, err := h.repos.Search().SearchStatusesWithPrivacy(ctx.Context(), params.Query, searchOptions, h.searchViewerActorID(viewerUsername))
 	if err != nil {
 		h.logger.Warn("status search failed", zap.Error(err))
 		return
@@ -202,6 +205,9 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 
 	// Convert search results to API format
 	for _, sr := range statusResults {
+		if len(result.Statuses) >= params.Limit {
+			break
+		}
 		status := h.convertStatusResultToAPI(ctx, sr, viewerUsername)
 		if strings.TrimSpace(status.ID) == "" {
 			continue
@@ -218,13 +224,22 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 
 // convertStatusResultToAPI converts status result to API format
 func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult, viewerUsername string) models.Status {
+	if sr == nil {
+		return models.Status{}
+	}
 	if status, err := h.resolveStatusFromSearchResult(ctx.Context(), sr); err == nil && status != nil {
+		if !h.statusVisibleInSearch(status, viewerUsername) {
+			return models.Status{}
+		}
 		apiStatus, convErr := h.convertStorageStatusToAPI(status, viewerUsername)
 		if convErr == nil && apiStatus != nil {
 			return *apiStatus
 		}
 	}
 
+	if !searchResultVisibleInSearch(sr, viewerUsername) {
+		return models.Status{}
+	}
 	return h.convertThinStatusResultToAPI(ctx, sr)
 }
 
@@ -384,7 +399,7 @@ func (h *Handler) addAuthorMatchedStatuses(ctx *apptheory.Context, params *Searc
 			if len(result.Statuses) >= params.Limit {
 				return
 			}
-			if !statusVisibleInSearch(status, viewerUsername) {
+			if !h.statusVisibleInSearch(status, viewerUsername) {
 				continue
 			}
 
@@ -402,16 +417,58 @@ func (h *Handler) addAuthorMatchedStatuses(ctx *apptheory.Context, params *Searc
 	}
 }
 
-func statusVisibleInSearch(status *storagemodels.Status, viewerUsername string) bool {
+func (h *Handler) statusVisibleInSearch(status *storagemodels.Status, viewerUsername string) bool {
+	return statusVisibleInSearchForViewer(status, viewerUsername, h.searchViewerActorID(viewerUsername))
+}
+
+func statusVisibleInSearchForViewer(status *storagemodels.Status, viewerUsername, viewerActorID string) bool {
 	if status == nil {
+		return false
+	}
+	if status.Deleted {
 		return false
 	}
 
 	switch status.Visibility {
 	case storagemodels.VisibilityPublic, storagemodels.VisibilityUnlisted:
 		return true
+	}
+
+	viewerUsername = strings.TrimSpace(viewerUsername)
+	if viewerUsername == "" {
+		return false
+	}
+	if strings.EqualFold(viewerUsername, strings.TrimSpace(status.AuthorUsername)) {
+		return true
+	}
+	viewerActorID = strings.TrimSpace(viewerActorID)
+	if viewerActorID == "" {
+		return false
+	}
+	return status.IsVisibleTo(viewerActorID)
+}
+
+func (h *Handler) searchViewerActorID(viewerUsername string) string {
+	viewerUsername = strings.TrimSpace(viewerUsername)
+	if viewerUsername == "" || h == nil || h.cfg == nil {
+		return ""
+	}
+	return h.cfg.ActorURL(viewerUsername)
+}
+
+func searchResultVisibleInSearch(result *storage.StatusSearchResult, viewerUsername string) bool {
+	if result == nil {
+		return false
+	}
+
+	switch strings.TrimSpace(strings.ToLower(result.Visibility)) {
+	case storagemodels.VisibilityPublic, storagemodels.VisibilityUnlisted:
+		return true
+	case storagemodels.VisibilityPrivate, storagemodels.VisibilityDirect:
+		return strings.TrimSpace(viewerUsername) != "" &&
+			strings.EqualFold(strings.TrimSpace(viewerUsername), strings.TrimSpace(result.AuthorUsername))
 	default:
-		return strings.TrimSpace(viewerUsername) != "" && strings.EqualFold(strings.TrimSpace(viewerUsername), strings.TrimSpace(status.AuthorUsername))
+		return false
 	}
 }
 

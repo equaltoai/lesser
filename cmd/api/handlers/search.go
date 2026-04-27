@@ -468,6 +468,9 @@ func (h *Handler) convertStatusSearchResults(ctx context.Context, statuses []sto
 		}
 
 		if fullStatus, err := h.resolveStatusFromSearchResult(ctx, &status); err == nil && fullStatus != nil {
+			if !h.statusVisibleInSearch(fullStatus, viewerUsername) {
+				continue
+			}
 			if apiStatus, convErr := h.convertStorageStatusToAPI(fullStatus, viewerUsername); convErr == nil && apiStatus != nil {
 				result.ID = apiStatus.ID
 				result.Content = apiStatus.Content
@@ -476,6 +479,8 @@ func (h *Handler) convertStatusSearchResults(ctx context.Context, statuses []sto
 				result.AccountUsername = apiStatus.Account.Username
 				result.CreatedAt = apiStatus.CreatedAt
 			}
+		} else if !searchResultVisibleInSearch(&status, viewerUsername) {
+			continue
 		}
 
 		// Add highlights if available

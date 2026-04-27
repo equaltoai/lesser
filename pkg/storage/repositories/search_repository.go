@@ -700,10 +700,10 @@ func (r *SearchRepository) SearchStatusesWithPrivacy(ctx context.Context, query 
 		return nil, err
 	}
 
-	// Apply privacy filters
-	if searcherActorID != "" {
-		results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
-	}
+	// Apply privacy filters. This is required even for unauthenticated searches
+	// because the public /api/v1/search surface can otherwise expose private or
+	// direct statuses that were indexed before this check existed.
+	results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
 
 	return results, nil
 }
@@ -719,10 +719,9 @@ func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Contex
 		return nil, nil, err
 	}
 
-	// Apply privacy filters
-	if searcherActorID != "" {
-		results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
-	}
+	// Apply privacy filters for both authenticated and unauthenticated searchers.
+	preFilterCount := len(results)
+	results = r.filterStatusesByPrivacy(ctx, results, searcherActorID)
 
 	// Apply original limit after filtering
 	finalResults := results
@@ -747,7 +746,7 @@ func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Contex
 	finalPagination := CreatePaginationResult(hasNextPage, nextCursor, len(results))
 
 	r.logger.Debug("search results after privacy filtering",
-		zap.Int("original_count", len(results)+len(results)-len(finalResults)),
+		zap.Int("original_count", preFilterCount),
 		zap.Int("filtered_count", len(finalResults)),
 		zap.String("searcher", searcherActorID))
 
@@ -763,8 +762,10 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 			continue
 		}
 
-		// Check if searcher is blocked by the author or has blocked the author
-		if r.deps != nil {
+		// Check if searcher is blocked by the author or has blocked the author.
+		// Anonymous searches still need visibility filtering below, but cannot
+		// perform viewer-specific block checks.
+		if r.deps != nil && strings.TrimSpace(searcherActorID) != "" {
 			isBlocked, err := r.deps.IsBlockedBidirectional(ctx, searcherActorID, result.AuthorID)
 			if err != nil {
 				r.logger.Debug("failed to check block status for status search",
@@ -808,14 +809,17 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 }
 
 // isStatusPrivate checks if a status should be excluded from search due to privacy
-func (r *SearchRepository) isStatusPrivate(_ *storage.StatusSearchResult) bool {
-	// Currently implements a conservative approach allowing all public/unlisted content in search results.
-	// Direct messages and private posts are excluded through other filtering mechanisms.
-	//
-	// Future enhancement: Include visibility field in search index to enable more granular filtering
-	// without requiring additional database queries for each result.
+func (r *SearchRepository) isStatusPrivate(result *storage.StatusSearchResult) bool {
+	if result == nil {
+		return true
+	}
 
-	return false // Allow all content - private/direct content is filtered at other layers
+	switch strings.TrimSpace(strings.ToLower(result.Visibility)) {
+	case models.VisibilityPublic, models.VisibilityUnlisted:
+		return false
+	default:
+		return true
+	}
 }
 
 // statusSearchResult wraps search result with sync protection
@@ -1388,6 +1392,9 @@ func (r *SearchRepository) statusModelToSearchResult(status *models.Status, scor
 		AuthorID:       status.AuthorID,
 		AuthorUsername: status.AuthorUsername,
 		Published:      status.PublishedAt,
+		Visibility:     status.Visibility,
+		Language:       status.Language,
+		Tags:           status.Hashtags,
 		Score:          score,
 		Highlights:     []string{strategy},
 	}
@@ -1785,6 +1792,8 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 			AuthorID:       indexEntry.AuthorID,
 			AuthorUsername: indexEntry.AuthorHandle,
 			Published:      indexEntry.Published,
+			Visibility:     indexEntry.Visibility,
+			Language:       indexEntry.Language,
 			Score:          1.0, // Exact hashtag match
 			Highlights:     []string{"hashtag_match"},
 		}
