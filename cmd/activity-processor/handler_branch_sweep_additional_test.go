@@ -196,7 +196,7 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		}
 		undo := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{ID: "undo-1", Type: ActivityTypeUndo},
-			Actor:      "https://example.com/users/alice",
+			Actor:      "https://example.com/users/",
 		}
 
 		err := handler.processUndoReject(ctx, undo, reject, "alice")
@@ -210,10 +210,13 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
 
 		reject := map[string]any{
+			"type":  ActivityTypeReject,
 			"actor": "https://example.com/users/alice",
 			"object": map[string]any{
-				"actor": "https://remote.example/users/bob",
-				"id":    "follow-1",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"id":     "follow-1",
+				"object": "https://example.com/users/alice",
 			},
 		}
 		undo := &activitypub.Activity{
@@ -223,6 +226,23 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 
 		require.Error(t, handler.processUndoReject(ctx, undo, reject, "alice"))
 		relationshipRepo.AssertExpectations(t)
+	})
+
+	t.Run("forged follow target is rejected", func(t *testing.T) {
+		handler := &ActivityHandler{Logger: zap.NewNop()}
+		reject := map[string]any{
+			"type":  ActivityTypeReject,
+			"actor": "https://example.com/users/alice",
+			"object": map[string]any{
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"id":     "follow-forged",
+				"object": "https://example.com/users/mallory",
+			},
+		}
+		undo := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "undo-forged", Type: ActivityTypeUndo}, Actor: "https://example.com/users/alice"}
+
+		require.ErrorIs(t, handler.processUndoReject(ctx, undo, reject, "alice"), services.ErrActorNotAuthorizedUndo)
 	})
 }
 

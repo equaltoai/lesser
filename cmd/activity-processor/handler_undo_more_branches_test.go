@@ -218,27 +218,23 @@ func TestActivityHandler_ProcessUndoReject_Branches(t *testing.T) {
 		require.ErrorIs(t, err, services.ErrUndoInvalidObjectType)
 	})
 
-	t.Run("follow lookup fails and username context used", func(t *testing.T) {
-		relationshipRepo := testmocks.NewMockRelationshipRepository()
-		relationshipRepo.On("CreateRelationship", mock.Anything, "alice", "bob", "follow-1").Return(nil).Once()
-
+	t.Run("follow lookup fails without mutating relationship", func(t *testing.T) {
 		activityRepo := testmocks.NewMockActivityRepository()
 		activityRepo.On("GetActivity", mock.Anything, "follow-1").Return((*activitypub.Activity)(nil), errors.New("not found")).Once()
 
 		h := &ActivityHandler{
-			Logger:           zap.NewNop(),
-			RelationshipRepo: relationshipRepo,
-			ActivityRepo:     activityRepo,
+			Logger:       zap.NewNop(),
+			ActivityRepo: activityRepo,
 		}
 
-		undo := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "undo-1"}, Actor: "https://example.com/users/alice"}
+		undo := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "undo-1"}, Actor: "https://remote.example/users/bob"}
 		reject := map[string]any{
+			"type":   ActivityTypeReject,
 			"actor":  "https://remote.example/users/bob",
 			"object": "follow-1",
 		}
-		require.NoError(t, h.processUndoReject(ctx, undo, reject, "alice"))
+		require.Error(t, h.processUndoReject(ctx, undo, reject, "alice"))
 
-		relationshipRepo.AssertExpectations(t)
 		activityRepo.AssertExpectations(t)
 	})
 
