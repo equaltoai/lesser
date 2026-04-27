@@ -378,7 +378,7 @@ func TestInboxHandler_InitializeSharedInboxRequest_RejectsInvalidResolvedTargetA
 
 	actorRepo := testingmocks.NewMockActorRepository()
 	env.handler.actorRepository = actorRepo
-	actorRepo.On("GetActorByUsername", mock.Anything, "alice").Return(&activitypub.Actor{PreferredUsername: "alice"}, nil).Once()
+	actorRepo.On("GetActorByUsername", mock.Anything, "alice").Return(&activitypub.Actor{PreferredUsername: "alice"}, nil).Twice()
 
 	activity := map[string]any{
 		"@context": activitypub.Context,
@@ -473,4 +473,109 @@ func newInstanceRepositoryWithState(state *storagemodels.InstanceState, err erro
 	}
 
 	return repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+}
+
+type sharedInboxResolverActorRepo struct {
+	actors map[string]*activitypub.Actor
+}
+
+func (r sharedInboxResolverActorRepo) GetActorByUsername(_ context.Context, username string) (*activitypub.Actor, error) {
+	actor := r.actors[username]
+	if actor == nil {
+		return nil, stderrors.New(actorNotFoundError)
+	}
+	return actor, nil
+}
+
+type sharedInboxResolverRelationshipRepo struct {
+	followers map[string][]string
+	deleted   [][2]string
+}
+
+func (r *sharedInboxResolverRelationshipRepo) GetFollowers(_ context.Context, username string, _ int, _ string) ([]string, string, error) {
+	return append([]string(nil), r.followers[username]...), "", nil
+}
+
+func (r *sharedInboxResolverRelationshipRepo) DeleteRelationship(_ context.Context, followerUsername, followingUsername string) error {
+	r.deleted = append(r.deleted, [2]string{followerUsername, followingUsername})
+	return nil
+}
+
+func TestSharedInboxTargetResolver_FollowerCollectionsRequireActorOwnership(t *testing.T) {
+	resolver := sharedInboxTargetResolver{
+		actorRepository: sharedInboxResolverActorRepo{actors: map[string]*activitypub.Actor{
+			"alice": {
+				BaseObject:        activitypub.BaseObject{ID: "https://local.example/users/alice", Type: activitypub.PersonType},
+				PreferredUsername: "alice",
+				Inbox:             "https://local.example/users/alice/inbox",
+				Outbox:            "https://local.example/users/alice/outbox",
+			},
+		}},
+		relationshipRepository: &sharedInboxResolverRelationshipRepo{followers: map[string][]string{
+			"bob@remote.example":     {"alice"},
+			"mallory@remote.example": {"alice"},
+		}},
+		localDomain: "local.example",
+	}
+
+	actors, err := resolver.Resolve(context.Background(), &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.CreateType,
+			ID:   "https://remote.example/activities/1",
+			To:   []string{"https://mallory.remote.example/users/mallory/followers"},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/objects/1",
+			"type":         activitypub.NoteType,
+			"attributedTo": "https://remote.example/users/bob",
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, actors)
+
+	actors, err = resolver.Resolve(context.Background(), &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.CreateType,
+			ID:   "https://remote.example/activities/2",
+			To:   []string{"https://remote.example/users/bob/followers"},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/objects/2",
+			"type":         activitypub.NoteType,
+			"attributedTo": "https://remote.example/users/bob",
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, actors, 1)
+	require.Equal(t, "alice", actors[0].PreferredUsername)
+}
+
+func TestSharedInboxTargetResolver_CleansStaleFollowerClaims(t *testing.T) {
+	relationshipRepo := &sharedInboxResolverRelationshipRepo{followers: map[string][]string{
+		"bob@remote.example": {"missing"},
+	}}
+	resolver := sharedInboxTargetResolver{
+		actorRepository:        sharedInboxResolverActorRepo{actors: map[string]*activitypub.Actor{}},
+		relationshipRepository: relationshipRepo,
+		localDomain:            "local.example",
+	}
+
+	actors, err := resolver.Resolve(context.Background(), &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.CreateType,
+			ID:   "https://remote.example/activities/3",
+			To:   []string{"https://remote.example/users/bob/followers"},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/objects/3",
+			"type":         activitypub.NoteType,
+			"attributedTo": "https://remote.example/users/bob",
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, actors)
+	require.Equal(t, [][2]string{{"missing", "bob@remote.example"}}, relationshipRepo.deleted)
 }

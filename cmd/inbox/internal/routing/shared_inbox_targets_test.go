@@ -39,6 +39,10 @@ func (s *sharedInboxRelationshipRepoStub) GetFollowers(_ context.Context, userna
 	return append([]string(nil), s.followers[username]...), "", nil
 }
 
+func (s *sharedInboxRelationshipRepoStub) DeleteRelationship(_ context.Context, _, _ string) error {
+	return nil
+}
+
 type sharedInboxActivityRepoStub struct {
 	activities map[string]*activitypub.Activity
 }
