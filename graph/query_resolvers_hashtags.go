@@ -176,6 +176,9 @@ func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []str
 			if post == nil {
 				continue
 			}
+			if post.Visibility != "" && post.Visibility != models.VisibilityPublic {
+				continue
+			}
 
 			if _, exists := allPosts[post.StatusID]; !exists {
 				allPosts[post.StatusID] = &model.Object{
@@ -311,6 +314,12 @@ func (r *queryResolver) buildHashtagTimelineEdges(ctx context.Context, posts []*
 		var status *models.Status
 		if statusByID != nil {
 			status = statusByID[post.StatusID]
+		}
+		if status != nil && status.Visibility != "" && status.Visibility != models.VisibilityPublic {
+			continue
+		}
+		if status == nil && post.Visibility != "" && post.Visibility != models.VisibilityPublic {
+			continue
 		}
 
 		if requireMedia && (status == nil || !status.HasMedia()) {

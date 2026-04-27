@@ -187,6 +187,27 @@ func TestBuildHashtagTimelineEdges_MediaFilter(t *testing.T) {
 	assert.NotNil(t, edges[0].Node)
 }
 
+func TestBuildHashtagTimelineEdges_FiltersNonPublicVisibility(t *testing.T) {
+	ctx := context.Background()
+	resolver := &Resolver{}
+	query := &queryResolver{resolver}
+
+	posts := []*storage.StatusSearchResult{
+		{StatusID: "public", Content: "public", Visibility: models.VisibilityPublic},
+		{StatusID: "private", Content: "private", Visibility: models.VisibilityPrivate},
+		{StatusID: "direct", Content: "direct", Visibility: models.VisibilityDirect},
+	}
+
+	statusByID := map[string]*models.Status{
+		"public":  {StatusID: "public", Visibility: models.VisibilityPublic},
+		"private": {StatusID: "private", Visibility: models.VisibilityPrivate},
+	}
+
+	edges := query.buildHashtagTimelineEdges(ctx, posts, statusByID, false)
+	assert.Len(t, edges, 1)
+	assert.Equal(t, model.Cursor("public"), edges[0].Cursor)
+}
+
 func TestBuildPostConnection(t *testing.T) {
 	edges := []*model.PostEdge{
 		{Cursor: "a"},

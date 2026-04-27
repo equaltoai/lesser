@@ -93,6 +93,20 @@ func TestHashtagRepository_PureHelpers(t *testing.T) {
 	assert.Nil(t, convertNotificationFiltersToStorage(nil))
 }
 
+func TestHashtagRepository_SkipsNonPublicIndexing(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
+
+	require.NoError(t, repo.IndexHashtag(ctx, "#Secret", "status-private", "alice", models.VisibilityPrivate))
+	require.NoError(t, repo.IndexStatusHashtags(ctx, "status-private", "alice", "alice", "https://example.com/s/private", "secret", []string{"#Secret"}, time.Now(), models.VisibilityPrivate))
+
+	db.AssertNotCalled(t, "WithContext", mock.Anything)
+	db.AssertNotCalled(t, "Model", mock.Anything)
+	q.AssertNotCalled(t, "Create")
+}
+
 func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 	ctx := context.Background()
 	db, q := newPermissiveDynamORM(t)
@@ -126,8 +140,21 @@ func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 					AuthorHandle: "alice",
 					StatusURL:    "https://example.com/s/1",
 					Content:      "hello",
+					Visibility:   models.VisibilityPublic,
 					Published:    time.Now().Add(-1 * time.Hour),
 					GSI2SK:       "TS#1",
+				},
+				{
+					PK:           "HASHTAG_TIMELINE#golang",
+					SK:           "TS#2",
+					StatusID:     "s2",
+					AuthorID:     "a2",
+					AuthorHandle: "bob",
+					StatusURL:    "https://example.com/s/2",
+					Content:      "private",
+					Visibility:   models.VisibilityPrivate,
+					Published:    time.Now().Add(-2 * time.Hour),
+					GSI2SK:       "TS#2",
 				},
 			}
 		case *[]*models.HashtagUsage:
@@ -179,17 +206,18 @@ func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 	// Timelines.
 	publicResults, err := repo.GetHashtagTimelineAdvanced(ctx, "#GoLang", nil, 2, models.VisibilityPublic)
 	require.NoError(t, err)
-	require.NotEmpty(t, publicResults)
+	require.Len(t, publicResults, 1)
+	require.Equal(t, "s1", publicResults[0].StatusID)
 
 	privateVis := "private"
 	privateResults, err := repo.GetHashtagTimelineAdvanced(ctx, "#GoLang", nil, 2, privateVis)
 	require.NoError(t, err)
-	require.NotEmpty(t, privateResults)
+	require.Empty(t, privateResults)
 
 	// Multi-hashtag merge path.
 	merged, err := repo.GetMultiHashtagTimeline(ctx, []string{"#GoLang"}, nil, 1, privateVis)
 	require.NoError(t, err)
-	require.Len(t, merged, 1)
+	require.Empty(t, merged)
 
 	// Suggestions and metadata range queries.
 	suggestions, err := repo.GetSuggestedHashtags(ctx, "alice", 1)
