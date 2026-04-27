@@ -58,6 +58,8 @@ type OAuthDeviceVerifyResponse struct {
 type OAuthDeviceConsentRequest struct {
 	UserCode string `json:"user_code"`
 	Action   string `json:"action"` // approve|deny
+	ClientID string `json:"client_id"`
+	Scope    string `json:"scope"`
 }
 
 // OAuthDeviceConsentResponse represents the server response after approving/denying a device session.

@@ -243,6 +243,9 @@ type Session struct {
 	DeviceID             string    `json:"device_id,omitempty"`
 	DeviceName           string    `json:"device_name,omitempty"`
 	AuthMethod           string    `json:"auth_method,omitempty"`
+	IsRevoked            bool      `json:"is_revoked,omitempty"`
+	RevokedAt            time.Time `json:"revoked_at,omitempty"`
+	RevokeReason         string    `json:"revoke_reason,omitempty"`
 	PreviousRefreshToken string    `json:"previous_refresh_token,omitempty"`
 	TokenRotatedAt       time.Time `json:"token_rotated_at,omitempty"`
 }

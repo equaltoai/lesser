@@ -560,6 +560,34 @@ func (s *OAuthService) validateAccessTokenNotRevoked(claims *Claims) error {
 	return nil
 }
 
+func (s *OAuthService) validateNativeSessionTokenStillActive(claims *Claims) error {
+	if s == nil || s.repos == nil || claims == nil {
+		return nil
+	}
+	if strings.TrimSpace(claims.ID) != "" {
+		return nil
+	}
+
+	sessionID := strings.TrimSpace(claims.SessionID)
+	if sessionID == "" {
+		return nil
+	}
+
+	accountRepo := s.repos.Account()
+	if accountRepo == nil {
+		return ErrInvalidToken
+	}
+
+	checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	session, err := accountRepo.GetSession(checkCtx, sessionID)
+	cancel()
+	if err != nil || session == nil || session.IsRevoked || time.Now().After(session.ExpiresAt) {
+		return ErrInvalidToken
+	}
+
+	return nil
+}
+
 // ValidateAccessTokenWithContext validates a JWT token with additional security context
 func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessionID, expectedIP string, expectedTokenVersion int) (*Claims, error) {
 	token, err := s.parseAccessToken(tokenString)
@@ -583,6 +611,10 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 	// This is a read-after-parse DynamoDB lookup keyed by token JTI; if storage is unavailable,
 	// we accept the token to avoid turning storage blips into auth outages.
 	if err := s.validateAccessTokenNotRevoked(claims); err != nil {
+		return nil, err
+	}
+
+	if err := s.validateNativeSessionTokenStillActive(claims); err != nil {
 		return nil, err
 	}
 

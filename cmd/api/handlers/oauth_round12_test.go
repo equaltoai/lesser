@@ -1453,6 +1453,52 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
+	t.Run("device_code confidential client requires authentication", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "confidential"
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-confidential": {
+					ClientID:     "client-confidential",
+					ClientSecret: "secret",
+					Name:         "Confidential CLI App",
+					RedirectURIs: []string{"https://example.com/callback"},
+					GrantTypes:   []string{oauthDeviceCodeGrantType},
+					ClientClass:  auth.ClientClassCLI,
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				oauthDeviceCodeHash(deviceCode): {
+					DeviceCodeHash:  oauthDeviceCodeHash(deviceCode),
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-confidential",
+					Scopes:          []string{auth.ScopeRead},
+					Status:          "pending",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+
+		ctxMissingSecret := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-confidential"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctxMissingSecret))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+
+		ctxWithSecret := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-confidential&client_secret=secret"))
+		resp = requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctxWithSecret))
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "authorization_pending", body["error"])
+	})
+
 	t.Run("device_code invalid_grant when device_code missing", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true

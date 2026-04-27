@@ -28,6 +28,8 @@ const (
 	TrustLevelUntrusted = "untrusted"
 )
 
+var sessionRandRead = rand.Read
+
 // Session is a type alias for storage.Session
 type Session = storage.Session
 
@@ -118,6 +120,9 @@ func (sm *SessionManager) ValidateRefreshToken(ctx context.Context, refreshToken
 	// Get session by refresh token
 	session, err := sm.repo.GetSessionByRefreshToken(ctx, refreshToken)
 	if err != nil {
+		return nil, ErrInvalidRefreshToken
+	}
+	if session == nil || session.IsRevoked {
 		return nil, ErrInvalidRefreshToken
 	}
 
@@ -227,7 +232,7 @@ func (sm *SessionManager) TrustDevice(ctx context.Context, deviceID string) erro
 // generateSecureToken generates a cryptographically secure random token
 func generateSecureToken() (string, error) {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := sessionRandRead(b); err != nil {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil

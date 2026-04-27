@@ -80,6 +80,42 @@ func TestAuthService_generateShortLivedAccessToken_AndValidateAccessToken(t *tes
 	q.AssertExpectations(t)
 }
 
+func TestAuthService_ValidateAccessTokenRejectsRevokedSession(t *testing.T) {
+	secret := "a-very-strong-jwt-key-without-weak-patterns-9876543210"
+
+	db := new(mocks.MockDB)
+	q := new(mocks.MockQuery)
+	db.On("WithContext", mock.Anything).Return(db)
+	db.On("Model", mock.Anything).Return(q)
+	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q)
+
+	sessionID := "sid-revoked"
+	q.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*models.Session)
+		*dest = models.Session{
+			SessionID:  sessionID,
+			UserID:     "USER#alice",
+			CreatedAt:  time.Now(),
+			LastUsedAt: time.Now(),
+			UpdatedAt:  time.Now(),
+			ExpiresAt:  time.Now().Add(1 * time.Hour).Unix(),
+			IsRevoked:  true,
+		}
+	})
+
+	accountRepo := repositories.NewAccountRepository(db, "test-table", "example.com", zap.NewNop())
+	as := &AuthService{
+		repos:     fakeAuthRepos{account: accountRepo},
+		jwtSecret: []byte(secret),
+	}
+
+	token, err := as.generateShortLivedAccessToken("alice", sessionID, "dev-1", DefaultScopes())
+	assert.NoError(t, err)
+
+	_, err = as.ValidateAccessToken(token)
+	assert.ErrorIs(t, err, ErrInvalidToken)
+}
+
 func TestAuthService_ValidateAccessToken_RejectsNonHMAC(t *testing.T) {
 	as := &AuthService{jwtSecret: []byte("a-very-strong-jwt-key-without-weak-patterns-9876543210")}
 

@@ -830,16 +830,16 @@ func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth
 		})
 	}
 
-	resp, err := h.validateOAuthClientSecretIfProvided(ctx, oauthSvc, req.clientID, req.clientSecret)
-	if resp != nil || err != nil {
-		return resp, err
-	}
 	client, err := h.repos.Account().GetOAuthClient(ctx, strings.TrimSpace(req.clientID))
 	if err != nil || client == nil {
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_client",
 			"error_description": "Invalid client credentials",
 		})
+	}
+	resp, err := validateOAuthDeviceGrantClientSecret(ctx, oauthSvc, client, req.clientID, req.clientSecret)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	if !oauthClientSupportsGrantType(client, oauthDeviceCodeGrantType) {
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
@@ -862,6 +862,7 @@ func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth
 	return h.oauthDeviceSessionTokenResponse(ctx, oauthSvc, session, req.clientID, now)
 }
 
+//nolint:unused // Kept for direct helper coverage and future optional-secret OAuth endpoints.
 func (h *Handler) validateOAuthClientSecretIfProvided(ctx context.Context, oauthSvc *auth.OAuthService, clientID, clientSecret string) (*apptheory.Response, error) {
 	if clientSecret == "" {
 		return nil, nil
@@ -874,6 +875,16 @@ func (h *Handler) validateOAuthClientSecretIfProvided(ctx context.Context, oauth
 		})
 	}
 
+	return nil, nil
+}
+
+func validateOAuthDeviceGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) (*apptheory.Response, error) {
+	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
 	return nil, nil
 }
 
@@ -1211,8 +1222,13 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return nil, auth.ErrInvalidGrant
 	}
-	if oauthClientRequiresPKCE(client) && strings.TrimSpace(codeVerifier) == "" {
-		return nil, auth.ErrInvalidRequest
+	if oauthClientRequiresPKCE(client) {
+		if strings.TrimSpace(authCode.CodeChallenge) == "" {
+			return nil, auth.ErrInvalidGrant
+		}
+		if strings.TrimSpace(codeVerifier) == "" {
+			return nil, auth.ErrInvalidRequest
+		}
 	}
 	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {

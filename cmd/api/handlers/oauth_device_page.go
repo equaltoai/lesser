@@ -103,6 +103,7 @@ const appName = document.getElementById("app-name");
 const appURL = document.getElementById("app-url");
 const requestStatus = document.getElementById("request-status");
 const scopeList = document.getElementById("scope-list");
+let verifiedDeviceRequest = null;
 
 function setStatus(title, detail) {
   lookupStatus.innerHTML = "<strong>" + title + "</strong><span>" + detail + "</span>";
@@ -146,6 +147,7 @@ async function lookupRequest() {
   setStatus("Looking up request", "Checking the pending device authorization...");
   try {
     const payload = await postForm("/oauth/device/verify", { user_code: userCode });
+    verifiedDeviceRequest = payload;
     details.classList.remove("hidden");
     appName.textContent = payload.client_name || payload.client_id || "Pending request";
     appURL.textContent = payload.client_url ? "Client URL: " + payload.client_url : "Client ID: " + (payload.client_id || "");
@@ -153,6 +155,7 @@ async function lookupRequest() {
     renderScopes(payload.scopes);
     setStatus("Request loaded", "Review the requesting app and scopes, then approve or deny.");
   } catch (error) {
+    verifiedDeviceRequest = null;
     details.classList.add("hidden");
     setStatus("Lookup failed", error.message);
   } finally {
@@ -163,6 +166,10 @@ async function lookupRequest() {
 async function submitConsent(action) {
   const userCode = normalizedCode();
   const bearerToken = accessTokenInput.value;
+  if (!verifiedDeviceRequest || verifiedDeviceRequest.user_code !== userCode) {
+    setStatus("Verify code first", "Look up the current device authorization before approving or denying.");
+    return;
+  }
   if (!bearerToken.trim()) {
     setStatus("Access token required", "Paste an operator bearer token before approving or denying.");
     return;
@@ -172,7 +179,12 @@ async function submitConsent(action) {
   denyButton.disabled = true;
   setStatus("Submitting decision", "Updating the device authorization...");
   try {
-    const payload = await postForm("/oauth/device/consent", { user_code: userCode, action }, bearerToken);
+    const payload = await postForm("/oauth/device/consent", {
+      user_code: userCode,
+      action,
+      client_id: verifiedDeviceRequest.client_id,
+      scope: (verifiedDeviceRequest.scopes || []).join(" "),
+    }, bearerToken);
     setStatus("Decision recorded", payload.message || ("Authorization " + payload.status));
     requestStatus.textContent = "Status: " + (payload.status || action);
   } catch (error) {

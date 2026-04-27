@@ -22,6 +22,39 @@ func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 	require.ErrorIs(t, validateAuthorizationCodeExchangeRedirect(client, "client-1", "https://example.com/other", "code"), auth.ErrInvalidRequest)
 }
 
+func TestLoadAndValidateAuthorizationCodeRequiresStoredPKCE(t *testing.T) {
+	cfg := round11TestConfig()
+	state := &round10QueryState{
+		authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+			"legacy-code": {
+				Code:        "legacy-code",
+				ClientID:    "client-public",
+				RedirectURI: "https://example.com/callback",
+				Username:    "alice",
+				ExpiresAt:   time.Now().Add(5 * time.Minute),
+				Scopes:      []string{auth.ScopeRead},
+			},
+		},
+	}
+	handler, _, _ := round11NewHandler(t, cfg, state)
+	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, cfg, handler.repos, nil)
+
+	_, err := handler.loadAndValidateAuthorizationCodeForExchange(
+		context.Background(),
+		oauthSvc,
+		&storage.OAuthClient{
+			ClientID:           "client-public",
+			RedirectURIs:       []string{"https://example.com/callback"},
+			RegistrationSource: oauthRegistrationSourceDynamic,
+		},
+		"legacy-code",
+		"client-public",
+		"https://example.com/callback",
+		"verifier",
+	)
+	require.ErrorIs(t, err, auth.ErrInvalidGrant)
+}
+
 func TestAuthorizationCodeExchangeTokenContext(t *testing.T) {
 	t.Parallel()
 

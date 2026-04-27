@@ -9,6 +9,7 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -45,6 +46,11 @@ func (h *Handler) HandleOAuthConsentLift(ctx *apptheory.Context) (*apptheory.Res
 		})
 	}
 
+	claims, resp, err := h.authenticateOAuthConsentSubmission(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
 	// Get OAuth state from storage
 	authState, err := h.repos.OAuth().GetOAuthState(ctx.Context(), state)
 	if err != nil {
@@ -57,12 +63,19 @@ func (h *Handler) HandleOAuthConsentLift(ctx *apptheory.Context) (*apptheory.Res
 		})
 	}
 
+	if resp := h.validateOAuthConsentActor(authState, claims); resp != nil {
+		return resp, nil
+	}
+
 	// Handle user action
 	// Note: We don't create OAuth sessions for client applications - OAuth state is sufficient
 	switch action {
 	case oauthConsentActionDeny:
 		return h.handleConsentDenial(ctx, authState)
 	case actionApprove:
+		if resp := h.validateOAuthConsentPKCE(ctx, authState); resp != nil {
+			return resp, nil
+		}
 		return h.handleConsentApproval(ctx, authState)
 	default:
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
@@ -70,6 +83,57 @@ func (h *Handler) HandleOAuthConsentLift(ctx *apptheory.Context) (*apptheory.Res
 			"error_description": "Invalid action parameter",
 		})
 	}
+}
+
+func (h *Handler) authenticateOAuthConsentSubmission(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
+	claims, err := h.authenticatedClaimsLift(ctx)
+	if err != nil {
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return nil, resp, respErr
+	}
+	if claims == nil || strings.TrimSpace(claims.GetUsername()) == "" {
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return nil, resp, respErr
+	}
+	return claims, nil, nil
+}
+
+func (h *Handler) validateOAuthConsentActor(authState *storage.OAuthState, claims *auth.Claims) *apptheory.Response {
+	expectedUsername := strings.TrimSpace(authState.Username)
+	if strings.TrimSpace(authState.PrincipalUsername) != "" {
+		expectedUsername = strings.TrimSpace(authState.PrincipalUsername)
+	}
+	if strings.EqualFold(strings.TrimSpace(claims.GetUsername()), expectedUsername) {
+		return nil
+	}
+	resp, _ := apptheory.JSON(http.StatusForbidden, map[string]string{
+		"error":             "access_denied",
+		"error_description": "Authenticated user does not match authorization request",
+	})
+	return resp
+}
+
+func (h *Handler) validateOAuthConsentPKCE(ctx *apptheory.Context, authState *storage.OAuthState) *apptheory.Response {
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context(), authState.ClientID)
+	if err != nil || client == nil {
+		resp, _ := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client",
+		})
+		return resp
+	}
+
+	if oauthClientRequiresPKCE(client) {
+		if err := requireOAuthPKCE(authState.CodeChallenge, authState.CodeChallengeMethod); err != nil {
+			resp, _ := apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_request",
+				"error_description": err.Error(),
+			})
+			return resp
+		}
+	}
+
+	return nil
 }
 
 // handleConsentDenial handles when the user denies consent

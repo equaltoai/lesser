@@ -21,6 +21,8 @@ import (
 // ===== Authentication Methods =====
 // This file contains authentication-related methods for the AccountRepository
 
+var accountAuthRandRead = rand.Read
+
 // ValidatePassword validates a user's password and tracks login attempts
 func (r *AccountRepository) ValidatePassword(ctx context.Context, username, password string) (*storage.User, error) {
 	// Get user first
@@ -126,7 +128,13 @@ func (r *AccountRepository) CreatePasswordResetToken(ctx context.Context, userna
 	}
 
 	// Generate token
-	token := generateSecureToken()
+	token, err := generateSecureToken()
+	if err != nil {
+		r.logger.Error("failed to generate password reset token",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", ErrorHandler.HandleCreateError(err, "password reset token", username)
+	}
 
 	// Create reset token record
 	reset := &models.PasswordReset{
@@ -257,6 +265,9 @@ func (r *AccountRepository) GetUserSessions(ctx context.Context, username string
 			IPAddress:    session.IPAddress,
 			UserAgent:    session.UserAgent,
 			LastActivity: session.LastUsedAt,
+			IsRevoked:    session.IsRevoked,
+			RevokedAt:    derefTime(session.RevokedAt),
+			RevokeReason: session.RevokeReason,
 		}
 	}
 
@@ -265,8 +276,21 @@ func (r *AccountRepository) GetUserSessions(ctx context.Context, username string
 
 // CreateSession creates a new session for a user
 func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddress, userAgent string) (*storage.Session, error) {
-	sessionID := generateSessionID()
-	token := generateSecureToken()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		r.logger.Error("failed to generate session ID",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, "session_id")
+	}
+	token, err := generateSecureToken()
+	if err != nil {
+		r.logger.Error("failed to generate session token",
+			zap.String("username", username),
+			zap.String("session_id", sessionID),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, sessionID)
+	}
 
 	now := time.Now()
 	expiresAt := now.Add(30 * 24 * time.Hour) // 30 days
@@ -293,7 +317,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 		return nil, ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
 
-	err := r.db.WithContext(ctx).Model(session).Create()
+	err = r.db.WithContext(ctx).Model(session).Create()
 	if err != nil {
 		r.logger.Error("failed to create session",
 			zap.String("username", username),
@@ -310,6 +334,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 		IPAddress:    session.IPAddress,
 		UserAgent:    session.UserAgent,
 		LastActivity: session.LastUsedAt,
+		IsRevoked:    session.IsRevoked,
 	}, nil
 }
 
@@ -434,23 +459,23 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 	return nil, common.UserNotFoundError{Username: "recovery:" + recoveryCode}
 }
 
-// generateSecureToken generates a cryptographically secure token
-func generateSecureToken() string {
-	// Generate 32 bytes of random data using crypto/rand
+// generateSecureToken generates a cryptographically secure token.
+func generateSecureToken() (string, error) {
 	randomBytes := make([]byte, 32)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		// Fallback to timestamp-based token if crypto/rand fails (should never happen in production)
-		return fmt.Sprintf("fallback_token_%d", time.Now().UnixNano())
+	if _, err := accountAuthRandRead(randomBytes); err != nil {
+		return "", err
 	}
 
-	// Return hex-encoded secure random token
-	return hex.EncodeToString(randomBytes)
+	return hex.EncodeToString(randomBytes), nil
 }
 
-// generateSessionID generates a unique session ID
-func generateSessionID() string {
-	return fmt.Sprintf("session_%d", time.Now().UnixNano())
+// generateSessionID generates a cryptographically random session ID.
+func generateSessionID() (string, error) {
+	randomBytes := make([]byte, 32)
+	if _, err := accountAuthRandRead(randomBytes); err != nil {
+		return "", err
+	}
+	return "session_" + hex.EncodeToString(randomBytes), nil
 }
 
 // verifyRecoveryCodeHash verifies a recovery code against its bcrypt hash
@@ -618,6 +643,9 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 		IPAddress:    session.IPAddress,
 		DeviceID:     session.DeviceID,
 		AuthMethod:   "", // Not stored in new model
+		IsRevoked:    session.IsRevoked,
+		RevokedAt:    derefTime(session.RevokedAt),
+		RevokeReason: session.RevokeReason,
 		// Handle previous refresh token if needed
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
@@ -735,6 +763,9 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 		IPAddress:            session.IPAddress,
 		DeviceID:             session.DeviceID,
 		AuthMethod:           "", // Not stored in new model
+		IsRevoked:            session.IsRevoked,
+		RevokedAt:            derefTime(session.RevokedAt),
+		RevokeReason:         session.RevokeReason,
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
 	}
@@ -748,6 +779,13 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func derefTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 // hashTokenForGSI creates a cryptographically secure hash of the token for GSI indexing

@@ -194,6 +194,8 @@
         body: new URLSearchParams({
           user_code: verifyResult.user_code,
           action,
+          client_id: verifyResult.client_id,
+          scope: (verifyResult.scopes || []).join(' '),
         }),
       });
 

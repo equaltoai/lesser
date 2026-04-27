@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -45,6 +46,22 @@ func TestOAuthRevokeLift_Round22(t *testing.T) {
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
+	})
+
+	t.Run("invalid basic auth is invalid_client", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(
+			http.MethodPost,
+			"/oauth/revoke",
+			map[string]string{"Authorization": "Basic not-base64"},
+			nil,
+			[]byte("token=rt-1&token_type_hint=refresh_token"),
+		)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthRevokeLift(ctx))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
 	})
 
 	t.Run("access_token hint is a no-op", func(t *testing.T) {
@@ -98,5 +115,119 @@ func TestOAuthRevokeLift_Round22(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-1&token_type_hint=refresh_token&client_id=client-1"))
 		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
+	})
+
+	t.Run("refresh_token without client_id does not revoke known token", func(t *testing.T) {
+		state := &round10QueryState{
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-no-client": {
+					Token:       "rt-no-client",
+					ClientID:    "client-1",
+					Username:    "alice",
+					Scopes:      []string{auth.ScopeRead},
+					ClientClass: auth.ClientClassCLI,
+					ExpiresAt:   time.Now().Add(1 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-no-client&token_type_hint=refresh_token"))
+		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
+
+		require.Contains(t, state.refreshTokensByToken, "rt-no-client")
+	})
+
+	t.Run("confidential refresh_token requires client_secret", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-conf": {
+					ClientID:     "client-conf",
+					ClientSecret: "secret",
+					Confidential: true,
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-conf": {
+					Token:       "rt-conf",
+					ClientID:    "client-conf",
+					Username:    "alice",
+					Scopes:      []string{auth.ScopeRead},
+					ClientClass: auth.ClientClassWeb,
+					ExpiresAt:   time.Now().Add(1 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-conf&token_type_hint=refresh_token&client_id=client-conf"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthRevokeLift(ctx))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+		require.Contains(t, state.refreshTokensByToken, "rt-conf")
+	})
+
+	t.Run("confidential refresh_token rejects wrong client_secret", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-conf": {
+					ClientID:     "client-conf",
+					ClientSecret: "secret",
+					Confidential: true,
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-conf-wrong": {
+					Token:       "rt-conf-wrong",
+					ClientID:    "client-conf",
+					Username:    "alice",
+					Scopes:      []string{auth.ScopeRead},
+					ClientClass: auth.ClientClassWeb,
+					ExpiresAt:   time.Now().Add(1 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-conf-wrong&token_type_hint=refresh_token&client_id=client-conf&client_secret=wrong"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthRevokeLift(ctx))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+		require.Contains(t, state.refreshTokensByToken, "rt-conf-wrong")
+	})
+
+	t.Run("confidential refresh_token accepts basic auth over form client", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-conf": {
+					ClientID:     "client-conf",
+					ClientSecret: "secret",
+					Confidential: true,
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-conf-basic": {
+					Token:       "rt-conf-basic",
+					ClientID:    "client-conf",
+					Username:    "alice",
+					Scopes:      []string{auth.ScopeRead},
+					ClientClass: auth.ClientClassWeb,
+					ExpiresAt:   time.Now().Add(1 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("client-conf:secret"))
+		ctx := round10NewLiftContextWithBodyBytes(
+			http.MethodPost,
+			"/oauth/revoke",
+			map[string]string{"Authorization": authHeader},
+			nil,
+			[]byte("token=rt-conf-basic&token_type_hint=refresh_token&client_id=other-client"),
+		)
+		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
+
+		require.NotContains(t, state.refreshTokensByToken, "rt-conf-basic")
 	})
 }

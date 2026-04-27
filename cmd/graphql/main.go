@@ -955,17 +955,40 @@ func createCostTrackingMiddleware() apptheory.Middleware {
 
 // createAuthMiddleware creates authentication middleware using unified patterns.
 //
-//nolint:unused // Exercised directly in tests; buildApp uses createAuthMiddlewareWithService to reuse a shared service instance.
+//nolint:unused // Exercised directly in tests; buildApp uses createAuthMiddlewareWithServices for paired auth services.
 func createAuthMiddleware() apptheory.Middleware {
-	return createAuthMiddlewareWithService(newGraphQLOAuthService(logger), logger)
+	return createAuthMiddlewareWithServices(newGraphQLAuthService(logger), newGraphQLOAuthService(logger), logger)
 }
 
+//nolint:unused // Exercised directly in tests; buildApp uses createAuthMiddlewareWithServices for paired auth services.
 func createAuthMiddlewareWithService(oauthService *auth.OAuthService, serviceLogger *zap.Logger) apptheory.Middleware {
+	return createAuthMiddlewareWithServices(nil, oauthService, serviceLogger)
+}
+
+func createAuthMiddlewareWithServices(authService *auth.AuthService, oauthService *auth.OAuthService, serviceLogger *zap.Logger) apptheory.Middleware {
+	if authService != nil && oauthService != nil {
+		return auth.CreatePrincipalContextBridgeFromAuthAndOAuthServices(authService, oauthService, serviceLogger, "graphql")
+	}
 	if oauthService == nil {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
 
 	return auth.CreatePrincipalContextBridgeFromOAuthService(oauthService, serviceLogger, "graphql")
+}
+
+func newGraphQLAuthService(serviceLogger *zap.Logger) *auth.AuthService {
+	if cfg == nil || cfg.JWTSecret == "" || repos == nil {
+		return nil
+	}
+
+	authService, err := auth.NewAuthService(cfg, repos)
+	if err != nil {
+		if serviceLogger != nil {
+			serviceLogger.Warn("failed to initialize GraphQL native auth service", zap.Error(err))
+		}
+		return nil
+	}
+	return authService
 }
 
 func newGraphQLOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
@@ -989,6 +1012,7 @@ func main() {
 }
 
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+	authService := newGraphQLAuthService(lambdaLogger)
 	oauthService := newGraphQLOAuthService(lambdaLogger)
 
 	options := []apptheory.Option{
@@ -1009,7 +1033,11 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 			MaxResponseBytes: 0,
 		}),
 	}
-	if oauthService != nil {
+	if authService != nil && oauthService != nil {
+		options = append(options, apptheory.WithAuthPrincipalHook(
+			auth.NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService, oauthService, lambdaLogger, "graphql"),
+		))
+	} else if oauthService != nil {
 		options = append(options, apptheory.WithAuthPrincipalHook(
 			auth.NewAppTheoryPrincipalHookFromOAuthService(oauthService, lambdaLogger, "graphql"),
 		))
@@ -1036,7 +1064,7 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	app.Use(graphqlSecurityHeaders())
 
 	// Authentication middleware.
-	app.Use(createAuthMiddlewareWithService(oauthService, lambdaLogger))
+	app.Use(createAuthMiddlewareWithServices(authService, oauthService, lambdaLogger))
 
 	// Cost tracking middleware.
 	app.Use(createCostTrackingMiddleware())
