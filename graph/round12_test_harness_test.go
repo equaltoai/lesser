@@ -404,7 +404,7 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		v.ObjectID = "status-1"
 		v.ObjectType = "status"
 		v.AuthorID = config.Get().ActorURL("bob")
-		v.Content = "note content"
+		v.Content = `<script>alert(1)</script><b>legacy note</b>`
 		v.Language = "en"
 		v.VisibilityStatus = "pending"
 		v.Score = 0

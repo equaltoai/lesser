@@ -10,6 +10,12 @@ func TestEscape(t *testing.T) {
 	require.Equal(t, "&lt;div&gt;hello&lt;/div&gt;", Escape("<div>hello</div>"))
 }
 
+func TestEscapePlainTextHTML_NormalizesLegacyContent(t *testing.T) {
+	require.Equal(t, "&lt;b&gt;hello&lt;/b&gt;", EscapePlainTextHTML(" <b>hello</b> "))
+	require.Equal(t, "&lt;b&gt;hello&lt;/b&gt;", EscapePlainTextHTML(" &lt;b&gt;hello&lt;/b&gt; "))
+	require.NotContains(t, EscapePlainTextHTML("<script>alert(1)</script><b>hello</b>"), "<script")
+}
+
 func TestSanitizeHTMLByContract_PlainTextIsStable(t *testing.T) {
 	require.Equal(t, "hello", SanitizeHTMLByContract("hello"))
 }

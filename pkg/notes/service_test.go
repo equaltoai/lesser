@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -68,8 +69,29 @@ func (s *stubCommunityNoteRepo) GetUserCommunityNoteVotes(_ context.Context, _ s
 	return s.userVotes, s.userVotesErr
 }
 
-func (s *stubCommunityNoteRepo) GetCommunityNotesByAuthor(_ context.Context, _ string, _ int, _ string) ([]*storage.CommunityNote, string, error) {
-	return s.notesByAuthor, "", s.notesByAuthorErr
+func (s *stubCommunityNoteRepo) GetCommunityNotesByAuthor(_ context.Context, _ string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
+	if s.notesByAuthorErr != nil {
+		return nil, "", s.notesByAuthorErr
+	}
+	start := 0
+	if cursor != "" {
+		parsed, err := strconv.Atoi(cursor)
+		if err == nil && parsed >= 0 {
+			start = parsed
+		}
+	}
+	if start >= len(s.notesByAuthor) {
+		return []*storage.CommunityNote{}, "", nil
+	}
+	end := len(s.notesByAuthor)
+	if limit > 0 && start+limit < end {
+		end = start + limit
+	}
+	nextCursor := ""
+	if end < len(s.notesByAuthor) {
+		nextCursor = strconv.Itoa(end)
+	}
+	return s.notesByAuthor[start:end], nextCursor, nil
 }
 
 func (s *stubCommunityNoteRepo) UpdateCommunityNoteScore(_ context.Context, noteID string, score float64, status string) error {
@@ -102,6 +124,26 @@ func TestService_CreateNote_StoresDefaults(t *testing.T) {
 	assert.Equal(t, 0.0, note.Score)
 	assert.True(t, note.UpdatedAt.After(time.Time{}))
 	assert.Equal(t, note.ID, repo.createdNote.ID)
+}
+
+func TestService_CheckNoteRateLimit_PaginatesPastOldNotes(t *testing.T) {
+	now := time.Now()
+	oldNotes := make([]*storage.CommunityNote, communityNoteRateLimitPageSize)
+	for i := range oldNotes {
+		oldNotes[i] = &storage.CommunityNote{ID: strconv.Itoa(i), CreatedAt: now.Add(-48 * time.Hour)}
+	}
+	recentNotes := []*storage.CommunityNote{
+		{ID: "recent-1", CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: "recent-2", CreatedAt: now.Add(-1 * time.Hour)},
+	}
+	repo := &stubCommunityNoteRepo{
+		notesByAuthor: append(oldNotes, recentNotes...),
+	}
+	svc := &Service{repo: repo, logger: zap.NewNop()}
+
+	allowed, remaining := svc.CheckNoteRateLimit(context.Background(), "alice", 2)
+	assert.False(t, allowed)
+	assert.Equal(t, 0, remaining)
 }
 
 func TestService_StoreNote_ErrorWrapped(t *testing.T) {

@@ -242,44 +242,97 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	return result, nextCursor, nil
 }
 
-// GetOutboxActivities retrieves activities created by a user - matches legacy implementation
+// GetOutboxActivities retrieves public-addressed activities created by a user.
+//
+// The ActivityPub outbox endpoint is unauthenticated and externally visible, so
+// followers-only and direct activities must not be returned from this read path
+// even though they share the same actor partition as public activities.
 func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	safeLimit := clampActivityLimit(limit)
+	cursorData := ""
+	if cursor != "" {
+		var cursorErr error
+		cursorData, cursorErr = activityDecodeCursor(cursor)
+		if cursorErr != nil {
+			r.logger.Warn("invalid cursor provided",
+				zap.String("cursor", cursor),
+				zap.Error(cursorErr))
+		}
+	}
 
-	// Use BaseRepository QueryWithSKPrefix for outbox activities
+	result := make([]*activitypub.Activity, 0, safeLimit)
+	var nextCursor string
+	for {
+		activities, hasMore, batchCursor, err := r.queryOutboxActivityRecords(ctx, username, safeLimit, cursorData)
+		if err != nil {
+			r.logger.Error("failed to query outbox activities",
+				zap.String("username", username),
+				zap.Error(err))
+			return nil, "", ErrorHandler.HandleQueryError(err, "activity", "outbox")
+		}
+		if len(activities) == 0 {
+			break
+		}
+
+		for i, record := range activities {
+			if record == nil || !activitypub.IsPublicAddressedActivity(record.Activity) {
+				continue
+			}
+			result = append(result, record.Activity)
+			if len(result) == safeLimit {
+				if hasMore || i < len(activities)-1 {
+					nextCursor = activityEncodeCursor(map[string]string{
+						"PK": record.PK,
+						"SK": record.SK,
+					})
+				}
+				r.logger.Debug("retrieved outbox activities",
+					zap.String("username", username),
+					zap.Int("count", len(result)),
+					zap.Bool("has_more", nextCursor != ""))
+				return result, nextCursor, nil
+			}
+		}
+
+		if !hasMore {
+			break
+		}
+		if batchCursor == "" || batchCursor == cursorData {
+			r.logger.Warn("stopping public outbox pagination because cursor did not advance",
+				zap.String("username", username))
+			break
+		}
+		cursorData = batchCursor
+	}
+
+	r.logger.Debug("retrieved outbox activities",
+		zap.String("username", username),
+		zap.Int("count", len(result)),
+		zap.Bool("has_more", nextCursor != ""))
+
+	return result, nextCursor, nil
+}
+
+func (r *ActivityRepository) queryOutboxActivityRecords(ctx context.Context, username string, safeLimit int, cursorData string) ([]*models.Activity, bool, string, error) {
 	pk := "ACTOR#" + username
-	skPrefix := "ACTIVITY#"
+	const skPrefix = "ACTIVITY#"
 
-	// Use BaseRepository method with custom cursor handling for compatibility
 	var activities []*models.Activity
 	query := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix).
 		Limit(safeLimit+1).
-		OrderBy("SK", "DESC") // Newest first
+		OrderBy("SK", "DESC")
 
-	if cursor != "" {
-		decodedCursor, cursorErr := activityDecodeCursor(cursor)
-		if cursorErr != nil {
-			r.logger.Warn("invalid cursor provided",
-				zap.String("cursor", cursor),
-				zap.Error(cursorErr))
-		} else {
-			query = query.Cursor(decodedCursor)
-		}
+	if cursorData != "" {
+		query = query.Cursor(cursorData)
 	}
 
-	err := query.All(&activities)
-
-	if err != nil {
-		r.logger.Error("failed to query outbox activities",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, "", ErrorHandler.HandleQueryError(err, "activity", "outbox")
+	if err := query.All(&activities); err != nil {
+		return nil, false, "", err
 	}
 
-	// Track cost using BaseRepository method
 	if r.costService != nil {
 		itemCount := int64(len(activities))
 		estimatedRU := itemCount
@@ -291,35 +344,21 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 		}
 	}
 
-	// Convert to ActivityPub activities
 	hasMore := len(activities) > safeLimit
 	if hasMore {
 		activities = activities[:safeLimit]
 	}
 
-	result := make([]*activitypub.Activity, 0, len(activities))
-	for _, record := range activities {
-		result = append(result, record.Activity)
-	}
-
-	// Encode next cursor if there are more results
-	var nextCursor string
-	if hasMore && len(result) > 0 {
-		// There might be more results
+	nextCursor := ""
+	if hasMore && len(activities) > 0 {
 		lastItem := activities[len(activities)-1]
-		cursorData := map[string]string{
+		nextCursor = activityQueryCursor(map[string]string{
 			"PK": lastItem.PK,
 			"SK": lastItem.SK,
-		}
-		nextCursor = activityEncodeCursor(cursorData)
+		})
 	}
 
-	r.logger.Debug("retrieved outbox activities",
-		zap.String("username", username),
-		zap.Int("count", len(result)),
-		zap.Bool("has_more", nextCursor != ""))
-
-	return result, nextCursor, nil
+	return activities, hasMore, nextCursor, nil
 }
 
 // GetCollection retrieves a collection for an actor - matches legacy implementation
@@ -640,6 +679,14 @@ func activityEncodeCursor(data map[string]string) string {
 		return ""
 	}
 	return base64.URLEncoding.EncodeToString(jsonData)
+}
+
+func activityQueryCursor(data map[string]string) string {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
+	return string(jsonData)
 }
 
 // activityDecodeCursor decodes a string cursor to a map

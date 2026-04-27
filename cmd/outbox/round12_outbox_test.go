@@ -178,7 +178,7 @@ func TestOutboxProcessor_DeliverActivityWithRetry_Round12(t *testing.T) {
 	}
 
 	msg := ActivityDeliveryMessage{
-		Activity:    &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType}},
+		Activity:    &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType, To: []string{activitypub.PublicAddress}}},
 		Actor:       &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}},
 		TargetInbox: "https://remote.example/inbox",
 	}
@@ -235,7 +235,7 @@ func TestOutboxProcessor_TrackDeliveryStatus_Round12(t *testing.T) {
 	}
 
 	err := op.trackDeliveryStatus(context.Background(), ActivityDeliveryMessage{
-		Activity:    &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType}},
+		Activity:    &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType, To: []string{activitypub.PublicAddress}}},
 		TargetInbox: "https://remote.example/inbox",
 	}, DeliveryResult{Success: true, StatusCode: 200, Duration: 5 * time.Millisecond, Attempt: 1})
 	require.NoError(t, err)
@@ -716,7 +716,14 @@ func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Count").Return(int64(3), nil).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]*models.Activity)
+		*out = append(*out,
+			&models.Activity{Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "public", To: []string{activitypub.PublicAddress}}}},
+			&models.Activity{Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "direct", To: []string{"https://example.com/users/bob"}}}},
+		)
+	}).Return(nil).Maybe()
 
 	actorRepo := testmocks.NewMockActorRepository()
 	activityRepo := testmocks.NewMockActivityRepository()
@@ -760,7 +767,7 @@ func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
 		Outbox: "",
 	}, nil).Maybe()
 	activityRepo.On("GetOutboxActivities", mock.Anything, "alice", mock.Anything, mock.Anything).Return([]*activitypub.Activity{
-		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType}},
+		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType, To: []string{activitypub.PublicAddress}}},
 	}, "next", nil).Maybe()
 
 	app := buildOutboxApp(processor)
@@ -859,7 +866,7 @@ func TestOutboxProcessor_TrackDeliveryStatus_ErrorBranches_Round12(t *testing.T)
 		logger:                       zap.NewNop(),
 	}
 
-	activity := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType}}
+	activity := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType, To: []string{activitypub.PublicAddress}}}
 	activity.Object = make(chan int)
 
 	require.NoError(t, op.trackDeliveryStatus(context.Background(), ActivityDeliveryMessage{
@@ -944,7 +951,8 @@ func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *tes
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("All", mock.Anything).Return(errors.New("count failed")).Maybe()
 
 	actorRepo := testmocks.NewMockActorRepository()
 	activityRepo := testmocks.NewMockActivityRepository()
@@ -1157,6 +1165,52 @@ func TestOutboxActivityValidationMap_OmitsNilObject_Round12(t *testing.T) {
 	payload := outboxActivityValidationMap(activity)
 	_, has := payload["object"]
 	require.False(t, has)
+}
+
+func TestOutboxProcessor_HandleOutboxGet_FiltersNonPublicActivities_Round12(t *testing.T) {
+	actorRepo := testmocks.NewMockActorRepository()
+	activityRepo := testmocks.NewMockActivityRepository()
+	instanceRepo := &round12InstanceRepo{state: &models.InstanceState{Locked: false}}
+
+	op := &OutboxProcessor{
+		actorRepository:    actorRepo,
+		activityRepository: activityRepo,
+		instanceRepository: instanceRepo,
+		logger:             zap.NewNop(),
+		lambdaCtx: &common.LambdaContext{
+			Logger: zap.NewNop(),
+			Config: &config.Config{Domain: "example.com", Region: "us-east-1", JWTSecret: "secret"},
+		},
+	}
+
+	actorRepo.On("GetActorByUsername", mock.Anything, "alice").Return(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:      "https://example.com/users/alice",
+			Type:    activitypub.PersonType,
+			Context: activitypub.DefaultContext,
+		},
+		Outbox: "https://example.com/users/alice/outbox",
+	}, nil).Once()
+	activityRepo.On("GetOutboxActivities", mock.Anything, "alice", mock.Anything, mock.Anything).Return([]*activitypub.Activity{
+		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/public", Type: activitypub.CreateType, To: []string{activitypub.PublicAddress}}},
+		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/direct", Type: activitypub.CreateType, To: []string{"https://example.com/users/bob"}}},
+		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/unlisted", Type: activitypub.CreateType, CC: []string{activitypub.PublicAddress}}},
+	}, "", nil).Once()
+
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "GET", "/users/alice/outbox", map[string]string{"page": "true"}, nil, "")
+	require.Equal(t, 200, resp.Status)
+
+	body := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
+	items, ok := body.OrderedItems.([]any)
+	require.True(t, ok)
+	require.Len(t, items, 2)
+	first, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "https://example.com/activities/public", first["id"])
+	second, ok := items[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "https://example.com/activities/unlisted", second["id"])
 }
 
 func TestOutboxProcessor_GetBearerToken_InvalidHeader_Round12(t *testing.T) {

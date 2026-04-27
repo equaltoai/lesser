@@ -4738,7 +4738,7 @@ func (s *Service) CreateCommunityNote(ctx context.Context, cmd *CreateCommunityN
 	if cmd != nil && cmd.Note != nil {
 		// Community notes are surfaced via an HTML-by-contract field in Mastodon-compatible responses.
 		// Treat stored note content as plain text and escape so it is always safe to embed.
-		cmd.Note.Content = htmlsafe.Escape(strings.TrimSpace(cmd.Note.Content))
+		cmd.Note.Content = htmlsafe.EscapePlainTextHTML(cmd.Note.Content)
 	}
 
 	// Create community note through repository
@@ -4770,7 +4770,7 @@ func (s *Service) GetVisibleCommunityNotes(ctx context.Context, query *GetVisibl
 	}
 
 	return &GetVisibleCommunityNotesResult{
-		Notes: notes,
+		Notes: safeCommunityNotesForPresentation(notes),
 	}, nil
 }
 
@@ -4793,7 +4793,7 @@ func (s *Service) GetCommunityNote(ctx context.Context, query *GetCommunityNoteQ
 	}
 
 	return &GetCommunityNoteResult{
-		Note: note,
+		Note: safeCommunityNoteForPresentation(note),
 	}, nil
 }
 
@@ -4841,9 +4841,29 @@ func (s *Service) GetCommunityNotesByAuthor(ctx context.Context, query *GetCommu
 	}
 
 	return &GetCommunityNotesByAuthorResult{
-		Notes:      notes,
+		Notes:      safeCommunityNotesForPresentation(notes),
 		NextCursor: nextCursor,
 	}, nil
+}
+
+func safeCommunityNoteForPresentation(note *storage.CommunityNote) *storage.CommunityNote {
+	if note == nil {
+		return nil
+	}
+	safe := *note
+	safe.Content = htmlsafe.EscapePlainTextHTML(note.Content)
+	return &safe
+}
+
+func safeCommunityNotesForPresentation(notes []*storage.CommunityNote) []*storage.CommunityNote {
+	if notes == nil {
+		return nil
+	}
+	safe := make([]*storage.CommunityNote, 0, len(notes))
+	for _, note := range notes {
+		safe = append(safe, safeCommunityNoteForPresentation(note))
+	}
+	return safe
 }
 
 // CountNotesByAuthorQuery represents a request to count notes by an author

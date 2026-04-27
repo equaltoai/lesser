@@ -61,6 +61,17 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 				URL:          cfg.BaseURL() + "/objects/obj-1",
 			},
 		},
+		statusByID: map[string]storagemodels.Status{
+			"s1": {
+				StatusID:       "s1",
+				AuthorUsername: "alice",
+				AuthorID:       "https://example.com/users/alice",
+				Content:        "hello",
+				Visibility:     storagemodels.VisibilityPublic,
+				CreatedAt:      now.Add(-1 * time.Hour),
+				UpdatedAt:      now.Add(-30 * time.Minute),
+			},
+		},
 	}
 	handler, _, _ := round11NewHandler(t, cfg, state)
 
@@ -73,11 +84,12 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 	requireStatus(t, http.StatusOK)(handler.HandleSearchV2Lift(ctxSearch2))
 
 	status := handler.convertStatusResultToAPI(ctxSearch, &storage.StatusSearchResult{
-		StatusID:  "s1",
-		Content:   "hi",
-		URL:       "https://example.com/s1",
-		Published: now,
-		AuthorID:  "https://example.com/users/alice",
+		StatusID:   "s1",
+		Content:    "hi",
+		URL:        "https://example.com/s1",
+		Published:  now,
+		AuthorID:   "https://example.com/users/alice",
+		Visibility: storagemodels.VisibilityPublic,
 	}, "")
 	require.Equal(t, "hello", status.Content)
 }

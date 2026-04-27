@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -127,7 +128,7 @@ func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID s
 		ObjectID:         model.ObjectID,
 		ObjectType:       model.ObjectType,
 		AuthorID:         model.AuthorID,
-		Content:          model.Content,
+		Content:          htmlsafe.EscapePlainTextHTML(model.Content),
 		Language:         model.Language,
 		Sources:          model.Sources,
 		HelpfulVotes:     model.HelpfulVotes,
@@ -172,7 +173,7 @@ func (r *CommunityNoteRepository) GetVisibleCommunityNotes(ctx context.Context, 
 				ObjectID:         model.ObjectID,
 				ObjectType:       model.ObjectType,
 				AuthorID:         model.AuthorID,
-				Content:          model.Content,
+				Content:          htmlsafe.EscapePlainTextHTML(model.Content),
 				Language:         model.Language,
 				Sources:          model.Sources,
 				HelpfulVotes:     model.HelpfulVotes,
@@ -332,7 +333,7 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 			ObjectID:         model.ObjectID,
 			ObjectType:       model.ObjectType,
 			AuthorID:         model.AuthorID,
-			Content:          model.Content,
+			Content:          htmlsafe.EscapePlainTextHTML(model.Content),
 			Language:         model.Language,
 			Sources:          model.Sources,
 			HelpfulVotes:     model.HelpfulVotes,

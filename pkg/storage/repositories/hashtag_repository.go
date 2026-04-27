@@ -167,6 +167,14 @@ func NewTrendingCalculator(config TrendingCalculatorConfig, logger *zap.Logger) 
 
 // IndexHashtag indexes a hashtag when used in a status
 func (r *HashtagRepository) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
+	if !isPublicHashtagVisibility(visibility) {
+		r.logger.Debug("skipping non-public hashtag metadata indexing",
+			zap.String("hashtag", hashtag),
+			zap.String("status_id", statusID),
+			zap.String("visibility", visibility))
+		return nil
+	}
+
 	now := time.Now()
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	pk := fmt.Sprintf("HASHTAG#%s", tagLower)
@@ -242,6 +250,14 @@ func (r *HashtagRepository) IndexStatusHashtags(ctx context.Context, statusID st
 
 	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return nil // Nothing to index
+	}
+
+	if !isPublicHashtagVisibility(visibility) {
+		r.logger.Debug("skipping non-public hashtag timeline indexing",
+			zap.String("status_id", statusID),
+			zap.String("visibility", visibility),
+			zap.Int("hashtag_count", len(hashtags)))
+		return nil
 	}
 
 	now := time.Now()
@@ -341,6 +357,10 @@ func (r *HashtagRepository) truncateContent(content string, maxLength int) strin
 	}
 
 	return truncated + "..."
+}
+
+func isPublicHashtagVisibility(visibility string) bool {
+	return strings.EqualFold(strings.TrimSpace(visibility), models.VisibilityPublic)
 }
 
 // GetHashtagInfo retrieves information about a specific hashtag
@@ -520,14 +540,14 @@ func (r *HashtagRepository) GetHashtagTimelineAdvanced(ctx context.Context, hash
 	var results []*storage.StatusSearchResult
 	var err error
 
-	if visibility != "" && visibility != models.VisibilityPublic {
-		// Use visibility-filtered index for non-public content
-		results, err = r.getHashtagTimelineByVisibility(ctx, tagLower, maxID, limit, visibility)
-	} else {
-		// Use main hashtag timeline index for public/all content
-		results, err = r.getHashtagTimelineFromIndex(ctx, tagLower, maxID, limit)
+	if visibility != "" && !isPublicHashtagVisibility(visibility) {
+		r.logger.Debug("refusing non-public hashtag timeline without viewer authorization",
+			zap.String("hashtag", tagLower),
+			zap.String("visibility", visibility))
+		return []*storage.StatusSearchResult{}, nil
 	}
 
+	results, err = r.getHashtagTimelineByVisibility(ctx, tagLower, maxID, limit, models.VisibilityPublic)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "hashtag timeline", tagLower)
 	}
@@ -537,51 +557,6 @@ func (r *HashtagRepository) GetHashtagTimelineAdvanced(ctx context.Context, hash
 		zap.Int("results", len(results)),
 		zap.Int("limit", limit),
 		zap.String("visibility", visibility))
-
-	return results, nil
-}
-
-// getHashtagTimelineFromIndex retrieves timeline using the main hashtag index
-func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, hashtag string, maxID *string, limit int) ([]*storage.StatusSearchResult, error) {
-	// Build query for hashtag timeline index
-	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
-		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", hashtag))
-
-	// Apply the maxID cursor when provided
-	if maxID != nil && *maxID != "" {
-		query = query.Where("SK", ">", *maxID)
-	}
-
-	// Set limit and order (SK already contains descending timestamp)
-	query = query.Limit(limit).OrderBy("SK", "ASC") // ASC because timestamp is already reversed
-
-	var indexEntries []models.HashtagStatusIndex
-	err := query.All(&indexEntries)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return []*storage.StatusSearchResult{}, nil
-		}
-		r.logger.Error("hashtag timeline index query failed",
-			zap.String("hashtag", hashtag),
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "hashtag timeline index", hashtag)
-	}
-
-	// Convert index entries to search results
-	results := make([]*storage.StatusSearchResult, len(indexEntries))
-	for i, entry := range indexEntries {
-		results[i] = &storage.StatusSearchResult{
-			ID:             entry.SK,
-			StatusID:       entry.StatusID,
-			Content:        entry.Content,
-			URL:            entry.StatusURL,
-			AuthorID:       entry.AuthorID,
-			AuthorUsername: entry.AuthorHandle,
-			Published:      entry.Published,
-			Score:          1.0, // All results have equal relevance in timeline
-			Highlights:     []string{"hashtag_timeline"},
-		}
-	}
 
 	return results, nil
 }
@@ -614,9 +589,12 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 	}
 
 	// Convert to search results
-	results := make([]*storage.StatusSearchResult, len(indexEntries))
-	for i, entry := range indexEntries {
-		results[i] = &storage.StatusSearchResult{
+	results := make([]*storage.StatusSearchResult, 0, len(indexEntries))
+	for _, entry := range indexEntries {
+		if !isPublicHashtagVisibility(entry.Visibility) {
+			continue
+		}
+		results = append(results, &storage.StatusSearchResult{
 			ID:             entry.GSI2SK,
 			StatusID:       entry.StatusID,
 			Content:        entry.Content,
@@ -624,9 +602,10 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 			AuthorID:       entry.AuthorID,
 			AuthorUsername: entry.AuthorHandle,
 			Published:      entry.Published,
+			Visibility:     entry.Visibility,
 			Score:          1.0,
 			Highlights:     []string{"hashtag_timeline_filtered"},
-		}
+		})
 	}
 
 	return results, nil

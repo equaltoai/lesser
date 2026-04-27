@@ -365,14 +365,32 @@ func TestSearchRepository_FilterStatusesByPrivacy_BlockedAndFailOpen(t *testing.
 	})
 
 	results := repo.filterStatusesByPrivacy(context.Background(), []*storage.StatusSearchResult{
-		{StatusID: "s1", AuthorID: "blocked-author"},
-		{StatusID: "s2", AuthorID: "error-author"},
-		{StatusID: "s3", AuthorID: "ok-author"},
+		{StatusID: "s1", AuthorID: "blocked-author", Visibility: models.VisibilityPublic},
+		{StatusID: "s2", AuthorID: "error-author", Visibility: models.VisibilityPublic},
+		{StatusID: "s2-direct", AuthorID: "error-author", Visibility: models.VisibilityDirect},
+		{StatusID: "s3", AuthorID: "ok-author", Visibility: models.VisibilityPublic},
 	}, "searcher")
 
 	require.Len(t, results, 2)
 	assert.Equal(t, "s2", results[0].StatusID)
 	assert.Equal(t, "s3", results[1].StatusID)
+}
+
+func TestSearchRepository_FilterStatusesByPrivacy_ExcludesNonPublicAndUnknown(t *testing.T) {
+	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
+
+	results := repo.filterStatusesByPrivacy(context.Background(), []*storage.StatusSearchResult{
+		{StatusID: "public", Visibility: models.VisibilityPublic},
+		{StatusID: "unlisted", Visibility: models.VisibilityUnlisted},
+		{StatusID: "private", Visibility: models.VisibilityPrivate},
+		{StatusID: "direct", Visibility: models.VisibilityDirect},
+		{StatusID: "legacy-empty"},
+		nil,
+	}, "")
+
+	require.Len(t, results, 2)
+	assert.Equal(t, "public", results[0].StatusID)
+	assert.Equal(t, "unlisted", results[1].StatusID)
 }
 
 func TestSearchRepository_UpdateSearchSuggestion_AppliesAllUpdateFields(t *testing.T) {
@@ -509,6 +527,22 @@ func TestSearchRepository_StatusModelToSearchResult_ReturnsNilForNilInput(t *tes
 	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
 
 	assert.Nil(t, repo.statusModelToSearchResult(nil, 1, "s"))
+
+	status := &models.Status{
+		StatusID:       "status-1",
+		Content:        "hello",
+		AuthorID:       "author",
+		AuthorUsername: "alice",
+		Visibility:     models.VisibilityPrivate,
+		Language:       "en",
+		Hashtags:       []string{"go"},
+		PublishedAt:    time.Now(),
+	}
+	result := repo.statusModelToSearchResult(status, 1, "s")
+	require.NotNil(t, result)
+	assert.Equal(t, models.VisibilityPrivate, result.Visibility)
+	assert.Equal(t, "en", result.Language)
+	assert.Equal(t, []string{"go"}, result.Tags)
 }
 
 func TestSearchRepository_CompareRelevance_CoversLengthTieBreaker(t *testing.T) {
@@ -783,6 +817,7 @@ func TestSearchRepository_SearchStatusesWithPrivacyPaginated_SetsNextCursorWhenM
 				Content:        "hello world",
 				AuthorID:       "https://example.com/users/alice",
 				AuthorUsername: "alice",
+				Visibility:     models.VisibilityPublic,
 				PublishedAt:    now.Add(time.Duration(-i) * time.Minute),
 			})
 		}

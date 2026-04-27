@@ -230,7 +230,7 @@ func TestMiscRound22_AddAuthorMatchedStatusesAppendsVisibleTimelineStatuses(t *t
 	require.Equal(t, statusID, result.Statuses[0].ID)
 	require.Contains(t, seen, statusID)
 	status := state.statusByID[statusID]
-	require.True(t, statusVisibleInSearch(&status, ""))
+	require.True(t, statusVisibleInSearchForViewer(&status, "", ""))
 }
 
 func TestMiscRound22_SearchStatusByURLUsesStoredStatusWhenAvailable(t *testing.T) {
@@ -295,6 +295,69 @@ func TestMiscRound22_SearchStatusByURLUsesStoredStatusWhenAvailable(t *testing.T
 	require.Equal(t, cfg.BaseURL()+"/@simulacrum/"+statusID, result.Statuses[0].URL)
 }
 
+func TestMiscRound22_SearchStatusByURLEnforcesViewerVisibility(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, 3, 11, 13, 5, 0, 0, time.UTC)
+	authorID := cfg.ActorURL("simulacrum")
+	statusID := "private-url-status"
+	statusURL := authorID + "/statuses/" + statusID
+
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"simulacrum": {
+				Username:     "simulacrum",
+				DisplayName:  "Simulacrum",
+				CreatedAt:    now.Add(-24 * time.Hour),
+				UpdatedAt:    now.Add(-24 * time.Hour),
+				Discoverable: true,
+				Role:         "user",
+			},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"simulacrum": {
+				Username: "simulacrum",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: authorID, Type: "Service"},
+					PreferredUsername: "simulacrum",
+					Name:              "Simulacrum",
+					Discoverable:      true,
+				},
+				NumericID: common.GenerateNumericID("simulacrum"),
+			},
+		},
+		statusByID: map[string]storagemodels.Status{
+			statusID: {
+				StatusID:       statusID,
+				AuthorID:       authorID,
+				AuthorUsername: "simulacrum",
+				Content:        "private url content",
+				Visibility:     storagemodels.VisibilityPrivate,
+				PublishedAt:    now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				Note: &activitypub.Note{
+					BaseObject:   activitypub.BaseObject{ID: statusURL, Type: activitypub.NoteType},
+					Content:      "private url content",
+					AttributedTo: authorID,
+				},
+			},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
+	require.NoError(t, err)
+
+	publicResult := apimodels.SearchResult{Statuses: []apimodels.Status{}}
+	handler.searchStatusByURL(ctx, statusURL, "", &publicResult)
+	require.Empty(t, publicResult.Statuses)
+
+	authorResult := apimodels.SearchResult{Statuses: []apimodels.Status{}}
+	handler.searchStatusByURL(ctx, statusURL, "simulacrum", &authorResult)
+	require.Len(t, authorResult.Statuses, 1)
+	require.Equal(t, statusID, authorResult.Statuses[0].ID)
+}
+
 func TestMiscRound22_ResolveStatusBySearchURLUsesCanonicalRemoteStatusID(t *testing.T) {
 	cfg := round11TestConfig()
 	remoteURL := "https://remote.example/users/bob/statuses/abc-123"
@@ -350,15 +413,35 @@ func TestMiscRound22_SearchHelperPureFunctions(t *testing.T) {
 	require.False(t, shouldAugmentStatusSearchByAuthor("#simulacrum"))
 	require.False(t, shouldAugmentStatusSearchByAuthor("https://remote.example/@simulacrum"))
 
-	require.False(t, statusVisibleInSearch(nil, ""))
-	require.True(t, statusVisibleInSearch(&storagemodels.Status{Visibility: storagemodels.VisibilityPublic}, ""))
-	require.True(t, statusVisibleInSearch(&storagemodels.Status{Visibility: storagemodels.VisibilityUnlisted}, ""))
-	require.True(t, statusVisibleInSearch(&storagemodels.Status{
+	require.False(t, statusVisibleInSearchForViewer(nil, "", ""))
+	require.True(t, statusVisibleInSearchForViewer(&storagemodels.Status{Visibility: storagemodels.VisibilityPublic}, "", ""))
+	require.True(t, statusVisibleInSearchForViewer(&storagemodels.Status{Visibility: storagemodels.VisibilityUnlisted}, "", ""))
+	require.True(t, statusVisibleInSearchForViewer(&storagemodels.Status{
 		Visibility:     storagemodels.VisibilityPrivate,
 		AuthorUsername: "Simulacrum",
-	}, "simulacrum"))
-	require.False(t, statusVisibleInSearch(&storagemodels.Status{
+	}, "simulacrum", ""))
+	require.False(t, statusVisibleInSearchForViewer(&storagemodels.Status{
 		Visibility:     storagemodels.VisibilityPrivate,
+		AuthorUsername: "simulacrum",
+	}, "other", ""))
+	require.False(t, statusVisibleInSearchForViewer(&storagemodels.Status{
+		Visibility: storagemodels.VisibilityPublic,
+		Deleted:    true,
+	}, "", ""))
+	require.True(t, statusVisibleInSearchForViewer(&storagemodels.Status{
+		Visibility:   storagemodels.VisibilityDirect,
+		ToRecipients: []string{"https://example.com/users/bob"},
+	}, "bob", "https://example.com/users/bob"))
+
+	require.False(t, searchResultVisibleInSearch(nil, ""))
+	require.False(t, searchResultVisibleInSearch(&storage.StatusSearchResult{Visibility: ""}, ""))
+	require.True(t, searchResultVisibleInSearch(&storage.StatusSearchResult{Visibility: storagemodels.VisibilityPublic}, ""))
+	require.True(t, searchResultVisibleInSearch(&storage.StatusSearchResult{
+		Visibility:     storagemodels.VisibilityPrivate,
+		AuthorUsername: "simulacrum",
+	}, "simulacrum"))
+	require.False(t, searchResultVisibleInSearch(&storage.StatusSearchResult{
+		Visibility:     storagemodels.VisibilityDirect,
 		AuthorUsername: "simulacrum",
 	}, "other"))
 }
@@ -373,6 +456,10 @@ func TestMiscRound22_SearchV2ExactActorRequiresResolve(t *testing.T) {
 	require.False(t, handler.searchV2ExactActorRequiresResolve("https://example.com/users/alice"))
 	require.True(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/users/bob"))
 	require.False(t, handler.searchV2ExactActorRequiresResolve("https://remote.example/objects/note-1"))
+
+	require.Equal(t, cfg.ActorURL("alice"), handler.searchViewerActorID(" alice "))
+	require.Equal(t, "", handler.searchViewerActorID(""))
+	require.Equal(t, "", (*Handler)(nil).searchViewerActorID("alice"))
 }
 
 func TestMiscRound22_ConvertStatusResultToAPIFallsBackWhenResolutionMisses(t *testing.T) {
@@ -383,16 +470,80 @@ func TestMiscRound22_ConvertStatusResultToAPIFallsBackWhenResolutionMisses(t *te
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
 	require.NoError(t, err)
 
+	nilResult := handler.convertStatusResultToAPI(ctx, nil, "")
+	require.Empty(t, nilResult.ID)
+
 	result := handler.convertStatusResultToAPI(ctx, &storage.StatusSearchResult{
-		StatusID:  "missing-status",
-		Content:   "thin fallback content",
-		URL:       cfg.BaseURL() + "/@ghost/missing-status",
-		Published: time.Date(2026, 3, 11, 12, 40, 0, 0, time.UTC),
+		StatusID:   "missing-status",
+		Content:    "thin fallback content",
+		URL:        cfg.BaseURL() + "/@ghost/missing-status",
+		Published:  time.Date(2026, 3, 11, 12, 40, 0, 0, time.UTC),
+		Visibility: storagemodels.VisibilityPublic,
 	}, "")
 
 	require.Equal(t, "missing-status", result.ID)
 	require.Equal(t, "thin fallback content", result.Content)
 	require.Equal(t, cfg.BaseURL()+"/@ghost/missing-status", result.URL)
+
+	hidden := handler.convertStatusResultToAPI(ctx, &storage.StatusSearchResult{
+		StatusID:   "missing-direct-status",
+		Content:    "hidden thin fallback",
+		URL:        cfg.BaseURL() + "/@ghost/missing-direct-status",
+		Published:  time.Date(2026, 3, 11, 12, 41, 0, 0, time.UTC),
+		Visibility: storagemodels.VisibilityDirect,
+	}, "")
+	require.Empty(t, hidden.ID)
+}
+
+func TestMiscRound22_ConvertStatusSearchResultsSkipsInvisibleStatuses(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, 3, 11, 13, 20, 0, 0, time.UTC)
+	authorID := cfg.ActorURL("simulacrum")
+	statusID := "hidden-search-result"
+	statusURL := authorID + "/statuses/" + statusID
+
+	state := &round10QueryState{
+		statusByID: map[string]storagemodels.Status{
+			statusID: {
+				StatusID:       statusID,
+				AuthorID:       authorID,
+				AuthorUsername: "simulacrum",
+				Content:        "hidden hydrated result",
+				Visibility:     storagemodels.VisibilityDirect,
+				PublishedAt:    now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				Note: &activitypub.Note{
+					BaseObject:   activitypub.BaseObject{ID: statusURL, Type: activitypub.NoteType},
+					Content:      "hidden hydrated result",
+					AttributedTo: authorID,
+				},
+			},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+	results := handler.convertStatusSearchResults(context.Background(), []storage.StatusSearchResult{
+		{
+			StatusID:   statusID,
+			URL:        statusURL,
+			Content:    "hidden hydrated result",
+			Visibility: storagemodels.VisibilityDirect,
+			Published:  now,
+		},
+		{
+			StatusID:   "missing-hidden",
+			Content:    "hidden thin result",
+			Visibility: storagemodels.VisibilityPrivate,
+			Published:  now,
+		},
+	}, "")
+
+	require.Empty(t, results)
+	require.True(t, handler.statusVisibleInSearch(&storagemodels.Status{
+		Visibility:   storagemodels.VisibilityDirect,
+		ToRecipients: []string{cfg.ActorURL("bob")},
+	}, "bob"))
 }
 
 func TestMiscRound22_ResolveStatusFromSearchResultHandlesFallbacks(t *testing.T) {
@@ -523,6 +674,83 @@ func TestMiscRound22_SearchStatusByContentAugmentsAuthorTimeline(t *testing.T) {
 
 	require.NotEmpty(t, result.Statuses)
 	require.Equal(t, statusID, result.Statuses[0].ID)
+}
+
+func TestMiscRound22_SearchStatusByContentFiltersNonPublicResults(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, 3, 11, 13, 10, 0, 0, time.UTC)
+	authorID := cfg.ActorURL("simulacrum")
+
+	publicStatus := storagemodels.Status{
+		StatusID:       "public-search-status",
+		AuthorID:       authorID,
+		AuthorUsername: "simulacrum",
+		Content:        "shared codex phrase",
+		Visibility:     storagemodels.VisibilityPublic,
+		PublishedAt:    now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		Note: &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: authorID + "/statuses/public-search-status", Type: activitypub.NoteType},
+			Content:      "shared codex phrase",
+			AttributedTo: authorID,
+		},
+	}
+	privateStatus := storagemodels.Status{
+		StatusID:       "private-search-status",
+		AuthorID:       authorID,
+		AuthorUsername: "simulacrum",
+		Content:        "shared codex phrase private",
+		Visibility:     storagemodels.VisibilityDirect,
+		PublishedAt:    now.Add(time.Minute),
+		CreatedAt:      now.Add(time.Minute),
+		UpdatedAt:      now.Add(time.Minute),
+		Note: &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: authorID + "/statuses/private-search-status", Type: activitypub.NoteType},
+			Content:      "shared codex phrase private",
+			AttributedTo: authorID,
+		},
+	}
+
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"simulacrum": {
+				Username:     "simulacrum",
+				DisplayName:  "Simulacrum",
+				CreatedAt:    now.Add(-24 * time.Hour),
+				UpdatedAt:    now.Add(-24 * time.Hour),
+				Discoverable: true,
+				Role:         "user",
+			},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"simulacrum": {
+				Username: "simulacrum",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: authorID, Type: "Service"},
+					PreferredUsername: "simulacrum",
+					Name:              "Simulacrum",
+					Discoverable:      true,
+				},
+				NumericID: common.GenerateNumericID("simulacrum"),
+			},
+		},
+		statusByID: map[string]storagemodels.Status{
+			publicStatus.StatusID:  publicStatus,
+			privateStatus.StatusID: privateStatus,
+		},
+		statusList: []storagemodels.Status{privateStatus, publicStatus},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, nil, nil)
+	require.NoError(t, err)
+
+	result := apimodels.SearchResult{Statuses: []apimodels.Status{}}
+	handler.searchStatusByContent(ctx, &SearchParams{Query: "shared codex phrase", Limit: 5}, "", &result)
+
+	require.Len(t, result.Statuses, 1)
+	require.Equal(t, publicStatus.StatusID, result.Statuses[0].ID)
 }
 
 func TestMiscRound22_AddAuthorMatchedStatusesSkipsSeenAndInvisibleTimelineStatuses(t *testing.T) {

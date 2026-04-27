@@ -717,8 +717,9 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *apptheory.Context) (*apptheory.R
 		return outboxJSONError(http.StatusInternalServerError, "failed to get outbox activities"), nil
 	}
 
-	orderedItems := make([]any, len(activities))
-	for i, activity := range activities {
+	publicActivities := filterPublicOutboxActivities(activities)
+	orderedItems := make([]any, len(publicActivities))
+	for i, activity := range publicActivities {
 		orderedItems[i] = activity
 	}
 
@@ -750,14 +751,37 @@ func (op *OutboxProcessor) countOutboxActivities(ctx context.Context, username s
 	pk := "ACTOR#" + username
 	const skPrefix = "ACTIVITY#"
 
-	count, err := op.db.WithContext(ctx).Model(&models.Activity{}).
+	var activities []*models.Activity
+	err := op.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix).
-		Count()
+		OrderBy("SK", "DESC").
+		All(&activities)
 	if err != nil {
 		return 0, err
 	}
-	return int(count), nil
+
+	count := 0
+	for _, record := range activities {
+		if record != nil && activitypub.IsPublicAddressedActivity(record.Activity) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func filterPublicOutboxActivities(activities []*activitypub.Activity) []*activitypub.Activity {
+	if len(activities) == 0 {
+		return activities
+	}
+
+	filtered := make([]*activitypub.Activity, 0, len(activities))
+	for _, activity := range activities {
+		if activitypub.IsPublicAddressedActivity(activity) {
+			filtered = append(filtered, activity)
+		}
+	}
+	return filtered
 }
 
 // HandleOutboxPost handles POST requests to the ActivityPub outbox endpoint

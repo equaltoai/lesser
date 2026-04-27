@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -718,12 +719,13 @@ func (s *Service) previewDirectMessageRequestRateLimit(ctx context.Context, cmd 
 func (s *Service) createDirectMessageStatus(_ context.Context, cmd *SendDirectMessageCommand, sender *storage.Account, recipientAccounts map[string]*storage.Account, conversationID, _ string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
 	now := time.Now().UTC()
+	noteCmd := sanitizedDirectMessageCommand(cmd)
 
 	status := &models.Status{
 		StatusID:       messageID,
 		AuthorID:       cmd.SenderID,
 		AuthorUsername: sender.User.Username,
-		Content:        cmd.Content,
+		Content:        noteCmd.Content,
 		Visibility:     VisibilityDirect,
 		Sensitive:      cmd.Sensitive,
 		Language:       cmd.Language,
@@ -736,7 +738,7 @@ func (s *Service) createDirectMessageStatus(_ context.Context, cmd *SendDirectMe
 	}
 
 	var err error
-	status.Note, err = s.buildActivityPubNote(cmd, messageID, sender, conversationID, recipientAccounts)
+	status.Note, err = s.buildActivityPubNote(noteCmd, messageID, sender, conversationID, recipientAccounts)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1510,11 +1512,13 @@ func extractUsernameFromActorIdentifier(identifier string) string {
 func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCommand, sendCmd *SendDirectMessageCommand, sender *storage.Account, recipient *storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
 	now := time.Now().UTC()
+	noteCmd := sanitizedDirectMessageCommand(sendCmd)
+
 	status := &models.Status{
 		StatusID:       messageID,
 		AuthorID:       cmd.SenderID,
 		AuthorUsername: sender.User.Username,
-		Content:        cmd.Content,
+		Content:        noteCmd.Content,
 		Visibility:     VisibilityDirect,
 		Sensitive:      cmd.Sensitive,
 		Language:       cmd.Language,
@@ -1527,7 +1531,7 @@ func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCom
 	}
 
 	var err error
-	status.Note, err = s.buildActivityPubNote(sendCmd, messageID, sender, conversationID, map[string]*storage.Account{
+	status.Note, err = s.buildActivityPubNote(noteCmd, messageID, sender, conversationID, map[string]*storage.Account{
 		recipientID: recipient,
 	})
 	if err != nil {
@@ -2063,6 +2067,19 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 	}
 
 	return nil
+}
+
+func sanitizedDirectMessageCommand(cmd *SendDirectMessageCommand) *SendDirectMessageCommand {
+	if cmd == nil {
+		return nil
+	}
+
+	sanitized := *cmd
+	sanitized.Content = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
+	sanitized.SpoilerText = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
+	sanitized.Recipients = append([]string(nil), cmd.Recipients...)
+	sanitized.MediaIDs = append([]string(nil), cmd.MediaIDs...)
+	return &sanitized
 }
 
 func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID string, sender *storage.Account, conversationID string, recipientAccounts map[string]*storage.Account) (*activitypub.Note, error) {

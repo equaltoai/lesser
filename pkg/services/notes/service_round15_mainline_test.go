@@ -1797,6 +1797,26 @@ func TestService_round15_community_note_content_is_escaped_at_write_time(t *test
 	require.NotContains(t, created.Note.Content, "<img")
 }
 
+func TestService_round15_community_note_content_is_escaped_for_read_boundaries(t *testing.T) {
+	raw := &storage.CommunityNote{
+		ID:      "legacy-note",
+		Content: `<script>alert(1)</script><b>legacy</b>`,
+	}
+
+	safe := safeCommunityNoteForPresentation(raw)
+	require.NotNil(t, safe)
+	require.NotSame(t, raw, safe)
+	require.NotContains(t, safe.Content, "<script")
+	require.Contains(t, safe.Content, "&lt;b&gt;legacy&lt;/b&gt;")
+	require.Contains(t, raw.Content, "<script>")
+
+	notes := safeCommunityNotesForPresentation([]*storage.CommunityNote{raw, nil})
+	require.Len(t, notes, 2)
+	require.NotContains(t, notes[0].Content, "<script")
+	require.Nil(t, notes[1])
+	require.Nil(t, safeCommunityNotesForPresentation(nil))
+}
+
 func TestService_round15_view_permissions_and_timelines(t *testing.T) {
 	service, _, _, _, _ := newNotesServiceHarness(t)
 

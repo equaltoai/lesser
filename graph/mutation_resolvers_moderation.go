@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -174,7 +175,7 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	graphqlNote := &model.CommunityNote{
 		ID:         note.ID,
 		Author:     r.convertAccountToActor(author),
-		Content:    note.Content,
+		Content:    htmlsafe.EscapePlainTextHTML(note.Content),
 		Helpful:    note.HelpfulVotes,
 		NotHelpful: note.NotHelpfulVotes,
 		CreatedAt:  model.Time(note.CreatedAt),
@@ -321,7 +322,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	return &model.CommunityNote{
 		ID:         note.ID,
 		Author:     authorActor,
-		Content:    note.Content,
+		Content:    htmlsafe.EscapePlainTextHTML(note.Content),
 		Helpful:    note.HelpfulVotes,
 		NotHelpful: note.NotHelpfulVotes,
 		CreatedAt:  model.Time(note.CreatedAt),
@@ -330,13 +331,13 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 
 // TrainModerationModel implements MutationResolver.
 func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) (*model.TrainingResult, error) {
-	// 1. Require authentication
-	username, err := r.requireAuth(ctx)
+	// 1. Require admin privileges
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Check feature flag (admin permissions checked via feature flag)
+	// 2. Check feature flag after admin authorization
 	if err := common.MustCheckModerationMLAccess(ctx, username); err != nil {
 		return nil, err
 	}

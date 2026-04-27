@@ -7,6 +7,7 @@ func applySchemaOverrides(spec *openAPISpec) {
 
 	overrideCreateStatusRequest(spec.Components.Schemas)
 	overrideOAuthClientSchemas(spec.Components.Schemas)
+	overrideCommunityNoteSchemas(spec.Components.Schemas)
 }
 
 func overrideCreateStatusRequest(schemas map[string]any) {
@@ -49,7 +50,41 @@ func overrideOAuthClientSchemas(schemas map[string]any) {
 	overrideSchemaProperty(schemas, "OAuthTokenRequest", "resource", "Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request.", false)
 }
 
+func overrideCommunityNoteSchemas(schemas map[string]any) {
+	mutateSchemaProperty(schemas, "CommunityNoteSource", "url", func(property map[string]any) {
+		property["format"] = "uri"
+	})
+	mutateSchemaProperty(schemas, "CreateCommunityNoteRequest", "content", func(property map[string]any) {
+		property["minLength"] = 10
+		property["maxLength"] = 500
+	})
+	mutateSchemaProperty(schemas, "CreateCommunityNoteRequest", "language", func(property map[string]any) {
+		property["minLength"] = 2
+		property["maxLength"] = 2
+	})
+	mutateSchemaProperty(schemas, "CreateCommunityNoteRequest", "sources", func(property map[string]any) {
+		property["maxItems"] = 5
+	})
+	mutateSchemaProperty(schemas, "VoteCommunityNoteRequest", "vote_type", func(property map[string]any) {
+		property["enum"] = []string{"helpful", "not_helpful", "neutral"}
+	})
+	mutateSchemaProperty(schemas, "VoteCommunityNoteRequest", "reason", func(property map[string]any) {
+		property["maxLength"] = 200
+	})
+}
+
 func overrideSchemaProperty(schemas map[string]any, schemaName, propertyName, description string, deprecated bool) {
+	mutateSchemaProperty(schemas, schemaName, propertyName, func(propertyMap map[string]any) {
+		if description != "" {
+			propertyMap["description"] = description
+		}
+		if deprecated {
+			propertyMap["deprecated"] = true
+		}
+	})
+}
+
+func mutateSchemaProperty(schemas map[string]any, schemaName, propertyName string, mutate func(map[string]any)) {
 	raw, ok := schemas[schemaName]
 	if !ok {
 		return
@@ -75,10 +110,7 @@ func overrideSchemaProperty(schemas map[string]any, schemaName, propertyName, de
 		return
 	}
 
-	if description != "" {
-		propertyMap["description"] = description
-	}
-	if deprecated {
-		propertyMap["deprecated"] = true
+	if mutate != nil {
+		mutate(propertyMap)
 	}
 }

@@ -1912,6 +1912,7 @@ components:
             additionalProperties: false
             properties:
                 url:
+                    format: uri
                     type: string
             required:
                 - url
@@ -2121,8 +2122,12 @@ components:
             additionalProperties: false
             properties:
                 content:
+                    maxLength: 500
+                    minLength: 10
                     type: string
                 language:
+                    maxLength: 2
+                    minLength: 2
                     type: string
                 object_id:
                     type: string
@@ -2131,6 +2136,7 @@ components:
                 sources:
                     items:
                         $ref: '#/components/schemas/CommunityNoteSource'
+                    maxItems: 5
                     type: array
             required:
                 - content
@@ -7768,8 +7774,13 @@ components:
             additionalProperties: false
             properties:
                 reason:
+                    maxLength: 200
                     type: string
                 vote_type:
+                    enum:
+                        - helpful
+                        - not_helpful
+                        - neutral
                     type: string
             required:
                 - vote_type

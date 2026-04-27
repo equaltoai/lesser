@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +38,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 		GetVisibleCommunityNotesFunc: func(_ context.Context, _ *servicenotes.GetVisibleCommunityNotesQuery) (*servicenotes.GetVisibleCommunityNotesResult, error) {
 			return &servicenotes.GetVisibleCommunityNotesResult{
 				Notes: []*storage.CommunityNote{
-					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/bob", Content: "visible", Language: "en", Sources: []string{"https://a"}, HelpfulVotes: 1, NotHelpfulVotes: 0, Score: 0.7, VisibilityStatus: "visible", CreatedAt: time.Now().Add(-2 * time.Hour)},
+					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/bob", Content: `<script>alert(1)</script><b>legacy</b>`, Language: "en", Sources: []string{"https://a"}, HelpfulVotes: 1, NotHelpfulVotes: 0, Score: 0.7, VisibilityStatus: "visible", CreatedAt: time.Now().Add(-2 * time.Hour)},
 					{ID: "n2", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/carol", Content: "pending", Language: "en", Sources: []string{"https://b"}, HelpfulVotes: 0, NotHelpfulVotes: 0, Score: 0.1, VisibilityStatus: "pending", CreatedAt: time.Now().Add(-1 * time.Hour)},
 				},
 			}, nil
@@ -45,7 +47,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 			if query.NoteID == "missing" {
 				return nil, errors.New("not found")
 			}
-			note := &storage.CommunityNote{ID: query.NoteID, AuthorID: "https://example.com/users/bob", Content: "note", CreatedAt: time.Now().Add(-1 * time.Hour)}
+			note := &storage.CommunityNote{ID: query.NoteID, AuthorID: "https://example.com/users/bob", Content: `<script>alert(1)</script><b>note</b>`, CreatedAt: time.Now().Add(-1 * time.Hour)}
 			if query.NoteID == "own" {
 				note.AuthorID = aliceActorID
 			}
@@ -63,7 +65,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 			}
 			return &servicenotes.GetCommunityNotesByAuthorResult{
 				Notes: []*storage.CommunityNote{
-					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: query.AuthorID, Content: "note", CreatedAt: time.Now().Add(-1 * time.Hour), HelpfulVotes: 2, NotHelpfulVotes: 1, Score: 0.5},
+					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: query.AuthorID, Content: `<script>alert(1)</script><b>note</b>`, CreatedAt: time.Now().Add(-1 * time.Hour), HelpfulVotes: 2, NotHelpfulVotes: 1, Score: 0.5},
 				},
 				NextCursor: "",
 			}, nil
@@ -76,7 +78,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 	lowerHeaders := map[string]string{"authorization": "Bearer " + token}
 
 	t.Run("create note unauthorized", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", nil, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", nil, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateNoteLift(ctx))
 	})
@@ -86,7 +88,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 		badCfg.ReputationPrivateKey = "not a pem"
 		badHandler, _, _ := round11NewHandler(t, badCfg, state, &RegistryStub{NotesSvc: notesSvc})
 
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(badHandler.HandleCreateNoteLift(ctx))
 	})
@@ -100,13 +102,23 @@ func TestNotesHandlersRound12(t *testing.T) {
 		}
 		lowHandler, _, _ := round11NewHandler(t, cfg, lowState, &RegistryStub{NotesSvc: notesSvc})
 
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusForbidden)(lowHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note invalid body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notes", headers, nil, []byte("{"))
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
+	})
+
+	t.Run("create note rejects invalid payload fields", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "short", Language: "en"})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
+
+		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en", Sources: []apimodels.CommunityNoteSource{{URL: "javascript:alert(1)"}}})
+		require.NoError(t, err)
 		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
 	})
 
@@ -143,7 +155,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 		}
 		rateHandler, _, _ := round11NewHandler(t, cfg, rateState, &RegistryStub{NotesSvc: notesSvc})
 
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusTooManyRequests)(rateHandler.HandleCreateNoteLift(ctx))
 	})
@@ -156,13 +168,13 @@ func TestNotesHandlersRound12(t *testing.T) {
 		}
 		failHandler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: failSvc})
 
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note success", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "valid note content", Language: "en"})
 		require.NoError(t, err)
 		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateNoteLift(ctx))
 		require.NotEmpty(t, resp.Headers["x-cost-micros"])
@@ -192,14 +204,26 @@ func TestNotesHandlersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", nil, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["object_id"] = "obj1"
-		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+
+		var payload apimodels.CommunityNotesResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &payload))
+		require.Len(t, payload.Notes, 2)
+		require.NotContains(t, payload.Notes[0].Content, "<script")
+		require.NotContains(t, payload.Notes[0].Content, "<b>legacy</b>")
+		require.Contains(t, payload.Notes[0].Content, "&lt;b&gt;legacy&lt;/b&gt;")
 	})
 
 	t.Run("get notes success authenticated (lowercase header)", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", lowerHeaders, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["object_id"] = "obj1"
-		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+
+		var payload apimodels.CommunityNotesResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &payload))
+		require.Len(t, payload.Notes, 2)
+		require.NotContains(t, payload.Notes[0].Content, "<script")
 	})
 
 	t.Run("vote missing note id", func(t *testing.T) {
@@ -217,6 +241,18 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 	t.Run("vote invalid request body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notes/n1/vote", headers, nil, []byte("{"))
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteNoteLift(ctx))
+	})
+
+	t.Run("vote rejects invalid payload fields", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/n1/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "admin"})
+		require.NoError(t, err)
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteNoteLift(ctx))
+
+		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/notes/n1/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful", Reason: strings.Repeat("x", 201)})
+		require.NoError(t, err)
 		ctx.Params["id"] = "n1"
 		requireStatus(t, http.StatusBadRequest)(h.HandleVoteNoteLift(ctx))
 	})
@@ -284,11 +320,18 @@ func TestNotesHandlersRound12(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(h.HandleGetUserNotesLift(ctx))
 	})
 
-	t.Run("get user notes success", func(t *testing.T) {
+	t.Run("get user notes success escapes rendered content", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/notes", nil, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "alice"
-		requireStatus(t, http.StatusOK)(h.HandleGetUserNotesLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetUserNotesLift(ctx))
+
+		var statuses []apimodels.UserNoteStatus
+		require.NoError(t, json.Unmarshal(resp.Body, &statuses))
+		require.Len(t, statuses, 1)
+		require.NotContains(t, statuses[0].Content, "<script")
+		require.NotContains(t, statuses[0].Content, "<b>note</b>")
+		require.Contains(t, statuses[0].Content, "&lt;b&gt;note&lt;/b&gt;")
 	})
 }
 

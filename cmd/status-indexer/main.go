@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -165,6 +166,12 @@ func (si *StatusIndexer) processRecord(ctx context.Context, record events.Dynamo
 
 	// Extract object details
 	details := si.extractObjectDetails(objectMap)
+	if !si.isSearchIndexableVisibility(details) {
+		si.logger.Debug("skipping non-public status for search indexing",
+			zap.String("status_id", details.objectID),
+			zap.String("visibility", details.visibility))
+		return nil
+	}
 
 	// Process the status if valid
 	if details.objectID != "" && details.content != "" {
@@ -178,11 +185,14 @@ func (si *StatusIndexer) processRecord(ctx context.Context, record events.Dynamo
 
 // statusDetails holds extracted status information
 type statusDetails struct {
-	objectID       string
-	content        string
-	authorID       string
-	authorUsername string
-	published      time.Time
+	objectID         string
+	content          string
+	authorID         string
+	authorUsername   string
+	published        time.Time
+	visibility       string
+	publicAddressed  bool
+	audienceObserved bool
 }
 
 // shouldProcessEvent checks if the event should be processed
@@ -276,10 +286,67 @@ func (si *StatusIndexer) extractObjectDetails(objectMap map[string]events.Dynamo
 		details.published, _ = time.Parse(time.RFC3339, pub.String())
 	}
 
+	// Extract explicit visibility when the object row has it. If it is absent,
+	// fall back to ActivityPub audience addressing.
+	if vis, ok := objectMap["visibility"]; ok && vis.DataType() == events.DataTypeString {
+		details.visibility = strings.ToLower(strings.TrimSpace(vis.String()))
+	}
+	details.publicAddressed, details.audienceObserved = si.publicSearchAddressing(objectMap)
+
 	// Extract username from author ID
 	details.authorUsername = si.extractUsernameFromAuthorID(details.authorID)
 
 	return details
+}
+
+func (si *StatusIndexer) isSearchIndexableVisibility(details statusDetails) bool {
+	switch strings.ToLower(strings.TrimSpace(details.visibility)) {
+	case models.VisibilityPrivate, models.VisibilityDirect:
+		return false
+	case models.VisibilityPublic, models.VisibilityUnlisted:
+		if details.audienceObserved {
+			return details.publicAddressed
+		}
+		return true
+	default:
+		return details.publicAddressed
+	}
+}
+
+func (si *StatusIndexer) publicSearchAddressing(objectMap map[string]events.DynamoDBAttributeValue) (bool, bool) {
+	observed := false
+	for _, key := range []string{"to", "cc"} {
+		attr, ok := objectMap[key]
+		if !ok {
+			continue
+		}
+		observed = true
+		for _, recipient := range dynamoStringValues(attr) {
+			if recipient == activitypub.PublicAddress {
+				return true, observed
+			}
+		}
+	}
+	return false, observed
+}
+
+func dynamoStringValues(attr events.DynamoDBAttributeValue) []string {
+	switch attr.DataType() {
+	case events.DataTypeString:
+		return []string{attr.String()}
+	case events.DataTypeStringSet:
+		return attr.StringSet()
+	case events.DataTypeList:
+		values := make([]string, 0, len(attr.List()))
+		for _, item := range attr.List() {
+			if item.DataType() == events.DataTypeString {
+				values = append(values, item.String())
+			}
+		}
+		return values
+	default:
+		return nil
+	}
 }
 
 // extractUsernameFromAuthorID extracts username from author ID URL

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -68,6 +69,53 @@ func newMockDB(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.MockQuery) {
 	q.On("First", mock.Anything).Return(errors.New("not found"))
 
 	return db, q
+}
+
+func TestNewStatusIndexer_Round12(t *testing.T) {
+	db, _ := newMockDB(t)
+	logger := zap.NewNop()
+	embed := &fakeEmbeddingGenerator{embedding: []float32{0.1, 0.2}}
+
+	si := NewStatusIndexer(db, "lesser-dev", "example.com", embed, logger)
+
+	require.Same(t, db, si.db)
+	require.Equal(t, "lesser-dev", si.tableName)
+	require.Equal(t, "example.com", si.domain)
+	require.Same(t, logger, si.logger)
+	require.Same(t, embed, si.aiService)
+	require.NotNil(t, si.likeRepo)
+	require.NotNil(t, si.hashtagsRepo)
+	require.NotNil(t, si.objectRepo)
+}
+
+func TestResolveStatusIndexerDB_Round12(t *testing.T) {
+	db, _ := newMockDB(t)
+
+	existingCtx := &common.LambdaContext{DynamoDB: db}
+	got, err := resolveStatusIndexerDB(existingCtx, &config.Config{Region: "us-east-1"}, nil)
+	require.NoError(t, err)
+	require.Same(t, db, got)
+
+	_, err = resolveStatusIndexerDB(nil, nil, zap.NewNop())
+	require.ErrorContains(t, err, "lambda config is required")
+
+	_, err = resolveStatusIndexerDB(&common.LambdaContext{}, &config.Config{}, zap.NewNop())
+	require.ErrorContains(t, err, "AWS region is required")
+
+	origNewLambdaClient := newLambdaClientFn
+	t.Cleanup(func() { newLambdaClientFn = origNewLambdaClient })
+
+	newLambdaClientFn = func(ctx context.Context, region string) (dynamormCore.DB, error) {
+		require.NotNil(t, ctx)
+		require.Equal(t, "us-west-2", region)
+		return db, nil
+	}
+
+	fallbackCtx := &common.LambdaContext{}
+	got, err = resolveStatusIndexerDB(fallbackCtx, &config.Config{Region: " us-west-2 "}, zap.NewNop())
+	require.NoError(t, err)
+	require.Same(t, db, got)
+	require.Same(t, db, fallbackCtx.DynamoDB)
 }
 
 func TestStatusIndexer_Helpers_Round12(t *testing.T) {
@@ -161,6 +209,45 @@ func TestStatusIndexer_Helpers_Round12(t *testing.T) {
 	require.Equal(t, "Hello world #Go!", details.content)
 	require.Equal(t, "https://example.com/users/alice", details.authorID)
 	require.Equal(t, "alice", details.authorUsername)
+	require.False(t, details.publicAddressed)
+
+	publicObjectMap := map[string]events.DynamoDBAttributeValue{
+		"type":         events.NewStringAttribute("Note"),
+		"id":           events.NewStringAttribute("status-public"),
+		"content":      events.NewStringAttribute("public content"),
+		"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+		"to":           events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute(activitypub.PublicAddress)}),
+	}
+	publicDetails := si.extractObjectDetails(publicObjectMap)
+	require.True(t, publicDetails.publicAddressed)
+	require.True(t, publicDetails.audienceObserved)
+	require.True(t, si.isSearchIndexableVisibility(publicDetails))
+	ccObjectMap := map[string]events.DynamoDBAttributeValue{
+		"cc": events.NewStringSetAttribute([]string{activitypub.PublicAddress}),
+	}
+	ccPublic, ccObserved := si.publicSearchAddressing(ccObjectMap)
+	require.True(t, ccPublic)
+	require.True(t, ccObserved)
+	emptyPublic, emptyObserved := si.publicSearchAddressing(map[string]events.DynamoDBAttributeValue{})
+	require.False(t, emptyPublic)
+	require.False(t, emptyObserved)
+	require.True(t, si.isSearchIndexableVisibility(statusDetails{visibility: models.VisibilityPublic}))
+	require.True(t, si.isSearchIndexableVisibility(statusDetails{visibility: models.VisibilityUnlisted}))
+	require.False(t, si.isSearchIndexableVisibility(statusDetails{visibility: models.VisibilityPrivate, publicAddressed: true}))
+	require.False(t, si.isSearchIndexableVisibility(statusDetails{visibility: models.VisibilityDirect}))
+	require.False(t, si.isSearchIndexableVisibility(statusDetails{
+		visibility:       models.VisibilityPublic,
+		audienceObserved: true,
+		publicAddressed:  false,
+	}))
+	require.False(t, si.isSearchIndexableVisibility(statusDetails{}))
+	require.Equal(t, []string{"one"}, dynamoStringValues(events.NewStringAttribute("one")))
+	require.ElementsMatch(t, []string{"one", "two"}, dynamoStringValues(events.NewStringSetAttribute([]string{"one", "two"})))
+	require.Equal(t, []string{"one"}, dynamoStringValues(events.NewListAttribute([]events.DynamoDBAttributeValue{
+		events.NewStringAttribute("one"),
+		events.NewNumberAttribute("2"),
+	})))
+	require.Nil(t, dynamoStringValues(events.NewNumberAttribute("1")))
 
 	require.Equal(t, "", si.extractUsernameFromAuthorID(""))
 	require.Equal(t, "bob", si.extractUsernameFromAuthorID("https://remote.example/users/bob"))
@@ -337,6 +424,8 @@ func TestStatusIndexer_processRecord_Round12(t *testing.T) {
 		"content":      events.NewStringAttribute("Hello world"),
 		"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
 		"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+		"visibility":   events.NewStringAttribute(models.VisibilityPublic),
+		"to":           events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute(activitypub.PublicAddress)}),
 	}
 	require.NoError(t, si.processRecord(context.Background(), record))
 
@@ -354,11 +443,45 @@ func TestStatusIndexer_processRecord_Round12(t *testing.T) {
 					"content":      events.NewStringAttribute("Hello legacy"),
 					"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
 					"published":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+					"visibility":   events.NewStringAttribute(models.VisibilityPublic),
 				}),
 			},
 		},
 	}
 	require.NoError(t, si.processRecord(context.Background(), legacyRecord))
+}
+
+func TestStatusIndexer_processRecord_SkipsNonPublicObjects(t *testing.T) {
+	db, _ := newMockDB(t)
+	embed := &fakeEmbeddingGenerator{embedding: []float32{0.1, 0.2}}
+
+	si := &StatusIndexer{
+		db:        db,
+		logger:    zap.NewNop(),
+		aiService: embed,
+		likeRepo:  &fakeLikeCounter{},
+	}
+
+	record := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			Keys: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("object#status-private"),
+				"SK": events.NewStringAttribute("object#status-private"),
+			},
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"type":         events.NewStringAttribute("Note"),
+				"id":           events.NewStringAttribute("status-private"),
+				"content":      events.NewStringAttribute("private #secret content"),
+				"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+				"visibility":   events.NewStringAttribute(models.VisibilityDirect),
+				"to":           events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute("https://example.com/users/bob")}),
+			},
+		},
+	}
+
+	require.NoError(t, si.processRecord(context.Background(), record))
+	require.Equal(t, 0, embed.calls)
 }
 
 func TestHandleStatusIndexerStreamRecord_Round12(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"html"
 	"html/template"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
 )
@@ -12,6 +13,16 @@ import (
 // Escape escapes untrusted text for safe inclusion into HTML contexts.
 func Escape(s string) string {
 	return html.EscapeString(s)
+}
+
+// EscapePlainTextHTML normalizes untrusted plain text for HTML-by-contract fields.
+//
+// Some Lesser API fields are rendered as HTML by Mastodon-compatible clients even
+// when the source value is user-authored plain text. Unescape first so legacy
+// already-escaped values do not become double-escaped, then escape the normalized
+// text for safe HTML inclusion.
+func EscapePlainTextHTML(s string) string {
+	return Escape(html.UnescapeString(strings.TrimSpace(s)))
 }
 
 // SanitizeHTMLByContract sanitizes HTML that is meant to be rendered as HTML by clients (e.g. Mastodon fields).
