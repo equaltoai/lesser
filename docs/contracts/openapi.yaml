@@ -3928,10 +3928,16 @@ components:
             properties:
                 action:
                     type: string
+                client_id:
+                    type: string
+                scope:
+                    type: string
                 user_code:
                     type: string
             required:
                 - action
+                - client_id
+                - scope
                 - user_code
             type: object
         OAuthDeviceConsentResponse:

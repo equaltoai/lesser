@@ -5730,6 +5730,8 @@ export interface components {
         };
         OAuthDeviceConsentRequest: {
             action: string;
+            client_id: string;
+            scope: string;
             user_code: string;
         };
         OAuthDeviceConsentResponse: {
