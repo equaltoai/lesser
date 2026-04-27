@@ -78,12 +78,14 @@ func TestCommunityNoteRepository_round09_votes_and_notes(t *testing.T) {
 		mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery).Once()
 		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.CommunityNote)
-			*dest = models.CommunityNote{ID: "n1", ObjectID: "obj", ObjectType: "status", AuthorID: "u1", Content: "c", VisibilityStatus: "visible"}
+			*dest = models.CommunityNote{ID: "n1", ObjectID: "obj", ObjectType: "status", AuthorID: "u1", Content: `<script>alert(1)</script><b>legacy</b>`, VisibilityStatus: "visible"}
 		}).Return(nil).Once()
 
 		n, err := repo.GetCommunityNote(ctx, "n1")
 		require.NoError(t, err)
 		assert.Equal(t, "n1", n.ID)
+		assert.NotContains(t, n.Content, "<script")
+		assert.Contains(t, n.Content, "&lt;b&gt;legacy&lt;/b&gt;")
 
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi1PK", "=", "OBJECT#obj#NOTES").Return(mockQuery).Once()
@@ -91,7 +93,7 @@ func TestCommunityNoteRepository_round09_votes_and_notes(t *testing.T) {
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.CommunityNote)
 			*dest = []models.CommunityNote{
-				{ID: "n1", VisibilityStatus: "visible"},
+				{ID: "n1", Content: `<img src=x onerror=alert(1)>`, VisibilityStatus: "visible"},
 				{ID: "n2", VisibilityStatus: "hidden"},
 				{ID: "n3", VisibilityStatus: "prominent"},
 			}
@@ -100,6 +102,7 @@ func TestCommunityNoteRepository_round09_votes_and_notes(t *testing.T) {
 		notes, err := repo.GetVisibleCommunityNotes(ctx, "obj")
 		require.NoError(t, err)
 		assert.Len(t, notes, 2)
+		assert.NotContains(t, notes[0].Content, "<img")
 
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi1PK", "=", "OBJECT#none#NOTES").Return(mockQuery).Once()
@@ -191,11 +194,12 @@ func TestCommunityNoteRepository_round09_vote_paths_and_author_listing(t *testin
 		mockQuery.On("Where", "gsi3SK", "<", "123#n1").Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.CommunityNote)
-			*dest = []models.CommunityNote{{ID: "n1", GSI3SK: "123#n1"}, {ID: "n2", GSI3SK: "122#n2"}}
+			*dest = []models.CommunityNote{{ID: "n1", Content: `<script>alert(1)</script>`, GSI3SK: "123#n1"}, {ID: "n2", GSI3SK: "122#n2"}}
 		}).Return(nil).Once()
 		notes, next, err := repo.GetCommunityNotesByAuthor(ctx, "u1", 2, "123#n1")
 		require.NoError(t, err)
 		assert.Len(t, notes, 2)
+		assert.NotContains(t, notes[0].Content, "<script")
 		assert.Equal(t, "122#n2", next)
 
 		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()

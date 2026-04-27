@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"html"
 	"strings"
 	"time"
 
@@ -230,7 +229,7 @@ func (h *Handler) HandleGetNotesLift(ctx *apptheory.Context) (*apptheory.Respons
 			ID:               note.ID,
 			ObjectID:         note.ObjectID,
 			AuthorID:         note.AuthorID,
-			Content:          note.Content,
+			Content:          safeCommunityNoteHTML(note.Content),
 			Language:         note.Language,
 			Sources:          note.Sources,
 			HelpfulVotes:     note.HelpfulVotes,
@@ -476,7 +475,7 @@ func validateVoteCommunityNoteRequest(req *apimodels.VoteCommunityNoteRequest) e
 }
 
 func safeCommunityNoteHTML(content string) string {
-	return htmlsafe.Escape(html.UnescapeString(strings.TrimSpace(content)))
+	return htmlsafe.EscapePlainTextHTML(content)
 }
 
 // Helper functions

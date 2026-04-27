@@ -135,17 +135,33 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	// Mutation: add community note.
 	notePayload, err := mut.AddCommunityNote(userCtx, model.CommunityNoteInput{
 		ObjectID: "status-1",
-		Content:  "fact check",
+		Content:  `<script>alert(1)</script><b>fact check</b>`,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, notePayload)
 	require.NotNil(t, notePayload.Note)
 	require.NotNil(t, notePayload.Object)
+	require.NotContains(t, notePayload.Note.Content, "<script")
+	require.NotContains(t, notePayload.Note.Content, "<b>fact check</b>")
+	require.Contains(t, notePayload.Note.Content, "&lt;b&gt;fact check&lt;/b&gt;")
+
+	require.NoError(t, storageRepo.CommunityNote().CreateCommunityNote(context.Background(), &storage.CommunityNote{
+		ID:               "legacy-raw-note",
+		ObjectID:         "status-1",
+		ObjectType:       "status",
+		AuthorID:         "https://localhost/users/bob",
+		Content:          `<script>alert(1)</script><b>legacy</b>`,
+		VisibilityStatus: "visible",
+		CreatedAt:        time.Now().Add(-time.Minute),
+		UpdatedAt:        time.Now().Add(-time.Minute),
+	}))
 
 	// Mutation: voting paths (author cannot vote).
-	note, err := mut.VoteCommunityNote(userCtx, "note-1", true)
+	note, err := mut.VoteCommunityNote(userCtx, "legacy-raw-note", true)
 	require.NoError(t, err)
 	require.NotNil(t, note)
+	require.NotContains(t, note.Content, "<script")
+	require.Contains(t, note.Content, "&lt;b&gt;legacy note&lt;/b&gt;")
 
 	_, err = mut.VoteCommunityNote(round12AuthContext("bob"), "note-1", false)
 	require.Error(t, err)

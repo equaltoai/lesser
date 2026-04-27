@@ -38,7 +38,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 		GetVisibleCommunityNotesFunc: func(_ context.Context, _ *servicenotes.GetVisibleCommunityNotesQuery) (*servicenotes.GetVisibleCommunityNotesResult, error) {
 			return &servicenotes.GetVisibleCommunityNotesResult{
 				Notes: []*storage.CommunityNote{
-					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/bob", Content: "visible", Language: "en", Sources: []string{"https://a"}, HelpfulVotes: 1, NotHelpfulVotes: 0, Score: 0.7, VisibilityStatus: "visible", CreatedAt: time.Now().Add(-2 * time.Hour)},
+					{ID: "n1", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/bob", Content: `<script>alert(1)</script><b>legacy</b>`, Language: "en", Sources: []string{"https://a"}, HelpfulVotes: 1, NotHelpfulVotes: 0, Score: 0.7, VisibilityStatus: "visible", CreatedAt: time.Now().Add(-2 * time.Hour)},
 					{ID: "n2", ObjectID: "obj1", ObjectType: "Note", AuthorID: "https://example.com/users/carol", Content: "pending", Language: "en", Sources: []string{"https://b"}, HelpfulVotes: 0, NotHelpfulVotes: 0, Score: 0.1, VisibilityStatus: "pending", CreatedAt: time.Now().Add(-1 * time.Hour)},
 				},
 			}, nil
@@ -204,14 +204,26 @@ func TestNotesHandlersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", nil, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["object_id"] = "obj1"
-		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+
+		var payload apimodels.CommunityNotesResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &payload))
+		require.Len(t, payload.Notes, 2)
+		require.NotContains(t, payload.Notes[0].Content, "<script")
+		require.NotContains(t, payload.Notes[0].Content, "<b>legacy</b>")
+		require.Contains(t, payload.Notes[0].Content, "&lt;b&gt;legacy&lt;/b&gt;")
 	})
 
 	t.Run("get notes success authenticated (lowercase header)", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", lowerHeaders, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["object_id"] = "obj1"
-		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
+
+		var payload apimodels.CommunityNotesResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &payload))
+		require.Len(t, payload.Notes, 2)
+		require.NotContains(t, payload.Notes[0].Content, "<script")
 	})
 
 	t.Run("vote missing note id", func(t *testing.T) {

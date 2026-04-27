@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	storageTypes "github.com/equaltoai/lesser/pkg/storage"
@@ -341,7 +342,7 @@ func (r *queryResolver) CommunityNotesByAuthor(ctx context.Context, username str
 			Node: &model.CommunityNote{
 				ID:         note.ID,
 				Author:     authorActor,
-				Content:    note.Content,
+				Content:    htmlsafe.EscapePlainTextHTML(note.Content),
 				Helpful:    note.HelpfulVotes,
 				NotHelpful: note.NotHelpfulVotes,
 				CreatedAt:  model.Time(note.CreatedAt),
