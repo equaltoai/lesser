@@ -106,7 +106,10 @@ func TestService_resolveDirectMessageConversationForSend_ReturnsExistingConversa
 		Return(existingConversation, nil).
 		Once()
 
-	conversation, createConversation, err := service.resolveDirectMessageConversationForSend(ctx, "bob", "alice")
+	conversation, createConversation, err := service.resolveDirectMessageConversationForCommand(ctx, &SendDirectMessageCommand{
+		SenderID:   "bob",
+		Recipients: []string{"alice"},
+	}, "alice")
 	require.NoError(t, err)
 	require.False(t, createConversation)
 	require.Same(t, existingConversation, conversation)

@@ -22,6 +22,30 @@ const (
 	DmRequestStateDeclined DmRequestState = "DECLINED"
 )
 
+// ConversationParticipantType identifies the durable identity class for a
+// conversation participant. It is intentionally explicit so remote actor URLs,
+// local usernames, and future agent identities do not depend on ID-shape
+// inference as the source of truth.
+type ConversationParticipantType string
+
+const (
+	// ConversationParticipantTypeLocalUser represents a local lesser account.
+	ConversationParticipantTypeLocalUser ConversationParticipantType = "local_user"
+	// ConversationParticipantTypeRemoteActor represents a federated ActivityPub actor.
+	ConversationParticipantTypeRemoteActor ConversationParticipantType = "remote_actor"
+)
+
+// ConversationParticipantRef is the typed participant identity stored alongside
+// the legacy participant ID list. Participants remains the compatibility field;
+// ParticipantRefs is the durable source of truth for federated conversations.
+type ConversationParticipantRef struct {
+	ParticipantType ConversationParticipantType `theorydb:"attr:participantType" json:"participant_type"`
+	ParticipantID   string                      `theorydb:"attr:participantID" json:"participant_id"`
+	Acct            string                      `theorydb:"attr:acct,omitempty" json:"acct,omitempty"`
+	Domain          string                      `theorydb:"attr:domain,omitempty" json:"domain,omitempty"`
+	ResolvedAt      *time.Time                  `theorydb:"attr:resolvedAt,omitempty" json:"resolved_at,omitempty"`
+}
+
 // Conversation represents a direct message conversation between users
 type Conversation struct {
 	_ struct{} `theorydb:"naming:camelCase"`
@@ -36,12 +60,13 @@ type Conversation struct {
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"`
 
 	// Core fields from legacy
-	ID           string    `theorydb:"attr:id" json:"id"`
-	Participants []string  `theorydb:"attr:participants" json:"participants"` // Actor IDs/usernames
-	LastStatusID string    `theorydb:"attr:lastStatusID" json:"last_status_id,omitempty"`
-	Unread       bool      `theorydb:"-" json:"unread"` // Per-viewer projection only; not stored on the shared row
-	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`
-	UpdatedAt    time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	ID              string                       `theorydb:"attr:id" json:"id"`
+	Participants    []string                     `theorydb:"attr:participants" json:"participants"` // Compatibility IDs: local usernames or remote actor URIs.
+	ParticipantRefs []ConversationParticipantRef `theorydb:"attr:participantRefs,omitempty" json:"participant_refs,omitempty"`
+	LastStatusID    string                       `theorydb:"attr:lastStatusID" json:"last_status_id,omitempty"`
+	Unread          bool                         `theorydb:"-" json:"unread"` // Per-viewer projection only; not stored on the shared row
+	CreatedAt       time.Time                    `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt       time.Time                    `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Message counting fields
 	TotalMessageCount int64     `theorydb:"attr:totalMessageCount" json:"total_message_count"`       // Total messages in conversation
@@ -77,6 +102,115 @@ func CanonicalConversationParticipants(participants []string) []string {
 
 	sort.Strings(normalized)
 	return normalized
+}
+
+// NormalizeConversationParticipantRef canonicalizes a typed participant ref for durable storage.
+func NormalizeConversationParticipantRef(ref ConversationParticipantRef) ConversationParticipantRef {
+	ref.ParticipantID = strings.TrimSpace(ref.ParticipantID)
+	ref.Acct = strings.TrimSpace(strings.TrimPrefix(ref.Acct, "@"))
+	ref.Domain = strings.ToLower(strings.TrimSpace(ref.Domain))
+
+	switch ref.ParticipantType {
+	case ConversationParticipantTypeRemoteActor:
+		if ref.Acct != "" {
+			ref.Acct = strings.ToLower(ref.Acct)
+		}
+	case ConversationParticipantTypeLocalUser:
+		ref.ParticipantID = CanonicalConversationParticipantID(ref.ParticipantID)
+	default:
+		if strings.Contains(ref.ParticipantID, "://") {
+			ref.ParticipantType = ConversationParticipantTypeRemoteActor
+		} else {
+			ref.ParticipantType = ConversationParticipantTypeLocalUser
+			ref.ParticipantID = CanonicalConversationParticipantID(ref.ParticipantID)
+		}
+	}
+
+	if ref.ResolvedAt != nil {
+		resolvedAt := ref.ResolvedAt.UTC()
+		ref.ResolvedAt = &resolvedAt
+	}
+
+	return ref
+}
+
+// NormalizeConversationParticipantRefs canonicalizes, de-duplicates, and sorts typed participants.
+func NormalizeConversationParticipantRefs(refs []ConversationParticipantRef) []ConversationParticipantRef {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	byKey := make(map[string]ConversationParticipantRef, len(refs))
+	for _, ref := range refs {
+		normalized := NormalizeConversationParticipantRef(ref)
+		if normalized.ParticipantID == "" || normalized.ParticipantType == "" {
+			continue
+		}
+		key := string(normalized.ParticipantType) + "\x00" + normalized.ParticipantID
+		byKey[key] = normalized
+	}
+
+	keys := make([]string, 0, len(byKey))
+	for key := range byKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	normalized := make([]ConversationParticipantRef, 0, len(keys))
+	for _, key := range keys {
+		normalized = append(normalized, byKey[key])
+	}
+	return normalized
+}
+
+// ConversationParticipantIDsFromRefs returns the compatibility participant ID list for typed refs.
+func ConversationParticipantIDsFromRefs(refs []ConversationParticipantRef) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(refs))
+	for _, ref := range NormalizeConversationParticipantRefs(refs) {
+		if ref.ParticipantID != "" {
+			ids = append(ids, ref.ParticipantID)
+		}
+	}
+	return CanonicalConversationParticipants(ids)
+}
+
+// ConversationHasRemoteParticipants reports whether the conversation includes a remote actor.
+func ConversationHasRemoteParticipants(conversation *Conversation) bool {
+	if conversation == nil {
+		return false
+	}
+	for _, ref := range NormalizeConversationParticipantRefs(conversation.ParticipantRefs) {
+		if ref.ParticipantType == ConversationParticipantTypeRemoteActor {
+			return true
+		}
+	}
+	for _, participantID := range conversation.Participants {
+		if strings.Contains(strings.TrimSpace(participantID), "://") {
+			return true
+		}
+	}
+	return false
+}
+
+// ConversationLocalParticipantIDs returns local-user participants that should own viewer state rows.
+func ConversationLocalParticipantIDs(conversation *Conversation) []string {
+	if conversation == nil {
+		return nil
+	}
+	if len(conversation.ParticipantRefs) == 0 {
+		return CanonicalConversationParticipants(conversation.Participants)
+	}
+
+	localParticipants := make([]string, 0, len(conversation.ParticipantRefs))
+	for _, ref := range NormalizeConversationParticipantRefs(conversation.ParticipantRefs) {
+		if ref.ParticipantType == ConversationParticipantTypeLocalUser && ref.ParticipantID != "" {
+			localParticipants = append(localParticipants, ref.ParticipantID)
+		}
+	}
+	return CanonicalConversationParticipants(localParticipants)
 }
 
 // TableName returns the DynamoDB table name

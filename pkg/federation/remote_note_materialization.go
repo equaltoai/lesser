@@ -2,9 +2,11 @@ package federation
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
@@ -36,7 +38,7 @@ func MaterializeRemoteNote(
 	}
 
 	if objectRepo != nil {
-		if err := objectRepo.CreateObject(ctx, note); err != nil && !dynamormerrors.IsConditionFailed(err) {
+		if err := objectRepo.CreateObject(ctx, note); err != nil && !dynamormerrors.IsConditionFailed(err) && !stdErrors.Is(err, storage.ErrAlreadyExists) {
 			return nil, err
 		}
 	}

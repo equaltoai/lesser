@@ -148,7 +148,38 @@ func TestRound12_ConversationAccountsFromPrefetch_UsesFederatedParticipantKeys(t
 		statusesReady: true,
 	}
 
-	actors := resolver.conversationAccountsFromPrefetch(round12AuthContext("alice"), []string{"alice", remoteID}, "alice", prefetch)
+	actors := resolver.conversationAccountsFromParticipantRefs(round12AuthContext("alice"), []storagemodels.ConversationParticipantRef{
+		{
+			ParticipantType: storagemodels.ConversationParticipantTypeLocalUser,
+			ParticipantID:   "alice",
+		},
+		{
+			ParticipantType: storagemodels.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   remoteID,
+		},
+	}, "alice", prefetch)
+	require.Len(t, actors, 1)
+	require.Equal(t, remoteID, actors[0].ID)
+	require.Equal(t, "bob", actors[0].PreferredUsername)
+}
+
+func TestConversationAccountsFromParticipantRefs_UsesSyntheticRemoteFallback(t *testing.T) {
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	remoteID := "https://remote.example/users/bob"
+
+	actors := resolver.conversationAccountsFromParticipantRefs(round12AuthContext("alice"), []storagemodels.ConversationParticipantRef{
+		{
+			ParticipantType: storagemodels.ConversationParticipantTypeLocalUser,
+			ParticipantID:   "alice",
+		},
+		{
+			ParticipantType: storagemodels.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   remoteID,
+			Acct:            "bob@remote.example",
+			Domain:          "remote.example",
+		},
+	}, "alice", &conversationListPrefetch{accountsByKey: map[string]*storage.Account{}})
+
 	require.Len(t, actors, 1)
 	require.Equal(t, remoteID, actors[0].ID)
 	require.Equal(t, "bob", actors[0].PreferredUsername)

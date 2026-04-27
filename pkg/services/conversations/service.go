@@ -59,6 +59,10 @@ type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
 }
 
+type remoteActorResolver interface {
+	ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error)
+}
+
 type directMessageTombstoneRepository interface {
 	CreateTombstone(ctx context.Context, viewerUsername, statusID string) error
 	TombstonesByStatusID(ctx context.Context, viewerUsername string, statusIDs []string) (map[string]bool, error)
@@ -176,15 +180,17 @@ type apiRateLimitInfoReader interface {
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
-	SenderID         string                            `json:"sender_id" validate:"required"`
-	Recipients       []string                          `json:"recipients" validate:"required,min=1"`
-	Content          string                            `json:"content" validate:"required,max=5000"`
-	Sensitive        bool                              `json:"sensitive"`
-	SpoilerText      string                            `json:"spoiler_text"`
-	Language         string                            `json:"language"`
-	MediaIDs         []string                          `json:"media_ids"`
-	InReplyToID      string                            `json:"in_reply_to_id"` // Can reply to messages in the conversation
-	AgentAttribution *activitypub.AgentPostAttribution `json:"agent_attribution,omitempty"`
+	SenderID               string                             `json:"sender_id" validate:"required"`
+	Recipients             []string                           `json:"recipients" validate:"required,min=1"`
+	Content                string                             `json:"content" validate:"required,max=5000"`
+	Sensitive              bool                               `json:"sensitive"`
+	SpoilerText            string                             `json:"spoiler_text"`
+	Language               string                             `json:"language"`
+	MediaIDs               []string                           `json:"media_ids"`
+	InReplyToID            string                             `json:"in_reply_to_id"` // Can reply to messages in the conversation
+	AgentAttribution       *activitypub.AgentPostAttribution  `json:"agent_attribution,omitempty"`
+	ResolvedRecipientActor *activitypub.Actor                 `json:"-"`
+	ResolvedRecipientRef   *models.ConversationParticipantRef `json:"-"`
 }
 
 // MarkConversationReadCommand contains data needed to mark a conversation as read
@@ -482,6 +488,21 @@ func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectM
 	}
 
 	recipientAccounts := make(map[string]*storage.Account, 1)
+	if isRemoteDirectMessageRecipientIdentifier(recipientID, s.domainName) {
+		recipient, recipientRef, err := s.resolveRemoteDirectMessageRecipient(ctx, recipientID)
+		if err != nil {
+			s.logger.Error("invalid remote recipient", zap.String("recipient_id", recipientID), zap.Error(err))
+			s.auditDMEvent(ctx, cmd, "", false, "resolve_remote_recipient_failed", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, nil, nil, errors.Join(ErrInvalidRecipient, err)
+		}
+		cmd.ResolvedRecipientActor = recipient.Actor
+		cmd.ResolvedRecipientRef = recipientRef
+		recipientAccounts[recipientRef.ParticipantID] = recipient
+		return sender, recipient, recipientAccounts, nil
+	}
+
 	recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
 	if err != nil {
 		s.logger.Error("invalid recipient", zap.String("recipient_id", recipientID), zap.Error(err))
@@ -494,6 +515,93 @@ func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectM
 	recipientAccounts[resolvedRecipientID] = recipient
 
 	return sender, recipient, recipientAccounts, nil
+}
+
+func isRemoteDirectMessageRecipientIdentifier(recipientID, localDomain string) bool {
+	recipientID = strings.TrimSpace(recipientID)
+	if recipientID == "" {
+		return false
+	}
+
+	normalizedLocalDomain := normalizeDirectMessageMentionDomain(localDomain)
+	if parsed, err := url.Parse(recipientID); err == nil && parsed.Scheme != "" && parsed.Hostname() != "" {
+		return normalizeDirectMessageMentionDomain(parsed.Hostname()) != normalizedLocalDomain
+	}
+
+	_, domain := directMessageMentionHandleParts(recipientID)
+	return domain != "" && normalizeDirectMessageMentionDomain(domain) != normalizedLocalDomain
+}
+
+func (s *Service) resolveRemoteDirectMessageRecipient(ctx context.Context, recipientID string) (*storage.Account, *models.ConversationParticipantRef, error) {
+	resolver, ok := s.federation.(remoteActorResolver)
+	if !ok || resolver == nil {
+		return nil, nil, errDirectMessageRemoteRecipientActorRequired
+	}
+
+	actor, err := resolver.ResolveActor(ctx, recipientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if actor == nil || strings.TrimSpace(actor.ID) == "" {
+		return nil, nil, errDirectMessageRemoteRecipientActorRequired
+	}
+
+	username, domain := normalizeDirectMessageMentionAccount(recipientID, nil, s.domainName)
+	if username == "" || domain == "" {
+		identity := federationActorIdentityForDirectMessage(actor, s.domainName)
+		username = identity.username
+		domain = identity.domain
+	}
+	acct := strings.TrimSpace(username)
+	if domain != "" && !strings.Contains(acct, "@") {
+		acct += "@" + domain
+	}
+	now := time.Now().UTC()
+	ref := models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   actor.ID,
+		Acct:            acct,
+		Domain:          domain,
+		ResolvedAt:      &now,
+	})
+
+	displayName := actor.Name
+	if displayName == "" {
+		displayName = username
+	}
+	account := &storage.Account{
+		User: &storage.User{
+			ID:          actor.ID,
+			Username:    actor.ID,
+			DisplayName: displayName,
+			URL:         actor.URL,
+		},
+		Actor: actor,
+	}
+	return account, &ref, nil
+}
+
+type directMessageActorIdentity struct {
+	username string
+	domain   string
+}
+
+func federationActorIdentityForDirectMessage(actor *activitypub.Actor, localDomain string) directMessageActorIdentity {
+	if actor == nil {
+		return directMessageActorIdentity{}
+	}
+	username := strings.TrimSpace(actor.PreferredUsername)
+	domain := ""
+	if parsed, err := url.Parse(strings.TrimSpace(actor.ID)); err == nil && parsed.Hostname() != "" {
+		domain = normalizeDirectMessageMentionDomain(parsed.Hostname())
+	}
+	if username == "" {
+		username = extractUsernameFromActorIdentifier(actor.ID)
+	}
+	if domain == normalizeDirectMessageMentionDomain(localDomain) {
+		domain = ""
+	}
+	return directMessageActorIdentity{username: username, domain: domain}
 }
 
 func cloneDirectMessageCommandWithResolvedParticipants(
@@ -509,8 +617,14 @@ func cloneDirectMessageCommandWithResolvedParticipants(
 	cloned.SenderID = resolvedLegacyLocalAccountID(cmd.SenderID, sender)
 	cloned.Recipients = append([]string(nil), cmd.Recipients...)
 	if len(cloned.Recipients) > 0 {
-		cloned.Recipients[0] = resolvedLegacyLocalAccountID(cloned.Recipients[0], recipient)
+		if cmd.ResolvedRecipientRef != nil && cmd.ResolvedRecipientRef.ParticipantID != "" {
+			cloned.Recipients[0] = cmd.ResolvedRecipientRef.ParticipantID
+		} else {
+			cloned.Recipients[0] = resolvedLegacyLocalAccountID(cloned.Recipients[0], recipient)
+		}
 	}
+	cloned.ResolvedRecipientActor = cmd.ResolvedRecipientActor
+	cloned.ResolvedRecipientRef = cmd.ResolvedRecipientRef
 
 	return &cloned
 }
@@ -632,10 +746,15 @@ func (s *Service) createDirectMessageStatus(_ context.Context, cmd *SendDirectMe
 	return status, messageID, nil
 }
 
-func (s *Service) resolveDirectMessageConversationForSend(ctx context.Context, senderID, recipientID string) (*models.Conversation, bool, error) {
-	participants := models.CanonicalConversationParticipants([]string{senderID, recipientID})
+func (s *Service) resolveDirectMessageConversationForCommand(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*models.Conversation, bool, error) {
+	senderID := cmd.SenderID
+	participantRefs := buildDirectMessageParticipantRefs(senderID, recipientID, cmd.ResolvedRecipientRef)
+	participants := models.ConversationParticipantIDsFromRefs(participantRefs)
+	if len(participants) == 0 {
+		participants = models.CanonicalConversationParticipants([]string{senderID, recipientID})
+	}
 
-	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, participants)
+	conversation, err := s.lookupDirectMessageConversationForSend(ctx, participants, participantRefs)
 	if err == nil && conversation != nil {
 		return conversation, false, nil
 	}
@@ -645,11 +764,46 @@ func (s *Service) resolveDirectMessageConversationForSend(ctx context.Context, s
 
 	now := time.Now().UTC()
 	return &models.Conversation{
-		ID:           uuid.New().String(),
-		Participants: participants,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:              uuid.New().String(),
+		Participants:    participants,
+		ParticipantRefs: participantRefs,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}, true, nil
+}
+
+type typedConversationLookupRepository interface {
+	GetConversationByParticipantRefs(ctx context.Context, refs []models.ConversationParticipantRef) (*models.Conversation, error)
+}
+
+func (s *Service) lookupDirectMessageConversationForSend(ctx context.Context, participants []string, participantRefs []models.ConversationParticipantRef) (*models.Conversation, error) {
+	if len(participantRefs) > 0 {
+		for _, ref := range participantRefs {
+			if ref.ParticipantType == models.ConversationParticipantTypeRemoteActor {
+				if typedRepo, ok := s.conversationRepo.(typedConversationLookupRepository); ok {
+					return typedRepo.GetConversationByParticipantRefs(ctx, participantRefs)
+				}
+				break
+			}
+		}
+	}
+	return s.conversationRepo.GetConversationByParticipants(ctx, participants)
+}
+
+func buildDirectMessageParticipantRefs(senderID, recipientID string, recipientRef *models.ConversationParticipantRef) []models.ConversationParticipantRef {
+	refs := []models.ConversationParticipantRef{{
+		ParticipantType: models.ConversationParticipantTypeLocalUser,
+		ParticipantID:   senderID,
+	}}
+	if recipientRef != nil {
+		refs = append(refs, *recipientRef)
+	} else {
+		refs = append(refs, models.ConversationParticipantRef{
+			ParticipantType: models.ConversationParticipantTypeLocalUser,
+			ParticipantID:   recipientID,
+		})
+	}
+	return models.NormalizeConversationParticipantRefs(refs)
 }
 
 func (s *Service) getUserConversationStateForSend(ctx context.Context, conversationID, participantID string) (*models.UserConversationState, error) {
@@ -712,6 +866,16 @@ func userConversationStateFromContract(conversation *models.Conversation, viewer
 	if stateContract.CounterpartID != "" {
 		state.CounterpartID = stateContract.CounterpartID
 	}
+	if stateContract.CounterpartType != "" {
+		state.CounterpartType = stateContract.CounterpartType
+	}
+	if stateContract.CounterpartAcct != "" {
+		state.CounterpartAcct = stateContract.CounterpartAcct
+	}
+	if stateContract.CounterpartDomain != "" {
+		state.CounterpartDomain = stateContract.CounterpartDomain
+	}
+	state.CounterpartResolvedAt = stateContract.CounterpartResolvedAt
 	if stateContract.Folder != "" {
 		state.Folder = stateContract.Folder
 	}
@@ -750,6 +914,10 @@ func userConversationStateContractFromModel(state *models.UserConversationState)
 		ViewerID:                 state.ViewerID,
 		ConversationID:           state.ConversationID,
 		CounterpartID:            state.CounterpartID,
+		CounterpartType:          state.CounterpartType,
+		CounterpartAcct:          state.CounterpartAcct,
+		CounterpartDomain:        state.CounterpartDomain,
+		CounterpartResolvedAt:    state.CounterpartResolvedAt,
 		Folder:                   state.Folder,
 		RequestState:             state.RequestState,
 		PreviewStatusID:          state.PreviewStatusID,
@@ -770,7 +938,42 @@ func userConversationStateForSend(conversation *models.Conversation, viewerID, c
 	return userConversationStateFromContract(conversation, viewerID, counterpartID, userConversationStateContractFromModel(state))
 }
 
+func conversationParticipantRefByID(conversation *models.Conversation, participantID string) *models.ConversationParticipantRef {
+	if conversation == nil || participantID == "" {
+		return nil
+	}
+	canonicalParticipantID := models.CanonicalConversationParticipantID(participantID)
+	for _, ref := range models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs) {
+		if models.CanonicalConversationParticipantID(ref.ParticipantID) == canonicalParticipantID {
+			refCopy := ref
+			return &refCopy
+		}
+	}
+	return nil
+}
+
+func applyConversationCounterpartRef(state *models.UserConversationState, ref *models.ConversationParticipantRef) {
+	if state == nil || ref == nil {
+		return
+	}
+	state.CounterpartType = ref.ParticipantType
+	state.CounterpartAcct = ref.Acct
+	state.CounterpartDomain = ref.Domain
+	state.CounterpartResolvedAt = ref.ResolvedAt
+}
+
+func isRemoteConversationParticipant(conversation *models.Conversation, participantID string) bool {
+	if ref := conversationParticipantRefByID(conversation, participantID); ref != nil {
+		return ref.ParticipantType == models.ConversationParticipantTypeRemoteActor
+	}
+	return strings.Contains(strings.TrimSpace(participantID), "://")
+}
+
 func (s *Service) evaluateDirectMessageRequestPolicyForState(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string, recipientRequestState models.DmRequestState) (willBeRequest bool, deliversToInbox bool, _ error) {
+	if cmd != nil && cmd.ResolvedRecipientRef != nil && cmd.ResolvedRecipientRef.ParticipantType == models.ConversationParticipantTypeRemoteActor {
+		return false, false, nil
+	}
+
 	deliversToInbox = s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID)
 
 	switch recipientRequestState {
@@ -816,6 +1019,7 @@ func buildDirectMessageParticipantStatesForSend(
 
 	senderState = userConversationStateForSend(conversation, senderID, recipientID, senderState)
 	senderState.CounterpartID = recipientID
+	applyConversationCounterpartRef(senderState, conversationParticipantRefByID(conversation, recipientID))
 	senderState.Folder = models.UserConversationFolderInbox
 	senderState.RequestState = models.DmRequestStateAccepted
 	senderState.RequestedAt = nil
@@ -828,8 +1032,13 @@ func buildDirectMessageParticipantStatesForSend(
 		senderState.AcceptedAt = &t
 	}
 
+	if isRemoteConversationParticipant(conversation, recipientID) {
+		return []*models.UserConversationState{senderState}
+	}
+
 	recipientState = userConversationStateForSend(conversation, recipientID, senderID, recipientState)
 	recipientState.CounterpartID = senderID
+	applyConversationCounterpartRef(recipientState, conversationParticipantRefByID(conversation, senderID))
 	recipientState.DeletedAt = nil
 	recipientState.Unread = true
 	recipientState.LastReadAt = nil
@@ -892,6 +1101,11 @@ func buildExpectedDirectMessageParticipantStates(
 	senderState *models.UserConversationState,
 	recipientState *models.UserConversationState,
 ) []*models.UserConversationState {
+	if isRemoteConversationParticipant(conversation, recipientID) {
+		return []*models.UserConversationState{
+			userConversationStateForSend(conversation, senderID, recipientID, senderState),
+		}
+	}
 	return []*models.UserConversationState{
 		userConversationStateForSend(conversation, senderID, recipientID, senderState),
 		userConversationStateForSend(conversation, recipientID, senderID, recipientState),
@@ -1007,14 +1221,15 @@ func (s *Service) executeDirectMessageSendAttempt(
 	recipientAccounts map[string]*storage.Account,
 	recipientID string,
 ) (*directMessageSendAttempt, bool, error) {
-	conversation, createConversation, err := s.resolveDirectMessageConversationForSend(ctx, cmd.SenderID, recipientID)
+	conversation, createConversation, err := s.resolveDirectMessageConversationForCommand(ctx, cmd, recipientID)
 	if err != nil {
 		return nil, false, err
 	}
 
 	var recipientRequestState models.DmRequestState
 	var recipientState *models.UserConversationState
-	if !createConversation {
+	recipientIsRemote := isRemoteConversationParticipant(conversation, recipientID)
+	if !createConversation && !recipientIsRemote {
 		recipientState, err = s.getUserConversationStateForSend(ctx, conversation.ID, recipientID)
 		if err != nil {
 			return nil, false, errors.Join(ErrCreateDirectMessage, err)
@@ -1219,10 +1434,33 @@ func (s *Service) validateSendMessageReplyTarget(ctx context.Context, inReplyToI
 	return nil
 }
 
-func (s *Service) getSendMessageAccounts(ctx context.Context, senderID, recipientID string) (*storage.Account, *storage.Account, error) {
+func (s *Service) getSendMessageAccountsForSend(ctx context.Context, sendCmd *SendDirectMessageCommand, conversation *models.Conversation, senderID, recipientID string) (*storage.Account, *storage.Account, error) {
 	sender, err := s.accountRepo.GetAccount(ctx, senderID)
 	if err != nil {
 		return nil, nil, errors.Join(ErrGetSenderAccount, err)
+	}
+
+	if ref := conversationParticipantRefByID(conversation, recipientID); ref != nil && ref.ParticipantType == models.ConversationParticipantTypeRemoteActor {
+		actor := sendCmd.ResolvedRecipientActor
+		if actor == nil {
+			actor = &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   ref.ParticipantID,
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: remoteUsernameFromParticipantRef(ref),
+			}
+		}
+		sendCmd.ResolvedRecipientActor = actor
+		sendCmd.ResolvedRecipientRef = ref
+		return sender, &storage.Account{
+			User: &storage.User{
+				ID:          ref.ParticipantID,
+				Username:    ref.ParticipantID,
+				DisplayName: remoteUsernameFromParticipantRef(ref),
+			},
+			Actor: actor,
+		}, nil
 	}
 
 	recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
@@ -1231,6 +1469,42 @@ func (s *Service) getSendMessageAccounts(ctx context.Context, senderID, recipien
 	}
 
 	return sender, recipient, nil
+}
+
+func remoteUsernameFromParticipantRef(ref *models.ConversationParticipantRef) string {
+	if ref == nil {
+		return ""
+	}
+	if ref.Acct != "" {
+		if username, _ := directMessageMentionHandleParts(ref.Acct); username != "" {
+			return username
+		}
+	}
+	return extractUsernameFromActorIdentifier(ref.ParticipantID)
+}
+
+func extractUsernameFromActorIdentifier(identifier string) string {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ""
+	}
+	if username, _ := directMessageMentionHandleParts(identifier); username != "" && !strings.Contains(identifier, "://") {
+		return username
+	}
+	if parsed, err := url.Parse(identifier); err == nil && parsed.Scheme != "" {
+		path := strings.Trim(parsed.Path, "/")
+		if path == "" {
+			return ""
+		}
+		parts := strings.Split(path, "/")
+		for i, part := range parts {
+			if (part == "users" || part == "actors" || part == "profiles") && i+1 < len(parts) {
+				return strings.TrimPrefix(parts[i+1], "@")
+			}
+		}
+		return strings.TrimPrefix(parts[len(parts)-1], "@")
+	}
+	return strings.TrimPrefix(identifier, "@")
 }
 
 func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCommand, sendCmd *SendDirectMessageCommand, sender *storage.Account, recipient *storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
@@ -1280,18 +1554,21 @@ func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessag
 		return nil, false, err
 	}
 
-	sender, recipient, err := s.getSendMessageAccounts(ctx, cmd.SenderID, recipientID)
+	sender, recipient, err := s.getSendMessageAccountsForSend(ctx, sendCmd, conversation, cmd.SenderID, recipientID)
 	if err != nil {
 		return nil, false, err
 	}
 
 	recipientRequestState := models.DmRequestState("")
-	recipientState, err := s.getUserConversationStateForSend(ctx, conversation.ID, recipientID)
-	if err != nil {
-		return nil, false, errors.Join(ErrCreateDirectMessage, err)
-	}
-	if recipientState != nil {
-		recipientRequestState = recipientState.RequestState
+	var recipientState *models.UserConversationState
+	if !isRemoteConversationParticipant(conversation, recipientID) {
+		recipientState, err = s.getUserConversationStateForSend(ctx, conversation.ID, recipientID)
+		if err != nil {
+			return nil, false, errors.Join(ErrCreateDirectMessage, err)
+		}
+		if recipientState != nil {
+			recipientRequestState = recipientState.RequestState
+		}
 	}
 
 	willBeRequest, deliversToInbox, err := s.evaluateDirectMessageRequestPolicyForState(ctx, sendCmd, conversation.ID, recipientID, recipientRequestState)
@@ -2009,7 +2286,7 @@ func (s *Service) emitMessageSentEvents(ctx context.Context, message *models.Sta
 	}
 
 	// Also emit to each participant's direct stream
-	for _, participantID := range conversation.Participants {
+	for _, participantID := range models.ConversationLocalParticipantIDs(conversation) {
 		participantEvent := *event
 		participantEvent.Stream = fmt.Sprintf("user:%s:direct", participantID)
 		if err := s.publisher.PublishToUser(ctx, participantID, &participantEvent); err != nil {
@@ -2058,7 +2335,7 @@ func (s *Service) queueFederationDelivery(ctx context.Context, message *models.S
 	// Only federate if there are remote recipients
 	hasRemoteRecipients := false
 	for _, recipientURL := range message.ToRecipients {
-		if !strings.Contains(recipientURL, s.domainName) {
+		if isRemoteDirectMessageActorID(recipientURL, s.domainName) {
 			hasRemoteRecipients = true
 			break
 		}
@@ -2087,6 +2364,19 @@ func (s *Service) queueFederationDelivery(ctx context.Context, message *models.S
 			zap.String("message_id", message.StatusID),
 			zap.Error(err))
 	}
+}
+
+func isRemoteDirectMessageActorID(actorID, localDomain string) bool {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return false
+	}
+
+	actorDomain := directMessageMentionActorDomain(actorID)
+	if actorDomain == "" {
+		return false
+	}
+	return actorDomain != normalizeDirectMessageMentionDomain(localDomain)
 }
 
 func (s *Service) isParticipant(userID string, participants []string) bool {

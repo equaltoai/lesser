@@ -2,7 +2,10 @@ package repositories
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,6 +54,63 @@ func conversationParticipantLookupPK(participants []string) string {
 	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
 }
 
+func conversationParticipantLookupV2PK(refs []models.ConversationParticipantRef) string {
+	normalized := models.NormalizeConversationParticipantRefs(refs)
+	parts := make([]string, 0, len(normalized))
+	for _, ref := range normalized {
+		if ref.ParticipantType == "" || ref.ParticipantID == "" {
+			continue
+		}
+		parts = append(parts, string(ref.ParticipantType)+"\x00"+ref.ParticipantID)
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	return "CONVERSATION_PARTICIPANTS_V2#" + hex.EncodeToString(sum[:])
+}
+
+func conversationParticipantRefsForLookup(conversation *models.Conversation, participants []string) []models.ConversationParticipantRef {
+	if conversation != nil && len(conversation.ParticipantRefs) > 0 {
+		return models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
+	}
+
+	canonicalParticipants := models.CanonicalConversationParticipants(participants)
+	refs := make([]models.ConversationParticipantRef, 0, len(canonicalParticipants))
+	for _, participantID := range canonicalParticipants {
+		participantType := models.ConversationParticipantTypeLocalUser
+		if strings.Contains(participantID, "://") {
+			participantType = models.ConversationParticipantTypeRemoteActor
+		}
+		refs = append(refs, models.ConversationParticipantRef{
+			ParticipantType: participantType,
+			ParticipantID:   participantID,
+		})
+	}
+	return models.NormalizeConversationParticipantRefs(refs)
+}
+
+func useConversationParticipantLookupV2(conversation *models.Conversation, participants []string) bool {
+	if conversation != nil && len(conversation.ParticipantRefs) > 0 {
+		for _, ref := range models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs) {
+			if ref.ParticipantType == models.ConversationParticipantTypeRemoteActor {
+				return true
+			}
+		}
+	}
+	for _, participantID := range participants {
+		if strings.Contains(strings.TrimSpace(participantID), "://") {
+			return true
+		}
+	}
+	return false
+}
+
+func conversationParticipantLookupPKForConversation(conversation *models.Conversation, participants []string) string {
+	if useConversationParticipantLookupV2(conversation, participants) {
+		return conversationParticipantLookupV2PK(conversationParticipantRefsForLookup(conversation, participants))
+	}
+	return conversationParticipantLookupPK(participants)
+}
+
 func newConversationParticipantLookup(conversationID string, participants []string) *models.ConversationParticipantKey {
 	participantKey := conversationParticipantLookupPK(participants)
 	return &models.ConversationParticipantKey{
@@ -59,6 +119,23 @@ func newConversationParticipantLookup(conversationID string, participants []stri
 		GSI1PK:         participantKey,
 		ConversationID: conversationID,
 	}
+}
+
+func newConversationParticipantLookupForConversation(conversation *models.Conversation, participants []string) *models.ConversationParticipantKey {
+	participantKey := conversationParticipantLookupPKForConversation(conversation, participants)
+	return &models.ConversationParticipantKey{
+		PK:             participantKey,
+		SK:             conversationParticipantLookupSK,
+		GSI1PK:         participantKey,
+		ConversationID: conversationIDFromModel(conversation),
+	}
+}
+
+func conversationIDFromModel(conversation *models.Conversation) string {
+	if conversation == nil {
+		return ""
+	}
+	return conversation.ID
 }
 
 func newConversationTransactWriteFn(db core.DB) func(ctx context.Context, fn func(core.TransactionBuilder) error) error {
@@ -119,8 +196,11 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 	}
 
 	// Set participants if provided
+	conversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
 	if err := common.ValidateSliceNotEmpty("participants", participants); err == nil {
 		conversation.Participants = models.CanonicalConversationParticipants(participants)
+	} else if len(conversation.ParticipantRefs) > 0 {
+		conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
 	} else {
 		conversation.Participants = models.CanonicalConversationParticipants(conversation.Participants)
 	}
@@ -141,7 +221,7 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 		return r.createConversationLegacy(ctx, log, conversation, preparedStates, explicitParticipantStates)
 	}
 
-	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
+	lookupKey := newConversationParticipantLookupForConversation(conversation, conversation.Participants)
 	if err := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
 		tx = tx.WithContext(ctx)
 		tx.Create(conversation)
@@ -185,7 +265,7 @@ func (r *ConversationRepository) createConversationLegacy(ctx context.Context, l
 		return ErrorHandler.HandleCreateError(stateErr, EntityConversation, conversation.ID)
 	}
 
-	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
+	lookupKey := newConversationParticipantLookupForConversation(conversation, conversation.Participants)
 	if err := r.GetDB().Model(lookupKey).WithContext(ctx).IfNotExists().Create(); err != nil {
 		if errors.IsConditionFailed(err) {
 			log.Info("participant lookup already exists; cleaning up duplicate conversation create",
@@ -221,7 +301,7 @@ func canonicalConversationParticipantsForStates(conversation *models.Conversatio
 		return nil, storage.ErrInvalidInput
 	}
 
-	canonicalParticipants := models.CanonicalConversationParticipants(conversation.Participants)
+	canonicalParticipants := models.ConversationLocalParticipantIDs(conversation)
 	if len(canonicalParticipants) == 0 {
 		return nil, storage.ErrInvalidInput
 	}
@@ -337,9 +417,22 @@ func (r *ConversationRepository) GetConversation(ctx context.Context, id string)
 
 // UpdateConversation updates a conversation (KEEP - Complex conversation update logic)
 func (r *ConversationRepository) UpdateConversation(ctx context.Context, conversation *models.Conversation) error {
-	// For updating, we recreate all records (matching legacy behavior)
-	// This ensures participant records are updated with new timestamps
-	return r.CreateConversation(ctx, conversation, conversation.Participants)
+	if conversation == nil {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "nil")
+	}
+	conversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
+	if len(conversation.ParticipantRefs) > 0 {
+		conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
+	} else {
+		conversation.Participants = models.CanonicalConversationParticipants(conversation.Participants)
+	}
+	if err := conversation.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversation.ID)
+	}
+	if err := r.GetDB().WithContext(ctx).Model(conversation).Update(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversation.ID)
+	}
+	return nil
 }
 
 // DeleteConversation deletes a conversation by ID (KEEP - Complex cleanup logic)
@@ -456,6 +549,51 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 			return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
 		}
 		log.Error("failed to load conversation after participant lookup",
+			zap.String("conversation_id", record.ConversationID),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+	}
+
+	return &conversation, nil
+}
+
+// GetConversationByParticipantRefs finds a conversation with exact typed participants.
+// It is used for federated conversations where remote actor URLs make the legacy
+// comma-joined participant lookup ambiguous.
+func (r *ConversationRepository) GetConversationByParticipantRefs(ctx context.Context, refs []models.ConversationParticipantRef) (*models.Conversation, error) {
+	normalized := models.NormalizeConversationParticipantRefs(refs)
+	log := r.logger.With(zap.Any("participant_refs", normalized))
+
+	lookupKey := &models.ConversationParticipantKey{
+		PK: conversationParticipantLookupV2PK(normalized),
+		SK: conversationParticipantLookupSK,
+	}
+
+	var record models.ConversationParticipantKey
+	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
+		ConsistentRead().
+		Where("PK", "=", lookupKey.PK).
+		Where("SK", "=", lookupKey.SK).
+		First(&record)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, "participant refs")
+		}
+		log.Error("failed to query conversation by typed participants", zap.Error(err))
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "participant refs")
+	}
+
+	var conversation models.Conversation
+	err = r.GetDB().Model(&models.Conversation{}).WithContext(ctx).
+		ConsistentRead().
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", record.ConversationID)).
+		Where("SK", "=", "METADATA").
+		First(&conversation)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+		}
+		log.Error("failed to load conversation after typed participant lookup",
 			zap.String("conversation_id", record.ConversationID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)

@@ -36,22 +36,26 @@ type UserConversationState struct {
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3PK,omitempty"`
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3SK,omitempty"`
 
-	ViewerID                 string                 `theorydb:"attr:viewerID" json:"viewer_id"`
-	ConversationID           string                 `theorydb:"attr:conversationID" json:"conversation_id"`
-	CounterpartID            string                 `theorydb:"attr:counterpartID" json:"counterpart_id"`
-	Folder                   UserConversationFolder `theorydb:"attr:folder" json:"folder"`
-	RequestState             DmRequestState         `theorydb:"attr:requestState,omitempty" json:"request_state,omitempty"`
-	PreviewStatusID          string                 `theorydb:"attr:previewStatusID,omitempty" json:"preview_status_id,omitempty"`
-	PreviewStatusPublishedAt time.Time              `theorydb:"attr:previewStatusPublishedAt,omitempty" json:"preview_status_published_at,omitempty"`
-	SortAt                   time.Time              `theorydb:"attr:sortAt" json:"sort_at"`
-	Unread                   bool                   `theorydb:"attr:unread" json:"unread"`
-	LastReadAt               *time.Time             `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
-	DeletedAt                *time.Time             `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
-	RequestedAt              *time.Time             `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
-	AcceptedAt               *time.Time             `theorydb:"attr:acceptedAt" json:"accepted_at,omitempty"`
-	DeclinedAt               *time.Time             `theorydb:"attr:declinedAt" json:"declined_at,omitempty"`
-	CreatedAt                time.Time              `theorydb:"attr:createdAt" json:"created_at"`
-	UpdatedAt                time.Time              `theorydb:"attr:updatedAt" json:"updated_at"`
+	ViewerID                 string                      `theorydb:"attr:viewerID" json:"viewer_id"`
+	ConversationID           string                      `theorydb:"attr:conversationID" json:"conversation_id"`
+	CounterpartID            string                      `theorydb:"attr:counterpartID" json:"counterpart_id"`
+	CounterpartType          ConversationParticipantType `theorydb:"attr:counterpartType,omitempty" json:"counterpart_type,omitempty"`
+	CounterpartAcct          string                      `theorydb:"attr:counterpartAcct,omitempty" json:"counterpart_acct,omitempty"`
+	CounterpartDomain        string                      `theorydb:"attr:counterpartDomain,omitempty" json:"counterpart_domain,omitempty"`
+	CounterpartResolvedAt    *time.Time                  `theorydb:"attr:counterpartResolvedAt,omitempty" json:"counterpart_resolved_at,omitempty"`
+	Folder                   UserConversationFolder      `theorydb:"attr:folder" json:"folder"`
+	RequestState             DmRequestState              `theorydb:"attr:requestState,omitempty" json:"request_state,omitempty"`
+	PreviewStatusID          string                      `theorydb:"attr:previewStatusID,omitempty" json:"preview_status_id,omitempty"`
+	PreviewStatusPublishedAt time.Time                   `theorydb:"attr:previewStatusPublishedAt,omitempty" json:"preview_status_published_at,omitempty"`
+	SortAt                   time.Time                   `theorydb:"attr:sortAt" json:"sort_at"`
+	Unread                   bool                        `theorydb:"attr:unread" json:"unread"`
+	LastReadAt               *time.Time                  `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
+	DeletedAt                *time.Time                  `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
+	RequestedAt              *time.Time                  `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
+	AcceptedAt               *time.Time                  `theorydb:"attr:acceptedAt" json:"accepted_at,omitempty"`
+	DeclinedAt               *time.Time                  `theorydb:"attr:declinedAt" json:"declined_at,omitempty"`
+	CreatedAt                time.Time                   `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt                time.Time                   `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name.
@@ -81,6 +85,8 @@ func (s *UserConversationState) prepareForWrite(isCreate bool) error {
 	}
 	s.ViewerID = CanonicalConversationParticipantID(s.ViewerID)
 	s.CounterpartID = CanonicalConversationParticipantID(s.CounterpartID)
+	s.CounterpartAcct = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(s.CounterpartAcct, "@")))
+	s.CounterpartDomain = strings.ToLower(strings.TrimSpace(s.CounterpartDomain))
 	s.ConversationID = strings.TrimSpace(s.ConversationID)
 
 	if err := common.ValidateRequiredParam("ViewerID", s.ViewerID); err != nil {
@@ -130,6 +136,7 @@ func (s *UserConversationState) prepareForWrite(isCreate bool) error {
 	s.RequestedAt = normalizeOptionalConversationTime(s.RequestedAt)
 	s.AcceptedAt = normalizeOptionalConversationTime(s.AcceptedAt)
 	s.DeclinedAt = normalizeOptionalConversationTime(s.DeclinedAt)
+	s.CounterpartResolvedAt = normalizeOptionalConversationTime(s.CounterpartResolvedAt)
 
 	return nil
 }

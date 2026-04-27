@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/google/uuid"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
@@ -76,6 +79,7 @@ type InboxHandler struct {
 	relationshipRepository       interfaces.ConcreteRelationshipRepository
 	objectRepository             interfaces.ObjectRepository
 	statusRepository             interfaces.StatusRepository
+	conversationRepository       interfaces.ConversationRepository
 	likeRepository               *repositories.LikeRepository
 	socialRepository             *repositories.SocialRepository
 	federationActivityRepository *repositories.FederationActivityRepository
@@ -95,6 +99,7 @@ type InboxHandler struct {
 	deliveryService              *federation.DeliveryService
 	remoteActorResolver          inboxRemoteActorResolver
 	activityDeliverer            inboxActivityDeliverer
+	publisher                    streaming.Publisher
 	tableName                    string
 	storageAdapter               storageCore.RepositoryStorage
 	baseURL                      string
@@ -127,6 +132,7 @@ type extractedServices struct {
 	authMiddleware   *auth.Middleware
 	emfMetrics       *observability.EMFMetrics
 	alertManager     *monitoring.AlertManager
+	streamQueue      streaming.StreamQueueService
 }
 
 // federationServices holds federation-related services
@@ -152,6 +158,7 @@ type repositoryCollection struct {
 	followRepo             interfaces.ConcreteRelationshipRepository
 	objectRepo             interfaces.ObjectRepository
 	statusRepo             interfaces.StatusRepository
+	conversationRepo       interfaces.ConversationRepository
 	likeRepo               *repositories.LikeRepository
 	socialRepo             *repositories.SocialRepository
 	federationActivityRepo *repositories.FederationActivityRepository
@@ -194,6 +201,11 @@ func extractServicesFromContext(lambdaCtx *common.LambdaContext) extractedServic
 	}
 	if lambdaCtx.AlertManager != nil {
 		services.alertManager = lambdaCtx.AlertManager.(*monitoring.AlertManager)
+	}
+	if lambdaCtx.StreamQueue != nil {
+		if streamQueue, ok := lambdaCtx.StreamQueue.(streaming.StreamQueueService); ok {
+			services.streamQueue = streamQueue
+		}
 	}
 
 	return services
@@ -316,6 +328,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 		followRepo:       repoFactory.Relationship(),
 		objectRepo:       repoFactory.Object(),
 		statusRepo:       repoFactory.Status(),
+		conversationRepo: repoFactory.Conversation(),
 		likeRepo:         repoFactory.Like(),
 		domainBlockRepo:  repoFactory.DomainBlock(),
 		userRepo:         repoFactory.User(),
@@ -371,6 +384,13 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 	return repos
 }
 
+func inboxPublisherFromStreamQueue(streamQueue streaming.StreamQueueService, logger *zap.Logger) streaming.Publisher {
+	if streamQueue == nil {
+		return streaming.NewNoopPublisher()
+	}
+	return streaming.NewQueuePublisher(streamQueue, logger)
+}
+
 // NewInboxHandler creates a new inbox handler using standardized initialization
 func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 	logger := lambdaCtx.Logger
@@ -403,6 +423,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		relationshipRepository:       repositories.followRepo,
 		objectRepository:             repositories.objectRepo,
 		statusRepository:             repositories.statusRepo,
+		conversationRepository:       repositories.conversationRepo,
 		likeRepository:               repositories.likeRepo,
 		socialRepository:             repositories.socialRepo,
 		federationActivityRepository: repositories.federationActivityRepo,
@@ -422,6 +443,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		deliveryService:              federationServices.deliveryService,
 		remoteActorResolver:          federation.NewRemoteSearchService(repoFactory),
 		activityDeliverer:            federationServices.deliveryService,
+		publisher:                    inboxPublisherFromStreamQueue(services.streamQueue, logger),
 		tableName:                    cfg.DynamoTableName,
 		storageAdapter:               repoFactory,
 		baseURL:                      cfg.BaseURL(),
@@ -2369,9 +2391,30 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 			return err
 		}
 
+		directInfo := ih.classifyInboundDirectCreate(activity, &note, targetActor)
+		if directInfo.unsupportedGroup {
+			ih.logUnsupportedInboundDirectGroup(activity, &note, targetActor, directInfo)
+			return nil
+		}
+
+		var directConversation *models.Conversation
+		var createDirectConversation bool
+		if directInfo.isDirect {
+			directConversation, createDirectConversation, err = ih.prepareInboundDirectConversation(ctx, activity, &note, targetActor, directInfo)
+			if err != nil {
+				log.Error("failed to prepare inbound direct conversation",
+					zap.String("activity_id", activity.ID),
+					zap.String("target_actor", targetActor.ID),
+					zap.Error(err))
+				return err
+			}
+			note.ConversationID = directConversation.ID
+			note.Visibility = models.VisibilityDirect
+		}
+
 		// Store the note (it will be marked as remote)
 		if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
-			if !dynamormerrors.IsConditionFailed(err) {
+			if !dynamormerrors.IsConditionFailed(err) && !stdErrors.Is(err, storage.ErrAlreadyExists) {
 				log.Error("failed to store remote note", zap.Error(err))
 				return err
 			}
@@ -2384,10 +2427,402 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 				zap.Error(err))
 			return err
 		}
-		ih.createRemoteCreateNotifications(ctx, activity, targetActor, &note, status)
+		if directInfo.isDirect {
+			if err := ih.persistInboundDirectConversation(ctx, directConversation, createDirectConversation, status, directInfo); err != nil {
+				log.Error("failed to persist inbound direct conversation",
+					zap.String("activity_id", activity.ID),
+					zap.String("conversation_id", directConversation.ID),
+					zap.Error(err))
+				return err
+			}
+			ih.createRemoteDirectNotification(ctx, activity, targetActor, &note, status, directConversation, directInfo)
+			ih.emitInboundDirectConversationEvent(ctx, directConversation, status, directInfo.localParticipantID)
+		} else {
+			ih.createRemoteCreateNotifications(ctx, activity, targetActor, &note, status)
+		}
 	}
 
 	return nil
+}
+
+type inboundDirectCreateInfo struct {
+	isDirect           bool
+	unsupportedGroup   bool
+	participantRefs    []models.ConversationParticipantRef
+	localParticipantID string
+	remoteActorID      string
+	remoteAcct         string
+	remoteDomain       string
+	specificRecipients []string
+}
+
+type inboundDirectConversationLookupRepository interface {
+	GetConversationByParticipantRefs(ctx context.Context, refs []models.ConversationParticipantRef) (*models.Conversation, error)
+}
+
+func (ih *InboxHandler) classifyInboundDirectCreate(activity *activitypub.Activity, note *activitypub.Note, targetActor *activitypub.Actor) inboundDirectCreateInfo {
+	info := inboundDirectCreateInfo{}
+	if activity == nil || note == nil || targetActor == nil {
+		return info
+	}
+
+	targetIDs := ih.localTargetActorIDs(targetActor)
+	actorID := strings.TrimRight(strings.TrimSpace(activity.Actor), "/")
+	if actorID == "" {
+		actorID = strings.TrimRight(strings.TrimSpace(note.AttributedTo), "/")
+	}
+
+	recipients, hasPublic, hasCollection, targetsLocalActor := ih.inboundDirectSpecificRecipients(activity, note, targetIDs, actorID)
+	info.specificRecipients = recipients
+	if hasPublic || hasCollection || !targetsLocalActor {
+		return info
+	}
+	if len(recipients) > 1 {
+		info.unsupportedGroup = true
+		return info
+	}
+	if len(recipients) != 1 {
+		return info
+	}
+
+	localParticipantID := strings.TrimSpace(targetActor.PreferredUsername)
+	if localParticipantID == "" {
+		localParticipantID = ih.extractUsernameFromActorID(targetActor.ID)
+	}
+	if localParticipantID == "" || actorID == "" {
+		return info
+	}
+
+	identity := federation.DescribeActorIdentity(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: actorID, Type: activitypub.PersonType},
+	}, ih.localDomain())
+	now := remoteCreateNotificationCreatedAt(activity, note, nil)
+	remoteRef := models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   actorID,
+		Acct:            identity.Acct,
+		Domain:          identity.Domain,
+		ResolvedAt:      &now,
+	})
+
+	info.isDirect = true
+	info.localParticipantID = localParticipantID
+	info.remoteActorID = actorID
+	info.remoteAcct = remoteRef.Acct
+	info.remoteDomain = remoteRef.Domain
+	info.participantRefs = models.NormalizeConversationParticipantRefs([]models.ConversationParticipantRef{
+		{
+			ParticipantType: models.ConversationParticipantTypeLocalUser,
+			ParticipantID:   localParticipantID,
+		},
+		remoteRef,
+	})
+	return info
+}
+
+func (ih *InboxHandler) inboundDirectSpecificRecipients(
+	activity *activitypub.Activity,
+	note *activitypub.Note,
+	targetIDs map[string]struct{},
+	actorID string,
+) ([]string, bool, bool, bool) {
+	seen := map[string]string{}
+	hasPublic := false
+	hasCollection := false
+	targetsLocalActor := false
+	actorKey := strings.ToLower(strings.TrimRight(actorID, "/"))
+
+	visit := func(raw string) {
+		recipient := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if recipient == "" {
+			return
+		}
+		recipientKey := strings.ToLower(recipient)
+		if recipientKey == strings.ToLower(strings.TrimRight(activitypub.PublicAddress, "/")) {
+			hasPublic = true
+			return
+		}
+		if isInboundDirectCollectionRecipient(recipient) {
+			hasCollection = true
+			return
+		}
+		if _, ok := targetIDs[recipientKey]; ok {
+			targetsLocalActor = true
+		}
+		if actorKey != "" && recipientKey == actorKey {
+			return
+		}
+		seen[recipientKey] = recipient
+	}
+
+	for _, recipient := range activity.To {
+		visit(recipient)
+	}
+	for _, recipient := range activity.CC {
+		visit(recipient)
+	}
+	for _, recipient := range activity.BTo {
+		visit(recipient)
+	}
+	for _, recipient := range activity.BCC {
+		visit(recipient)
+	}
+	for _, recipient := range note.To {
+		visit(recipient)
+	}
+	for _, recipient := range note.CC {
+		visit(recipient)
+	}
+	for _, recipient := range note.BTo {
+		visit(recipient)
+	}
+	for _, recipient := range note.BCC {
+		visit(recipient)
+	}
+
+	recipients := make([]string, 0, len(seen))
+	for _, recipient := range seen {
+		recipients = append(recipients, recipient)
+	}
+	sort.Strings(recipients)
+	return recipients, hasPublic, hasCollection, targetsLocalActor
+}
+
+func isInboundDirectCollectionRecipient(recipient string) bool {
+	recipient = strings.ToLower(strings.TrimSpace(recipient))
+	return strings.Contains(recipient, "/followers") ||
+		strings.Contains(recipient, "/following") ||
+		strings.HasSuffix(recipient, "/collections/featured") ||
+		strings.HasSuffix(recipient, "/featured")
+}
+
+func (ih *InboxHandler) logUnsupportedInboundDirectGroup(activity *activitypub.Activity, note *activitypub.Note, targetActor *activitypub.Actor, info inboundDirectCreateInfo) {
+	if ih.logger == nil {
+		return
+	}
+	ih.logger.Info("unsupported_direct_group",
+		zap.String("activity_id", strings.TrimSpace(activity.ID)),
+		zap.String("note_id", strings.TrimSpace(note.ID)),
+		zap.String("actor_id", strings.TrimSpace(activity.Actor)),
+		zap.String("target_actor", strings.TrimSpace(targetActor.ID)),
+		zap.Strings("specific_recipients", info.specificRecipients),
+		zap.Int("specific_recipient_count", len(info.specificRecipients)))
+}
+
+func (ih *InboxHandler) prepareInboundDirectConversation(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	note *activitypub.Note,
+	_ *activitypub.Actor,
+	info inboundDirectCreateInfo,
+) (*models.Conversation, bool, error) {
+	if ih.conversationRepository == nil {
+		return nil, false, fmt.Errorf("conversation repository not configured")
+	}
+
+	participants := models.ConversationParticipantIDsFromRefs(info.participantRefs)
+	if len(participants) != 2 {
+		return nil, false, fmt.Errorf("inbound direct conversation requires exactly two participants")
+	}
+
+	if typedRepo, ok := ih.conversationRepository.(inboundDirectConversationLookupRepository); ok {
+		conversation, err := typedRepo.GetConversationByParticipantRefs(ctx, info.participantRefs)
+		if err == nil && conversation != nil && strings.TrimSpace(conversation.ID) != "" {
+			return conversation, false, nil
+		}
+		if err != nil && !isInboundDirectNotFound(err) {
+			return nil, false, err
+		}
+	} else {
+		conversation, err := ih.conversationRepository.GetConversationByParticipants(ctx, participants)
+		if err == nil && conversation != nil && strings.TrimSpace(conversation.ID) != "" {
+			return conversation, false, nil
+		}
+		if err != nil && !isInboundDirectNotFound(err) {
+			return nil, false, err
+		}
+	}
+
+	conversationID := ""
+	statusID := models.CanonicalStatusIDForDomain(note.ID, ih.localDomain())
+	if statusID != "" && ih.statusRepository != nil {
+		if existing, err := ih.statusRepository.GetStatus(ctx, statusID); err == nil && existing != nil {
+			conversationID = strings.TrimSpace(existing.ConversationID)
+		}
+	}
+	if conversationID == "" {
+		conversationID = uuid.NewString()
+	}
+
+	now := remoteCreateNotificationCreatedAt(activity, note, nil)
+	return &models.Conversation{
+		ID:              conversationID,
+		Participants:    participants,
+		ParticipantRefs: info.participantRefs,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastMessageTime: now,
+	}, true, nil
+}
+
+func (ih *InboxHandler) persistInboundDirectConversation(
+	ctx context.Context,
+	conversation *models.Conversation,
+	createConversation bool,
+	status *models.Status,
+	info inboundDirectCreateInfo,
+) error {
+	if ih.conversationRepository == nil || conversation == nil || status == nil {
+		return nil
+	}
+
+	publishedAt := status.PublishedAt.UTC()
+	if publishedAt.IsZero() {
+		publishedAt = time.Now().UTC()
+	}
+
+	if conversation.LastStatusID != status.StatusID {
+		conversation.TotalMessageCount++
+	}
+	conversation.LastStatusID = status.StatusID
+	conversation.LastMessageTime = publishedAt
+	conversation.UpdatedAt = publishedAt
+	conversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
+	if len(conversation.ParticipantRefs) == 0 {
+		conversation.ParticipantRefs = info.participantRefs
+	}
+	conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
+
+	remoteRef := inboundDirectRemoteParticipantRef(info)
+	state := &models.UserConversationState{
+		ViewerID:                 info.localParticipantID,
+		ConversationID:           conversation.ID,
+		CounterpartID:            info.remoteActorID,
+		CounterpartType:          remoteRef.ParticipantType,
+		CounterpartAcct:          remoteRef.Acct,
+		CounterpartDomain:        remoteRef.Domain,
+		CounterpartResolvedAt:    remoteRef.ResolvedAt,
+		Folder:                   models.UserConversationFolderInbox,
+		RequestState:             models.DmRequestStateAccepted,
+		PreviewStatusID:          status.StatusID,
+		PreviewStatusPublishedAt: publishedAt,
+		SortAt:                   publishedAt,
+		Unread:                   true,
+		CreatedAt:                conversation.CreatedAt,
+		UpdatedAt:                publishedAt,
+	}
+
+	if createConversation {
+		if err := ih.conversationRepository.CreateConversationWithParticipantStates(ctx, conversation, conversation.Participants, []*models.UserConversationState{state}); err != nil {
+			if !stdErrors.Is(err, storage.ErrAlreadyExists) {
+				return err
+			}
+			createConversation = false
+		}
+	}
+	if !createConversation {
+		if err := ih.conversationRepository.UpdateConversation(ctx, conversation); err != nil && !isInboundDirectNotFound(err) {
+			return err
+		}
+		if err := ih.conversationRepository.PutUserConversationState(ctx, state); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func inboundDirectRemoteParticipantRef(info inboundDirectCreateInfo) models.ConversationParticipantRef {
+	for _, ref := range models.NormalizeConversationParticipantRefs(info.participantRefs) {
+		if ref.ParticipantType == models.ConversationParticipantTypeRemoteActor {
+			return ref
+		}
+	}
+	return models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   info.remoteActorID,
+		Acct:            info.remoteAcct,
+		Domain:          info.remoteDomain,
+	})
+}
+
+func isInboundDirectNotFound(err error) bool {
+	return isRemoteStatusNotFound(err) || stdErrors.Is(err, storage.ErrNotFound)
+}
+
+func (ih *InboxHandler) createRemoteDirectNotification(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	targetActor *activitypub.Actor,
+	note *activitypub.Note,
+	status *models.Status,
+	conversation *models.Conversation,
+	info inboundDirectCreateInfo,
+) {
+	if conversation == nil || status == nil {
+		return
+	}
+	recipient := info.localParticipantID
+	if recipient == "" && targetActor != nil {
+		recipient = strings.TrimSpace(targetActor.PreferredUsername)
+	}
+	if recipient == "" || info.remoteActorID == "" {
+		return
+	}
+
+	ih.createRemoteCreateNotification(ctx, remoteCreateNotificationInput{
+		kind:      common.NotificationTypeMention,
+		recipient: recipient,
+		actorID:   info.remoteActorID,
+		activity:  activity,
+		note:      note,
+		status:    status,
+		title:     fmt.Sprintf("%s sent you a direct message", ih.remoteNotificationActorLabel(info.remoteActorID)),
+		body:      fmt.Sprintf("%s sent you a direct message", ih.remoteNotificationActorLabel(info.remoteActorID)),
+		groupKey:  fmt.Sprintf("remote-direct:%s:%s", recipient, conversation.ID),
+		extraData: map[string]interface{}{
+			"conversationID":  conversation.ID,
+			"conversation_id": conversation.ID,
+			"visibility":      models.VisibilityDirect,
+			"actorID":         info.remoteActorID,
+			"actor_id":        info.remoteActorID,
+			"targetID":        status.StatusID,
+			"target_id":       status.StatusID,
+		},
+		stableParts: []string{strings.TrimSpace(activity.ID), recipient},
+	})
+}
+
+func (ih *InboxHandler) emitInboundDirectConversationEvent(ctx context.Context, conversation *models.Conversation, status *models.Status, localRecipient string) {
+	if ih.publisher == nil || conversation == nil || status == nil || localRecipient == "" {
+		return
+	}
+
+	event := &streaming.Event{
+		Type:      "conversation.message",
+		Timestamp: time.Now().UTC(),
+		Payload: map[string]interface{}{
+			"message":      status,
+			"conversation": conversation,
+		},
+	}
+
+	conversationEvent := *event
+	conversationEvent.Stream = fmt.Sprintf("conversation:%s", conversation.ID)
+	if err := ih.publisher.PublishToConversation(ctx, conversation.ID, &conversationEvent); err != nil && ih.logger != nil {
+		ih.logger.Warn("failed to publish inbound direct conversation event",
+			zap.String("conversation_id", conversation.ID),
+			zap.Error(err))
+	}
+
+	userEvent := *event
+	userEvent.Stream = fmt.Sprintf("user:%s:direct", localRecipient)
+	if err := ih.publisher.PublishToUser(ctx, localRecipient, &userEvent); err != nil && ih.logger != nil {
+		ih.logger.Warn("failed to publish inbound direct user event",
+			zap.String("conversation_id", conversation.ID),
+			zap.String("recipient", localRecipient),
+			zap.Error(err))
+	}
 }
 
 func (ih *InboxHandler) createRemoteCreateNotifications(

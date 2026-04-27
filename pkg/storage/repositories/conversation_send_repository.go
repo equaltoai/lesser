@@ -55,7 +55,7 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 			for _, state := range prepared.participantStates {
 				tx.Create(state)
 			}
-			tx.Create(newConversationParticipantLookup(prepared.conversation.ID, prepared.conversation.Participants))
+			tx.Create(newConversationParticipantLookupForConversation(prepared.conversation, prepared.conversation.Participants))
 		} else {
 			tx.UpdateWithBuilder(prepared.expectedConversation, func(update core.UpdateBuilder) error {
 				// DynamoDB ADD initializes a missing numeric attribute, so this remains
@@ -126,6 +126,10 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 	}
 
 	expectedConversation.Participants = models.CanonicalConversationParticipants(expectedConversation.Participants)
+	expectedConversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(expectedConversation.ParticipantRefs)
+	if len(expectedConversation.ParticipantRefs) > 0 {
+		expectedConversation.Participants = models.ConversationParticipantIDsFromRefs(expectedConversation.ParticipantRefs)
+	}
 	if len(expectedConversation.Participants) == 0 {
 		return nil, storage.ErrInvalidInput
 	}
@@ -199,6 +203,9 @@ func cloneConversationModel(conversation *models.Conversation) *models.Conversat
 	if conversation.Participants != nil {
 		cloned.Participants = append([]string(nil), conversation.Participants...)
 	}
+	if conversation.ParticipantRefs != nil {
+		cloned.ParticipantRefs = append([]models.ConversationParticipantRef(nil), conversation.ParticipantRefs...)
+	}
 
 	return &cloned
 }
@@ -241,6 +248,21 @@ func applyDirectMessageParticipantStateUpdate(update core.UpdateBuilder, state *
 		Set("Unread", state.Unread).
 		Set("UpdatedAt", state.UpdatedAt)
 
+	if state.CounterpartType != "" {
+		update.Set("CounterpartType", state.CounterpartType)
+	} else {
+		update.Remove("CounterpartType")
+	}
+	if state.CounterpartAcct != "" {
+		update.Set("CounterpartAcct", state.CounterpartAcct)
+	} else {
+		update.Remove("CounterpartAcct")
+	}
+	if state.CounterpartDomain != "" {
+		update.Set("CounterpartDomain", state.CounterpartDomain)
+	} else {
+		update.Remove("CounterpartDomain")
+	}
 	if state.RequestState != "" {
 		update.Set("RequestState", state.RequestState)
 	} else {
@@ -280,5 +302,10 @@ func applyDirectMessageParticipantStateUpdate(update core.UpdateBuilder, state *
 		update.Set("DeclinedAt", *state.DeclinedAt)
 	} else {
 		update.Remove("DeclinedAt")
+	}
+	if state.CounterpartResolvedAt != nil {
+		update.Set("CounterpartResolvedAt", *state.CounterpartResolvedAt)
+	} else {
+		update.Remove("CounterpartResolvedAt")
 	}
 }

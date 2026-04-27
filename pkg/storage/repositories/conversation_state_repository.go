@@ -41,6 +41,20 @@ func counterpartForConversation(viewerID string, participants []string) string {
 	return ""
 }
 
+func counterpartRefForConversation(conversation *models.Conversation, counterpartID string) *models.ConversationParticipantRef {
+	if conversation == nil || counterpartID == "" {
+		return nil
+	}
+	canonicalCounterpartID := models.CanonicalConversationParticipantID(counterpartID)
+	for _, ref := range models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs) {
+		if models.CanonicalConversationParticipantID(ref.ParticipantID) == canonicalCounterpartID {
+			refCopy := ref
+			return &refCopy
+		}
+	}
+	return nil
+}
+
 func defaultUserConversationState(conversation *models.Conversation, viewerID string) *models.UserConversationState {
 	now := time.Now().UTC()
 	sortAt := now
@@ -56,14 +70,21 @@ func defaultUserConversationState(conversation *models.Conversation, viewerID st
 		}
 	}
 
+	counterpartID := counterpartForConversation(viewerID, participants)
 	state := &models.UserConversationState{
 		ViewerID:       viewerID,
 		ConversationID: conversationID,
-		CounterpartID:  counterpartForConversation(viewerID, participants),
+		CounterpartID:  counterpartID,
 		Folder:         models.UserConversationFolderHidden,
 		SortAt:         sortAt,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+	if ref := counterpartRefForConversation(conversation, counterpartID); ref != nil {
+		state.CounterpartType = ref.ParticipantType
+		state.CounterpartAcct = ref.Acct
+		state.CounterpartDomain = ref.Domain
+		state.CounterpartResolvedAt = ref.ResolvedAt
 	}
 	if conversation != nil {
 		state.CreatedAt = conversation.CreatedAt.UTC()
@@ -130,6 +151,10 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 		ViewerID:                 state.ViewerID,
 		ConversationID:           state.ConversationID,
 		CounterpartID:            state.CounterpartID,
+		CounterpartType:          state.CounterpartType,
+		CounterpartAcct:          state.CounterpartAcct,
+		CounterpartDomain:        state.CounterpartDomain,
+		CounterpartResolvedAt:    state.CounterpartResolvedAt,
 		Folder:                   state.Folder,
 		RequestState:             state.RequestState,
 		PreviewStatusID:          state.PreviewStatusID,
@@ -226,7 +251,7 @@ func (r *ConversationRepository) initializeUserConversationStates(ctx context.Co
 		return storage.ErrInvalidInput
 	}
 
-	for _, participantID := range conversation.Participants {
+	for _, participantID := range models.ConversationLocalParticipantIDs(conversation) {
 		state := defaultUserConversationState(conversation, participantID)
 		existing, err := r.getUserConversationStateModel(ctx, participantID, conversation.ID)
 		if err == nil && existing != nil {
