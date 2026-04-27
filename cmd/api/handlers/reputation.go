@@ -47,6 +47,10 @@ func (h *Handler) HandleGetReputationLift(ctx *apptheory.Context) (*apptheory.Re
 		actorID = strings.TrimSpace(actor.ID)
 	}
 
+	if err := reputation.ValidateActorID(actorID); err != nil {
+		return common.RespondBadRequest(ctx, "invalid actor_id")
+	}
+
 	// Initialize reputation service
 	repService, err := h.getReputationService()
 	if err != nil {
@@ -242,6 +246,9 @@ func (h *Handler) HandleGetVouchesLift(ctx *apptheory.Context) (*apptheory.Respo
 	// If it's just a username, convert to full actor URI
 	if !strings.Contains(actorID, "://") {
 		actorID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, actorID)
+	}
+	if err := reputation.ValidateActorID(actorID); err != nil {
+		return common.RespondBadRequest(ctx, "invalid actor_id")
 	}
 
 	// Initialize reputation service

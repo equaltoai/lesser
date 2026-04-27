@@ -83,15 +83,10 @@ func NewSigner(privateKeyPEM string, instanceURL string, logger *zap.Logger) (*S
 		publicKey = pub
 		privateKey = priv
 
-		// Log the generated private key in PEM format for future use
-		privKeyBytes, _ := x509.MarshalPKCS8PrivateKey(privateKey)
-		pemBlock := &pem.Block{
-			Type:  "PRIVATE KEY",
-			Bytes: privKeyBytes,
-		}
-		pemData := pem.EncodeToMemory(pemBlock)
+		publicKeyFingerprint := sha256.Sum256(publicKey)
 		logger.Info("generated new Ed25519 key pair",
-			zap.String("private_key_pem", string(pemData)))
+			zap.String("instance", instanceURL),
+			zap.String("public_key_fingerprint", base64.RawStdEncoding.EncodeToString(publicKeyFingerprint[:])))
 	}
 
 	return &Signer{

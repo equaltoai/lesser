@@ -215,6 +215,10 @@ func NewService(cfg *Config) (*Service, error) {
 
 // GetReputation retrieves the current reputation for an actor
 func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputation, error) {
+	if err := ValidateActorID(actorID); err != nil {
+		return nil, fmt.Errorf("invalid actor ID: %w", err)
+	}
+
 	// Get reputation from storage
 	storedRep, err := s.userRepo.GetReputation(ctx, actorID)
 	if err != nil {
