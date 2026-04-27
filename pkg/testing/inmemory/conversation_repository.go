@@ -132,7 +132,7 @@ func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, trans
 		}
 		r.conversations[conversation.ID] = conversation
 		r.participants[conversation.ID] = append([]string(nil), conversation.Participants...)
-		for _, participantID := range conversation.Participants {
+		for _, participantID := range models.ConversationLocalParticipantIDs(conversation) {
 			r.userConversations[participantID] = append(r.userConversations[participantID], conversation.ID)
 		}
 	} else {
@@ -151,7 +151,7 @@ func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, trans
 	}
 
 	senderID := transition.Status.AuthorID
-	for _, participantID := range conversation.Participants {
+	for _, participantID := range models.ConversationLocalParticipantIDs(conversation) {
 		r.readStatus[conversation.ID+":"+participantID] = participantID == senderID
 	}
 

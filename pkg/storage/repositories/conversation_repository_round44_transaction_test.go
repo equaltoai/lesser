@@ -515,6 +515,91 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_CreatesNewConvers
 	require.Equal(t, "conv-send", status.ConversationID)
 }
 
+func TestRound44_ConversationRepository_ApplyDirectMessageSend_CreatesRemoteConversationWithLocalStateOnly(t *testing.T) {
+	ctx := context.Background()
+	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+	builder := &recordingConversationTransactionBuilder{}
+
+	repo.transactWriteFn = func(txCtx context.Context, fn func(core.TransactionBuilder) error) error {
+		require.Equal(t, ctx, txCtx)
+		return fn(builder)
+	}
+
+	publishedAt := time.Date(2026, 4, 27, 13, 30, 0, 0, time.UTC)
+	remoteActorID := "https://dev.theory.greater.website/users/steward"
+	err := repo.ApplyDirectMessageSend(ctx, &models.DirectMessageSendTransition{
+		Conversation: &models.Conversation{
+			ID:           "conv-remote",
+			Participants: []string{"ops", remoteActorID},
+			ParticipantRefs: []models.ConversationParticipantRef{
+				{ParticipantType: models.ConversationParticipantTypeLocalUser, ParticipantID: "ops"},
+				{
+					ParticipantType: models.ConversationParticipantTypeRemoteActor,
+					ParticipantID:   remoteActorID,
+					Acct:            "steward@dev.theory.greater.website",
+					Domain:          "dev.theory.greater.website",
+				},
+			},
+			CreatedAt: publishedAt,
+			UpdatedAt: publishedAt,
+		},
+		Status: &models.Status{
+			StatusID:       "status-remote",
+			AuthorID:       "ops",
+			AuthorUsername: "ops",
+			Content:        "hello remote",
+			Visibility:     models.VisibilityDirect,
+			ConversationID: "conv-remote",
+			PublishedAt:    publishedAt,
+		},
+		ParticipantStates: []*models.UserConversationState{
+			{
+				ViewerID:          "ops",
+				ConversationID:    "conv-remote",
+				CounterpartID:     remoteActorID,
+				CounterpartType:   models.ConversationParticipantTypeRemoteActor,
+				CounterpartAcct:   "steward@dev.theory.greater.website",
+				CounterpartDomain: "dev.theory.greater.website",
+				Folder:            models.UserConversationFolderInbox,
+				RequestState:      models.DmRequestStateAccepted,
+				Unread:            false,
+				LastReadAt:        &publishedAt,
+				AcceptedAt:        &publishedAt,
+			},
+		},
+		CreateConversation: true,
+	}, recordStatusStageWithPut)
+	require.NoError(t, err)
+
+	require.Len(t, builder.created, 4)
+	require.Equal(t, []string{"create", "create", "create", "put"}, builder.ops)
+
+	conversation, ok := builder.created[0].(*models.Conversation)
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"ops", remoteActorID}, conversation.Participants)
+	require.Len(t, conversation.ParticipantRefs, 2)
+	require.Equal(t, "status-remote", conversation.LastStatusID)
+	require.EqualValues(t, 1, conversation.TotalMessageCount)
+
+	state, ok := builder.created[1].(*models.UserConversationState)
+	require.True(t, ok)
+	require.Equal(t, "ops", state.ViewerID)
+	require.Equal(t, remoteActorID, state.CounterpartID)
+	require.Equal(t, models.ConversationParticipantTypeRemoteActor, state.CounterpartType)
+	require.Equal(t, "steward@dev.theory.greater.website", state.CounterpartAcct)
+	require.False(t, state.Unread)
+
+	lookup, ok := builder.created[2].(*models.ConversationParticipantKey)
+	require.True(t, ok)
+	require.Equal(t, conversationParticipantLookupPKForConversation(conversation, conversation.Participants), lookup.PK)
+	require.Equal(t, "conv-remote", lookup.ConversationID)
+
+	status, ok := builder.created[3].(*models.Status)
+	require.True(t, ok)
+	require.Equal(t, "status-remote", status.StatusID)
+	require.Equal(t, "conv-remote", status.ConversationID)
+}
+
 func TestRound44_ConversationRepository_ApplyDirectMessageSend_UpdatesExistingConversationWriteSet(t *testing.T) {
 	ctx := context.Background()
 	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
@@ -632,6 +717,101 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_UpdatesExistingCo
 	status, ok := builder.created[0].(*models.Status)
 	require.True(t, ok)
 	require.Equal(t, "status-existing", status.StatusID)
+}
+
+func TestRound44_ConversationRepository_ApplyDirectMessageSend_UpdatesRemoteConversationWithLocalStateOnly(t *testing.T) {
+	ctx := context.Background()
+	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+	builder := &recordingConversationTransactionBuilder{}
+
+	repo.transactWriteFn = func(txCtx context.Context, fn func(core.TransactionBuilder) error) error {
+		require.Equal(t, ctx, txCtx)
+		return fn(builder)
+	}
+
+	publishedAt := time.Date(2026, 4, 27, 14, 15, 0, 0, time.UTC)
+	previousAt := publishedAt.Add(-time.Hour)
+	remoteActorID := "https://dev.theory.greater.website/users/steward"
+	conversation := &models.Conversation{
+		ID:                "conv-remote-existing",
+		Participants:      []string{"ops", remoteActorID},
+		CreatedAt:         previousAt,
+		UpdatedAt:         previousAt,
+		TotalMessageCount: 2,
+		ParticipantRefs: []models.ConversationParticipantRef{
+			{ParticipantType: models.ConversationParticipantTypeLocalUser, ParticipantID: "ops"},
+			{
+				ParticipantType: models.ConversationParticipantTypeRemoteActor,
+				ParticipantID:   remoteActorID,
+				Acct:            "steward@dev.theory.greater.website",
+				Domain:          "dev.theory.greater.website",
+			},
+		},
+	}
+	localState := &models.UserConversationState{
+		ViewerID:          "ops",
+		ConversationID:    conversation.ID,
+		CounterpartID:     remoteActorID,
+		CounterpartType:   models.ConversationParticipantTypeRemoteActor,
+		CounterpartAcct:   "steward@dev.theory.greater.website",
+		CounterpartDomain: "dev.theory.greater.website",
+		Folder:            models.UserConversationFolderInbox,
+		RequestState:      models.DmRequestStateAccepted,
+		Unread:            false,
+		LastReadAt:        &publishedAt,
+		AcceptedAt:        &previousAt,
+		CreatedAt:         previousAt,
+		UpdatedAt:         publishedAt,
+	}
+	expectedLocalState := *localState
+	expectedLocalState.UpdatedAt = previousAt
+
+	err := repo.ApplyDirectMessageSend(ctx, &models.DirectMessageSendTransition{
+		Conversation: conversation,
+		Status: &models.Status{
+			StatusID:       "status-remote-existing",
+			AuthorID:       "ops",
+			AuthorUsername: "ops",
+			Content:        "again remote",
+			Visibility:     models.VisibilityDirect,
+			ConversationID: conversation.ID,
+			PublishedAt:    publishedAt,
+		},
+		ParticipantStates:         []*models.UserConversationState{localState},
+		ExpectedParticipantStates: []*models.UserConversationState{&expectedLocalState},
+	}, recordStatusStageWithPut)
+	require.NoError(t, err)
+
+	require.Len(t, builder.created, 1)
+	require.Len(t, builder.updates, 2)
+	require.Equal(t, []string{"update_builder", "update_builder", "put"}, builder.ops)
+
+	conversationUpdate := builder.updates[0]
+	expectedConversation, ok := conversationUpdate.model.(*models.Conversation)
+	require.True(t, ok)
+	require.Equal(t, conversation.ID, expectedConversation.ID)
+	require.EqualValues(t, 2, expectedConversation.TotalMessageCount)
+	require.Equal(t, previousAt, expectedConversation.UpdatedAt)
+	require.EqualValues(t, 1, conversationUpdate.builder.adds["TotalMessageCount"])
+	require.Contains(t, conversationUpdate.conditions, core.TransactCondition{Kind: core.TransactConditionKindPrimaryKeyExists})
+	require.Contains(t, conversationUpdate.conditions, core.TransactCondition{Field: "UpdatedAt", Operator: "=", Value: previousAt})
+
+	stateUpdate := builder.updates[1]
+	expectedState, ok := stateUpdate.model.(*models.UserConversationState)
+	require.True(t, ok)
+	require.Equal(t, "ops", expectedState.ViewerID)
+	require.Equal(t, remoteActorID, expectedState.CounterpartID)
+	require.Equal(t, "status-remote-existing", stateUpdate.builder.sets["PreviewStatusID"])
+	require.Equal(t, models.ConversationParticipantTypeRemoteActor, stateUpdate.builder.sets["CounterpartType"])
+	require.Equal(t, "steward@dev.theory.greater.website", stateUpdate.builder.sets["CounterpartAcct"])
+	require.False(t, stateUpdate.builder.sets["Unread"].(bool))
+	require.Contains(t, stateUpdate.conditions, core.TransactCondition{Kind: core.TransactConditionKindPrimaryKeyExists})
+	require.Contains(t, stateUpdate.conditions, core.TransactCondition{Field: "UpdatedAt", Operator: "=", Value: previousAt})
+
+	status, ok := builder.created[0].(*models.Status)
+	require.True(t, ok)
+	require.Equal(t, "status-remote-existing", status.StatusID)
+	require.Equal(t, conversation.ID, status.ConversationID)
 }
 
 func TestRound44_ConversationRepository_ApplyDirectMessageSend_MapsExistingConversationConflictsToVersionConflict(t *testing.T) {
