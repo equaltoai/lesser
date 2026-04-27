@@ -763,17 +763,9 @@ func (h *Handler) convertNotificationsToAPI(ctx *apptheory.Context, notification
 // convertSingleNotification converts a single notification to API format
 func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *storage.Notification) *models.Notification {
 	// Get the account that triggered the notification
-	actor, err := h.repos.Actor().GetActor(ctx.Context(), notif.AccountID)
-	if err != nil {
-		h.logger.Warn("failed to get actor for notification; using fallback actor",
-			zap.String("notification_id", notif.ID),
-			zap.String("account_id", notif.AccountID),
-			zap.Error(err),
-		)
-		actor = h.fallbackNotificationActor(notif.AccountID)
-		if actor == nil {
-			return nil
-		}
+	actor := h.notificationActor(ctx.Context(), notif.AccountID)
+	if actor == nil {
+		return nil
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
@@ -892,6 +884,9 @@ func (h *Handler) notificationSnapshotActor(ctx *apptheory.Context, snapshot map
 	}
 
 	fallbackActor := h.fallbackNotificationActor(attributedTo)
+	if cached := h.cachedRemoteNotificationActor(ctx.Context(), attributedTo); cached != nil {
+		return cached
+	}
 	username := extractUsernameFromNotificationActorID(attributedTo)
 	if username == "" {
 		return fallbackActor
@@ -903,6 +898,48 @@ func (h *Handler) notificationSnapshotActor(ctx *apptheory.Context, snapshot map
 	}
 
 	return statusActor
+}
+
+func (h *Handler) notificationActor(ctx context.Context, actorID string) *activitypub.Actor {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil
+	}
+
+	if h != nil && h.repos != nil && h.repos.Actor() != nil {
+		if actor, err := h.repos.Actor().GetActor(ctx, actorID); err == nil && actor != nil {
+			return actor
+		} else if err != nil && h.logger != nil {
+			h.logger.Warn("failed to get local actor for notification; trying remote cache/fallback",
+				zap.String("account_id", actorID),
+				zap.Error(err))
+		}
+		if actor := h.cachedRemoteNotificationActor(ctx, actorID); actor != nil {
+			return actor
+		}
+	}
+	return h.fallbackNotificationActor(actorID)
+}
+
+func (h *Handler) cachedRemoteNotificationActor(ctx context.Context, actorID string) *activitypub.Actor {
+	if h == nil || h.repos == nil || h.repos.Actor() == nil {
+		return nil
+	}
+	candidates := []string{actorID}
+	if username := extractUsernameFromNotificationActorID(actorID); username != "" && username != actorID {
+		candidates = append(candidates, username)
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
+		if err == nil && actor != nil {
+			return actor
+		}
+	}
+	return nil
 }
 
 func notificationSnapshotObjectMap(snapshot map[string]interface{}) map[string]interface{} {
@@ -1119,16 +1156,9 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Get the account that triggered the notification
-	actor, err := h.repos.Actor().GetActor(ctx.Context(), notification.ActorID)
-	if err != nil {
-		h.logger.Warn("failed to get actor for notification; using fallback actor",
-			zap.String("notification_id", notification.ID),
-			zap.String("actor_id", notification.ActorID),
-			zap.Error(err))
-		actor = h.fallbackNotificationActor(notification.ActorID)
-		if actor == nil {
-			return common.RespondFailedToGet(ctx, "notification details")
-		}
+	actor := h.notificationActor(ctx.Context(), notification.ActorID)
+	if actor == nil {
+		return common.RespondFailedToGet(ctx, "notification details")
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())

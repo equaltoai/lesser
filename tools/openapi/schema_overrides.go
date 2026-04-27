@@ -39,7 +39,7 @@ func overrideCreateStatusRequest(schemas map[string]any) {
 	}
 
 	visibility["enum"] = []string{"public", "unlisted", "private", "direct"}
-	visibility["description"] = "Status visibility. `direct` messages must mention exactly one recipient using an @mention in the status content."
+	visibility["description"] = "Status visibility. `direct` messages must mention exactly one local or remote recipient using an @mention in the status content; group direct messages are not supported in v1."
 }
 
 func overrideOAuthClientSchemas(schemas map[string]any) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -51,17 +52,22 @@ func conversationParticipantUsernames(conv *storageModels.Conversation, viewerUs
 	}
 
 	viewerUsername = strings.ToLower(strings.TrimSpace(viewerUsername))
-	seen := make(map[string]struct{}, len(conv.Participants))
-	usernames := make([]string, 0, len(conv.Participants))
-	for _, participant := range conv.Participants {
-		candidate := strings.ToLower(strings.TrimSpace(participant))
+	refs := conversationParticipantRefsForProjection(conv)
+	seen := make(map[string]struct{}, len(refs))
+	usernames := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		candidate := strings.TrimSpace(ref.ParticipantID)
+		if ref.ParticipantType != storageModels.ConversationParticipantTypeRemoteActor {
+			candidate = strings.ToLower(candidate)
+		}
 		if candidate == "" || candidate == viewerUsername {
 			continue
 		}
-		if _, ok := seen[candidate]; ok {
+		key := strings.ToLower(candidate)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[candidate] = struct{}{}
+		seen[key] = struct{}{}
 		usernames = append(usernames, candidate)
 	}
 
@@ -72,6 +78,40 @@ func conversationParticipantUsernames(conv *storageModels.Conversation, viewerUs
 	}
 
 	return usernames
+}
+
+func conversationParticipantRefsForProjection(conv *storageModels.Conversation) []storageModels.ConversationParticipantRef {
+	if conv == nil {
+		return nil
+	}
+	if len(conv.ParticipantRefs) > 0 {
+		return storageModels.NormalizeConversationParticipantRefs(conv.ParticipantRefs)
+	}
+	refs := make([]storageModels.ConversationParticipantRef, 0, len(conv.Participants))
+	for _, participant := range conv.Participants {
+		participant = strings.TrimSpace(participant)
+		if participant == "" {
+			continue
+		}
+		participantType := storageModels.ConversationParticipantTypeLocalUser
+		if strings.Contains(participant, "://") {
+			participantType = storageModels.ConversationParticipantTypeRemoteActor
+		}
+		refs = append(refs, storageModels.ConversationParticipantRef{
+			ParticipantType: participantType,
+			ParticipantID:   participant,
+		})
+	}
+	if conv.ViewerState != nil && conv.ViewerState.CounterpartID != "" {
+		refs = append(refs, storageModels.ConversationParticipantRef{
+			ParticipantType: conv.ViewerState.CounterpartType,
+			ParticipantID:   conv.ViewerState.CounterpartID,
+			Acct:            conv.ViewerState.CounterpartAcct,
+			Domain:          conv.ViewerState.CounterpartDomain,
+			ResolvedAt:      conv.ViewerState.CounterpartResolvedAt,
+		})
+	}
+	return storageModels.NormalizeConversationParticipantRefs(refs)
 }
 
 func conversationAPIAccountPrefetchKeys(account *storage.Account) []string {
@@ -163,6 +203,8 @@ func (h *Handler) loadConversationAPIPrefetch(ctx context.Context, conversations
 		}
 	}
 
+	h.addRemoteConversationAPIAccountsToPrefetch(ctx, conversations, prefetch)
+
 	if len(statusIDs) > 0 && h.repos.Status() != nil {
 		if statuses, err := h.repos.Status().GetStatusesByIDs(ctx, statusIDs); err == nil {
 			prefetch.statusesByID = buildConversationAPIStatusMap(statuses)
@@ -170,6 +212,26 @@ func (h *Handler) loadConversationAPIPrefetch(ctx context.Context, conversations
 	}
 
 	return prefetch
+}
+
+func (h *Handler) addRemoteConversationAPIAccountsToPrefetch(ctx context.Context, conversations []*storageModels.Conversation, prefetch *conversationAPIPrefetch) {
+	if h == nil || h.repos == nil || h.repos.Actor() == nil || prefetch == nil {
+		return
+	}
+	for _, conv := range conversations {
+		for _, ref := range conversationParticipantRefsForProjection(conv) {
+			if ref.ParticipantType != storageModels.ConversationParticipantTypeRemoteActor {
+				continue
+			}
+			account := h.conversationAPIRemoteAccountForParticipantRef(ctx, ref)
+			if account == nil {
+				continue
+			}
+			for _, key := range conversationAPIAccountPrefetchKeys(account) {
+				prefetch.accountsByKey[key] = account
+			}
+		}
+	}
 }
 
 func (h *Handler) conversationAPIAccountForParticipant(ctx context.Context, participant string, prefetch *conversationAPIPrefetch) *storage.Account {
@@ -203,10 +265,90 @@ func (h *Handler) conversationAPIAccountForParticipant(ctx context.Context, part
 	}
 }
 
+func (h *Handler) conversationAPIAccountForParticipantRef(ctx context.Context, ref storageModels.ConversationParticipantRef, prefetch *conversationAPIPrefetch) *storage.Account {
+	ref = storageModels.NormalizeConversationParticipantRef(ref)
+	if ref.ParticipantID == "" {
+		return nil
+	}
+	if prefetch != nil {
+		if account := prefetch.accountsByKey[strings.ToLower(ref.ParticipantID)]; account != nil {
+			return account
+		}
+		if ref.Acct != "" {
+			if account := prefetch.accountsByKey[strings.ToLower(ref.Acct)]; account != nil {
+				return account
+			}
+		}
+	}
+	if ref.ParticipantType == storageModels.ConversationParticipantTypeRemoteActor {
+		return h.conversationAPIRemoteAccountForParticipantRef(ctx, ref)
+	}
+	return h.conversationAPIAccountForParticipant(ctx, ref.ParticipantID, prefetch)
+}
+
+func (h *Handler) conversationAPIRemoteAccountForParticipantRef(ctx context.Context, ref storageModels.ConversationParticipantRef) *storage.Account {
+	ref = storageModels.NormalizeConversationParticipantRef(ref)
+	if ref.ParticipantID == "" || h == nil {
+		return nil
+	}
+	localDomain := ""
+	if h.cfg != nil {
+		localDomain = h.cfg.Domain
+	}
+
+	if h.repos != nil && h.repos.Actor() != nil {
+		candidates := []string{ref.ParticipantID, ref.Acct}
+		for _, candidate := range candidates {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "" {
+				continue
+			}
+			actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
+			if err == nil && actor != nil {
+				return storageAccountFromActor(actor, localDomain)
+			}
+		}
+	}
+
+	return storageAccountFromActor(conversationAPISyntheticRemoteActor(ref), localDomain)
+}
+
+func conversationAPISyntheticRemoteActor(ref storageModels.ConversationParticipantRef) *activitypub.Actor {
+	ref = storageModels.NormalizeConversationParticipantRef(ref)
+	username := strings.TrimSpace(ref.Acct)
+	if username != "" {
+		if handleUser, _, ok := strings.Cut(username, "@"); ok {
+			username = handleUser
+		}
+	}
+	if username == "" {
+		username = strings.TrimSpace(extractUsernameFromActorID(ref.ParticipantID))
+	}
+	if username == "" {
+		username = strings.TrimSpace(ref.ParticipantID)
+	}
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   ref.ParticipantID,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              username,
+		URL:               ref.ParticipantID,
+	}
+}
+
 func (h *Handler) conversationAPIAccounts(ctx context.Context, conv *storageModels.Conversation, viewerUsername string, prefetch *conversationAPIPrefetch) []apimodels.Account {
 	accounts := make([]apimodels.Account, 0, len(conv.Participants))
-	for _, participant := range conversationParticipantUsernames(conv, viewerUsername) {
-		account := h.conversationAPIAccountForParticipant(ctx, participant, prefetch)
+	for _, ref := range conversationParticipantRefsForProjection(conv) {
+		participant := ref.ParticipantID
+		if ref.ParticipantType != storageModels.ConversationParticipantTypeRemoteActor {
+			participant = strings.ToLower(strings.TrimSpace(participant))
+		}
+		if participant == "" || participant == strings.ToLower(strings.TrimSpace(viewerUsername)) {
+			continue
+		}
+		account := h.conversationAPIAccountForParticipantRef(ctx, ref, prefetch)
 		if account == nil || account.Actor == nil {
 			continue
 		}
