@@ -179,9 +179,9 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.Activity)
 				*out = append(*out,
-					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#z#1", GSI1PK: "INBOX#alice", GSI1SK: "z", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "1"}}},
-					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#y#2", GSI1PK: "INBOX#alice", GSI1SK: "y", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "2"}}},
-					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#x#3", GSI1PK: "INBOX#alice", GSI1SK: "x", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "3"}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#z#1", GSI1PK: "INBOX#alice", GSI1SK: "z", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "1", To: []string{activitypub.PublicAddress}}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#y#2", GSI1PK: "INBOX#alice", GSI1SK: "y", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "2", To: []string{activitypub.PublicAddress}}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#x#3", GSI1PK: "INBOX#alice", GSI1SK: "x", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "3", To: []string{activitypub.PublicAddress}}}},
 				)
 			}).
 			Return(nil).
@@ -316,10 +316,42 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("GetOutboxActivities filters non-public activities", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.
+			On("All", mock.Anything).
+			Run(func(args mock.Arguments) {
+				out := args.Get(0).(*[]*models.Activity)
+				*out = append(*out,
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#z#public", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "public", To: []string{activitypub.PublicAddress}}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#y#direct", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "direct", To: []string{"https://example.com/users/bob"}}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#x#unlisted", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "unlisted", CC: []string{activitypub.PublicAddress}}}},
+					&models.Activity{PK: "ACTOR#alice", SK: "ACTIVITY#w#object", Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "object"}, Object: &activitypub.Note{BaseObject: activitypub.BaseObject{To: []string{activitypub.PublicAddress}}}}},
+				)
+			}).
+			Return(nil).
+			Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+		outbox, cursor, err := repo.GetOutboxActivities(ctx, "alice", 10, "")
+		require.NoError(t, err)
+		require.Empty(t, cursor)
+		require.Len(t, outbox, 3)
+		require.Equal(t, "public", outbox[0].ID)
+		require.Equal(t, "unlisted", outbox[1].ID)
+		require.Equal(t, "object", outbox[2].ID)
+	})
+
 	t.Run("GetOutboxActivities decodes valid cursor and handles query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			out := args.Get(0).(*[]*models.Activity)
+			*out = nil
+		}).Return(nil).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
 
