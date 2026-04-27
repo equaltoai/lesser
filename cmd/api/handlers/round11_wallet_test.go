@@ -135,6 +135,36 @@ func TestWalletHandlers_GetWallets_OAuthTokenDoesNotRequireSession(t *testing.T)
 	requireStatus(t, http.StatusOK)(handler.HandleGetWalletsLift(ctxList))
 }
 
+func TestWalletHandlers_GetWalletsRejectsRevokedSessionToken(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now()
+
+	state := &round10QueryState{
+		sessionsByID: map[string]storagemodels.Session{
+			"sid-revoked": {
+				SessionID:  "sid-revoked",
+				UserID:     "USER#alice",
+				CreatedAt:  now.Add(-2 * time.Hour),
+				LastUsedAt: now.Add(-30 * time.Minute),
+				ExpiresAt:  now.Add(1 * time.Hour).Unix(),
+				IsRevoked:  true,
+			},
+		},
+		walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+			"alice": {},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sid-revoked")
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	ctxList, err := round10NewLiftContext(http.MethodGet, "/auth/wallet/list", headers, nil, nil)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusUnauthorized)(handler.HandleGetWalletsLift(ctxList))
+}
+
 func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
 	cfg := round11TestConfig()
 	now := time.Now()

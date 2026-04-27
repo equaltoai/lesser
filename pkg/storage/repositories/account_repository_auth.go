@@ -257,6 +257,9 @@ func (r *AccountRepository) GetUserSessions(ctx context.Context, username string
 			IPAddress:    session.IPAddress,
 			UserAgent:    session.UserAgent,
 			LastActivity: session.LastUsedAt,
+			IsRevoked:    session.IsRevoked,
+			RevokedAt:    derefTime(session.RevokedAt),
+			RevokeReason: session.RevokeReason,
 		}
 	}
 
@@ -310,6 +313,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 		IPAddress:    session.IPAddress,
 		UserAgent:    session.UserAgent,
 		LastActivity: session.LastUsedAt,
+		IsRevoked:    session.IsRevoked,
 	}, nil
 }
 
@@ -618,6 +622,9 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 		IPAddress:    session.IPAddress,
 		DeviceID:     session.DeviceID,
 		AuthMethod:   "", // Not stored in new model
+		IsRevoked:    session.IsRevoked,
+		RevokedAt:    derefTime(session.RevokedAt),
+		RevokeReason: session.RevokeReason,
 		// Handle previous refresh token if needed
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
@@ -735,6 +742,9 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 		IPAddress:            session.IPAddress,
 		DeviceID:             session.DeviceID,
 		AuthMethod:           "", // Not stored in new model
+		IsRevoked:            session.IsRevoked,
+		RevokedAt:            derefTime(session.RevokedAt),
+		RevokeReason:         session.RevokeReason,
 		PreviousRefreshToken: "", // Would need to be added to model if required
 		TokenRotatedAt:       time.Time{},
 	}
@@ -748,6 +758,13 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func derefTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 // hashTokenForGSI creates a cryptographically secure hash of the token for GSI indexing

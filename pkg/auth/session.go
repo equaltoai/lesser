@@ -120,6 +120,9 @@ func (sm *SessionManager) ValidateRefreshToken(ctx context.Context, refreshToken
 	if err != nil {
 		return nil, ErrInvalidRefreshToken
 	}
+	if session == nil || session.IsRevoked {
+		return nil, ErrInvalidRefreshToken
+	}
 
 	// Check if session is expired
 	if time.Now().After(session.ExpiresAt) {

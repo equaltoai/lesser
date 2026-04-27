@@ -221,7 +221,7 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 			return nil, ErrInvalidToken
 		}
 		session, err := accountRepo.GetSession(context.Background(), claims.SessionID)
-		if err != nil || time.Now().After(session.ExpiresAt) {
+		if err != nil || session == nil || session.IsRevoked || time.Now().After(session.ExpiresAt) {
 			return nil, ErrInvalidToken
 		}
 
