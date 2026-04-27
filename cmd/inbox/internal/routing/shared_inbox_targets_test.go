@@ -313,4 +313,13 @@ func TestSharedInboxTargetResolver_HelperFunctions(t *testing.T) {
 	var nilNote *activitypub.Note
 	require.Empty(t, extractAttributedTo(nilNote))
 	require.Empty(t, extractAttributedTo(struct{}{}))
+
+	// isFollowersCollectionAddress empty and non-followers cases
+	require.False(t, isFollowersCollectionAddress(""))
+	require.False(t, isFollowersCollectionAddress("https://example.com/users/alice"))
+
+	// followersCollectionOwner empty and non-followers cases
+	r := sharedInboxTargetResolver{localDomain: "example.com"}
+	require.Equal(t, "", r.followersCollectionOwner(""))
+	require.Equal(t, "", r.followersCollectionOwner("https://example.com/users/alice"))
 }

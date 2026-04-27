@@ -86,3 +86,15 @@ func TestActivityProcessor_GetFollowers_Branches(t *testing.T) {
 		relationshipRepo.AssertExpectations(t)
 	})
 }
+
+func TestContainsFollowersAddress_FalseCase(t *testing.T) {
+	// When no address contains /followers, the function returns false.
+	require.False(t, containsFollowersAddress(
+		[]string{"https://example.com/users/alice"},
+		[]string{"https://www.w3.org/ns/activitystreams#Public"},
+	))
+	// Full true path already exercised by fanout tests; this ensures the false return is covered.
+	require.True(t, containsFollowersAddress(
+		[]string{"https://example.com/users/alice/followers"},
+	))
+}
