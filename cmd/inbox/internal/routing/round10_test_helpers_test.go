@@ -84,7 +84,7 @@ func (db *extendedMockDB) TransactionFunc(fn func(tx any) error) error { return 
 func (db *extendedMockDB) Transact() dynamormCore.TransactionBuilder { return nil }
 
 func (db *extendedMockDB) TransactWrite(_ context.Context, fn func(dynamormCore.TransactionBuilder) error) error {
-	return fn(nil)
+	return fn(&mocks.MockTransactionBuilder{})
 }
 
 func newInboxTestEnv(t *testing.T) *inboxTestEnv {

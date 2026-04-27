@@ -128,11 +128,13 @@ func TestInboxHandler_Project20_RemoteCreateMentionNotificationIsDeterministic(t
 	require.Contains(t, result.Items[0].Data, "postSnapshot")
 }
 
-func TestInboxHandler_Project20_RemoteCreateReplyNotificationTargetsLocalParentAuthor(t *testing.T) {
+func TestInboxHandler_Project20_RemoteDirectReplyCreatesMentionNotification(t *testing.T) {
 	env := newInboxTestEnv(t)
 	notifications := inmemory.NewNotificationRepository()
+	conversations := inmemory.NewConversationRepository()
 	parentURL := env.cfg.BaseURL() + "/users/alice/statuses/parent-1"
 	env.handler.notificationRepository = notifications
+	env.handler.conversationRepository = conversations
 	env.handler.statusRepository = newProject20StatusRepo(&models.Status{
 		StatusID:       "parent-1",
 		AuthorID:       env.local.ID,
@@ -159,9 +161,16 @@ func TestInboxHandler_Project20_RemoteCreateReplyNotificationTargetsLocalParentA
 	result, err := notifications.GetUserNotifications(context.Background(), "alice", interfaces.PaginationOptions{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, result.Items, 1)
-	require.Equal(t, common.NotificationTypeReply, result.Items[0].Type)
-	require.Equal(t, "parent-1", result.Items[0].Data["parent_status_id"])
+	require.Equal(t, common.NotificationTypeMention, result.Items[0].Type)
+	require.Equal(t, models.VisibilityDirect, result.Items[0].Data["visibility"])
+	require.NotEmpty(t, result.Items[0].Data["conversationID"])
 	require.Contains(t, result.Items[0].Data, "postSnapshot")
+
+	stateResult, err := conversations.ListUserConversationStatesByFolder(context.Background(), "alice", interfaces.UserConversationFolder(models.UserConversationFolderInbox), interfaces.PaginationOptions{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, stateResult.Items, 1)
+	require.Equal(t, result.Items[0].Data["conversationID"], stateResult.Items[0].ConversationID)
+	require.Equal(t, env.remoteActorID, stateResult.Items[0].CounterpartID)
 }
 
 type project20StatusRepo struct {
