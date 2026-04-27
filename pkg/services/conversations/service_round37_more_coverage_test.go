@@ -451,6 +451,34 @@ func TestService_createDirectMessageStatus_BuildsStatusWithoutPersistence(t *tes
 	}, status.Note.Tag[0])
 }
 
+func TestService_createDirectMessageStatus_SanitizesContentAndSummary(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	rawContent := `<p onclick="steal()">hello</p><img src=x onerror="steal()"><script>alert(1)</script>`
+	rawSpoiler := `<span onclick="steal()">cw</span><script>alert(2)</script>`
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:    "alice",
+		Recipients:  []string{"bob"},
+		Content:     rawContent,
+		SpoilerText: rawSpoiler,
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		"bob": createTestAccount("bob", "bob"),
+	}, "conv123", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.Equal(t, status.Content, status.Note.Content)
+	require.Contains(t, status.Content, "hello")
+	require.NotContains(t, status.Content, "<script")
+	require.NotContains(t, status.Content, "onclick")
+	require.NotContains(t, status.Content, "onerror")
+	require.NotContains(t, status.Content, "<img")
+	require.Contains(t, status.Note.Summary, "cw")
+	require.NotContains(t, status.Note.Summary, "<script")
+	require.NotContains(t, status.Note.Summary, "onclick")
+}
+
 func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
 	ctx := context.Background()
 
@@ -645,6 +673,38 @@ func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T)
 	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
 	require.Equal(t, status.ToRecipients, status.Note.To)
 	require.Len(t, status.Note.Tag, 1)
+}
+
+func TestService_createSendMessageStatus_SanitizesContent(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	rawContent := `<p onclick="steal()">hello again</p><img src=x onerror="steal()"><script>alert(1)</script>`
+
+	status, _, err := service.createSendMessageStatus(
+		ctx,
+		&SendMessageCommand{
+			SenderID: "alice",
+			Content:  rawContent,
+		},
+		&SendDirectMessageCommand{
+			SenderID:   "alice",
+			Recipients: []string{"bob"},
+			Content:    rawContent,
+		},
+		createTestAccount("alice", "alice"),
+		createTestAccount("bob", "bob"),
+		"conv123",
+		"bob",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.Equal(t, status.Content, status.Note.Content)
+	require.Contains(t, status.Content, "hello again")
+	require.NotContains(t, status.Content, "<script")
+	require.NotContains(t, status.Content, "onclick")
+	require.NotContains(t, status.Content, "onerror")
+	require.NotContains(t, status.Content, "<img")
 }
 
 func TestService_createSendMessageStatus_RejectsRemoteHandleWithoutActorID(t *testing.T) {
