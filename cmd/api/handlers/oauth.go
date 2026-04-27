@@ -1222,8 +1222,13 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return nil, auth.ErrInvalidGrant
 	}
-	if oauthClientRequiresPKCE(client) && strings.TrimSpace(codeVerifier) == "" {
-		return nil, auth.ErrInvalidRequest
+	if oauthClientRequiresPKCE(client) {
+		if strings.TrimSpace(authCode.CodeChallenge) == "" {
+			return nil, auth.ErrInvalidGrant
+		}
+		if strings.TrimSpace(codeVerifier) == "" {
+			return nil, auth.ErrInvalidRequest
+		}
 	}
 	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {

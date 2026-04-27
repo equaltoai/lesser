@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOAuthConsentHandlers_Round11(t *testing.T) {
 	cfg := round10TestConfig()
+	aliceHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})}
+	ownerHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})}
 	t.Run("deny clears request and returns callback error response", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthStates: map[string]storagemodels.OAuthState{
@@ -25,8 +28,27 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
-		ctxDeny := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-1&action=deny"))
+		ctxDeny := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", aliceHeaders, nil, []byte("state=state-1&action=deny"))
 		requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxDeny))
+	})
+
+	t.Run("unauthenticated submission is rejected before consent action", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthStates: map[string]storagemodels.OAuthState{
+				"state-unauth": {
+					State:       "state-unauth",
+					ClientID:    "client-unauth",
+					Username:    "alice",
+					RedirectURI: "https://client.example/callback",
+					Scopes:      []string{"read"},
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-unauth&action=approve"))
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleOAuthConsentLift(ctxApprove))
+		require.Empty(t, state.authorizationCodesByCode)
 	})
 
 	t.Run("approve uses stored oauth state resource without resource form field", func(t *testing.T) {
@@ -44,7 +66,7 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
-		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-2&action=approve"))
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", aliceHeaders, nil, []byte("state=state-2&action=approve"))
 		requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxApprove))
 		require.Len(t, state.authorizationCodesByCode, 1)
 		for _, authCode := range state.authorizationCodesByCode {
@@ -68,7 +90,7 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 		}
 		handler, repos, _ := round11NewHandler(t, cfg, state)
 
-		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-3&action=approve"))
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", ownerHeaders, nil, []byte("state=state-3&action=approve"))
 		requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxApprove))
 
 		require.NotNil(t, repos)
@@ -95,12 +117,66 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
-		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-4&action=approve"))
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", aliceHeaders, nil, []byte("state=state-4&action=approve"))
 		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthConsentLift(ctxApprove))
 
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
+	})
+
+	t.Run("mismatched authenticated user cannot approve stored state", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthStates: map[string]storagemodels.OAuthState{
+				"state-5": {
+					State:       "state-5",
+					ClientID:    "client-5",
+					Username:    "alice",
+					RedirectURI: "https://client.example/callback",
+					Scopes:      []string{"read"},
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+		malloryHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "mallory", []string{auth.ScopeRead})}
+
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", malloryHeaders, nil, []byte("state=state-5&action=approve"))
+		resp := requireStatus(t, http.StatusForbidden)(handler.HandleOAuthConsentLift(ctxApprove))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "access_denied", body["error"])
+		require.Empty(t, state.authorizationCodesByCode)
+	})
+
+	t.Run("dynamic public client consent requires stored PKCE", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-public": {
+					ClientID:           "client-public",
+					RedirectURIs:       []string{"https://client.example/callback"},
+					RegistrationSource: oauthRegistrationSourceDynamic,
+				},
+			},
+			oauthStates: map[string]storagemodels.OAuthState{
+				"state-public": {
+					State:       "state-public",
+					ClientID:    "client-public",
+					Username:    "alice",
+					RedirectURI: "https://client.example/callback",
+					Scopes:      []string{"read"},
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", aliceHeaders, nil, []byte("state=state-public&action=approve"))
+		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthConsentLift(ctxApprove))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_request", body["error"])
+		require.Empty(t, state.authorizationCodesByCode)
 	})
 
 	t.Run("oauth login redirects to hosted auth ui", func(t *testing.T) {
