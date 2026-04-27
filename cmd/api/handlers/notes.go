@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"fmt"
+	"html"
+	"strings"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/reputation"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -54,6 +57,9 @@ func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Respo
 	if err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
+	if err := validateCreateCommunityNoteRequest(&req); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
 
 	// Validate sources
 	if len(req.Sources) > notes.MaxSources {
@@ -74,7 +80,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Respo
 	// Convert Source structs to string URLs
 	sourceURLs := make([]string, len(req.Sources))
 	for i, src := range req.Sources {
-		sourceURLs[i] = src.URL
+		sourceURLs[i] = strings.TrimSpace(src.URL)
 	}
 
 	// Create note
@@ -95,12 +101,17 @@ func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Store note using Notes service
-	if _, err := h.registry.Notes().CreateCommunityNote(ctx.Context(), &servicenotes.CreateCommunityNoteCommand{
+	created, err := h.registry.Notes().CreateCommunityNote(ctx.Context(), &servicenotes.CreateCommunityNoteCommand{
 		Note: note,
-	}); err != nil {
+	})
+	if err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
+	if created != nil && created.Note != nil {
+		note = created.Note
+	}
+	note.Content = safeCommunityNoteHTML(note.Content)
 
 	// Add rate limit info to response
 	response := apimodels.CreateCommunityNoteResponse{
@@ -263,6 +274,9 @@ func (h *Handler) HandleVoteNoteLift(ctx *apptheory.Context) (*apptheory.Respons
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
+	if err := validateVoteCommunityNoteRequest(&req); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
 
 	// Initialize services
 	repService, err := h.getNoteReputationService()
@@ -299,6 +313,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *apptheory.Context) (*apptheory.Respons
 		VoterID:   userID,
 		VoteType:  req.VoteType,
 		Weight:    weight,
+		Rationale: strings.TrimSpace(req.Reason),
 		CreatedAt: time.Now(),
 	}
 
@@ -362,7 +377,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *apptheory.Context) (*apptheory.Res
 	for i, note := range userNotes {
 		statuses[i] = apimodels.UserNoteStatus{
 			ID:        note.ID,
-			Content:   fmt.Sprintf("<p>Community Note: %s</p>", note.Content),
+			Content:   fmt.Sprintf("<p>Community Note: %s</p>", safeCommunityNoteHTML(note.Content)),
 			CreatedAt: note.CreatedAt.Format(time.RFC3339),
 			Account: apimodels.UserNoteAccount{
 				ID:       note.AuthorID,
@@ -398,6 +413,70 @@ func (h *Handler) HandleGetUserNotesLift(ctx *apptheory.Context) (*apptheory.Res
 	setHeader(resp, "X-Cost-Micros", fmt.Sprintf("%d", 100*len(userNotes)))
 	setHeader(resp, "X-Cost-Details", fmt.Sprintf("DynamoDB: %d reads", len(userNotes)))
 	return resp, nil
+}
+
+func validateCreateCommunityNoteRequest(req *apimodels.CreateCommunityNoteRequest) error {
+	if req == nil {
+		return common.ValidationError{Field: "body", Message: "required"}
+	}
+	req.ObjectID = strings.TrimSpace(req.ObjectID)
+	req.ObjectType = strings.TrimSpace(req.ObjectType)
+	req.Content = strings.TrimSpace(req.Content)
+	req.Language = strings.TrimSpace(req.Language)
+
+	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("object_type", req.ObjectType); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("content", req.Content); err != nil {
+		return err
+	}
+	if len(req.Content) < notes.MinNoteLength {
+		return common.ValidationError{Field: "content", Message: fmt.Sprintf("must be at least %d characters", notes.MinNoteLength)}
+	}
+	if len(req.Content) > notes.MaxNoteLength {
+		return common.ValidationError{Field: "content", Message: fmt.Sprintf("cannot be longer than %d characters", notes.MaxNoteLength)}
+	}
+	if len(req.Language) != 2 {
+		return common.ValidationError{Field: "language", Message: "must be a 2-letter code"}
+	}
+	if len(req.Sources) > notes.MaxSources {
+		return common.ValidationError{Field: "sources", Message: fmt.Sprintf("maximum %d sources allowed", notes.MaxSources)}
+	}
+	for i := range req.Sources {
+		req.Sources[i].URL = strings.TrimSpace(req.Sources[i].URL)
+		if err := common.ValidateRequiredParam(fmt.Sprintf("sources[%d].url", i), req.Sources[i].URL); err != nil {
+			return err
+		}
+		if err := common.ValidateURL(req.Sources[i].URL, fmt.Sprintf("sources[%d].url", i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateVoteCommunityNoteRequest(req *apimodels.VoteCommunityNoteRequest) error {
+	if req == nil {
+		return common.ValidationError{Field: "body", Message: "required"}
+	}
+	req.VoteType = strings.TrimSpace(req.VoteType)
+	req.Reason = strings.TrimSpace(req.Reason)
+
+	switch notes.VoteType(req.VoteType) {
+	case notes.VoteHelpful, notes.VoteNotHelpful, notes.VoteNeutral:
+	default:
+		return common.ValidationError{Field: "vote_type", Message: "must be one of helpful, not_helpful, neutral"}
+	}
+	if len(req.Reason) > notes.MaxReasonLength {
+		return common.ValidationError{Field: "reason", Message: fmt.Sprintf("cannot be longer than %d characters", notes.MaxReasonLength)}
+	}
+	return nil
+}
+
+func safeCommunityNoteHTML(content string) string {
+	return htmlsafe.Escape(html.UnescapeString(strings.TrimSpace(content)))
 }
 
 // Helper functions

@@ -197,34 +197,42 @@ func (s *Service) UpdateNoteScore(ctx context.Context, noteID string, score floa
 	return nil
 }
 
-// CheckNoteRateLimit checks if a user can create more notes
+const communityNoteRateLimitPageSize = 100
+
+// CheckNoteRateLimit checks if a user can create more notes.
 func (s *Service) CheckNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int) {
-	// Get user's note count in the last 24 hours
-	// Since we don't have this method on CommunityNote repository, we'll use GetNotesByAuthor
-	// Safe conversion with bounds check
-	queryLimit := limit + 1
-	var queryLimit32 int32
-	if queryLimit > int(^int32(0)) {
-		queryLimit32 = ^int32(0) // Max int32
-	} else if queryLimit < 0 {
-		queryLimit32 = 0
-	} else {
-		queryLimit32 = int32(queryLimit)
-	}
-	notes, err := s.GetNotesByAuthor(ctx, userID, queryLimit32)
-	if err != nil {
+	if limit <= 0 || s == nil || s.repo == nil {
 		return false, 0
 	}
 
-	// Count notes from last 24 hours
 	cutoff := time.Now().Add(-24 * time.Hour)
 	count := 0
-	for _, note := range notes {
-		if note.CreatedAt.After(cutoff) {
-			count++
+	cursor := ""
+
+	for {
+		notes, nextCursor, err := s.repo.GetCommunityNotesByAuthor(ctx, userID, communityNoteRateLimitPageSize, cursor)
+		if err != nil {
+			return false, 0
 		}
+
+		for _, note := range notes {
+			if note != nil && note.CreatedAt.After(cutoff) {
+				count++
+				if count >= limit {
+					return false, 0
+				}
+			}
+		}
+
+		if nextCursor == "" || nextCursor == cursor {
+			break
+		}
+		cursor = nextCursor
 	}
 
-	// Check if under limit
-	return count < limit, limit - count
+	remaining := limit - count
+	if remaining < 0 {
+		remaining = 0
+	}
+	return true, remaining
 }
