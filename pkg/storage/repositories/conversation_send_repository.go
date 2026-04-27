@@ -165,7 +165,12 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 		return nil, err
 	}
 
-	participantStates, err := normalizeExplicitConversationParticipantStates(conversation, conversation.Participants, transition.ParticipantStates)
+	stateOwnerParticipants := models.ConversationLocalParticipantIDs(conversation)
+	if len(stateOwnerParticipants) == 0 {
+		return nil, storage.ErrInvalidInput
+	}
+
+	participantStates, err := normalizeExplicitConversationParticipantStates(conversation, stateOwnerParticipants, transition.ParticipantStates)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +190,7 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 		return nil, storage.ErrInvalidInput
 	}
 
-	expectedParticipantStates, err := normalizeExplicitConversationParticipantStates(expectedConversation, expectedConversation.Participants, transition.ExpectedParticipantStates)
+	expectedParticipantStates, err := normalizeExplicitConversationParticipantStates(expectedConversation, stateOwnerParticipants, transition.ExpectedParticipantStates)
 	if err != nil {
 		return nil, err
 	}
