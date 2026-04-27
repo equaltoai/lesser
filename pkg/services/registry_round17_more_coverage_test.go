@@ -986,13 +986,6 @@ func TestRegistry_Adapters_And_JobQueueImplementations(t *testing.T) {
 		assert.Equal(t, 1, fed.deliverRecipientsCalls)
 	})
 
-	t.Run("simpleFederationService_queue_activity_noop", func(t *testing.T) {
-		svc := &simpleFederationService{logger: logger}
-		assert.NoError(t, svc.QueueActivity(context.Background(), &activitypub.Activity{
-			BaseObject: activitypub.BaseObject{Type: "Create"},
-			Actor:      "actor",
-		}))
-	})
 }
 
 type captureJobQueue struct {

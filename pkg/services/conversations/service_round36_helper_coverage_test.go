@@ -611,7 +611,10 @@ func TestService_resolveDirectMessageConversationForSend_ReturnsLookupErrors(t *
 		Return((*models.Conversation)(nil), errors.New("boom")).
 		Once()
 
-	_, _, err := service.resolveDirectMessageConversationForSend(ctx, "alice", "bob")
+	_, _, err := service.resolveDirectMessageConversationForCommand(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+	}, "bob")
 	require.ErrorIs(t, err, ErrLookupExistingConversation)
 	conversationRepo.AssertExpectations(t)
 }
@@ -627,7 +630,10 @@ func TestService_resolveDirectMessageConversationForSend_CreatesCanonicalConvers
 		Return((*models.Conversation)(nil), errors.New("not found")).
 		Once()
 
-	conversation, createConversation, err := service.resolveDirectMessageConversationForSend(ctx, "bob", "alice")
+	conversation, createConversation, err := service.resolveDirectMessageConversationForCommand(ctx, &SendDirectMessageCommand{
+		SenderID:   "bob",
+		Recipients: []string{"alice"},
+	}, "alice")
 	require.NoError(t, err)
 	require.True(t, createConversation)
 	require.NotNil(t, conversation)

@@ -1344,8 +1344,7 @@ func (r *Registry) Conversations() *conversations.Service {
 				}
 			}
 
-			// Create a simple federation service adapter for conversations
-			federationService := &simpleFederationService{logger: r.logger}
+			federationService := r.createFederationAdapterUnlocked()
 
 			r.conversationsService = conversations.NewService(
 				conversationRepo,
@@ -2721,23 +2720,6 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 	}
 
 	return username
-}
-
-// simpleFederationService provides a basic federation service implementation for conversations
-type simpleFederationService struct {
-	logger *zap.Logger
-}
-
-// QueueActivity queues an activity for federation delivery
-func (s *simpleFederationService) QueueActivity(_ context.Context, activity *activitypub.Activity) error {
-	// For now, just log the activity - in a full implementation this would queue for delivery
-	if s.logger != nil {
-		s.logger.Info("federation activity queued",
-			zap.String("type", activity.Type),
-			zap.String("actor", activity.Actor),
-			zap.String("object", fmt.Sprintf("%v", activity.Object)))
-	}
-	return nil
 }
 
 // getJobQueue returns the job queue service, creating it if necessary

@@ -99,6 +99,14 @@ func (m *mockConversationRepository) GetConversationByParticipants(ctx context.C
 	return args.Get(0).(*models.Conversation), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetConversationByParticipantRefs(ctx context.Context, refs []models.ConversationParticipantRef) (*models.Conversation, error) {
+	args := m.Called(ctx, refs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Conversation), args.Error(1)
+}
+
 func (m *mockConversationRepository) GetUserConversationState(ctx context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
 	args := m.Called(ctx, viewerID, conversationID)
 	if args.Get(0) == nil {
@@ -723,11 +731,27 @@ func (m *mockPublisher) GetEvents() []streaming.Event {
 
 type mockFederationService struct {
 	activities []*activitypub.Activity
+	actors     map[string]*activitypub.Actor
+	resolveErr error
 }
 
 func (m *mockFederationService) QueueActivity(ctx context.Context, activity *activitypub.Activity) error {
 	m.activities = append(m.activities, activity)
 	return nil
+}
+
+func (m *mockFederationService) ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	if m.resolveErr != nil {
+		return nil, m.resolveErr
+	}
+	if m.actors == nil {
+		return nil, errDirectMessageRemoteRecipientActorRequired
+	}
+	actor := m.actors[handle]
+	if actor == nil {
+		return nil, errDirectMessageRemoteRecipientActorRequired
+	}
+	return actor, nil
 }
 
 func (m *mockFederationService) GetQueuedActivities() []*activitypub.Activity {
@@ -877,13 +901,6 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 
 	// Test data - create a remote recipient (different domain)
 	senderAccount := createTestAccount("sender123", "alice")
-	remoteRecipientAccount := &storage.Account{
-		User: &storage.User{
-			Username: "bob",
-			Email:    "bob@remote.com",
-		},
-	}
-
 	cmd := &SendDirectMessageCommand{
 		SenderID:   "sender123",
 		Recipients: []string{"bob@remote.com"},
@@ -892,10 +909,6 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 
 	// Mock expectations
 	accountRepo.On("GetAccount", ctx, "sender123").Return(senderAccount, nil)
-	accountRepo.On("GetAccount", ctx, "bob@remote.com").Return(remoteRecipientAccount, nil)
-
-	// No existing conversation
-	conversationRepo.On("GetConversationByParticipants", ctx, []string{"bob@remote.com", "sender123"}).Return(nil, fmt.Errorf("not found"))
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -908,6 +921,95 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// Verify federation was NOT queued because the send failed closed.
 	activities := federation.GetQueuedActivities()
 	assert.Len(t, activities, 0)
+
+	conversationRepo.AssertExpectations(t)
+	accountRepo.AssertExpectations(t)
+}
+
+func TestService_SendDirectMessage_WithResolvedRemoteRecipient(t *testing.T) {
+	service, conversationRepo, _, accountRepo, publisher, federation := createTestService()
+	ctx := context.Background()
+
+	senderAccount := createTestAccount("sender123", "alice")
+	remoteActorID := "https://remote.com/users/bob"
+	federation.actors = map[string]*activitypub.Actor{
+		"bob@remote.com": {
+			BaseObject: activitypub.BaseObject{
+				ID:   remoteActorID,
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "bob",
+			Name:              "Bob Remote",
+			URL:               "https://remote.com/@bob",
+		},
+	}
+
+	cmd := &SendDirectMessageCommand{
+		SenderID:   "sender123",
+		Recipients: []string{"bob@remote.com"},
+		Content:    "Hello remote user!",
+	}
+
+	accountRepo.On("GetAccount", ctx, "sender123").Return(senderAccount, nil).Once()
+	conversationRepo.On("GetConversationByParticipantRefs", ctx, mock.MatchedBy(func(refs []models.ConversationParticipantRef) bool {
+		refs = models.NormalizeConversationParticipantRefs(refs)
+		if len(refs) != 2 {
+			return false
+		}
+		local := refs[0]
+		remote := refs[1]
+		return local.ParticipantType == models.ConversationParticipantTypeLocalUser &&
+			local.ParticipantID == "sender123" &&
+			remote.ParticipantType == models.ConversationParticipantTypeRemoteActor &&
+			remote.ParticipantID == remoteActorID &&
+			remote.Acct == "bob@remote.com" &&
+			remote.Domain == "remote.com" &&
+			remote.ResolvedAt != nil
+	})).Return(nil, fmt.Errorf("not found")).Once()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		if transition == nil || transition.Conversation == nil || transition.Status == nil {
+			return false
+		}
+		if !transition.CreateConversation || len(transition.ParticipantStates) != 1 {
+			return false
+		}
+		if len(transition.Conversation.ParticipantRefs) != 2 {
+			return false
+		}
+		state := transition.ParticipantStates[0]
+		return transition.Conversation.ParticipantRefs[1].ParticipantID == remoteActorID &&
+			transition.Status.Visibility == VisibilityDirect &&
+			len(transition.Status.ToRecipients) == 1 &&
+			transition.Status.ToRecipients[0] == remoteActorID &&
+			state.ViewerID == "sender123" &&
+			state.CounterpartID == remoteActorID &&
+			state.CounterpartType == models.ConversationParticipantTypeRemoteActor &&
+			state.CounterpartAcct == "bob@remote.com" &&
+			state.CounterpartDomain == "remote.com" &&
+			state.RequestState == models.DmRequestStateAccepted &&
+			state.Folder == models.UserConversationFolderInbox &&
+			!state.Unread
+	}), mock.Anything).Return(nil).Once()
+
+	result, err := service.SendDirectMessage(ctx, cmd)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Conversation)
+	require.Contains(t, result.Conversation.Participants, "sender123")
+	require.Contains(t, result.Conversation.Participants, remoteActorID)
+	require.Len(t, result.Conversation.ParticipantRefs, 2)
+	require.Len(t, result.Events, 2) // conversation stream + local sender direct stream
+
+	activities := federation.GetQueuedActivities()
+	require.Len(t, activities, 1)
+	require.Equal(t, "Create", activities[0].Type)
+	require.Equal(t, []string{remoteActorID}, activities[0].To)
+
+	events := publisher.GetEvents()
+	require.Len(t, events, 2)
+	require.Contains(t, []string{events[0].Stream, events[1].Stream}, "conversation:"+result.Conversation.ID)
+	require.Contains(t, []string{events[0].Stream, events[1].Stream}, "user:sender123:direct")
 
 	conversationRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
