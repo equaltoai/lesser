@@ -762,6 +762,15 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 			continue
 		}
 
+		// Check visibility before viewer-specific dependency checks. If block
+		// lookup is unavailable, non-public statuses must still stay excluded.
+		if r.isStatusPrivate(result) {
+			r.logger.Debug("excluding private/direct status from search",
+				zap.String("status_id", result.StatusID),
+				zap.String("author", result.AuthorID))
+			continue
+		}
+
 		// Check if searcher is blocked by the author or has blocked the author.
 		// Anonymous searches still need visibility filtering below, but cannot
 		// perform viewer-specific block checks.
@@ -772,7 +781,8 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 					zap.String("searcher", searcherActorID),
 					zap.String("author", result.AuthorID),
 					zap.Error(err))
-				// On error, include the result (fail open)
+				// On block-check errors, preserve availability only for statuses
+				// that have already passed visibility filtering above.
 				filteredResults = append(filteredResults, result)
 				continue
 			}
@@ -785,15 +795,6 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 					zap.String("searcher", searcherActorID))
 				continue
 			}
-		}
-
-		// Check visibility - for now, only allow public and unlisted content in search
-		// Private and direct messages should not appear in search results
-		if r.isStatusPrivate(result) {
-			r.logger.Debug("excluding private/direct status from search",
-				zap.String("status_id", result.StatusID),
-				zap.String("author", result.AuthorID))
-			continue
 		}
 
 		// Status passed all privacy checks

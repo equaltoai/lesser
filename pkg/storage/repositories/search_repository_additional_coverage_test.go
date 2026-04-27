@@ -367,6 +367,7 @@ func TestSearchRepository_FilterStatusesByPrivacy_BlockedAndFailOpen(t *testing.
 	results := repo.filterStatusesByPrivacy(context.Background(), []*storage.StatusSearchResult{
 		{StatusID: "s1", AuthorID: "blocked-author", Visibility: models.VisibilityPublic},
 		{StatusID: "s2", AuthorID: "error-author", Visibility: models.VisibilityPublic},
+		{StatusID: "s2-direct", AuthorID: "error-author", Visibility: models.VisibilityDirect},
 		{StatusID: "s3", AuthorID: "ok-author", Visibility: models.VisibilityPublic},
 	}, "searcher")
 
