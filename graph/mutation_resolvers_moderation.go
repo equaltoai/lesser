@@ -330,13 +330,13 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 
 // TrainModerationModel implements MutationResolver.
 func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) (*model.TrainingResult, error) {
-	// 1. Require authentication
-	username, err := r.requireAuth(ctx)
+	// 1. Require admin privileges
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Check feature flag (admin permissions checked via feature flag)
+	// 2. Check feature flag after admin authorization
 	if err := common.MustCheckModerationMLAccess(ctx, username); err != nil {
 		return nil, err
 	}

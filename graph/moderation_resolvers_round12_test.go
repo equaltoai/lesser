@@ -170,9 +170,9 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	// Mutation: ML training is permission-gated.
+	// Mutation: ML training is admin-gated before feature flag or service access.
 	_, err = mut.TrainModerationModel(userCtx, nil, nil)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrAdminPrivilegesRequired)
 }
 
 func TestRound12ModerationResolvers_DashboardStorageNil(t *testing.T) {
