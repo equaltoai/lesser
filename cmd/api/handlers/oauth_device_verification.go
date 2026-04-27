@@ -9,11 +9,14 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 var oauthDeviceUserCodePattern = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$`)
+
+const oauthDeviceErrorInvalidRequest = "invalid_request"
 
 func normalizeOAuthDeviceUserCode(input string) string {
 	trimmed := strings.ToUpper(strings.TrimSpace(input))
@@ -33,6 +36,68 @@ func validateOAuthDeviceUserCode(userCode string) bool {
 		return false
 	}
 	return oauthDeviceUserCodePattern.MatchString(userCode)
+}
+
+func oauthDeviceConsentScopeParam(params map[string]string) (string, bool) {
+	if params == nil {
+		return "", false
+	}
+	for _, key := range []string{"scope", "scopes"} {
+		if value, ok := params[key]; ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func canonicalOAuthScopeSet(scopes []string) map[string]int {
+	out := make(map[string]int, len(scopes))
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		out[scope]++
+	}
+	return out
+}
+
+func oauthScopeSetsEqual(a, b []string) bool {
+	aSet := canonicalOAuthScopeSet(a)
+	bSet := canonicalOAuthScopeSet(b)
+	if len(aSet) != len(bSet) {
+		return false
+	}
+	for scope, count := range aSet {
+		if bSet[scope] != count {
+			return false
+		}
+	}
+	return true
+}
+
+func validateOAuthDeviceConsentBinding(params map[string]string, session *storage.OAuthDeviceSession) (string, string) {
+	if session == nil {
+		return oauthDeviceErrorInvalidRequest, "invalid device session"
+	}
+
+	clientID := strings.TrimSpace(params["client_id"])
+	if clientID == "" {
+		return oauthDeviceErrorInvalidRequest, "client_id is required"
+	}
+	if clientID != strings.TrimSpace(session.ClientID) {
+		return oauthDeviceErrorInvalidRequest, "client_id does not match device authorization"
+	}
+
+	scopeValue, scopeProvided := oauthDeviceConsentScopeParam(params)
+	if len(canonicalOAuthScopeSet(session.Scopes)) > 0 && !scopeProvided {
+		return oauthDeviceErrorInvalidRequest, "scope is required"
+	}
+	if scopeProvided && !oauthScopeSetsEqual(splitOAuthSpaceDelimited(scopeValue), session.Scopes) {
+		return "invalid_scope", "scope does not match device authorization"
+	}
+
+	return "", ""
 }
 
 // HandleOAuthDeviceVerifyLift handles POST /oauth/device/verify.
@@ -229,10 +294,21 @@ func (h *Handler) HandleOAuthDeviceConsentLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	status := strings.ToLower(strings.TrimSpace(session.Status))
-	if status == oauthDeviceSessionStatusConsumed {
+	if status != oauthDeviceSessionStatusPending {
+		description := "the user_code has already been used"
+		if status == oauthDeviceSessionStatusApproved || status == oauthDeviceSessionStatusDenied {
+			description = "the user_code has already been completed"
+		}
 		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
 			Error:            "invalid_request",
-			ErrorDescription: "the user_code has already been used",
+			ErrorDescription: description,
+		})
+	}
+
+	if code, description := validateOAuthDeviceConsentBinding(params, session); code != "" {
+		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
+			Error:            code,
+			ErrorDescription: description,
 		})
 	}
 

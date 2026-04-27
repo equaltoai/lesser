@@ -113,7 +113,7 @@ func TestOAuthDeviceConsentLiftRound13_InvalidAction(t *testing.T) {
 
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
 		"authorization": "Bearer " + accessToken,
-	}, nil, []byte("user_code=ABCD-EFGH&action=wat"))
+	}, nil, []byte("user_code=ABCD-EFGH&action=wat&client_id=client-1&scope=read"))
 	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthDeviceConsentLift(ctx))
 
 	var body apimodels.OAuthErrorResponse
@@ -151,7 +151,7 @@ func TestOAuthDeviceConsentLiftRound13_UpdateErrorReturns500(t *testing.T) {
 
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
 		"authorization": "Bearer " + accessToken,
-	}, nil, []byte("user_code=ABCD-EFGH&action=approve"))
+	}, nil, []byte("user_code=ABCD-EFGH&action=approve&client_id=client-1&scope=read"))
 	resp := requireStatus(t, http.StatusInternalServerError)(h.HandleOAuthDeviceConsentLift(ctx))
 
 	var body apimodels.OAuthErrorResponse

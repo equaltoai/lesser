@@ -94,6 +94,28 @@ func TestOAuthDeviceConsentLiftRound12(t *testing.T) {
 				UpdatedAt:       now.Add(-1 * time.Minute),
 				ExpiresAt:       now.Add(5 * time.Minute),
 			},
+			"JKLM-NPQR": {
+				DeviceCodeHash:  "hash-deny",
+				UserCode:        "JKLM-NPQR",
+				ClientID:        "client-1",
+				Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+				Status:          "pending",
+				IntervalSeconds: oauthDevicePollIntervalSeconds,
+				CreatedAt:       now.Add(-1 * time.Minute),
+				UpdatedAt:       now.Add(-1 * time.Minute),
+				ExpiresAt:       now.Add(5 * time.Minute),
+			},
+			"STUV-WXYZ": {
+				DeviceCodeHash:  "hash-mismatch",
+				UserCode:        "STUV-WXYZ",
+				ClientID:        "client-1",
+				Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+				Status:          "pending",
+				IntervalSeconds: oauthDevicePollIntervalSeconds,
+				CreatedAt:       now.Add(-1 * time.Minute),
+				UpdatedAt:       now.Add(-1 * time.Minute),
+				ExpiresAt:       now.Add(5 * time.Minute),
+			},
 		},
 	}
 
@@ -104,14 +126,14 @@ func TestOAuthDeviceConsentLiftRound12(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("missing auth returns 401", func(t *testing.T) {
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", nil, nil, []byte("user_code=ABCD-EFGH&action=approve"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", nil, nil, []byte("user_code=ABCD-EFGH&action=approve&client_id=client-1&scope=read+write"))
 		requireStatus(t, http.StatusUnauthorized)(h.HandleOAuthDeviceConsentLift(ctx))
 	})
 
 	t.Run("approve updates status", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
 			"authorization": "Bearer " + accessToken,
-		}, nil, []byte("user_code=ABCD-EFGH&action=approve"))
+		}, nil, []byte("user_code=ABCD-EFGH&action=approve&client_id=client-1&scope=write+read"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthDeviceConsentLift(ctx))
 
 		var body apimodels.OAuthDeviceConsentResponse
@@ -122,11 +144,35 @@ func TestOAuthDeviceConsentLiftRound12(t *testing.T) {
 	t.Run("deny updates status", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
 			"authorization": "Bearer " + accessToken,
-		}, nil, []byte("user_code=ABCD-EFGH&action=deny"))
+		}, nil, []byte("user_code=JKLM-NPQR&action=deny&client_id=client-1&scope=read+write"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthDeviceConsentLift(ctx))
 
 		var body apimodels.OAuthDeviceConsentResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "denied", strings.ToLower(body.Status))
+	})
+
+	t.Run("mismatched client is rejected before consent update", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
+			"authorization": "Bearer " + accessToken,
+		}, nil, []byte("user_code=STUV-WXYZ&action=approve&client_id=other-client&scope=read+write"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthDeviceConsentLift(ctx))
+
+		var body apimodels.OAuthErrorResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_request", body.Error)
+		require.Equal(t, "pending", strings.ToLower(state.oauthDeviceSessionsByUserCode["STUV-WXYZ"].Status))
+	})
+
+	t.Run("scope escalation is rejected before consent update", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
+			"authorization": "Bearer " + accessToken,
+		}, nil, []byte("user_code=STUV-WXYZ&action=approve&client_id=client-1&scope=read+write+admin"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthDeviceConsentLift(ctx))
+
+		var body apimodels.OAuthErrorResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_scope", body.Error)
+		require.Equal(t, "pending", strings.ToLower(state.oauthDeviceSessionsByUserCode["STUV-WXYZ"].Status))
 	})
 }
