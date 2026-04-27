@@ -238,6 +238,28 @@ func TestActivityHandler_ProcessUndoReject_Branches(t *testing.T) {
 		activityRepo.AssertExpectations(t)
 	})
 
+	t.Run("undo actor does not match reject actor", func(t *testing.T) {
+		h := &ActivityHandler{Logger: zap.NewNop()}
+
+		undo := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "undo-actor-mismatch", Type: ActivityTypeUndo},
+			Actor:      "https://example.com/users/alice",
+		}
+		reject := map[string]any{
+			"type":  ActivityTypeReject,
+			"actor": "https://example.com/users/bob",
+			"object": map[string]any{
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/carol",
+				"id":     "follow-1",
+				"object": "https://example.com/users/bob",
+			},
+		}
+
+		err := h.processUndoReject(ctx, undo, reject, "alice")
+		require.ErrorIs(t, err, services.ErrActorNotAuthorizedUndo)
+	})
+
 	t.Run("missing follower after fallbacks errors", func(t *testing.T) {
 		relationshipRepo := testmocks.NewMockRelationshipRepository()
 		h := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
@@ -332,6 +354,14 @@ func TestActivityHandler_UndoRejectHelperBranches(t *testing.T) {
 
 	t.Run("missing required follow fields are rejected", func(t *testing.T) {
 		_, err := h.followStateFromMap(map[string]any{
+			"id":     "reject-wrong-type",
+			"type":   ActivityTypeReject,
+			"actor":  "https://remote.example/users/bob",
+			"object": "https://example.com/users/alice",
+		})
+		require.ErrorIs(t, err, services.ErrExtractActivityTypeFromUndo)
+
+		_, err = h.followStateFromMap(map[string]any{
 			"id":     "follow-missing-target",
 			"type":   ActivityTypeFollow,
 			"actor":  "https://remote.example/users/bob",

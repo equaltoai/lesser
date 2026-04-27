@@ -84,3 +84,20 @@ func TestParseNote(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to parse note")
 	})
 }
+
+func TestParseActivityPubSizeLimits(t *testing.T) {
+	oversized := []byte(strings.Repeat(" ", common.MaxJSONSize+1))
+	sizeLimitErr := "exceeds maximum"
+
+	_, err := ParseActivity(oversized)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), sizeLimitErr)
+
+	_, err = ParseActor(oversized)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), sizeLimitErr)
+
+	_, err = ParseNote(oversized)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), sizeLimitErr)
+}
