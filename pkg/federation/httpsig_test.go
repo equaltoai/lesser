@@ -588,3 +588,39 @@ func TestServerInteroperability(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireSignedBodyIntegrity(t *testing.T) {
+	privateKey, err := GenerateRSAKeyPair(2048)
+	require.NoError(t, err)
+
+	t.Run("body requires digest covered by signature", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "https://example.com/inbox", strings.NewReader(`{"type":"Create"}`))
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+		req.Header.Set("Content-Type", "application/activity+json")
+		require.NoError(t, SignHTTPRequestWithAlgorithm(req, privateKey, "https://example.com/users/alice#main-key", AlgorithmRSASHA256))
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("signed digest succeeds", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "https://example.com/inbox", strings.NewReader(`{"type":"Create"}`))
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+		req.Header.Set("Content-Type", "application/activity+json")
+		require.NoError(t, SignHTTPRequest(req, privateKey, "https://example.com/users/alice#main-key"))
+
+		require.NoError(t, RequireSignedBodyIntegrity(req))
+	})
+
+	t.Run("host must match request URL host", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "https://example.com/inbox", strings.NewReader(`{"type":"Create"}`))
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+		req.Header.Set("Content-Type", "application/activity+json")
+		require.NoError(t, SignHTTPRequest(req, privateKey, "https://example.com/users/alice#main-key"))
+		req.URL.Host = "attacker.example"
+
+		require.Error(t, RequireSignedBodyIntegrity(req))
+	})
+}

@@ -93,7 +93,7 @@ func TestInboxHandler_VerifyDigestEnhanced_TraceCoverage(t *testing.T) {
 		nil,
 		body,
 	)
-	require.NoError(t, env.handler.verifyDigestEnhanced(missingDigestCtx, req))
+	require.Error(t, env.handler.verifyDigestEnhanced(missingDigestCtx, req))
 
 	validDigestCtx := newAppTheoryContextWithValues(
 		http.MethodPost,

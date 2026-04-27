@@ -74,3 +74,37 @@ func TestHeaderMapValue_UncoveredBranches(t *testing.T) {
 		HostHeader: {},
 	}, HostHeader))
 }
+
+func TestOriginURLFromHeaders_RejectsMalformedForwardedHosts(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers map[string][]string
+	}{
+		{
+			name: "lesser forwarded host with path is ignored",
+			headers: map[string][]string{
+				"x-lesser-forwarded-host": {"theory.dev.example.com/evil"},
+			},
+		},
+		{
+			name: "forwarded host with userinfo is ignored",
+			headers: map[string][]string{
+				"forwarded": {"for=198.51.100.22;proto=https;host=evil.example@theory.dev.example.com"},
+			},
+		},
+		{
+			name: "host fallback with path is ignored",
+			headers: map[string][]string{
+				"host": {"theory.dev.example.com/evil"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := RequestURLFromHeaders(tt.headers, "/inbox", nil)
+			require.Empty(t, u.Host)
+			require.Equal(t, "/inbox", u.Path)
+		})
+	}
+}

@@ -895,6 +895,26 @@ func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxR
 		ih.logFollowTraceReconstructedRequest(trace, httpReq)
 	}
 
+	if err := ih.validateInboundSignatureHost(httpReq); err != nil {
+		ih.logger.Warn("inbound signature host binding failed",
+			zap.String("actor", req.Activity.Actor),
+			zap.String("request_host", httpReq.Host),
+			zap.String("url_host", httpReq.URL.Host),
+			zap.Error(err))
+		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
+		ih.recordFailureCost(req, fmt.Sprintf("Signature host binding failed: %v", err), 3)
+		return errors.Unauthorized("signature host binding failed").WithInternalError(err)
+	}
+
+	if err := federation.RequireSignedBodyIntegrity(httpReq); err != nil {
+		ih.logger.Warn("inbound signature integrity headers missing or unsigned",
+			zap.String("actor", req.Activity.Actor),
+			zap.Error(err))
+		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
+		ih.recordFailureCost(req, fmt.Sprintf("Signature integrity headers failed: %v", err), 3)
+		return errors.Unauthorized("signature integrity headers required").WithInternalError(err)
+	}
+
 	// Enhanced signature verification with caching and retry logic
 	signatureVerifyStart := time.Now()
 	if err := ih.signatureService.VerifySignature(httpReq.Context(), httpReq, req.Activity.Actor); err != nil {
@@ -1005,9 +1025,8 @@ func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxR
 	trace := ih.followTraceForRequest(req)
 	if err := common.ValidateRequiredParam("digestHeader", digestHeader); err != nil {
 		ih.logFollowTrace(trace, "receiver.digest.missing")
-		// No digest header is acceptable for some implementations
-		ih.logger.Debug("no digest header present", zap.String("actor", req.Activity.Actor))
-		return nil
+		ih.logger.Warn("missing digest header", zap.String("actor", req.Activity.Actor))
+		return common.AuthenticationError{Message: "missing digest header"}
 	}
 
 	ih.logFollowTrace(trace, "receiver.digest.start",
@@ -1377,6 +1396,24 @@ func (ih *InboxHandler) convertRequest(ctx *apptheory.Context, body []byte) (*ht
 	}
 
 	return req, nil
+}
+
+func (ih *InboxHandler) validateInboundSignatureHost(req *http.Request) error {
+	if req == nil || req.URL == nil {
+		return fmt.Errorf("missing request URL")
+	}
+	requestHost := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
+	if requestHost == "" {
+		return fmt.Errorf("missing request host")
+	}
+	instanceHost := strings.ToLower(strings.TrimSpace(ih.localDomain()))
+	if instanceHost == "" {
+		return nil
+	}
+	if requestHost != instanceHost {
+		return fmt.Errorf("request host %q does not match instance host %q", requestHost, instanceHost)
+	}
+	return nil
 }
 
 func inboxRequestURL(ctx *apptheory.Context) *url.URL {

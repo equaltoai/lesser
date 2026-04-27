@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -97,6 +98,21 @@ func TestInboxRequestURL_OriginMatrix(t *testing.T) {
 			require.Equal(t, tt.want, inboxRequestURL(ctx).String())
 		})
 	}
+}
+
+func TestInboxHandler_validateInboundSignatureHostBindsInstanceDomain(t *testing.T) {
+	env := newInboxTestEnv(t)
+	oldDomain := env.cfg.Domain
+	env.cfg.Domain = "theory.dev.example.com"
+	t.Cleanup(func() { env.cfg.Domain = oldDomain })
+
+	valid := httptest.NewRequest(http.MethodPost, "https://theory.dev.example.com/users/alice/inbox", strings.NewReader(`{}`))
+	valid.Host = "theory.dev.example.com"
+	require.NoError(t, env.handler.validateInboundSignatureHost(valid))
+
+	forged := httptest.NewRequest(http.MethodPost, "https://attacker.example/users/alice/inbox", strings.NewReader(`{}`))
+	forged.Host = "attacker.example"
+	require.Error(t, env.handler.validateInboundSignatureHost(forged))
 }
 
 func TestInboxHandler_convertRequest_VerifiesClassicDeliveryAfterForwardedReconstruction(t *testing.T) {

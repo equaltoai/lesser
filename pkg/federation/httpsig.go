@@ -232,6 +232,85 @@ func ParsePrivateKeyPEM(pemData []byte) (crypto.PrivateKey, error) {
 	}
 }
 
+// RequireSignedBodyIntegrity enforces the minimum signed-header set for
+// body-bearing inbound ActivityPub requests. Digest must be present and signed
+// with host/date/(request-target) so a proxy or attacker cannot alter the body
+// and Digest header without invalidating the HTTP signature.
+func RequireSignedBodyIntegrity(req *http.Request) error {
+	if req == nil {
+		return common.AuthenticationError{Message: "missing request"}
+	}
+
+	sig, err := ParseSignatureHeader(req.Header.Get(SignatureHeader))
+	if err != nil {
+		return errors.Join(ErrSignatureParseFailed, err)
+	}
+
+	signedHeaders := make(map[string]struct{}, len(sig.Headers))
+	for _, header := range sig.Headers {
+		signedHeaders[strings.ToLower(strings.TrimSpace(header))] = struct{}{}
+	}
+	for _, required := range []string{RequestTargetHeader, "host", "date"} {
+		if _, ok := signedHeaders[required]; !ok {
+			return errors.Join(ErrRequiredHeaderNotFound, common.AuthenticationError{Message: "signature must cover " + required})
+		}
+	}
+
+	if err := validateSignedHostBinding(req); err != nil {
+		return err
+	}
+
+	if !requestHasIntegrityBody(req) {
+		return nil
+	}
+	if err := common.ValidateRequiredParam("digest_header", req.Header.Get(DigestHeader)); err != nil {
+		return common.AuthenticationError{Message: "missing digest header"}
+	}
+	if _, ok := signedHeaders["digest"]; !ok {
+		return errors.Join(ErrRequiredHeaderNotFound, common.AuthenticationError{Message: "signature must cover digest"})
+	}
+	return nil
+}
+
+func requestHasIntegrityBody(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	if req.ContentLength > 0 || req.Header.Get(DigestHeader) != "" {
+		return true
+	}
+	switch strings.ToUpper(req.Method) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateSignedHostBinding(req *http.Request) error {
+	if req == nil || req.URL == nil {
+		return common.AuthenticationError{Message: "missing request URL"}
+	}
+	urlHost := strings.TrimSpace(req.URL.Host)
+	if err := common.ValidateRequiredParam("url_host", urlHost); err != nil {
+		return common.AuthenticationError{Message: "missing request host"}
+	}
+	signedHost := strings.TrimSpace(req.Host)
+	if signedHost == "" {
+		signedHost = strings.TrimSpace(req.Header.Get(common.HostHeader))
+	}
+	if err := common.ValidateRequiredParam("signed_host", signedHost); err != nil {
+		return common.AuthenticationError{Message: "missing signed host"}
+	}
+	if strings.ContainsAny(signedHost, "\r\n\t /\\?#@") || strings.ContainsAny(urlHost, "\r\n\t /\\?#@") {
+		return common.AuthenticationError{Message: "invalid signed host"}
+	}
+	if !strings.EqualFold(signedHost, urlHost) {
+		return common.AuthenticationError{Message: "signed host does not match request URL host"}
+	}
+	return nil
+}
+
 // VerifyHTTPSignature verifies an incoming HTTP request's signature
 func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 	log := common.Logger()
