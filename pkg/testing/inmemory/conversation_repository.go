@@ -49,15 +49,21 @@ func (r *ConversationRepository) CreateConversation(_ context.Context, conversat
 	if _, exists := r.conversations[conversation.ID]; exists {
 		return storage.ErrAlreadyExists
 	}
+	conversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
+	if len(conversation.ParticipantRefs) > 0 {
+		conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
+	} else {
+		conversation.Participants = models.CanonicalConversationParticipants(participants)
+	}
 	r.conversations[conversation.ID] = conversation
-	r.participants[conversation.ID] = participants
-	for _, p := range participants {
+	r.participants[conversation.ID] = append([]string(nil), conversation.Participants...)
+	for _, p := range models.ConversationLocalParticipantIDs(conversation) {
 		r.userConversations[p] = append(r.userConversations[p], conversation.ID)
 		key := p + ":" + conversation.ID
 		r.states[key] = &models.UserConversationState{
 			ViewerID:       p,
 			ConversationID: conversation.ID,
-			CounterpartID:  counterpartIDForInMemoryState(p, participants),
+			CounterpartID:  counterpartIDForInMemoryState(p, conversation.Participants),
 			Folder:         models.UserConversationFolderInbox,
 			SortAt:         conversation.UpdatedAt,
 			CreatedAt:      conversation.CreatedAt,
@@ -255,6 +261,12 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 	return nil, storage.ErrNotFound
 }
 
+// GetConversationByParticipantRefs finds a conversation with exact typed participants.
+func (r *ConversationRepository) GetConversationByParticipantRefs(_ context.Context, refs []models.ConversationParticipantRef) (*models.Conversation, error) {
+	participants := models.ConversationParticipantIDsFromRefs(refs)
+	return r.GetConversationByParticipants(context.Background(), participants)
+}
+
 func counterpartIDForInMemoryState(viewerID string, participants []string) string {
 	for _, participantID := range participants {
 		if participantID != viewerID {
@@ -278,6 +290,10 @@ func (r *ConversationRepository) GetUserConversationState(_ context.Context, vie
 		ViewerID:                 state.ViewerID,
 		ConversationID:           state.ConversationID,
 		CounterpartID:            state.CounterpartID,
+		CounterpartType:          state.CounterpartType,
+		CounterpartAcct:          state.CounterpartAcct,
+		CounterpartDomain:        state.CounterpartDomain,
+		CounterpartResolvedAt:    state.CounterpartResolvedAt,
 		Folder:                   state.Folder,
 		RequestState:             state.RequestState,
 		PreviewStatusID:          state.PreviewStatusID,
@@ -322,6 +338,10 @@ func (r *ConversationRepository) ListUserConversationStatesByFolder(_ context.Co
 			ViewerID:                 state.ViewerID,
 			ConversationID:           state.ConversationID,
 			CounterpartID:            state.CounterpartID,
+			CounterpartType:          state.CounterpartType,
+			CounterpartAcct:          state.CounterpartAcct,
+			CounterpartDomain:        state.CounterpartDomain,
+			CounterpartResolvedAt:    state.CounterpartResolvedAt,
 			Folder:                   state.Folder,
 			RequestState:             state.RequestState,
 			PreviewStatusID:          state.PreviewStatusID,
@@ -355,6 +375,10 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(_ context.Cont
 			ViewerID:                 state.ViewerID,
 			ConversationID:           state.ConversationID,
 			CounterpartID:            state.CounterpartID,
+			CounterpartType:          state.CounterpartType,
+			CounterpartAcct:          state.CounterpartAcct,
+			CounterpartDomain:        state.CounterpartDomain,
+			CounterpartResolvedAt:    state.CounterpartResolvedAt,
 			Folder:                   state.Folder,
 			RequestState:             state.RequestState,
 			PreviewStatusID:          state.PreviewStatusID,
@@ -389,6 +413,10 @@ func (r *ConversationRepository) ListConversationParticipantStates(_ context.Con
 			ViewerID:                 state.ViewerID,
 			ConversationID:           state.ConversationID,
 			CounterpartID:            state.CounterpartID,
+			CounterpartType:          state.CounterpartType,
+			CounterpartAcct:          state.CounterpartAcct,
+			CounterpartDomain:        state.CounterpartDomain,
+			CounterpartResolvedAt:    state.CounterpartResolvedAt,
 			Folder:                   state.Folder,
 			RequestState:             state.RequestState,
 			PreviewStatusID:          state.PreviewStatusID,

@@ -30,6 +30,10 @@ type UserConversationStateContract struct {
 	ViewerID                 string
 	ConversationID           string
 	CounterpartID            string
+	CounterpartType          models.ConversationParticipantType
+	CounterpartAcct          string
+	CounterpartDomain        string
+	CounterpartResolvedAt    *time.Time
 	Folder                   UserConversationFolder
 	RequestState             models.DmRequestState
 	PreviewStatusID          string

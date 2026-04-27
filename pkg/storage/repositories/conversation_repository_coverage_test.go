@@ -179,6 +179,52 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_Canonicali
 	conversationQuery.AssertExpectations(t)
 }
 
+func TestRound07_ConversationRepository_GetConversationByParticipantRefs_LoadsTypedLookup(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	lookupQuery := new(mocks.MockQuery)
+	conversationQuery := new(mocks.MockQuery)
+
+	refs := []models.ConversationParticipantRef{
+		{ParticipantType: models.ConversationParticipantTypeRemoteActor, ParticipantID: "https://remote.example/users/bob", Acct: "bob@remote.example"},
+		{ParticipantType: models.ConversationParticipantTypeLocalUser, ParticipantID: "Alice"},
+	}
+	normalized := models.NormalizeConversationParticipantRefs(refs)
+	lookupPK := conversationParticipantLookupV2PK(normalized)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(lookupQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+
+	lookupQuery.On("WithContext", mock.Anything).Return(lookupQuery).Once()
+	lookupQuery.On("ConsistentRead").Return(lookupQuery).Once()
+	lookupQuery.On("Where", "PK", "=", lookupPK).Return(lookupQuery).Once()
+	lookupQuery.On("Where", "SK", "=", conversationParticipantLookupSK).Return(lookupQuery).Once()
+	lookupQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
+		record := args.Get(0).(*models.ConversationParticipantKey)
+		record.ConversationID = "conv-typed"
+	}).Return(nil).Once()
+
+	conversationQuery.On("WithContext", mock.Anything).Return(conversationQuery).Once()
+	conversationQuery.On("ConsistentRead").Return(conversationQuery).Once()
+	conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-typed").Return(conversationQuery).Once()
+	conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+	conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+		conv := args.Get(0).(*models.Conversation)
+		conv.ID = "conv-typed"
+		conv.ParticipantRefs = normalized
+	}).Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	conv, err := repo.GetConversationByParticipantRefs(context.Background(), refs)
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+	require.Equal(t, "conv-typed", conv.ID)
+	require.Equal(t, normalized, conv.ParticipantRefs)
+
+	lookupQuery.AssertExpectations(t)
+	conversationQuery.AssertExpectations(t)
+}
+
 func TestRound07_ConversationRepository_GetConversationByParticipants_ConversationLoadErrorBranches(t *testing.T) {
 	ctx := context.Background()
 
