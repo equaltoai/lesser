@@ -1,8 +1,10 @@
 package activitypub
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +31,13 @@ func TestParseActivity(t *testing.T) {
 
 	t.Run("unmarshal error surfaces as parse failure", func(t *testing.T) {
 		_, err := ParseActivity([]byte(`{"id":123,"type":"Create","actor":"https://example.com/users/alice"}`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse activity")
+	})
+
+	t.Run("json safety limits rejected", func(t *testing.T) {
+		body := `{"id":"https://example.com/a/bomb","type":"Create","actor":"https://example.com/users/alice","object":` + strings.Repeat(`{"nested":`, common.MaxJSONDepth+2) + `"leaf"` + strings.Repeat(`}`, common.MaxJSONDepth+2) + `}`
+		_, err := ParseActivity([]byte(body))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse activity")
 	})

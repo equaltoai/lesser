@@ -88,7 +88,7 @@ func TestActivityProcessor_ProcessActivityDeleted_CreateErrorBranch(t *testing.T
 				"direction": events.NewStringAttribute("outbox"),
 				"username":  events.NewStringAttribute("alice"),
 				"type":      events.NewStringAttribute("Create"),
-				"activity":  events.NewStringAttribute(`{"id":"act-1","type":"Create","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
+				"activity":  events.NewStringAttribute(`{"id":"https://example.com/activities/act-1","type":"Create","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
 			},
 		},
 	})

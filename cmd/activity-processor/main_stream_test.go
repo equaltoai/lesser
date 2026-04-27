@@ -55,7 +55,7 @@ func TestActivityProcessor_StreamProcessingPaths(t *testing.T) {
 				"username":  events.NewStringAttribute("alice"),
 				"actor_id":  events.NewStringAttribute("https://example.com/users/alice"),
 				"type":      events.NewStringAttribute("Like"),
-				"activity":  events.NewStringAttribute(`{"id":"act-1","type":"Like","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
+				"activity":  events.NewStringAttribute(`{"id":"https://example.com/activities/act-1","type":"Like","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
 			},
 		},
 	})

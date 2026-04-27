@@ -194,11 +194,11 @@ func TestActivityProcessor_ProcessRecord_Remove_DeletionSwitchCases(t *testing.T
 		name         string
 		activityJSON string
 	}{
-		{name: "create", activityJSON: `{"id":"act-1","type":"Create","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`},
-		{name: "announce", activityJSON: `{"id":"act-2","type":"Announce","actor":"https://example.com/users/alice","object":"https://example.com/objects/2"}`},
-		{name: "follow", activityJSON: `{"id":"act-3","type":"Follow","actor":"https://example.com/users/alice","object":"https://remote.example/users/bob"}`},
-		{name: "delete", activityJSON: `{"id":"act-4","type":"Delete","actor":"https://example.com/users/alice","object":"https://example.com/objects/3"}`},
-		{name: "default", activityJSON: `{"id":"act-5","type":"Like","actor":"https://example.com/users/alice","object":"https://example.com/objects/4"}`},
+		{name: "create", activityJSON: `{"id":"https://example.com/activities/act-1","type":"Create","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`},
+		{name: "announce", activityJSON: `{"id":"https://example.com/activities/act-2","type":"Announce","actor":"https://example.com/users/alice","object":"https://example.com/objects/2"}`},
+		{name: "follow", activityJSON: `{"id":"https://example.com/activities/act-3","type":"Follow","actor":"https://example.com/users/alice","object":"https://remote.example/users/bob"}`},
+		{name: "delete", activityJSON: `{"id":"https://example.com/activities/act-4","type":"Delete","actor":"https://example.com/users/alice","object":"https://example.com/objects/3"}`},
+		{name: "default", activityJSON: `{"id":"https://example.com/activities/act-5","type":"Like","actor":"https://example.com/users/alice","object":"https://example.com/objects/4"}`},
 	}
 
 	for _, tc := range cases {
@@ -262,7 +262,7 @@ func TestActivityProcessor_ProcessRecord_Insert_Outbox_CreateAndAnnounce(t *test
 				"actor_id":  events.NewStringAttribute("https://example.com/users/alice"),
 				"type":      events.NewStringAttribute("Create"),
 				"activity": events.NewStringAttribute(`{
-					"id":"act-create",
+					"id":"https://example.com/activities/act-create",
 					"type":"Create",
 					"actor":"https://example.com/users/alice",
 					"object":{
@@ -309,7 +309,7 @@ func TestActivityProcessor_ProcessRecord_Insert_Outbox_CreateAndAnnounce(t *test
 				"username":  events.NewStringAttribute("alice"),
 				"actor_id":  events.NewStringAttribute("https://example.com/users/alice"),
 				"type":      events.NewStringAttribute("Announce"),
-				"activity":  events.NewStringAttribute(`{"id":"act-announce","type":"Announce","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
+				"activity":  events.NewStringAttribute(`{"id":"https://example.com/activities/act-announce","type":"Announce","actor":"https://example.com/users/alice","object":"https://example.com/objects/1"}`),
 			},
 		},
 	})
