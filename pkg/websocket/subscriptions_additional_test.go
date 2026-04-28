@@ -230,9 +230,13 @@ func TestWebSocketHandler_Routes(t *testing.T) {
 	h := NewWebSocketHandler(sm, zap.NewNop())
 
 	resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
-		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "$connect"},
-		QueryStringParameters: map[string]string{
-			"user_id": "u1",
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$connect",
+			Authorizer: map[string]any{
+				"username": "u1",
+				"role":     "admin",
+			},
 		},
 	})
 	require.NoError(t, err)
@@ -278,4 +282,47 @@ func TestWebSocketHandler_Routes(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestWebSocketHandler_AdminAlertSubscriptionsRequireAuthenticatedRoles(t *testing.T) {
+	sm := &stubSubscriptionManager{}
+	h := NewWebSocketHandler(sm, zap.NewNop())
+
+	resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
+		Body:           `{"type":"moderation"}`,
+	})
+	require.Error(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+
+	h.rememberConnectionPrincipal("c1", webSocketPrincipal{
+		UserID:        "alice",
+		Role:          "user",
+		Authenticated: true,
+	})
+	resp, err = h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
+		Body:           `{"type":"threat_intel"}`,
+	})
+	require.Error(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+
+	h.rememberConnectionPrincipal("c1", webSocketPrincipal{
+		UserID:        "mod",
+		Role:          "moderator",
+		Authenticated: true,
+	})
+	resp, err = h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
+		Body:           `{"type":"infrastructure"}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	resp, err = h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
+		Body:           `{"type":"timeline"}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
 }

@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -151,6 +152,7 @@ func TestWebSocketHandler_MoreRoutesAndParsing(t *testing.T) {
 	})
 
 	t.Run("subscribe performance uses default severity when missing", func(t *testing.T) {
+		h.rememberConnectionPrincipal("c1", webSocketPrincipal{UserID: "admin", Role: "admin", Authenticated: true})
 		resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
 			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
 			Body:           `{"type":"performance","filter":{}}`,
@@ -161,6 +163,7 @@ func TestWebSocketHandler_MoreRoutesAndParsing(t *testing.T) {
 	})
 
 	t.Run("moderation filter unmarshal failure falls back to empty filter", func(t *testing.T) {
+		h.rememberConnectionPrincipal("c1", webSocketPrincipal{UserID: "admin", Role: "admin", Authenticated: true})
 		resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
 			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
 			Body:           `{"type":"moderation","filter":{"severity":123}}`,
@@ -198,6 +201,46 @@ func TestWebSocketHandler_MoreRoutesAndParsing(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, resp.StatusCode)
 	})
+}
+
+func TestWebSocketHandler_PrincipalHelpers(t *testing.T) {
+	h := NewWebSocketHandler(&stubSubscriptionManager{}, zap.NewNop())
+
+	principal := h.extractPrincipal(events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			Authorizer: map[string]any{
+				"claims": map[string]any{
+					"cognito:username": "mod",
+					"cognito:groups":   []any{"users", "moderator"},
+				},
+			},
+		},
+	})
+	require.True(t, principal.Authenticated)
+	require.Equal(t, "mod", principal.UserID)
+	require.Equal(t, "users,moderator", principal.Role)
+	require.True(t, webSocketRoleAllowsAdminAlerts(principal.Role))
+	require.True(t, webSocketRoleAllowsAdminAlerts("admin"))
+	require.True(t, webSocketRoleAllowsAdminAlerts("mod"))
+	require.False(t, webSocketRoleAllowsAdminAlerts("user"))
+
+	h.rememberConnectionPrincipal("c1", principal)
+	stored, ok := h.connectionPrincipal("c1")
+	require.True(t, ok)
+	require.Equal(t, "mod", stored.UserID)
+
+	h.forgetConnectionPrincipal("c1")
+	_, ok = h.connectionPrincipal("c1")
+	require.False(t, ok)
+
+	anonymous := h.extractPrincipal(events.APIGatewayWebsocketProxyRequest{})
+	require.False(t, anonymous.Authenticated)
+
+	require.Equal(t, http.StatusInternalServerError, webSocketErrorStatus(errors.New("boom")))
+	require.Equal(t, http.StatusForbidden, webSocketErrorStatus(&webSocketStatusError{
+		statusCode: http.StatusForbidden,
+		message:    "forbidden",
+	}))
 }
 
 func TestSubscriptionManager_handleDeadConnection_Async(t *testing.T) {

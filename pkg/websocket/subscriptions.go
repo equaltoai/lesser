@@ -4,7 +4,10 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -513,6 +516,23 @@ func convertToMap(v any) (map[string]any, error) {
 type WebSocketHandler struct {
 	subscriptionManager SubscriptionManager
 	logger              *zap.Logger
+	principalMu         sync.RWMutex
+	principals          map[string]webSocketPrincipal
+}
+
+type webSocketPrincipal struct {
+	UserID        string
+	Role          string
+	Authenticated bool
+}
+
+type webSocketStatusError struct {
+	statusCode int
+	message    string
+}
+
+func (e *webSocketStatusError) Error() string {
+	return e.message
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
@@ -520,6 +540,7 @@ func NewWebSocketHandler(sm SubscriptionManager, logger *zap.Logger) *WebSocketH
 	return &WebSocketHandler{
 		subscriptionManager: sm,
 		logger:              logger,
+		principals:          make(map[string]webSocketPrincipal),
 	}
 }
 
@@ -544,7 +565,12 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(_ context.Context, eve
 
 // handleConnect handles WebSocket connection events
 func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	userID := h.extractUserID(event)
+	principal := h.extractPrincipal(event)
+	userID := principal.UserID
+	if userID == "" {
+		userID = h.extractUserID(event)
+		principal.UserID = userID
+	}
 
 	if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
 		h.logger.Error("Failed to handle connect",
@@ -554,6 +580,8 @@ func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGa
 		)
 		return events.APIGatewayProxyResponse{StatusCode: 500}, err
 	}
+
+	h.rememberConnectionPrincipal(connectionID, principal)
 
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }
@@ -567,8 +595,130 @@ func (h *WebSocketHandler) extractUserID(event events.APIGatewayWebsocketProxyRe
 	return userID
 }
 
+func (h *WebSocketHandler) extractPrincipal(event events.APIGatewayWebsocketProxyRequest) webSocketPrincipal {
+	fields := flattenAuthorizerFields(event.RequestContext.Authorizer)
+	userID := firstAuthorizerField(fields,
+		"username",
+		"user_id",
+		"userid",
+		"user",
+		"sub",
+		"principal_id",
+		"principalid",
+		"cognito_username",
+		"cognitousername",
+	)
+	role := firstAuthorizerField(fields,
+		"role",
+		"roles",
+		"user_role",
+		"userrole",
+		"cognito_groups",
+		"cognitogroups",
+	)
+
+	return webSocketPrincipal{
+		UserID:        userID,
+		Role:          role,
+		Authenticated: userID != "",
+	}
+}
+
+func flattenAuthorizerFields(authorizer any) map[string]string {
+	if authorizer == nil {
+		return nil
+	}
+	data, err := json.Marshal(authorizer)
+	if err != nil {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil
+	}
+
+	fields := map[string]string{}
+	collectAuthorizerFields(fields, "", decoded)
+	return fields
+}
+
+func collectAuthorizerFields(fields map[string]string, prefix string, value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, child := range v {
+			collectAuthorizerFields(fields, key, child)
+			if prefix != "" {
+				collectAuthorizerFields(fields, prefix+"_"+key, child)
+			}
+		}
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, child := range v {
+			if part := strings.TrimSpace(fmt.Sprint(child)); part != "" && part != "<nil>" {
+				parts = append(parts, part)
+			}
+		}
+		if prefix != "" && len(parts) > 0 {
+			fields[normalizeAuthorizerKey(prefix)] = strings.Join(parts, ",")
+		}
+	default:
+		if prefix == "" {
+			return
+		}
+		value := strings.TrimSpace(fmt.Sprint(v))
+		if value == "" || value == "<nil>" {
+			return
+		}
+		fields[normalizeAuthorizerKey(prefix)] = value
+	}
+}
+
+func firstAuthorizerField(fields map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(fields[normalizeAuthorizerKey(key)]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeAuthorizerKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	replacer := strings.NewReplacer("_", "", "-", "", ".", "", ":", "", " ", "")
+	return replacer.Replace(key)
+}
+
+func (h *WebSocketHandler) rememberConnectionPrincipal(connectionID string, principal webSocketPrincipal) {
+	h.principalMu.Lock()
+	defer h.principalMu.Unlock()
+
+	if h.principals == nil {
+		h.principals = make(map[string]webSocketPrincipal)
+	}
+	h.principals[connectionID] = principal
+}
+
+func (h *WebSocketHandler) forgetConnectionPrincipal(connectionID string) {
+	h.principalMu.Lock()
+	defer h.principalMu.Unlock()
+
+	delete(h.principals, connectionID)
+}
+
+func (h *WebSocketHandler) connectionPrincipal(connectionID string) (webSocketPrincipal, bool) {
+	h.principalMu.RLock()
+	defer h.principalMu.RUnlock()
+
+	if h.principals == nil {
+		return webSocketPrincipal{}, false
+	}
+	principal, ok := h.principals[connectionID]
+	return principal, ok
+}
+
 // handleDisconnect handles WebSocket disconnection events
 func (h *WebSocketHandler) handleDisconnect(connectionID string) (events.APIGatewayProxyResponse, error) {
+	h.forgetConnectionPrincipal(connectionID)
 	if err := h.subscriptionManager.HandleDisconnect(connectionID); err != nil {
 		h.logger.Error("Failed to handle disconnect",
 			zap.String("connection_id", connectionID),
@@ -591,7 +741,7 @@ func (h *WebSocketHandler) handleSubscribe(connectionID string, body string) (ev
 
 	err := h.processSubscriptionType(connectionID, request.Type, request.Filter)
 	if err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+		return events.APIGatewayProxyResponse{StatusCode: webSocketErrorStatus(err)}, err
 	}
 
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
@@ -599,6 +749,12 @@ func (h *WebSocketHandler) handleSubscribe(connectionID string, body string) (ev
 
 // processSubscriptionType processes different subscription types
 func (h *WebSocketHandler) processSubscriptionType(connectionID string, subType string, filter any) error {
+	if isAdminAlertSubscriptionType(subType) {
+		if err := h.ensureAdminAlertSubscriptionAuthorized(connectionID); err != nil {
+			return err
+		}
+	}
+
 	switch subType {
 	case "moderation":
 		return h.subscribeModerationQueue(connectionID, filter)
@@ -617,6 +773,53 @@ func (h *WebSocketHandler) processSubscriptionType(connectionID string, subType 
 	default:
 		return fmt.Errorf("unknown subscription type: %s", subType)
 	}
+}
+
+func isAdminAlertSubscriptionType(subType string) bool {
+	switch subType {
+	case "moderation", "threat_intel", "performance", "infrastructure":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *WebSocketHandler) ensureAdminAlertSubscriptionAuthorized(connectionID string) error {
+	principal, ok := h.connectionPrincipal(connectionID)
+	if !ok || !principal.Authenticated {
+		return &webSocketStatusError{
+			statusCode: http.StatusUnauthorized,
+			message:    "admin alert subscriptions require authentication",
+		}
+	}
+	if !webSocketRoleAllowsAdminAlerts(principal.Role) {
+		return &webSocketStatusError{
+			statusCode: http.StatusForbidden,
+			message:    "admin alert subscriptions require admin or moderator role",
+		}
+	}
+	return nil
+}
+
+func webSocketRoleAllowsAdminAlerts(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	for _, part := range strings.FieldsFunc(role, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
+	}) {
+		switch strings.TrimSpace(part) {
+		case "admin", "moderator", "mod":
+			return true
+		}
+	}
+	return false
+}
+
+func webSocketErrorStatus(err error) int {
+	var statusErr *webSocketStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.statusCode
+	}
+	return http.StatusInternalServerError
 }
 
 // subscribeModerationQueue handles moderation queue subscriptions
