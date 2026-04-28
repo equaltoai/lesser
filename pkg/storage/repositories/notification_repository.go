@@ -662,15 +662,12 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 	cursor := ""
 
 	for {
-		query := r.db.WithContext(ctx).Model(&models.Notification{}).
-			Where("PK", "=", pk).
-			Where("SK", "begins_with", "notif#").
-			OrderBy("SK", "DESC").
-			Limit(countBatchLimit)
-
-		if cursor != "" {
-			query = query.Where("SK", "<", cursor)
-		}
+		query := applyNotificationSortKeyScope(
+			r.db.WithContext(ctx).Model(&models.Notification{}).
+				Where("PK", "=", pk).
+				OrderBy("SK", "DESC"),
+			cursor,
+		).Limit(notificationQueryFetchLimit(countBatchLimit, cursor))
 
 		var notifications []models.Notification
 		err := query.All(&notifications)
@@ -680,16 +677,22 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 			}
 			return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "type counting")
 		}
+		notifications = dropNotificationCursorDuplicate(notifications, cursor)
 
 		if len(notifications) == 0 {
 			break
+		}
+
+		hasMore := len(notifications) > countBatchLimit
+		if hasMore {
+			notifications = notifications[:countBatchLimit]
 		}
 
 		for i := range notifications {
 			counts[notifications[i].Type]++
 		}
 
-		if len(notifications) < countBatchLimit {
+		if !hasMore {
 			break
 		}
 

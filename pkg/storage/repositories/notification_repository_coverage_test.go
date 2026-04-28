@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -261,26 +262,36 @@ func TestRound07_NotificationRepository_GetNotificationCountsByType_PaginatesAnd
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
-	// First call: full batch (forces cursor branch).
+	// First call: full logical batch plus sentinel (forces cursor branch).
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.Notification)
-		batch := make([]models.Notification, 500)
+		batch := make([]models.Notification, 501)
 		for i := range batch {
-			batch[i] = models.Notification{Type: "mention", SK: "notif#cursor"}
+			batch[i] = models.Notification{Type: "mention", SK: fmt.Sprintf("notif#%03d", 999-i)}
 		}
 		*ptr = batch
 	}).Return(nil).Once()
 
-	// Second call: empty slice breaks.
+	// Second call: inclusive cursor duplicate plus two real older notifications.
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.Notification)
-		*ptr = nil
+		*ptr = []models.Notification{
+			{Type: "mention", SK: "notif#500"},
+			{Type: "follow", SK: "notif#498"},
+			{Type: "follow", SK: "notif#497"},
+		}
 	}).Return(nil).Once()
 
 	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	counts, err := repo.GetNotificationCountsByType(context.Background(), "user-1")
 	require.NoError(t, err)
 	require.Equal(t, int64(500), counts["mention"])
+	require.Equal(t, int64(2), counts["follow"])
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 1, countMockLimitCalls(mockQuery, 501))
+	require.Equal(t, 1, countMockLimitCalls(mockQuery, 502))
 
 	// NotFound breaks without error.
 	mockQuery.On("All", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()
