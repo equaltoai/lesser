@@ -102,10 +102,15 @@ func redactGraphAgentPrivateFields(agent *model.Agent) {
 	}
 	agent.AgentOwner = nil
 	agent.DelegatedScopes = []string{}
-	if agent.IdentitySemantics != nil {
-		agent.IdentitySemantics.SoulAgentID = nil
-		agent.IdentitySemantics.SoulBindingState = model.SoulBindingStateUnbound
+	redactGraphAgentIdentitySemantics(agent.IdentitySemantics)
+}
+
+func redactGraphAgentIdentitySemantics(identity *model.AgentIdentitySemantics) {
+	if identity == nil {
+		return
 	}
+	identity.SoulAgentID = nil
+	identity.SoulBindingState = model.SoulBindingStateUnbound
 }
 
 func graphAgentQuarantineFields(governance *storage.AgentGovernanceState) (*string, *model.Time, *model.Time, *string, *model.Time, bool) {

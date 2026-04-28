@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func allowLocalLesserHostProxyForTests(t *testing.T) {
@@ -275,6 +276,33 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.NoError(t, err)
 
 		requireStatus(t, http.StatusBadRequest)(h.HandleTrustGetRenderThumbnailLift(ctx))
+	})
+
+	t.Run("missing_asset_ids_return_400_before_proxy", func(t *testing.T) {
+		cfg := round11TestConfig()
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		cases := []struct {
+			name    string
+			path    string
+			handler func(*apptheory.Context) (*apptheory.Response, error)
+		}{
+			{name: "preview", path: "/api/v1/trust/previews/", handler: h.HandleTrustGetLinkPreviewLift},
+			{name: "preview_image", path: "/api/v1/trust/previews/images/", handler: h.HandleTrustGetLinkPreviewImageLift},
+			{name: "publish_job", path: "/api/v1/trust/publish/jobs/", handler: h.HandleTrustGetPublishJobLift},
+			{name: "render", path: "/api/v1/trust/renders/", handler: h.HandleTrustGetRenderLift},
+			{name: "render_snapshot", path: "/api/v1/trust/renders//snapshot", handler: h.HandleTrustGetRenderSnapshotLift},
+			{name: "attestation", path: "/api/v1/trust/attestations/", handler: h.HandleTrustGetAttestationLift},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx, err := round10NewLiftContext(http.MethodGet, tc.path, nil, nil, nil)
+				require.NoError(t, err)
+
+				requireStatus(t, http.StatusBadRequest)(tc.handler(ctx))
+			})
+		}
 	})
 
 	t.Run("missing_job_id_returns_400", func(t *testing.T) {
