@@ -471,7 +471,7 @@ func (s *Service) GetScheduledMediaAttachments(ctx context.Context, scheduledSta
 			continue
 		}
 
-		if media.Status != "ready" && media.Status != "completed" {
+		if media.Status != models.MediaStatusReady && media.Status != models.MediaStatusCompleted {
 			s.logger.Warn("skipping scheduled media attachment not ready",
 				zap.String("scheduled_status_id", scheduledStatusID),
 				zap.String("media_id", media.MediaID),
@@ -534,7 +534,7 @@ func (s *Service) validateMediaAttachments(ctx context.Context, username string,
 		}
 
 		// Validate media is in ready state
-		if media.Status != "ready" && media.Status != "completed" {
+		if media.Status != models.MediaStatusReady && media.Status != models.MediaStatusCompleted {
 			s.logger.Error("media attachment not ready",
 				zap.String("media_id", mediaID),
 				zap.String("status", media.Status))
@@ -580,7 +580,7 @@ func (s *Service) getMediaAttachments(ctx context.Context, username string, medi
 		}
 
 		// Only include ready/completed media
-		if media.Status == "ready" || media.Status == "completed" {
+		if media.Status == models.MediaStatusReady || media.Status == models.MediaStatusCompleted {
 			mediaItems = append(mediaItems, media)
 			s.logger.Debug("retrieved media attachment",
 				zap.String("media_id", mediaID),
