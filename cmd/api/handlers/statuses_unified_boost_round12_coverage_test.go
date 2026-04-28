@@ -3,11 +3,13 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -45,7 +47,7 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(h.HandleUnifiedBoostLift(ctxUnauthed))
 	})
 
-	t.Run("handle unified boost: parse fallback -> pure boost", func(t *testing.T) {
+	t.Run("handle unified boost: invalid json is rejected", func(t *testing.T) {
 		state := &round10QueryState{
 			actorsByUser: map[string]storagemodels.Actor{
 				"alice": {Username: "alice", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"}}},
@@ -58,7 +60,24 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/123/reblog", headers, nil, []byte(`{invalid}`))
 		ctx.Params["id"] = "123"
 
-		requireStatus(t, http.StatusOK)(h.HandleUnifiedBoostLift(ctx))
+		requireStatus(t, http.StatusBadRequest)(h.HandleUnifiedBoostLift(ctx))
+	})
+
+	t.Run("handle unified boost: rejects oversized and overlong quote comments", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		tooLarge := []byte(`{"comment":"` + strings.Repeat("a", maxUnifiedBoostRequestBodyBytes) + `"}`)
+		ctxTooLarge := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/123/reblog", headers, nil, tooLarge)
+		ctxTooLarge.Params["id"] = "123"
+		requireStatus(t, http.StatusBadRequest)(h.HandleUnifiedBoostLift(ctxTooLarge))
+
+		tooLong := strings.Repeat("a", common.MaxStatusLength+1)
+		ctxTooLong, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/reblog", headers, nil, models.ReblogRequest{Comment: &tooLong})
+		require.NoError(t, err)
+		ctxTooLong.Params["id"] = "123"
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleUnifiedBoostLift(ctxTooLong))
 	})
 
 	t.Run("pure boost: create announce error", func(t *testing.T) {
