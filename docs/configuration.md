@@ -231,6 +231,10 @@ CRAWLER_PROTECTION_MODE=off # off|observe|limit|block
 # Emergency bypass (skip block + rate limiting for matching client IPs)
 CRAWLER_PROTECTION_BYPASS_CIDRS="" # comma-separated CIDRs or IPs
 
+# Forwarded client IP trust roots. X-Forwarded-For is ignored unless its chain
+# includes one of these proxy CIDRs; leave empty to fail closed.
+CRAWLER_TRUSTED_PROXY_CIDRS="" # comma-separated CIDRs or IPs
+
 # Hard-block toggle (only relevant when CRAWLER_PROTECTION_MODE=block)
 CRAWLER_BLOCK_AI_CRAWLERS=true
 
