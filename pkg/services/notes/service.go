@@ -2308,6 +2308,46 @@ func isAlreadyExistsError(err error) bool {
 	return strings.Contains(lower, "already") || strings.Contains(lower, "condition check failed")
 }
 
+func statusStreamingPayload(payload map[string]interface{}, shared bool) map[string]interface{} {
+	if len(payload) == 0 {
+		return payload
+	}
+
+	cloned := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if shared {
+			switch typed := value.(type) {
+			case *models.Status:
+				cloned[key] = sanitizeStatusForSharedStream(typed)
+				continue
+			case models.Status:
+				cloned[key] = *sanitizeStatusForSharedStream(&typed)
+				continue
+			}
+		}
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func sanitizeStatusForSharedStream(status *models.Status) *models.Status {
+	if status == nil {
+		return nil
+	}
+
+	sanitized := *status
+	sanitized.BtoRecipients = nil
+	sanitized.BccRecipients = nil
+	if status.Note != nil {
+		note := *status.Note
+		note.BTo = nil
+		note.BCC = nil
+		sanitized.Note = &note
+	}
+
+	return &sanitized
+}
+
 func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityCreatedEvents(ctx, "status", status.StatusID, status.AuthorID, status)
@@ -2319,7 +2359,7 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 			Type:      businessEvent.Type,
 			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername),
 			Timestamp: businessEvent.Timestamp,
-			Payload:   businessEvent.Metadata,
+			Payload:   statusStreamingPayload(businessEvent.Metadata, false),
 		}
 
 		// Emit to user's stream
@@ -2335,6 +2375,7 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 		if status.IsPublic() {
 			publicEvent := *streamingEvent
 			publicEvent.Stream = "public"
+			publicEvent.Payload = statusStreamingPayload(businessEvent.Metadata, true)
 			if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
 				s.logger.Error("failed to publish to public stream", zap.Error(err))
 			} else {
@@ -2342,16 +2383,21 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 			}
 		}
 
-		// Emit to hashtag streams for this event
-		for _, hashtag := range status.Hashtags {
-			hashtagEvent := *streamingEvent
-			hashtagEvent.Stream = fmt.Sprintf("hashtag:%s", hashtag)
-			if err := s.publisher.PublishToStream(ctx, hashtagEvent.Stream, &hashtagEvent); err != nil {
-				s.logger.Error("failed to publish to hashtag stream",
-					zap.String("hashtag", hashtag),
-					zap.Error(err))
-			} else {
-				streamingEvents = append(streamingEvents, &hashtagEvent)
+		// Emit to hashtag streams only for public posts. Hashtag streams are
+		// shared streams, so private/direct/unlisted content must not appear
+		// there even with sanitized recipient fields.
+		if status.IsPublic() {
+			for _, hashtag := range status.Hashtags {
+				hashtagEvent := *streamingEvent
+				hashtagEvent.Stream = fmt.Sprintf("hashtag:%s", hashtag)
+				hashtagEvent.Payload = statusStreamingPayload(businessEvent.Metadata, true)
+				if err := s.publisher.PublishToStream(ctx, hashtagEvent.Stream, &hashtagEvent); err != nil {
+					s.logger.Error("failed to publish to hashtag stream",
+						zap.String("hashtag", hashtag),
+						zap.Error(err))
+				} else {
+					streamingEvents = append(streamingEvents, &hashtagEvent)
+				}
 			}
 		}
 
@@ -2359,6 +2405,7 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 		if status.IsDirect() && status.ConversationID != "" {
 			conversationEvent := *streamingEvent
 			conversationEvent.Stream = fmt.Sprintf("conversation:%s", status.ConversationID)
+			conversationEvent.Payload = statusStreamingPayload(businessEvent.Metadata, true)
 			if err := s.publisher.PublishToConversation(ctx, status.ConversationID, &conversationEvent); err != nil {
 				s.logger.Error("failed to publish to conversation stream", zap.Error(err))
 			} else {
@@ -2670,6 +2717,7 @@ func (s *Service) emitReblogEvents(ctx context.Context, status *models.Status, r
 	if status.IsPublic() {
 		publicEvent := *event
 		publicEvent.Stream = "public"
+		publicEvent.Payload = statusStreamingPayload(event.Payload, true)
 		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
 			s.logger.Error("failed to publish reblog to public stream", zap.Error(err))
 		} else {
