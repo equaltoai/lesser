@@ -69,7 +69,7 @@ func validNotificationFallbackActorURL(parsed *neturl.URL) bool {
 		return false
 	}
 	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
-	if scheme != "https" && scheme != "http" {
+	if scheme != schemeHTTPS && scheme != schemeHTTP {
 		return false
 	}
 	if strings.TrimSpace(parsed.Hostname()) == "" || parsed.User != nil {

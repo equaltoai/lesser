@@ -52,7 +52,7 @@ func isNotFoundError(err error) bool {
 	return errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)
 }
 
-func (h *Handler) adminInternalServerError(ctx *apptheory.Context, err error) (*apptheory.Response, error) {
+func (h *Handler) adminInternalServerError(_ *apptheory.Context, err error) (*apptheory.Response, error) {
 	if h != nil && h.logger != nil {
 		h.logger.Error("admin handler internal error", zap.Error(err))
 	}

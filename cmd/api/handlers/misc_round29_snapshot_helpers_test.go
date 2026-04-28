@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -141,5 +142,88 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 
 	t.Run("notificationSnapshotString ignores non-string values", func(t *testing.T) {
 		require.Equal(t, "", notificationSnapshotString(map[string]interface{}{"createdAt": 123}, "createdAt"))
+	})
+}
+
+func TestMisc_NotificationVisibilityContextRecipients_Round29(t *testing.T) {
+	t.Run("note includes recipients and mention targets", func(t *testing.T) {
+		visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(&activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				To:  []string{" https://example.com/users/alice ", ""},
+				CC:  []string{"https://www.w3.org/ns/activitystreams#Public"},
+				BTo: []string{"https://example.com/users/bob"},
+				BCC: []string{"https://example.com/users/carol"},
+			},
+			AttributedTo: "https://example.com/users/author",
+			Visibility:   "private",
+			Tag: []activitypub.Tag{
+				{Type: "Mention", Href: "https://example.com/users/alice", Name: "@alice@example.com"},
+				{Type: "Hashtag", Href: "https://example.com/tags/lesser", Name: "#lesser"},
+			},
+		})
+
+		require.Equal(t, "private", visibility)
+		require.Equal(t, "https://example.com/users/author", attributedTo)
+		require.Equal(t, []string{
+			"https://example.com/users/alice",
+			"https://www.w3.org/ns/activitystreams#Public",
+			"https://example.com/users/bob",
+			"https://example.com/users/carol",
+		}, recipients)
+		require.Equal(t, []string{"https://example.com/users/alice", "@alice@example.com"}, mentions)
+	})
+
+	t.Run("stored object includes recipients without mention targets", func(t *testing.T) {
+		visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(&storagemodels.Object{
+			Visibility:   "unlisted",
+			AttributedTo: "https://example.com/users/author",
+			To:           []string{"https://example.com/users/alice"},
+			CC:           []string{"https://www.w3.org/ns/activitystreams#Public"},
+			BTo:          []string{"https://example.com/users/bob"},
+			BCC:          []string{"https://example.com/users/carol"},
+		})
+
+		require.Equal(t, "unlisted", visibility)
+		require.Equal(t, "https://example.com/users/author", attributedTo)
+		require.Equal(t, []string{
+			"https://example.com/users/alice",
+			"https://www.w3.org/ns/activitystreams#Public",
+			"https://example.com/users/bob",
+			"https://example.com/users/carol",
+		}, recipients)
+		require.Nil(t, mentions)
+	})
+
+	t.Run("snapshot maps normalize mixed recipient and tag values", func(t *testing.T) {
+		visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(map[string]interface{}{
+			"visibility":   "direct",
+			"attributedTo": "https://example.com/users/author",
+			"to":           []interface{}{" https://example.com/users/alice ", 123, ""},
+			"cc":           []string{"https://www.w3.org/ns/activitystreams#Public"},
+			"bto":          []interface{}{"https://example.com/users/bob"},
+			"bcc":          "not-a-list",
+			"tag": []interface{}{
+				map[string]interface{}{"type": "Mention", "href": "https://example.com/users/alice", "name": "@alice@example.com"},
+				map[string]interface{}{"type": "Hashtag", "href": "https://example.com/tags/lesser", "name": "#lesser"},
+				"bad-tag",
+			},
+		})
+
+		require.Equal(t, "direct", visibility)
+		require.Equal(t, "https://example.com/users/author", attributedTo)
+		require.Equal(t, []string{
+			"https://example.com/users/alice",
+			"https://www.w3.org/ns/activitystreams#Public",
+			"https://example.com/users/bob",
+		}, recipients)
+		require.Equal(t, []string{"https://example.com/users/alice", "@alice@example.com"}, mentions)
+	})
+
+	t.Run("unsupported objects return empty context", func(t *testing.T) {
+		visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext("bad")
+		require.Empty(t, visibility)
+		require.Empty(t, attributedTo)
+		require.Nil(t, recipients)
+		require.Nil(t, mentions)
 	})
 }
