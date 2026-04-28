@@ -539,4 +539,21 @@ func TestValidateEntityIDsListCoverage(t *testing.T) {
 		err := ValidateEntityIDsList([]string{}, "item")
 		assert.Error(t, err)
 	})
+
+	t.Run("too long entity", func(t *testing.T) {
+		err := ValidateEntityIDsList([]string{strings.Repeat("a", 501)}, "item")
+		assert.Error(t, err)
+	})
+}
+
+func TestValidateEntityIDCoverage(t *testing.T) {
+	assert.NoError(t, ValidateEntityID("valid-id", "item"))
+	assert.Error(t, ValidateEntityID("", "item"))
+	assert.Error(t, ValidateEntityID(strings.Repeat("a", 501), "item"))
+}
+
+func TestValidateLanguageCodeCoverage(t *testing.T) {
+	assert.NoError(t, ValidateLanguageCode(""))
+	assert.NoError(t, ValidateLanguageCode("en"))
+	assert.Error(t, ValidateLanguageCode("eng"))
 }
