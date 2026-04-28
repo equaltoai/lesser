@@ -208,10 +208,11 @@ func (s *Service) GetMediaRenditions(ctx context.Context, mediaID string) (*Rend
 	return renditions, nil
 }
 
-// GenerateSignedStreamURL generates a signed streaming URL for a media item
-func (s *Service) GenerateSignedStreamURL(ctx context.Context, mediaID string, quality *string) (*StreamSession, error) {
+// GenerateSignedStreamURL generates a signed streaming URL for a media item owned by viewerID.
+func (s *Service) GenerateSignedStreamURL(ctx context.Context, mediaID string, viewerID string, quality *string) (*StreamSession, error) {
 	s.logger.Debug("generating signed stream URL",
 		zap.String("media_id", mediaID),
+		zap.String("viewer_id", viewerID),
 		zap.Any("quality", quality))
 
 	// Validate CloudFront service is available
@@ -223,6 +224,14 @@ func (s *Service) GenerateSignedStreamURL(ctx context.Context, mediaID string, q
 	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
 	if err != nil {
 		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+
+	if !s.isOwnedByViewer(media, viewerID) {
+		s.logger.Warn("denying signed stream URL ownership mismatch",
+			zap.String("media_id", mediaID),
+			zap.String("media_owner", media.UserID),
+			zap.String("viewer_id", viewerID))
+		return nil, ErrMediaUnauthorizedAccess
 	}
 
 	// Verify media is ready
@@ -268,20 +277,12 @@ func (s *Service) GenerateSignedStreamURL(ctx context.Context, mediaID string, q
 	return session, nil
 }
 
-// PreloadMedia preloads manifests and primes CDN cache for media items
-func (s *Service) PreloadMedia(ctx context.Context, mediaIDs []string) ([]string, error) {
+// PreloadMedia preloads manifests and primes CDN cache for media items owned by viewerID.
+func (s *Service) PreloadMedia(ctx context.Context, viewerID string, mediaIDs []string) ([]string, error) {
 	s.logger.Info("preloading media", zap.Int("count", len(mediaIDs)))
 
 	successfulIDs := []string{}
 	var preloadErrors []error
-
-	// If manifest service is available, preload manifests
-	if s.manifestService != nil {
-		if err := s.manifestService.PreloadManifests(ctx, mediaIDs); err != nil {
-			s.logger.Warn("failed to preload manifests", zap.Error(err))
-			preloadErrors = append(preloadErrors, err)
-		}
-	}
 
 	// Verify each media item is ready
 	for _, mediaID := range mediaIDs {
@@ -294,12 +295,30 @@ func (s *Service) PreloadMedia(ctx context.Context, mediaIDs []string) ([]string
 			continue
 		}
 
+		if !s.isOwnedByViewer(media, viewerID) {
+			s.logger.Warn("skipping media preload ownership mismatch",
+				zap.String("media_id", mediaID),
+				zap.String("media_owner", media.UserID),
+				zap.String("viewer_id", viewerID))
+			preloadErrors = append(preloadErrors, ErrMediaUnauthorizedAccess)
+			continue
+		}
+
 		if media.IsReady() {
 			successfulIDs = append(successfulIDs, mediaID)
 		} else {
 			s.logger.Warn("media not ready for preload",
 				zap.String("media_id", mediaID),
 				zap.String("status", media.Status))
+		}
+	}
+
+	// If manifest service is available, preload only media that passed ownership
+	// and readiness checks.
+	if len(successfulIDs) > 0 && s.manifestService != nil {
+		if err := s.manifestService.PreloadManifests(ctx, successfulIDs); err != nil {
+			s.logger.Warn("failed to preload manifests", zap.Error(err))
+			preloadErrors = append(preloadErrors, err)
 		}
 	}
 

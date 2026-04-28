@@ -378,7 +378,7 @@ func (h *Handler) convertScheduledStatusesToAPI(ctx *apptheory.Context, statuses
 		if len(status.MediaIDs) > 0 {
 			// Get scheduled service to fetch media
 			if scheduledService := h.registry.Scheduled(); scheduledService != nil {
-				mediaAttachments, _ = scheduledService.GetScheduledMediaAttachments(ctx.Context(), status.ID)
+				mediaAttachments, _ = scheduledService.GetScheduledMediaAttachments(ctx.Context(), status.ID, status.Username)
 			}
 		}
 

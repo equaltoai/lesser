@@ -224,7 +224,7 @@ func TestService_GenerateSignedStreamURL_round26_coverage(t *testing.T) {
 
 	t.Run("cloudfront_missing", func(t *testing.T) {
 		svc := NewService(&MockMediaRepository{}, nil, publisher, &MockJobQueueService{}, logger, "bucket", "cdn.example")
-		_, err := svc.GenerateSignedStreamURL(ctx, "m1", nil)
+		_, err := svc.GenerateSignedStreamURL(ctx, "m1", "alice", nil)
 		require.ErrorIs(t, err, ErrCloudFrontServiceUnavailable)
 	})
 
@@ -232,10 +232,22 @@ func TestService_GenerateSignedStreamURL_round26_coverage(t *testing.T) {
 		mediaRepo := new(MockMediaRepository)
 		svc := NewService(mediaRepo, nil, publisher, &MockJobQueueService{}, logger, "bucket", "cdn.example")
 		svc.cloudfrontService = &fakeCloudFrontService{signedURL: "https://signed"}
-		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", Status: "processing"}, nil)
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "alice", Status: "processing"}, nil)
 
-		_, err := svc.GenerateSignedStreamURL(ctx, "m1", nil)
+		_, err := svc.GenerateSignedStreamURL(ctx, "m1", "alice", nil)
 		require.ErrorIs(t, err, ErrMediaNotReadyForStreaming)
+	})
+
+	t.Run("owner_required", func(t *testing.T) {
+		mediaRepo := new(MockMediaRepository)
+		svc := NewService(mediaRepo, nil, publisher, &MockJobQueueService{}, logger, "bucket", "cdn.example")
+		cf := &fakeCloudFrontService{signedURL: "https://signed"}
+		svc.cloudfrontService = cf
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "bob", Status: "ready"}, nil)
+
+		_, err := svc.GenerateSignedStreamURL(ctx, "m1", "alice", nil)
+		require.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+		require.Empty(t, cf.calls)
 	})
 
 	t.Run("success_quality_and_bitrate", func(t *testing.T) {
@@ -243,10 +255,10 @@ func TestService_GenerateSignedStreamURL_round26_coverage(t *testing.T) {
 		svc := NewService(mediaRepo, nil, publisher, &MockJobQueueService{}, logger, "bucket", "cdn.example")
 		cf := &fakeCloudFrontService{signedURL: "https://signed"}
 		svc.cloudfrontService = cf
-		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", Status: "ready"}, nil)
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "alice", Status: "ready"}, nil)
 
 		q := "480p"
-		session, err := svc.GenerateSignedStreamURL(ctx, "m1", &q)
+		session, err := svc.GenerateSignedStreamURL(ctx, "m1", "alice", &q)
 		require.NoError(t, err)
 		assert.Equal(t, "https://signed", session.URL)
 		assert.Equal(t, "480p", session.Quality)
@@ -270,18 +282,19 @@ func TestService_PreloadMedia_round26_coverage(t *testing.T) {
 		mediaRepo.On("GetMedia", ctx, "m1").Return((*models.Media)(nil), stderrors.New("boom"))
 		mediaRepo.On("GetMedia", ctx, "m2").Return((*models.Media)(nil), stderrors.New("boom"))
 
-		_, err := svc.PreloadMedia(ctx, []string{"m1", "m2"})
+		_, err := svc.PreloadMedia(ctx, "alice", []string{"m1", "m2"})
 		require.Error(t, err)
 	})
 
-	t.Run("returns_ready_ids", func(t *testing.T) {
+	t.Run("returns_owned_ready_ids", func(t *testing.T) {
 		mediaRepo := new(MockMediaRepository)
 		svc := NewService(mediaRepo, nil, publisher, &MockJobQueueService{}, logger, "bucket", "cdn.example")
 
-		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", Status: "ready"}, nil)
-		mediaRepo.On("GetMedia", ctx, "m2").Return(&models.Media{MediaID: "m2", Status: "processing"}, nil)
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "alice", Status: "ready"}, nil)
+		mediaRepo.On("GetMedia", ctx, "m2").Return(&models.Media{MediaID: "m2", UserID: "alice", Status: "processing"}, nil)
+		mediaRepo.On("GetMedia", ctx, "m3").Return(&models.Media{MediaID: "m3", UserID: "bob", Status: "ready"}, nil)
 
-		ids, err := svc.PreloadMedia(ctx, []string{"m1", "m2"})
+		ids, err := svc.PreloadMedia(ctx, "alice", []string{"m1", "m2", "m3"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"m1"}, ids)
 	})

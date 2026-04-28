@@ -626,6 +626,10 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 	return nil
 }
 
+func (s *Service) isOwnedByViewer(media *models.Media, viewerID string) bool {
+	return media != nil && strings.TrimSpace(viewerID) != "" && media.UserID == viewerID
+}
+
 func (s *Service) emitMediaUploadedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
 
@@ -842,15 +846,26 @@ func (s *Service) MarkMediaFailed(ctx context.Context, mediaID string, errorMsg 
 	return nil
 }
 
-// GetStreamingURL returns a media streaming URL and metadata for GraphQL
-func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.MediaStream, error) {
+// GetStreamingURL returns a media streaming URL and metadata for GraphQL.
+// The viewer must own the media; public status/object resolvers should expose
+// already-authorized attachment URLs instead of minting owner-scoped stream URLs.
+func (s *Service) GetStreamingURL(ctx context.Context, mediaID string, viewerID string) (*model.MediaStream, error) {
 	s.logger.Debug("getting media streaming URL",
-		zap.String("media_id", mediaID))
+		zap.String("media_id", mediaID),
+		zap.String("viewer_id", viewerID))
 
 	// Get the media record
 	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
 	if err != nil {
 		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+
+	if !s.isOwnedByViewer(media, viewerID) {
+		s.logger.Warn("denying media streaming URL ownership mismatch",
+			zap.String("media_id", mediaID),
+			zap.String("media_owner", media.UserID),
+			zap.String("viewer_id", viewerID))
+		return nil, ErrMediaUnauthorizedAccess
 	}
 
 	// Verify media is ready for streaming

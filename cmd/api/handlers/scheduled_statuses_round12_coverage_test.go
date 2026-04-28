@@ -194,7 +194,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 						Pagination: nil,
 					}, nil
 				},
-				GetScheduledMediaAttachmentsFunc: func(ctx context.Context, scheduledStatusID string) ([]*storagemodels.Media, error) {
+				GetScheduledMediaAttachmentsFunc: func(ctx context.Context, scheduledStatusID string, username string) ([]*storagemodels.Media, error) {
 					return []*storagemodels.Media{{MediaID: "m", ContentType: "video/mp4", CDNUrl: "https://example.com/v.mp4", Width: 1, Height: 1, Duration: 1}}, nil
 				},
 			},

@@ -174,7 +174,7 @@ type RelationshipsService interface {
 type ScheduledService interface {
 	CreateScheduledStatus(ctx context.Context, cmd *scheduled.CreateScheduledStatusCommand) (*scheduled.StatusResult, error)
 	DeleteScheduledStatus(ctx context.Context, cmd *scheduled.DeleteScheduledStatusCommand) error
-	GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) ([]*storagemodels.Media, error)
+	GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string, username string) ([]*storagemodels.Media, error)
 	GetScheduledStatus(ctx context.Context, query *scheduled.GetScheduledStatusQuery) (*scheduled.StatusResult, error)
 	ListScheduledStatuses(ctx context.Context, query *scheduled.ListScheduledStatusesQuery) (*scheduled.StatusListResult, error)
 	UpdateScheduledStatus(ctx context.Context, cmd *scheduled.UpdateScheduledStatusCommand) (*scheduled.StatusResult, error)

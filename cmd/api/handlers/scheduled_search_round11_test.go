@@ -80,7 +80,7 @@ func TestScheduledStatusHandlers_Round11(t *testing.T) {
 					},
 				}, nil
 			},
-			GetScheduledMediaAttachmentsFunc: func(ctx context.Context, scheduledStatusID string) ([]*storagemodels.Media, error) {
+			GetScheduledMediaAttachmentsFunc: func(ctx context.Context, scheduledStatusID string, username string) ([]*storagemodels.Media, error) {
 				return []*storagemodels.Media{{MediaID: "media-1", ContentType: "video/mp4", CDNUrl: "https://example.com/video.mp4", Width: 1920, Height: 1080, Duration: 3}}, nil
 			},
 		},

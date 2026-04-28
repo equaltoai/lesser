@@ -81,10 +81,19 @@ func TestService_GetStreamingURL(t *testing.T) {
 	t.Run("not ready returns expected error", func(t *testing.T) {
 		service := NewService(new(MockMediaRepository), nil, nil, nil, zap.NewNop(), "bucket", "cdn.example.com")
 		mediaRepo := service.mediaRepo.(*MockMediaRepository)
-		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", Status: "processing"}, nil).Once()
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "alice", Status: "processing"}, nil).Once()
 
-		_, err := service.GetStreamingURL(ctx, "m1")
+		_, err := service.GetStreamingURL(ctx, "m1", "alice")
 		require.ErrorIs(t, err, ErrMediaNotReadyForStreaming)
+	})
+
+	t.Run("viewer must own media", func(t *testing.T) {
+		service := NewService(new(MockMediaRepository), nil, nil, nil, zap.NewNop(), "bucket", "cdn.example.com")
+		mediaRepo := service.mediaRepo.(*MockMediaRepository)
+		mediaRepo.On("GetMedia", ctx, "m1").Return(&models.Media{MediaID: "m1", UserID: "bob", Status: "ready"}, nil).Once()
+
+		_, err := service.GetStreamingURL(ctx, "m1", "alice")
+		require.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
 	})
 
 	t.Run("uses CDN URLs when available", func(t *testing.T) {
@@ -92,6 +101,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		mediaRepo := service.mediaRepo.(*MockMediaRepository)
 		media := &models.Media{
 			MediaID:     "m2",
+			UserID:      "alice",
 			Status:      "ready",
 			ContentType: "image/jpeg",
 			CDNUrl:      "https://cdn.example.com/media/m2",
@@ -104,7 +114,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		}
 		mediaRepo.On("GetMedia", ctx, "m2").Return(media, nil).Once()
 
-		out, err := service.GetStreamingURL(ctx, "m2")
+		out, err := service.GetStreamingURL(ctx, "m2", "alice")
 		require.NoError(t, err)
 		require.Equal(t, "https://cdn.example.com/media/m2", out.URL)
 		require.Equal(t, "https://cdn.example.com/media/m2/thumb", out.ThumbnailURL)
@@ -115,6 +125,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		mediaRepo := service.mediaRepo.(*MockMediaRepository)
 		media := &models.Media{
 			MediaID:     "m3",
+			UserID:      "alice",
 			Status:      "ready",
 			ContentType: "image/jpeg",
 			CDNUrl:      "",
@@ -127,7 +138,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		}
 		mediaRepo.On("GetMedia", ctx, "m3").Return(media, nil).Once()
 
-		out, err := service.GetStreamingURL(ctx, "m3")
+		out, err := service.GetStreamingURL(ctx, "m3", "alice")
 		require.NoError(t, err)
 		require.Equal(t, "https://bucket.s3.amazonaws.com/key/m3", out.URL)
 		require.Equal(t, "https://bucket.s3.amazonaws.com/thumb/m3", out.ThumbnailURL)
@@ -138,6 +149,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		mediaRepo := service.mediaRepo.(*MockMediaRepository)
 		media := &models.Media{
 			MediaID:     "m4",
+			UserID:      "alice",
 			Status:      "ready",
 			ContentType: "video/mp4",
 			S3Bucket:    "bucket",
@@ -150,7 +162,7 @@ func TestService_GetStreamingURL(t *testing.T) {
 		}
 		mediaRepo.On("GetMedia", ctx, "m4").Return(media, nil).Once()
 
-		out, err := service.GetStreamingURL(ctx, "m4")
+		out, err := service.GetStreamingURL(ctx, "m4", "alice")
 		require.NoError(t, err)
 		require.Len(t, out.Bitrates, 2)
 
