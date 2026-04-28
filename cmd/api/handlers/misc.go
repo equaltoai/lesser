@@ -880,6 +880,14 @@ func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, notif *stor
 		return
 	}
 
+	if !h.notificationObjectVisibleToViewer(ctx.Context(), notif, obj) {
+		h.logger.Debug("skipping notification status expansion due to visibility",
+			zap.String("notification_id", notif.ID),
+			zap.String("status_id", notif.StatusID),
+			zap.String("viewer", notif.Username))
+		return
+	}
+
 	// Get status author
 	statusActor := h.extractStatusAuthor(ctx, obj)
 
@@ -918,6 +926,13 @@ func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *
 		return nil
 	}
 
+	if !h.notificationSnapshotVisibleToViewer(ctx.Context(), notif, snapshot) {
+		h.logger.Debug("skipping notification snapshot expansion due to visibility",
+			zap.String("notification_id", notif.ID),
+			zap.String("viewer", notif.Username))
+		return nil
+	}
+
 	statusActor := h.notificationSnapshotActor(ctx, snapshot)
 	status := transformations.ObjectToStatusBase(notificationSnapshotObjectMap(snapshot), statusActor, h.cfg.BaseURL())
 	if status.ID == "" {
@@ -932,6 +947,102 @@ func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *
 	}
 
 	return &status
+}
+
+func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, notif *storage.Notification, snapshot map[string]interface{}) bool {
+	return h.notificationStatusVisibleToViewer(ctx,
+		notif,
+		notificationSnapshotString(snapshot, "visibility"),
+		notificationSnapshotString(snapshot, "attributedTo"),
+		nil,
+		nil,
+	)
+}
+
+func (h *Handler) notificationObjectVisibleToViewer(ctx context.Context, notif *storage.Notification, obj any) bool {
+	visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(obj)
+	return h.notificationStatusVisibleToViewer(ctx, notif, visibility, attributedTo, recipients, mentions)
+}
+
+func (h *Handler) notificationStatusVisibleToViewer(
+	ctx context.Context,
+	notif *storage.Notification,
+	visibility string,
+	attributedTo string,
+	recipients []string,
+	mentions []string,
+) bool {
+	visibility = strings.TrimSpace(visibility)
+	if visibility == "" {
+		visibility = storagemodels.VisibilityPublic
+	}
+
+	switch visibility {
+	case storagemodels.VisibilityPublic, storagemodels.VisibilityUnlisted:
+		return true
+	}
+
+	if notif == nil {
+		return false
+	}
+	viewer := strings.TrimSpace(notif.Username)
+	if viewer == "" {
+		return false
+	}
+	author := extractUsernameFromNotificationActorID(attributedTo)
+	if author != "" && strings.EqualFold(viewer, author) {
+		return true
+	}
+
+	switch visibility {
+	case storagemodels.VisibilityPrivate:
+		return h.notificationViewerFollowsAuthor(ctx, viewer, author)
+	case storagemodels.VisibilityDirect:
+		return h.notificationDirectVisibleToViewer(viewer, recipients, mentions)
+	default:
+		h.logger.Warn("unknown notification status visibility",
+			zap.String("notification_id", notif.ID),
+			zap.String("visibility", visibility))
+		return false
+	}
+}
+
+func (h *Handler) notificationViewerFollowsAuthor(ctx context.Context, viewer, author string) bool {
+	if viewer == "" || author == "" || h == nil || h.repos == nil || h.repos.Relationship() == nil {
+		return false
+	}
+	ok, err := h.repos.Relationship().IsFollowing(ctx, viewer, author)
+	if err != nil {
+		h.logger.Warn("failed to check notification status visibility",
+			zap.String("viewer", viewer),
+			zap.String("author", author),
+			zap.Error(err))
+		return false
+	}
+	return ok
+}
+
+func (h *Handler) notificationDirectVisibleToViewer(viewer string, recipients []string, mentions []string) bool {
+	if strings.TrimSpace(viewer) == "" {
+		return false
+	}
+	// Legacy notification snapshots did not persist direct-message recipient
+	// arrays. A notification is already scoped to a single owner, so keep those
+	// owner-visible while enforcing recipient checks whenever recipient evidence
+	// is present.
+	if len(recipients) == 0 && len(mentions) == 0 {
+		return true
+	}
+	viewerActorID := ""
+	if h != nil && h.cfg != nil {
+		viewerActorID = h.cfg.ActorURL(viewer)
+	}
+	for _, value := range append(recipients, mentions...) {
+		if mentionMatchesNotificationViewer(value, viewer, viewerActorID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) notificationSnapshotActor(ctx *apptheory.Context, snapshot map[string]interface{}) *activitypub.Actor {
@@ -997,6 +1108,98 @@ func (h *Handler) cachedRemoteNotificationActor(ctx context.Context, actorID str
 		}
 	}
 	return nil
+}
+
+func notificationObjectVisibilityContext(obj any) (visibility string, attributedTo string, recipients []string, mentions []string) {
+	switch typed := obj.(type) {
+	case *activitypub.Note:
+		return typed.Visibility, typed.AttributedTo, appendNotificationRecipients(nil, typed.To, typed.CC, typed.BTo, typed.BCC), noteMentionTargets(typed.Tag)
+	case *storagemodels.Object:
+		return typed.Visibility, typed.AttributedTo, appendNotificationRecipients(nil, typed.To, typed.CC, typed.BTo, typed.BCC), nil
+	case map[string]interface{}:
+		return notificationSnapshotString(typed, "visibility"),
+			notificationSnapshotString(typed, "attributedTo"),
+			appendNotificationRecipients(nil,
+				notificationStringSliceFromAny(typed["to"]),
+				notificationStringSliceFromAny(typed["cc"]),
+				notificationStringSliceFromAny(typed["bto"]),
+				notificationStringSliceFromAny(typed["bcc"])),
+			notificationMentionTargetsFromAny(typed["tag"])
+	default:
+		return "", "", nil, nil
+	}
+}
+
+func appendNotificationRecipients(dst []string, lists ...[]string) []string {
+	for _, list := range lists {
+		for _, value := range list {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				dst = append(dst, trimmed)
+			}
+		}
+	}
+	return dst
+}
+
+func noteMentionTargets(tags []activitypub.Tag) []string {
+	out := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if strings.EqualFold(strings.TrimSpace(tag.Type), "Mention") {
+			out = appendNotificationRecipients(out, []string{tag.Href, tag.Name})
+		}
+	}
+	return out
+}
+
+func notificationMentionTargetsFromAny(value interface{}) []string {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		tag, ok := item.(map[string]interface{})
+		if !ok || !strings.EqualFold(notificationSnapshotString(tag, "type"), "Mention") {
+			continue
+		}
+		out = appendNotificationRecipients(out, []string{
+			notificationSnapshotString(tag, "href"),
+			notificationSnapshotString(tag, "name"),
+		})
+	}
+	return out
+}
+
+func notificationStringSliceFromAny(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return appendNotificationRecipients(nil, typed)
+	case []interface{}:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if str, ok := item.(string); ok {
+				out = appendNotificationRecipients(out, []string{str})
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func mentionMatchesNotificationViewer(value, viewer, viewerActorID string) bool {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "@"))
+	viewer = strings.TrimSpace(viewer)
+	if value == "" || viewer == "" {
+		return false
+	}
+	if strings.EqualFold(value, viewer) {
+		return true
+	}
+	if viewerActorID != "" && strings.EqualFold(value, viewerActorID) {
+		return true
+	}
+	return strings.EqualFold(extractUsernameFromNotificationActorID(value), viewer)
 }
 
 func notificationSnapshotObjectMap(snapshot map[string]interface{}) map[string]interface{} {

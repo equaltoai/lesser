@@ -4,19 +4,23 @@ import (
 	"fmt"
 	neturl "net/url"
 	"strings"
+	"unicode"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 )
+
+const maxNotificationFallbackActorIDLength = 2048
 
 func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
+	if !validNotificationFallbackActorID(actorID) {
 		return nil
 	}
 
 	username := extractUsernameFromNotificationActorID(actorID)
 	if username == "" {
-		username = actorID
+		return nil
 	}
 
 	baseURL := ""
@@ -29,6 +33,10 @@ func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 	}
 
 	if strings.Contains(actorID, "://") {
+		parsed, err := neturl.Parse(actorID)
+		if err != nil || !validNotificationFallbackActorURL(parsed) {
+			return nil
+		}
 		actor.ID = actorID
 		actor.URL = actorID
 	} else if baseURL != "" && username != "" {
@@ -47,9 +55,32 @@ func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 	return actor
 }
 
+func validNotificationFallbackActorID(actorID string) bool {
+	if actorID == "" || len(actorID) > maxNotificationFallbackActorIDLength {
+		return false
+	}
+	return strings.IndexFunc(actorID, func(r rune) bool {
+		return unicode.IsControl(r) || r == '<' || r == '>' || r == '"' || r == '\''
+	}) == -1
+}
+
+func validNotificationFallbackActorURL(parsed *neturl.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	if scheme != "https" && scheme != "http" {
+		return false
+	}
+	if strings.TrimSpace(parsed.Hostname()) == "" || parsed.User != nil {
+		return false
+	}
+	return parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
 func extractUsernameFromNotificationActorID(actorID string) string {
 	cleaned := strings.TrimSpace(actorID)
-	if cleaned == "" {
+	if !validNotificationFallbackActorID(cleaned) {
 		return ""
 	}
 
@@ -58,17 +89,17 @@ func extractUsernameFromNotificationActorID(actorID string) string {
 	// URL-style actor identifier
 	if strings.Contains(cleaned, "://") {
 		parsed, err := neturl.Parse(cleaned)
-		if err != nil {
+		if err != nil || !validNotificationFallbackActorURL(parsed) {
 			return ""
 		}
 		segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
 		for i := len(segments) - 1; i >= 0; i-- {
 			if seg := strings.TrimSpace(segments[i]); seg != "" {
-				return strings.TrimPrefix(seg, "@")
+				return sanitizedNotificationActorUsername(strings.TrimPrefix(seg, "@"))
 			}
 		}
 		if host := strings.TrimSpace(parsed.Hostname()); host != "" {
-			return host
+			return sanitizedNotificationActorUsername(host)
 		}
 		return ""
 	}
@@ -77,9 +108,20 @@ func extractUsernameFromNotificationActorID(actorID string) string {
 	if strings.Contains(cleaned, "@") {
 		parts := strings.Split(cleaned, "@")
 		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-			return strings.TrimSpace(parts[0])
+			return sanitizedNotificationActorUsername(parts[0])
 		}
 	}
 
-	return cleaned
+	return sanitizedNotificationActorUsername(cleaned)
+}
+
+func sanitizedNotificationActorUsername(username string) string {
+	username = strings.TrimSpace(strings.TrimPrefix(username, "@"))
+	if username == "" {
+		return ""
+	}
+	if err := common.ValidateActivityPubUsername(username); err != nil {
+		return ""
+	}
+	return username
 }

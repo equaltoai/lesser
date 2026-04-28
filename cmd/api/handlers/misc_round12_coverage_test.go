@@ -263,7 +263,7 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 					"url":          "https://example.com/@bob/status-snapshot",
 					"content":      "<p>snapshot body</p>",
 					"createdAt":    now.Add(-30 * time.Minute).Format(time.RFC3339),
-					"visibility":   "private",
+					"visibility":   "public",
 					"inReplyToId":  "https://example.com/objects/root",
 					"attributedTo": cfg.BaseURL() + "/users/bob",
 				},
@@ -273,7 +273,7 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		require.NotNil(t, apiNotif.Status)
 		require.Equal(t, "<p>snapshot body</p>", apiNotif.Status.Content)
 		require.Equal(t, "https://example.com/@bob/status-snapshot", apiNotif.Status.URL)
-		require.Equal(t, "private", apiNotif.Status.Visibility)
+		require.Equal(t, "public", apiNotif.Status.Visibility)
 	})
 
 	t.Run("object fetch error leaves status unset", func(t *testing.T) {
