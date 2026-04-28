@@ -128,6 +128,49 @@ func TestActivityHandler_ProcessCreateActivity_NoteExtractionFailed(t *testing.T
 	require.Error(t, handler.processCreateActivity(ctx, create, "alice"))
 }
 
+func TestActivityHandler_NoteMappingBranches(t *testing.T) {
+	handler := &ActivityHandler{Logger: zap.NewNop()}
+
+	note, err := handler.mapToNote(map[string]any{
+		"id":           "https://example.com/objects/1",
+		"type":         "Note",
+		"content":      "hello",
+		"attributedTo": "https://example.com/users/alice",
+		"sensitive":    true,
+		"to":           []any{activitypub.PublicAddress, 123},
+		"cc":           []any{"https://example.com/users/alice/followers"},
+		"bto":          []any{"https://example.com/users/bob"},
+		"bcc":          []any{"https://example.com/users/carol"},
+		"inReplyTo":    "https://example.com/objects/root",
+		"tag": []any{
+			map[string]any{"type": "Hashtag", "href": "https://example.com/tags/test", "name": "#test"},
+			map[string]any{},
+			"not-a-tag",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/objects/1", note.ID)
+	require.Equal(t, "Note", note.Type)
+	require.Equal(t, "hello", note.Content)
+	require.Equal(t, "https://example.com/users/alice", note.AttributedTo)
+	require.True(t, note.Sensitive)
+	require.Equal(t, []string{activitypub.PublicAddress, ""}, note.To)
+	require.Equal(t, []string{"https://example.com/users/alice/followers"}, note.CC)
+	require.Equal(t, []string{"https://example.com/users/bob"}, note.BTo)
+	require.Equal(t, []string{"https://example.com/users/carol"}, note.BCC)
+	require.Equal(t, "https://example.com/objects/root", note.InReplyTo)
+	require.Len(t, note.Tag, 1)
+	require.Equal(t, "#test", note.Tag[0].Name)
+
+	extracted, err := handler.extractNoteFromActivity(&activitypub.Activity{Object: map[string]any{
+		"id":      "https://example.com/objects/2",
+		"type":    "Note",
+		"content": "from map",
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "from map", extracted.Content)
+}
+
 func TestActivityHandler_ProcessUndoActivity_AdditionalErrorBranches(t *testing.T) {
 	ctx := context.Background()
 
@@ -196,7 +239,7 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		}
 		undo := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{ID: "undo-1", Type: ActivityTypeUndo},
-			Actor:      "https://example.com/users/alice",
+			Actor:      "https://example.com/users/",
 		}
 
 		err := handler.processUndoReject(ctx, undo, reject, "alice")
@@ -210,10 +253,13 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
 
 		reject := map[string]any{
+			"type":  ActivityTypeReject,
 			"actor": "https://example.com/users/alice",
 			"object": map[string]any{
-				"actor": "https://remote.example/users/bob",
-				"id":    "follow-1",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"id":     "follow-1",
+				"object": "https://example.com/users/alice",
 			},
 		}
 		undo := &activitypub.Activity{
@@ -223,6 +269,23 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 
 		require.Error(t, handler.processUndoReject(ctx, undo, reject, "alice"))
 		relationshipRepo.AssertExpectations(t)
+	})
+
+	t.Run("forged follow target is rejected", func(t *testing.T) {
+		handler := &ActivityHandler{Logger: zap.NewNop()}
+		reject := map[string]any{
+			"type":  ActivityTypeReject,
+			"actor": "https://example.com/users/alice",
+			"object": map[string]any{
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"id":     "follow-forged",
+				"object": "https://example.com/users/mallory",
+			},
+		}
+		undo := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "undo-forged", Type: ActivityTypeUndo}, Actor: "https://example.com/users/alice"}
+
+		require.ErrorIs(t, handler.processUndoReject(ctx, undo, reject, "alice"), services.ErrActorNotAuthorizedUndo)
 	})
 }
 

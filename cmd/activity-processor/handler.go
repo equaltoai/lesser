@@ -77,6 +77,8 @@ const (
 	VisibilityPublic = "public"
 	// VisibilityDirect represents a direct message visibility level
 	VisibilityDirect = "direct"
+	// VisibilityPrivate represents a followers-only visibility level
+	VisibilityPrivate = "private"
 
 	// ModerationEventTypeFlagCreated represents a flag creation event
 	ModerationEventTypeFlagCreated = "flag_created"
@@ -813,7 +815,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 			// Don't fail the entire operation - continue processing
 		}
 
-	case "private":
+	case VisibilityPrivate:
 		h.Logger.Debug("Status is private, adding to followers' home timelines",
 			zap.String("status_id", status.StatusID))
 		// Private posts only go to followers' home timelines
@@ -1759,22 +1761,15 @@ func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *a
 		zap.String("username", username),
 	)
 
-	var rejectActor string
-	var followActivity interface{}
-
-	switch reject := rejectActivity.(type) {
-	case *activitypub.Activity:
-		rejectActor = reject.Actor
-		followActivity = reject.Object
-	case map[string]interface{}:
-		if actor, ok := reject["actor"].(string); ok {
-			rejectActor = actor
-		}
-		followActivity = reject["object"]
-	default:
-		h.Logger.Error("Undo Reject activity has invalid reject target type",
-			zap.Any("reject_activity", rejectActivity))
-		return services.ErrUndoInvalidObjectType
+	rejectActor, followActivity, err := h.extractRejectStateForUndoReject(rejectActivity)
+	if err != nil {
+		return err
+	}
+	if rejectActor != undoActivity.Actor {
+		h.Logger.Warn("Undo Reject actor does not match referenced Reject actor",
+			zap.String("undo_actor", undoActivity.Actor),
+			zap.String("reject_actor", rejectActor))
+		return services.ErrActorNotAuthorizedUndo
 	}
 
 	rejecter := h.extractUsernameFromActorURI(rejectActor)
@@ -1784,64 +1779,34 @@ func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *a
 		return services.ErrExtractUsernamesFromReject
 	}
 
-	var follower string
-	var followActivityID string
-
-	resolveFollowActivity := func(activity *activitypub.Activity) {
-		if activity == nil {
-			return
-		}
-
-		if follower == "" && activity.Actor != "" {
-			follower = h.extractUsernameFromActorURI(activity.Actor)
-		}
-
-		if followActivityID == "" && activity.ID != "" {
-			followActivityID = activity.ID
-		}
+	followState, err := h.resolveUndoRejectFollowState(ctx, followActivity)
+	if err != nil {
+		return err
+	}
+	if followState.Target != rejectActor && h.extractUsernameFromActorURI(followState.Target) != rejecter {
+		h.Logger.Warn("Undo Reject referenced Follow target does not match Reject actor",
+			zap.String("reject_actor", rejectActor),
+			zap.String("follow_target", followState.Target),
+			zap.String("follow_activity_id", followState.ID))
+		return services.ErrActorNotAuthorizedUndo
 	}
 
-	switch follow := followActivity.(type) {
-	case string:
-		followActivityID = follow
-
-		if resolved, err := h.getActivityByID(ctx, follow); err == nil {
-			resolveFollowActivity(resolved)
-		} else {
-			h.Logger.Warn("Failed to resolve follow activity for Undo Reject",
-				zap.String("follow_activity_id", follow),
-				zap.Error(err))
-		}
-	case *activitypub.Activity:
-		resolveFollowActivity(follow)
-	case map[string]interface{}:
-		if actor, ok := follow["actor"].(string); ok {
-			follower = h.extractUsernameFromActorURI(actor)
-		}
-		if id, ok := follow["id"].(string); ok {
-			followActivityID = id
-		}
-	default:
-		h.Logger.Warn("Undo Reject follow activity has unexpected type",
-			zap.Any("follow_activity", follow))
-	}
-
-	if follower == "" {
-		follower = username
-	}
-
+	follower := h.extractUsernameFromActorURI(followState.Actor)
 	if err := common.ValidateRequiredParam("follower", follower); err != nil {
 		h.Logger.Error("Failed to resolve follower for Undo Reject",
 			zap.String("rejecter", rejecter),
-			zap.String("username_context", username))
-		return err
+			zap.String("follow_actor", followState.Actor))
+		return services.ErrExtractUsernamesFromReject
+	}
+	if err := common.ValidateRequiredParam("followActivityID", followState.ID); err != nil {
+		return services.ErrExtractUsernamesFromReject
 	}
 
-	if err := h.RelationshipRepo.CreateRelationship(ctx, follower, rejecter, followActivityID); err != nil {
+	if err := h.RelationshipRepo.CreateRelationship(ctx, follower, rejecter, followState.ID); err != nil {
 		h.Logger.Error("Failed to recreate follow relationship after Undo Reject",
 			zap.String("follower", follower),
 			zap.String("rejecter", rejecter),
-			zap.String("follow_activity_id", followActivityID),
+			zap.String("follow_activity_id", followState.ID),
 			zap.Error(err))
 		return followRelationshipCreationFailed(err)
 	}
@@ -1849,9 +1814,121 @@ func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *a
 	h.Logger.Info("Successfully processed Undo Reject activity",
 		zap.String("follower", follower),
 		zap.String("followee", rejecter),
-		zap.String("follow_activity_id", followActivityID))
+		zap.String("follow_activity_id", followState.ID))
 
 	return nil
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+type undoRejectFollowState struct {
+	ID     string
+	Actor  string
+	Target string
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func (h *ActivityHandler) extractRejectStateForUndoReject(rejectActivity interface{}) (string, interface{}, error) {
+	switch reject := rejectActivity.(type) {
+	case *activitypub.Activity:
+		if reject.Type != ActivityTypeReject {
+			return "", nil, services.ErrExtractActivityTypeFromUndo
+		}
+		return reject.Actor, reject.Object, nil
+	case map[string]interface{}:
+		activityType, _ := reject["type"].(string)
+		if activityType != ActivityTypeReject {
+			return "", nil, services.ErrExtractActivityTypeFromUndo
+		}
+		actor, _ := reject["actor"].(string)
+		return actor, reject["object"], nil
+	default:
+		h.Logger.Error("Undo Reject activity has invalid reject target type",
+			zap.Any("reject_activity", rejectActivity))
+		return "", nil, services.ErrUndoInvalidObjectType
+	}
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func (h *ActivityHandler) resolveUndoRejectFollowState(ctx context.Context, followActivity interface{}) (undoRejectFollowState, error) {
+	switch follow := followActivity.(type) {
+	case string:
+		if err := common.ValidateRequiredParam("followActivityID", follow); err != nil {
+			return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+		}
+		resolved, err := h.getActivityByID(ctx, follow)
+		if err != nil {
+			h.Logger.Warn("Failed to resolve follow activity for Undo Reject",
+				zap.String("follow_activity_id", follow),
+				zap.Error(err))
+			return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+		}
+		return h.followStateFromActivity(resolved)
+	case *activitypub.Activity:
+		return h.followStateFromActivity(follow)
+	case map[string]interface{}:
+		return h.followStateFromMap(follow)
+	default:
+		h.Logger.Warn("Undo Reject follow activity has unexpected type",
+			zap.Any("follow_activity", follow))
+		return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+	}
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func (h *ActivityHandler) followStateFromActivity(activity *activitypub.Activity) (undoRejectFollowState, error) {
+	if activity == nil || activity.Type != ActivityTypeFollow {
+		return undoRejectFollowState{}, services.ErrExtractActivityTypeFromUndo
+	}
+	state := undoRejectFollowState{
+		ID:     activity.ID,
+		Actor:  activity.Actor,
+		Target: h.followTargetFromObject(activity.Object),
+	}
+	return validateUndoRejectFollowState(state)
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func (h *ActivityHandler) followStateFromMap(activity map[string]interface{}) (undoRejectFollowState, error) {
+	activityType, _ := activity["type"].(string)
+	if activityType != ActivityTypeFollow {
+		return undoRejectFollowState{}, services.ErrExtractActivityTypeFromUndo
+	}
+	state := undoRejectFollowState{}
+	if id, ok := activity["id"].(string); ok {
+		state.ID = id
+	}
+	if actor, ok := activity["actor"].(string); ok {
+		state.Actor = actor
+	}
+	state.Target = h.followTargetFromObject(activity["object"])
+	return validateUndoRejectFollowState(state)
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func (h *ActivityHandler) followTargetFromObject(object interface{}) string {
+	switch obj := object.(type) {
+	case string:
+		return obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+//nolint:unused // Used by processUndoReject; production reachability is through stream dispatch.
+func validateUndoRejectFollowState(state undoRejectFollowState) (undoRejectFollowState, error) {
+	if err := common.ValidateRequiredParam("followActivityID", state.ID); err != nil {
+		return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+	}
+	if err := common.ValidateRequiredParam("followActor", state.Actor); err != nil {
+		return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+	}
+	if err := common.ValidateRequiredParam("followTarget", state.Target); err != nil {
+		return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+	}
+	return state, nil
 }
 
 // processUndoFlag processes an undo of a Flag activity

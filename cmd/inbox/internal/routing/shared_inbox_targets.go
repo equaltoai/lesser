@@ -16,6 +16,7 @@ type sharedInboxActorRepository interface {
 
 type sharedInboxRelationshipRepository interface {
 	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	DeleteRelationship(ctx context.Context, followerUsername, followingUsername string) error
 }
 
 type sharedInboxActivityRepository interface {
@@ -38,10 +39,11 @@ func (r sharedInboxTargetResolver) Resolve(ctx context.Context, activity *activi
 	usernames := make(map[string]struct{})
 	followerHandles := make(map[string]struct{})
 
-	r.addAddressTargets(usernames, followerHandles, activity.To...)
-	r.addAddressTargets(usernames, followerHandles, activity.CC...)
-	r.addAddressTargets(usernames, followerHandles, activity.BTo...)
-	r.addAddressTargets(usernames, followerHandles, activity.BCC...)
+	actorOwner := r.localOrRemoteIdentity(activity.Actor)
+	r.addAddressTargets(usernames, followerHandles, actorOwner, activity.To...)
+	r.addAddressTargets(usernames, followerHandles, actorOwner, activity.CC...)
+	r.addAddressTargets(usernames, followerHandles, actorOwner, activity.BTo...)
+	r.addAddressTargets(usernames, followerHandles, actorOwner, activity.BCC...)
 
 	switch activity.Type {
 	case activitypub.FollowType:
@@ -61,7 +63,7 @@ func (r sharedInboxTargetResolver) Resolve(ctx context.Context, activity *activi
 			return nil, err
 		}
 	case activitypub.AddType, activitypub.RemoveType:
-		r.addAddressTargets(usernames, followerHandles, activity.Target)
+		r.addAddressTargets(usernames, followerHandles, actorOwner, activity.Target)
 		if err := r.addObjectOwnerTargets(ctx, usernames, activity.Object); err != nil {
 			return nil, err
 		}
@@ -113,10 +115,10 @@ func (r sharedInboxTargetResolver) addObjectTargets(usernames map[string]struct{
 	switch typed := object.(type) {
 	case map[string]any:
 		if actorID, _ := typed["actor"].(string); actorID != "" {
-			r.addAddressTargets(usernames, followerHandles, actorID)
+			r.addAddressTargets(usernames, followerHandles, r.localOrRemoteIdentity(actorID), actorID)
 		}
 		if attributedTo, _ := typed["attributedTo"].(string); attributedTo != "" {
-			r.addAddressTargets(usernames, followerHandles, attributedTo)
+			r.addAddressTargets(usernames, followerHandles, r.localOrRemoteIdentity(attributedTo), attributedTo)
 		}
 	}
 }
@@ -151,9 +153,18 @@ func (r sharedInboxTargetResolver) expandFollowerHandles(ctx context.Context, us
 				return err
 			}
 			for _, follower := range followers {
-				if username := r.localUsername(follower); username != "" {
-					usernames[username] = struct{}{}
+				username := r.localUsername(follower)
+				if username == "" {
+					continue
 				}
+				if r.actorRepository != nil {
+					actor, err := r.actorRepository.GetActorByUsername(ctx, username)
+					if err != nil || actor == nil {
+						_ = r.relationshipRepository.DeleteRelationship(ctx, username, handle)
+						continue
+					}
+				}
+				usernames[username] = struct{}{}
 			}
 			if nextCursor == "" {
 				break
@@ -182,7 +193,7 @@ func (r sharedInboxTargetResolver) loadActors(ctx context.Context, usernames map
 	return actors, nil
 }
 
-func (r sharedInboxTargetResolver) addAddressTargets(usernames map[string]struct{}, followerHandles map[string]struct{}, addresses ...string) {
+func (r sharedInboxTargetResolver) addAddressTargets(usernames map[string]struct{}, followerHandles map[string]struct{}, authorizedFollowerOwner string, addresses ...string) {
 	for _, address := range addresses {
 		address = strings.TrimSpace(address)
 		if address == "" || address == activitypub.PublicAddress {
@@ -194,11 +205,12 @@ func (r sharedInboxTargetResolver) addAddressTargets(usernames map[string]struct
 			continue
 		}
 
-		if strings.Contains(address, "/followers") {
-			if strings.Contains(normalized, "@") {
-				followerHandles[normalized] = struct{}{}
-				continue
+		if isFollowersCollectionAddress(address) {
+			owner := r.followersCollectionOwner(address)
+			if owner != "" && owner == authorizedFollowerOwner {
+				followerHandles[owner] = struct{}{}
 			}
+			continue
 		}
 
 		if !strings.Contains(normalized, "@") {
@@ -208,11 +220,37 @@ func (r sharedInboxTargetResolver) addAddressTargets(usernames map[string]struct
 }
 
 func (r sharedInboxTargetResolver) localUsername(address string) string {
-	normalized := models.NormalizeRelationshipIdentity(address, r.localDomain)
+	normalized := r.localOrRemoteIdentity(address)
 	if normalized == "" || strings.Contains(normalized, "@") {
 		return ""
 	}
 	return normalized
+}
+
+func (r sharedInboxTargetResolver) localOrRemoteIdentity(address string) string {
+	return models.NormalizeRelationshipIdentity(address, r.localDomain)
+}
+
+func (r sharedInboxTargetResolver) followersCollectionOwner(address string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	trimmed := strings.TrimSuffix(address, "/")
+	idx := strings.LastIndex(trimmed, "/followers")
+	if idx < 0 || idx+len("/followers") != len(trimmed) {
+		return ""
+	}
+	return r.localOrRemoteIdentity(trimmed[:idx])
+}
+
+func isFollowersCollectionAddress(address string) bool {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return false
+	}
+	trimmed := strings.TrimSuffix(address, "/")
+	return strings.HasSuffix(trimmed, "/followers")
 }
 
 func explicitLocalRecipients(activity *activitypub.Activity, localDomain string) []string {

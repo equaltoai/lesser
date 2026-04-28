@@ -47,10 +47,8 @@ func TestProcessUndoRejectRecreatesFollowRelationship(t *testing.T) {
 				ID:   followActivityID,
 				Type: "Follow",
 			},
-			Actor: followerActor,
-			Object: map[string]interface{}{
-				"id": followerActor,
-			},
+			Actor:  followerActor,
+			Object: rejectActor,
 		}
 		*dest = append(*dest, &models.Activity{Activity: followActivity})
 	}).Return(nil)

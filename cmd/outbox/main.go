@@ -962,12 +962,15 @@ func (op *OutboxProcessor) getBearerToken(ctx *apptheory.Context) string {
 func (op *OutboxProcessor) parseActivityFromRequest(ctx *apptheory.Context) (*activitypub.Activity, *apptheory.Response) {
 	var activity activitypub.Activity
 
-	// Parse the request body as JSON
-	if ctx == nil {
+	if ctx == nil || len(ctx.Request.Body) == 0 {
 		return nil, outboxJSONError(http.StatusBadRequest, "invalid JSON activity")
 	}
-	if err := json.Unmarshal(ctx.Request.Body, &activity); err != nil {
-		op.logger.Error("failed to parse activity JSON", zap.Error(err))
+	if len(ctx.Request.Body) > common.MaxActivitySize {
+		op.logger.Warn("outbox activity body too large", zap.Int("size", len(ctx.Request.Body)), zap.Int("max_size", common.MaxActivitySize))
+		return nil, outboxJSONError(http.StatusRequestEntityTooLarge, "activity body too large")
+	}
+	if err := common.ParseActivityPubObject(ctx.Request.Body, &activity); err != nil {
+		op.logger.Error("failed to safely parse activity JSON", zap.Error(err))
 		return nil, outboxJSONError(http.StatusBadRequest, "invalid JSON activity")
 	}
 

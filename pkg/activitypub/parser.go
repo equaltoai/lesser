@@ -10,13 +10,12 @@ import (
 
 // ParseActivity parses a JSON byte array into an Activity struct
 func ParseActivity(data []byte) (*Activity, error) {
-	// Validate JSON before parsing
-	if err := common.ValidateJSONField(string(data), "activitypub_activity"); err != nil {
+	if err := validateRawActivityPubJSON(data, "activity"); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	var activity Activity
-	if err := json.Unmarshal(data, &activity); err != nil {
+	if err := common.ParseActivityPubObject(data, &activity); err != nil {
 		return nil, fmt.Errorf("failed to parse activity: %w", err)
 	}
 
@@ -30,13 +29,12 @@ func ParseActivity(data []byte) (*Activity, error) {
 
 // ParseActor parses a JSON byte array into an Actor struct
 func ParseActor(data []byte) (*Actor, error) {
-	// Validate JSON before parsing
-	if err := common.ValidateJSONField(string(data), "activitypub_actor"); err != nil {
+	if err := validateRawActivityPubJSON(data, "actor"); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	var actor Actor
-	if err := json.Unmarshal(data, &actor); err != nil {
+	if err := common.ParseActivityPubObject(data, &actor); err != nil {
 		return nil, fmt.Errorf("failed to parse actor: %w", err)
 	}
 
@@ -50,13 +48,12 @@ func ParseActor(data []byte) (*Actor, error) {
 
 // ParseNote parses a JSON byte array into a Note struct
 func ParseNote(data []byte) (*Note, error) {
-	// Validate JSON before parsing
-	if err := common.ValidateJSONField(string(data), "activitypub_note"); err != nil {
+	if err := validateRawActivityPubJSON(data, "note"); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	var note Note
-	if err := json.Unmarshal(data, &note); err != nil {
+	if err := common.ParseActivityPubObject(data, &note); err != nil {
 		return nil, fmt.Errorf("failed to parse note: %w", err)
 	}
 
@@ -66,4 +63,14 @@ func ParseNote(data []byte) (*Note, error) {
 	}
 
 	return &note, nil
+}
+
+func validateRawActivityPubJSON(data []byte, kind string) error {
+	if len(data) > common.MaxJSONSize {
+		return fmt.Errorf("%s JSON size %d bytes exceeds maximum %d", kind, len(data), common.MaxJSONSize)
+	}
+	if !json.Valid(data) {
+		return fmt.Errorf("malformed %s JSON", kind)
+	}
+	return nil
 }
