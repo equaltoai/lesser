@@ -44,8 +44,9 @@ func (r *NotificationRepository) SetDispatcher(dispatcher interfaces.Notificatio
 }
 
 func applyNotificationSortKeyScope(query core.Query, cursor string) core.Query {
+	query = query.Where("SK", "begins_with", "notif#")
 	if cursor == "" {
-		return query.Where("SK", "begins_with", "notif#")
+		return query
 	}
 
 	return query.Where("SK", "<", cursor)

@@ -142,6 +142,32 @@ func TestRound07_NotificationRepository_ByTypeFallbackAndPreferencesDefault(t *t
 	require.True(t, prefs.EmailEnabled)
 }
 
+func TestNotificationRepository_PaginationPreservesNotificationSKPrefix(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]models.Notification)
+		*ptr = []models.Notification{}
+	}).Return(nil)
+
+	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetUserNotifications(context.Background(), "alice", interfaces.PaginationOptions{
+		Limit:  10,
+		Cursor: "notif#20260428120000#cursor",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "<"))
+}
+
 func TestRound07_NotificationRepository_SetNotificationPreference_UnknownType(t *testing.T) {
 	baseTime := time.Unix(1, 0).UTC()
 	mockDB := new(mocks.MockDB)
