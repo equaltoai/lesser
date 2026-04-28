@@ -35,6 +35,20 @@ func countMockCalls(q *mocks.MockQuery, method, field, op string) int {
 	return count
 }
 
+func countMockLimitCalls(q *mocks.MockQuery, limit int) int {
+	count := 0
+	for _, call := range q.Calls {
+		if call.Method != "Limit" || len(call.Arguments) < 1 {
+			continue
+		}
+		if got, ok := call.Arguments.Get(0).(int); ok && got == limit {
+			count++
+		}
+	}
+
+	return count
+}
+
 type fakeNotificationDispatcher struct {
 	calls int
 }
@@ -164,8 +178,43 @@ func TestNotificationRepository_PaginationPreservesNotificationSKPrefix(t *testi
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
-	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 1, countMockLimitCalls(mockQuery, 12))
+}
+
+func TestNotificationRepository_PaginationDropsInclusiveCursorDuplicate(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]models.Notification)
+		*ptr = []models.Notification{
+			{ID: "cursor", SK: "notif#20260428120000#cursor"},
+			{ID: "older-2", SK: "notif#20260428115900#older-2"},
+			{ID: "older-1", SK: "notif#20260428115800#older-1"},
+			{ID: "sentinel", SK: "notif#20260428115700#sentinel"},
+		}
+	}).Return(nil)
+
+	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	result, err := repo.GetUserNotifications(context.Background(), "alice", interfaces.PaginationOptions{
+		Limit:  2,
+		Cursor: "notif#20260428120000#cursor",
+	})
+	require.NoError(t, err)
+
+	require.True(t, result.HasMore)
+	require.Equal(t, "notif#20260428115800#older-1", result.NextCursor)
+	require.Equal(t, []string{"older-2", "older-1"}, []string{result.Items[0].ID, result.Items[1].ID})
+	require.Equal(t, 1, countMockLimitCalls(mockQuery, 4))
 }
 
 func TestRound07_NotificationRepository_SetNotificationPreference_UnknownType(t *testing.T) {
@@ -490,7 +539,8 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.NoError(t, err)
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
-	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Zero(t, countMockCalls(mockQuery, "Where", "SK", "<"))
 	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
@@ -504,7 +554,8 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.NoError(t, err)
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
-	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Zero(t, countMockCalls(mockQuery, "Where", "SK", "<"))
 	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "IsRead", "="))
 }
@@ -538,7 +589,7 @@ func TestRound07_NotificationRepository_GetUserNotifications_LogsQueryError(t *t
 	require.Equal(t, queryErr.Error(), fields["error"])
 }
 
-func TestRound07_NotificationRepository_NotificationQueries_DropSortKeyPrefixFilterWhenCursorPresent(t *testing.T) {
+func TestRound07_NotificationRepository_NotificationQueries_UsePrefixSafeRangeWhenCursorPresent(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
@@ -562,7 +613,8 @@ func TestRound07_NotificationRepository_NotificationQueries_DropSortKeyPrefixFil
 	_, err = repo.GetNotificationsAdvanced(context.Background(), "user-1", map[string]interface{}{"Type": "mention"}, interfaces.PaginationOptions{Limit: 1, Cursor: "notif#99"})
 	require.NoError(t, err)
 
-	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Zero(t, countMockCalls(mockQuery, "Where", "SK", "<"))
 	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "Type", "="))
 }

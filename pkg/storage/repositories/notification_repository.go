@@ -22,6 +22,8 @@ type NotificationRepository struct {
 	dispatcher interfaces.NotificationDispatcher
 }
 
+const notificationSortKeyPrefix = "notif#"
+
 // NewNotificationRepository creates a new notification repository with enhanced functionality and cost tracking
 func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
 	// Create enhanced repository optimized for notification operations
@@ -44,12 +46,43 @@ func (r *NotificationRepository) SetDispatcher(dispatcher interfaces.Notificatio
 }
 
 func applyNotificationSortKeyScope(query core.Query, cursor string) core.Query {
-	query = query.Where("SK", "begins_with", "notif#")
-	if cursor == "" {
-		return query
+	cursor = strings.TrimSpace(cursor)
+	if notificationCursorInSortKeyRange(cursor) {
+		return query.Where("SK", "between", []any{notificationSortKeyPrefix, cursor})
 	}
 
-	return query.Where("SK", "<", cursor)
+	return query.Where("SK", "begins_with", notificationSortKeyPrefix)
+}
+
+func notificationCursorInSortKeyRange(cursor string) bool {
+	return strings.HasPrefix(cursor, notificationSortKeyPrefix) && cursor > notificationSortKeyPrefix
+}
+
+func notificationQueryFetchLimit(pageLimit int, cursor string) int {
+	extra := 1 // over-fetch one item to detect whether another page exists
+	if notificationCursorInSortKeyRange(strings.TrimSpace(cursor)) {
+		// Cursor-scoped queries use an inclusive BETWEEN condition to keep
+		// DynamoDB's sort-key condition valid while preserving the notif# range.
+		// Over-fetch one more item so dropping the duplicate cursor does not
+		// hide the real has-more sentinel.
+		extra++
+	}
+	return pageLimit + extra
+}
+
+func dropNotificationCursorDuplicate(notifications []models.Notification, cursor string) []models.Notification {
+	cursor = strings.TrimSpace(cursor)
+	if !notificationCursorInSortKeyRange(cursor) || len(notifications) == 0 {
+		return notifications
+	}
+
+	filtered := notifications[:0]
+	for _, notification := range notifications {
+		if notification.SK != cursor {
+			filtered = append(filtered, notification)
+		}
+	}
+	return filtered
 }
 
 // CreateNotification creates a new notification using BaseRepository
@@ -138,7 +171,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 	)
 
 	// Fetch limit+1 to detect if more results exist
-	query = query.Limit(opts.Limit + 1)
+	query = query.Limit(notificationQueryFetchLimit(opts.Limit, opts.Cursor))
 
 	var notifications []models.Notification
 	err := query.All(&notifications)
@@ -148,6 +181,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "user notifications")
 	}
+	notifications = dropNotificationCursorDuplicate(notifications, opts.Cursor)
 
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: make([]*models.Notification, 0, len(notifications)),
@@ -190,13 +224,14 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 	).Filter("IsRead", "=", false)
 
 	// Fetch limit+1 to detect if more results exist
-	query = query.Limit(opts.Limit + 1)
+	query = query.Limit(notificationQueryFetchLimit(opts.Limit, opts.Cursor))
 
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "unread notifications")
 	}
+	notifications = dropNotificationCursorDuplicate(notifications, opts.Cursor)
 
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: make([]*models.Notification, 0, len(notifications)),
@@ -481,13 +516,14 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	)
 
 	// Fetch extra items to account for grouping expansion and detect more results
-	query = query.Limit((opts.Limit * 3) + 1)
+	query = query.Limit(notificationQueryFetchLimit(opts.Limit*3, opts.Cursor))
 
 	var allNotifications []models.Notification
 	err := query.All(&allNotifications)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "notification groups")
 	}
+	allNotifications = dropNotificationCursorDuplicate(allNotifications, opts.Cursor)
 
 	// Filter notifications for the specific user and group them
 	userGroups := make(map[string]*models.Notification)
@@ -908,13 +944,14 @@ func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, u
 		query = query.Filter(key, "=", value)
 	}
 
-	query = query.Limit(pagination.Limit + 1)
+	query = query.Limit(notificationQueryFetchLimit(pagination.Limit, pagination.Cursor))
 
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "advanced query")
 	}
+	notifications = dropNotificationCursorDuplicate(notifications, pagination.Cursor)
 
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: make([]*models.Notification, 0, len(notifications)),
