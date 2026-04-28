@@ -1,7 +1,9 @@
 package crawler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -34,6 +36,7 @@ const (
 	contextCrawlerCategoryKey = "crawler_category"
 	contextCrawlerReasonKey   = "crawler_reason"
 	routeClassOther           = "other"
+	trustedSourceIPHeader     = "x-lesser-trusted-source-ip"
 )
 
 type atomicLimiter interface {
@@ -52,7 +55,8 @@ const (
 
 	crawlerBypassCIDRsEnv = "CRAWLER_PROTECTION_BYPASS_CIDRS"
 	// CRAWLER_TRUSTED_PROXY_CIDRS is intentionally empty by default; forwarded IP
-	// headers are only used when the forwarding chain includes a configured proxy.
+	// headers are only used when the AWS request source IP is in a configured
+	// trusted proxy CIDR.
 	crawlerTrustedProxyCIDRsEnv = "CRAWLER_TRUSTED_PROXY_CIDRS"
 )
 
@@ -327,6 +331,121 @@ func isClientIPBypassed(clientIP string, allowlist []*net.IPNet) bool {
 	return false
 }
 
+// InjectTrustedSourceIPHeader copies the AWS event's trusted source IP into an
+// internal header before AppTheory normalizes the event into its portable
+// Request model. AppTheory intentionally exposes only HTTP method/path/query/
+// headers/body, so crawler protection needs this narrow bridge to distinguish
+// a trusted forwarding header chain from client-supplied spoofed headers.
+//
+// The internal header is always removed from the incoming event first. This
+// prevents a client from supplying the bridge header directly; only the value
+// derived from requestContext.http.sourceIp (API Gateway v2 / Lambda URL) or
+// requestContext.identity.sourceIp (API Gateway REST v1) is trusted.
+func InjectTrustedSourceIPHeader(event json.RawMessage, logger *zap.Logger) json.RawMessage {
+	if len(bytes.TrimSpace(event)) == 0 {
+		return event
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var envelope map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(event))
+	decoder.UseNumber()
+	if err := decoder.Decode(&envelope); err != nil || envelope == nil {
+		logger.Debug("crawler source ip injection skipped: invalid event envelope", zap.Error(err))
+		return event
+	}
+
+	sourceIP := sourceIPFromAWSEvent(envelope)
+	changed := sanitizeInternalSourceIPHeader(envelope, sourceIP)
+	if !changed {
+		return event
+	}
+
+	updated, err := json.Marshal(envelope)
+	if err != nil {
+		logger.Debug("crawler source ip injection skipped: failed to marshal event envelope", zap.Error(err))
+		return event
+	}
+	return json.RawMessage(updated)
+}
+
+func sourceIPFromAWSEvent(event map[string]any) string {
+	requestContext, ok := event["requestContext"].(map[string]any)
+	if !ok || requestContext == nil {
+		return ""
+	}
+
+	if httpContext, ok := requestContext["http"].(map[string]any); ok {
+		if sourceIP := normalizeIPString(stringField(httpContext, "sourceIp")); sourceIP != "" {
+			return sourceIP
+		}
+	}
+
+	if identity, ok := requestContext["identity"].(map[string]any); ok {
+		if sourceIP := normalizeIPString(stringField(identity, "sourceIp")); sourceIP != "" {
+			return sourceIP
+		}
+	}
+
+	return ""
+}
+
+func stringField(values map[string]any, field string) string {
+	for key, value := range values {
+		if strings.EqualFold(strings.TrimSpace(key), field) {
+			if text, ok := value.(string); ok {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func sanitizeInternalSourceIPHeader(event map[string]any, sourceIP string) bool {
+	changed := false
+
+	headers, ok := event["headers"].(map[string]any)
+	if ok && headers != nil {
+		if removeHeaderValue(headers, trustedSourceIPHeader) {
+			changed = true
+		}
+	} else if sourceIP != "" {
+		headers = map[string]any{}
+		event["headers"] = headers
+		changed = true
+	}
+
+	if sourceIP != "" {
+		if headers == nil {
+			headers = map[string]any{}
+			event["headers"] = headers
+		}
+		headers[trustedSourceIPHeader] = sourceIP
+		changed = true
+	}
+
+	if multiHeaders, ok := event["multiValueHeaders"].(map[string]any); ok && multiHeaders != nil {
+		if removeHeaderValue(multiHeaders, trustedSourceIPHeader) {
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+func removeHeaderValue(headers map[string]any, name string) bool {
+	removed := false
+	for key := range headers {
+		if strings.EqualFold(strings.TrimSpace(key), name) {
+			delete(headers, key)
+			removed = true
+		}
+	}
+	return removed
+}
+
 func buildLimiters(mode protectionMode, logger *zap.Logger) map[Category]atomicLimiter {
 	if !isEnforcementMode(mode) || isRateLimitingDisabled() {
 		return nil
@@ -492,8 +611,14 @@ func maybeApplyRateLimit(
 }
 
 func extractClientIP(ctx *apptheory.Context, trustedProxyCIDRs []*net.IPNet) string {
-	if len(trustedProxyCIDRs) == 0 {
+	sourceIP := normalizeIPString(headerValue(ctx, trustedSourceIPHeader))
+	if sourceIP == "" {
 		return unknownString
+	}
+
+	source := normalizeIP(sourceIP)
+	if source == nil || !ipInCIDRs(source, trustedProxyCIDRs) {
+		return sourceIP
 	}
 
 	if clientIP, trusted := extractClientIPFromForwardedFor(headerValue(ctx, "X-Forwarded-For"), trustedProxyCIDRs); trusted {
@@ -502,7 +627,7 @@ func extractClientIP(ctx *apptheory.Context, trustedProxyCIDRs []*net.IPNet) str
 		}
 	}
 
-	return unknownString
+	return sourceIP
 }
 
 func extractClientIPFromForwardedFor(raw string, trustedProxyCIDRs []*net.IPNet) (string, bool) {
@@ -522,19 +647,14 @@ func extractClientIPFromForwardedFor(raw string, trustedProxyCIDRs []*net.IPNet)
 		return "", false
 	}
 
-	sawTrustedProxy := false
 	for i := len(ips) - 1; i >= 0; i-- {
 		if ipInCIDRs(ips[i], trustedProxyCIDRs) {
-			sawTrustedProxy = true
 			continue
 		}
-		if sawTrustedProxy {
-			return ips[i].String(), true
-		}
-		return "", false
+		return ips[i].String(), true
 	}
 
-	return "", sawTrustedProxy
+	return "", true
 }
 
 func normalizeIP(raw string) net.IP {
@@ -546,6 +666,14 @@ func normalizeIP(raw string) net.IP {
 		return ip4
 	}
 	return ip
+}
+
+func normalizeIPString(raw string) string {
+	ip := normalizeIP(raw)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func ipInCIDRs(ip net.IP, cidrs []*net.IPNet) bool {

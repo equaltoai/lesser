@@ -326,7 +326,7 @@ func main() {
 			emfMetrics.RecordBusinessMetric(observability.MetricColdStartDuration, float64(coldStartDuration.Milliseconds()), observability.UnitMilliseconds, nil)
 		}
 
-		result, err := app.HandleLambda(ctx, event)
+		result, err := app.HandleLambda(ctx, crawler.InjectTrustedSourceIPHeader(event, logger))
 
 		requestDuration := time.Since(requestStart)
 		if emfMetrics != nil {

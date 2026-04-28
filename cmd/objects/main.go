@@ -872,7 +872,7 @@ func runObjects() {
 	app := buildApp(handler, logger)
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
-		return app.HandleLambda(ctx, event)
+		return app.HandleLambda(ctx, crawler.InjectTrustedSourceIPHeader(event, logger))
 	})
 }
 
