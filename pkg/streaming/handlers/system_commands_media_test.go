@@ -101,6 +101,44 @@ func TestHandleUploadMediaInvalidBase64(t *testing.T) {
 	assert.Equal(t, 0, stub.callCount)
 }
 
+func TestHandleUploadMediaTooLargeBeforeDecode(t *testing.T) {
+	stub := &stubMediaService{}
+	handler := NewSystemCommandHandler(nil, nil, stub, nil, zaptest.NewLogger(t))
+
+	payload := map[string]interface{}{
+		"file_data": strings.Repeat("A", base64.StdEncoding.EncodedLen(maxWebSocketUploadBytes)+1),
+	}
+	conn := &streaming.ConnectionInfo{UserID: "alice", IsAuthenticated: true}
+	cmd := &streaming.Command{ID: "cmd-too-large", Payload: payload}
+
+	resp, err := handler.handleUploadMedia(context.Background(), conn, cmd)
+	assert.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.False(t, resp.Success)
+	assert.Equal(t, "UPLOAD_MEDIA_INVALID", resp.Error.Code)
+	assert.Equal(t, 0, stub.callCount)
+}
+
+func TestHandleUploadMediaRejectsUnsafeSVG(t *testing.T) {
+	stub := &stubMediaService{}
+	handler := NewSystemCommandHandler(nil, nil, stub, nil, zaptest.NewLogger(t))
+
+	payload := map[string]interface{}{
+		"file_data":    base64.StdEncoding.EncodeToString([]byte(`<svg onload="alert(1)"></svg>`)),
+		"file_name":    "bad.svg",
+		"content_type": "image/svg+xml",
+	}
+	conn := &streaming.ConnectionInfo{UserID: "alice", IsAuthenticated: true}
+	cmd := &streaming.Command{ID: "cmd-svg", Payload: payload}
+
+	resp, err := handler.handleUploadMedia(context.Background(), conn, cmd)
+	assert.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.False(t, resp.Success)
+	assert.Equal(t, "UPLOAD_MEDIA_INVALID", resp.Error.Code)
+	assert.Equal(t, 0, stub.callCount)
+}
+
 func TestHandleUploadMediaInvalidDescription(t *testing.T) {
 	stub := &stubMediaService{}
 	handler := NewSystemCommandHandler(nil, nil, stub, nil, zaptest.NewLogger(t))

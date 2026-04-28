@@ -458,6 +458,10 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 		return ErrMediaUnsupportedType
 	}
 
+	if err := ValidateSVGUpload(cmd.ContentType, cmd.FileData); err != nil {
+		return err
+	}
+
 	// Validate file extension matches content type
 	if !s.validateFileExtension(cmd.FileName, cmd.ContentType) {
 		return ErrMediaFileExtensionMismatch
@@ -548,7 +552,7 @@ func (s *Service) isValidMediaType(contentType string) bool {
 		"audio/webm":  true,
 	}
 
-	return validTypes[strings.ToLower(contentType)]
+	return validTypes[normalizedContentType(contentType)]
 }
 
 func (s *Service) validateFileExtension(fileName, contentType string) bool {
@@ -561,8 +565,8 @@ func (s *Service) validateFileExtension(fileName, contentType string) bool {
 	}
 
 	// Compare base types (ignore charset and other parameters)
-	expectedBase := strings.Split(expectedType, ";")[0]
-	actualBase := strings.Split(contentType, ";")[0]
+	expectedBase := normalizedContentType(expectedType)
+	actualBase := normalizedContentType(contentType)
 
 	return strings.EqualFold(expectedBase, actualBase)
 }
