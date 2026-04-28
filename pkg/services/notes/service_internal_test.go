@@ -288,12 +288,6 @@ func TestMentionActorIDsAndAudienceHelpers(t *testing.T) {
 }
 
 func TestMentionHelpersNormalizeURLsAndUsernames(t *testing.T) {
-	// extractMentionUsername still exists but is no longer used in auth paths.
-	// Keep these assertions to document the extraction behavior.
-	assert.Equal(t, "bob", extractMentionUsername("https://example.com/users/bob"))
-	assert.Equal(t, "carol", extractMentionUsername("https://example.com/@carol"))
-	assert.Equal(t, "dan", extractMentionUsername("@dan"))
-
 	// Exact actor ID match still works.
 	assert.True(t, mentionMatchesViewer("https://example.com/users/bob", "bob", "https://example.com/users/bob"))
 	// Bare @username mention matches local viewer username.

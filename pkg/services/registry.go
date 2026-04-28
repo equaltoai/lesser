@@ -1741,7 +1741,7 @@ func (r *Registry) Lists() *lists.Service {
 		relationshipRepo := r.storage.Relationship()
 
 		// Check if repositories are available
-		if listRepo != nil && statusRepo != nil {
+		if listRepo != nil && statusRepo != nil && relationshipRepo != nil {
 			r.listsService = lists.NewService(
 				listRepo,
 				statusRepo,

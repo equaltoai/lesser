@@ -810,6 +810,16 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 		return nil, errors.Join(ErrActorDecodeFailed, err)
 	}
 
+	// Validate domain consistency: the fetched actor document's declared ID
+	// must belong to the same domain as the URL used to fetch it.
+	if err := common.ValidateActorDomainConsistency(actorID, actor.ID); err != nil {
+		d.logger.Error("actor domain mismatch in delivery fetch — possible spoofing",
+			zap.String("fetch_url", actorID),
+			zap.String("declared_id", actor.ID),
+			zap.Error(err))
+		return nil, errors.Join(ErrActorDomainMismatch, err)
+	}
+
 	// Cache the actor (ignore errors)
 	// Extract handle from actor ID
 	handle := extractHandleFromActorID(actor.ID, actor.PreferredUsername)

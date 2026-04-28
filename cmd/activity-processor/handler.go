@@ -863,13 +863,13 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
 	cfg := config.Get()
 	if cfg == nil {
-		return strings.Contains(actorID, DefaultTestingDomain)
+		return common.IsLocalActorID(actorID, DefaultTestingDomain)
 	}
 	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
-	return strings.Contains(actorID, domain)
+	return common.IsLocalActorID(actorID, domain)
 }
 
 // extractStatusID extracts status ID from a Note ID URL
@@ -2796,8 +2796,8 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 			continue
 		}
 
-		// Skip local recipients
-		if strings.Contains(recipient, domain) {
+		// Skip local recipients (canonical URL host comparison + @domain suffix)
+		if common.IsLocalActorID(recipient, domain) || strings.HasSuffix(recipient, "@"+domain) {
 			continue
 		}
 

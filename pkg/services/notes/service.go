@@ -1082,27 +1082,6 @@ func mentionMatchesViewer(mention, viewerUsername, viewerActorID string) bool {
 	return false
 }
 
-func extractMentionUsername(mention string) string {
-	candidate := strings.TrimSpace(mention)
-	if candidate == "" {
-		return ""
-	}
-
-	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
-		parsed, err := url.Parse(candidate)
-		if err == nil {
-			path := strings.Trim(parsed.Path, "/")
-			if path != "" {
-				segments := strings.Split(path, "/")
-				last := strings.TrimSpace(segments[len(segments)-1])
-				return strings.TrimPrefix(last, "@")
-			}
-		}
-	}
-
-	return strings.TrimPrefix(candidate, "@")
-}
-
 func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {
 	cleaned := strings.TrimSpace(viewerID)
 	if cleaned == "" {

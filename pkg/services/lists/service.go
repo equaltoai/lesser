@@ -327,14 +327,20 @@ func (s *Service) AddToList(ctx context.Context, cmd *AddToListCommand) (*Member
 
 	// Require that the list owner follows the account being added.
 	// This prevents using lists to bypass followers-only visibility.
-	if s.relationshipRepo != nil {
-		isFollowing, err := s.relationshipRepo.IsFollowing(ctx, list.Username, cmd.MemberUsername)
-		if err != nil || !isFollowing {
-			s.logger.Warn("cannot add unfollowed account to list",
-				zap.String("list_owner", list.Username),
-				zap.String("member_username", cmd.MemberUsername))
-			return nil, common.ErrForbidden(serviceerrors.ErrListMemberNotFollowed)
-		}
+	// Fail closed: if the relationship repository is not wired, refuse the
+	// operation rather than silently allowing unfollowed accounts.
+	if s.relationshipRepo == nil {
+		s.logger.Error("list membership check skipped: relationship repository not wired",
+			zap.String("list_id", cmd.ListID),
+			zap.String("member_username", cmd.MemberUsername))
+		return nil, common.ErrForbidden(serviceerrors.ErrListMemberNotFollowed)
+	}
+	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, list.Username, cmd.MemberUsername)
+	if err != nil || !isFollowing {
+		s.logger.Warn("cannot add unfollowed account to list",
+			zap.String("list_owner", list.Username),
+			zap.String("member_username", cmd.MemberUsername))
+		return nil, common.ErrForbidden(serviceerrors.ErrListMemberNotFollowed)
 	}
 
 	// Check if already a member
