@@ -299,8 +299,9 @@ func TestMentionHelpersNormalizeURLsAndUsernames(t *testing.T) {
 }
 
 type stubPublisher struct {
-	userEvents   []streamingEventRecord
-	streamEvents []streamingEventRecord
+	userEvents         []streamingEventRecord
+	streamEvents       []streamingEventRecord
+	conversationEvents []streamingEventRecord
 }
 
 type streamingEventRecord struct {
@@ -318,11 +319,109 @@ func (s *stubPublisher) PublishToStream(_ context.Context, streamName string, ev
 	return nil
 }
 
-func (s *stubPublisher) PublishToConversation(_ context.Context, _ string, _ *streaming.Event) error {
+func (s *stubPublisher) PublishToConversation(_ context.Context, conversationID string, event *streaming.Event) error {
+	s.conversationEvents = append(s.conversationEvents, streamingEventRecord{target: conversationID, event: event})
 	return nil
 }
 
 func (s *stubPublisher) Close() error { return nil }
+
+func TestStatusStreamingSharedEventsSanitizeBlindRecipients(t *testing.T) {
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	service := &Service{publisher: pub, logger: zap.NewNop()}
+
+	status := &models.Status{
+		StatusID:       "status-1",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Visibility:     models.VisibilityPublic,
+		Hashtags:       []string{"security"},
+		BtoRecipients:  []string{"https://example.com/users/hidden-to"},
+		BccRecipients:  []string{"https://example.com/users/hidden-bcc"},
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:  "https://example.com/objects/status-1",
+				BTo: []string{"https://example.com/users/hidden-to"},
+				BCC: []string{"https://example.com/users/hidden-bcc"},
+			},
+			AttributedTo: "https://example.com/users/alice",
+			Content:      "hello",
+		},
+	}
+
+	service.emitStatusCreatedEvents(ctx, status)
+
+	require.NotEmpty(t, pub.userEvents)
+	userStatus := pub.userEvents[0].event.Payload["entity"].(*models.Status)
+	require.NotEmpty(t, userStatus.BtoRecipients)
+	require.NotEmpty(t, userStatus.BccRecipients)
+
+	require.NotEmpty(t, pub.streamEvents)
+	for _, record := range pub.streamEvents {
+		sharedStatus := record.event.Payload["entity"].(*models.Status)
+		require.Empty(t, sharedStatus.BtoRecipients, "stream %s leaked bto recipients", record.target)
+		require.Empty(t, sharedStatus.BccRecipients, "stream %s leaked bcc recipients", record.target)
+		require.NotNil(t, sharedStatus.Note)
+		require.Empty(t, sharedStatus.Note.BTo, "stream %s leaked note bto", record.target)
+		require.Empty(t, sharedStatus.Note.BCC, "stream %s leaked note bcc", record.target)
+	}
+}
+
+func TestStatusStreamingPrivateHashtagsStayOutOfSharedStreams(t *testing.T) {
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	service := &Service{publisher: pub, logger: zap.NewNop()}
+
+	status := &models.Status{
+		StatusID:       "status-private",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Visibility:     models.VisibilityPrivate,
+		Hashtags:       []string{"private"},
+	}
+
+	service.emitStatusCreatedEvents(ctx, status)
+
+	require.NotEmpty(t, pub.userEvents)
+	require.Empty(t, pub.streamEvents)
+}
+
+func TestStatusStreamingConversationEventsSanitizeBlindRecipients(t *testing.T) {
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	service := &Service{publisher: pub, logger: zap.NewNop()}
+
+	status := &models.Status{
+		StatusID:       "status-direct",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Visibility:     models.VisibilityDirect,
+		ConversationID: "conversation-1",
+		BtoRecipients:  []string{"https://example.com/users/hidden-to"},
+		BccRecipients:  []string{"https://example.com/users/hidden-bcc"},
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:  "https://example.com/objects/status-direct",
+				BTo: []string{"https://example.com/users/hidden-to"},
+				BCC: []string{"https://example.com/users/hidden-bcc"},
+			},
+			AttributedTo: "https://example.com/users/alice",
+		},
+	}
+
+	service.emitStatusCreatedEvents(ctx, status)
+
+	require.Len(t, pub.conversationEvents, 2)
+	for _, record := range pub.conversationEvents {
+		sharedStatus := record.event.Payload["entity"].(*models.Status)
+		require.Empty(t, sharedStatus.BtoRecipients)
+		require.Empty(t, sharedStatus.BccRecipients)
+		require.NotNil(t, sharedStatus.Note)
+		require.Empty(t, sharedStatus.Note.BTo)
+		require.Empty(t, sharedStatus.Note.BCC)
+	}
+}
 
 type stubNotificationService struct {
 	cmds []*notifications.CreateNotificationCommand

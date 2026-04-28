@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
@@ -498,6 +499,23 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/reviewers", headers, nil, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusOK)(h.HandleAdminGetReviewersLift(ctx))
+	})
+
+	t.Run("Admin accounts redacts internal error details", func(t *testing.T) {
+		state := cloneState()
+		state.allErrorByType = map[string]error{
+			reflect.TypeOf(&[]storagemodels.User{}).String(): errors.New("secret ddb failure with table internals"),
+		}
+		h := newHandler(t, state)
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts", headers, nil, nil)
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetAccountsLift(ctx))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "internal server error", body["error"])
+		require.NotContains(t, string(resp.Body), "secret ddb failure")
 	})
 
 	t.Run("Moderation overview covers empty queue and reports", func(t *testing.T) {

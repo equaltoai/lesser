@@ -22,6 +22,8 @@ func TestExtractUsernameFromNotificationActorID(t *testing.T) {
 		{name: "url_host_fallback", input: "https://example.com", want: "example.com"},
 		{name: "url_no_host", input: "https:///", want: ""},
 		{name: "url_parse_error", input: "https://%", want: ""},
+		{name: "url_query_rejected", input: "https://example.com/users/alice?token=secret", want: ""},
+		{name: "markup_rejected", input: "<script>", want: ""},
 		{name: "plain", input: "bob", want: "bob"},
 	}
 
@@ -49,15 +51,14 @@ func TestFallbackNotificationActor(t *testing.T) {
 		require.Equal(t, "bob", actor.Name)
 	})
 
-	t.Run("url_parse_error_uses_raw_id_as_username", func(t *testing.T) {
+	t.Run("url_parse_error_is_rejected", func(t *testing.T) {
 		h := &Handler{cfg: &config.Config{Domain: "example.com"}}
-		actorID := "https://%"
-		actor := h.fallbackNotificationActor(actorID)
-		require.NotNil(t, actor)
-		require.Equal(t, actorID, actor.ID)
-		require.Equal(t, actorID, actor.URL)
-		require.Equal(t, actorID, actor.PreferredUsername)
-		require.Equal(t, actorID, actor.Name)
+		require.Nil(t, h.fallbackNotificationActor("https://%"))
+	})
+
+	t.Run("unsafe_identifier_is_rejected", func(t *testing.T) {
+		h := &Handler{cfg: &config.Config{Domain: "example.com"}}
+		require.Nil(t, h.fallbackNotificationActor("alice<script>"))
 	})
 
 	t.Run("local_identifier_builds_urls_when_configured", func(t *testing.T) {
