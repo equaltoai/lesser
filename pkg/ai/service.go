@@ -77,6 +77,50 @@ type AIService struct {
 	config      *AIConfig
 }
 
+// RedactPIIFromAnalysis returns a response-safe copy of an AI analysis with raw
+// PII text and offsets removed. Storage keeps the full moderation record; this
+// helper is for owner-facing API responses where raw PII is not required.
+func RedactPIIFromAnalysis(analysis *AIAnalysis) *AIAnalysis {
+	if analysis == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(analysis)
+	if err != nil {
+		return &AIAnalysis{
+			ID:               analysis.ID,
+			ObjectID:         analysis.ObjectID,
+			ObjectType:       analysis.ObjectType,
+			OverallRisk:      analysis.OverallRisk,
+			ModerationAction: analysis.ModerationAction,
+			Confidence:       analysis.Confidence,
+			AnalyzedAt:       analysis.AnalyzedAt,
+			Version:          analysis.Version,
+		}
+	}
+	var redacted AIAnalysis
+	if err := json.Unmarshal(data, &redacted); err != nil {
+		return &AIAnalysis{
+			ID:               analysis.ID,
+			ObjectID:         analysis.ObjectID,
+			ObjectType:       analysis.ObjectType,
+			OverallRisk:      analysis.OverallRisk,
+			ModerationAction: analysis.ModerationAction,
+			Confidence:       analysis.Confidence,
+			AnalyzedAt:       analysis.AnalyzedAt,
+			Version:          analysis.Version,
+		}
+	}
+	if redacted.TextAnalysis != nil {
+		for i := range redacted.TextAnalysis.PIIEntities {
+			redacted.TextAnalysis.PIIEntities[i].Text = ""
+			redacted.TextAnalysis.PIIEntities[i].BeginOffset = 0
+			redacted.TextAnalysis.PIIEntities[i].EndOffset = 0
+		}
+	}
+	return &redacted
+}
+
 // AIConfig contains configuration for AI service features and thresholds
 //
 //nolint:revive // AI prefix clarifies this is AI-specific config

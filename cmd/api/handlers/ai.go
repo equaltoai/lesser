@@ -1,15 +1,24 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	originalai "github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	ai "github.com/equaltoai/lesser/pkg/services/ai"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
+
+type aiAnalysisLiftRequest struct {
+	ObjectID   string `json:"object_id"`
+	ObjectType string `json:"object_type"`
+	Force      bool   `json:"force"` // Force re-analysis
+}
 
 // Removed global AI storage - now using AIRepository
 
@@ -17,8 +26,12 @@ import (
 // GET /api/v1/ai/analysis/:object_id
 func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Auth - require read scope
-	if _, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken); resp != nil || err != nil {
+	claims, resp, err := h.authenticatedClaimsWithResponder(ctx, common.RespondMissingAuth, common.RespondInvalidToken)
+	if resp != nil || err != nil {
 		return resp, err
+	}
+	if !claims.HasScope(auth.ScopeRead) && !claims.HasScope(auth.ScopeAdmin) {
+		return common.RespondInsufficientScope(ctx, auth.ScopeRead)
 	}
 
 	// Get object ID from path parameters
@@ -39,6 +52,11 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Re
 		})
 	}
 
+	adminViewer, resp, err := h.authorizeAIAnalysisViewer(ctx, claims, objectID)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
 	// Get analysis using AI service
 	result, err := h.registry.AI().GetAnalysis(ctx.Context(), &ai.GetAnalysisQuery{
 		ObjectID: objectID,
@@ -50,7 +68,67 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Re
 	}
 
 	// Return analysis
-	return okJSON(result.Analysis)
+	analysis := result.Analysis
+	if !adminViewer {
+		analysis = originalai.RedactPIIFromAnalysis(analysis)
+	}
+	return okJSON(analysis)
+}
+
+func (h *Handler) authorizeAIAnalysisViewer(ctx *apptheory.Context, claims *auth.Claims, objectID string) (bool, *apptheory.Response, error) {
+	adminViewer, err := h.claimsUserHasAdminRole(ctx.Context(), claims)
+	if err != nil {
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return false, resp, respErr
+	}
+	if adminViewer {
+		return true, nil, nil
+	}
+
+	ownerUsername, err := h.aiAnalysisOwnerUsername(ctx.Context(), objectID)
+	if err != nil {
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return false, resp, respErr
+	}
+	if ownerUsername != "" && strings.EqualFold(ownerUsername, strings.TrimSpace(claims.Username)) {
+		return false, nil, nil
+	}
+	resp, respErr := common.RespondForbidden(ctx, "not authorized to view AI analysis")
+	return false, resp, respErr
+}
+
+func (h *Handler) claimsUserHasAdminRole(ctx context.Context, claims *auth.Claims) (bool, error) {
+	if claims == nil || strings.TrimSpace(claims.Username) == "" {
+		return false, nil
+	}
+	if h == nil || h.repos == nil || h.repos.Account() == nil {
+		return false, nil
+	}
+	user, err := h.repos.Account().GetUser(ctx, claims.Username)
+	if err != nil {
+		return false, err
+	}
+	return user != nil && strings.EqualFold(user.Role, roleAdmin), nil
+}
+
+func (h *Handler) aiAnalysisOwnerUsername(ctx context.Context, objectID string) (string, error) {
+	if h == nil || h.repos == nil || h.repos.Status() == nil {
+		return "", nil
+	}
+	status, err := h.repos.Status().GetStatus(ctx, objectID)
+	if err != nil {
+		if common.IsNotFound(err) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return "", nil
+		}
+		return "", err
+	}
+	if status == nil {
+		return "", nil
+	}
+	if owner := strings.TrimSpace(status.AuthorUsername); owner != "" {
+		return owner, nil
+	}
+	return strings.TrimPrefix(strings.TrimSpace(transformations.ExtractUsernameFromActorID(status.AuthorID)), "@"), nil
 }
 
 // HandleRequestAIAnalysisLift triggers AI analysis for an object
@@ -67,6 +145,44 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheor
 		return common.RespondInsufficientScope(ctx, "moderation")
 	}
 
+	if resp, err := h.ensureAIAnalysisEnabled(ctx); resp != nil || err != nil {
+		return resp, err
+	}
+
+	req, resp, err := parseAIAnalysisLiftRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	// Queue for analysis using AI service
+	queueResult, err := h.registry.AI().QueueForAnalysis(ctx.Context(), &ai.QueueAnalysisCommand{
+		ObjectID:   req.ObjectID,
+		ObjectType: req.ObjectType,
+		Force:      req.Force,
+	})
+	if err != nil {
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "failed to queue analysis",
+		})
+	}
+
+	// If not queued (already exists), return existing
+	if !queueResult.Queued {
+		if resp, err := h.existingAIAnalysisResponse(ctx, claims, req.ObjectID); resp != nil || err != nil {
+			return resp, err
+		}
+	}
+
+	response := map[string]any{
+		"message":        "Analysis queued",
+		"object_id":      req.ObjectID,
+		"estimated_time": "10-30 seconds",
+	}
+
+	return apptheory.JSON(http.StatusAccepted, response)
+}
+
+func (h *Handler) ensureAIAnalysisEnabled(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if h.repos != nil && h.repos.Instance() != nil {
 		exists, err := h.repos.Instance().AIConfigExists(ctx.Context())
 		if err != nil {
@@ -88,59 +204,50 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheor
 			}
 		}
 	}
+	return nil, nil
+}
 
-	var req struct {
-		ObjectID   string `json:"object_id"`
-		ObjectType string `json:"object_type"`
-		Force      bool   `json:"force"` // Force re-analysis
-	}
-
+func parseAIAnalysisLiftRequest(ctx *apptheory.Context) (*aiAnalysisLiftRequest, *apptheory.Response, error) {
+	var req aiAnalysisLiftRequest
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		// Fallback for test environments / missing content-type
 		if len(ctx.Request.Body) == 0 {
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return nil, resp, respErr
 		}
 		if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return nil, resp, respErr
 		}
 	}
 
 	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
+		return nil, resp, respErr
 	}
 
-	// Queue for analysis using AI service
-	queueResult, err := h.registry.AI().QueueForAnalysis(ctx.Context(), &ai.QueueAnalysisCommand{
-		ObjectID:   req.ObjectID,
-		ObjectType: req.ObjectType,
-		Force:      req.Force,
+	return &req, nil, nil
+}
+
+func (h *Handler) existingAIAnalysisResponse(ctx *apptheory.Context, claims *auth.Claims, objectID string) (*apptheory.Response, error) {
+	result, _ := h.registry.AI().GetAnalysis(ctx.Context(), &ai.GetAnalysisQuery{
+		ObjectID: objectID,
 	})
-	if err != nil {
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "failed to queue analysis",
-		})
+	if result == nil || result.Analysis == nil {
+		return nil, nil
 	}
 
-	// If not queued (already exists), return existing
-	if !queueResult.Queued {
-		// Get the existing analysis
-		result, _ := h.registry.AI().GetAnalysis(ctx.Context(), &ai.GetAnalysisQuery{
-			ObjectID: req.ObjectID,
-		})
-		if result != nil && result.Analysis != nil {
-			return okJSON(result.Analysis)
-		}
+	adminViewer, resp, err := h.authorizeAIAnalysisViewer(ctx, claims, objectID)
+	if resp != nil || err != nil {
+		return resp, err
 	}
-
-	response := map[string]any{
-		"message":        "Analysis queued",
-		"object_id":      req.ObjectID,
-		"estimated_time": "10-30 seconds",
+	analysis := result.Analysis
+	if !adminViewer {
+		analysis = originalai.RedactPIIFromAnalysis(analysis)
 	}
-
-	return apptheory.JSON(http.StatusAccepted, response)
+	return okJSON(analysis)
 }
 
 // HandleGetAIStatsLift returns AI analysis statistics

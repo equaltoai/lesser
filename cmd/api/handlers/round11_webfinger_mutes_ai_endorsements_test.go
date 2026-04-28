@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -170,7 +171,17 @@ func TestAILift_Flows(t *testing.T) {
 		},
 	}
 
-	h := &Handler{cfg: cfg, logger: logger, registry: registry}
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"alice": {Username: "alice", Role: "user", Approved: true, Version: 1},
+			"admin": {Username: "admin", Role: roleAdmin, Approved: true, Version: 1},
+		},
+		statusByID: map[string]storagemodels.Status{
+			"obj-123": {StatusID: "obj-123", AuthorUsername: "alice", AuthorID: "https://example.com/users/alice"},
+		},
+	})
+	h.logger = logger
+	h.registry = registry
 
 	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/obj-123", map[string]string{
@@ -180,7 +191,7 @@ func TestAILift_Flows(t *testing.T) {
 	ctx.Params["object_id"] = "obj-123"
 	requireStatus(t, http.StatusOK)(h.HandleGetAIAnalysisLift(ctx))
 
-	moderationToken := round11SignAccessToken(t, cfg.JWTSecret, "mod", []string{"moderation"})
+	moderationToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"moderation"})
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{
 		"Authorization": "Bearer " + moderationToken,
 	}, nil, map[string]any{"object_id": "obj-123", "object_type": "status"})
