@@ -65,6 +65,7 @@ func TestValidateAccountIDCoverage(t *testing.T) {
 		{"valid numeric", "12345678901234567890", false},
 		{"valid alphanumeric", "abc123", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -219,6 +220,7 @@ func TestValidateFilterParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 101), true},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +243,7 @@ func TestValidateKeywordParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 101), true},
 	}
 
 	for _, tt := range tests {
@@ -300,6 +303,7 @@ func TestValidateSearchQueryCoverage(t *testing.T) {
 		{"valid query", "hello world", false},
 		{"short query", "hi", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
