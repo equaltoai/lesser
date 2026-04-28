@@ -43,6 +43,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_FlowAndFiltering(t *test
 	ctx := context.Background()
 
 	require.NoError(t, repo.HandleConnect(ctx, "conn-1", "user-1"))
+	require.NoError(t, repo.HandleConnectWithPrincipal(ctx, "conn-2", "user-2", "moderator"))
 
 	require.NoError(t, repo.CreateSubscription(ctx, "conn-1", "notifications", map[string]any{"a": 1}))
 	require.NoError(t, repo.DeleteSubscription(ctx, "conn-1", "notifications"))

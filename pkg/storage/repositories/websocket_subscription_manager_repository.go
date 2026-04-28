@@ -33,11 +33,18 @@ func NewWebSocketSubscriptionManagerRepository(db core.DB, tableName string, log
 	}
 }
 
-// HandleConnect stores a new WebSocket connection
+// HandleConnect stores a new WebSocket connection.
 func (r *WebSocketSubscriptionManagerRepository) HandleConnect(ctx context.Context, connectionID, userID string) error {
+	return r.HandleConnectWithPrincipal(ctx, connectionID, userID, "")
+}
+
+// HandleConnectWithPrincipal stores a new WebSocket connection with the
+// connection's authenticated principal role when available.
+func (r *WebSocketSubscriptionManagerRepository) HandleConnectWithPrincipal(ctx context.Context, connectionID, userID, role string) error {
 	connection := &models.WebSocketEventConnection{
 		ConnectionID: connectionID,
 		UserID:       userID,
+		Role:         role,
 		ConnectedAt:  time.Now(),
 		LastSeen:     time.Now(),
 		TTL:          time.Now().Add(24 * time.Hour).Unix(), // Expire after 24 hours

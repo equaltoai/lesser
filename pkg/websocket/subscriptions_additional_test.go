@@ -18,9 +18,11 @@ import (
 type stubSubscriptionRepo struct {
 	handleConnectErr    error
 	handleDisconnectErr error
+	getConnectionErr    error
 	createErr           error
 	deleteErr           error
 	getErr              error
+	connectRole         string
 
 	created []struct {
 		connectionID     string
@@ -32,7 +34,8 @@ type stubSubscriptionRepo struct {
 		subscriptionType string
 	}
 
-	subsByType map[string][]storageModels.WebSocketEventSubscription
+	subsByType      map[string][]storageModels.WebSocketEventSubscription
+	connectionsByID map[string]storageModels.WebSocketEventConnection
 
 	disconnected chan string
 }
@@ -41,11 +44,30 @@ func (s *stubSubscriptionRepo) HandleConnect(_ context.Context, _, _ string) err
 	return s.handleConnectErr
 }
 
+func (s *stubSubscriptionRepo) HandleConnectWithPrincipal(_ context.Context, _, _ string, role string) error {
+	s.connectRole = role
+	return s.handleConnectErr
+}
+
 func (s *stubSubscriptionRepo) HandleDisconnect(_ context.Context, connectionID string) error {
 	if s.disconnected != nil {
 		s.disconnected <- connectionID
 	}
 	return s.handleDisconnectErr
+}
+
+func (s *stubSubscriptionRepo) GetConnection(_ context.Context, connectionID string) (*storageModels.WebSocketEventConnection, error) {
+	if s.getConnectionErr != nil {
+		return nil, s.getConnectionErr
+	}
+	if s.connectionsByID == nil {
+		return nil, nil
+	}
+	connection, ok := s.connectionsByID[connectionID]
+	if !ok {
+		return nil, nil
+	}
+	return &connection, nil
 }
 
 func (s *stubSubscriptionRepo) CreateSubscription(_ context.Context, connectionID, subscriptionType string, filter map[string]any) error {
@@ -131,6 +153,104 @@ func TestSubscriptionManager_SubscribeRejectsUnknownConnection(t *testing.T) {
 	err := sm.SubscribeThreatIntel("missing")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "connection not found")
+}
+
+func TestSubscriptionManager_SubscribeHydratesConnectionFromRepository(t *testing.T) {
+	now := time.Now()
+	repo := &stubSubscriptionRepo{
+		connectionsByID: map[string]storageModels.WebSocketEventConnection{
+			"c1": {
+				ConnectionID: "c1",
+				UserID:       "admin",
+				Role:         "admin",
+				ConnectedAt:  now,
+				LastSeen:     now,
+				TTL:          now.Add(time.Hour).Unix(),
+			},
+		},
+	}
+	sm := &subscriptionManager{
+		repo:          repo,
+		apiGW:         &stubStreamerClient{},
+		connections:   map[string]*Connection{},
+		subscriptions: map[string]map[string]*Subscription{},
+		logger:        zap.NewNop(),
+	}
+
+	err := sm.SubscribeThreatIntel("c1")
+	require.NoError(t, err)
+	require.Len(t, repo.created, 1)
+	assert.Equal(t, "threat_intel", repo.created[0].subscriptionType)
+	require.Contains(t, sm.connections, "c1")
+	assert.Equal(t, "admin", sm.connections["c1"].Role)
+}
+
+func TestSubscriptionManager_ConnectionPrincipalLoadsDurableRole(t *testing.T) {
+	repo := &stubSubscriptionRepo{
+		connectionsByID: map[string]storageModels.WebSocketEventConnection{
+			"c1": {ConnectionID: "c1", UserID: "mod", Role: "moderator"},
+		},
+	}
+	sm := &subscriptionManager{
+		repo:          repo,
+		apiGW:         &stubStreamerClient{},
+		connections:   map[string]*Connection{},
+		subscriptions: map[string]map[string]*Subscription{},
+		logger:        zap.NewNop(),
+	}
+
+	principal, err := sm.ConnectionPrincipal("c1")
+	require.NoError(t, err)
+	assert.True(t, principal.Authenticated)
+	assert.Equal(t, "mod", principal.UserID)
+	assert.Equal(t, "moderator", principal.Role)
+}
+
+func TestSubscriptionManager_SubscribeConvenienceMethodsAndPublishAlerts(t *testing.T) {
+	repo := &stubSubscriptionRepo{
+		subsByType: map[string][]storageModels.WebSocketEventSubscription{
+			"performance": {
+				{
+					ConnectionID:     "c1",
+					SubscriptionType: "performance",
+					Filter:           map[string]any{"severity": "critical"},
+				},
+			},
+			"infrastructure": {
+				{ConnectionID: "c2", SubscriptionType: "infrastructure"},
+			},
+		},
+	}
+	client := &stubStreamerClient{}
+	sm := &subscriptionManager{
+		repo:  repo,
+		apiGW: client,
+		connections: map[string]*Connection{
+			"c1": {ConnectionID: "c1"},
+		},
+		subscriptions: map[string]map[string]*Subscription{},
+		logger:        zap.NewNop(),
+	}
+
+	require.NoError(t, sm.SubscribePerformanceAlerts("c1", "critical"))
+	require.NoError(t, sm.SubscribeInfrastructureEvents("c1"))
+	require.NoError(t, sm.SubscribeCommunityNotes("c1"))
+	require.NoError(t, sm.SubscribeTimeline("c1"))
+	require.NoError(t, sm.SubscribeNotifications("c1"))
+	require.Len(t, repo.created, 5)
+
+	require.NoError(t, sm.PublishPerformanceAlert(&PerformanceAlert{
+		ID:        "p1",
+		Severity:  "critical",
+		Timestamp: time.Now(),
+	}))
+	require.NoError(t, sm.PublishInfrastructureEvent(&InfrastructureEvent{
+		ID:        "i1",
+		Timestamp: time.Now(),
+	}))
+	require.Len(t, client.posts, 2)
+	assert.Equal(t, "c1", client.posts[0].connectionID)
+	assert.Equal(t, "c2", client.posts[1].connectionID)
 }
 
 func TestSubscriptionManager_PublishToSubscribers_MarshalError(t *testing.T) {
@@ -224,6 +344,23 @@ func (s *stubSubscriptionManager) HandleConnect(_ string, userID string) error {
 	return s.connectErr
 }
 func (s *stubSubscriptionManager) HandleDisconnect(_ string) error { return nil }
+
+type principalAwareStubSubscriptionManager struct {
+	stubSubscriptionManager
+	connectPrincipal webSocketPrincipal
+	principal        webSocketPrincipal
+	principalErr     error
+}
+
+func (s *principalAwareStubSubscriptionManager) HandleConnectWithPrincipal(_ string, principal webSocketPrincipal) error {
+	s.connectPrincipal = principal
+	s.connectUserID = principal.UserID
+	return s.connectErr
+}
+
+func (s *principalAwareStubSubscriptionManager) ConnectionPrincipal(_ string) (webSocketPrincipal, error) {
+	return s.principal, s.principalErr
+}
 
 func TestWebSocketHandler_Routes(t *testing.T) {
 	sm := &stubSubscriptionManager{}
@@ -325,4 +462,71 @@ func TestWebSocketHandler_AdminAlertSubscriptionsRequireAuthenticatedRoles(t *te
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestWebSocketHandler_AdminAlertSubscriptionUsesRouteAuthorizer(t *testing.T) {
+	sm := &stubSubscriptionManager{}
+	h := NewWebSocketHandler(sm, zap.NewNop())
+
+	resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "subscribe",
+			Authorizer: map[string]any{
+				"username": "mod",
+				"role":     "moderator",
+			},
+		},
+		Body: `{"type":"threat_intel"}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	stored, ok := h.connectionPrincipal("c1")
+	require.True(t, ok)
+	assert.Equal(t, "mod", stored.UserID)
+	assert.Equal(t, "moderator", stored.Role)
+}
+
+func TestWebSocketHandler_AdminAlertSubscriptionLoadsDurablePrincipal(t *testing.T) {
+	sm := &principalAwareStubSubscriptionManager{
+		principal: webSocketPrincipal{
+			UserID:        "admin",
+			Role:          "admin",
+			Authenticated: true,
+		},
+	}
+	h := NewWebSocketHandler(sm, zap.NewNop())
+
+	resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "subscribe"},
+		Body:           `{"type":"infrastructure"}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	stored, ok := h.connectionPrincipal("c1")
+	require.True(t, ok)
+	assert.Equal(t, "admin", stored.UserID)
+	assert.Equal(t, "admin", stored.Role)
+}
+
+func TestWebSocketHandler_ConnectPersistsDurablePrincipalRole(t *testing.T) {
+	sm := &principalAwareStubSubscriptionManager{}
+	h := NewWebSocketHandler(sm, zap.NewNop())
+
+	resp, err := h.HandleAPIGatewayWebSocketEvent(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$connect",
+			Authorizer: map[string]any{
+				"username": "mod",
+				"role":     "moderator",
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "mod", sm.connectPrincipal.UserID)
+	assert.Equal(t, "moderator", sm.connectPrincipal.Role)
 }
