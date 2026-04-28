@@ -178,11 +178,11 @@ func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 		require.False(t, env.handler.isRequestSuccessful(assertErr{}, 200))
 		require.NotEmpty(t, env.handler.parseRemoteInstance("Mastodon/4.0.0"))
 
-			require.Equal(t, "alice", extractLocalUsernameFromURLPath("/users/alice"))
-			require.Equal(t, "", extractLocalUsernameFromURLPath(""))
-			require.Equal(t, "profile", extractLocalUsernameFromURLPath("/profile"))
-			require.Equal(t, "carol", extractLocalUsernameFromURLPath("/users/carol/inbox"))
-			require.Equal(t, "", headerValue(nil, ""))
+		require.Equal(t, "alice", extractLocalUsernameFromURLPath("/users/alice"))
+		require.Equal(t, "", extractLocalUsernameFromURLPath(""))
+		require.Equal(t, "profile", extractLocalUsernameFromURLPath("/profile"))
+		require.Equal(t, "carol", extractLocalUsernameFromURLPath("/users/carol/inbox"))
+		require.Equal(t, "", headerValue(nil, ""))
 	})
 }
 
