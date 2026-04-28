@@ -80,3 +80,17 @@ func TestConfig_OAuthClientSecretRotationGracePeriod_DefaultsTo24Hours(t *testin
 
 	assert.Equal(t, 24*time.Hour, cfg.OAuthClientSecretRotationGracePeriod)
 }
+
+func TestConfig_GraphQLMaxComplexity_DefaultAndOverride(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("GRAPHQL_MAX_COMPLEXITY", "")
+
+	ResetForTests()
+	cfg := Get()
+	assert.Equal(t, DefaultGraphQLMaxComplexity, cfg.GraphQLMaxComplexity)
+
+	t.Setenv("GRAPHQL_MAX_COMPLEXITY", "2500")
+	ResetForTests()
+	cfg = Get()
+	assert.Equal(t, 2500, cfg.GraphQLMaxComplexity)
+}
