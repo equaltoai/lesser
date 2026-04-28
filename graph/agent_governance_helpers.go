@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
@@ -73,4 +76,49 @@ func graphAgentGovernanceWriteError(err error, action string) error {
 		)
 	}
 	return apperrors.InternalWithCause(err, fmt.Sprintf("failed to %s agent governance state", action))
+}
+
+func agentOwnerMatchesLocalPrincipal(owner string, principalUsername string, localActorURL string) bool {
+	principalUsername = strings.TrimSpace(principalUsername)
+	owner = strings.TrimSpace(owner)
+	if principalUsername == "" || owner == "" {
+		return false
+	}
+
+	lowerOwner := strings.ToLower(owner)
+	if strings.HasPrefix(lowerOwner, "http://") || strings.HasPrefix(lowerOwner, "https://") {
+		return strings.TrimSpace(localActorURL) != "" && strings.EqualFold(owner, localActorURL)
+	}
+
+	owner = strings.TrimPrefix(owner, "@")
+	if strings.Contains(owner, "/") {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(owner), principalUsername)
+}
+
+func (r *Resolver) agentOwnerActorURL(username string) string {
+	if r == nil || r.Config == nil {
+		return ""
+	}
+	return r.Config.ActorURL(strings.TrimSpace(username))
+}
+
+func optionalGraphAuthClaims(ctx context.Context) *auth.Claims {
+	claims, _ := ctx.Value(common.ContextKeyClaims).(*auth.Claims)
+	if claims == nil || strings.TrimSpace(claims.Username) == "" {
+		return nil
+	}
+	return claims
+}
+
+func (r *Resolver) canViewAgentPrivateFields(claims *auth.Claims, agentUser *storage.User) bool {
+	if claims == nil || agentUser == nil {
+		return false
+	}
+	return isAgentOwnerOrAdmin(claims, agentUser, r.agentOwnerActorURL(claims.Username))
+}
+
+func graphClaimsIsAdmin(claims *auth.Claims) bool {
+	return claims != nil && (claims.HasScope(auth.ScopeAdmin) || claims.HasScope("admin:write") || claims.HasScope("admin:all"))
 }

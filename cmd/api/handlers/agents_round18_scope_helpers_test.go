@@ -23,6 +23,7 @@ func TestAgentsRound18_IsAgentOwnerOrAdmin(t *testing.T) {
 	require.False(t, h.isAgentOwnerOrAdmin(&auth.Claims{Username: "alice"}, &storage.User{AgentOwner: ""}))
 	require.True(t, h.isAgentOwnerOrAdmin(&auth.Claims{Username: "alice"}, &storage.User{AgentOwner: "@alice"}))
 	require.False(t, h.isAgentOwnerOrAdmin(&auth.Claims{Username: "alice"}, &storage.User{AgentOwner: "bob"}))
+	require.False(t, h.isAgentOwnerOrAdmin(&auth.Claims{Username: "alice"}, &storage.User{AgentOwner: "https://remote.example/users/alice"}))
 }
 
 func TestAgentsRound18_ValidateDelegationScopes(t *testing.T) {

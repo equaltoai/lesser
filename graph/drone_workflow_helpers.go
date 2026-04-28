@@ -68,7 +68,7 @@ func (r *Resolver) canViewDroneWorkflow(ctx context.Context, claims *auth.Claims
 	if strings.EqualFold(strings.TrimSpace(claims.Username), strings.TrimSpace(agentUser.Username)) {
 		return true
 	}
-	if isAgentOwnerOrAdmin(claims, agentUser) {
+	if isAgentOwnerOrAdmin(claims, agentUser, r.agentOwnerActorURL(claims.Username)) {
 		return true
 	}
 	role, err := r.normalizedRole(ctx, claims.Username)

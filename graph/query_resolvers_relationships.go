@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -389,7 +390,7 @@ func stringToCursor(value string) *model.Cursor {
 
 // TrustGraph is the resolver for the trustGraph field.
 func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category *models.TrustCategory) ([]*trust.TrustEdge, error) {
-	_, err := r.requireAuth(ctx)
+	viewerUsername, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +407,9 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 	// Validate inputs
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil, ErrActorIDRequired
+	}
+	if !r.canViewTrustGraph(ctx, viewerUsername, actorID) {
+		return nil, apperrors.Forbidden("not authorized to view trust graph")
 	}
 
 	trustRepo := r.Registry.GetStorage().Trust()
@@ -457,4 +461,16 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 		zap.Int("edge_count", len(edges)))
 
 	return edges, nil
+}
+
+func (r *Resolver) canViewTrustGraph(ctx context.Context, viewerUsername string, actorID string) bool {
+	viewerUsername = strings.TrimSpace(viewerUsername)
+	if viewerUsername == "" {
+		return false
+	}
+	if r.isAdmin(ctx, viewerUsername) {
+		return true
+	}
+	localUsername := r.localUsernameForLookup(actorID)
+	return localUsername != "" && strings.EqualFold(localUsername, viewerUsername)
 }

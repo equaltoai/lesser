@@ -109,4 +109,7 @@ func TestRound12QueryResolvers_Relationships_PagesAndGraph(t *testing.T) {
 	filtered, err := q.TrustGraph(ctx, "alice", &cat)
 	require.NoError(t, err)
 	require.NotNil(t, filtered)
+
+	_, err = q.TrustGraph(ctx, "bob", nil)
+	require.Error(t, err)
 }

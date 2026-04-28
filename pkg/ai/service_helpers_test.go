@@ -13,6 +13,31 @@ import (
 // Section 1: Composite scoring helpers
 // =============================================================================
 
+func TestRedactPIIFromAnalysis(t *testing.T) {
+	analysis := &AIAnalysis{
+		ID:       "analysis-1",
+		ObjectID: "status-1",
+		TextAnalysis: &TextAnalysis{
+			ContainsPII: true,
+			PIIEntities: []PIIEntity{{
+				Type:        PiiEmail,
+				Text:        "alice@example.com",
+				Score:       0.99,
+				BeginOffset: 5,
+				EndOffset:   22,
+			}},
+		},
+	}
+
+	redacted := RedactPIIFromAnalysis(analysis)
+	require.NotSame(t, analysis, redacted)
+	require.Len(t, redacted.TextAnalysis.PIIEntities, 1)
+	require.Empty(t, redacted.TextAnalysis.PIIEntities[0].Text)
+	require.Zero(t, redacted.TextAnalysis.PIIEntities[0].BeginOffset)
+	require.Zero(t, redacted.TextAnalysis.PIIEntities[0].EndOffset)
+	require.Equal(t, "alice@example.com", analysis.TextAnalysis.PIIEntities[0].Text)
+}
+
 func TestCalculateOverallRisk(t *testing.T) {
 	// Create a minimal AIService for testing - no AWS clients needed for pure helpers
 	service := &AIService{

@@ -1,9 +1,11 @@
 package graph
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -109,6 +111,86 @@ func TestConvertStorageUserToAgent_NormalizesExpiredQuarantine(t *testing.T) {
 	require.False(t, agent.QuarantineActive)
 	require.NotNil(t, agent.QuarantineEnd)
 	require.Equal(t, past.UTC(), time.Time(*agent.QuarantineEnd))
+}
+
+func TestRedactGraphAgentPrivateFields(t *testing.T) {
+	owner := "@alice"
+	soulID := "0xsoul"
+	agent := &model.Agent{
+		AgentOwner:      &owner,
+		DelegatedScopes: []string{auth.ScopeRead},
+		IdentitySemantics: &model.AgentIdentitySemantics{
+			SoulBindingState: model.SoulBindingStateBound,
+			SoulAgentID:      &soulID,
+		},
+	}
+
+	redactGraphAgentPrivateFields(agent)
+	require.Nil(t, agent.AgentOwner)
+	require.Empty(t, agent.DelegatedScopes)
+	require.Equal(t, model.SoulBindingStateUnbound, agent.IdentitySemantics.SoulBindingState)
+	require.Nil(t, agent.IdentitySemantics.SoulAgentID)
+}
+
+func TestAgentIdentitySemanticsResolverRedactsSoulBindingForPublicViewer(t *testing.T) {
+	resolver, graphStorage := newRound12GraphResolver(t)
+	resolver.Config.AllowAgents = true
+	now := time.Now().UTC()
+	metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
+		CurrentPhase: agents.DroneWorkflowPhaseContinuity,
+		CurrentState: agents.DroneWorkflowStateContinuityStable,
+		SoulAgentID:  "soul-agent-1",
+	})
+	require.NoError(t, err)
+
+	user := &storage.User{
+		Username:     "drone1",
+		DisplayName:  "Drone One",
+		IsAgent:      true,
+		AgentType:    "CUSTOM",
+		AgentVersion: "v1",
+		AgentOwner:   "@owner",
+		Metadata:     metadata,
+		Approved:     true,
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now,
+	}
+	graphStorage.SeedAccountUser(user)
+	governance := &storage.AgentGovernanceState{
+		Username:        "drone1",
+		DelegatedScopes: []string{auth.ScopeRead},
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now,
+	}
+	graphStorage.SeedAgentGovernanceState(governance)
+
+	publicAgent := resolver.convertStorageUserToAgent(user, governance)
+	require.NotNil(t, publicAgent)
+	redactGraphAgentPrivateFields(publicAgent)
+	require.Nil(t, publicAgent.AgentOwner)
+	require.Empty(t, publicAgent.DelegatedScopes)
+
+	publicIdentity, err := resolver.Agent().IdentitySemantics(context.Background(), publicAgent)
+	require.NoError(t, err)
+	require.NotNil(t, publicIdentity)
+	require.Equal(t, agents.DroneIdentityStateSouled, publicIdentity.IdentityState)
+	require.Equal(t, model.SoulBindingStateUnbound, publicIdentity.SoulBindingState)
+	require.Nil(t, publicIdentity.SoulAgentID)
+
+	ownerIdentity, err := resolver.Agent().IdentitySemantics(delegatedAgentAuthContext("owner", auth.ScopeRead), publicAgent)
+	require.NoError(t, err)
+	require.NotNil(t, ownerIdentity)
+	require.Equal(t, model.SoulBindingStateBound, ownerIdentity.SoulBindingState)
+	require.NotNil(t, ownerIdentity.SoulAgentID)
+	require.Equal(t, "soul-agent-1", *ownerIdentity.SoulAgentID)
+}
+
+func TestGraphAgentOwnerMatchesLocalPrincipal(t *testing.T) {
+	require.True(t, agentOwnerMatchesLocalPrincipal("@alice", "alice", ""))
+	require.True(t, agentOwnerMatchesLocalPrincipal("alice", "alice", ""))
+	require.True(t, agentOwnerMatchesLocalPrincipal("https://example.com/users/alice", "alice", "https://example.com/users/alice"))
+	require.False(t, agentOwnerMatchesLocalPrincipal("https://remote.example/users/alice", "alice", "https://example.com/users/alice"))
+	require.False(t, agentOwnerMatchesLocalPrincipal("example.com/users/alice", "alice", ""))
 }
 
 func ptrGraphTime(value time.Time) *time.Time {

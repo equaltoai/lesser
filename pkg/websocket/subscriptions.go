@@ -4,7 +4,10 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +21,9 @@ import (
 
 type subscriptionRepository interface {
 	HandleConnect(ctx context.Context, connectionID, userID string) error
+	HandleConnectWithPrincipal(ctx context.Context, connectionID, userID, role string) error
 	HandleDisconnect(ctx context.Context, connectionID string) error
+	GetConnection(ctx context.Context, connectionID string) (*storageModels.WebSocketEventConnection, error)
 	CreateSubscription(ctx context.Context, connectionID, subscriptionType string, filter map[string]any) error
 	DeleteSubscription(ctx context.Context, connectionID, subscriptionType string) error
 	GetSubscriptionsForType(ctx context.Context, subscriptionType string) ([]storageModels.WebSocketEventSubscription, error)
@@ -46,6 +51,7 @@ type SubscriptionManager interface {
 type Connection struct {
 	ConnectionID string    `json:"connection_id" dynamodbav:"ConnectionID"`
 	UserID       string    `json:"user_id" dynamodbav:"UserID"`
+	Role         string    `json:"role,omitempty" dynamodbav:"Role,omitempty"`
 	ConnectedAt  time.Time `json:"connected_at" dynamodbav:"ConnectedAt"`
 	LastSeen     time.Time `json:"last_seen" dynamodbav:"LastSeen"`
 	TTL          int64     `json:"ttl" dynamodbav:"TTL"`
@@ -158,23 +164,35 @@ func NewSubscriptionManager(repo *repositories.WebSocketSubscriptionManagerRepos
 
 // HandleConnect handles a new WebSocket connection
 func (sm *subscriptionManager) HandleConnect(connectionID, userID string) error {
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
+	return sm.handleConnect(connectionID, userID, "")
+}
 
+func (sm *subscriptionManager) HandleConnectWithPrincipal(connectionID string, principal webSocketPrincipal) error {
+	return sm.handleConnect(connectionID, principal.UserID, principal.Role)
+}
+
+func (sm *subscriptionManager) handleConnect(connectionID, userID, role string) error {
+	now := time.Now()
+	sm.mutex.Lock()
 	connection := &Connection{
 		ConnectionID: connectionID,
 		UserID:       userID,
-		ConnectedAt:  time.Now(),
-		LastSeen:     time.Now(),
-		TTL:          time.Now().Add(24 * time.Hour).Unix(), // Expire after 24 hours
+		Role:         role,
+		ConnectedAt:  now,
+		LastSeen:     now,
+		TTL:          now.Add(24 * time.Hour).Unix(), // Expire after 24 hours
 	}
 
 	// Store in memory
+	if sm.connections == nil {
+		sm.connections = make(map[string]*Connection)
+	}
 	sm.connections[connectionID] = connection
+	sm.mutex.Unlock()
 
 	// Store in DynamoDB using repository
 	// Use background context for async repository operation
-	err := sm.repo.HandleConnect(context.Background(), connectionID, userID)
+	err := sm.repo.HandleConnectWithPrincipal(context.Background(), connectionID, userID, role)
 	if err != nil {
 		return fmt.Errorf("failed to store connection: %w", err)
 	}
@@ -184,6 +202,23 @@ func (sm *subscriptionManager) HandleConnect(connectionID, userID string) error 
 		zap.String("user_id", userID),
 	)
 	return nil
+}
+
+func (sm *subscriptionManager) ConnectionPrincipal(connectionID string) (webSocketPrincipal, error) {
+	connection, err := sm.loadConnection(context.Background(), connectionID)
+	if err != nil {
+		return webSocketPrincipal{}, err
+	}
+	if connection == nil || strings.TrimSpace(connection.ConnectionID) == "" {
+		return webSocketPrincipal{}, fmt.Errorf("connection not found: %s", connectionID)
+	}
+
+	userID := strings.TrimSpace(connection.UserID)
+	return webSocketPrincipal{
+		UserID:        userID,
+		Role:          connection.Role,
+		Authenticated: userID != "" && userID != "anonymous",
+	}, nil
 }
 
 // HandleDisconnect handles WebSocket disconnection
@@ -251,12 +286,8 @@ func (sm *subscriptionManager) SubscribeNotifications(connectionID string) error
 
 // createSubscription creates a new subscription
 func (sm *subscriptionManager) createSubscription(connectionID string, subscriptionType string, filter any) error {
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
-
-	// Check if connection exists
-	if _, exists := sm.connections[connectionID]; !exists {
-		return fmt.Errorf("connection not found: %s", connectionID)
+	if err := sm.ensureConnectionKnown(context.Background(), connectionID); err != nil {
+		return err
 	}
 
 	subscription := &Subscription{
@@ -277,6 +308,11 @@ func (sm *subscriptionManager) createSubscription(connectionID string, subscript
 	}
 
 	// Store in memory
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	if sm.subscriptions == nil {
+		sm.subscriptions = make(map[string]map[string]*Subscription)
+	}
 	if sm.subscriptions[connectionID] == nil {
 		sm.subscriptions[connectionID] = make(map[string]*Subscription)
 	}
@@ -294,6 +330,59 @@ func (sm *subscriptionManager) createSubscription(connectionID string, subscript
 		zap.String("subscription_type", subscriptionType),
 	)
 	return nil
+}
+
+func (sm *subscriptionManager) ensureConnectionKnown(ctx context.Context, connectionID string) error {
+	connectionID = strings.TrimSpace(connectionID)
+	if connectionID == "" {
+		return fmt.Errorf("connection not found: %s", connectionID)
+	}
+
+	sm.mutex.RLock()
+	_, exists := sm.connections[connectionID]
+	sm.mutex.RUnlock()
+	if exists {
+		return nil
+	}
+
+	connection, err := sm.loadConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to load connection %s: %w", connectionID, err)
+	}
+	if connection == nil || strings.TrimSpace(connection.ConnectionID) == "" {
+		return fmt.Errorf("connection not found: %s", connectionID)
+	}
+
+	sm.cacheConnection(connection)
+	return nil
+}
+
+func (sm *subscriptionManager) loadConnection(ctx context.Context, connectionID string) (*storageModels.WebSocketEventConnection, error) {
+	if sm.repo == nil {
+		return nil, fmt.Errorf("connection repository is not configured")
+	}
+	return sm.repo.GetConnection(ctx, connectionID)
+}
+
+func (sm *subscriptionManager) cacheConnection(connection *storageModels.WebSocketEventConnection) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if sm.connections == nil {
+		sm.connections = make(map[string]*Connection)
+	}
+	if _, exists := sm.connections[connection.ConnectionID]; exists {
+		return
+	}
+
+	sm.connections[connection.ConnectionID] = &Connection{
+		ConnectionID: connection.ConnectionID,
+		UserID:       connection.UserID,
+		Role:         connection.Role,
+		ConnectedAt:  connection.ConnectedAt,
+		LastSeen:     connection.LastSeen,
+		TTL:          connection.TTL,
+	}
 }
 
 // Unsubscribe removes a subscription
@@ -513,6 +602,28 @@ func convertToMap(v any) (map[string]any, error) {
 type WebSocketHandler struct {
 	subscriptionManager SubscriptionManager
 	logger              *zap.Logger
+	principalMu         sync.RWMutex
+	principals          map[string]webSocketPrincipal
+}
+
+type webSocketPrincipal struct {
+	UserID        string
+	Role          string
+	Authenticated bool
+}
+
+type principalAwareSubscriptionManager interface {
+	HandleConnectWithPrincipal(connectionID string, principal webSocketPrincipal) error
+	ConnectionPrincipal(connectionID string) (webSocketPrincipal, error)
+}
+
+type webSocketStatusError struct {
+	statusCode int
+	message    string
+}
+
+func (e *webSocketStatusError) Error() string {
+	return e.message
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
@@ -520,6 +631,7 @@ func NewWebSocketHandler(sm SubscriptionManager, logger *zap.Logger) *WebSocketH
 	return &WebSocketHandler{
 		subscriptionManager: sm,
 		logger:              logger,
+		principals:          make(map[string]webSocketPrincipal),
 	}
 }
 
@@ -534,7 +646,7 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(_ context.Context, eve
 	case "$disconnect":
 		return h.handleDisconnect(connectionID)
 	case "subscribe":
-		return h.handleSubscribe(connectionID, event.Body)
+		return h.handleSubscribe(event)
 	case "unsubscribe":
 		return h.handleUnsubscribe(connectionID, event.Body)
 	default:
@@ -544,9 +656,14 @@ func (h *WebSocketHandler) HandleAPIGatewayWebSocketEvent(_ context.Context, eve
 
 // handleConnect handles WebSocket connection events
 func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	userID := h.extractUserID(event)
+	principal := h.extractPrincipal(event)
+	userID := principal.UserID
+	if userID == "" {
+		userID = h.extractUserID(event)
+		principal.UserID = userID
+	}
 
-	if err := h.subscriptionManager.HandleConnect(connectionID, userID); err != nil {
+	if err := h.handleSubscriptionManagerConnect(connectionID, userID, principal); err != nil {
 		h.logger.Error("Failed to handle connect",
 			zap.String("connection_id", connectionID),
 			zap.String("user_id", userID),
@@ -555,7 +672,18 @@ func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGa
 		return events.APIGatewayProxyResponse{StatusCode: 500}, err
 	}
 
+	h.rememberConnectionPrincipal(connectionID, principal)
+
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+func (h *WebSocketHandler) handleSubscriptionManagerConnect(connectionID, userID string, principal webSocketPrincipal) error {
+	if principal.Authenticated {
+		if sm, ok := h.subscriptionManager.(principalAwareSubscriptionManager); ok {
+			return sm.HandleConnectWithPrincipal(connectionID, principal)
+		}
+	}
+	return h.subscriptionManager.HandleConnect(connectionID, userID)
 }
 
 // extractUserID extracts user ID from query parameters or returns anonymous
@@ -567,8 +695,130 @@ func (h *WebSocketHandler) extractUserID(event events.APIGatewayWebsocketProxyRe
 	return userID
 }
 
+func (h *WebSocketHandler) extractPrincipal(event events.APIGatewayWebsocketProxyRequest) webSocketPrincipal {
+	fields := flattenAuthorizerFields(event.RequestContext.Authorizer)
+	userID := firstAuthorizerField(fields,
+		"username",
+		"user_id",
+		"userid",
+		"user",
+		"sub",
+		"principal_id",
+		"principalid",
+		"cognito_username",
+		"cognitousername",
+	)
+	role := firstAuthorizerField(fields,
+		"role",
+		"roles",
+		"user_role",
+		"userrole",
+		"cognito_groups",
+		"cognitogroups",
+	)
+
+	return webSocketPrincipal{
+		UserID:        userID,
+		Role:          role,
+		Authenticated: userID != "",
+	}
+}
+
+func flattenAuthorizerFields(authorizer any) map[string]string {
+	if authorizer == nil {
+		return nil
+	}
+	data, err := json.Marshal(authorizer)
+	if err != nil {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil
+	}
+
+	fields := map[string]string{}
+	collectAuthorizerFields(fields, "", decoded)
+	return fields
+}
+
+func collectAuthorizerFields(fields map[string]string, prefix string, value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, child := range v {
+			collectAuthorizerFields(fields, key, child)
+			if prefix != "" {
+				collectAuthorizerFields(fields, prefix+"_"+key, child)
+			}
+		}
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, child := range v {
+			if part := strings.TrimSpace(fmt.Sprint(child)); part != "" && part != "<nil>" {
+				parts = append(parts, part)
+			}
+		}
+		if prefix != "" && len(parts) > 0 {
+			fields[normalizeAuthorizerKey(prefix)] = strings.Join(parts, ",")
+		}
+	default:
+		if prefix == "" {
+			return
+		}
+		value := strings.TrimSpace(fmt.Sprint(v))
+		if value == "" || value == "<nil>" {
+			return
+		}
+		fields[normalizeAuthorizerKey(prefix)] = value
+	}
+}
+
+func firstAuthorizerField(fields map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(fields[normalizeAuthorizerKey(key)]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeAuthorizerKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	replacer := strings.NewReplacer("_", "", "-", "", ".", "", ":", "", " ", "")
+	return replacer.Replace(key)
+}
+
+func (h *WebSocketHandler) rememberConnectionPrincipal(connectionID string, principal webSocketPrincipal) {
+	h.principalMu.Lock()
+	defer h.principalMu.Unlock()
+
+	if h.principals == nil {
+		h.principals = make(map[string]webSocketPrincipal)
+	}
+	h.principals[connectionID] = principal
+}
+
+func (h *WebSocketHandler) forgetConnectionPrincipal(connectionID string) {
+	h.principalMu.Lock()
+	defer h.principalMu.Unlock()
+
+	delete(h.principals, connectionID)
+}
+
+func (h *WebSocketHandler) connectionPrincipal(connectionID string) (webSocketPrincipal, bool) {
+	h.principalMu.RLock()
+	defer h.principalMu.RUnlock()
+
+	if h.principals == nil {
+		return webSocketPrincipal{}, false
+	}
+	principal, ok := h.principals[connectionID]
+	return principal, ok
+}
+
 // handleDisconnect handles WebSocket disconnection events
 func (h *WebSocketHandler) handleDisconnect(connectionID string) (events.APIGatewayProxyResponse, error) {
+	h.forgetConnectionPrincipal(connectionID)
 	if err := h.subscriptionManager.HandleDisconnect(connectionID); err != nil {
 		h.logger.Error("Failed to handle disconnect",
 			zap.String("connection_id", connectionID),
@@ -579,26 +829,45 @@ func (h *WebSocketHandler) handleDisconnect(connectionID string) (events.APIGate
 }
 
 // handleSubscribe handles subscription requests
-func (h *WebSocketHandler) handleSubscribe(connectionID string, body string) (events.APIGatewayProxyResponse, error) {
+func (h *WebSocketHandler) handleSubscribe(event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
 	var request struct {
 		Type   string `json:"type"`
 		Filter any    `json:"filter,omitempty"`
 	}
 
-	if err := json.Unmarshal([]byte(body), &request); err != nil {
+	if err := json.Unmarshal([]byte(event.Body), &request); err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: 400}, fmt.Errorf("invalid request body: %w", err)
 	}
 
-	err := h.processSubscriptionType(connectionID, request.Type, request.Filter)
+	connectionID := event.RequestContext.ConnectionID
+	var principal webSocketPrincipal
+	principalKnown := false
+	if isAdminAlertSubscriptionType(request.Type) {
+		principal, principalKnown = h.principalForEvent(connectionID, event)
+	}
+
+	err := h.processSubscriptionType(connectionID, request.Type, request.Filter, principal, principalKnown)
 	if err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+		return events.APIGatewayProxyResponse{StatusCode: webSocketErrorStatus(err)}, err
 	}
 
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }
 
 // processSubscriptionType processes different subscription types
-func (h *WebSocketHandler) processSubscriptionType(connectionID string, subType string, filter any) error {
+func (h *WebSocketHandler) processSubscriptionType(
+	connectionID string,
+	subType string,
+	filter any,
+	principal webSocketPrincipal,
+	principalKnown bool,
+) error {
+	if isAdminAlertSubscriptionType(subType) {
+		if err := h.ensureAdminAlertSubscriptionAuthorized(principal, principalKnown); err != nil {
+			return err
+		}
+	}
+
 	switch subType {
 	case "moderation":
 		return h.subscribeModerationQueue(connectionID, filter)
@@ -617,6 +886,81 @@ func (h *WebSocketHandler) processSubscriptionType(connectionID string, subType 
 	default:
 		return fmt.Errorf("unknown subscription type: %s", subType)
 	}
+}
+
+func isAdminAlertSubscriptionType(subType string) bool {
+	switch subType {
+	case "moderation", "threat_intel", "performance", "infrastructure":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *WebSocketHandler) principalForEvent(connectionID string, event events.APIGatewayWebsocketProxyRequest) (webSocketPrincipal, bool) {
+	principal := h.extractPrincipal(event)
+	if principal.Authenticated {
+		h.rememberConnectionPrincipal(connectionID, principal)
+		return principal, true
+	}
+
+	if stored, ok := h.connectionPrincipal(connectionID); ok {
+		return stored, true
+	}
+
+	if sm, ok := h.subscriptionManager.(principalAwareSubscriptionManager); ok {
+		stored, err := sm.ConnectionPrincipal(connectionID)
+		if err != nil {
+			h.logger.Warn("failed to load WebSocket connection principal",
+				zap.String("connection_id", connectionID),
+				zap.Error(err),
+			)
+			return webSocketPrincipal{}, false
+		}
+		if stored.UserID != "" || stored.Role != "" {
+			h.rememberConnectionPrincipal(connectionID, stored)
+			return stored, true
+		}
+	}
+
+	return webSocketPrincipal{}, false
+}
+
+func (h *WebSocketHandler) ensureAdminAlertSubscriptionAuthorized(principal webSocketPrincipal, known bool) error {
+	if !known || !principal.Authenticated {
+		return &webSocketStatusError{
+			statusCode: http.StatusUnauthorized,
+			message:    "admin alert subscriptions require authentication",
+		}
+	}
+	if !webSocketRoleAllowsAdminAlerts(principal.Role) {
+		return &webSocketStatusError{
+			statusCode: http.StatusForbidden,
+			message:    "admin alert subscriptions require admin or moderator role",
+		}
+	}
+	return nil
+}
+
+func webSocketRoleAllowsAdminAlerts(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	for _, part := range strings.FieldsFunc(role, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
+	}) {
+		switch strings.TrimSpace(part) {
+		case "admin", "moderator", "mod":
+			return true
+		}
+	}
+	return false
+}
+
+func webSocketErrorStatus(err error) int {
+	var statusErr *webSocketStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.statusCode
+	}
+	return http.StatusInternalServerError
 }
 
 // subscribeModerationQueue handles moderation queue subscriptions

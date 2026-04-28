@@ -630,7 +630,7 @@ func (h *Handler) HandleTrustGetLinkPreviewLift(ctx *apptheory.Context) (*appthe
 }
 
 // HandleTrustGetLinkPreviewImageLift proxies GET /api/v1/trust/previews/images/{imageId} to lesser-host.
-// This endpoint is public (no user auth) so that image URLs can be loaded by <img> tags.
+// This endpoint requires a user read token; user tokens are never forwarded upstream.
 func (h *Handler) HandleTrustGetLinkPreviewImageLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	imageID := strings.TrimSpace(ctx.Param("imageId"))
 	if imageID == "" {
@@ -641,7 +641,7 @@ func (h *Handler) HandleTrustGetLinkPreviewImageLift(ctx *apptheory.Context) (*a
 		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/previews/images/" + url.PathEscape(imageID),
 		accept:              "*/*",
-		requiredScope:       "",
+		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -704,7 +704,7 @@ func (h *Handler) HandleTrustGetRenderLift(ctx *apptheory.Context) (*apptheory.R
 }
 
 // HandleTrustGetRenderThumbnailLift proxies GET /api/v1/trust/renders/{renderId}/thumbnail to lesser-host.
-// This endpoint is public (no user auth) so thumbnail URLs can be loaded by <img> tags.
+// This endpoint requires a user read token; user tokens are never forwarded upstream.
 func (h *Handler) HandleTrustGetRenderThumbnailLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	renderID := strings.TrimSpace(ctx.Param("renderId"))
 	if renderID == "" {
@@ -715,7 +715,7 @@ func (h *Handler) HandleTrustGetRenderThumbnailLift(ctx *apptheory.Context) (*ap
 		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/renders/" + url.PathEscape(renderID) + "/thumbnail",
 		accept:              "*/*",
-		requiredScope:       "",
+		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -772,7 +772,7 @@ func (h *Handler) HandleTrustJWKSJSONLift(ctx *apptheory.Context) (*apptheory.Re
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/.well-known/jwks.json",
-		requiredScope:       "",
+		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -784,7 +784,7 @@ func (h *Handler) HandleTrustLookupAttestationLift(ctx *apptheory.Context) (*app
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations",
-		requiredScope:       "",
+		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -800,7 +800,7 @@ func (h *Handler) HandleTrustGetAttestationLift(ctx *apptheory.Context) (*appthe
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations/" + url.PathEscape(id),
-		requiredScope:       "",
+		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})

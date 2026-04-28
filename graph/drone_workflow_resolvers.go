@@ -25,7 +25,13 @@ func (r *agentResolver) IdentitySemantics(ctx context.Context, obj *model.Agent)
 		return nil, err
 	}
 	_, identity, err := r.buildDroneWorkflowSurface(ctx, "", agentUser, governance)
-	return identity, err
+	if err != nil {
+		return nil, err
+	}
+	if !r.canViewAgentPrivateFields(optionalGraphAuthClaims(ctx), agentUser) {
+		redactGraphAgentIdentitySemantics(identity)
+	}
+	return identity, nil
 }
 
 func (r *agentResolver) Workflow(ctx context.Context, obj *model.Agent) (*model.AgentWorkflowSurface, error) {

@@ -204,6 +204,27 @@ func TestIssueAgentRuntimeTokens(t *testing.T) {
 		require.Equal(t, int(customTTL.Seconds()), customBundle.Session.AccessTTLSeconds)
 	})
 
+	t.Run("caps refresh session to delegated absolute ttl", func(t *testing.T) {
+		repoDelegated, _, queryDelegated := newAgentRuntimeAccountRepo()
+		queryDelegated.On("Create").Return(nil).Once()
+
+		delegatedTTL := 90 * time.Minute
+		delegatedBundle, err := IssueAgentRuntimeTokens(context.Background(), cfg, agentRuntimeRepos{account: repoDelegated}, AgentRuntimeTokenIssueParams{
+			Username:           "alice",
+			ClientID:           DelegatedAgentRuntimeClientID,
+			Scopes:             []string{ScopeRead},
+			AccessTTL:          delegatedTTL,
+			RefreshIdleTTL:     delegatedTTL,
+			RefreshAbsoluteTTL: delegatedTTL,
+			DeviceLabel:        "delegated-runtime",
+		})
+		require.NoError(t, err)
+		require.Equal(t, int(delegatedTTL.Seconds()), delegatedBundle.Session.AccessTTLSeconds)
+		require.WithinDuration(t, delegatedBundle.Session.CreatedAt.Add(delegatedTTL), delegatedBundle.Session.IdleExpiresAt, 2*time.Second)
+		require.WithinDuration(t, delegatedBundle.Session.CreatedAt.Add(delegatedTTL), delegatedBundle.Session.AbsoluteExpiresAt, 2*time.Second)
+		require.WithinDuration(t, delegatedBundle.Session.AbsoluteExpiresAt, delegatedBundle.Session.ExpiresAt, time.Second)
+	})
+
 	t.Run("propagates refresh storage failures", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
 		queryErr.On("Create").Return(errors.New("create failed")).Once()

@@ -1296,11 +1296,13 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 		return oauthRefreshToken
 	}
 
-	absoluteExpiry := now.Add(auth.AgentRuntimeRefreshAbsoluteTTL)
-	idleExpiry := now.Add(auth.AgentRuntimeRefreshIdleTTL)
-	if idleExpiry.After(absoluteExpiry) {
-		idleExpiry = absoluteExpiry
+	refreshIdleTTL := time.Duration(0)
+	refreshAbsoluteTTL := time.Duration(0)
+	if clientID == delegatedAgentClientID && accessTTL > 0 {
+		refreshIdleTTL = accessTTL
+		refreshAbsoluteTTL = accessTTL
 	}
+	idleExpiry, absoluteExpiry := auth.AgentRuntimeRefreshExpiries(now, refreshIdleTTL, refreshAbsoluteTTL)
 
 	oauthRefreshToken.ExpiresAt = idleExpiry
 	oauthRefreshToken.FamilyID = common.GenerateSessionIDULID()

@@ -48,11 +48,13 @@ type AgentRuntimeAuthDiagnostic struct {
 
 // AgentRuntimeTokenIssueParams describes a first-class bearer + refresh runtime session.
 type AgentRuntimeTokenIssueParams struct {
-	Username    string
-	ClientID    string
-	Scopes      []string
-	AccessTTL   time.Duration
-	DeviceLabel string
+	Username           string
+	ClientID           string
+	Scopes             []string
+	AccessTTL          time.Duration
+	RefreshIdleTTL     time.Duration
+	RefreshAbsoluteTTL time.Duration
+	DeviceLabel        string
 }
 
 // AgentRuntimeTokenBundle contains the issued OAuth tokens and stored refresh-session metadata.
@@ -113,11 +115,7 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		deviceLabel = DefaultAgentRuntimeDeviceLabel
 	}
 
-	idleExpiry := now.Add(AgentRuntimeRefreshIdleTTL)
-	absoluteExpiry := now.Add(AgentRuntimeRefreshAbsoluteTTL)
-	if idleExpiry.After(absoluteExpiry) {
-		idleExpiry = absoluteExpiry
-	}
+	idleExpiry, absoluteExpiry := AgentRuntimeRefreshExpiries(now, params.RefreshIdleTTL, params.RefreshAbsoluteTTL)
 
 	oauthSvc := NewOAuthService(cfg.JWTSecret, cfg, repos, nil)
 	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
@@ -163,6 +161,25 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		RefreshToken: refreshToken,
 		Session:      refreshRecord,
 	}, nil
+}
+
+// AgentRuntimeRefreshExpiries returns the idle and absolute refresh-session expiries for
+// an agent runtime token. Zero durations preserve Lesser's default runtime session bounds;
+// positive durations allow delegation flows to cap refresh sessions to the requested TTL.
+func AgentRuntimeRefreshExpiries(now time.Time, idleTTL, absoluteTTL time.Duration) (time.Time, time.Time) {
+	if idleTTL <= 0 {
+		idleTTL = AgentRuntimeRefreshIdleTTL
+	}
+	if absoluteTTL <= 0 {
+		absoluteTTL = AgentRuntimeRefreshAbsoluteTTL
+	}
+
+	idleExpiry := now.Add(idleTTL)
+	absoluteExpiry := now.Add(absoluteTTL)
+	if idleExpiry.After(absoluteExpiry) {
+		idleExpiry = absoluteExpiry
+	}
+	return idleExpiry, absoluteExpiry
 }
 
 // IsAgentRuntimeRefreshToken reports whether a stored refresh token belongs to the dedicated

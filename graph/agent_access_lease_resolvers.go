@@ -257,6 +257,9 @@ func (r *mutationResolver) CreateAgentAccessLeaseSessionKeyChallenge(ctx context
 	if err != nil {
 		return nil, err
 	}
+	if err := r.ensureActiveAgentLeaseAccount(ctx, username); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	if graphEffectiveAgentAccessLeaseStatus(lease, now) != graphAgentAccessLeaseStatusActive {
 		return nil, apperrors.Unauthorized("lease is not active")
@@ -299,6 +302,9 @@ func (r *mutationResolver) AuthorizeAgentAccessLeaseSessionKey(ctx context.Conte
 	}
 	lease, err := r.loadGraphAgentAccessLease(ctx, username, leaseID)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.ensureActiveAgentLeaseAccount(ctx, username); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -349,6 +355,9 @@ func (r *mutationResolver) CreateAgentAccessLeaseRenewChallenge(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
+	if err := r.ensureActiveAgentLeaseAccount(ctx, username); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	if graphEffectiveAgentAccessLeaseStatus(lease, now) != graphAgentAccessLeaseStatusActive {
 		return nil, apperrors.Unauthorized("lease is not active")
@@ -395,6 +404,9 @@ func (r *mutationResolver) ExchangeAgentAccessLeaseToken(ctx context.Context, us
 	}
 	lease, err := r.loadGraphAgentAccessLease(ctx, username, leaseID)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.ensureActiveAgentLeaseAccount(ctx, username); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -541,7 +553,7 @@ func (r *Resolver) requireOwnedAgentLeaseAccount(ctx context.Context, username s
 		return nil, nil, ErrStorageUnavailable
 	}
 	account, err := r.Storage.Account().GetAccount(ctx, username)
-	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return nil, nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
 	owner := strings.TrimPrefix(strings.TrimSpace(account.User.AgentOwner), "@")
@@ -563,13 +575,24 @@ func (r *Resolver) requireManagedAgentLeaseAccount(ctx context.Context, username
 		return nil, nil, ErrStorageUnavailable
 	}
 	account, err := r.Storage.Account().GetAccount(ctx, username)
-	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return nil, nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return nil, nil, apperrors.Forbidden("not authorized to manage agent leases")
 	}
 	return claims, account, nil
+}
+
+func (r *Resolver) ensureActiveAgentLeaseAccount(ctx context.Context, username string) error {
+	if r.Storage == nil || r.Storage.Account() == nil {
+		return ErrStorageUnavailable
+	}
+	account, err := r.Storage.Account().GetAccount(ctx, username)
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
+		return apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
+	}
+	return nil
 }
 
 func (r *Resolver) graphUserHasWallet(ctx context.Context, username string, address string) (bool, error) {

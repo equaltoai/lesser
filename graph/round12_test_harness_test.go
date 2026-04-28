@@ -302,6 +302,25 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		v.CreatedAt = time.Now().Add(-time.Hour)
 		v.UpdatedAt = time.Now().Add(-time.Minute)
 		return
+	case *models.WalletCredential:
+		username := strings.TrimPrefix(state.lastPK, "USER#")
+		if strings.TrimSpace(username) == "" {
+			username = "alice"
+		}
+		addresses := []string{"0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"}
+		index := state.autoPopulateIndex
+		if index < 0 || index >= len(addresses) {
+			index = 0
+		}
+		v.PK = fmt.Sprintf("USER#%s", username)
+		v.SK = fmt.Sprintf("WALLET#%s", addresses[index])
+		v.Username = username
+		v.Address = addresses[index]
+		v.ChainID = 1
+		v.Type = "ethereum"
+		v.LinkedAt = time.Now().Add(-2 * time.Hour)
+		v.LastUsed = time.Now().Add(time.Duration(index) * time.Minute)
+		return
 	case *models.RelationshipRecord:
 		follower := strings.TrimPrefix(state.lastPK, "FOLLOW#")
 		if strings.TrimSpace(follower) == "" {

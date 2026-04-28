@@ -345,6 +345,9 @@ func (h *Handler) HandleCreateAgentAccessLeaseSessionKeyChallengeLift(ctx *appth
 	if resp != nil || err != nil {
 		return resp, err
 	}
+	if resp, err := h.ensureActiveAgentLeaseAccount(ctx, username); resp != nil || err != nil {
+		return resp, err
+	}
 	now := time.Now().UTC()
 	if effectiveAgentAccessLeaseStatus(lease, now) != agentAccessLeaseStatusActive {
 		return apptheory.JSON(http.StatusUnauthorized, map[string]any{
@@ -400,6 +403,9 @@ func (h *Handler) HandleAuthorizeAgentAccessLeaseSessionKeyLift(ctx *apptheory.C
 
 	lease, resp, err := h.loadAgentAccessLease(ctx, username, leaseID)
 	if resp != nil || err != nil {
+		return resp, err
+	}
+	if resp, err := h.ensureActiveAgentLeaseAccount(ctx, username); resp != nil || err != nil {
 		return resp, err
 	}
 	now := time.Now().UTC()
@@ -485,6 +491,9 @@ func (h *Handler) HandleCreateAgentAccessLeaseRenewChallengeLift(ctx *apptheory.
 	if resp != nil || err != nil {
 		return resp, err
 	}
+	if resp, err := h.ensureActiveAgentLeaseAccount(ctx, username); resp != nil || err != nil {
+		return resp, err
+	}
 
 	now := time.Now().UTC()
 	if effectiveAgentAccessLeaseStatus(lease, now) != agentAccessLeaseStatusActive {
@@ -553,6 +562,9 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 
 	lease, resp, err := h.loadAgentAccessLease(ctx, username, leaseID)
 	if resp != nil || err != nil {
+		return resp, err
+	}
+	if resp, err := h.ensureActiveAgentLeaseAccount(ctx, username); resp != nil || err != nil {
 		return resp, err
 	}
 	now := time.Now().UTC()
@@ -749,7 +761,7 @@ func (h *Handler) requireOwnedAgentAccount(ctx *apptheory.Context, username stri
 		resp, respErr := common.RespondInternalServerError(ctx)
 		return nil, nil, resp, respErr
 	}
-	if account == nil || account.User == nil || !account.User.IsAgent {
+	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		resp, respErr := common.RespondNotFound(ctx, "agent")
 		return nil, nil, resp, respErr
 	}
@@ -777,7 +789,7 @@ func (h *Handler) requireManagedAgentAccount(ctx *apptheory.Context, username st
 		resp, respErr := common.RespondInternalServerError(ctx)
 		return nil, nil, resp, respErr
 	}
-	if account == nil || account.User == nil || !account.User.IsAgent {
+	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		resp, respErr := common.RespondNotFound(ctx, "agent")
 		return nil, nil, resp, respErr
 	}
@@ -786,6 +798,20 @@ func (h *Handler) requireManagedAgentAccount(ctx *apptheory.Context, username st
 		return nil, nil, resp, respErr
 	}
 	return claims, account, nil, nil
+}
+
+func (h *Handler) ensureActiveAgentLeaseAccount(ctx *apptheory.Context, username string) (*apptheory.Response, error) {
+	account, err := h.repos.Account().GetAccount(ctx.Context(), username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return common.RespondNotFound(ctx, "agent")
+		}
+		return common.RespondInternalServerError(ctx)
+	}
+	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
+		return common.RespondNotFound(ctx, "agent")
+	}
+	return nil, nil
 }
 
 func (h *Handler) createAgentAccessLeaseChallenge(ctx *apptheory.Context, opts agentAccessLeaseOptions, action string) (*storageModels.AgentAccessLeaseChallenge, error) {

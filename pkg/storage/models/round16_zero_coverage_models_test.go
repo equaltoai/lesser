@@ -458,12 +458,13 @@ func TestUserAppConsent_ScopesAndRevocation(t *testing.T) {
 
 func TestWebSocketSubscriptionModels(t *testing.T) {
 	t.Run("WebSocketEventConnection UpdateKeys sets optional GSI", func(t *testing.T) {
-		c := &WebSocketEventConnection{ConnectionID: "c1", UserID: "u1"}
+		c := &WebSocketEventConnection{ConnectionID: "c1", UserID: "u1", Role: "moderator"}
 		require.NoError(t, c.UpdateKeys())
 		assert.Equal(t, "CONNECTION#c1", c.PK)
 		assert.Equal(t, SKMetadata, c.SK)
 		assert.Equal(t, "USER#u1", c.GSI1PK)
 		assert.Equal(t, "CONNECTION#c1", c.GSI1SK)
+		assert.Equal(t, "moderator", c.Role)
 		assert.Equal(t, c.PK, c.GetPK())
 		assert.Equal(t, c.SK, c.GetSK())
 		assert.Equal(t, MainTableName, c.TableName())

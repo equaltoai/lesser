@@ -96,6 +96,23 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 	}
 }
 
+func redactGraphAgentPrivateFields(agent *model.Agent) {
+	if agent == nil {
+		return
+	}
+	agent.AgentOwner = nil
+	agent.DelegatedScopes = []string{}
+	redactGraphAgentIdentitySemantics(agent.IdentitySemantics)
+}
+
+func redactGraphAgentIdentitySemantics(identity *model.AgentIdentitySemantics) {
+	if identity == nil {
+		return
+	}
+	identity.SoulAgentID = nil
+	identity.SoulBindingState = model.SoulBindingStateUnbound
+}
+
 func graphAgentQuarantineFields(governance *storage.AgentGovernanceState) (*string, *model.Time, *model.Time, *string, *model.Time, bool) {
 	summary := governance.QuarantineSummaryAt(time.Now().UTC())
 	return graphOptionalString(summary.Status),

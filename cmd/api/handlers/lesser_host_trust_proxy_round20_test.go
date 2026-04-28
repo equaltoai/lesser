@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func allowLocalLesserHostProxyForTests(t *testing.T) {
@@ -93,7 +94,10 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", nil, map[string]string{
+		readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, map[string]string{
 			"actor_uri":      "https://example.com/users/alice",
 			"object_uri":     "https://example.com/objects/1",
 			"content_hash":   "0xdeadbeef",
@@ -204,7 +208,7 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.Equal(t, "/api/v1/trust/attestations/"+attestationID, got["attestation_url"])
 	})
 
-	t.Run("public_preview_image_proxies_without_user_auth_or_instance_auth", func(t *testing.T) {
+	t.Run("preview_image_requires_user_auth_and_does_not_forward_it", func(t *testing.T) {
 		const imageID = "img123"
 
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +229,17 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/previews/images/"+imageID, nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["imageId"] = imageID
+
+		proxyResp, err := h.HandleTrustGetLinkPreviewImageLift(ctx)
+		require.Nil(t, proxyResp)
+		require.Error(t, err)
+
+		readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/trust/previews/images/"+imageID, map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["imageId"] = imageID
 
@@ -261,6 +276,33 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.NoError(t, err)
 
 		requireStatus(t, http.StatusBadRequest)(h.HandleTrustGetRenderThumbnailLift(ctx))
+	})
+
+	t.Run("missing_asset_ids_return_400_before_proxy", func(t *testing.T) {
+		cfg := round11TestConfig()
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		cases := []struct {
+			name    string
+			path    string
+			handler func(*apptheory.Context) (*apptheory.Response, error)
+		}{
+			{name: "preview", path: "/api/v1/trust/previews/", handler: h.HandleTrustGetLinkPreviewLift},
+			{name: "preview_image", path: "/api/v1/trust/previews/images/", handler: h.HandleTrustGetLinkPreviewImageLift},
+			{name: "publish_job", path: "/api/v1/trust/publish/jobs/", handler: h.HandleTrustGetPublishJobLift},
+			{name: "render", path: "/api/v1/trust/renders/", handler: h.HandleTrustGetRenderLift},
+			{name: "render_snapshot", path: "/api/v1/trust/renders//snapshot", handler: h.HandleTrustGetRenderSnapshotLift},
+			{name: "attestation", path: "/api/v1/trust/attestations/", handler: h.HandleTrustGetAttestationLift},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx, err := round10NewLiftContext(http.MethodGet, tc.path, nil, nil, nil)
+				require.NoError(t, err)
+
+				requireStatus(t, http.StatusBadRequest)(tc.handler(ctx))
+			})
+		}
 	})
 
 	t.Run("missing_job_id_returns_400", func(t *testing.T) {
@@ -329,7 +371,7 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.Equal(t, "/api/v1/trust/previews/images/"+imageID, got["image_url"])
 	})
 
-	t.Run("public_thumbnail_and_authenticated_snapshot_proxy_binary_responses", func(t *testing.T) {
+	t.Run("thumbnail_and_snapshot_require_user_auth_for_binary_responses", func(t *testing.T) {
 		const (
 			instanceKey = "instance-key-raw"
 			renderID    = "render123"
@@ -365,11 +407,21 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.NoError(t, err)
 		thumbCtx.Params["renderId"] = renderID
 
+		proxyResp, err := h.HandleTrustGetRenderThumbnailLift(thumbCtx)
+		require.Nil(t, proxyResp)
+		require.Error(t, err)
+
+		readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		thumbCtx, err = round10NewLiftContext(http.MethodGet, "/api/v1/trust/renders/"+renderID+"/thumbnail", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+		thumbCtx.Params["renderId"] = renderID
+
 		thumbResp := requireStatus(t, http.StatusOK)(h.HandleTrustGetRenderThumbnailLift(thumbCtx))
 		require.Equal(t, []string{"image/png"}, thumbResp.Headers["content-type"])
 		require.Equal(t, []byte{0x01, 0x02, 0x03}, thumbResp.Body)
 
-		readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
 		snapCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/renders/"+renderID+"/snapshot", map[string]string{
 			"Authorization": "Bearer " + readToken,
 		}, nil, nil)
@@ -464,11 +516,15 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		getAIJobCtx.Params["jobId"] = "j1"
 		requireStatus(t, http.StatusOK)(h.HandleTrustGetAIJobLift(getAIJobCtx))
 
-		jwksCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", nil, nil, nil)
+		jwksCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusOK)(h.HandleTrustJWKSJSONLift(jwksCtx))
 
-		attCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/"+attestationID, nil, nil, nil)
+		attCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/"+attestationID, map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
 		require.NoError(t, err)
 		attCtx.Params["id"] = attestationID
 		requireStatus(t, http.StatusOK)(h.HandleTrustGetAttestationLift(attCtx))
@@ -484,6 +540,25 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/trust/publish/jobs", nil, nil, []byte(`{"object_uri":"https://example.com/objects/1"}`))
 
 		resp, err := h.HandleTrustCreatePublishJobLift(ctx)
+		require.Nil(t, resp)
+		require.Error(t, err)
+
+		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", nil, nil, nil)
+		require.NoError(t, err)
+		resp, err = h.HandleTrustJWKSJSONLift(ctx2)
+		require.Nil(t, resp)
+		require.Error(t, err)
+
+		ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", nil, nil, nil)
+		require.NoError(t, err)
+		resp, err = h.HandleTrustLookupAttestationLift(ctx3)
+		require.Nil(t, resp)
+		require.Error(t, err)
+
+		ctx4, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/att-1", nil, nil, nil)
+		require.NoError(t, err)
+		ctx4.Params["id"] = "att-1"
+		resp, err = h.HandleTrustGetAttestationLift(ctx4)
 		require.Nil(t, resp)
 		require.Error(t, err)
 	})
@@ -649,6 +724,19 @@ func TestLesserHostTrustProxyHelpersRound20(t *testing.T) {
 		require.Nil(t, req)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusServiceUnavailable, resp.Status)
+	})
+
+	t.Run("empty_scope_and_nil_logger_helpers", func(t *testing.T) {
+		cfg := round11TestConfig()
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/x", nil, nil, nil)
+		require.NoError(t, err)
+
+		require.NoError(t, h.ensureLesserHostProxyScope(ctx, "  "))
+
+		var nilHandler *Handler
+		nilHandler.warnTrustProxyMisconfigured("ignored")
+		(&Handler{}).warnTrustProxyMisconfigured("ignored")
 	})
 
 	t.Run("content_type_normalization", func(t *testing.T) {

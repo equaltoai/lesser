@@ -397,11 +397,13 @@ func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername
 		deviceLabel = userAgent
 	}
 	bundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
-		Username:    agentUsername,
-		ClientID:    delegatedAgentClientID,
-		Scopes:      requestedScopes,
-		AccessTTL:   accessTTL,
-		DeviceLabel: deviceLabel,
+		Username:           agentUsername,
+		ClientID:           delegatedAgentClientID,
+		Scopes:             requestedScopes,
+		AccessTTL:          accessTTL,
+		RefreshIdleTTL:     accessTTL,
+		RefreshAbsoluteTTL: accessTTL,
+		DeviceLabel:        deviceLabel,
 	})
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err
@@ -439,6 +441,7 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondInternalServerError(ctx)
 	}
 	baseURL := handlerBaseURL(h)
+	viewerClaims := h.optionalAuthenticatedClaimsLift(ctx)
 	for _, user := range users {
 		if user == nil || !user.IsAgent {
 			continue
@@ -448,6 +451,9 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 		}
 		agentOut := agentFromStorageUserWithBaseURL(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))], baseURL)
 		agentOut.IdentitySemantics = apiAgentIdentitySemantics(h.agentIdentitySemantics(ctx.Context(), user))
+		if !h.canViewAgentPrivateFields(viewerClaims, user) {
+			redactAPIAgentPrivateFields(&agentOut)
+		}
 		agentsOut = append(agentsOut, agentOut)
 	}
 
@@ -478,6 +484,9 @@ func (h *Handler) HandleGetAgentLift(ctx *apptheory.Context) (*apptheory.Respons
 
 	agentOut := agentFromStorageUserWithBaseURL(user, governance, handlerBaseURL(h))
 	agentOut.IdentitySemantics = apiAgentIdentitySemantics(h.agentIdentitySemantics(ctx.Context(), user))
+	if !h.canViewAgentPrivateFields(h.optionalAuthenticatedClaimsLift(ctx), user) {
+		redactAPIAgentPrivateFields(&agentOut)
+	}
 	return okJSON(agentOut)
 }
 
@@ -863,12 +872,11 @@ func (h *Handler) isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.Us
 		return true
 	}
 
-	owner := strings.TrimSpace(agentUser.AgentOwner)
-	if owner == "" {
-		return false
-	}
-	owner = strings.TrimPrefix(owner, "@")
-	return strings.EqualFold(owner, claims.Username)
+	return h.agentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username)
+}
+
+func (h *Handler) canViewAgentPrivateFields(claims *auth.Claims, agentUser *storage.User) bool {
+	return h.isAgentOwnerOrAdmin(claims, agentUser)
 }
 
 func (h *Handler) validateDelegationScopes(ctx *apptheory.Context, ownerScopes []string, requested []string) ([]string, *apptheory.Response, error) {
@@ -1022,6 +1030,16 @@ func agentFromStorageUserWithBaseURL(user *storage.User, governance *storage.Age
 	out.IdentitySemantics = apiAgentIdentitySemantics(agents.DeriveDroneIdentitySemantics(user.Username, workflowState, false, ""))
 
 	return out
+}
+
+func redactAPIAgentPrivateFields(agent *apimodels.Agent) {
+	if agent == nil {
+		return
+	}
+	agent.AgentOwner = ""
+	agent.DelegatedScopes = nil
+	agent.IdentitySemantics.SoulAgentID = ""
+	agent.IdentitySemantics.SoulBindingState = "UNBOUND"
 }
 
 func applyAPIAgentQuarantineSummary(out *apimodels.Agent, governance *storage.AgentGovernanceState) {

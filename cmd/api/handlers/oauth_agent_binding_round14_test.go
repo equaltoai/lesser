@@ -25,9 +25,9 @@ func TestAgentOwnedByPrincipalRound14(t *testing.T) {
 		AgentOwner: "@alice",
 	}, "alice"))
 
-	require.True(t, h.agentOwnedByPrincipal(&storage.User{
+	require.False(t, h.agentOwnedByPrincipal(&storage.User{
 		IsAgent:    true,
-		AgentOwner: "https://example.com/users/alice",
+		AgentOwner: "https://remote.example/users/alice",
 	}, "alice"))
 
 	require.False(t, h.agentOwnedByPrincipal(&storage.User{

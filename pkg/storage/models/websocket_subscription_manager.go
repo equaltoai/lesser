@@ -20,6 +20,7 @@ type WebSocketEventConnection struct {
 	// Business fields
 	ConnectionID string    `theorydb:"attr:connectionID" json:"connection_id"`
 	UserID       string    `theorydb:"attr:userID" json:"user_id"`
+	Role         string    `theorydb:"attr:role,omitempty" json:"role,omitempty"`
 	ConnectedAt  time.Time `theorydb:"attr:connectedAt" json:"connected_at"`
 	LastSeen     time.Time `theorydb:"attr:lastSeen" json:"last_seen"`
 

@@ -519,6 +519,42 @@ func TestSoulHandlerHelpers_ServiceResolutionAndErrorMapping(t *testing.T) {
 	requireStatus(t, http.StatusInternalServerError)(h.respondSoulServiceError(ctx, errors.New("boom")))
 }
 
+func TestSoulAvatarConversionIncludesStyles(t *testing.T) {
+	t.Parallel()
+
+	styleID := 7
+	avatar := toAPISoulAvatar(&soulservice.SoulAvatar{
+		TokenURI:               "ipfs://avatar",
+		Image:                  "https://cdn.example/avatar.png",
+		CurrentStyleID:         &styleID,
+		CurrentStyleName:       "classic",
+		CurrentRendererAddress: "0xrenderer",
+		Styles: []soulservice.SoulAvatarStyle{
+			{
+				StyleID:         styleID,
+				StyleName:       "classic",
+				RendererAddress: "0xrenderer",
+				Image:           "https://cdn.example/classic.png",
+				Selected:        true,
+			},
+		},
+	})
+
+	require.NotNil(t, avatar)
+	require.Equal(t, "ipfs://avatar", avatar.TokenURI)
+	require.Equal(t, "https://cdn.example/avatar.png", avatar.Image)
+	require.NotNil(t, avatar.CurrentStyleID)
+	require.Equal(t, styleID, *avatar.CurrentStyleID)
+	require.Equal(t, "classic", avatar.CurrentStyleName)
+	require.Equal(t, "0xrenderer", avatar.CurrentRendererAddress)
+	require.Len(t, avatar.Styles, 1)
+	require.Equal(t, styleID, avatar.Styles[0].StyleID)
+	require.Equal(t, "classic", avatar.Styles[0].StyleName)
+	require.Equal(t, "0xrenderer", avatar.Styles[0].RendererAddress)
+	require.Equal(t, "https://cdn.example/classic.png", avatar.Styles[0].Image)
+	require.True(t, avatar.Styles[0].Selected)
+}
+
 func TestHandleGetMySoulsLift_ReturnsInternalWhenServiceUnavailable(t *testing.T) {
 	t.Parallel()
 
