@@ -476,12 +476,16 @@ func newInstanceRepositoryWithState(state *storagemodels.InstanceState, err erro
 }
 
 type sharedInboxResolverActorRepo struct {
-	actors map[string]*activitypub.Actor
+	actors     map[string]*activitypub.Actor
+	nilActorOK bool // when true, return nil, nil for missing actors (simulating not-found without error)
 }
 
 func (r sharedInboxResolverActorRepo) GetActorByUsername(_ context.Context, username string) (*activitypub.Actor, error) {
 	actor := r.actors[username]
 	if actor == nil {
+		if r.nilActorOK {
+			return nil, nil
+		}
 		return nil, stderrors.New(actorNotFoundError)
 	}
 	return actor, nil
@@ -556,8 +560,9 @@ func TestSharedInboxTargetResolver_CleansStaleFollowerClaims(t *testing.T) {
 	relationshipRepo := &sharedInboxResolverRelationshipRepo{followers: map[string][]string{
 		"bob@remote.example": {"missing"},
 	}}
+	// Use a repo where the follower genuinely does not exist (nil actor, nil error).
 	resolver := sharedInboxTargetResolver{
-		actorRepository:        sharedInboxResolverActorRepo{actors: map[string]*activitypub.Actor{}},
+		actorRepository:        sharedInboxResolverActorRepo{actors: map[string]*activitypub.Actor{}, nilActorOK: true},
 		relationshipRepository: relationshipRepo,
 		localDomain:            "local.example",
 	}
@@ -578,4 +583,35 @@ func TestSharedInboxTargetResolver_CleansStaleFollowerClaims(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, actors)
 	require.Equal(t, [][2]string{{"missing", "bob@remote.example"}}, relationshipRepo.deleted)
+}
+
+func TestSharedInboxTargetResolver_PreservesRelationshipOnTransientLookupError(t *testing.T) {
+	relationshipRepo := &sharedInboxResolverRelationshipRepo{followers: map[string][]string{
+		"bob@remote.example": {"unstable"},
+	}}
+	// nilActorOK=false (default) means GetActorByUsername returns an error
+	// for a missing actor — simulating a transient storage failure.
+	resolver := sharedInboxTargetResolver{
+		actorRepository:        sharedInboxResolverActorRepo{actors: map[string]*activitypub.Actor{}},
+		relationshipRepository: relationshipRepo,
+		localDomain:            "local.example",
+	}
+
+	actors, err := resolver.Resolve(context.Background(), &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.CreateType,
+			ID:   "https://remote.example/activities/4",
+			To:   []string{"https://remote.example/users/bob/followers"},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/objects/4",
+			"type":         activitypub.NoteType,
+			"attributedTo": "https://remote.example/users/bob",
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, actors)
+	// Relationship must NOT be deleted on transient errors.
+	require.Empty(t, relationshipRepo.deleted)
 }

@@ -56,6 +56,9 @@ func TestExtractDomainFromActorID(t *testing.T) {
 		{"handle", "alice@example.com", ""},
 		{"not a URL", "/users/alice", ""},
 		{"ftp scheme", "ftp://example.com/users/alice", ""},
+		{"url parse error", "https://%ZZ/path", ""},
+		{"hostname fallback to host", "https://:8443/path", ":8443"},
+		{"IPv6 loopback", "https://[::1]/users/alice", "::1"},
 	}
 
 	for _, tt := range tests {

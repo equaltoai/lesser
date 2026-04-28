@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -173,6 +174,7 @@ func TestValidateAccountParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -397,6 +399,7 @@ func TestValidateAcctParameterCoverage(t *testing.T) {
 		{"username only", "alice", false},
 		{"username@domain", "alice@example.com", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {

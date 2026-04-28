@@ -159,16 +159,19 @@ func (r sharedInboxTargetResolver) expandFollowerHandles(ctx context.Context, us
 				}
 				if r.actorRepository != nil {
 					actor, err := r.actorRepository.GetActorByUsername(ctx, username)
+					if err != nil {
+						// Transient read failure — do not sever the
+						// relationship. Skip this follower for now;
+						// they will be reached on the next fanout.
+						continue
+					}
 					if actor == nil {
 						// The follower no longer exists as a local actor.
 						// Clean up the stale relationship edge so future
 						// fanouts do not try to deliver to a deleted account.
-						// Only delete when the result is definitively nil —
-						// transient read errors must not sever real follow edges.
 						_ = r.relationshipRepository.DeleteRelationship(ctx, username, handle)
 						continue
 					}
-					_ = err // err is non-nil only on transient read failures; ignore.
 				}
 				usernames[username] = struct{}{}
 			}
