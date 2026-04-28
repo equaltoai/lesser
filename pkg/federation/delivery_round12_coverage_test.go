@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -28,8 +29,8 @@ func TestDeliveryHelpers_RecipientsAndDomains(t *testing.T) {
 	assert.True(t, isLocalActor("https://example.com/users/bob", "https://example.com/users/alice"))
 	assert.False(t, isLocalActor("https://remote.example/users/bob", "https://example.com/users/alice"))
 
-	assert.Equal(t, "example.com", extractDomain(actorID))
-	assert.Equal(t, "not-a-url", extractDomain("not-a-url"))
+	assert.Equal(t, "example.com", common.ExtractDomainFromActorID(actorID))
+	assert.Equal(t, "", common.ExtractDomainFromActorID("not-a-url"))
 
 	assert.Equal(t, "@alice@example.com", extractHandleFromActorID(actorID, "alice"))
 	assert.Equal(t, "", extractHandleFromActorID("https://example.com/users/alice", ""))

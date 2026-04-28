@@ -405,6 +405,18 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 		return nil, ErrInvalidActorMissingFields
 	}
 
+	// Validate domain consistency: the actor document's declared ID must
+	// belong to the same domain as the URL it was fetched from. This prevents
+	// a malicious server at evil.example from returning an actor claiming to
+	// be from victim.example.
+	if err := common.ValidateActorDomainConsistency(actorURL, actor.ID); err != nil {
+		s.logger.Error("actor domain mismatch — possible spoofing",
+			zap.String("fetch_url", actorURL),
+			zap.String("declared_id", actor.ID),
+			zap.Error(err))
+		return nil, errors.Join(ErrActorDomainMismatch, err)
+	}
+
 	return &actor, nil
 }
 

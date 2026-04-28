@@ -173,8 +173,8 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/agents/memory/search", apiHandler.HandleAgentMemorySearchLift, requireRead)
 	app.Post("/api/v1/agents/{username}/suspend", apiHandler.HandleSuspendAgentLift, requireAdmin)
 
-	app.Get("/api/v1/accounts/{id}/followers", apiHandler.HandleGetAccountFollowersLift)
-	app.Get("/api/v1/accounts/{id}/following", apiHandler.HandleGetAccountFollowingLift)
+	app.Get("/api/v1/accounts/{id}/followers", apiHandler.HandleGetAccountFollowersLift, requireRead)
+	app.Get("/api/v1/accounts/{id}/following", apiHandler.HandleGetAccountFollowingLift, requireRead)
 
 	// Relationships endpoint with native Lift implementation
 	app.Get("/api/v1/accounts/relationships", apiHandler.HandleGetRelationshipsLift, requireFollowRead)
@@ -226,8 +226,8 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/statuses/{id}/context", apiHandler.HandleGetStatusContextLift, optionalAuth)
 	app.Get("/api/v1/statuses/{id}/history", apiHandler.HandleGetStatusHistoryLift, optionalAuth)
 	app.Get("/api/v1/statuses/{id}/source", apiHandler.HandleGetStatusSourceLift, requireRead)
-	app.Get("/api/v1/statuses/{id}/favourited_by", apiHandler.HandleGetStatusFavouritedByLift)
-	app.Get("/api/v1/statuses/{id}/reblogged_by", apiHandler.HandleGetStatusRebloggedByLift)
+	app.Get("/api/v1/statuses/{id}/favourited_by", apiHandler.HandleGetStatusFavouritedByLift, requireRead)
+	app.Get("/api/v1/statuses/{id}/reblogged_by", apiHandler.HandleGetStatusRebloggedByLift, requireRead)
 	app.Get("/api/v1/accounts/{id}/statuses", apiHandler.HandleGetAccountStatusesLift, optionalAuth)
 
 	// Additional Mastodon parity endpoints

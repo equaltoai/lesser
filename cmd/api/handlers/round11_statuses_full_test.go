@@ -105,7 +105,8 @@ func TestStatusesFullPermissions(t *testing.T) {
 	}
 	require.True(t, handler.isViewerMentioned(directStatus.Mentions, "alice"))
 	require.True(t, handler.isViewerMentioned([]string{"alice"}, "alice"))
-	require.True(t, handler.isViewerMentioned([]string{"https://remote.example/users/alice"}, "alice"))
+	// Remote actor URLs must not match local usernames (canonical identity comparison).
+	require.False(t, handler.isViewerMentioned([]string{"https://remote.example/users/alice"}, "alice"))
 	require.False(t, handler.isViewerMentioned(directStatus.Mentions, ""))
 	require.True(t, handler.isViewerInRecipientLists(directStatus, "alice"))
 	require.True(t, handler.isViewerInRecipientLists(&storagemodels.Status{

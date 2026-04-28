@@ -288,13 +288,20 @@ func TestMentionActorIDsAndAudienceHelpers(t *testing.T) {
 }
 
 func TestMentionHelpersNormalizeURLsAndUsernames(t *testing.T) {
+	// extractMentionUsername still exists but is no longer used in auth paths.
+	// Keep these assertions to document the extraction behavior.
 	assert.Equal(t, "bob", extractMentionUsername("https://example.com/users/bob"))
 	assert.Equal(t, "carol", extractMentionUsername("https://example.com/@carol"))
 	assert.Equal(t, "dan", extractMentionUsername("@dan"))
 
+	// Exact actor ID match still works.
 	assert.True(t, mentionMatchesViewer("https://example.com/users/bob", "bob", "https://example.com/users/bob"))
+	// Bare @username mention matches local viewer username.
 	assert.True(t, mentionMatchesViewer("@carol", "carol", "https://example.com/users/carol"))
-	assert.False(t, mentionMatchesViewer("https://example.com/users/dan", "erin", "https://example.com/users/erin"))
+	// URL mention from a different domain must NOT match a local username.
+	assert.False(t, mentionMatchesViewer("https://evil.example/users/alice", "alice", "https://local.example/users/alice"))
+	// URL mention from matching domain with matching actor ID must match.
+	assert.True(t, mentionMatchesViewer("https://local.example/users/alice", "alice", "https://local.example/users/alice"))
 }
 
 type stubPublisher struct {

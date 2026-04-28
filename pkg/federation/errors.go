@@ -455,6 +455,10 @@ var (
 	// ErrInvalidActorMissingFields is returned when actor is missing required fields
 	ErrInvalidActorMissingFields = apperrors.ObjectMissingField("required fields")
 
+	// ErrActorDomainMismatch is returned when a remote actor's declared ID
+	// belongs to a different domain than the URL used to fetch it.
+	ErrActorDomainMismatch = apperrors.ActorFetchFailed("", errors.New("actor domain mismatch — possible spoofing"))
+
 	// ErrInvalidUsernameFormat is returned when username format is invalid
 	ErrInvalidUsernameFormat = apperrors.UsernameExtractionFailed("format validation", errors.New("invalid username format"))
 

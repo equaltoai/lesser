@@ -20,16 +20,18 @@ import (
 
 // Service provides list operations
 type Service struct {
-	listRepo   interfaces.ListRepository
-	statusRepo interfaces.StatusRepository
-	publisher  streaming.Publisher
-	logger     *zap.Logger
+	listRepo         interfaces.ListRepository
+	statusRepo       interfaces.StatusRepository
+	relationshipRepo interfaces.ConcreteRelationshipRepository
+	publisher        streaming.Publisher
+	logger           *zap.Logger
 }
 
 // NewService creates a new Lists Service with the required dependencies
 func NewService(
 	listRepo interfaces.ListRepository,
 	statusRepo interfaces.StatusRepository,
+	relationshipRepo interfaces.ConcreteRelationshipRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *Service {
@@ -38,10 +40,11 @@ func NewService(
 	}
 
 	return &Service{
-		listRepo:   listRepo,
-		statusRepo: statusRepo,
-		publisher:  publisher,
-		logger:     logger,
+		listRepo:         listRepo,
+		statusRepo:       statusRepo,
+		relationshipRepo: relationshipRepo,
+		publisher:        publisher,
+		logger:           logger,
 	}
 }
 
@@ -320,6 +323,18 @@ func (s *Service) AddToList(ctx context.Context, cmd *AddToListCommand) (*Member
 	// Verify permission (only list owner can add members)
 	if list.Username != cmd.AdderID {
 		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedAddMember)
+	}
+
+	// Require that the list owner follows the account being added.
+	// This prevents using lists to bypass followers-only visibility.
+	if s.relationshipRepo != nil {
+		isFollowing, err := s.relationshipRepo.IsFollowing(ctx, list.Username, cmd.MemberUsername)
+		if err != nil || !isFollowing {
+			s.logger.Warn("cannot add unfollowed account to list",
+				zap.String("list_owner", list.Username),
+				zap.String("member_username", cmd.MemberUsername))
+			return nil, common.ErrForbidden(serviceerrors.ErrListMemberNotFollowed)
+		}
 	}
 
 	// Check if already a member

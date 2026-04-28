@@ -651,6 +651,9 @@ var (
 	// ErrListUnauthorizedAddMember is returned when user cannot add members to list owned by another user
 	ErrListUnauthorizedAddMember = errors.New("cannot add members to list owned by another user")
 
+	// ErrListMemberNotFollowed is returned when trying to add an unfollowed account to a list
+	ErrListMemberNotFollowed = errors.New("must follow account before adding to list")
+
 	// ErrListUnauthorizedRemoveMember is returned when user cannot remove members from list owned by another user
 	ErrListUnauthorizedRemoveMember = errors.New("cannot remove members from list owned by another user")
 

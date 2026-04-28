@@ -176,6 +176,19 @@ func (h *Handler) resolveRelationshipTargetID(ctx context.Context, accountID str
 		return "", fmt.Errorf("actor not found: %s", accountID)
 	}
 	if actorID := strings.TrimSpace(actor.ID); actorID != "" {
+		// When the target was specified as a URL, validate that the resolved
+		// actor's declared ID belongs to the same domain. This prevents a
+		// follow/block request to https://victim.example/users/bob from
+		// resolving to a spoofed actor on a different domain.
+		if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
+			if err := common.ValidateActorDomainConsistency(accountID, actorID); err != nil {
+				h.logger.Warn("relationship target domain mismatch",
+					zap.String("requested_id", accountID),
+					zap.String("resolved_actor_id", actorID),
+					zap.Error(err))
+				return "", fmt.Errorf("actor identity mismatch")
+			}
+		}
 		return actorID, nil
 	}
 	if username := strings.TrimSpace(actor.PreferredUsername); username != "" {

@@ -393,7 +393,7 @@ func setupTestService() (*Service, *MockListRepository, *MockNoteRepository, *Mo
 	publisher := &MockPublisher{}
 	logger := zap.NewNop()
 
-	service := NewService(listRepo, noteRepo, publisher, logger)
+	service := NewService(listRepo, noteRepo, nil, publisher, logger)
 	return service, listRepo, noteRepo, publisher
 }
 
@@ -961,7 +961,7 @@ func TestNewService(t *testing.T) {
 
 	// Test with logger
 	logger := zap.NewNop()
-	service := NewService(listRepo, noteRepo, publisher, logger)
+	service := NewService(listRepo, noteRepo, nil, publisher, logger)
 	assert.NotNil(t, service)
 	assert.Equal(t, listRepo, service.listRepo)
 	assert.Equal(t, noteRepo, service.statusRepo)
@@ -969,7 +969,7 @@ func TestNewService(t *testing.T) {
 	assert.Equal(t, logger, service.logger)
 
 	// Test with nil logger (should create nop logger)
-	serviceNoLogger := NewService(listRepo, noteRepo, publisher, nil)
+	serviceNoLogger := NewService(listRepo, noteRepo, nil, publisher, nil)
 	assert.NotNil(t, serviceNoLogger)
 	assert.NotNil(t, serviceNoLogger.logger)
 }
