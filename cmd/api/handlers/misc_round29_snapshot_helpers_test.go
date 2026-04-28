@@ -227,3 +227,117 @@ func TestMisc_NotificationVisibilityContextRecipients_Round29(t *testing.T) {
 		require.Nil(t, mentions)
 	})
 }
+
+func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		relationshipRecords: []storagemodels.RelationshipRecord{
+			{
+				PK:    "FOLLOW#alice",
+				SK:    "FOLLOWING#bob",
+				State: storagemodels.RelationshipAccepted,
+			},
+		},
+	})
+	ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("public defaults visible before notification scoping", func(t *testing.T) {
+		require.True(t, handler.notificationStatusVisibleToViewer(ctx.Context(), nil, "", "", nil, nil))
+	})
+
+	t.Run("private requires scoped notification viewer", func(t *testing.T) {
+		require.False(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			nil,
+			storagemodels.VisibilityPrivate,
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+		require.False(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-private-empty-viewer"},
+			storagemodels.VisibilityPrivate,
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+	})
+
+	t.Run("author always sees own private status", func(t *testing.T) {
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-author", Username: "bob"},
+			storagemodels.VisibilityPrivate,
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+	})
+
+	t.Run("followers see private status from followed author", func(t *testing.T) {
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-private-follow", Username: "alice"},
+			storagemodels.VisibilityPrivate,
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+		require.False(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-private-miss", Username: "alice"},
+			storagemodels.VisibilityPrivate,
+			"https://example.com/users/carol",
+			nil,
+			nil,
+		))
+	})
+
+	t.Run("direct visibility accepts legacy snapshots and explicit recipients", func(t *testing.T) {
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-direct-legacy", Username: "alice"},
+			storagemodels.VisibilityDirect,
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-direct-recipient", Username: "alice"},
+			storagemodels.VisibilityDirect,
+			"https://example.com/users/bob",
+			[]string{"https://example.com/users/alice"},
+			nil,
+		))
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-direct-mention", Username: "alice"},
+			storagemodels.VisibilityDirect,
+			"https://example.com/users/bob",
+			nil,
+			[]string{"@alice"},
+		))
+		require.False(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-direct-miss", Username: "alice"},
+			storagemodels.VisibilityDirect,
+			"https://example.com/users/bob",
+			[]string{"https://example.com/users/carol"},
+			[]string{"@carol"},
+		))
+	})
+
+	t.Run("unknown visibility fails closed", func(t *testing.T) {
+		require.False(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			&storage.Notification{ID: "n-unknown", Username: "alice"},
+			"friends-only",
+			"https://example.com/users/bob",
+			nil,
+			nil,
+		))
+	})
+}
