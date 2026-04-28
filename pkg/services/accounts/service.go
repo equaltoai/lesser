@@ -991,6 +991,56 @@ func (s *Service) sanitizeAccountForViewer(account *storage.Account, viewerID st
 	return sanitized
 }
 
+func accountStreamingPayload(payload map[string]interface{}, public bool) map[string]interface{} {
+	if len(payload) == 0 {
+		return payload
+	}
+
+	cloned := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if public {
+			switch typed := value.(type) {
+			case *storage.Account:
+				cloned[key] = publicAccountForStreaming(typed)
+				continue
+			case storage.Account:
+				cloned[key] = *publicAccountForStreaming(&typed)
+				continue
+			}
+		}
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func publicAccountForStreaming(account *storage.Account) *storage.Account {
+	if account == nil {
+		return nil
+	}
+
+	sanitized := &storage.Account{PrivateKey: ""}
+	if account.User != nil {
+		userCopy := *account.User
+		userCopy.Email = ""
+		userCopy.PasswordHash = ""
+		userCopy.RecoveryMethods = nil
+		userCopy.Metadata = nil
+		userCopy.Locale = ""
+		userCopy.Role = ""
+		userCopy.AllowNSFW = false
+		userCopy.RequireNSFWWarning = false
+		userCopy.AgentCapabilities = nil
+		userCopy.AgentOwner = ""
+		userCopy.AgentCreatedBy = ""
+		sanitized.User = &userCopy
+	}
+	if account.Actor != nil {
+		actorCopy := *account.Actor
+		sanitized.Actor = &actorCopy
+	}
+	return sanitized
+}
+
 func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage.Account) []*streaming.Event {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityUpdatedEvents(ctx, "account", account.User.Username, account.User.Username, account, map[string]interface{}{
@@ -1005,7 +1055,7 @@ func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage
 			Type:      businessEvent.Type,
 			Stream:    fmt.Sprintf("user:%s", account.User.Username),
 			Timestamp: businessEvent.Timestamp,
-			Payload:   businessEvent.Metadata,
+			Payload:   accountStreamingPayload(businessEvent.Metadata, false),
 		}
 
 		// Emit to user's stream
@@ -1018,6 +1068,7 @@ func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage
 		// Also emit to followers' streams
 		followersEvent := *streamingEvent
 		followersEvent.Stream = fmt.Sprintf("followers:%s", account.User.Username)
+		followersEvent.Payload = accountStreamingPayload(businessEvent.Metadata, true)
 		if err := s.publisher.PublishToStream(ctx, followersEvent.Stream, &followersEvent); err != nil {
 			s.logger.Error("failed to publish to followers stream", zap.Error(err))
 		} else {

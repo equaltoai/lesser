@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -274,6 +275,72 @@ func TestService_emitAccountUpdatedEvents_PublishesToUserAndFollowers(t *testing
 	}
 	assert.True(t, sawUserStream)
 	assert.True(t, sawFollowersStream)
+}
+
+func TestService_emitAccountUpdatedEvents_SanitizesFollowersPayload(t *testing.T) {
+	ctx := context.Background()
+	publisher := new(MockPublisher)
+	svc := NewService(nil, publisher, nil, nil, nil, zap.NewNop(), "example.com")
+
+	account := &storage.Account{
+		User: &storage.User{
+			ID:                 "u1",
+			Username:           "alice",
+			Email:              "alice@example.com",
+			PasswordHash:       "hash",
+			RecoveryMethods:    []string{"wallet"},
+			Metadata:           map[string]interface{}{"auth_hint": "private"},
+			Locale:             "en",
+			Role:               "admin",
+			AllowNSFW:          true,
+			RequireNSFWWarning: true,
+			AgentOwner:         "owner",
+			AgentCreatedBy:     "creator",
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: "Person",
+			},
+			PreferredUsername: "alice",
+		},
+		PrivateKey: "private-key",
+	}
+
+	publisher.On("PublishToUser", ctx, "alice", mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+	publisher.On("PublishToStream", ctx, "followers:alice", mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+
+	events := svc.emitAccountUpdatedEvents(ctx, account)
+	assert.Len(t, events, 2)
+
+	var userAccount *storage.Account
+	var followersAccount *storage.Account
+	for _, event := range events {
+		if event.Stream == "user:alice" {
+			userAccount, _ = event.Payload["entity"].(*storage.Account)
+		}
+		if event.Stream == "followers:alice" {
+			followersAccount, _ = event.Payload["entity"].(*storage.Account)
+		}
+	}
+
+	require.NotNil(t, userAccount)
+	require.NotNil(t, followersAccount)
+	assert.Equal(t, "alice@example.com", userAccount.User.Email)
+	assert.Equal(t, "hash", userAccount.User.PasswordHash)
+	assert.Empty(t, followersAccount.PrivateKey)
+	assert.Empty(t, followersAccount.User.Email)
+	assert.Empty(t, followersAccount.User.PasswordHash)
+	assert.Empty(t, followersAccount.User.RecoveryMethods)
+	assert.Empty(t, followersAccount.User.Metadata)
+	assert.Empty(t, followersAccount.User.Locale)
+	assert.Empty(t, followersAccount.User.Role)
+	assert.False(t, followersAccount.User.AllowNSFW)
+	assert.False(t, followersAccount.User.RequireNSFWWarning)
+	assert.Empty(t, followersAccount.User.AgentOwner)
+	assert.Empty(t, followersAccount.User.AgentCreatedBy)
+	assert.Equal(t, "alice", followersAccount.Actor.PreferredUsername)
+	publisher.AssertExpectations(t)
 }
 
 func TestService_emitAccountUpdatedEvents_ToleratesPublishFailures(t *testing.T) {
