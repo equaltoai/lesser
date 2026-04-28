@@ -615,3 +615,9 @@ func TestSharedInboxTargetResolver_PreservesRelationshipOnTransientLookupError(t
 	// Relationship must NOT be deleted on transient errors.
 	require.Empty(t, relationshipRepo.deleted)
 }
+
+func TestSharedInboxTargetResolver_ResolveAndValidateFollower_NilActorRepo(t *testing.T) {
+	r := sharedInboxTargetResolver{}
+	ok := r.resolveAndValidateFollower(context.Background(), "alice", "bob@remote.example")
+	require.False(t, ok)
+}
