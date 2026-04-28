@@ -106,6 +106,9 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 	if username == "" {
 		return nil, nil
 	}
+	if !r.canViewActorTipAddress(ctx, obj, username) {
+		return nil, nil
+	}
 
 	wallets, err := r.Storage.Account().GetUserWallets(ctx, username)
 	if err != nil {
@@ -122,6 +125,23 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 		return nil, nil
 	}
 	return &bestAddress, nil
+}
+
+func (r *actorResolver) canViewActorTipAddress(ctx context.Context, obj *activitypub.Actor, username string) bool {
+	viewerUsername := strings.TrimSpace(r.optionalAuth(ctx))
+	if viewerUsername == "" {
+		return false
+	}
+	if r.isAdmin(ctx, viewerUsername) {
+		return true
+	}
+
+	localUsername := r.localUsernameForLookup(obj.ID)
+	if localUsername == "" && strings.TrimSpace(obj.ID) == "" {
+		localUsername = strings.TrimSpace(username)
+	}
+
+	return localUsername != "" && strings.EqualFold(localUsername, viewerUsername)
 }
 
 func (r *actorResolver) TipChainID(ctx context.Context, _ *activitypub.Actor) (*int, error) {
