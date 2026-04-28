@@ -52,6 +52,13 @@ func isNotFoundError(err error) bool {
 	return errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)
 }
 
+func (h *Handler) adminInternalServerError(ctx *apptheory.Context, err error) (*apptheory.Response, error) {
+	if h != nil && h.logger != nil {
+		h.logger.Error("admin handler internal error", zap.Error(err))
+	}
+	return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+}
+
 // processUserSessions processes user sessions to extract IP history and most recent IP
 func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory []models.AdminIP) {
 	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
@@ -119,7 +126,7 @@ func (h *Handler) adminAccountAction(ctx *apptheory.Context, action string, acti
 	// Execute the action
 	if err := actionFn(username); err != nil {
 		h.logger.Error("failed to "+action+" account", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	return noContent(), nil
@@ -146,7 +153,7 @@ func (h *Handler) adminAction(ctx *apptheory.Context, action string, updatesFn f
 	updates, err := updatesFn(username)
 	if err != nil {
 		h.logger.Error("failed to execute "+action, zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Update user if we have updates
@@ -154,7 +161,7 @@ func (h *Handler) adminAction(ctx *apptheory.Context, action string, updatesFn f
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 			h.logger.Error("failed to "+action+" user", zap.Error(err))
-			return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return h.adminInternalServerError(ctx, err)
 		}
 	}
 
@@ -190,7 +197,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *apptheory.Context) (*apptheory
 	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context(), safeLimit32, cursor)
 	if err != nil {
 		h.logger.Error("failed to list users", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Convert to admin account format
@@ -277,14 +284,14 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *apptheory.Context) (*apptheory.
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "account not found"})
 		}
 		h.logger.Error("failed to get user", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Get actor info
 	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Get report stats
@@ -411,7 +418,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *apptheory.Context) (*apptheo
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 			h.logger.Error("failed to update user", zap.Error(err))
-			return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return h.adminInternalServerError(ctx, err)
 		}
 	}
 
@@ -463,7 +470,7 @@ func (h *Handler) HandleAdminEnableAccountLift(ctx *apptheory.Context) (*apptheo
 
 	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to enable user", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	return noContent(), nil
@@ -521,7 +528,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *apptheory.Context) (*apptheory.
 	reports, nextCursor, err := h.repos.Moderation().GetReportsByStatus(ctx.Context(), status, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get reports", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Convert to API format
@@ -705,14 +712,14 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *apptheory.Context) (*apptheo
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to resolve report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Get updated report
 	report, err := h.repos.Moderation().GetReport(ctx.Context(), reportID)
 	if err != nil {
 		h.logger.Error("failed to get updated report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Convert to API format (simplified for now)
@@ -743,7 +750,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *apptheory.Context) (*apptheor
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to reopen report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -780,13 +787,13 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *apptheory.Context) (*apptheor
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to get report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Assign report to the admin
 	if err := h.repos.Moderation().AssignReport(ctx.Context(), reportID, adminClaims.Username); err != nil {
 		h.logger.Error("failed to assign report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -823,13 +830,13 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *apptheory.Context) (*appthe
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to get report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Unassign the report
 	if err := h.repos.Moderation().UnassignReport(ctx.Context(), reportID); err != nil {
 		h.logger.Error("failed to unassign report", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -935,7 +942,7 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *apptheory.Context) (*a
 	events, nextCursor, err := h.repos.Moderation().GetModerationEvents(ctx.Context(), filter, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation events", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Convert to response format
@@ -1022,7 +1029,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *apptheory.Context)
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "moderation event not found"})
 		}
 		h.logger.Error("failed to get moderation event", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Map decision to action type
@@ -1046,7 +1053,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *apptheory.Context)
 	err = h.repos.Moderation().CreateAdminReview(ctx.Context(), eventID, adminClaims.Username, action, req.Reason)
 	if err != nil {
 		h.logger.Error("failed to create admin review", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -1088,7 +1095,7 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *apptheory.Context) (*apptheo
 	trustRelationships, err := h.repos.Trust().GetAllTrustRelationships(ctx.Context(), limit)
 	if err != nil {
 		h.logger.Error("failed to get trust relationships", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Build graph structure
@@ -1177,7 +1184,7 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *apptheory.Context) (*apptheory
 
 	if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context(), trustRel); err != nil {
 		h.logger.Error("failed to update trust relationship", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -1213,14 +1220,14 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *apptheory.Context) (*apptheor
 	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context(), roleModerator)
 	if err != nil {
 		h.logger.Error("failed to list moderator users", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Get users with admin role
 	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context(), roleAdmin)
 	if err != nil {
 		h.logger.Error("failed to list admin users", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Combine both lists
@@ -1277,7 +1284,7 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *apptheory.Context) (*appt
 
 	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to promote user to moderator", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
@@ -1313,7 +1320,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *apptheory.Context) (*appth
 			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
 		}
 		h.logger.Error("failed to get user", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	if user.Role == roleAdmin {
@@ -1328,7 +1335,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *apptheory.Context) (*appth
 
 	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to demote moderator", zap.Error(err))
-		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return h.adminInternalServerError(ctx, err)
 	}
 
 	// Log admin action
