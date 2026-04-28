@@ -139,7 +139,10 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		require.Equal(t, "alice", out[0].Username)
 		require.Equal(t, 10, out[0].AgentCapabilities.MaxPostsPerHour)
 		require.Equal(t, agents.DroneIdentityStateSouled, out[0].IdentitySemantics.IdentityState)
-		require.Equal(t, "0xalice-soul", out[0].IdentitySemantics.SoulAgentID)
+		require.Empty(t, out[0].AgentOwner)
+		require.Empty(t, out[0].DelegatedScopes)
+		require.Equal(t, "UNBOUND", out[0].IdentitySemantics.SoulBindingState)
+		require.Empty(t, out[0].IdentitySemantics.SoulAgentID)
 	})
 
 	t.Run("gets_agent_by_username", func(t *testing.T) {
@@ -153,6 +156,26 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		require.Equal(t, "alice", out.Username)
 		require.True(t, out.Verified)
 		require.Equal(t, agents.DroneIdentityStateSouled, out.IdentitySemantics.IdentityState)
+		require.Empty(t, out.AgentOwner)
+		require.Empty(t, out.DelegatedScopes)
+		require.Equal(t, "UNBOUND", out.IdentitySemantics.SoulBindingState)
+		require.Empty(t, out.IdentitySemantics.SoulAgentID)
+	})
+
+	t.Run("gets_private_agent_metadata_for_owner", func(t *testing.T) {
+		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/alice", map[string]string{
+			"Authorization": "Bearer " + ownerToken,
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["username"] = "alice"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAgentLift(ctx))
+		var out apimodels.Agent
+		require.NoError(t, json.Unmarshal(resp.Body, &out))
+		require.Equal(t, "@owner", out.AgentOwner)
+		require.Equal(t, []string{auth.ScopeRead, "write:statuses"}, out.DelegatedScopes)
+		require.Equal(t, "BOUND", out.IdentitySemantics.SoulBindingState)
 		require.Equal(t, "0xalice-soul", out.IdentitySemantics.SoulAgentID)
 	})
 

@@ -59,7 +59,11 @@ func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agen
 		return nil, graphAgentGovernanceLoadError(err)
 	}
 
-	return r.convertStorageUserToAgent(user, governance), nil
+	agent := r.convertStorageUserToAgent(user, governance)
+	if !r.canViewAgentPrivateFields(optionalGraphAuthClaims(ctx), user) {
+		redactGraphAgentPrivateFields(agent)
+	}
+	return agent, nil
 }
 
 type agentListFilters struct {
@@ -169,6 +173,20 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		return nil, ErrStorageUnavailable
 	}
 
+	ownerFilter := strings.TrimPrefix(strings.TrimSpace(derefString(ownerUsername)), "@")
+	viewerClaims := optionalGraphAuthClaims(ctx)
+	if ownerFilter != "" {
+		if viewerClaims == nil {
+			return nil, ErrAuthenticationRequired
+		}
+		if !viewerClaims.HasScope(auth.ScopeRead) && !graphClaimsIsAdmin(viewerClaims) {
+			return nil, apperrors.InsufficientScope(auth.ScopeRead)
+		}
+		if !graphClaimsIsAdmin(viewerClaims) && !strings.EqualFold(ownerFilter, strings.TrimSpace(viewerClaims.Username)) {
+			return nil, apperrors.Forbidden("not authorized to filter agents by owner")
+		}
+	}
+
 	limit32 := agentListLimit32(first, 100)
 	limit := int(limit32)
 	cursor := agentListCursor(after)
@@ -189,7 +207,7 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		typeArg:     typeArg,
 		queryValue:  strings.ToLower(strings.TrimSpace(derefString(query))),
 		verified:    verified,
-		ownerFilter: strings.TrimPrefix(strings.TrimSpace(derefString(ownerUsername)), "@"),
+		ownerFilter: ownerFilter,
 	}
 
 	edges := make([]*model.AgentEdge, 0, len(users))
@@ -202,6 +220,9 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		agent := r.convertStorageUserToAgent(user, governance)
 		if agent == nil {
 			continue
+		}
+		if !r.canViewAgentPrivateFields(viewerClaims, user) {
+			redactGraphAgentPrivateFields(agent)
 		}
 
 		edges = append(edges, &model.AgentEdge{
@@ -326,7 +347,7 @@ func (r *queryResolver) AgentActivity(ctx context.Context, username string, firs
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
 
-	if !isAgentOwnerOrAdmin(claims, account.User) && !strings.EqualFold(strings.TrimSpace(claims.Username), username) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) && !strings.EqualFold(strings.TrimSpace(claims.Username), username) {
 		return nil, apperrors.Forbidden("not authorized to view agent activity")
 	}
 
@@ -545,7 +566,7 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
 	}
 
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return nil, apperrors.Forbidden("not authorized to modify agent")
 	}
 
@@ -674,7 +695,7 @@ func (r *mutationResolver) DeleteAgent(ctx context.Context, username string) (*m
 		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
 	}
 
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return nil, apperrors.Forbidden("not authorized to delete agent")
 	}
 
@@ -796,7 +817,7 @@ func (r *mutationResolver) resolveDelegatedAgentAccount(ctx context.Context, cla
 	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return nil, apperrors.Forbidden("not authorized to delegate to agent")
 	}
 	governance, err := r.loadAgentGovernanceState(ctx, agentUsername)
@@ -958,7 +979,7 @@ func (r *mutationResolver) RevokeAgentToken(ctx context.Context, username string
 		return false, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
 
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return false, apperrors.Forbidden("not authorized to revoke agent tokens")
 	}
 
@@ -1361,7 +1382,7 @@ func scopesAreSubset(ownerScopes, requested []string) bool {
 	return auth.ScopeSetAllows(ownerScopes, requested)
 }
 
-func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User) bool {
+func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User, localActorURL ...string) bool {
 	if claims == nil || agentUser == nil {
 		return false
 	}
@@ -1370,12 +1391,11 @@ func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User) bool {
 		return true
 	}
 
-	owner := strings.TrimSpace(agentUser.AgentOwner)
-	if owner == "" {
-		return false
+	actorURL := ""
+	if len(localActorURL) > 0 {
+		actorURL = localActorURL[0]
 	}
-	owner = strings.TrimPrefix(owner, "@")
-	return strings.EqualFold(owner, strings.TrimSpace(claims.Username))
+	return agentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username, actorURL)
 }
 
 //nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.

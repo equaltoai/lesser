@@ -578,7 +578,7 @@ func (r *Resolver) requireManagedAgentLeaseAccount(ctx context.Context, username
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return nil, nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	if !isAgentOwnerOrAdmin(claims, account.User) {
+	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {
 		return nil, nil, apperrors.Forbidden("not authorized to manage agent leases")
 	}
 	return claims, account, nil

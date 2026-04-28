@@ -6,6 +6,25 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
+func (h *Handler) agentOwnerMatchesLocalPrincipal(owner string, principalUsername string) bool {
+	principalUsername = strings.TrimSpace(principalUsername)
+	owner = strings.TrimSpace(owner)
+	if principalUsername == "" || owner == "" {
+		return false
+	}
+
+	lowerOwner := strings.ToLower(owner)
+	if strings.HasPrefix(lowerOwner, "http://") || strings.HasPrefix(lowerOwner, "https://") {
+		return h != nil && h.cfg != nil && strings.EqualFold(owner, h.cfg.ActorURL(principalUsername))
+	}
+
+	owner = strings.TrimPrefix(owner, "@")
+	if strings.Contains(owner, "/") {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(owner), principalUsername)
+}
+
 func (h *Handler) agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {
 	if agentUser == nil || !agentUser.IsAgent {
 		return false
@@ -21,16 +40,5 @@ func (h *Handler) agentOwnedByPrincipal(agentUser *storage.User, principalUserna
 		return false
 	}
 
-	if h != nil && h.cfg != nil {
-		normalizedOwner := h.normalizeDelegatedByActorURI(owner)
-		if strings.EqualFold(normalizedOwner, h.cfg.ActorURL(principalUsername)) {
-			return true
-		}
-	}
-
-	owner = strings.TrimPrefix(owner, "@")
-	if idx := strings.LastIndex(owner, "/users/"); idx >= 0 {
-		owner = owner[idx+len("/users/"):]
-	}
-	return strings.EqualFold(strings.TrimSpace(owner), principalUsername)
+	return h.agentOwnerMatchesLocalPrincipal(owner, principalUsername)
 }

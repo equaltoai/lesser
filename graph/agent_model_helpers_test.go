@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -109,6 +110,33 @@ func TestConvertStorageUserToAgent_NormalizesExpiredQuarantine(t *testing.T) {
 	require.False(t, agent.QuarantineActive)
 	require.NotNil(t, agent.QuarantineEnd)
 	require.Equal(t, past.UTC(), time.Time(*agent.QuarantineEnd))
+}
+
+func TestRedactGraphAgentPrivateFields(t *testing.T) {
+	owner := "@alice"
+	soulID := "0xsoul"
+	agent := &model.Agent{
+		AgentOwner:      &owner,
+		DelegatedScopes: []string{auth.ScopeRead},
+		IdentitySemantics: &model.AgentIdentitySemantics{
+			SoulBindingState: model.SoulBindingStateBound,
+			SoulAgentID:      &soulID,
+		},
+	}
+
+	redactGraphAgentPrivateFields(agent)
+	require.Nil(t, agent.AgentOwner)
+	require.Empty(t, agent.DelegatedScopes)
+	require.Equal(t, model.SoulBindingStateUnbound, agent.IdentitySemantics.SoulBindingState)
+	require.Nil(t, agent.IdentitySemantics.SoulAgentID)
+}
+
+func TestGraphAgentOwnerMatchesLocalPrincipal(t *testing.T) {
+	require.True(t, agentOwnerMatchesLocalPrincipal("@alice", "alice", ""))
+	require.True(t, agentOwnerMatchesLocalPrincipal("alice", "alice", ""))
+	require.True(t, agentOwnerMatchesLocalPrincipal("https://example.com/users/alice", "alice", "https://example.com/users/alice"))
+	require.False(t, agentOwnerMatchesLocalPrincipal("https://remote.example/users/alice", "alice", "https://example.com/users/alice"))
+	require.False(t, agentOwnerMatchesLocalPrincipal("example.com/users/alice", "alice", ""))
 }
 
 func ptrGraphTime(value time.Time) *time.Time {
