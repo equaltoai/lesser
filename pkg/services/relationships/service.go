@@ -3230,13 +3230,14 @@ func followResponseObjectID(originalActivityID string, follower, following *stor
 	return fmt.Sprintf("%s/follows/%s", baseActorID, followingSlug)
 }
 
-// isLocalActor checks if an actor is local to this instance
+// isLocalActor checks if an actor is local to this instance using
+// URL hostname comparison (not substring matching) to prevent
+// false matches on subdomains or partial domain overlaps.
 func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 	if actor == nil {
 		return false
 	}
-	// Check if the actor ID contains our domain
-	return strings.Contains(actor.ID, domainName)
+	return common.IsLocalActorID(actor.ID, domainName)
 }
 
 func isNilFederationService(f FederationService) bool {

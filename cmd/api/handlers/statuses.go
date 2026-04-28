@@ -621,7 +621,7 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *apptheory.Context, 
 			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
 			return nil, resp, respErr
 		}
-		if obj.AuthorID == "" && obj.AuthorUsername != "" && transformations.ExtractUsernameFromActorID(actorID) != obj.AuthorUsername {
+		if obj.AuthorID == "" {
 			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
 			return nil, resp, respErr
 		}

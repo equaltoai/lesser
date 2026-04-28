@@ -96,6 +96,12 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 	if err != nil {
 		return nil, err
 	}
+	// If the resolved actor appears to be local, verify it is not suspended.
+	if resolution.Actor != nil && common.IsLocalActorID(resolution.Actor.ID, h.cfg.Domain) && h.repos != nil && h.repos.Account() != nil {
+		if account, acctErr := h.repos.Account().GetAccount(ctx, resolution.Actor.PreferredUsername); acctErr == nil && account != nil && account.User != nil && account.User.Suspended {
+			return nil, fmt.Errorf("account not found")
+		}
+	}
 	return resolution.Actor, nil
 }
 

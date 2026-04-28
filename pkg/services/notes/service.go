@@ -733,9 +733,15 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 		return nil, ErrGetStatus
 	}
 
-	// Verify permission (only author can update)
-	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
-	if status.AuthorUsername != cmd.UpdaterID {
+	// Verify permission (only author can update).
+	// Use canonical actor identity comparison instead of username-only matching
+	// to prevent a remote actor with the same username from claiming ownership.
+	authorNorm := models.NormalizeRelationshipIdentity(status.AuthorID, s.domainName)
+	if authorNorm == "" {
+		authorNorm = status.AuthorUsername
+	}
+	updaterNorm := models.NormalizeRelationshipIdentity(cmd.UpdaterID, s.domainName)
+	if !strings.EqualFold(updaterNorm, authorNorm) {
 		s.logger.Warn("user cannot update post owned by another user",
 			zap.String("updater_id", cmd.UpdaterID),
 			zap.String("author_username", status.AuthorUsername),
@@ -810,8 +816,15 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 
 	// Direct messages (visibility=direct) must not be globally deleted by the author.
 	// DM v1 supports delete-for-me only (see conversations.DeleteMessage).
+	//
+	// Use canonical actor identity comparison instead of username-only matching.
+	authorNorm := models.NormalizeRelationshipIdentity(status.AuthorID, s.domainName)
+	if authorNorm == "" {
+		authorNorm = status.AuthorUsername
+	}
+	deleterNorm := models.NormalizeRelationshipIdentity(cmd.DeleterID, s.domainName)
 	isAdmin := false
-	if status.Visibility == models.VisibilityDirect || status.AuthorUsername != cmd.DeleterID {
+	if status.Visibility == models.VisibilityDirect || !strings.EqualFold(deleterNorm, authorNorm) {
 		if s.userRepo != nil {
 			if deleter, err := s.userRepo.GetUser(ctx, cmd.DeleterID); err == nil && deleter != nil {
 				isAdmin = deleter.Role == "admin"
@@ -822,9 +835,8 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		return common.ErrForbidden(errors.New("direct messages cannot be deleted via deleteObject; use deleteMessage"))
 	}
 
-	// Verify permission (author or admin)
-	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
-	if status.AuthorUsername != cmd.DeleterID {
+	// Verify permission (author or admin).
+	if !strings.EqualFold(deleterNorm, authorNorm) {
 		// Check if deleter is an admin
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
@@ -1052,32 +1064,22 @@ func mentionMatchesViewer(mention, viewerUsername, viewerActorID string) bool {
 		return false
 	}
 
-	if strings.EqualFold(candidate, viewerUsername) || strings.EqualFold(candidate, viewerActorID) {
+	// Exact match against the viewer's canonical actor ID.
+	if strings.EqualFold(candidate, viewerActorID) {
 		return true
 	}
 
-	return strings.EqualFold(extractMentionUsername(candidate), viewerUsername)
-}
-
-func extractMentionUsername(mention string) string {
-	candidate := strings.TrimSpace(mention)
-	if candidate == "" {
-		return ""
+	// Bare username mentions (no URL scheme, with or without leading @)
+	// are local-only and can be compared directly against the viewer's username.
+	if !strings.HasPrefix(candidate, "http://") && !strings.HasPrefix(candidate, "https://") {
+		return strings.EqualFold(strings.TrimPrefix(candidate, "@"), viewerUsername)
 	}
 
-	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
-		parsed, err := url.Parse(candidate)
-		if err == nil {
-			path := strings.Trim(parsed.Path, "/")
-			if path != "" {
-				segments := strings.Split(path, "/")
-				last := strings.TrimSpace(segments[len(segments)-1])
-				return strings.TrimPrefix(last, "@")
-			}
-		}
-	}
-
-	return strings.TrimPrefix(candidate, "@")
+	// For URL mentions, require the full URL to match the viewer's
+	// canonical actor ID (checked above). Do NOT fall back to last-path-segment
+	// extraction which would allow https://evil.example/users/alice to
+	// match a local viewer named "alice".
+	return false
 }
 
 func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {

@@ -1738,12 +1738,14 @@ func (r *Registry) Lists() *lists.Service {
 		// Initialize the Lists service with repository interfaces
 		listRepo := r.storage.List()
 		statusRepo := r.storage.Status()
+		relationshipRepo := r.storage.Relationship()
 
 		// Check if repositories are available
-		if listRepo != nil && statusRepo != nil {
+		if listRepo != nil && statusRepo != nil && relationshipRepo != nil {
 			r.listsService = lists.NewService(
 				listRepo,
 				statusRepo,
+				relationshipRepo,
 				r.publisher,
 				r.logger,
 			)

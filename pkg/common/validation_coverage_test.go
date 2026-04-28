@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,6 +65,7 @@ func TestValidateAccountIDCoverage(t *testing.T) {
 		{"valid numeric", "12345678901234567890", false},
 		{"valid alphanumeric", "abc123", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -173,6 +175,7 @@ func TestValidateAccountParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -217,6 +220,7 @@ func TestValidateFilterParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 101), true},
 	}
 
 	for _, tt := range tests {
@@ -239,6 +243,7 @@ func TestValidateKeywordParamIDCoverage(t *testing.T) {
 	}{
 		{"valid", "12345", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 101), true},
 	}
 
 	for _, tt := range tests {
@@ -298,6 +303,7 @@ func TestValidateSearchQueryCoverage(t *testing.T) {
 		{"valid query", "hello world", false},
 		{"short query", "hi", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -397,6 +403,7 @@ func TestValidateAcctParameterCoverage(t *testing.T) {
 		{"username only", "alice", false},
 		{"username@domain", "alice@example.com", false},
 		{"empty", "", true},
+		{"too long", strings.Repeat("a", 501), true},
 	}
 
 	for _, tt := range tests {
@@ -532,4 +539,21 @@ func TestValidateEntityIDsListCoverage(t *testing.T) {
 		err := ValidateEntityIDsList([]string{}, "item")
 		assert.Error(t, err)
 	})
+
+	t.Run("too long entity", func(t *testing.T) {
+		err := ValidateEntityIDsList([]string{strings.Repeat("a", 501)}, "item")
+		assert.Error(t, err)
+	})
+}
+
+func TestValidateEntityIDCoverage(t *testing.T) {
+	assert.NoError(t, ValidateEntityID("valid-id", "item"))
+	assert.Error(t, ValidateEntityID("", "item"))
+	assert.Error(t, ValidateEntityID(strings.Repeat("a", 501), "item"))
+}
+
+func TestValidateLanguageCodeCoverage(t *testing.T) {
+	assert.NoError(t, ValidateLanguageCode(""))
+	assert.NoError(t, ValidateLanguageCode("en"))
+	assert.Error(t, ValidateLanguageCode("eng"))
 }

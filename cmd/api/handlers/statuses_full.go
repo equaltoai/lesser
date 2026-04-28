@@ -253,12 +253,18 @@ func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 		if candidate == "" {
 			continue
 		}
+		// Exact match against canonical actor ID or bare username.
 		if strings.EqualFold(candidate, viewer) || strings.EqualFold(candidate, viewerActorID) {
 			return true
 		}
-		if username, _, _ := h.describeStoredMention(candidate); strings.EqualFold(username, viewer) {
-			return true
+		// Bare username mentions (no URL scheme) are local-only.
+		if !strings.HasPrefix(candidate, "http://") && !strings.HasPrefix(candidate, "https://") {
+			if strings.EqualFold(strings.TrimPrefix(candidate, "@"), viewer) {
+				return true
+			}
 		}
+		// For URL mentions, do not fall back to last-path-segment extraction.
+		// A URL like https://evil.example/users/alice must not match a local "alice".
 	}
 	return false
 }

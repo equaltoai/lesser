@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -390,10 +391,13 @@ func (m *MockPublisher) Reset() {
 func setupTestService() (*Service, *MockListRepository, *MockNoteRepository, *MockPublisher) {
 	listRepo := &MockListRepository{}
 	noteRepo := &MockNoteRepository{}
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+	// Default: IsFollowing returns true so existing list-add tests continue to pass.
+	relationshipRepo.On("IsFollowing", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	publisher := &MockPublisher{}
 	logger := zap.NewNop()
 
-	service := NewService(listRepo, noteRepo, publisher, logger)
+	service := NewService(listRepo, noteRepo, relationshipRepo, publisher, logger)
 	return service, listRepo, noteRepo, publisher
 }
 
@@ -961,15 +965,17 @@ func TestNewService(t *testing.T) {
 
 	// Test with logger
 	logger := zap.NewNop()
-	service := NewService(listRepo, noteRepo, publisher, logger)
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+	service := NewService(listRepo, noteRepo, relationshipRepo, publisher, logger)
 	assert.NotNil(t, service)
 	assert.Equal(t, listRepo, service.listRepo)
 	assert.Equal(t, noteRepo, service.statusRepo)
+	assert.Equal(t, relationshipRepo, service.relationshipRepo)
 	assert.Equal(t, publisher, service.publisher)
 	assert.Equal(t, logger, service.logger)
 
 	// Test with nil logger (should create nop logger)
-	serviceNoLogger := NewService(listRepo, noteRepo, publisher, nil)
+	serviceNoLogger := NewService(listRepo, noteRepo, relationshipRepo, publisher, nil)
 	assert.NotNil(t, serviceNoLogger)
 	assert.NotNil(t, serviceNoLogger.logger)
 }

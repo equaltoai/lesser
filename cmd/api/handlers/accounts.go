@@ -208,8 +208,25 @@ func (h *Handler) publicAccountFromActor(ctx context.Context, actor *activitypub
 	return out
 }
 
+// isRemoteURL returns true when accountID is an HTTP/HTTPS URL whose host
+// does not match the local domain. This prevents remote actor URLs from being
+// looked up as local usernames.
+func (h *Handler) isRemoteURL(accountID string) bool {
+	// Bare usernames and @handles are local lookups, not remote URLs.
+	if !strings.HasPrefix(accountID, "http://") && !strings.HasPrefix(accountID, "https://") {
+		return false
+	}
+	domain := ""
+	if h != nil && h.cfg != nil {
+		domain = h.cfg.Domain
+	}
+	return !common.IsLocalActorID(accountID, domain)
+}
+
 func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string) (*storage.Account, error) {
-	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
+	skipLocalLookup := h.isRemoteURL(accountID)
+
+	if h != nil && h.registry != nil && h.registry.Accounts() != nil && !skipLocalLookup {
 		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
 		if err == nil && account != nil && h.accountLookupMatchesRequestedID(account, accountID) {
 			return account, nil
@@ -315,7 +332,7 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 }
 
 func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
-	if actor == nil {
+	if actor == nil || actor.ID == "" {
 		return false
 	}
 
@@ -324,7 +341,7 @@ func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
 		localDomain = h.cfg.Domain
 	}
 
-	return !federation.DescribeActorIdentity(actor, localDomain).IsRemote
+	return common.IsLocalActorID(actor.ID, localDomain)
 }
 
 type actorNumericIDMappingEnsurer interface {

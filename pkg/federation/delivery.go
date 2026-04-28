@@ -1,7 +1,6 @@
 package federation
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -811,6 +810,16 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 		return nil, errors.Join(ErrActorDecodeFailed, err)
 	}
 
+	// Validate domain consistency: the fetched actor document's declared ID
+	// must belong to the same domain as the URL used to fetch it.
+	if err := common.ValidateActorDomainConsistency(actorID, actor.ID); err != nil {
+		d.logger.Error("actor domain mismatch in delivery fetch — possible spoofing",
+			zap.String("fetch_url", actorID),
+			zap.String("declared_id", actor.ID),
+			zap.Error(err))
+		return nil, errors.Join(ErrActorDomainMismatch, err)
+	}
+
 	// Cache the actor (ignore errors)
 	// Extract handle from actor ID
 	handle := extractHandleFromActorID(actor.ID, actor.PreferredUsername)
@@ -825,26 +834,14 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 	return &actor, nil
 }
 
-// isLocalActor checks if an actor ID belongs to the same instance
+// isLocalActor checks if two actor IDs share the same domain using
+// URL hostname comparison rather than substring matching.
 func isLocalActor(actorID, localActorID string) bool {
-	// Extract domain from actor IDs
-	// Format: https://domain.com/users/username
-	localDomain := extractDomain(localActorID)
-	actorDomain := extractDomain(actorID)
-
-	return localDomain == actorDomain
-}
-
-// extractDomain extracts the domain from an actor ID
-func extractDomain(actorID string) string {
-	// Simple extraction - in production, use proper URL parsing
-	if err := common.ValidateIntRange("actor_id_length", len(actorID), 9, 2000); err == nil && actorID[:8] == "https://" {
-		parts := actorID[8:]
-		if idx := bytes.IndexByte([]byte(parts), '/'); idx > 0 {
-			return parts[:idx]
-		}
+	localDomain := common.ExtractDomainFromActorID(localActorID)
+	if localDomain == "" {
+		return false
 	}
-	return actorID
+	return common.IsLocalActorID(actorID, localDomain)
 }
 
 // QueueDelivery queues an activity for async delivery with proper retry handling
@@ -977,7 +974,7 @@ func generateDeliveryID() string {
 func extractHandleFromActorID(actorID, preferredUsername string) string {
 	// Extract domain from actor ID
 	// Format: https://domain.com/users/username
-	domain := extractDomain(actorID)
+	domain := common.ExtractDomainFromActorID(actorID)
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"domain":             domain,
 		"preferred_username": preferredUsername,

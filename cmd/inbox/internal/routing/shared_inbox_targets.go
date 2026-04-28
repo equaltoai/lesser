@@ -157,12 +157,8 @@ func (r sharedInboxTargetResolver) expandFollowerHandles(ctx context.Context, us
 				if username == "" {
 					continue
 				}
-				if r.actorRepository != nil {
-					actor, err := r.actorRepository.GetActorByUsername(ctx, username)
-					if err != nil || actor == nil {
-						_ = r.relationshipRepository.DeleteRelationship(ctx, username, handle)
-						continue
-					}
+				if r.resolveAndValidateFollower(ctx, username, handle) {
+					continue
 				}
 				usernames[username] = struct{}{}
 			}
@@ -174,6 +170,30 @@ func (r sharedInboxTargetResolver) expandFollowerHandles(ctx context.Context, us
 	}
 
 	return nil
+}
+
+// resolveAndValidateFollower checks that a follower still exists as a local
+// actor. It returns true (caller should continue) when the follower was
+// skipped or cleaned up. Transient read failures are skipped without
+// deleting the relationship.
+func (r sharedInboxTargetResolver) resolveAndValidateFollower(ctx context.Context, username, handle string) bool {
+	if r.actorRepository == nil {
+		return false
+	}
+	actor, err := r.actorRepository.GetActorByUsername(ctx, username)
+	if err != nil {
+		// Transient read failure — do not sever the relationship.
+		// Skip this follower for now; they will be reached on the next fanout.
+		return true
+	}
+	if actor == nil {
+		// The follower no longer exists as a local actor.
+		// Clean up the stale relationship edge so future
+		// fanouts do not try to deliver to a deleted account.
+		_ = r.relationshipRepository.DeleteRelationship(ctx, username, handle)
+		return true
+	}
+	return false
 }
 
 func (r sharedInboxTargetResolver) loadActors(ctx context.Context, usernames map[string]struct{}) ([]*activitypub.Actor, error) {
