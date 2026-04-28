@@ -132,8 +132,9 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	require.Equal(t, "runtime-app", runtimeToken.DeviceLabel)
 	require.Equal(t, int((45 * time.Minute).Seconds()), runtimeToken.AccessTTLSeconds)
 	require.WithinDuration(t, now, runtimeToken.SessionCreatedAt, time.Second)
-	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshAbsoluteTTL), runtimeToken.AbsoluteExpiresAt, time.Second)
-	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshIdleTTL), runtimeToken.IdleExpiresAt, time.Second)
+	require.WithinDuration(t, now.Add(45*time.Minute), runtimeToken.AbsoluteExpiresAt, time.Second)
+	require.WithinDuration(t, now.Add(45*time.Minute), runtimeToken.IdleExpiresAt, time.Second)
+	require.WithinDuration(t, runtimeToken.AbsoluteExpiresAt, runtimeToken.ExpiresAt, time.Second)
 }
 
 func TestOAuthDeviceApprovedTokenContext(t *testing.T) {

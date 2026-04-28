@@ -233,6 +233,30 @@ func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(
 	require.Empty(t, token.RefreshToken)
 }
 
+func TestAgentsRound20_MintDelegatedAgentTokens_BoundsRefreshByRequestedTTL(t *testing.T) {
+	cfg := round10TestConfig()
+	cfg.AllowAgents = true
+
+	state := &round10QueryState{}
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
+	require.NoError(t, err)
+
+	requestedTTL := 10 * time.Minute
+	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, requestedTTL, "test-runtime", "")
+	require.NoError(t, mintErr)
+	require.NotEmpty(t, token.RefreshToken)
+
+	stored, ok := state.refreshTokensByToken[token.RefreshToken]
+	require.True(t, ok)
+	require.Equal(t, delegatedAgentClientID, stored.ClientID)
+	require.WithinDuration(t, stored.CreatedAt.Add(requestedTTL), stored.IdleExpiresAt, 2*time.Second)
+	require.WithinDuration(t, stored.CreatedAt.Add(requestedTTL), stored.AbsoluteExpiresAt, 2*time.Second)
+	require.WithinDuration(t, stored.AbsoluteExpiresAt, stored.ExpiresAt, time.Second)
+}
+
 func TestAgentsRound20_AgentDelegationEnvelope_EmptyMetadataCases(t *testing.T) {
 	scopes, ok := agentDelegationEnvelope(nil)
 	require.False(t, ok)

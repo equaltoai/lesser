@@ -1,9 +1,11 @@
 package graph
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -89,4 +91,23 @@ func TestGraphAgentAccessLeaseModel_UsesEffectiveTokenTTL(t *testing.T) {
 	model = graphAgentAccessLeaseModel(lease, now)
 	require.NotNil(t, model)
 	require.Equal(t, 12, model.TokenTTLHours)
+}
+
+func TestGraphAgentAccessLeaseAccountGuards_RejectSuspendedAgent(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{auth.ScopeRead})
+	state.users["agent1"].Suspended = true
+	resolver := newDelegationResolver(t, state, false)
+	ctx := delegatedAgentAuthContext("owner", "write:accounts")
+
+	_, _, err := resolver.requireOwnedAgentLeaseAccount(ctx, "agent1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent not found")
+
+	_, _, err = resolver.requireManagedAgentLeaseAccount(ctx, "agent1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent not found")
+
+	err = resolver.ensureActiveAgentLeaseAccount(context.Background(), "agent1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent not found")
 }

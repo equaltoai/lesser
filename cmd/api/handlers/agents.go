@@ -397,11 +397,13 @@ func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername
 		deviceLabel = userAgent
 	}
 	bundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
-		Username:    agentUsername,
-		ClientID:    delegatedAgentClientID,
-		Scopes:      requestedScopes,
-		AccessTTL:   accessTTL,
-		DeviceLabel: deviceLabel,
+		Username:           agentUsername,
+		ClientID:           delegatedAgentClientID,
+		Scopes:             requestedScopes,
+		AccessTTL:          accessTTL,
+		RefreshIdleTTL:     accessTTL,
+		RefreshAbsoluteTTL: accessTTL,
+		DeviceLabel:        deviceLabel,
 	})
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err

@@ -736,11 +736,13 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		return nil, apperrors.Internal("jwt secret not configured")
 	}
 	bundle, err := auth.IssueAgentRuntimeTokens(ctx, r.Config, r.Storage, auth.AgentRuntimeTokenIssueParams{
-		Username:    agentUsername,
-		ClientID:    delegatedAgentClientID,
-		Scopes:      requestedScopes,
-		AccessTTL:   accessTTL,
-		DeviceLabel: auth.DefaultAgentRuntimeDeviceLabel,
+		Username:           agentUsername,
+		ClientID:           delegatedAgentClientID,
+		Scopes:             requestedScopes,
+		AccessTTL:          accessTTL,
+		RefreshIdleTTL:     accessTTL,
+		RefreshAbsoluteTTL: accessTTL,
+		DeviceLabel:        auth.DefaultAgentRuntimeDeviceLabel,
 	})
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint delegated agent tokens")

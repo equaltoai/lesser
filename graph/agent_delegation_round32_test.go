@@ -449,7 +449,8 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 }
 
 func TestDelegateToAgent_AllowsExistingAgentWhenRegistrationDisabled(t *testing.T) {
-	resolver := newDelegationResolver(t, newDelegationGraphState("agent1", []string{"read", "write:statuses"}), false)
+	state := newDelegationGraphState("agent1", []string{"read", "write:statuses"})
+	resolver := newDelegationResolver(t, state, false)
 	ctx := delegatedAgentAuthContext("owner", auth.ScopeRead, auth.ScopeWrite)
 
 	result, err := resolver.Mutation().DelegateToAgent(ctx, model.DelegateToAgentInput{
@@ -467,6 +468,11 @@ func TestDelegateToAgent_AllowsExistingAgentWhenRegistrationDisabled(t *testing.
 	require.Equal(t, "write:statuses", result.Scope)
 	require.NotNil(t, result.Agent)
 	require.Equal(t, "agent1", result.Agent.Username)
+	storedRefresh := state.refreshTokens[result.RefreshToken]
+	require.NotNil(t, storedRefresh)
+	requestedTTL := time.Duration(result.ExpiresIn) * time.Second
+	require.WithinDuration(t, storedRefresh.CreatedAt.Add(requestedTTL), storedRefresh.IdleExpiresAt, 2*time.Second)
+	require.WithinDuration(t, storedRefresh.CreatedAt.Add(requestedTTL), storedRefresh.AbsoluteExpiresAt, 2*time.Second)
 }
 
 func TestDelegateToAgent_CreatesMissingAgentWhenRegistrationEnabled(t *testing.T) {

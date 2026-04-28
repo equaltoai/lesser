@@ -730,6 +730,79 @@ func TestAgentAccessLeasesRound20_ErrorPaths(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateAgentAccessLeaseRenewChallengeLift(ctx))
 	})
 
+	t.Run("renew challenge rejects suspended agent", func(t *testing.T) {
+		state := baseState()
+		agent := state.usersByUsername["agent1"]
+		agent.Suspended = true
+		state.usersByUsername["agent1"] = agent
+		leaseID := "lease-suspended"
+		state.agentAccessLeasesByKey = map[string]storagemodels.AgentAccessLease{
+			"AGENT_ACCESS_LEASE#agent1#LEASE#" + leaseID: {
+				PK:                "AGENT_ACCESS_LEASE#agent1",
+				SK:                "LEASE#" + leaseID,
+				ID:                leaseID,
+				Username:          "agent1",
+				PrincipalUsername: "owner",
+				PrincipalWallet:   ownerAddr,
+				AgentWallet:       agentAddr,
+				Scopes:            []string{"read"},
+				DeviceLabel:       "local-agent",
+				Status:            "active",
+				IdleTimeoutHours:  24,
+				IdleExpiresAt:     now.Add(24 * time.Hour),
+				AbsoluteExpiresAt: now.Add(48 * time.Hour),
+				LastUsedAt:        now,
+				LeaseVersion:      1,
+				CreatedAt:         now,
+				UpdatedAt:         now,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/"+leaseID+"/renew/challenge", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent1"
+		ctx.Params["leaseID"] = leaseID
+		requireStatus(t, http.StatusNotFound)(h.HandleCreateAgentAccessLeaseRenewChallengeLift(ctx))
+	})
+
+	t.Run("exchange token rejects suspended agent before renewal proof", func(t *testing.T) {
+		state := baseState()
+		agent := state.usersByUsername["agent1"]
+		agent.Suspended = true
+		state.usersByUsername["agent1"] = agent
+		leaseID := "lease-suspended-token"
+		state.agentAccessLeasesByKey = map[string]storagemodels.AgentAccessLease{
+			"AGENT_ACCESS_LEASE#agent1#LEASE#" + leaseID: {
+				PK:                "AGENT_ACCESS_LEASE#agent1",
+				SK:                "LEASE#" + leaseID,
+				ID:                leaseID,
+				Username:          "agent1",
+				PrincipalUsername: "owner",
+				PrincipalWallet:   ownerAddr,
+				AgentWallet:       agentAddr,
+				Scopes:            []string{"read"},
+				DeviceLabel:       "local-agent",
+				Status:            "active",
+				IdleTimeoutHours:  24,
+				IdleExpiresAt:     now.Add(24 * time.Hour),
+				AbsoluteExpiresAt: now.Add(48 * time.Hour),
+				LastUsedAt:        now,
+				LeaseVersion:      1,
+				CreatedAt:         now,
+				UpdatedAt:         now,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/"+leaseID+"/token", nil, nil, apimodels.RenewAgentAccessLeaseTokenRequest{
+			ChallengeID: "challenge-suspended",
+			Signature:   "0xdeadbeef",
+		})
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent1"
+		ctx.Params["leaseID"] = leaseID
+		requireStatus(t, http.StatusNotFound)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+	})
+
 	t.Run("exchange token rejects mismatched challenge action", func(t *testing.T) {
 		state := baseState()
 		leaseID := "lease-3"
