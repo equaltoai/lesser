@@ -216,7 +216,7 @@ func detectUploadContentType(upload graphql.Upload, data []byte) string {
 
 	contentType := http.DetectContentType(data[:sniffLength])
 	if contentType == "" {
-		contentType = "application/octet-stream"
+		contentType = contentTypeApplicationOctetStream
 	}
 
 	return contentType

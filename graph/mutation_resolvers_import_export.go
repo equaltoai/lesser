@@ -410,7 +410,7 @@ func basicGraphQLImportFileValidation(data []byte) error {
 
 func detectGraphQLImportContentType(data []byte) string {
 	if len(data) == 0 {
-		return "application/octet-stream"
+		return contentTypeApplicationOctetStream
 	}
 	switch data[0] {
 	case '{', '[':
@@ -419,7 +419,7 @@ func detectGraphQLImportContentType(data []byte) string {
 	if strings.Contains(string(data[:min(100, len(data))]), ",") {
 		return "text/csv"
 	}
-	return "application/octet-stream"
+	return contentTypeApplicationOctetStream
 }
 
 func isValidGraphQLImportContentType(contentType string) bool {

@@ -21,6 +21,8 @@ const (
 	importExportFormatActivitypub = "activitypub"
 	importExportFormatMastodon    = "mastodon"
 	importExportFormatCSV         = "csv"
+
+	contentTypeApplicationOctetStream = "application/octet-stream"
 )
 
 func exportTypeFromString(value string) (model.ExportType, error) {
