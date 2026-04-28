@@ -52,6 +52,7 @@ type round12PermissiveQueryState struct {
 
 	seededAccountUsers     map[string]*storagepkg.User
 	seededGovernanceStates map[string]*storagepkg.AgentGovernanceState
+	seededImportBudgets    map[string]*models.ImportBudget
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
 }
@@ -391,6 +392,18 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		v.SuccessCount = 1
 		v.CreatedAt = time.Now().Add(-time.Hour)
 		v.UpdatedAt = time.Now().Add(-time.Minute)
+		return
+	case *models.ImportBudget:
+		if state != nil && state.seededImportBudgets != nil {
+			key := state.lastPK + "#" + state.lastSK
+			if budget := state.seededImportBudgets[key]; budget != nil {
+				*v = *budget
+				return
+			}
+		}
+		v.PK = state.lastPK
+		v.SK = state.lastSK
+		v.IsActive = false
 		return
 	case *models.Media:
 		mediaID := strings.TrimPrefix(state.lastPK, "media#")
