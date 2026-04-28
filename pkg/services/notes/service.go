@@ -35,6 +35,9 @@ import (
 const (
 	// VisibilityPublic represents public visibility
 	VisibilityPublic = "public"
+
+	maxRemoteMentionResolutions      = 10
+	remoteMentionResolutionBatchSize = 5
 )
 
 // Service provides notes/status operations
@@ -1577,16 +1580,59 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 	seenActors := make(map[string]struct{}, len(extracted))
 	tags := make([]activitypub.Tag, 0, len(extracted))
 	usernames := make([]string, 0, len(extracted))
+	remoteCandidates := make([]remoteMentionCandidate, 0)
+	seenRemoteCandidates := make(map[string]struct{}, len(extracted))
 
 	for _, rawMention := range extracted {
-		tag, username, ok := s.resolveMentionTag(ctx, strings.TrimSpace(rawMention), localDomain, authorUsername, remoteResolver, seenActors)
-		if !ok {
+		mention := strings.TrimSpace(rawMention)
+		if mention == "" {
 			continue
 		}
 
-		tags = append(tags, tag)
-		if username != "" {
-			usernames = append(usernames, username)
+		username, domain := splitMentionHandle(mention)
+		tag, localUsername, ok, err := s.resolveStoredMentionTag(ctx, mention, username, domain, localDomain, authorUsername, seenActors)
+		if err == nil {
+			if ok {
+				tags = append(tags, tag)
+				if localUsername != "" {
+					usernames = append(usernames, localUsername)
+				}
+			}
+			continue
+		}
+
+		if domain == "" || remoteResolver == nil {
+			s.logger.Debug("skipping unresolved local mention",
+				zap.String("mention", mention),
+				zap.Error(err))
+			continue
+		}
+
+		key := strings.ToLower(username + "@" + domain)
+		if _, seen := seenRemoteCandidates[key]; seen {
+			continue
+		}
+		seenRemoteCandidates[key] = struct{}{}
+
+		if len(remoteCandidates) >= maxRemoteMentionResolutions {
+			s.logger.Warn("remote mention resolution cap reached",
+				zap.Int("cap", maxRemoteMentionResolutions),
+				zap.String("skipped_mention", mention))
+			continue
+		}
+
+		remoteCandidates = append(remoteCandidates, remoteMentionCandidate{
+			mention:   mention,
+			username:  username,
+			domain:    domain,
+			lookupErr: err,
+		})
+	}
+
+	if len(remoteCandidates) > 0 {
+		remoteTags := s.resolveRemoteMentionBatches(ctx, remoteCandidates, localDomain, remoteResolver, seenActors)
+		if len(remoteTags) > 0 {
+			tags = append(tags, remoteTags...)
 		}
 	}
 
@@ -1595,6 +1641,13 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 	}
 
 	return tags, usernames
+}
+
+type remoteMentionCandidate struct {
+	mention   string
+	username  string
+	domain    string
+	lookupErr error
 }
 
 type mentionActorResolver interface {
@@ -1617,24 +1670,47 @@ func (s *Service) mentionActorResolver() mentionActorResolver {
 	return resolver
 }
 
-func (s *Service) resolveMentionTag(
+func (s *Service) resolveRemoteMentionBatches(
 	ctx context.Context,
-	mention, localDomain, authorUsername string,
+	candidates []remoteMentionCandidate,
+	localDomain string,
 	remoteResolver mentionActorResolver,
 	seenActors map[string]struct{},
-) (activitypub.Tag, string, bool) {
-	if mention == "" {
-		return activitypub.Tag{}, "", false
+) []activitypub.Tag {
+	if remoteResolver == nil || len(candidates) == 0 {
+		return nil
 	}
 
-	username, domain := splitMentionHandle(mention)
-
-	tag, localUsername, ok, err := s.resolveStoredMentionTag(ctx, mention, username, domain, localDomain, authorUsername, seenActors)
-	if err == nil {
-		return tag, localUsername, ok
+	batchSize := remoteMentionResolutionBatchSize
+	if batchSize <= 0 {
+		batchSize = len(candidates)
 	}
 
-	return s.resolveRemoteMentionTag(ctx, mention, username, domain, localDomain, remoteResolver, seenActors, err)
+	tags := make([]activitypub.Tag, 0, len(candidates))
+	for start := 0; start < len(candidates); start += batchSize {
+		end := start + batchSize
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+
+		for _, candidate := range candidates[start:end] {
+			tag, _, ok := s.resolveRemoteMentionTag(
+				ctx,
+				candidate.mention,
+				candidate.username,
+				candidate.domain,
+				localDomain,
+				remoteResolver,
+				seenActors,
+				candidate.lookupErr,
+			)
+			if ok {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	return tags
 }
 
 func (s *Service) resolveStoredMentionTag(
