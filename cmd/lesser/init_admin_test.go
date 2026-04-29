@@ -141,6 +141,42 @@ func TestValidateInitAdminConsentMessage(t *testing.T) {
 	}
 }
 
+func TestInitAdminConsentInstanceNormalization(t *testing.T) {
+	got, err := normalizeInitAdminConsentInstance("dev.example.com.")
+	require.NoError(t, err)
+	require.Equal(t, "dev.example.com", got)
+
+	_, err = normalizeInitAdminConsentInstance("http://dev.example.com")
+	require.Error(t, err)
+
+	_, err = normalizeInitAdminConsentInstance("https://dev.example.com/path")
+	require.Error(t, err)
+
+	_, err = normalizeInitAdminConsentInstance("https://user@dev.example.com")
+	require.Error(t, err)
+}
+
+func TestValidateInitAdminConsentMessageRejectsMalformedJSON(t *testing.T) {
+	now := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
+
+	err := validateInitAdminConsentMessage(`{"kind":"lesser.init_admin_consent.v1","unknown":true}`, "dev.example.com", "alice", now)
+	require.Error(t, err)
+
+	valid := initAdminConsentMessage{
+		Kind:      initAdminConsentKind,
+		Instance:  "https://dev.example.com",
+		Username:  "alice",
+		Nonce:     "nonce-1234567890",
+		ExpiresAt: now.Add(10 * time.Minute).Format(time.RFC3339),
+	}
+	data, err := json.Marshal(valid)
+	require.NoError(t, err)
+
+	err = validateInitAdminConsentMessage(string(data)+" {}", "dev.example.com", "alice", now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "trailing")
+}
+
 func TestRejectReservedWallet_ExtraListRejects(t *testing.T) {
 	addr := "0x4444444444444444444444444444444444444444"
 	require.Error(t, rejectReservedWallet(addr, addr))

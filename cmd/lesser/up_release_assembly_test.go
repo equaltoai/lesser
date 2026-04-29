@@ -116,6 +116,22 @@ func TestResolveReleaseAssemblyTemplate_ErrorsOnPhysicalPlaceholder(t *testing.T
 	require.ErrorContains(t, err, "unresolved app slug placeholder")
 }
 
+func TestResolveReleaseAssemblyTemplate_ErrorBranches(t *testing.T) {
+	_, err := resolveReleaseAssemblyTemplate([]byte(`{`), "my-app")
+	require.ErrorContains(t, err, "parse template JSON")
+
+	_, err = resolveReleaseAssemblyTemplate([]byte(`{}`), "---")
+	require.ErrorContains(t, err, "no alphanumeric characters")
+
+	_, err = resolveReleaseAssemblyTemplate([]byte(`{
+  "Resources": {
+    "Roleappslugplaceholder": {"Type": "Custom::Demo"},
+    "Rolemyapp": {"Type": "Custom::Demo"}
+  }
+}`), "my-app")
+	require.ErrorContains(t, err, "logical ID collision")
+}
+
 func TestUploadReleaseAssemblyAssets_Errors(t *testing.T) {
 	previousNewS3Client := newS3ClientFn
 	previousNewPresign := newS3PresignClientFn
