@@ -3,6 +3,8 @@ package notes
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,21 +135,22 @@ func TestBuildMentionTagsSkipsWhenActorIDCannotBeResolved(t *testing.T) {
 }
 
 func TestBuildMentionTagsResolvesRemoteMentionsViaFederation(t *testing.T) {
+	federation := &stubFederation{
+		resolved: map[string]*activitypub.Actor{
+			"carol@remote.example": {
+				BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
+				PreferredUsername: "carol",
+			},
+		},
+	}
 	service := &Service{
 		domainName: "example.com",
 		accountRepo: &stubAccountRepo{
 			domain:  "example.com",
 			missing: map[string]bool{"carol@remote.example": true},
 		},
-		federation: &stubFederation{
-			resolved: map[string]*activitypub.Actor{
-				"carol@remote.example": {
-					BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
-					PreferredUsername: "carol",
-				},
-			},
-		},
-		logger: zap.NewNop(),
+		federation: federation,
+		logger:     zap.NewNop(),
 	}
 
 	tags, usernames := service.buildMentionTags(context.Background(), "hi @carol@remote.example", &storage.Account{
@@ -158,6 +161,43 @@ func TestBuildMentionTagsResolvesRemoteMentionsViaFederation(t *testing.T) {
 	assert.Equal(t, "https://remote.example/users/carol", tags[0].Href)
 	assert.Equal(t, "@carol@remote.example", tags[0].Name)
 	assert.Empty(t, usernames)
+	assert.Equal(t, []string{"carol@remote.example"}, federation.calls)
+}
+
+func TestBuildMentionTagsCapsRemoteMentionResolution(t *testing.T) {
+	missing := make(map[string]bool)
+	resolved := make(map[string]*activitypub.Actor)
+	mentions := make([]string, 0, maxRemoteMentionResolutions+3)
+	for i := 0; i < maxRemoteMentionResolutions+3; i++ {
+		handle := fmt.Sprintf("user%d@remote.example", i)
+		mentions = append(mentions, "@"+handle)
+		missing[handle] = true
+		resolved[handle] = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: fmt.Sprintf("https://remote.example/users/user%d", i)},
+			PreferredUsername: fmt.Sprintf("user%d", i),
+		}
+	}
+
+	federation := &stubFederation{resolved: resolved}
+	service := &Service{
+		domainName: "example.com",
+		accountRepo: &stubAccountRepo{
+			domain:  "example.com",
+			missing: missing,
+		},
+		federation: federation,
+		logger:     zap.NewNop(),
+	}
+
+	tags, usernames := service.buildMentionTags(context.Background(), strings.Join(mentions, " "), &storage.Account{
+		User: &storage.User{Username: "alice"},
+	})
+
+	require.Len(t, tags, maxRemoteMentionResolutions)
+	assert.Empty(t, usernames)
+	require.Len(t, federation.calls, maxRemoteMentionResolutions)
+	assert.Equal(t, "user0@remote.example", federation.calls[0])
+	assert.Equal(t, fmt.Sprintf("user%d@remote.example", maxRemoteMentionResolutions-1), federation.calls[len(federation.calls)-1])
 }
 
 func TestBuildMentionTagsUsesCanonicalRemoteHandleFromCachedAccount(t *testing.T) {
@@ -436,6 +476,7 @@ type stubFederation struct {
 	activities []*activitypub.Activity
 	resolved   map[string]*activitypub.Actor
 	resolveErr map[string]error
+	calls      []string
 }
 
 func (s *stubFederation) QueueActivity(_ context.Context, activity *activitypub.Activity) error {
@@ -444,6 +485,7 @@ func (s *stubFederation) QueueActivity(_ context.Context, activity *activitypub.
 }
 
 func (s *stubFederation) ResolveActor(_ context.Context, handle string) (*activitypub.Actor, error) {
+	s.calls = append(s.calls, handle)
 	if s.resolveErr != nil && s.resolveErr[handle] != nil {
 		return nil, s.resolveErr[handle]
 	}

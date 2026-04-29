@@ -2,11 +2,14 @@ package crawler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/require"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -54,6 +57,15 @@ func (stubDB) Close() error {
 
 func (stubDB) WithContext(context.Context) tablecore.DB {
 	return stubDB{}
+}
+
+func providerSourceIP(sourceIP string) apptheory.SourceProvenance {
+	return apptheory.SourceProvenance{
+		SourceIP: sourceIP,
+		Provider: "apigw-v2",
+		Source:   "provider_request_context",
+		Valid:    true,
+	}
 }
 
 func TestParseProtectionMode(t *testing.T) {
@@ -180,6 +192,7 @@ func TestMiddleware_Block_BlocksAICrawler(t *testing.T) {
 func TestMiddleware_Block_BypassCIDR_AllowsAICrawler(t *testing.T) {
 	t.Setenv("DISABLE_RATE_LIMITING", "true")
 	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
 
 	called := 0
 	next := func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -187,6 +200,63 @@ func TestMiddleware_Block_BypassCIDR_AllowsAICrawler(t *testing.T) {
 		require.Equal(t, "ai_crawler", ctx.Get(contextCrawlerCategoryKey))
 		require.Equal(t, "ua:gptbot", ctx.Get(contextCrawlerReasonKey))
 		return apptheory.Text(200, "ok"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method:           "GET",
+		Path:             "/users/alice",
+		SourceProvenance: providerSourceIP("70.0.0.2"),
+		Headers: map[string][]string{
+			"user-agent":      {"GPTBot/1.0"},
+			"accept":          {"application/activity+json"},
+			"x-forwarded-for": {"203.0.113.10, 70.0.0.1"},
+		},
+	}}
+
+	mw := Middleware(protectionModeBlock, zap.NewNop())
+	resp, err := mw(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, 1, called)
+}
+
+func TestMiddleware_Block_SpoofedTrustedProxyChainDoesNotBypass(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
+
+	called := 0
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "should not run"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: "GET",
+		Path:   "/users/alice",
+		Headers: map[string][]string{
+			"user-agent":      {"GPTBot/1.0"},
+			"accept":          {"application/activity+json"},
+			"x-forwarded-for": {"203.0.113.10, 70.0.0.1"},
+		},
+	}}
+
+	resp, err := Middleware(protectionModeBlock, zap.NewNop())(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 403, resp.Status)
+	require.Equal(t, 0, called)
+}
+
+func TestMiddleware_Block_SpoofedBypassCIDRDoesNotBypass(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+
+	called := 0
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "should not run"), nil
 	}
 
 	ctx := &apptheory.Context{Request: apptheory.Request{
@@ -203,8 +273,38 @@ func TestMiddleware_Block_BypassCIDR_AllowsAICrawler(t *testing.T) {
 	resp, err := mw(next)(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.Equal(t, 200, resp.Status)
-	require.Equal(t, 1, called)
+	require.Equal(t, 403, resp.Status)
+	require.Equal(t, 0, called)
+}
+
+func TestMiddleware_Block_SpoofedTrustedProxyWithoutClientDoesNotBypass(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
+
+	called := 0
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "should not run"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: "GET",
+		Path:   "/users/alice",
+		Headers: map[string][]string{
+			"user-agent":      {"GPTBot/1.0"},
+			"accept":          {"application/activity+json"},
+			"x-forwarded-for": {"70.0.0.1"},
+			"x-real-ip":       {"203.0.113.10"},
+		},
+	}}
+
+	mw := Middleware(protectionModeBlock, zap.NewNop())
+	resp, err := mw(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 403, resp.Status)
+	require.Equal(t, 0, called)
 }
 
 func TestParseCIDRAllowlistFromEnv(t *testing.T) {
@@ -214,6 +314,110 @@ func TestParseCIDRAllowlistFromEnv(t *testing.T) {
 	require.NotEmpty(t, nets)
 	require.True(t, isClientIPBypassed("203.0.113.10", nets))
 	require.False(t, isClientIPBypassed(unknownString, nets))
+}
+
+func TestMiddleware_Block_AppTheoryProviderSourceAllowsTrustedForwarding(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
+
+	called := 0
+	app := apptheory.New()
+	app.Use(Middleware(protectionModeBlock, zap.NewNop()))
+	app.Get("/users/{username}", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		called++
+		require.Equal(t, "70.0.0.2", ctx.SourceIP())
+		return apptheory.Text(200, "ok"), nil
+	})
+
+	event := json.RawMessage(`{
+		"version":"2.0",
+		"routeKey":"GET /users/{username}",
+		"rawPath":"/users/alice",
+		"headers":{
+			"user-agent":"GPTBot/1.0",
+			"accept":"application/activity+json",
+			"x-forwarded-for":"203.0.113.10, 70.0.0.1"
+		},
+		"requestContext":{"http":{"method":"GET","path":"/users/alice","sourceIp":"70.0.0.2"}},
+		"isBase64Encoded":false
+	}`)
+
+	respAny, err := app.HandleLambda(context.Background(), event)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.APIGatewayV2HTTPResponse)
+	require.True(t, ok)
+	require.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, 1, called)
+}
+
+func TestMiddleware_Block_AppTheoryRESTProviderSourceAllowsTrustedForwarding(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
+
+	called := 0
+	app := apptheory.New()
+	app.Use(Middleware(protectionModeBlock, zap.NewNop()))
+	app.Get("/users/{username}", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		called++
+		require.Equal(t, "70.0.0.2", ctx.SourceIP())
+		return apptheory.Text(200, "ok"), nil
+	})
+
+	event := json.RawMessage(`{
+		"httpMethod":"GET",
+		"path":"/users/alice",
+		"headers":{
+			"user-agent":"GPTBot/1.0",
+			"accept":"application/activity+json",
+			"x-forwarded-for":"203.0.113.10, 70.0.0.1"
+		},
+		"requestContext":{"identity":{"sourceIp":"70.0.0.2"}},
+		"isBase64Encoded":false
+	}`)
+
+	respAny, err := app.HandleLambda(context.Background(), event)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.APIGatewayProxyResponse)
+	require.True(t, ok)
+	require.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, 1, called)
+}
+
+func TestMiddleware_Block_ClientSuppliedSourceHeaderCannotBypass(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
+
+	called := 0
+	app := apptheory.New()
+	app.Use(Middleware(protectionModeBlock, zap.NewNop()))
+	app.Get("/users/{username}", func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "ok"), nil
+	})
+
+	event := json.RawMessage(`{
+		"version":"2.0",
+		"routeKey":"GET /users/{username}",
+		"rawPath":"/users/alice",
+		"headers":{
+			"user-agent":"GPTBot/1.0",
+			"accept":"application/activity+json",
+			"x-forwarded-for":"203.0.113.10, 70.0.0.1",
+			"X-Lesser-Trusted-Source-IP":"70.0.0.2"
+		},
+		"requestContext":{"http":{"method":"GET","path":"/users/alice","sourceIp":"198.51.100.9"}},
+		"isBase64Encoded":false
+	}`)
+
+	respAny, err := app.HandleLambda(context.Background(), event)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.APIGatewayV2HTTPResponse)
+	require.True(t, ok)
+	require.Equal(t, 403, resp.StatusCode)
+	require.Equal(t, 0, called)
 }
 
 func TestNewLimiterFunc(t *testing.T) {
@@ -275,6 +479,7 @@ func TestNewLimiterFunc(t *testing.T) {
 
 func TestMiddleware_Limit_Returns429AndUsesStableKey(t *testing.T) {
 	t.Setenv("DISABLE_RATE_LIMITING", "false")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
 
 	orig := newLimiterFunc
 	t.Cleanup(func() { newLimiterFunc = orig })
@@ -312,8 +517,9 @@ func TestMiddleware_Limit_Returns429AndUsesStableKey(t *testing.T) {
 	}
 
 	ctx := &apptheory.Context{Request: apptheory.Request{
-		Method: "GET",
-		Path:   "/users/alice",
+		Method:           "GET",
+		Path:             "/users/alice",
+		SourceProvenance: providerSourceIP("70.0.0.2"),
 		Headers: map[string][]string{
 			"user-agent":        {"ExampleScraperBot/1.0"},
 			"accept":            {"text/html"},
@@ -340,6 +546,46 @@ func TestMiddleware_Limit_Returns429AndUsesStableKey(t *testing.T) {
 	require.Equal(t, []string{"30"}, resp.Headers["retry-after"])
 }
 
+func TestMiddleware_Limit_SpoofedForwardedHeaderUsesUnknownKey(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "false")
+
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	limiter := &stubLimiter{decision: &apptheoryLimited.LimitDecision{
+		Allowed:      true,
+		CurrentCount: 1,
+		Limit:        30,
+		ResetsAt:     time.Unix(1700000000, 0),
+	}}
+	newLimiterFunc = func(_ string, limit int, _ time.Duration, _ *zap.Logger) (atomicLimiter, error) {
+		if limit == 30 {
+			return limiter, nil
+		}
+		return nil, context.Canceled
+	}
+
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(200, "ok"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: "GET",
+		Path:   "/users/alice",
+		Headers: map[string][]string{
+			"user-agent":      {"ExampleScraperBot/1.0"},
+			"accept":          {"text/html"},
+			"x-forwarded-for": {"203.0.113.1"},
+		},
+	}}
+
+	resp, err := Middleware(protectionModeLimit, zap.NewNop())(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, "ip:"+unknownString, limiter.lastKey.Identifier)
+}
+
 func TestBuildLimiters_FailOpenOnNewLimiterError(t *testing.T) {
 	t.Setenv("DISABLE_RATE_LIMITING", "false")
 
@@ -356,6 +602,7 @@ func TestBuildLimiters_FailOpenOnNewLimiterError(t *testing.T) {
 
 func TestMiddleware_Limit_AllowsAndAddsHeaders(t *testing.T) {
 	t.Setenv("DISABLE_RATE_LIMITING", "false")
+	t.Setenv("CRAWLER_TRUSTED_PROXY_CIDRS", "70.0.0.0/8")
 
 	orig := newLimiterFunc
 	t.Cleanup(func() { newLimiterFunc = orig })
@@ -378,12 +625,13 @@ func TestMiddleware_Limit_AllowsAndAddsHeaders(t *testing.T) {
 	}
 
 	ctx := &apptheory.Context{Request: apptheory.Request{
-		Method: "GET",
-		Path:   "/api/v1/instance",
+		Method:           "GET",
+		Path:             "/api/v1/instance",
+		SourceProvenance: providerSourceIP("70.0.0.3"),
 		Headers: map[string][]string{
 			"user-agent":      {"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
 			"accept":          {"text/html"},
-			"x-forwarded-for": {"203.0.113.2"},
+			"x-forwarded-for": {"203.0.113.2, 70.0.0.2"},
 		},
 	}}
 
@@ -419,20 +667,31 @@ func TestRouteClassForPath(t *testing.T) {
 }
 
 func TestExtractClientIP(t *testing.T) {
-	require.Equal(t, unknownString, extractClientIP(nil))
+	_, trustedProxy, err := net.ParseCIDR("70.0.0.0/8")
+	require.NoError(t, err)
+	trusted := []*net.IPNet{trustedProxy}
+
+	require.Equal(t, unknownString, extractClientIP(nil, trusted))
 
 	xff := &apptheory.Context{Request: apptheory.Request{Headers: map[string][]string{
 		"x-forwarded-for": {"203.0.113.1, 70.0.0.1"},
-	}}}
-	require.Equal(t, "203.0.113.1", extractClientIP(xff))
+	}, SourceProvenance: providerSourceIP("70.0.0.2")}}
+	require.Equal(t, "70.0.0.2", extractClientIP(xff, nil))
+	require.Equal(t, "203.0.113.1", extractClientIP(xff, trusted))
 
 	xri := &apptheory.Context{Request: apptheory.Request{Headers: map[string][]string{
-		"x-real-ip": {"203.0.113.9"},
-	}}}
-	require.Equal(t, "203.0.113.9", extractClientIP(xri))
+		"x-forwarded-for": {"70.0.0.1"},
+		"x-real-ip":       {"203.0.113.9"},
+	}, SourceProvenance: providerSourceIP("70.0.0.2")}}
+	require.Equal(t, "70.0.0.2", extractClientIP(xri, trusted))
+
+	direct := &apptheory.Context{Request: apptheory.Request{Headers: map[string][]string{
+		"x-forwarded-for": {"203.0.113.9"},
+	}, SourceProvenance: providerSourceIP("198.51.100.9")}}
+	require.Equal(t, "198.51.100.9", extractClientIP(direct, trusted))
 
 	unknown := &apptheory.Context{Request: apptheory.Request{Headers: map[string][]string{}}}
-	require.Equal(t, unknownString, extractClientIP(unknown))
+	require.Equal(t, unknownString, extractClientIP(unknown, trusted))
 }
 
 func TestRateLimitHeaders(t *testing.T) {

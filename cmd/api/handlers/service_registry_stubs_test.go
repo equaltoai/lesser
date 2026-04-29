@@ -884,7 +884,7 @@ func (s *RelationshipsServiceStub) Unmute(ctx context.Context, cmd *relationship
 type ScheduledServiceStub struct {
 	CreateScheduledStatusFunc        func(ctx context.Context, cmd *scheduled.CreateScheduledStatusCommand) (*scheduled.StatusResult, error)
 	DeleteScheduledStatusFunc        func(ctx context.Context, cmd *scheduled.DeleteScheduledStatusCommand) error
-	GetScheduledMediaAttachmentsFunc func(ctx context.Context, scheduledStatusID string) ([]*storagemodels.Media, error)
+	GetScheduledMediaAttachmentsFunc func(ctx context.Context, scheduledStatusID string, username string) ([]*storagemodels.Media, error)
 	GetScheduledStatusFunc           func(ctx context.Context, query *scheduled.GetScheduledStatusQuery) (*scheduled.StatusResult, error)
 	ListScheduledStatusesFunc        func(ctx context.Context, query *scheduled.ListScheduledStatusesQuery) (*scheduled.StatusListResult, error)
 	UpdateScheduledStatusFunc        func(ctx context.Context, cmd *scheduled.UpdateScheduledStatusCommand) (*scheduled.StatusResult, error)
@@ -906,9 +906,9 @@ func (s *ScheduledServiceStub) DeleteScheduledStatus(ctx context.Context, cmd *s
 	return missingStub("ScheduledService.DeleteScheduledStatus")
 }
 
-func (s *ScheduledServiceStub) GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) ([]*storagemodels.Media, error) {
+func (s *ScheduledServiceStub) GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string, username string) ([]*storagemodels.Media, error) {
 	if s != nil && s.GetScheduledMediaAttachmentsFunc != nil {
-		return s.GetScheduledMediaAttachmentsFunc(ctx, scheduledStatusID)
+		return s.GetScheduledMediaAttachmentsFunc(ctx, scheduledStatusID, username)
 	}
 	return nil, missingStub("ScheduledService.GetScheduledMediaAttachments")
 }

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/equaltoai/lesser/graph/model"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,6 +69,15 @@ func TestRound12MutationResolvers_ImportExport_HelperFunctions(t *testing.T) {
 
 	_, err = mergeStrategyForImportMode(model.ImportMode("nope"))
 	require.Error(t, err)
+
+	require.Equal(t, int64(5_000_000), graphQLEstimateExportCost("archive", "activitypub", true))
+	require.Greater(
+		t,
+		graphQLEstimateImportCost("followers", importMergeStrategyReplace, 1),
+		graphQLEstimateImportCost("followers", importMergeStrategyMerge, 1),
+	)
+	require.NoError(t, basicGraphQLImportFileValidation([]byte("account,show_reblogs\n@bob@example.com,true\n")))
+	require.Error(t, basicGraphQLImportFileValidation([]byte("no-commas-and-not-json")))
 }
 
 func TestRound12MutationResolvers_ImportExport_CreateExport_DuplicateAndValidation(t *testing.T) {
@@ -100,6 +111,51 @@ func TestRound12MutationResolvers_ImportExport_CreateExport_DuplicateAndValidati
 		Format: model.ExportFormatCSV,
 	})
 	require.Error(t, err)
+}
+
+func TestRound12MutationResolvers_ImportExport_CreateExport_RESTGates(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	mut := &mutationResolver{resolver}
+
+	_, err := mut.CreateExport(round12AuthContext("alice"), model.CreateExportInput{
+		Type:   model.ExportTypeArchive,
+		Format: model.ExportFormatCSV,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CSV format")
+
+	futureEnd := model.Time(time.Now().Add(time.Hour))
+	pastStart := model.Time(time.Now().Add(-time.Hour))
+	_, err = mut.CreateExport(round12AuthContext("alice"), model.CreateExportInput{
+		Type:   model.ExportTypeFollowers,
+		Format: model.ExportFormatCSV,
+		DateRange: &model.DateRangeInput{
+			Start: pastStart,
+			End:   futureEnd,
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "date range")
+
+	now := time.Now()
+	budget := &storageModels.ImportBudget{
+		Username:              "alice",
+		Period:                storageModels.PeriodDaily,
+		IsActive:              true,
+		ExportLimitMicroCents: 1,
+		NextResetAt:           now.Add(24 * time.Hour),
+	}
+	budget.UpdateKeys()
+	storage.queryState.seededImportBudgets = map[string]*storageModels.ImportBudget{
+		budget.PK + "#" + budget.SK: budget,
+	}
+
+	_, err = mut.CreateExport(round12AuthContext("alice"), model.CreateExportInput{
+		Type:   model.ExportTypeArchive,
+		Format: model.ExportFormatActivitypub,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "export budget limit exceeded")
 }
 
 func TestRound12MutationResolvers_ImportExport_CreateImport_EarlyFailures(t *testing.T) {
@@ -153,6 +209,49 @@ func TestRound12MutationResolvers_ImportExport_CreateImport_EarlyFailures(t *tes
 		File: graphql.Upload{Filename: "x.csv", File: bytes.NewReader(nil), Size: 0},
 	})
 	require.Error(t, err)
+}
+
+func TestRound12MutationResolvers_ImportExport_CreateImport_RESTGates(t *testing.T) {
+	t.Setenv("AWS_REGION", "us-east-1")
+
+	resolver, storage := newRound12GraphResolver(t)
+	mut := &mutationResolver{resolver}
+
+	_, err := mut.CreateImport(round12AuthContext("alice"), model.CreateImportInput{
+		Type: model.ImportTypeFollowers,
+		File: graphql.Upload{
+			Filename: "followers.txt",
+			File:     bytes.NewReader([]byte("no-commas-and-not-json")),
+			Size:     int64(len("no-commas-and-not-json")),
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "file validation failed")
+
+	data := []byte(`{"account":"@bob@example.com"}`)
+	estimated := graphQLEstimateImportCost(importExportTypeFollowers, importMergeStrategyMerge, len(data))
+	budget := &storageModels.ImportBudget{
+		Username:              "alice",
+		Period:                storageModels.PeriodDaily,
+		IsActive:              true,
+		ImportLimitMicroCents: estimated - 1,
+		NextResetAt:           time.Now().Add(24 * time.Hour),
+	}
+	budget.UpdateKeys()
+	storage.queryState.seededImportBudgets = map[string]*storageModels.ImportBudget{
+		budget.PK + "#" + budget.SK: budget,
+	}
+
+	_, err = mut.CreateImport(round12AuthContext("alice"), model.CreateImportInput{
+		Type: model.ImportTypeFollowers,
+		File: graphql.Upload{
+			Filename: "followers.json",
+			File:     bytes.NewReader(data),
+			Size:     int64(len(data)),
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "import budget limit exceeded")
 }
 
 func TestRound12MutationResolvers_ImportExport_CancelImport_Paths(t *testing.T) {

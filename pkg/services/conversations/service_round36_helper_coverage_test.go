@@ -35,8 +35,8 @@ func TestService_enforceDirectMessageRequestRateLimit_AuditsAndFailsOnTotalLimit
 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
-		On("CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(storage.ErrRateLimited).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(false, 0, time.Now().UTC().Add(dmRequestTotalWindow), nil).
 		Once()
 
 	auditRepo := testmocks.NewMockAuditRepository()
@@ -80,12 +80,12 @@ func TestService_enforceDirectMessageRequestRateLimit_AuditsAndFailsOnPerRecipie
 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
-		On("CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(true, dmRequestTotalLimit-1, time.Now().UTC().Add(dmRequestTotalWindow), nil).
 		Once()
 	rateLimitRepo.
-		On("CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
-		Return(storage.ErrRateLimited).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
+		Return(false, 0, time.Now().UTC().Add(dmRequestPerRecipientWindow), nil).
 		Once()
 
 	auditRepo := testmocks.NewMockAuditRepository()
@@ -122,6 +122,55 @@ func TestService_enforceDirectMessageRequestRateLimit_AuditsAndFailsOnPerRecipie
 
 	rateLimitRepo.AssertExpectations(t)
 	auditRepo.AssertExpectations(t)
+}
+
+func TestService_enforceDirectMessageTotalRateLimit_FailsOpenOnStorageError(t *testing.T) {
+	ctx := context.Background()
+	storageErr := errors.New("rate limit store unavailable")
+
+	rateLimitRepo := testmocks.NewMockRateLimitRepository()
+	rateLimitRepo.
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(true, dmSendTotalLimit, time.Now().UTC().Add(dmSendTotalWindow), storageErr).
+		Once()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, rateLimitRepo, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	err := service.enforceDirectMessageTotalRateLimit(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+		Content:    "hi",
+	}, "bob")
+	require.NoError(t, err)
+
+	rateLimitRepo.AssertExpectations(t)
+}
+
+func TestService_enforceDirectMessageRequestRateLimit_FailsOpenOnStorageError(t *testing.T) {
+	ctx := context.Background()
+	storageErr := errors.New("rate limit store unavailable")
+	resetTime := time.Now().UTC().Add(dmRequestTotalWindow)
+
+	rateLimitRepo := testmocks.NewMockRateLimitRepository()
+	rateLimitRepo.
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(true, dmRequestTotalLimit-1, resetTime, nil).
+		Once()
+	rateLimitRepo.
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
+		Return(true, dmRequestPerRecipientLimit, resetTime, storageErr).
+		Once()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, rateLimitRepo, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	err := service.enforceDirectMessageRequestRateLimit(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+		Content:    "hi",
+	}, "conv123", "bob")
+	require.NoError(t, err)
+
+	rateLimitRepo.AssertExpectations(t)
 }
 
 func TestService_DirectMessageInboxPreferenceHelpers(t *testing.T) {

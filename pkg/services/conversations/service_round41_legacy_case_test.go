@@ -155,23 +155,23 @@ func TestCloneDirectMessageCommandWithResolvedParticipants(t *testing.T) {
 	})
 }
 
-func TestService_previewDirectMessageRequestRateLimit_UsesPerRecipientPreview(t *testing.T) {
+func TestService_enforceDirectMessageRequestRateLimit_UsesPerRecipientLimit(t *testing.T) {
 	ctx := context.Background()
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	resetTime := time.Now().Add(time.Minute)
 
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(1, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(true, dmRequestTotalLimit-1, resetTime, nil).
 		Once()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
-		Return(1, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
+		Return(true, dmRequestPerRecipientLimit-1, resetTime, nil).
 		Once()
 
 	service := NewService(nil, nil, nil, nil, nil, nil, rateLimitRepo, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
-	err := service.previewDirectMessageRequestRateLimit(ctx, &SendDirectMessageCommand{
+	err := service.enforceDirectMessageRequestRateLimit(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
 		Recipients: []string{"bob"},
 		Content:    "hi",
@@ -181,19 +181,19 @@ func TestService_previewDirectMessageRequestRateLimit_UsesPerRecipientPreview(t 
 	rateLimitRepo.AssertExpectations(t)
 }
 
-func TestService_previewDirectMessageRequestRateLimit_ReturnsTotalPreviewFailure(t *testing.T) {
+func TestService_enforceDirectMessageRequestRateLimit_ReturnsTotalFailure(t *testing.T) {
 	ctx := context.Background()
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	resetTime := time.Now().Add(time.Minute)
 
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(0, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(false, 0, resetTime, nil).
 		Once()
 
 	service := NewService(nil, nil, nil, nil, nil, nil, rateLimitRepo, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
-	err := service.previewDirectMessageRequestRateLimit(ctx, &SendDirectMessageCommand{
+	err := service.enforceDirectMessageRequestRateLimit(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
 		Recipients: []string{"bob"},
 		Content:    "hi",
@@ -252,16 +252,16 @@ func TestService_SendDirectMessage_RateLimitsPendingRequestPreview(t *testing.T)
 		Once()
 
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
-		Return(1, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(true, dmSendTotalLimit-1, resetTime, nil).
 		Once()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(1, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(true, dmRequestTotalLimit-1, resetTime, nil).
 		Once()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
-		Return(0, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
+		Return(false, 0, resetTime, nil).
 		Once()
 
 	_, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{

@@ -52,8 +52,8 @@ func TestService_SendDirectMessage_RateLimited_TotalThroughput(t *testing.T) {
 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
-		Return(0, time.Now().UTC().Add(dmSendTotalWindow), nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(false, 0, time.Now().UTC().Add(dmSendTotalWindow), nil).
 		Once()
 
 	service := NewService(
@@ -96,8 +96,8 @@ func TestService_SendDirectMessage_PendingRequest_BlocksAdditionalMessages(t *te
 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
-		Return(dmSendTotalLimit, time.Now().UTC().Add(dmSendTotalWindow), nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(true, dmSendTotalLimit-1, time.Now().UTC().Add(dmSendTotalWindow), nil).
 		Once()
 
 	service := NewService(
@@ -157,8 +157,8 @@ func TestService_SendDirectMessage_RequestDisallowsMedia(t *testing.T) {
 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
-		Return(dmSendTotalLimit, time.Now().UTC().Add(dmSendTotalWindow), nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(true, dmSendTotalLimit-1, time.Now().UTC().Add(dmSendTotalWindow), nil).
 		Once()
 
 	service := NewService(

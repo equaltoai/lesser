@@ -140,7 +140,7 @@ func TestService_executeDirectMessageSendAttempt_RetriesCreateRace(t *testing.T)
 		Content:    "hello",
 	}, sender, map[string]*storage.Account{
 		"bob": recipient,
-	}, "bob")
+	}, "bob", nil)
 	require.ErrorIs(t, err, storage.ErrAlreadyExists)
 	require.True(t, retry)
 	require.Nil(t, attempt)

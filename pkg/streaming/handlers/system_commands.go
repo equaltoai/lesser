@@ -53,6 +53,8 @@ type mediaUploader interface {
 	UploadMedia(ctx context.Context, cmd *mediasvc.UploadMediaCommand) (*mediasvc.Result, error)
 }
 
+const maxWebSocketUploadBytes = 10 * 1024 * 1024
+
 type wsUploadPayload struct {
 	Data        []byte
 	Filename    string
@@ -395,6 +397,13 @@ func (sch *SystemCommandHandler) parseUploadPayload(payload map[string]interface
 	if comma := strings.Index(fileData, ","); comma != -1 {
 		fileData = fileData[comma+1:]
 	}
+	fileData = strings.TrimSpace(fileData)
+
+	if len(fileData) > base64.StdEncoding.EncodedLen(maxWebSocketUploadBytes) {
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Uploaded file is too large",
+			fmt.Sprintf("WebSocket media uploads are limited to %d bytes", maxWebSocketUploadBytes))
+	}
 
 	decoded, err := base64.StdEncoding.DecodeString(fileData)
 	if err != nil {
@@ -410,6 +419,12 @@ func (sch *SystemCommandHandler) parseUploadPayload(payload map[string]interface
 			"Ensure the media payload contains data")
 	}
 
+	if len(decoded) > maxWebSocketUploadBytes {
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Uploaded file is too large",
+			fmt.Sprintf("WebSocket media uploads are limited to %d bytes", maxWebSocketUploadBytes))
+	}
+
 	filename := sch.GetString(payload, "file_name", "")
 	if filename == "" {
 		filename = sch.GetString(payload, "filename", "")
@@ -420,6 +435,12 @@ func (sch *SystemCommandHandler) parseUploadPayload(payload map[string]interface
 
 	mimeType := strings.TrimSpace(sch.GetString(payload, "mime_type", ""))
 	if mimeType == "" {
+		mimeType = strings.TrimSpace(sch.GetString(payload, "content_type", ""))
+	}
+	if mimeType == "" {
+		mimeType = strings.TrimSpace(sch.GetString(payload, "contentType", ""))
+	}
+	if mimeType == "" {
 		sniff := len(decoded)
 		if sniff > 512 {
 			sniff = 512
@@ -428,6 +449,13 @@ func (sch *SystemCommandHandler) parseUploadPayload(payload map[string]interface
 	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
+	}
+
+	if err := mediasvc.ValidateSVGUpload(mimeType, decoded); err != nil {
+		sch.Logger().Warn("unsafe SVG media upload rejected", zap.Error(err))
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Invalid SVG media",
+			err.Error())
 	}
 
 	description := strings.TrimSpace(sch.GetString(payload, "description", ""))

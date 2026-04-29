@@ -338,20 +338,24 @@ func (h *Handler) statusInteraction(ctx *apptheory.Context, operation string) (*
 		return common.RespondUnauthorized(ctx)
 	}
 
+	return h.statusInteractionForUser(ctx, operation, statusID, claims.Username)
+}
+
+func (h *Handler) statusInteractionForUser(ctx *apptheory.Context, operation string, statusID string, username string) (*apptheory.Response, error) {
 	if !isSupportedStatusInteraction(operation) {
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}
 
-	result, err := h.executeStatusInteraction(ctx.Context(), operation, statusID, claims.Username)
+	result, err := h.executeStatusInteraction(ctx.Context(), operation, statusID, username)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
 		}
 		return common.RespondInternalServerError(ctx, statusInteractionFailureMessage(operation))
 	}
-	h.createStatusInteractionNotification(ctx.Context(), operation, claims.Username, result.Status)
+	h.createStatusInteractionNotification(ctx.Context(), operation, username, result.Status)
 
-	mastodonStatus, convErr := h.convertStorageStatusToAPI(result.Status, claims.Username)
+	mastodonStatus, convErr := h.convertStorageStatusToAPI(result.Status, username)
 	if convErr != nil {
 		h.logger.Error("failed to serialize interacted status", zap.String("operation", operation), zap.Error(convErr))
 		return common.RespondInternalServerError(ctx, "failed to serialize status")
@@ -548,9 +552,45 @@ func (h *Handler) HandleUnfavoriteLift(ctx *apptheory.Context) (*apptheory.Respo
 	return h.statusInteraction(ctx, statusOpUnfavorite)
 }
 
-// HandleReblogLift handles POST /api/v1/statuses/:id/reblog
+// HandleReblogLift handles POST /api/v1/statuses/:id/reblog.
+//
+// The live Mastodon-compatible route preserves the existing pure-boost service
+// path for empty bodies while enforcing the unified boost parser for optional
+// quote-boost request bodies.
 func (h *Handler) HandleReblogLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.statusInteraction(ctx, statusOpReblog)
+	statusID := ctx.Param("id")
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
+
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
+	req, parseResp, err := h.parseUnifiedBoostRequest(ctx)
+	if parseResp != nil || err != nil {
+		return parseResp, err
+	}
+	if req.Comment == nil || strings.TrimSpace(*req.Comment) == "" {
+		return h.statusInteractionForUser(ctx, statusOpReblog, statusID, claims.Username)
+	}
+
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
+	if err != nil {
+		h.logger.Error("failed to get actor", zap.Error(err))
+		return common.RespondInternalServerError(ctx)
+	}
+
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
+
+	return h.createQuoteBoostLift(ctx, statusID, objectID, *req.Comment, req.Visibility, actor)
 }
 
 // HandleUnreblogLift handles POST /api/v1/statuses/:id/unreblog

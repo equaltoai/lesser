@@ -60,6 +60,12 @@ func (m *MockRateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userI
 	return args.Int(0), args.Get(1).(time.Time), args.Error(2)
 }
 
+// CheckFixedWindowRateLimit mocks the optional fixed-window atomic rate-limit helper.
+func (m *MockRateLimitRepository) CheckFixedWindowRateLimit(ctx context.Context, identifier, bucket string, limit int, window time.Duration) (allowed bool, remaining int, resetTime time.Time, err error) {
+	args := m.Called(ctx, identifier, bucket, limit, window)
+	return args.Bool(0), args.Int(1), args.Get(2).(time.Time), args.Error(3)
+}
+
 // ===== Federation Rate Limiting Operations =====
 
 // CheckFederationRateLimit mocks the CheckFederationRateLimit method

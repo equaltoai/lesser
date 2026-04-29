@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t *testing.T) {
+func TestService_SendDirectMessage_ConsumesRateLimitBeforeWrites(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
@@ -31,16 +31,16 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	resetTime := time.Now().UTC().Add(time.Minute)
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
-		Return(dmSendTotalLimit, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
+		Return(true, dmSendTotalLimit-1, resetTime, nil).
 		Once()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
-		Return(dmRequestTotalLimit, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow).
+		Return(true, dmRequestTotalLimit-1, resetTime, nil).
 		Once()
 	rateLimitRepo.
-		On("GetAPIRateLimitInfo", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
-		Return(dmRequestPerRecipientLimit, resetTime, nil).
+		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow).
+		Return(true, dmRequestPerRecipientLimit-1, resetTime, nil).
 		Once()
 
 	service := NewService(
@@ -79,9 +79,7 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 	})
 	require.ErrorIs(t, err, ErrCreateDirectMessage)
 
-	rateLimitRepo.AssertNotCalled(t, "CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow)
-	rateLimitRepo.AssertNotCalled(t, "CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow)
-	rateLimitRepo.AssertNotCalled(t, "CheckAPIRateLimit", mock.Anything, "dm:alice", "dm_request_to:bob", dmRequestPerRecipientLimit, dmRequestPerRecipientWindow)
+	rateLimitRepo.AssertExpectations(t)
 }
 
 func TestDirectMessageRequestPerRecipientLimit_IsUsable(t *testing.T) {

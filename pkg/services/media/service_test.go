@@ -623,6 +623,16 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 			},
 			expectedErr: "invalid media category",
 		},
+		{
+			name: "unsafe svg content",
+			modifyCmd: func(cmd *UploadMediaCommand) {
+				cmd.FileName = "bad.svg"
+				cmd.ContentType = "image/svg+xml"
+				cmd.FileData = []byte(`<svg><script>alert(1)</script></svg>`)
+				cmd.MediaCategory = models.MediaCategoryImage
+			},
+			expectedErr: "unsafe svg content",
+		},
 	}
 
 	for _, tt := range tests {

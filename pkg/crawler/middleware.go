@@ -49,6 +49,12 @@ const (
 	defaultSearchEngineLimitPerHour = 100
 	defaultGenericBotLimitPerHour   = 30
 	defaultSuspiciousLimitPerHour   = 10
+
+	crawlerBypassCIDRsEnv = "CRAWLER_PROTECTION_BYPASS_CIDRS"
+	// CRAWLER_TRUSTED_PROXY_CIDRS is intentionally empty by default; forwarded IP
+	// headers are only used when the AWS request source IP is in a configured
+	// trusted proxy CIDR.
+	crawlerTrustedProxyCIDRsEnv = "CRAWLER_TRUSTED_PROXY_CIDRS"
 )
 
 var (
@@ -249,7 +255,16 @@ func isAICrawlerBlockingDisabled() bool {
 }
 
 func parseCIDRAllowlistFromEnv(logger *zap.Logger) []*net.IPNet {
-	raw := strings.TrimSpace(os.Getenv("CRAWLER_PROTECTION_BYPASS_CIDRS"))
+	raw := strings.TrimSpace(os.Getenv(crawlerBypassCIDRsEnv))
+	return parseCIDRList(raw, logger)
+}
+
+func parseTrustedProxyCIDRsFromEnv(logger *zap.Logger) []*net.IPNet {
+	raw := strings.TrimSpace(os.Getenv(crawlerTrustedProxyCIDRsEnv))
+	return parseCIDRList(raw, logger)
+}
+
+func parseCIDRList(raw string, logger *zap.Logger) []*net.IPNet {
 	if raw == "" {
 		return nil
 	}
@@ -267,7 +282,7 @@ func parseCIDRAllowlistFromEnv(logger *zap.Logger) []*net.IPNet {
 		if strings.Contains(entry, "/") {
 			_, ipNet, err := net.ParseCIDR(entry)
 			if err != nil || ipNet == nil {
-				logger.Error("invalid crawler bypass CIDR ignored", zap.String("entry", entry), zap.Error(err))
+				logger.Error("invalid crawler CIDR ignored", zap.String("entry", entry), zap.Error(err))
 				continue
 			}
 			nets = append(nets, ipNet)
@@ -276,7 +291,7 @@ func parseCIDRAllowlistFromEnv(logger *zap.Logger) []*net.IPNet {
 
 		ip := net.ParseIP(entry)
 		if ip == nil {
-			logger.Error("invalid crawler bypass IP ignored", zap.String("entry", entry))
+			logger.Error("invalid crawler IP ignored", zap.String("entry", entry))
 			continue
 		}
 		if ip4 := ip.To4(); ip4 != nil {
@@ -367,6 +382,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 
 	metrics := newCrawlerMetrics(logger)
 	bypassCIDRs := parseCIDRAllowlistFromEnv(logger)
+	trustedProxyCIDRs := parseTrustedProxyCIDRsFromEnv(logger)
 	limiters := buildLimiters(mode, logger)
 
 	return func(next apptheory.Handler) apptheory.Handler {
@@ -383,7 +399,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 			ctx.Set(contextCrawlerReasonKey, reason)
 
 			routeClass := routeClassForPath(ctx.Request.Path)
-			clientIP := extractClientIP(ctx)
+			clientIP := extractClientIP(ctx, trustedProxyCIDRs)
 			enforcementBypassed := isClientIPBypassed(clientIP, bypassCIDRs)
 			logger.Debug("crawler classification",
 				zap.String("request_id", strings.TrimSpace(ctx.RequestID)),
@@ -476,24 +492,82 @@ func maybeApplyRateLimit(
 	return resp, true, false, handlerErr
 }
 
-func extractClientIP(ctx *apptheory.Context) string {
-	xff := headerValue(ctx, "X-Forwarded-For")
-	if xff != "" {
-		if idx := strings.Index(xff, ","); idx >= 0 {
-			xff = xff[:idx]
-		}
-		xff = strings.TrimSpace(xff)
-		if xff != "" {
-			return xff
+func extractClientIP(ctx *apptheory.Context, trustedProxyCIDRs []*net.IPNet) string {
+	sourceIP := normalizeIPString(ctx.SourceIP())
+	if sourceIP == "" {
+		return unknownString
+	}
+
+	source := normalizeIP(sourceIP)
+	if source == nil || !ipInCIDRs(source, trustedProxyCIDRs) {
+		return sourceIP
+	}
+
+	if clientIP, trusted := extractClientIPFromForwardedFor(headerValue(ctx, "X-Forwarded-For"), trustedProxyCIDRs); trusted {
+		if clientIP != "" {
+			return clientIP
 		}
 	}
 
-	xri := strings.TrimSpace(headerValue(ctx, "X-Real-IP"))
-	if xri != "" {
-		return xri
+	return sourceIP
+}
+
+func extractClientIPFromForwardedFor(raw string, trustedProxyCIDRs []*net.IPNet) (string, bool) {
+	if strings.TrimSpace(raw) == "" || len(trustedProxyCIDRs) == 0 {
+		return "", false
 	}
 
-	return unknownString
+	parts := strings.Split(raw, ",")
+	ips := make([]net.IP, 0, len(parts))
+	for _, part := range parts {
+		ip := normalizeIP(part)
+		if ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	if len(ips) == 0 {
+		return "", false
+	}
+
+	for i := len(ips) - 1; i >= 0; i-- {
+		if ipInCIDRs(ips[i], trustedProxyCIDRs) {
+			continue
+		}
+		return ips[i].String(), true
+	}
+
+	return "", true
+}
+
+func normalizeIP(raw string) net.IP {
+	ip := net.ParseIP(strings.TrimSpace(raw))
+	if ip == nil {
+		return nil
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4
+	}
+	return ip
+}
+
+func normalizeIPString(raw string) string {
+	ip := normalizeIP(raw)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
+}
+
+func ipInCIDRs(ip net.IP, cidrs []*net.IPNet) bool {
+	if ip == nil {
+		return false
+	}
+	for _, ipNet := range cidrs {
+		if ipNet != nil && ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func routeClassForPath(path string) string {

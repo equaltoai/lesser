@@ -216,7 +216,7 @@ func detectUploadContentType(upload graphql.Upload, data []byte) string {
 
 	contentType := http.DetectContentType(data[:sniffLength])
 	if contentType == "" {
-		contentType = "application/octet-stream"
+		contentType = contentTypeApplicationOctetStream
 	}
 
 	return contentType
@@ -336,7 +336,7 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 	}
 
 	// Generate signed streaming URL
-	session, err := mediaSvc.GenerateSignedStreamURL(ctx, mediaID, qualityStr)
+	session, err := mediaSvc.GenerateSignedStreamURL(ctx, mediaID, username, qualityStr)
 	if err != nil {
 		r.Logger.Error("failed to generate signed streaming URL",
 			zap.String("user", username),
@@ -415,7 +415,7 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 	}
 
 	// Preload media manifests and prime CDN cache
-	successfulIDs, err := mediaSvc.PreloadMedia(ctx, mediaIDs)
+	successfulIDs, err := mediaSvc.PreloadMedia(ctx, username, mediaIDs)
 	if err != nil {
 		r.Logger.Error("failed to preload media",
 			zap.String("user", username),

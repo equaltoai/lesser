@@ -74,6 +74,9 @@ Several HTTP Lambdas include a crawler protection middleware. Behavior is contro
 - Mode: `CRAWLER_PROTECTION_MODE=off|observe|limit|block`
 - Emergency bypass (skip block + rate limiting for matching client IPs):
   `CRAWLER_PROTECTION_BYPASS_CIDRS=203.0.113.0/24,2001:db8::/32`
+- Trusted forwarding roots: set `CRAWLER_TRUSTED_PROXY_CIDRS` to proxy CIDRs whose AWS request
+  source IP is allowed to supply `X-Forwarded-For`; without a trusted source IP, crawler protection
+  ignores forwarding headers and uses the AWS source IP, or `unknown` if the source is unavailable.
 - Rate limiter kill switch (use only for debugging): `DISABLE_RATE_LIMITING=true`
 - Limit tuning (per hour): `CRAWLER_LIMIT_SEARCH_ENGINE_PER_HOUR`, `CRAWLER_LIMIT_GENERIC_BOT_PER_HOUR`, `CRAWLER_LIMIT_SUSPICIOUS_PER_HOUR`
 - EMF metrics toggle: `CRAWLER_METRICS_ENABLED=true` (also requires `DISABLE_METRICS=false` and `EMF_METRICS_ENABLED=true`)

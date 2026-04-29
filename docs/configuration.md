@@ -231,6 +231,11 @@ CRAWLER_PROTECTION_MODE=off # off|observe|limit|block
 # Emergency bypass (skip block + rate limiting for matching client IPs)
 CRAWLER_PROTECTION_BYPASS_CIDRS="" # comma-separated CIDRs or IPs
 
+# Forwarded client IP trust roots. X-Forwarded-For is ignored unless the
+# trusted AWS request source IP is in one of these proxy CIDRs; leave empty to
+# use the AWS source IP directly and fail closed on spoofed forwarding headers.
+CRAWLER_TRUSTED_PROXY_CIDRS="" # comma-separated CIDRs or IPs
+
 # Hard-block toggle (only relevant when CRAWLER_PROTECTION_MODE=block)
 CRAWLER_BLOCK_AI_CRAWLERS=true
 

@@ -47,6 +47,9 @@ var (
 	// ErrMediaFileExtensionMismatch is returned when file extension doesn't match content type
 	ErrMediaFileExtensionMismatch = errors.NewValidationError("file_extension", "does not match content type")
 
+	// ErrMediaUnsafeSVG is returned when SVG content contains active or external content.
+	ErrMediaUnsafeSVG = errors.NewValidationError("svg", "unsafe svg content")
+
 	// ErrMediaNotReady is returned when media is not ready for viewing
 	ErrMediaNotReady = errors.MediaAttachmentNotReady("unknown")
 

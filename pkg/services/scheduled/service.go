@@ -161,7 +161,7 @@ func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledSta
 	// Get media attachments if any
 	var mediaAttachments []*models.Media
 	if err := common.ValidateSliceNotEmpty("scheduled.MediaIDs", scheduled.MediaIDs); err == nil {
-		mediaAttachments, err = s.getMediaAttachments(ctx, scheduled.MediaIDs)
+		mediaAttachments, err = s.getMediaAttachments(ctx, scheduled.Username, scheduled.MediaIDs)
 		if err != nil {
 			s.logger.Warn("failed to get media attachments",
 				zap.String("scheduled_id", query.ID),
@@ -240,7 +240,7 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 
 	// Validate media attachments if provided
 	if err := common.ValidateSliceNotEmpty("cmd.MediaIDs", cmd.MediaIDs); err == nil {
-		if err := s.validateMediaAttachments(ctx, cmd.MediaIDs); err != nil {
+		if err := s.validateMediaAttachments(ctx, cmd.Username, cmd.MediaIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -279,7 +279,7 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 	// Get media attachments for response
 	var mediaAttachments []*models.Media
 	if err := common.ValidateSliceNotEmpty("scheduled.MediaIDs", scheduled.MediaIDs); err == nil {
-		mediaAttachments, _ = s.getMediaAttachments(ctx, scheduled.MediaIDs)
+		mediaAttachments, _ = s.getMediaAttachments(ctx, scheduled.Username, scheduled.MediaIDs)
 	}
 
 	// Emit events for real-time updates
@@ -348,7 +348,7 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 	// Get media attachments for response
 	var mediaAttachments []*models.Media
 	if err := common.ValidateSliceNotEmpty("existing.MediaIDs", existing.MediaIDs); err == nil {
-		mediaAttachments, _ = s.getMediaAttachments(ctx, existing.MediaIDs)
+		mediaAttachments, _ = s.getMediaAttachments(ctx, existing.Username, existing.MediaIDs)
 	}
 
 	// Emit events for real-time updates
@@ -442,10 +442,13 @@ func (s *Service) PublishScheduledStatus(ctx context.Context, cmd *PublishSchedu
 	return nil
 }
 
-// GetScheduledMediaAttachments retrieves media attachments for a scheduled status
-func (s *Service) GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string) ([]*models.Media, error) {
+// GetScheduledMediaAttachments retrieves media attachments for a scheduled status.
+// The caller username is required so stale or corrupted scheduled rows cannot return
+// media owned by another account.
+func (s *Service) GetScheduledMediaAttachments(ctx context.Context, scheduledStatusID string, username string) ([]*models.Media, error) {
 	s.logger.Info("getting scheduled status media attachments",
-		zap.String("scheduled_status_id", scheduledStatusID))
+		zap.String("scheduled_status_id", scheduledStatusID),
+		zap.String("username", username))
 
 	mediaItems, err := s.scheduledRepo.GetScheduledStatusMedia(ctx, scheduledStatusID)
 	if err != nil {
@@ -455,7 +458,31 @@ func (s *Service) GetScheduledMediaAttachments(ctx context.Context, scheduledSta
 		return nil, errors.Join(svcErrors.ErrGetStatuses, err)
 	}
 
-	return mediaItems, nil
+	filtered := make([]*models.Media, 0, len(mediaItems))
+	for _, media := range mediaItems {
+		if !s.isMediaOwnedByUser(media, username) {
+			if media != nil {
+				s.logger.Warn("skipping scheduled media attachment owned by another user",
+					zap.String("scheduled_status_id", scheduledStatusID),
+					zap.String("media_id", media.MediaID),
+					zap.String("media_owner", media.UserID),
+					zap.String("username", username))
+			}
+			continue
+		}
+
+		if media.Status != models.MediaStatusReady && media.Status != models.MediaStatusCompleted {
+			s.logger.Warn("skipping scheduled media attachment not ready",
+				zap.String("scheduled_status_id", scheduledStatusID),
+				zap.String("media_id", media.MediaID),
+				zap.String("status", media.Status))
+			continue
+		}
+
+		filtered = append(filtered, media)
+	}
+
+	return filtered, nil
 }
 
 // Helper methods
@@ -477,8 +504,8 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 	return nil
 }
 
-// validateMediaAttachments validates that media attachments exist
-func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
+// validateMediaAttachments validates that media attachments exist and belong to the scheduling user.
+func (s *Service) validateMediaAttachments(ctx context.Context, username string, mediaIDs []string) error {
 	if err := common.ValidateSliceLength("mediaIDs", mediaIDs, 4); err != nil {
 		return svcErrors.ErrValidationFailed
 	}
@@ -498,8 +525,16 @@ func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []strin
 			return errors.Join(svcErrors.ErrMediaAttachmentNotFound, err)
 		}
 
+		if !s.isMediaOwnedByUser(media, username) {
+			s.logger.Warn("scheduled media attachment ownership mismatch",
+				zap.String("media_id", mediaID),
+				zap.String("media_owner", media.UserID),
+				zap.String("username", username))
+			return svcErrors.ErrMediaAttachmentNotFound
+		}
+
 		// Validate media is in ready state
-		if media.Status != "ready" && media.Status != "completed" {
+		if media.Status != models.MediaStatusReady && media.Status != models.MediaStatusCompleted {
 			s.logger.Error("media attachment not ready",
 				zap.String("media_id", mediaID),
 				zap.String("status", media.Status))
@@ -524,7 +559,7 @@ func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []strin
 }
 
 // getMediaAttachments retrieves media attachments by IDs
-func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([]*models.Media, error) {
+func (s *Service) getMediaAttachments(ctx context.Context, username string, mediaIDs []string) ([]*models.Media, error) {
 	mediaItems := make([]*models.Media, 0, len(mediaIDs))
 
 	for _, mediaID := range mediaIDs {
@@ -536,8 +571,16 @@ func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([
 			return nil, errors.Join(svcErrors.ErrRetrieveMediaAttachment, err)
 		}
 
+		if !s.isMediaOwnedByUser(media, username) {
+			s.logger.Warn("skipping scheduled media attachment owned by another user",
+				zap.String("media_id", mediaID),
+				zap.String("media_owner", media.UserID),
+				zap.String("username", username))
+			continue
+		}
+
 		// Only include ready/completed media
-		if media.Status == "ready" || media.Status == "completed" {
+		if media.Status == models.MediaStatusReady || media.Status == models.MediaStatusCompleted {
 			mediaItems = append(mediaItems, media)
 			s.logger.Debug("retrieved media attachment",
 				zap.String("media_id", mediaID),
@@ -550,6 +593,10 @@ func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([
 	}
 
 	return mediaItems, nil
+}
+
+func (s *Service) isMediaOwnedByUser(media *models.Media, username string) bool {
+	return media != nil && username != "" && media.UserID == username
 }
 
 // Event emission methods

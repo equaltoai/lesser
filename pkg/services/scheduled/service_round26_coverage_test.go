@@ -208,7 +208,7 @@ func TestService_CreateScheduledStatus_round26_coverage(t *testing.T) {
 		repo := &fakeScheduledRepo{}
 		mediaRepo := &fakeMediaRepo{
 			items: map[string]*models.Media{
-				"m1": {MediaID: "m1", Status: "processing"},
+				"m1": {MediaID: "m1", UserID: "alice", Status: "processing"},
 			},
 		}
 		svc := NewService(repo, nil, mediaRepo, nil, zap.NewNop(), "example.com")
@@ -222,11 +222,30 @@ func TestService_CreateScheduledStatus_round26_coverage(t *testing.T) {
 		require.ErrorIs(t, err, svcErrors.ErrMediaAttachmentNotReady)
 	})
 
+	t.Run("media_owned_by_another_user_is_hidden", func(t *testing.T) {
+		repo := &fakeScheduledRepo{}
+		mediaRepo := &fakeMediaRepo{
+			items: map[string]*models.Media{
+				"m1": {MediaID: "m1", UserID: "bob", Status: "ready"},
+			},
+		}
+		svc := NewService(repo, nil, mediaRepo, nil, zap.NewNop(), "example.com")
+
+		_, err := svc.CreateScheduledStatus(ctx, &CreateScheduledStatusCommand{
+			Username:    "alice",
+			Status:      "hi",
+			MediaIDs:    []string{"m1"},
+			ScheduledAt: time.Now().Add(10 * time.Minute),
+		})
+		require.ErrorIs(t, err, svcErrors.ErrMediaAttachmentNotFound)
+		require.Empty(t, repo.createCalls)
+	})
+
 	t.Run("media_expired", func(t *testing.T) {
 		repo := &fakeScheduledRepo{}
 		mediaRepo := &fakeMediaRepo{
 			items: map[string]*models.Media{
-				"m1": {MediaID: "m1", Status: "ready", ExpiresAt: time.Now().Unix() - 1},
+				"m1": {MediaID: "m1", UserID: "alice", Status: "ready", ExpiresAt: time.Now().Unix() - 1},
 			},
 		}
 		svc := NewService(repo, nil, mediaRepo, nil, zap.NewNop(), "example.com")
@@ -256,8 +275,8 @@ func TestService_CreateScheduledStatus_round26_coverage(t *testing.T) {
 		repo := &fakeScheduledRepo{getByID: map[string]*storage.ScheduledStatus{}}
 		mediaRepo := &fakeMediaRepo{
 			items: map[string]*models.Media{
-				"m1": {MediaID: "m1", Status: "ready", ContentType: "image/png"},
-				"m2": {MediaID: "m2", Status: "completed", ContentType: "image/jpeg"},
+				"m1": {MediaID: "m1", UserID: "alice", Status: "ready", ContentType: "image/png"},
+				"m2": {MediaID: "m2", UserID: "alice", Status: "completed", ContentType: "image/jpeg"},
 			},
 		}
 		pub := &fakePublisher{}
@@ -341,16 +360,17 @@ func TestService_GetScheduledStatus_round26_coverage(t *testing.T) {
 		assert.Equal(t, []string{"m1"}, mediaRepo.calls)
 	})
 
-	t.Run("filters_media_to_ready_or_completed", func(t *testing.T) {
+	t.Run("filters_media_to_ready_completed_and_owned", func(t *testing.T) {
 		repo := &fakeScheduledRepo{
 			getByID: map[string]*storage.ScheduledStatus{
-				"sched1": {ID: "sched1", Username: "alice", MediaIDs: []string{"m1", "m2"}},
+				"sched1": {ID: "sched1", Username: "alice", MediaIDs: []string{"m1", "m2", "m3"}},
 			},
 		}
 		mediaRepo := &fakeMediaRepo{
 			items: map[string]*models.Media{
-				"m1": {MediaID: "m1", Status: "ready"},
-				"m2": {MediaID: "m2", Status: "processing"},
+				"m1": {MediaID: "m1", UserID: "alice", Status: "ready"},
+				"m2": {MediaID: "m2", UserID: "alice", Status: "processing"},
+				"m3": {MediaID: "m3", UserID: "bob", Status: "ready"},
 			},
 		}
 		svc := NewService(repo, nil, mediaRepo, nil, zap.NewNop(), "example.com")
@@ -488,8 +508,8 @@ func TestService_UpdateScheduledStatus_round26_coverage(t *testing.T) {
 		}
 		mediaRepo := &fakeMediaRepo{
 			items: map[string]*models.Media{
-				"m1": {MediaID: "m1", Status: "ready"},
-				"m2": {MediaID: "m2", Status: "processing"},
+				"m1": {MediaID: "m1", UserID: "alice", Status: "ready"},
+				"m2": {MediaID: "m2", UserID: "alice", Status: "processing"},
 			},
 		}
 		pub := &fakePublisher{}
@@ -618,21 +638,23 @@ func TestService_GetScheduledMediaAttachments_round26_coverage(t *testing.T) {
 		repo := &fakeScheduledRepo{getMediaErr: stderrors.New("boom")}
 		svc := NewService(repo, nil, nil, nil, zap.NewNop(), "example.com")
 
-		_, err := svc.GetScheduledMediaAttachments(ctx, "sched1")
+		_, err := svc.GetScheduledMediaAttachments(ctx, "sched1", "alice")
 		require.ErrorIs(t, err, svcErrors.ErrGetStatuses)
 	})
 
-	t.Run("success_returns_media", func(t *testing.T) {
+	t.Run("success_returns_owned_ready_media", func(t *testing.T) {
 		repo := &fakeScheduledRepo{
 			mediaByScheduledID: map[string][]*models.Media{
 				"sched1": {
-					{MediaID: "m1", Status: "ready"},
+					{MediaID: "m1", UserID: "alice", Status: "ready"},
+					{MediaID: "m2", UserID: "bob", Status: "ready"},
+					{MediaID: "m3", UserID: "alice", Status: "processing"},
 				},
 			},
 		}
 		svc := NewService(repo, nil, nil, nil, zap.NewNop(), "example.com")
 
-		items, err := svc.GetScheduledMediaAttachments(ctx, "sched1")
+		items, err := svc.GetScheduledMediaAttachments(ctx, "sched1", "alice")
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		assert.Equal(t, "m1", items[0].MediaID)

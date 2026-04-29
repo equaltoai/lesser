@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"strings"
 	"time"
@@ -11,12 +14,15 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
+
+const maxUnifiedBoostRequestBodyBytes = 16 * 1024
 
 // HandleUnifiedBoostLift handles both traditional boosts and quote boosts
 func (h *Handler) HandleUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -35,17 +41,16 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 	username := claims.Username
 
+	req, parseResp, err := h.parseUnifiedBoostRequest(ctx)
+	if parseResp != nil || err != nil {
+		return parseResp, err
+	}
+
 	// Get the user's actor
 	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
-	}
-
-	// Parse request body if present
-	var req models.ReblogRequest
-	if len(ctx.Request.Body) > 0 {
-		_ = common.ParseRequestWithFallback(ctx, &req)
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -63,6 +68,57 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Res
 
 	// Traditional boost - create Announce activity
 	return h.createPureBoostLift(ctx, statusID, objectID, actor)
+}
+
+func (h *Handler) parseUnifiedBoostRequest(ctx *apptheory.Context) (models.ReblogRequest, *apptheory.Response, error) {
+	var req models.ReblogRequest
+	body := ctx.Request.Body
+	if len(body) == 0 {
+		return req, nil, nil
+	}
+	if len(body) > maxUnifiedBoostRequestBodyBytes {
+		resp, err := common.RespondBadRequest(ctx, "request body too large")
+		return req, resp, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(&req); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return req, resp, respErr
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return req, resp, respErr
+	}
+
+	comment, resp, err := h.sanitizeQuoteBoostComment(ctx, req.Comment)
+	if resp != nil || err != nil {
+		return req, resp, err
+	}
+	if comment == "" {
+		req.Comment = nil
+	} else {
+		req.Comment = &comment
+	}
+
+	return req, nil, nil
+}
+
+func (h *Handler) sanitizeQuoteBoostComment(ctx *apptheory.Context, comment *string) (string, *apptheory.Response, error) {
+	if comment == nil {
+		return "", nil, nil
+	}
+
+	sanitized := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(*comment))
+	if sanitized == "" {
+		return "", nil, nil
+	}
+	if err := common.ValidateStatusContent(sanitized); err != nil {
+		resp, respErr := common.RespondUnprocessableEntity(ctx, err.Error())
+		return "", resp, respErr
+	}
+
+	return sanitized, nil, nil
 }
 
 // createPureBoostLift creates a traditional ActivityPub Announce
