@@ -19,7 +19,7 @@ func (m *MockTx) Put(item any) error {
 		return nil
 	}
 	return runTxOperation(func() error {
-		return m.Tx.Create(item)
+		return m.Create(item)
 	})
 }
 

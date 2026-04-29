@@ -2255,82 +2255,96 @@ func (r *AccountRepository) searchAccountsByShortHandlePrefix(ctx context.Contex
 		return nil, "", false, nil
 	}
 
-	var skCursor string
-	if cursor != "" {
-		pkCursor, decodedSK, err := Utils.Pagination.DecodeCursor(cursor)
-		if err != nil {
-			r.logger.Warn("invalid search cursor provided",
-				zap.String("cursor", cursor),
-				zap.Error(err))
-		} else if decodedSK != "" {
-			if pkCursor != "" && !containsString(prefixKeys, pkCursor) {
-				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
-					zap.String("expected_prefix", prefixKeys[0]),
-					zap.String("cursor_prefix", pkCursor))
-			} else {
-				skCursor = decodedSK
-			}
-		}
-	}
-
+	skCursor := r.decodeShortHandleSearchCursor(prefixKeys, cursor)
 	seen := make(map[string]struct{})
 	users := make([]models.User, 0, searchLimit+1)
 	for _, prefixKey := range prefixKeys {
-		var partitionUsers []models.User
-		queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-			Index("gsi5").
-			Where("gsi5PK", "=", prefixKey).
-			Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
-			OrderBy("gsi5SK", "ASC").
-			Limit(searchLimit + 1)
-
-		if skCursor != "" {
-			queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
-		}
-
-		if err := queryBuilder.All(&partitionUsers); err != nil {
+		partitionUsers, err := r.queryShortHandlePrefixPartition(ctx, prefixKey, normalizedQuery, searchLimit, skCursor)
+		if err != nil {
 			return nil, "", false, ErrorHandler.HandleQueryError(err, EntityUser, "search")
 		}
-
-		for _, user := range partitionUsers {
-			gsiSK := user.GSI5SK
-			if gsiSK == "" {
-				gsiSK = strings.ToLower(user.Username)
-			}
-			if !strings.HasPrefix(gsiSK, normalizedQuery) {
-				continue
-			}
-			if skCursor != "" && gsiSK <= skCursor {
-				continue
-			}
-
-			identity := user.PK
-			if identity == "" {
-				identity = strings.ToLower(user.Username)
-			}
-			if _, ok := seen[identity]; ok {
-				continue
-			}
-			seen[identity] = struct{}{}
-			users = append(users, user)
-		}
+		users = appendUniqueShortSearchUsers(users, seen, partitionUsers, normalizedQuery, skCursor)
 	}
 
+	sortUsersBySearchKey(users)
+	users, nextCursor, hasMore := paginateSearchUsers(users, searchLimit)
+	return users, nextCursor, hasMore, nil
+}
+
+func (r *AccountRepository) decodeShortHandleSearchCursor(prefixKeys []string, cursor string) string {
+	if cursor == "" {
+		return ""
+	}
+
+	pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(cursor)
+	if err != nil {
+		r.logger.Warn("invalid search cursor provided",
+			zap.String("cursor", cursor),
+			zap.Error(err))
+		return ""
+	}
+	if skCursor == "" {
+		return ""
+	}
+	if pkCursor != "" && !containsString(prefixKeys, pkCursor) {
+		r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+			zap.String("expected_prefix", prefixKeys[0]),
+			zap.String("cursor_prefix", pkCursor))
+		return ""
+	}
+	return skCursor
+}
+
+func (r *AccountRepository) queryShortHandlePrefixPartition(ctx context.Context, prefixKey, normalizedQuery string, searchLimit int, skCursor string) ([]models.User, error) {
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("gsi5").
+		Where("gsi5PK", "=", prefixKey).
+		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("gsi5SK", "ASC").
+		Limit(searchLimit + 1)
+
+	if skCursor != "" {
+		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+	}
+
+	if err := queryBuilder.All(&users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func appendUniqueShortSearchUsers(result []models.User, seen map[string]struct{}, users []models.User, normalizedQuery, skCursor string) []models.User {
+	for _, user := range users {
+		gsiSK := userSearchSortKey(user)
+		if !strings.HasPrefix(gsiSK, normalizedQuery) {
+			continue
+		}
+		if skCursor != "" && gsiSK <= skCursor {
+			continue
+		}
+		identity := userSearchIdentity(user)
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		result = append(result, user)
+	}
+	return result
+}
+
+func sortUsersBySearchKey(users []models.User) {
 	sort.SliceStable(users, func(i, j int) bool {
-		left := users[i].GSI5SK
-		if left == "" {
-			left = strings.ToLower(users[i].Username)
-		}
-		right := users[j].GSI5SK
-		if right == "" {
-			right = strings.ToLower(users[j].Username)
-		}
+		left := userSearchSortKey(users[i])
+		right := userSearchSortKey(users[j])
 		if left == right {
 			return users[i].GSI5PK < users[j].GSI5PK
 		}
 		return left < right
 	})
+}
 
+func paginateSearchUsers(users []models.User, searchLimit int) ([]models.User, string, bool) {
 	hasMore := len(users) > searchLimit
 	if hasMore {
 		users = users[:searchLimit]
@@ -2342,7 +2356,21 @@ func (r *AccountRepository) searchAccountsByShortHandlePrefix(ctx context.Contex
 		nextCursor = Utils.Pagination.EncodeCursor(lastUser.GSI5PK, lastUser.GSI5SK)
 	}
 
-	return users, nextCursor, hasMore, nil
+	return users, nextCursor, hasMore
+}
+
+func userSearchSortKey(user models.User) string {
+	if user.GSI5SK != "" {
+		return user.GSI5SK
+	}
+	return strings.ToLower(user.Username)
+}
+
+func userSearchIdentity(user models.User) string {
+	if user.PK != "" {
+		return user.PK
+	}
+	return strings.ToLower(user.Username)
 }
 
 func handlePrefixKeysForShortSearch(normalizedQuery string) []string {
