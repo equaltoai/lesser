@@ -9,35 +9,66 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParticipantsForStatus_PrefersMentionHandlesFromContent(t *testing.T) {
+func TestParticipantsForStatus_UsesRecipientFieldsAndIgnoresContentMentions(t *testing.T) {
 	status := &models.Status{
 		AuthorUsername: "medic",
+		AuthorID:       "https://sim.example.com/users/medic",
 		Content:        "hello @arch and @pilot, looping back to @arch",
-		ToRecipients:   []string{"https://sim.example.com/users/ignored"},
+		ToRecipients:   []string{"https://sim.example.com/users/arch"},
+		CcRecipients:   []string{"https://sim.example.com/users/scout"},
 	}
 
 	participants, ok := participantsForStatus(status)
 	require.True(t, ok)
-	require.Equal(t, []string{"arch", "medic", "pilot"}, participants)
+	require.Equal(t, []string{"arch", "medic", "scout"}, participants)
 }
 
-func TestParticipantsForStatus_FallsBackToAudienceWhenContentHasNoMention(t *testing.T) {
+func TestParticipantsForStatus_PreservesRemoteRecipientActorIDs(t *testing.T) {
 	status := &models.Status{
 		AuthorUsername: "medic",
+		AuthorID:       "https://sim.example.com/users/medic",
 		ToRecipients: []string{
-			"https://sim.example.com/users/arch",
+			"https://remote.example/users/arch",
 		},
 	}
 
 	participants, ok := participantsForStatus(status)
 	require.True(t, ok)
-	require.Equal(t, []string{"arch", "medic"}, participants)
+	require.Equal(t, []string{"https://remote.example/users/arch", "medic"}, participants)
+}
+
+func TestParticipantsForStatus_FallsBackToNoteAudience(t *testing.T) {
+	status := &models.Status{
+		AuthorUsername: "medic",
+		AuthorID:       "https://sim.example.com/users/medic",
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				To:  []string{"https://sim.example.com/users/arch"},
+				BCC: []string{"https://sim.example.com/users/scout"},
+			},
+		},
+	}
+
+	participants, ok := participantsForStatus(status)
+	require.True(t, ok)
+	require.Equal(t, []string{"arch", "medic", "scout"}, participants)
 }
 
 func TestParticipantsForStatus_RejectsMissingRecipient(t *testing.T) {
 	status := &models.Status{
 		AuthorUsername: "medic",
 		Content:        "hello there",
+	}
+
+	participants, ok := participantsForStatus(status)
+	require.False(t, ok)
+	require.Nil(t, participants)
+}
+
+func TestParticipantsForStatus_RejectsContentOnlyMentions(t *testing.T) {
+	status := &models.Status{
+		AuthorUsername: "medic",
+		Content:        "hello @arch",
 	}
 
 	participants, ok := participantsForStatus(status)

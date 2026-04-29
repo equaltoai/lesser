@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -13,8 +14,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -668,7 +669,7 @@ func participantsForStatus(status *models.Status) ([]string, bool) {
 	}
 
 	participants := []string{sender}
-	participants = append(participants, mentionRecipients(status, sender)...)
+	participants = append(participants, recipientParticipants(status, sender)...)
 	participants = canonicalizeParticipants(participants)
 	if len(participants) < 2 {
 		return nil, false
@@ -676,14 +677,14 @@ func participantsForStatus(status *models.Status) ([]string, bool) {
 	return participants, true
 }
 
-func mentionRecipients(status *models.Status, sender string) []string {
+func recipientParticipants(status *models.Status, sender string) []string {
 	seen := map[string]struct{}{
 		sender: {},
 	}
 
 	recipients := make([]string, 0)
 	appendRecipient := func(candidate string) {
-		normalized := strings.TrimSpace(strings.TrimPrefix(candidate, "@"))
+		normalized := participantIDForRecipient(status, candidate)
 		if normalized == "" {
 			return
 		}
@@ -694,19 +695,66 @@ func mentionRecipients(status *models.Status, sender string) []string {
 		recipients = append(recipients, normalized)
 	}
 
-	for _, mention := range conversations.ExtractMentionHandles(status.Content) {
-		appendRecipient(mention)
-	}
-
-	if len(recipients) > 0 {
-		return recipients
-	}
-
-	for _, recipientURL := range status.ToRecipients {
-		appendRecipient(extractUsernameFromActorID(recipientURL))
+	for _, recipient := range authoritativeRecipients(status) {
+		appendRecipient(recipient)
 	}
 
 	return recipients
+}
+
+func authoritativeRecipients(status *models.Status) []string {
+	if status == nil {
+		return nil
+	}
+
+	recipients := make([]string, 0, len(status.ToRecipients)+len(status.CcRecipients)+len(status.BtoRecipients)+len(status.BccRecipients))
+	recipients = append(recipients, status.ToRecipients...)
+	recipients = append(recipients, status.CcRecipients...)
+	recipients = append(recipients, status.BtoRecipients...)
+	recipients = append(recipients, status.BccRecipients...)
+	if len(recipients) > 0 || status.Note == nil {
+		return recipients
+	}
+
+	recipients = append(recipients, status.Note.To...)
+	recipients = append(recipients, status.Note.CC...)
+	recipients = append(recipients, status.Note.BTo...)
+	recipients = append(recipients, status.Note.BCC...)
+	return recipients
+}
+
+func participantIDForRecipient(status *models.Status, recipient string) string {
+	recipient = strings.TrimSpace(recipient)
+	if !isSpecificActorRecipient(recipient) {
+		return ""
+	}
+
+	recipientHost := actorHost(recipient)
+	authorID := ""
+	if status != nil {
+		authorID = status.AuthorID
+	}
+	authorHost := actorHost(authorID)
+	if recipientHost != "" {
+		if authorHost == "" || !strings.EqualFold(recipientHost, authorHost) {
+			return recipient
+		}
+	}
+
+	return extractUsernameFromActorID(recipient)
+}
+
+func isSpecificActorRecipient(recipient string) bool {
+	if recipient == "" || strings.EqualFold(recipient, activitypub.PublicAddress) {
+		return false
+	}
+
+	lowerRecipient := strings.ToLower(recipient)
+	if strings.Contains(lowerRecipient, "/followers") || strings.Contains(lowerRecipient, "/following") {
+		return false
+	}
+
+	return true
 }
 
 func canonicalizeParticipants(participants []string) []string {
@@ -780,6 +828,27 @@ func extractUsernameFromActorID(actorID string) string {
 		return ""
 	}
 	return strings.TrimPrefix(last, "@")
+}
+
+func actorHost(actorID string) string {
+	value := strings.TrimSpace(actorID)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, "://") {
+		parsed, err := url.Parse(value)
+		if err != nil {
+			return ""
+		}
+		return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	}
+
+	handle := strings.TrimPrefix(value, "@")
+	if parts := strings.SplitN(handle, "@", 2); len(parts) == 2 {
+		return strings.ToLower(strings.TrimSpace(parts[1]))
+	}
+
+	return ""
 }
 
 func timePtr(ts time.Time) *time.Time {
