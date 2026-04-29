@@ -106,8 +106,13 @@ func apiSecurityHeaders() apptheory.Middleware {
 
 			setDefault("x-content-type-options", []string{"nosniff"})
 			setDefault("x-frame-options", []string{"DENY"})
+			setDefault("content-security-policy", []string{"default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"})
+			setDefault("strict-transport-security", []string{"max-age=31536000; includeSubDomains"})
 			setDefault("referrer-policy", []string{"strict-origin-when-cross-origin"})
 			setDefault("cross-origin-resource-policy", []string{"same-origin"})
+			setDefault("cross-origin-opener-policy", []string{"same-origin"})
+			setDefault("permissions-policy", []string{"camera=(), geolocation=(), microphone=(), payment=(), usb=()"})
+			setDefault("x-permitted-cross-domain-policies", []string{"none"})
 			setDefault("x-robots-tag", []string{"noindex, nofollow"})
 			return resp, err
 		}

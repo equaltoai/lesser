@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"testing"
@@ -173,13 +174,16 @@ func TestAPISecurityHeadersMiddleware_Round22(t *testing.T) {
 			return &apptheory.Response{
 				Status: http.StatusOK,
 				Headers: map[string][]string{
-					"x-frame-options": {"SAMEORIGIN"},
+					"x-frame-options":         {"SAMEORIGIN"},
+					"content-security-policy": {"default-src 'self'"},
 				},
 			}, nil
 		})(newTestAppTheoryContext(http.MethodGet, "/"))
 		require.NoError(t, err)
 		require.Equal(t, []string{"nosniff"}, resp.Headers["x-content-type-options"])
 		require.Equal(t, []string{"SAMEORIGIN"}, resp.Headers["x-frame-options"])
+		require.Equal(t, []string{"default-src 'self'"}, resp.Headers["content-security-policy"])
+		require.Equal(t, []string{"max-age=31536000; includeSubDomains"}, resp.Headers["strict-transport-security"])
 		require.Equal(t, []string{"strict-origin-when-cross-origin"}, resp.Headers["referrer-policy"])
 	})
 
@@ -188,7 +192,68 @@ func TestAPISecurityHeadersMiddleware_Round22(t *testing.T) {
 			return &apptheory.Response{Status: http.StatusOK}, nil
 		})(newTestAppTheoryContext(http.MethodGet, "/"))
 		require.NoError(t, err)
+		require.Equal(t, []string{"default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"}, resp.Headers["content-security-policy"])
 		require.Equal(t, []string{"same-origin"}, resp.Headers["cross-origin-resource-policy"])
+		require.Equal(t, []string{"same-origin"}, resp.Headers["cross-origin-opener-policy"])
+		require.Equal(t, []string{"camera=(), geolocation=(), microphone=(), payment=(), usb=()"}, resp.Headers["permissions-policy"])
+		require.Equal(t, []string{"none"}, resp.Headers["x-permitted-cross-domain-policies"])
 		require.Equal(t, []string{"noindex, nofollow"}, resp.Headers["x-robots-tag"])
 	})
+}
+
+func TestAPICORSAllowedOrigins_Round23(t *testing.T) {
+	t.Run("defaults to instance origin", func(t *testing.T) {
+		t.Setenv(apiCORSAllowedOriginsEnv, "")
+		t.Setenv(apiCORSAllowedOriginsLegacyEnv, "")
+
+		require.Equal(t, []string{"https://sim.example.com"}, apiCORSAllowedOrigins(&config.Config{Domain: "sim.example.com"}))
+		require.Equal(t, []string{}, apiCORSAllowedOrigins(nil))
+	})
+
+	t.Run("operator allowlist normalizes and deduplicates origins", func(t *testing.T) {
+		t.Setenv(apiCORSAllowedOriginsEnv, " https://SIM.example.com/ , https://app.example, https://sim.example.com, https://bad.example/path ")
+		t.Setenv(apiCORSAllowedOriginsLegacyEnv, "")
+
+		require.Equal(t, []string{"https://sim.example.com", "https://app.example"}, apiCORSAllowedOrigins(&config.Config{Domain: "sim.example.com"}))
+	})
+
+	t.Run("legacy env alias is still honored", func(t *testing.T) {
+		t.Setenv(apiCORSAllowedOriginsEnv, "")
+		t.Setenv(apiCORSAllowedOriginsLegacyEnv, "https://legacy.example")
+
+		require.Equal(t, []string{"https://legacy.example"}, apiCORSAllowedOrigins(&config.Config{Domain: "sim.example.com"}))
+	})
+
+	t.Run("wildcard requires explicit operator opt in", func(t *testing.T) {
+		t.Setenv(apiCORSAllowedOriginsEnv, "*")
+		t.Setenv(apiCORSAllowedOriginsLegacyEnv, "")
+
+		require.Equal(t, []string{"*"}, apiCORSAllowedOrigins(&config.Config{Domain: "sim.example.com"}))
+	})
+}
+
+func TestAPICORSRuntime_Round23(t *testing.T) {
+	app := apptheory.New(apptheory.WithCORS(apptheory.CORSConfig{
+		AllowedOrigins: apiCORSAllowedOrigins(&config.Config{Domain: "sim.example.com"}),
+		AllowHeaders:   []string{"Authorization", "Content-Type"},
+	}))
+
+	request := apptheory.Request{
+		Method: http.MethodOptions,
+		Path:   "/api/v1/statuses",
+		Headers: map[string][]string{
+			"access-control-request-method": {"GET"},
+		},
+	}
+
+	request.Headers["origin"] = []string{"https://evil.example"}
+	resp := app.Serve(context.Background(), request)
+	require.Equal(t, http.StatusNoContent, resp.Status)
+	require.Empty(t, resp.Headers["access-control-allow-origin"])
+
+	request.Headers["origin"] = []string{"https://sim.example.com"}
+	resp = app.Serve(context.Background(), request)
+	require.Equal(t, http.StatusNoContent, resp.Status)
+	require.Equal(t, []string{"https://sim.example.com"}, resp.Headers["access-control-allow-origin"])
+	require.Equal(t, []string{"origin"}, resp.Headers["vary"])
 }
