@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"sort"
@@ -569,40 +571,54 @@ func bookmarkCreatedAt(bookmark models.Bookmark) time.Time {
 	return time.Time{}
 }
 
+const (
+	bookmarkPageCursorPrefix = "bm2:"
+	bookmarkTimeUpperBound   = models.BookmarkSortKeyPrefixTime + "$"
+	bookmarkLegacyUpperBound = "A"
+)
+
+type bookmarkPageCursor struct {
+	Version  int    `json:"v"`
+	TimeSK   string `json:"t,omitempty"`
+	LegacySK string `json:"l,omitempty"`
+}
+
+type bookmarkStreamKind int
+
+const (
+	bookmarkStreamTime bookmarkStreamKind = iota
+	bookmarkStreamLegacy
+)
+
 func (r *BookmarkRepository) queryUnlockedTimeBookmarks(ctx context.Context, username string, limit int, cursor string) ([]models.Bookmark, string, error) {
 	pk := buildBookmarkPK(username)
 	limit = sanitizeLimit(limit, 20, 100)
-	readLimit := (limit + 1) * 4
-	if readLimit < 100 {
-		readLimit = 100
-	}
-	if readLimit > 500 {
-		readLimit = 500
+
+	pageCursor, err := parseBookmarkPageCursor(cursor)
+	if err != nil {
+		return nil, "", err
 	}
 
-	var bookmarks []models.Bookmark
-	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", SortOrderDesc).
-		Limit(readLimit)
-
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
-	}
-
-	if err := query.All(&bookmarks); err != nil {
-		r.logger.Error("failed to get user bookmarks",
+	target := limit + 1
+	timeBookmarks, err := r.queryReadableBookmarkStream(ctx, pk, bookmarkStreamTime, pageCursor.TimeSK, target)
+	if err != nil {
+		r.logger.Error("failed to get user time bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "user bookmarks")
 	}
 
-	filtered := make([]models.Bookmark, 0, len(bookmarks))
-	for _, bookmark := range bookmarks {
-		if isReadableTimeBookmark(bookmark) {
-			filtered = append(filtered, bookmark)
-		}
+	legacyBookmarks, err := r.queryReadableBookmarkStream(ctx, pk, bookmarkStreamLegacy, pageCursor.LegacySK, target)
+	if err != nil {
+		r.logger.Error("failed to get user legacy bookmarks",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "user bookmarks")
 	}
+
+	filtered := make([]models.Bookmark, 0, len(timeBookmarks)+len(legacyBookmarks))
+	filtered = append(filtered, timeBookmarks...)
+	filtered = append(filtered, legacyBookmarks...)
 
 	sort.SliceStable(filtered, func(i, j int) bool {
 		left := bookmarkCreatedAt(filtered[i])
@@ -620,10 +636,198 @@ func (r *BookmarkRepository) queryUnlockedTimeBookmarks(ctx context.Context, use
 
 	nextCursor := ""
 	if hasMore && len(filtered) > 0 {
-		nextCursor = filtered[len(filtered)-1].SK
+		nextPageCursor := pageCursor
+		for _, bookmark := range filtered {
+			if isTimeBookmarkSK(bookmark.SK) || bookmark.RecordType == models.BookmarkRecordTypeTime {
+				nextPageCursor.TimeSK = bookmark.SK
+				continue
+			}
+			if isLegacyBookmarkTimestampSK(bookmark.SK) {
+				nextPageCursor.LegacySK = bookmark.SK
+			}
+		}
+		nextCursor = encodeBookmarkPageCursor(nextPageCursor)
 	}
 
 	return filtered, nextCursor, nil
+}
+
+func (r *BookmarkRepository) queryReadableBookmarkStream(
+	ctx context.Context,
+	pk string,
+	stream bookmarkStreamKind,
+	cursor string,
+	target int,
+) ([]models.Bookmark, error) {
+	if target <= 0 {
+		return nil, nil
+	}
+
+	upperBound := bookmarkStreamInitialUpperBound(stream)
+	if strings.TrimSpace(cursor) != "" {
+		upperBound = cursor
+	}
+
+	batchLimit := target * 4
+	if batchLimit < 100 {
+		batchLimit = 100
+	}
+	if batchLimit > 500 {
+		batchLimit = 500
+	}
+
+	result := make([]models.Bookmark, 0, target)
+	for len(result) < target {
+		page, err := r.queryBookmarkStreamPage(ctx, pk, upperBound, batchLimit)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+
+		var stop bool
+		result, stop = appendReadableBookmarkStreamPage(result, page, stream, target)
+		if stop {
+			break
+		}
+
+		nextUpperBound, ok := nextBookmarkStreamUpperBound(page, upperBound, batchLimit)
+		if !ok {
+			break
+		}
+		upperBound = nextUpperBound
+	}
+
+	return result, nil
+}
+
+func (r *BookmarkRepository) queryBookmarkStreamPage(ctx context.Context, pk, upperBound string, limit int) ([]models.Bookmark, error) {
+	var page []models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Where("SK", "<", upperBound).
+		OrderBy("SK", SortOrderDesc).
+		Limit(limit).
+		All(&page)
+	return page, err
+}
+
+func appendReadableBookmarkStreamPage(
+	result []models.Bookmark,
+	page []models.Bookmark,
+	stream bookmarkStreamKind,
+	target int,
+) ([]models.Bookmark, bool) {
+	for _, bookmark := range page {
+		readable, stop := readableBookmarkForStream(bookmark, stream)
+		if stop {
+			return result, true
+		}
+		if !readable {
+			continue
+		}
+		if bookmark.CreatedAt.IsZero() {
+			bookmark.CreatedAt = bookmarkCreatedAt(bookmark)
+		}
+		result = append(result, bookmark)
+		if len(result) >= target {
+			return result, true
+		}
+	}
+	return result, false
+}
+
+func readableBookmarkForStream(bookmark models.Bookmark, stream bookmarkStreamKind) (bool, bool) {
+	switch stream {
+	case bookmarkStreamTime:
+		if !isTimeBookmarkSK(bookmark.SK) && bookmark.RecordType != models.BookmarkRecordTypeTime {
+			return false, true
+		}
+	case bookmarkStreamLegacy:
+		if !isLegacyBookmarkTimestampSK(bookmark.SK) {
+			return false, false
+		}
+	}
+	return isReadableTimeBookmark(bookmark), false
+}
+
+func nextBookmarkStreamUpperBound(page []models.Bookmark, upperBound string, batchLimit int) (string, bool) {
+	lastSK := page[len(page)-1].SK
+	if len(page) < batchLimit || lastSK == upperBound {
+		return "", false
+	}
+	return lastSK, true
+}
+
+func bookmarkStreamInitialUpperBound(stream bookmarkStreamKind) string {
+	if stream == bookmarkStreamTime {
+		return bookmarkTimeUpperBound
+	}
+	return bookmarkLegacyUpperBound
+}
+
+func isTimeBookmarkSK(sk string) bool {
+	return strings.HasPrefix(sk, models.BookmarkSortKeyPrefixTime+"#")
+}
+
+func parseBookmarkPageCursor(cursor string) (bookmarkPageCursor, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return bookmarkPageCursor{Version: 2}, nil
+	}
+	if !strings.HasPrefix(cursor, bookmarkPageCursorPrefix) {
+		return legacyBookmarkPageCursor(cursor), nil
+	}
+
+	encoded := strings.TrimPrefix(cursor, bookmarkPageCursorPrefix)
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return bookmarkPageCursor{}, fmt.Errorf("invalid bookmark cursor: %w", err)
+	}
+
+	var pageCursor bookmarkPageCursor
+	if err := json.Unmarshal(payload, &pageCursor); err != nil {
+		return bookmarkPageCursor{}, fmt.Errorf("invalid bookmark cursor: %w", err)
+	}
+	if pageCursor.Version == 0 {
+		pageCursor.Version = 2
+	}
+	return pageCursor, nil
+}
+
+func legacyBookmarkPageCursor(cursor string) bookmarkPageCursor {
+	pageCursor := bookmarkPageCursor{Version: 2}
+	if isTimeBookmarkSK(cursor) {
+		pageCursor.TimeSK = cursor
+		if createdAt := bookmarkTimestampFromSK(cursor); !createdAt.IsZero() {
+			pageCursor.LegacySK = createdAt.Format(time.RFC3339Nano) + "\xff"
+		}
+		return pageCursor
+	}
+	if isLegacyBookmarkTimestampSK(cursor) {
+		pageCursor.LegacySK = cursor
+		if createdAt := bookmarkTimestampFromSK(cursor); !createdAt.IsZero() {
+			pageCursor.TimeSK = models.BookmarkSortKeyPrefixTime + "#" + createdAt.Format(time.RFC3339Nano)
+		}
+		return pageCursor
+	}
+	pageCursor.TimeSK = cursor
+	pageCursor.LegacySK = cursor
+	return pageCursor
+}
+
+func encodeBookmarkPageCursor(cursor bookmarkPageCursor) string {
+	cursor.Version = 2
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return ""
+	}
+	return bookmarkPageCursorPrefix + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func bookmarkTimestampFromSK(sk string) time.Time {
+	return bookmarkCreatedAt(models.Bookmark{SK: sk})
 }
 
 func (r *BookmarkRepository) repairLegacyBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error) {

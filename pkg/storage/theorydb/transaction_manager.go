@@ -352,10 +352,6 @@ func inferTransactionUpdateFields(item any) []string {
 		if skipTransactionUpdateField(field) {
 			continue
 		}
-		if name := theoryDBAttrName(field); name != "" {
-			fields = append(fields, name)
-			continue
-		}
 		fields = append(fields, field.Name)
 	}
 	return fields
@@ -374,15 +370,6 @@ func skipTransactionUpdateField(field reflect.StructField) bool {
 		}
 	}
 	return false
-}
-
-func theoryDBAttrName(field reflect.StructField) string {
-	for _, part := range strings.Split(field.Tag.Get("theorydb"), ",") {
-		if strings.HasPrefix(part, "attr:") {
-			return strings.TrimPrefix(part, "attr:")
-		}
-	}
-	return ""
 }
 
 // validateOperations validates the provided operations

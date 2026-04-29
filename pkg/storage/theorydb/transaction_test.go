@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/theory-cloud/tabletheory/pkg/core"
@@ -720,6 +721,51 @@ func TestTransactionManager_M10_BuilderValidationErrors(t *testing.T) {
 	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationDelete, TableName: "users"}))
 	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}}))
 	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationType(99)}))
+}
+
+func TestTransactionManager_M10_InferredFieldsUseGoNamesForTaggedModels(t *testing.T) {
+	user := &models.User{
+		PK:          "USER#alice",
+		SK:          models.SKMetadata,
+		Username:    "alice",
+		DisplayName: "Alice",
+	}
+
+	fields := inferTransactionUpdateFields(user)
+	assert.Contains(t, fields, "Username")
+	assert.Contains(t, fields, "DisplayName")
+	assert.NotContains(t, fields, "username")
+	assert.NotContains(t, fields, "displayName")
+	assert.NotContains(t, fields, "PK")
+	assert.NotContains(t, fields, "SK")
+	assert.NotContains(t, fields, "Version")
+	assert.NotContains(t, fields, "GSI1PK")
+
+	mockDB := new(mocks.MockExtendedDB)
+	builder := new(mocks.MockTransactionBuilder)
+	mockDB.TransactWriteBuilder = builder
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
+	builder.On("Update", user, mock.MatchedBy(func(got []string) bool {
+		return containsString(got, "Username") &&
+			containsString(got, "DisplayName") &&
+			!containsString(got, "username") &&
+			!containsString(got, "displayName")
+	}), mock.Anything).Return(builder).Once()
+
+	manager := NewTransactionManager(mockDB, zap.NewNop())
+	err := manager.ExecuteWrite(context.Background(), TransactionOperation{Type: OperationUpdate, Item: user})
+	assert.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	builder.AssertExpectations(t)
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Tests for convenience functions

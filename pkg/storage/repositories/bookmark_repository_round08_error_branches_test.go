@@ -266,21 +266,29 @@ func TestBookmarkRepository_Round08_QueryUnlockedTimeBookmarks_HasMore(t *testin
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	allCalls := 0
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		allCalls++
 		dest := args.Get(0).(*[]models.Bookmark)
 		pk := buildBookmarkPK("alice")
-		*dest = []models.Bookmark{
-			{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
-			{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
+		if allCalls == 1 {
+			*dest = []models.Bookmark{
+				{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
+				{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
+			}
+			return
 		}
-	}).Return(nil).Once()
+		*dest = nil
+	}).Return(nil).Twice()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	items, cursor, err := repo.queryUnlockedTimeBookmarks(ctx, "alice", 1, "")
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "TIME#3", items[0].SK)
-	require.Equal(t, "TIME#3", cursor)
+	pageCursor, err := parseBookmarkPageCursor(cursor)
+	require.NoError(t, err)
+	require.Equal(t, "TIME#3", pageCursor.TimeSK)
 }
 
 func TestBookmarkRepository_Round08_DynamoFindTimeBookmarkByObject_EmptyList(t *testing.T) {

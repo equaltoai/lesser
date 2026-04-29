@@ -44,12 +44,17 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 			}
 			return
 		}
+		if allCalls == 2 {
+			*dest = []models.Bookmark{
+				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
+				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
+			}
+			return
+		}
 		*dest = []models.Bookmark{
-			{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
-			{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
 			{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
 		}
-	}).Return(nil).Twice()
+	}).Return(nil)
 
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 
@@ -64,7 +69,10 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 	require.Len(t, items, 2)
 	require.Equal(t, "o3", items[0].ObjectID)
 	require.Equal(t, "o2", items[1].ObjectID)
-	require.Equal(t, items[1].SK, nextCursor)
+	pageCursor, err := parseBookmarkPageCursor(nextCursor)
+	require.NoError(t, err)
+	require.Equal(t, items[1].SK, pageCursor.TimeSK)
+	require.Empty(t, pageCursor.LegacySK)
 }
 
 func TestBookmarkRepository_Round08_CascadeDeleteUserBookmarks_FallbackDeletes(t *testing.T) {
