@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -55,6 +56,10 @@ func keyringSaveSecret(account string, secret string) error {
 		"-w",
 	)
 	cmd.Stdin = strings.NewReader(macOSKeychainPromptInput(secret))
+	// Detach from the controlling terminal so the Keychain prompt path
+	// (getpass(3) inside SecurityTool) cannot open /dev/tty and must fall
+	// back to reading the supplied Stdin pipe.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		return fmt.Errorf("security add-generic-password: %w", ctx.Err())
