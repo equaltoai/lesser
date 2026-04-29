@@ -63,7 +63,9 @@ var (
 
 const (
 	// adminRole is the role string for admin users
-	adminRole = "admin"
+	adminRole         = "admin"
+	streamEventInsert = "INSERT"
+	streamEventModify = "MODIFY"
 )
 
 // ModerationProcessor handles DynamoDB stream events for moderation
@@ -579,7 +581,7 @@ func initAdvancedModerationEngine() {
 // processRecord processes a single DynamoDB stream record
 func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
 	// Only process INSERT and MODIFY events
-	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+	if record.EventName != streamEventInsert && record.EventName != streamEventModify {
 		return nil
 	}
 
@@ -602,11 +604,12 @@ func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.
 
 	// Handle different types of moderation records
 	switch {
-	case strings.HasPrefix(pk, "REVIEW#"):
-		// New review added
+	case strings.HasPrefix(pk, "REVIEW#") && record.EventName == streamEventInsert:
+		// New review added. Review MODIFY events are intentionally ignored to
+		// avoid re-processing rows written by consensus-side effects.
 		return mp.handleNewReview(ctx, record)
 
-	case strings.HasPrefix(pk, "EVENT#") && record.EventName == "INSERT":
+	case strings.HasPrefix(pk, "EVENT#") && record.EventName == streamEventInsert:
 		// New moderation event created
 		return mp.handleNewEvent(ctx, record)
 
@@ -650,9 +653,14 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 	if err != nil {
 		return ErrFailedToExtractReview(err)
 	}
+	mp.logger.Debug("validated moderation review stream record",
+		zap.String("review_id", review.ID),
+		zap.String("action", string(review.Action)))
 
-	// Process the review and check for consensus
-	decision, err := mp.consensusEngine.ProcessReview(ctx, eventID, review)
+	// The stream record represents a review that is already persisted. Evaluate
+	// consensus without writing the same review again; otherwise the write can
+	// emit a recursive MODIFY event for this review row.
+	decision, err := mp.consensusEngine.ProcessPersistedReview(ctx, eventID)
 	if err != nil {
 		mp.logger.Warn("Failed to process review",
 			zap.String("event_id", eventID),
@@ -1466,8 +1474,9 @@ func (mp *ModerationProcessor) triggerAutomaticActions(ctx context.Context, even
 			return ErrFailedToAddAutomaticReview(err)
 		}
 
-		// Process immediately to potentially trigger consensus
-		decision, err := mp.consensusEngine.ProcessReview(ctx, event.ID, review)
+		// Process immediately to potentially trigger consensus without writing
+		// the automatic review a second time.
+		decision, err := mp.consensusEngine.ProcessPersistedReview(ctx, event.ID)
 		if err != nil {
 			return ErrFailedToProcessAutomaticReview(err)
 		}

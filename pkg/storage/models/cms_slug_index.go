@@ -12,6 +12,7 @@ const (
 	cmsArticleSlugIndexPKPrefix     = "CMS#ARTICLE#SLUG#"
 	cmsCategorySlugIndexPKPrefix    = "CMS#CATEGORY#SLUG#"
 	cmsPublicationSlugIndexPKPrefix = "CMS#PUBLICATION#SLUG#"
+	cmsTenantSlugIndexPKPrefix      = "CMS#TENANT#"
 )
 
 // CMSSlugIndex maps a slug to a canonical object ID.
@@ -85,6 +86,21 @@ func CMSPublicationSlugIndexPK(slug string) string {
 	return cmsSlugIndexPK(cmsPublicationSlugIndexPKPrefix, slug)
 }
 
+// CMSTenantArticleSlugIndexPK returns the tenant-scoped PK for an article slug.
+func CMSTenantArticleSlugIndexPK(tenant string, slug string) string {
+	return cmsTenantSlugIndexPK(tenant, "ARTICLE", slug)
+}
+
+// CMSTenantCategorySlugIndexPK returns the tenant-scoped PK for a category slug.
+func CMSTenantCategorySlugIndexPK(tenant string, slug string) string {
+	return cmsTenantSlugIndexPK(tenant, "CATEGORY", slug)
+}
+
+// CMSTenantPublicationSlugIndexPK returns the tenant-scoped PK for a publication slug.
+func CMSTenantPublicationSlugIndexPK(tenant string, slug string) string {
+	return cmsTenantSlugIndexPK(tenant, "PUBLICATION", slug)
+}
+
 // CMSArticleSlugIndexSK returns the fixed SK for article slug index entries.
 func CMSArticleSlugIndexSK() string { return cmsSlugIndexSK }
 
@@ -100,4 +116,14 @@ func cmsSlugIndexPK(prefix string, slug string) string {
 		return ""
 	}
 	return prefix + slug
+}
+
+func cmsTenantSlugIndexPK(tenant string, itemType string, slug string) string {
+	tenant = strings.ToLower(strings.TrimSpace(tenant))
+	itemType = strings.ToUpper(strings.TrimSpace(itemType))
+	slug = strings.TrimSpace(slug)
+	if tenant == "" || itemType == "" || slug == "" {
+		return ""
+	}
+	return cmsTenantSlugIndexPKPrefix + tenant + "#" + itemType + "#SLUG#" + slug
 }

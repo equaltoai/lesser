@@ -42,6 +42,7 @@ type fakeConsensusStorage struct {
 	reviewsByEvent  map[string][]*moderation.Review
 	getEventErr     error
 	addReviewErr    error
+	addReviewCalls  int
 	getReviewsErr   error
 	createDecision  error
 	decisions       []*moderation.ModerationDecision
@@ -73,6 +74,7 @@ func (s *fakeConsensusStorage) GetModerationEvent(_ context.Context, eventID str
 }
 
 func (s *fakeConsensusStorage) AddModerationReview(_ context.Context, review *moderation.Review) error {
+	s.addReviewCalls++
 	if s.addReviewErr != nil {
 		return s.addReviewErr
 	}
@@ -188,6 +190,14 @@ func TestModerationProcessor_HandleNewReview_CoversDecisionAndErrorPaths(t *test
 			Category: moderation.CategoryNSFW,
 			Severity: 5,
 		}
+		storageBackend.reviewsByEvent["evt-1"] = []*moderation.Review{{
+			ID:         "rev-1",
+			EventID:    "evt-1",
+			ReviewerID: "mod-1",
+			Action:     moderation.ActionTypeRemove,
+			Weight:     2.5,
+			Created:    time.Now().UTC(),
+		}}
 
 		engine := moderation.NewConsensusEngine(storageBackend, &moderation.ConsensusConfig{
 			MinReviewers:        1,
@@ -215,6 +225,55 @@ func TestModerationProcessor_HandleNewReview_CoversDecisionAndErrorPaths(t *test
 		}
 
 		require.NoError(t, mp.handleNewReview(ctx, record))
+		require.Zero(t, storageBackend.addReviewCalls, "streamed reviews must not be re-written")
+		require.Len(t, storageBackend.reviewsByEvent["evt-1"], 1)
+		require.Len(t, storageBackend.decisions, 1)
+	})
+
+	t.Run("review modify event is ignored", func(t *testing.T) {
+		storageBackend := newFakeConsensusStorage()
+		storageBackend.events["evt-1"] = &moderation.ModerationEvent{
+			ID:       "evt-1",
+			ObjectID: "obj-1",
+			ActorID:  "actor-1",
+			Category: moderation.CategoryNSFW,
+			Severity: 5,
+		}
+		storageBackend.reviewsByEvent["evt-1"] = []*moderation.Review{{
+			ID:         "rev-1",
+			EventID:    "evt-1",
+			ReviewerID: "mod-1",
+			Action:     moderation.ActionTypeRemove,
+			Weight:     2.5,
+			Created:    time.Now().UTC(),
+		}}
+
+		engine := moderation.NewConsensusEngine(storageBackend, &moderation.ConsensusConfig{
+			MinReviewers:        1,
+			MinTrustWeight:      0,
+			ConsensusThreshold:  0,
+			CriticalThreshold:   0,
+			EscalationThreshold: 1.1,
+		})
+
+		mp := &ModerationProcessor{logger: zap.NewNop(), consensusEngine: engine}
+		record := events.DynamoDBEventRecord{
+			EventName: "MODIFY",
+			Change: events.DynamoDBStreamRecord{
+				NewImage: map[string]events.DynamoDBAttributeValue{
+					"Type":   events.NewStringAttribute("REVIEW"),
+					"Action": events.NewStringAttribute("remove"),
+				},
+				Keys: map[string]events.DynamoDBAttributeValue{
+					"PK": events.NewStringAttribute("REVIEW#evt-1"),
+					"SK": events.NewStringAttribute("REVIEWER#mod-1"),
+				},
+			},
+		}
+
+		require.NoError(t, mp.processRecord(ctx, record))
+		require.Zero(t, storageBackend.addReviewCalls)
+		require.Empty(t, storageBackend.decisions)
 	})
 
 	t.Run("invalid PK/SK formats", func(t *testing.T) {

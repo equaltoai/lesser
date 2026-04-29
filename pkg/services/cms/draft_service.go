@@ -36,6 +36,10 @@ type articleDraftPublisher interface {
 	UpdateArticle(ctx context.Context, article *models.Article) error
 }
 
+type tenantArticleDraftPublisher interface {
+	GetArticleByTenantSlug(ctx context.Context, tenant string, slug string) (*models.Article, error)
+}
+
 // DraftService handles business logic for drafts
 type DraftService struct {
 	draftRepo      draftRepository
@@ -303,7 +307,15 @@ func (s *DraftService) resolveExistingArticleBySlug(ctx context.Context, domain 
 	}
 
 	if s.articleService != nil {
-		article, err := s.articleService.GetArticleBySlug(ctx, slug)
+		var (
+			article *models.Article
+			err     error
+		)
+		if tenantGetter, ok := s.articleService.(tenantArticleDraftPublisher); ok {
+			article, err = tenantGetter.GetArticleByTenantSlug(ctx, domain, slug)
+		} else {
+			article, err = s.articleService.GetArticleBySlug(ctx, slug)
+		}
 		if err == nil {
 			return article, nil
 		}

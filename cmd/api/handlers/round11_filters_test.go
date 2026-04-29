@@ -16,7 +16,10 @@ func TestFiltersHandlers(t *testing.T) {
 			"filter-1": {ID: "filter-1", Username: "alice", Title: "Test", Context: []string{"home"}, FilterAction: "warn", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 		filterKeywords: map[string][]storagemodels.FilterKeyword{
-			"filter-1": {{ID: "kw-1", FilterID: "filter-1", Keyword: "spam", WholeWord: true, CreatedAt: time.Now()}},
+			"filter-1": {
+				{ID: "kw-1", FilterID: "filter-1", Keyword: "spam", WholeWord: true, CreatedAt: time.Now()},
+				{ID: "kw-2", FilterID: "filter-1", Keyword: "eggs", WholeWord: false, CreatedAt: time.Now()},
+			},
 		},
 		filterStatuses: map[string][]storagemodels.FilterStatus{
 			"filter-1": {{ID: "fs-1", FilterID: "filter-1", StatusID: "status-1", CreatedAt: time.Now()}},

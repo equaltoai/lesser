@@ -88,13 +88,14 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := round12AuthContext("alice")
+	adminCtx := round12AuthContext("admin")
 
 	mut := resolver.Mutation()
 	qry := resolver.Query()
 
 	// Categories.
 	categorySlug := "tech"
-	category, err := mut.CreateCategory(ctx, model.CreateCategoryInput{
+	category, err := mut.CreateCategory(adminCtx, model.CreateCategoryInput{
 		Name: "Tech",
 		Slug: &categorySlug,
 	})
@@ -102,7 +103,7 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	require.NotNil(t, category)
 
 	color := "#ff0"
-	category, err = mut.UpdateCategory(ctx, category.ID, model.UpdateCategoryInput{
+	category, err = mut.UpdateCategory(adminCtx, category.ID, model.UpdateCategoryInput{
 		Color: &color,
 	})
 	require.NoError(t, err)
@@ -334,9 +335,159 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	ok, err = mut.DeleteCategory(ctx, category.ID)
+	ok, err = mut.DeleteCategory(adminCtx, category.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
+}
+
+func TestRound12CMS_MutationPermissions(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+
+	aliceCtx := round12AuthContext("alice")
+	adminCtx := round12AuthContext("admin")
+	bobCtx := round12AuthContext("bob")
+
+	categorySlug := "private-taxonomy"
+	_, err := mut.CreateCategory(aliceCtx, model.CreateCategoryInput{
+		Name: "Private Taxonomy",
+		Slug: &categorySlug,
+	})
+	require.Error(t, err)
+
+	category, err := mut.CreateCategory(adminCtx, model.CreateCategoryInput{
+		Name: "Private Taxonomy",
+		Slug: &categorySlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, category)
+
+	seriesSlug := "bob-series"
+	bobSeries, err := mut.CreateSeries(bobCtx, model.CreateSeriesInput{
+		Title: "Bob Series",
+		Slug:  &seriesSlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, bobSeries)
+
+	articleSlug := "alice-article"
+	_, err = mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:     &articleSlug,
+		Title:    "Alice Article",
+		Content:  "body",
+		SeriesID: &bobSeries.ID,
+	})
+	require.Error(t, err)
+}
+
+func TestRound12CMS_SeriesMutationRejectsCrossTenantSeries(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+	aliceCtx := round12AuthContext("alice")
+
+	cfg := resolver.Registry.GetConfig()
+	require.NotNil(t, cfg)
+
+	cfg.BaseURL = "https://tenant-a.example"
+	seriesSlug := "tenant-series"
+	tenantASeries, err := mut.CreateSeries(aliceCtx, model.CreateSeriesInput{
+		Title: "Tenant A Series",
+		Slug:  &seriesSlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantASeries)
+
+	authorID, rawSeriesID, ok := parseSeriesGraphQLID(tenantASeries.ID)
+	require.True(t, ok)
+	storedSeries, err := resolver.Registry.Series().GetSeries(context.Background(), authorID, rawSeriesID)
+	require.NoError(t, err)
+	require.Equal(t, "tenant-a.example", storedSeries.Tenant)
+
+	cfg.BaseURL = "https://tenant-b.example"
+	updatedTitle := "tenant-b takeover"
+	_, err = mut.UpdateSeries(aliceCtx, tenantASeries.ID, model.UpdateSeriesInput{Title: &updatedTitle})
+	require.Error(t, err)
+
+	articleSlug := "tenant-b-article"
+	_, err = mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:     &articleSlug,
+		Title:    "Tenant B Article",
+		Content:  "body",
+		SeriesID: &tenantASeries.ID,
+	})
+	require.Error(t, err)
+
+	article, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &articleSlug,
+		Title:   "Tenant B Article",
+		Content: "body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, article)
+
+	order := 1
+	_, err = mut.AddArticleToSeries(aliceCtx, tenantASeries.ID, article.ID, &order)
+	require.Error(t, err)
+
+	_, err = mut.RemoveArticleFromSeries(aliceCtx, tenantASeries.ID, article.ID)
+	require.Error(t, err)
+
+	_, err = mut.ReorderSeriesArticles(aliceCtx, tenantASeries.ID, []string{article.ID})
+	require.Error(t, err)
+
+	ok, err = mut.DeleteSeries(aliceCtx, tenantASeries.ID)
+	require.Error(t, err)
+	require.False(t, ok)
+}
+
+func TestRound12CMS_ArticleWritesRejectCrossTenantArticle(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+	aliceCtx := round12AuthContext("alice")
+
+	cfg := resolver.Registry.GetConfig()
+	require.NotNil(t, cfg)
+
+	cfg.BaseURL = "https://tenant-a.example"
+	articleSlug := "tenant-a-article"
+	tenantAArticle, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &articleSlug,
+		Title:   "Tenant A Article",
+		Content: "tenant a body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantAArticle)
+
+	revision := &models.Revision{
+		ID:           "tenant-a-rev-1",
+		ObjectID:     tenantAArticle.ID,
+		Version:      7,
+		Content:      "restored tenant a body",
+		ChangedBy:    "alice",
+		ChangeType:   "update",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		MetadataJSON: "{}",
+	}
+	require.NoError(t, revision.UpdateKeys())
+	require.NoError(t, storage.Revision().CreateRevision(aliceCtx, revision))
+
+	cfg.BaseURL = "https://tenant-b.example"
+	updatedTitle := "tenant-b takeover"
+	_, err = mut.UpdateArticle(aliceCtx, tenantAArticle.ID, model.UpdateArticleInput{Title: &updatedTitle})
+	require.Error(t, err)
+
+	restored, err := mut.RestoreRevision(aliceCtx, tenantAArticle.ID, 7)
+	require.Error(t, err)
+	require.Nil(t, restored)
+
+	ok, err := mut.DeleteArticle(aliceCtx, tenantAArticle.ID)
+	require.Error(t, err)
+	require.False(t, ok)
+
+	storedArticle, err := storage.Article().GetArticle(context.Background(), tenantAArticle.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Tenant A Article", storedArticle.Name)
 }
 
 func TestRound12CMS_HelperBranches(t *testing.T) {

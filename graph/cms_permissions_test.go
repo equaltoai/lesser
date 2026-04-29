@@ -25,11 +25,20 @@ func TestEnsureAuthorCanWriteCMSAllowsLocalActorMatch(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestEnsureAuthorCanWriteCMSAllowsNormalizedUsernameMatch(t *testing.T) {
+func TestEnsureAuthorCanWriteCMSRejectsCrossTenantActorURL(t *testing.T) {
 	t.Parallel()
 
 	resolver := &Resolver{}
 
 	err := resolver.ensureAuthorCanWriteCMS(context.Background(), "alice", "https://example.com/users/alice")
+	require.Error(t, err)
+}
+
+func TestEnsureAuthorCanWriteCMSAllowsLegacyUsernameMatch(t *testing.T) {
+	t.Parallel()
+
+	resolver := &Resolver{}
+
+	err := resolver.ensureAuthorCanWriteCMS(context.Background(), "alice", "alice")
 	require.NoError(t, err)
 }

@@ -270,6 +270,9 @@ func TestRoutingMetrics(t *testing.T) {
 func TestCMSSeriesSlugIndex(t *testing.T) {
 	t.Run("PK helpers and UpdateKeys validation", func(t *testing.T) {
 		assert.Equal(t, "", CMSSeriesSlugIndexPK(""))
+		assert.Equal(t, "", CMSTenantSeriesSlugIndexPK("", "series"))
+		assert.Equal(t, "", CMSTenantSeriesSlugIndexPK("example.com", ""))
+		assert.Equal(t, "CMS#TENANT#example.com#SERIES#SLUG#series", CMSTenantSeriesSlugIndexPK(" Example.COM ", "series"))
 		assert.Equal(t, "REF", CMSSeriesSlugIndexSK())
 
 		i := &CMSSeriesSlugIndex{}

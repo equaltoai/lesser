@@ -152,6 +152,12 @@ func TestFiltersHandlers_Round12(t *testing.T) {
 			filtersByID: map[string]storagemodels.Filter{
 				"filter-1": {ID: "filter-1", Username: "alice", Title: "x", Context: []string{"home"}, FilterAction: "warn"},
 			},
+			filterKeywords: map[string][]storagemodels.FilterKeyword{
+				"filter-1": {
+					{ID: "kw-1", FilterID: "filter-1", Keyword: "old", WholeWord: false, CreatedAt: time.Now()},
+					{ID: "kw-2", FilterID: "filter-1", Keyword: "eggs", WholeWord: false, CreatedAt: time.Now()},
+				},
+			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
@@ -170,6 +176,28 @@ func TestFiltersHandlers_Round12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "filter-1"
 		requireStatus(t, http.StatusOK)(handler.HandleUpdateFilterLift(ctx))
+	})
+
+	t.Run("update filter rejects keyword from another filter", func(t *testing.T) {
+		state := &round10QueryState{
+			filtersByID: map[string]storagemodels.Filter{
+				"filter-1": {ID: "filter-1", Username: "alice", Title: "x", Context: []string{"home"}, FilterAction: "warn"},
+				"filter-2": {ID: "filter-2", Username: "bob", Title: "y", Context: []string{"home"}, FilterAction: "warn"},
+			},
+			filterKeywords: map[string][]storagemodels.FilterKeyword{
+				"filter-2": {{ID: "kw-bob", FilterID: "filter-2", Keyword: "private", WholeWord: true, CreatedAt: time.Now()}},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", writeHeaders, nil, map[string]any{
+			"keywords_attributes": []any{
+				map[string]any{"id": "kw-bob", "keyword": "stolen"},
+			},
+		})
+		require.NoError(t, err)
+		ctx.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleUpdateFilterLift(ctx))
 	})
 
 	t.Run("parseFilterUpdateParams supports JSON body bytes", func(t *testing.T) {
@@ -249,6 +277,25 @@ func TestFiltersHandlers_Round12(t *testing.T) {
 		ctxDel.Params["filter_id"] = "filter-1"
 		ctxDel.Params["keyword_id"] = "kw-1"
 		requireStatus(t, http.StatusOK)(handler.HandleDeleteFilterKeywordLift(ctxDel))
+	})
+
+	t.Run("delete filter keyword rejects keyword from another filter", func(t *testing.T) {
+		state := &round10QueryState{
+			filtersByID: map[string]storagemodels.Filter{
+				"filter-1": {ID: "filter-1", Username: "alice", Title: "x", Context: []string{"home"}, FilterAction: "warn"},
+				"filter-2": {ID: "filter-2", Username: "bob", Title: "y", Context: []string{"home"}, FilterAction: "warn"},
+			},
+			filterKeywords: map[string][]storagemodels.FilterKeyword{
+				"filter-2": {{ID: "kw-bob", FilterID: "filter-2", Keyword: "private", WholeWord: true, CreatedAt: time.Now()}},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctxDel, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/keywords/kw-bob", writeHeaders, nil, nil)
+		require.NoError(t, err)
+		ctxDel.Params["filter_id"] = "filter-1"
+		ctxDel.Params["keyword_id"] = "kw-bob"
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteFilterKeywordLift(ctxDel))
 	})
 
 	t.Run("add and delete filter status", func(t *testing.T) {

@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	cmsSeriesSlugIndexPKPrefix = "CMS#SERIES#SLUG#"
-	cmsSeriesSlugIndexSK       = "REF"
+	cmsSeriesSlugIndexPKPrefix  = "CMS#SERIES#SLUG#"
+	cmsTenantSeriesSlugPKPrefix = "CMS#TENANT#"
+	cmsSeriesSlugIndexSK        = "REF"
 )
 
 // CMSSeriesSlugIndex maps a series slug to its owning author + series ID for efficient lookup.
@@ -70,6 +71,16 @@ func CMSSeriesSlugIndexPK(slug string) string {
 		return ""
 	}
 	return cmsSeriesSlugIndexPKPrefix + slug
+}
+
+// CMSTenantSeriesSlugIndexPK returns the tenant-scoped PK for a series slug.
+func CMSTenantSeriesSlugIndexPK(tenant string, slug string) string {
+	tenant = strings.ToLower(strings.TrimSpace(tenant))
+	slug = strings.TrimSpace(slug)
+	if tenant == "" || slug == "" {
+		return ""
+	}
+	return cmsTenantSeriesSlugPKPrefix + tenant + "#SERIES#SLUG#" + slug
 }
 
 // CMSSeriesSlugIndexSK returns the fixed SK for slug index entries.

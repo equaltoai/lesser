@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
@@ -12,6 +13,8 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
+
+var errFilterKeywordNotFound = errors.New("filter keyword not found")
 
 // HandleGetFiltersLift handles GET /api/v2/filters
 func (h *Handler) HandleGetFiltersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -292,6 +295,14 @@ func (h *Handler) HandleUpdateFilterLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondValidationError(ctx, err)
 	}
 
+	if err := h.validateKeywordUpdates(ctx, filterID, params); err != nil {
+		if errors.Is(err, errFilterKeywordNotFound) {
+			return h.respondNotFound(ctx, "filter keyword")
+		}
+		h.logger.Error("failed to verify filter keyword ownership", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
 	// Build filter updates
 	updates := h.buildFilterUpdates(params)
 
@@ -302,7 +313,13 @@ func (h *Handler) HandleUpdateFilterLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	// Handle keyword updates
-	h.handleKeywordUpdates(ctx, filterID, params)
+	if err := h.handleKeywordUpdates(ctx, filterID, params); err != nil {
+		if errors.Is(err, errFilterKeywordNotFound) {
+			return h.respondNotFound(ctx, "filter keyword")
+		}
+		h.logger.Error("failed to update filter keywords", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
 
 	// Return updated filter
 	return h.returnUpdatedFilter(ctx, filterID)
@@ -353,11 +370,34 @@ func (h *Handler) buildFilterUpdates(params map[string]any) map[string]any {
 	return updates
 }
 
-// handleKeywordUpdates handles keyword updates for a filter
-func (h *Handler) handleKeywordUpdates(ctx *apptheory.Context, filterID string, params map[string]any) {
+func (h *Handler) validateKeywordUpdates(ctx *apptheory.Context, filterID string, params map[string]any) error {
 	keywordsAttrs, ok := params["keywords_attributes"].([]any)
 	if !ok {
-		return
+		return nil
+	}
+
+	for _, kwAttr := range keywordsAttrs {
+		kwMap, ok := kwAttr.(map[string]any)
+		if !ok {
+			continue
+		}
+		keywordID, hasID := kwMap["id"].(string)
+		if !hasID || keywordID == "" {
+			continue
+		}
+		if err := h.ensureFilterKeywordBelongsToFilter(ctx, filterID, keywordID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// handleKeywordUpdates handles keyword updates for a filter
+func (h *Handler) handleKeywordUpdates(ctx *apptheory.Context, filterID string, params map[string]any) error {
+	keywordsAttrs, ok := params["keywords_attributes"].([]any)
+	if !ok {
+		return nil
 	}
 
 	for _, kwAttr := range keywordsAttrs {
@@ -366,34 +406,47 @@ func (h *Handler) handleKeywordUpdates(ctx *apptheory.Context, filterID string, 
 			continue
 		}
 
-		h.processKeywordUpdate(ctx, filterID, kwMap)
+		if err := h.processKeywordUpdate(ctx, filterID, kwMap); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // processKeywordUpdate processes a single keyword update
-func (h *Handler) processKeywordUpdate(ctx *apptheory.Context, filterID string, kwMap map[string]any) {
+func (h *Handler) processKeywordUpdate(ctx *apptheory.Context, filterID string, kwMap map[string]any) error {
 	if id, hasID := kwMap["id"].(string); hasID {
 		// Update or delete existing keyword
 		if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
-			h.deleteFilterKeyword(ctx, id)
-		} else {
-			h.updateFilterKeyword(ctx, id, kwMap)
+			return h.deleteFilterKeyword(ctx, filterID, id)
 		}
-	} else {
-		// Create new keyword
-		h.createFilterKeyword(ctx, filterID, kwMap)
+		return h.updateFilterKeyword(ctx, filterID, id, kwMap)
 	}
+
+	// Create new keyword
+	h.createFilterKeyword(ctx, filterID, kwMap)
+
+	return nil
 }
 
 // deleteFilterKeyword deletes a filter keyword
-func (h *Handler) deleteFilterKeyword(ctx *apptheory.Context, keywordID string) {
+func (h *Handler) deleteFilterKeyword(ctx *apptheory.Context, filterID string, keywordID string) error {
+	if err := h.ensureFilterKeywordBelongsToFilter(ctx, filterID, keywordID); err != nil {
+		return err
+	}
 	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
+		return err
 	}
+	return nil
 }
 
 // updateFilterKeyword updates a filter keyword
-func (h *Handler) updateFilterKeyword(ctx *apptheory.Context, keywordID string, kwMap map[string]any) {
+func (h *Handler) updateFilterKeyword(ctx *apptheory.Context, filterID string, keywordID string, kwMap map[string]any) error {
+	if err := h.ensureFilterKeywordBelongsToFilter(ctx, filterID, keywordID); err != nil {
+		return err
+	}
 	kwUpdates := make(map[string]any)
 	if keyword, ok := kwMap["keyword"].(string); ok {
 		kwUpdates["keyword"] = keyword
@@ -403,7 +456,9 @@ func (h *Handler) updateFilterKeyword(ctx *apptheory.Context, keywordID string, 
 	}
 	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context(), keywordID, kwUpdates); err != nil {
 		h.logger.Error("failed to update filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
+		return err
 	}
+	return nil
 }
 
 // createFilterKeyword creates a new filter keyword
@@ -426,6 +481,24 @@ func (h *Handler) createFilterKeyword(ctx *apptheory.Context, filterID string, k
 	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context(), filterID, kw); err != nil {
 		h.logger.Error("failed to add filter keyword", zap.Error(err))
 	}
+}
+
+func (h *Handler) ensureFilterKeywordBelongsToFilter(ctx *apptheory.Context, filterID string, keywordID string) error {
+	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context(), filterID)
+	if err != nil {
+		return err
+	}
+
+	for _, keyword := range keywords {
+		if keyword == nil {
+			continue
+		}
+		if keyword.ID == keywordID && keyword.FilterID == filterID {
+			return nil
+		}
+	}
+
+	return errFilterKeywordNotFound
 }
 
 // returnUpdatedFilter returns the updated filter with keywords and statuses
@@ -659,7 +732,14 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *apptheory.Context) (*appthe
 		return h.respondNotFound(ctx, "filter")
 	}
 
-	// Delete the keyword
+	// Delete the keyword only after proving it belongs to the owned filter.
+	if err := h.ensureFilterKeywordBelongsToFilter(ctx, filterID, keywordID); err != nil {
+		if errors.Is(err, errFilterKeywordNotFound) {
+			return h.respondNotFound(ctx, "filter keyword")
+		}
+		h.logger.Error("failed to verify filter keyword ownership", zap.String("filter_id", filterID), zap.String("keyword_id", keywordID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
 	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
