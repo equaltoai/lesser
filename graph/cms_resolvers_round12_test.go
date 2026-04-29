@@ -88,13 +88,14 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := round12AuthContext("alice")
+	adminCtx := round12AuthContext("admin")
 
 	mut := resolver.Mutation()
 	qry := resolver.Query()
 
 	// Categories.
 	categorySlug := "tech"
-	category, err := mut.CreateCategory(ctx, model.CreateCategoryInput{
+	category, err := mut.CreateCategory(adminCtx, model.CreateCategoryInput{
 		Name: "Tech",
 		Slug: &categorySlug,
 	})
@@ -102,7 +103,7 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	require.NotNil(t, category)
 
 	color := "#ff0"
-	category, err = mut.UpdateCategory(ctx, category.ID, model.UpdateCategoryInput{
+	category, err = mut.UpdateCategory(adminCtx, category.ID, model.UpdateCategoryInput{
 		Color: &color,
 	})
 	require.NoError(t, err)
@@ -334,9 +335,49 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	ok, err = mut.DeleteCategory(ctx, category.ID)
+	ok, err = mut.DeleteCategory(adminCtx, category.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
+}
+
+func TestRound12CMS_MutationPermissions(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+
+	aliceCtx := round12AuthContext("alice")
+	adminCtx := round12AuthContext("admin")
+	bobCtx := round12AuthContext("bob")
+
+	categorySlug := "private-taxonomy"
+	_, err := mut.CreateCategory(aliceCtx, model.CreateCategoryInput{
+		Name: "Private Taxonomy",
+		Slug: &categorySlug,
+	})
+	require.Error(t, err)
+
+	category, err := mut.CreateCategory(adminCtx, model.CreateCategoryInput{
+		Name: "Private Taxonomy",
+		Slug: &categorySlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, category)
+
+	seriesSlug := "bob-series"
+	bobSeries, err := mut.CreateSeries(bobCtx, model.CreateSeriesInput{
+		Title: "Bob Series",
+		Slug:  &seriesSlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, bobSeries)
+
+	articleSlug := "alice-article"
+	_, err = mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:     &articleSlug,
+		Title:    "Alice Article",
+		Content:  "body",
+		SeriesID: &bobSeries.ID,
+	})
+	require.Error(t, err)
 }
 
 func TestRound12CMS_HelperBranches(t *testing.T) {

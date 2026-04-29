@@ -244,6 +244,9 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 	if err != nil {
 		return nil, err
 	}
+	if err := r.ensureCanUseCMSSeries(ctx, username, input.SeriesID); err != nil {
+		return nil, err
+	}
 
 	articleSvc := r.Registry.Articles()
 	if articleSvc == nil {
@@ -346,6 +349,9 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 	}
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
+		return nil, err
+	}
+	if err := r.ensureCanUseCMSSeries(ctx, username, input.SeriesID); err != nil {
 		return nil, err
 	}
 
@@ -848,12 +854,35 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 	return r.convertCMSSeries(ctx, series), nil
 }
 
+func (r *mutationResolver) ensureCanUseCMSSeries(ctx context.Context, username string, seriesID *string) error {
+	if seriesID == nil || strings.TrimSpace(*seriesID) == "" {
+		return nil
+	}
+
+	authorID, rawID, ok := parseSeriesGraphQLID(*seriesID)
+	if !ok {
+		return errors.New("invalid series id")
+	}
+	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
+		return errors.New("insufficient privileges for series update")
+	}
+
+	seriesSvc := r.Registry.Series()
+	if seriesSvc == nil {
+		return errors.New("series service is not available")
+	}
+	if _, err := seriesSvc.GetSeries(ctx, authorID, rawID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *mutationResolver) CreateCategory(ctx context.Context, input model.CreateCategoryInput) (*model.Category, error) {
 	if err := r.requireCMSCategoriesEnabled(); err != nil {
 		return nil, err
 	}
 
-	_, err := r.requireAuth(ctx)
+	_, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -903,7 +932,7 @@ func (r *mutationResolver) UpdateCategory(ctx context.Context, id string, input 
 		return nil, err
 	}
 
-	_, err := r.requireAuth(ctx)
+	_, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -954,7 +983,7 @@ func (r *mutationResolver) DeleteCategory(ctx context.Context, id string) (bool,
 		return false, err
 	}
 
-	_, err := r.requireAuth(ctx)
+	_, err := r.requireAdmin(ctx)
 	if err != nil {
 		return false, err
 	}
