@@ -480,8 +480,7 @@ func (h *StreamRouterHandler) HandleDynamoDBRecord(ctx *apptheory.EventContext, 
 			zap.String("event_id", record.EventID),
 			zap.Error(err),
 		)
-		// Match previous Lift behavior: log and continue; do not fail the batch.
-		return nil
+		return err
 	}
 
 	return nil
