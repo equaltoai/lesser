@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -2178,6 +2179,20 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 		searchLimit = 20
 	}
 
+	if len(normalizedQuery) == 1 {
+		users, nextCursor, hasMore, err := r.searchAccountsByShortHandlePrefix(ctx, normalizedQuery, searchLimit, opts.Cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		return &interfaces.PaginatedResult[*storage.Account]{
+			Items:      r.usersToAccounts(users),
+			NextCursor: nextCursor,
+			HasMore:    hasMore,
+			Total:      -1,
+		}, nil
+	}
+
 	prefix := normalizedQuery
 	if len(prefix) > 2 {
 		prefix = prefix[:2]
@@ -2218,14 +2233,6 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 		users = users[:searchLimit]
 	}
 
-	accounts := make([]*storage.Account, 0, len(users))
-	for _, user := range users {
-		account := &storage.Account{
-			User: r.modelToStorageUser(&user),
-		}
-		accounts = append(accounts, account)
-	}
-
 	var nextCursor string
 	if hasMore && len(users) > 0 {
 		lastUser := users[len(users)-1]
@@ -2233,11 +2240,142 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	}
 
 	return &interfaces.PaginatedResult[*storage.Account]{
-		Items:      accounts,
+		Items:      r.usersToAccounts(users),
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
+}
+
+const accountHandleSecondChars = "-0123456789_abcdefghijklmnopqrstuvwxyz"
+
+func (r *AccountRepository) searchAccountsByShortHandlePrefix(ctx context.Context, normalizedQuery string, searchLimit int, cursor string) ([]models.User, string, bool, error) {
+	prefixKeys := handlePrefixKeysForShortSearch(normalizedQuery)
+	if len(prefixKeys) == 0 {
+		return nil, "", false, nil
+	}
+
+	var skCursor string
+	if cursor != "" {
+		pkCursor, decodedSK, err := Utils.Pagination.DecodeCursor(cursor)
+		if err != nil {
+			r.logger.Warn("invalid search cursor provided",
+				zap.String("cursor", cursor),
+				zap.Error(err))
+		} else if decodedSK != "" {
+			if pkCursor != "" && !containsString(prefixKeys, pkCursor) {
+				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+					zap.String("expected_prefix", prefixKeys[0]),
+					zap.String("cursor_prefix", pkCursor))
+			} else {
+				skCursor = decodedSK
+			}
+		}
+	}
+
+	seen := make(map[string]struct{})
+	users := make([]models.User, 0, searchLimit+1)
+	for _, prefixKey := range prefixKeys {
+		var partitionUsers []models.User
+		queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+			Index("gsi5").
+			Where("gsi5PK", "=", prefixKey).
+			Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
+			OrderBy("gsi5SK", "ASC").
+			Limit(searchLimit + 1)
+
+		if skCursor != "" {
+			queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+		}
+
+		if err := queryBuilder.All(&partitionUsers); err != nil {
+			return nil, "", false, ErrorHandler.HandleQueryError(err, EntityUser, "search")
+		}
+
+		for _, user := range partitionUsers {
+			gsiSK := user.GSI5SK
+			if gsiSK == "" {
+				gsiSK = strings.ToLower(user.Username)
+			}
+			if !strings.HasPrefix(gsiSK, normalizedQuery) {
+				continue
+			}
+			if skCursor != "" && gsiSK <= skCursor {
+				continue
+			}
+
+			identity := user.PK
+			if identity == "" {
+				identity = strings.ToLower(user.Username)
+			}
+			if _, ok := seen[identity]; ok {
+				continue
+			}
+			seen[identity] = struct{}{}
+			users = append(users, user)
+		}
+	}
+
+	sort.SliceStable(users, func(i, j int) bool {
+		left := users[i].GSI5SK
+		if left == "" {
+			left = strings.ToLower(users[i].Username)
+		}
+		right := users[j].GSI5SK
+		if right == "" {
+			right = strings.ToLower(users[j].Username)
+		}
+		if left == right {
+			return users[i].GSI5PK < users[j].GSI5PK
+		}
+		return left < right
+	})
+
+	hasMore := len(users) > searchLimit
+	if hasMore {
+		users = users[:searchLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(users) > 0 {
+		lastUser := users[len(users)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.GSI5PK, lastUser.GSI5SK)
+	}
+
+	return users, nextCursor, hasMore, nil
+}
+
+func handlePrefixKeysForShortSearch(normalizedQuery string) []string {
+	if len(normalizedQuery) != 1 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(accountHandleSecondChars)+1)
+	keys = append(keys, fmt.Sprintf("USER_HANDLE_PREFIX#%s", normalizedQuery))
+	for _, second := range accountHandleSecondChars {
+		keys = append(keys, fmt.Sprintf("USER_HANDLE_PREFIX#%s%c", normalizedQuery, second))
+	}
+	return keys
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *AccountRepository) usersToAccounts(users []models.User) []*storage.Account {
+	accounts := make([]*storage.Account, 0, len(users))
+	for _, user := range users {
+		account := &storage.Account{
+			User: r.modelToStorageUser(&user),
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts
 }
 
 // GetSuggestedAccounts retrieves suggested accounts to follow
