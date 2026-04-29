@@ -711,6 +711,17 @@ func TestTransactionManager_M10_AdditionalTransactionCoverage(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestTransactionManager_M10_BuilderValidationErrors(t *testing.T) {
+	manager := NewTransactionManager(nil, zap.NewNop())
+	builder := new(mocks.MockTransactionBuilder)
+
+	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationPut}))
+	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationUpdate}))
+	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationDelete, TableName: "users"}))
+	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}}))
+	assert.Error(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationType(99)}))
+}
+
 // Tests for convenience functions
 
 func TestExecuteSimpleTransaction(t *testing.T) {
