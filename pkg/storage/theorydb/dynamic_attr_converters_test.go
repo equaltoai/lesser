@@ -125,3 +125,29 @@ func TestActivityPubContextValueConverter_RoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "https://spec.lessersoul.ai/ns/agent-attribution/v1#", nested["lessersoul"])
 }
+
+func TestActivityPubContextValueConverter_LegacyAttributeShapes(t *testing.T) {
+	conv := activityPubContextValueConverter{}
+
+	t.Run("raw string context", func(t *testing.T) {
+		var out activitypub.ContextValue
+		require.NoError(t, conv.FromAttributeValue(&types.AttributeValueMemberS{
+			Value: "https://www.w3.org/ns/activitystreams",
+		}, &out))
+		require.Equal(t, activitypub.ContextValue{"https://www.w3.org/ns/activitystreams"}, out)
+	})
+
+	t.Run("json string context", func(t *testing.T) {
+		var out activitypub.ContextValue
+		require.NoError(t, conv.FromAttributeValue(&types.AttributeValueMemberS{
+			Value: `"https://www.w3.org/ns/activitystreams"`,
+		}, &out))
+		require.Equal(t, activitypub.ContextValue{"https://www.w3.org/ns/activitystreams"}, out)
+	})
+
+	t.Run("null context", func(t *testing.T) {
+		var out activitypub.ContextValue
+		require.NoError(t, conv.FromAttributeValue(&types.AttributeValueMemberNULL{Value: true}, &out))
+		require.Nil(t, out)
+	})
+}

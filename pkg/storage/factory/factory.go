@@ -283,7 +283,7 @@ func registerStorageConverters(db dynamormCore.DB) error {
 	if db == nil {
 		return fmt.Errorf("dynamorm DB is nil")
 	}
-	return nil
+	return theorydb.RegisterDefaultTypeConverters(db)
 }
 
 // searchRepositoryDeps implements SearchRepositoryDeps interface
