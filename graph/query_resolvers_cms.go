@@ -51,36 +51,8 @@ func cmsResolveBySlug[E any](
 	var zero E
 
 	tenant = strings.ToLower(strings.TrimSpace(tenant))
-	fetchFromIndex := func(indexPK string) (E, bool, error) {
-		var idx models.CMSSlugIndex
-		err := db.WithContext(ctx).Model(&models.CMSSlugIndex{}).
-			Where("PK", "=", indexPK).
-			Where("SK", "=", models.CMSSlugIndexSK()).
-			First(&idx)
-		if err != nil {
-			if dynamormerrors.IsNotFound(err) {
-				return zero, false, nil
-			}
-			return zero, false, err
-		}
-
-		targetID := strings.TrimSpace(idx.TargetID)
-		if targetID == "" {
-			return zero, false, nil
-		}
-
-		entity, err := fetchByID(targetID)
-		if err != nil {
-			return zero, false, err
-		}
-		if tenant != "" && belongsToTenant != nil && !belongsToTenant(entity, tenant) {
-			return zero, false, nil
-		}
-		return entity, true, nil
-	}
-
 	if strings.TrimSpace(pk) != "" {
-		entity, ok, err := fetchFromIndex(pk)
+		entity, ok, err := cmsFetchEntityFromSlugIndex(ctx, db, pk, tenant, fetchByID, belongsToTenant)
 		if err != nil {
 			return zero, err
 		}
@@ -90,22 +62,12 @@ func cmsResolveBySlug[E any](
 	}
 
 	if tenant != "" && strings.TrimSpace(legacyPK) != "" && !strings.EqualFold(pk, legacyPK) {
-		entity, ok, err := fetchFromIndex(legacyPK)
+		entity, ok, err := cmsFetchEntityFromSlugIndex(ctx, db, legacyPK, tenant, fetchByID, belongsToTenant)
 		if err != nil {
 			return zero, err
 		}
 		if ok {
-			targetID := strings.TrimSpace(extractID(entity))
-			if targetID != "" {
-				backfill := &models.CMSSlugIndex{
-					PK:       pk,
-					Slug:     slug,
-					TargetID: targetID,
-				}
-				if err := backfill.UpdateKeys(); err == nil {
-					_ = db.WithContext(ctx).Model(backfill).IfNotExists().Create()
-				}
-			}
+			cmsBackfillSlugIndex(ctx, db, pk, slug, extractID(entity))
 			return entity, nil
 		}
 	}
@@ -118,19 +80,60 @@ func cmsResolveBySlug[E any](
 		return zero, nil
 	}
 
-	targetID := strings.TrimSpace(extractID(entity))
-	if targetID != "" {
-		backfill := &models.CMSSlugIndex{
-			PK:       pk,
-			Slug:     slug,
-			TargetID: targetID,
+	cmsBackfillSlugIndex(ctx, db, pk, slug, extractID(entity))
+	return entity, nil
+}
+
+func cmsFetchEntityFromSlugIndex[E any](
+	ctx context.Context,
+	db dynamormcore.DB,
+	indexPK string,
+	tenant string,
+	fetchByID func(string) (E, error),
+	belongsToTenant func(E, string) bool,
+) (E, bool, error) {
+	var zero E
+
+	var idx models.CMSSlugIndex
+	err := db.WithContext(ctx).Model(&models.CMSSlugIndex{}).
+		Where("PK", "=", indexPK).
+		Where("SK", "=", models.CMSSlugIndexSK()).
+		First(&idx)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return zero, false, nil
 		}
-		if err := backfill.UpdateKeys(); err == nil {
-			_ = db.WithContext(ctx).Model(backfill).IfNotExists().Create()
-		}
+		return zero, false, err
 	}
 
-	return entity, nil
+	targetID := strings.TrimSpace(idx.TargetID)
+	if targetID != "" {
+		entity, err := fetchByID(targetID)
+		if err != nil {
+			return zero, false, err
+		}
+		if tenant != "" && belongsToTenant != nil && !belongsToTenant(entity, tenant) {
+			return zero, false, nil
+		}
+		return entity, true, nil
+	}
+
+	return zero, false, nil
+}
+
+func cmsBackfillSlugIndex(ctx context.Context, db dynamormcore.DB, pk string, slug string, targetID string) {
+	targetID = strings.TrimSpace(targetID)
+	if targetID == "" {
+		return
+	}
+	backfill := &models.CMSSlugIndex{
+		PK:       pk,
+		Slug:     slug,
+		TargetID: targetID,
+	}
+	if err := backfill.UpdateKeys(); err == nil {
+		_ = db.WithContext(ctx).Model(backfill).IfNotExists().Create()
+	}
 }
 
 func cmsStorageIDBelongsToTenant(id string, tenant string) bool {
@@ -665,33 +668,8 @@ func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.S
 	}
 	tenant := strings.ToLower(strings.TrimSpace(r.getDomain()))
 
-	fetchSeriesIndex := func(indexPK string) (*models.Series, bool, error) {
-		var idx models.CMSSeriesSlugIndex
-		err := store.GetDB().WithContext(ctx).Model(&models.CMSSeriesSlugIndex{}).
-			Where("PK", "=", indexPK).
-			Where("SK", "=", models.CMSSeriesSlugIndexSK()).
-			First(&idx)
-		if err != nil {
-			if dynamormerrors.IsNotFound(err) {
-				return nil, false, nil
-			}
-			return nil, false, err
-		}
-		if strings.TrimSpace(idx.AuthorID) == "" || strings.TrimSpace(idx.SeriesID) == "" {
-			return nil, false, nil
-		}
-		series, err := store.Series().GetSeries(ctx, idx.AuthorID, idx.SeriesID)
-		if err != nil {
-			return nil, false, err
-		}
-		if series == nil || !cmsSeriesBelongsToTenant(series, tenant) {
-			return nil, false, nil
-		}
-		return series, true, nil
-	}
-
 	// Preferred path: use a tenant-scoped slug index to avoid scans at scale.
-	if series, ok, err := fetchSeriesIndex(models.CMSTenantSeriesSlugIndexPK(tenant, slug)); err != nil {
+	if series, ok, err := cmsFetchSeriesByIndex(ctx, store, models.CMSTenantSeriesSlugIndexPK(tenant, slug), tenant); err != nil {
 		return nil, err
 	} else if ok {
 		return r.convertCMSSeries(ctx, series), nil
@@ -699,49 +677,90 @@ func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.S
 
 	// Back-compat path: read the legacy global index, then backfill the scoped
 	// index after the resolved series is accepted for this tenant.
-	if series, ok, err := fetchSeriesIndex(models.CMSSeriesSlugIndexPK(slug)); err != nil {
+	if series, ok, err := cmsFetchSeriesByIndex(ctx, store, models.CMSSeriesSlugIndexPK(slug), tenant); err != nil {
 		return nil, err
 	} else if ok {
 		backfillSeriesSlugIndex(ctx, store.GetDB(), tenant, series)
 		return r.convertCMSSeries(ctx, series), nil
 	}
 
-	// Backfill helper for instances that have legacy series rows without slug index entries.
-	backfillIndex := func(item *models.Series) {
-		backfillSeriesSlugIndex(ctx, store.GetDB(), tenant, item)
-	}
-
 	// Fast fallback: if authenticated, search within the viewer's series (no scan).
 	if viewer := r.optionalAuth(ctx); viewer != "" {
-		items, err := store.Series().ListSeriesByAuthor(ctx, viewer, 500)
-		if err == nil {
-			for _, item := range items {
-				if item != nil && strings.EqualFold(item.Slug, slug) && cmsSeriesBelongsToTenant(item, tenant) {
-					backfillIndex(item)
-					return r.convertCMSSeries(ctx, item), nil
-				}
-			}
+		series, ok, err := cmsFindViewerSeriesBySlug(ctx, store, viewer, slug, tenant)
+		if err == nil && ok {
+			backfillSeriesSlugIndex(ctx, store.GetDB(), tenant, series)
+			return r.convertCMSSeries(ctx, series), nil
 		}
 	}
 
 	// Legacy fallback: scan for the first matching slug across all authors and backfill the index.
+	series, ok, err := cmsScanSeriesBySlug(ctx, store, slug, tenant)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		backfillSeriesSlugIndex(ctx, store.GetDB(), tenant, series)
+		return r.convertCMSSeries(ctx, series), nil
+	}
+
+	return nil, nil
+}
+
+func cmsFetchSeriesByIndex(ctx context.Context, store storagecore.RepositoryStorage, indexPK string, tenant string) (*models.Series, bool, error) {
+	var idx models.CMSSeriesSlugIndex
+	err := store.GetDB().WithContext(ctx).Model(&models.CMSSeriesSlugIndex{}).
+		Where("PK", "=", indexPK).
+		Where("SK", "=", models.CMSSeriesSlugIndexSK()).
+		First(&idx)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if strings.TrimSpace(idx.AuthorID) == "" || strings.TrimSpace(idx.SeriesID) == "" {
+		return nil, false, nil
+	}
+	series, err := store.Series().GetSeries(ctx, idx.AuthorID, idx.SeriesID)
+	if err != nil {
+		return nil, false, err
+	}
+	if series == nil || !cmsSeriesBelongsToTenant(series, tenant) {
+		return nil, false, nil
+	}
+	return series, true, nil
+}
+
+func cmsFindViewerSeriesBySlug(ctx context.Context, store storagecore.RepositoryStorage, viewer string, slug string, tenant string) (*models.Series, bool, error) {
+	items, err := store.Series().ListSeriesByAuthor(ctx, viewer, 500)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, item := range items {
+		if item != nil && strings.EqualFold(item.Slug, slug) && cmsSeriesBelongsToTenant(item, tenant) {
+			return item, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func cmsScanSeriesBySlug(ctx context.Context, store storagecore.RepositoryStorage, slug string, tenant string) (*models.Series, bool, error) {
 	var seriesModels []models.Series
 	scanErr := store.GetDB().WithContext(ctx).Model(&models.Series{}).
 		Where("SK", "BEGINS_WITH", "ID#").
 		Limit(1000).
 		All(&seriesModels)
 	if scanErr != nil {
-		return nil, scanErr
+		return nil, false, scanErr
 	}
 
 	for i := range seriesModels {
 		if strings.EqualFold(seriesModels[i].Slug, slug) && cmsSeriesBelongsToTenant(&seriesModels[i], tenant) {
-			backfillIndex(&seriesModels[i])
-			return r.convertCMSSeries(ctx, &seriesModels[i]), nil
+			return &seriesModels[i], true, nil
 		}
 	}
 
-	return nil, nil
+	return nil, false, nil
 }
 
 func cmsSeriesBelongsToTenant(series *models.Series, tenant string) bool {

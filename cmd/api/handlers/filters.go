@@ -420,13 +420,12 @@ func (h *Handler) processKeywordUpdate(ctx *apptheory.Context, filterID string, 
 		// Update or delete existing keyword
 		if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
 			return h.deleteFilterKeyword(ctx, filterID, id)
-		} else {
-			return h.updateFilterKeyword(ctx, filterID, id, kwMap)
 		}
-	} else {
-		// Create new keyword
-		h.createFilterKeyword(ctx, filterID, kwMap)
+		return h.updateFilterKeyword(ctx, filterID, id, kwMap)
 	}
+
+	// Create new keyword
+	h.createFilterKeyword(ctx, filterID, kwMap)
 
 	return nil
 }

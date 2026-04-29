@@ -63,7 +63,9 @@ var (
 
 const (
 	// adminRole is the role string for admin users
-	adminRole = "admin"
+	adminRole         = "admin"
+	streamEventInsert = "INSERT"
+	streamEventModify = "MODIFY"
 )
 
 // ModerationProcessor handles DynamoDB stream events for moderation
@@ -579,7 +581,7 @@ func initAdvancedModerationEngine() {
 // processRecord processes a single DynamoDB stream record
 func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
 	// Only process INSERT and MODIFY events
-	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+	if record.EventName != streamEventInsert && record.EventName != streamEventModify {
 		return nil
 	}
 
@@ -602,12 +604,12 @@ func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.
 
 	// Handle different types of moderation records
 	switch {
-	case strings.HasPrefix(pk, "REVIEW#") && record.EventName == "INSERT":
+	case strings.HasPrefix(pk, "REVIEW#") && record.EventName == streamEventInsert:
 		// New review added. Review MODIFY events are intentionally ignored to
 		// avoid re-processing rows written by consensus-side effects.
 		return mp.handleNewReview(ctx, record)
 
-	case strings.HasPrefix(pk, "EVENT#") && record.EventName == "INSERT":
+	case strings.HasPrefix(pk, "EVENT#") && record.EventName == streamEventInsert:
 		// New moderation event created
 		return mp.handleNewEvent(ctx, record)
 
