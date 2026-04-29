@@ -108,7 +108,7 @@ func buildClientSSRFallbackCSP() string {
 		"frame-ancestors 'none'",
 		"img-src 'self' data: https:",
 		"font-src 'self' data: https:",
-		"style-src 'self' 'unsafe-inline'",
+		"style-src 'self'",
 		"script-src 'self'",
 		"connect-src 'self' https: wss:",
 	}, "; ") + ";"

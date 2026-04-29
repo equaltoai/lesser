@@ -31,6 +31,9 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 	if strings.Contains(clientCSP, "unsafe-eval") {
 		t.Fatalf("client SSR fallback CSP must not include unsafe-eval: %s", clientCSP)
 	}
+	if strings.Contains(clientCSP, "unsafe-inline") {
+		t.Fatalf("client SSR fallback CSP must not include unsafe-inline: %s", clientCSP)
+	}
 
 	dist := findSingleCloudFrontDistribution(t, resources)
 	defaultBehavior := extractDefaultCacheBehavior(t, dist)
