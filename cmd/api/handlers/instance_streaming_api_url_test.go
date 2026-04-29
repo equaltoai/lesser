@@ -1,8 +1,7 @@
 package handlers
 
 import (
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -76,15 +75,15 @@ func TestIsProductionEnvironment_round28_more_coverage(t *testing.T) {
 func TestGenerateVAPIDKeyPair_round28_more_coverage(t *testing.T) {
 	t.Parallel()
 
-	publicKeyB64, privateKeyPEM, err := generateVAPIDKeyPair()
+	publicKeyB64, privateKeyB64, err := generateVAPIDKeyPair()
 	require.NoError(t, err)
 	require.NotEmpty(t, publicKeyB64)
-	require.NotEmpty(t, privateKeyPEM)
+	require.NotEmpty(t, privateKeyB64)
+	require.NotContains(t, privateKeyB64, "BEGIN EC PRIVATE KEY")
 
-	block, _ := pem.Decode([]byte(privateKeyPEM))
-	require.NotNil(t, block)
-	_, err = x509.ParseECPrivateKey(block.Bytes)
+	privateKeyBytes, err := base64.RawURLEncoding.DecodeString(privateKeyB64)
 	require.NoError(t, err)
+	require.Len(t, privateKeyBytes, 32)
 }
 
 func TestHandler_markdownToHTMLLift_round28_more_coverage(t *testing.T) {
