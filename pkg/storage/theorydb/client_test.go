@@ -3,8 +3,11 @@ package theorydb
 import (
 	"context"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
@@ -97,4 +100,46 @@ func TestWithTimeoutBuffer_NilAndNonLambdaDB(t *testing.T) {
 
 	db := fakeDB{}
 	assert.Equal(t, db, WithTimeoutBuffer(db, 0))
+}
+
+func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	deadline := time.Now().Add(30 * time.Second).Round(0)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	db, err := GetLambdaClient(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+	assert.Equal(t, deadline.Add(-defaultTimeoutBuffer), lambdaDeadlineOf(t, db))
+}
+
+func lambdaTimeoutBufferOf(t *testing.T, db core.DB) time.Duration {
+	t.Helper()
+
+	field := tableTheoryDBField(t, db, "lambdaTimeoutBuffer")
+	return time.Duration(field.Int())
+}
+
+func lambdaDeadlineOf(t *testing.T, db core.DB) time.Time {
+	t.Helper()
+
+	field := tableTheoryDBField(t, db, "lambdaDeadline")
+	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface().(time.Time)
+}
+
+func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
+	t.Helper()
+
+	value := reflect.ValueOf(db)
+	require.Equal(t, reflect.Ptr, value.Kind())
+
+	elem := value.Elem()
+	field := elem.FieldByName(name)
+	require.True(t, field.IsValid(), "expected returned Lambda client to expose %s", name)
+	return field
 }

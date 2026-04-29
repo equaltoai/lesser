@@ -106,10 +106,7 @@ func GetClient(_ context.Context) (core.DB, error) {
 	return client, clientErr
 }
 
-// GetLambdaClient returns a singleton DynamORM Lambda-optimized client instance
-// This ensures that the client is only initialized once per Lambda container
-// and includes Lambda-specific optimizations like timeout handling
-func GetLambdaClient(ctx context.Context) (*tabletheory.LambdaDB, error) {
+func getLambdaOptimizedClient() (*tabletheory.LambdaDB, error) {
 	clientOnce.Do(func() {
 		zap.L().Info("initializing Lambda-optimized DynamORM client")
 		startTime := time.Now()
@@ -134,18 +131,38 @@ func GetLambdaClient(ctx context.Context) (*tabletheory.LambdaDB, error) {
 		zap.L().Info("DynamORM initialized", zap.Duration("duration", time.Since(startTime)))
 	})
 
-	// Apply Lambda context timeout if available
-	if ctx != nil && lambdaDB != nil {
-		return lambdaDB.WithLambdaTimeout(ctx), clientErr
+	return lambdaDB, clientErr
+}
+
+// GetLambdaClient returns a singleton DynamORM Lambda-optimized DB client instance.
+// This ensures that the client is only initialized once per Lambda container
+// and includes Lambda-specific optimizations like timeout handling. The returned
+// core.DB preserves lesser's configured Lambda timeout safety buffer before
+// applying the caller's Lambda context deadline.
+func GetLambdaClient(ctx context.Context) (core.DB, error) {
+	lambdaClient, err := getLambdaOptimizedClient()
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return lambdaClient, clientErr
 	}
 
-	return lambdaDB, clientErr
+	// Apply Lambda context timeout if available
+	if ctx != nil {
+		if extended, ok := client.(core.ExtendedDB); ok {
+			return extended.WithLambdaTimeout(ctx), clientErr
+		}
+		return client.WithContext(ctx), clientErr
+	}
+
+	return client, clientErr
 }
 
 // InitializeModels pre-registers models with the DynamORM client to reduce cold start time
 // This should be called in the init() function of Lambda handlers
 func InitializeModels(models ...any) error {
-	db, err := GetLambdaClient(context.Background())
+	db, err := getLambdaOptimizedClient()
 	if err != nil {
 		return err
 	}

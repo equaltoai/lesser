@@ -92,14 +92,19 @@ func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
 	zap.L().Info("initializing Lambda-optimized DynamORM client")
 
 	// Get the Lambda-optimized client
-	lambdaDB, err := GetLambdaClient(context.Background())
+	db, err := GetLambdaClient(context.Background())
 	if err != nil {
 		zap.L().Error("failed to initialize DynamORM", zap.Error(err))
 		return nil, err
 	}
 
+	lambdaDB, err := getLambdaOptimizedClient()
+	if err != nil {
+		zap.L().Error("failed to initialize Lambda DynamORM", zap.Error(err))
+		return nil, err
+	}
+
 	// Apply timeout buffer if specified
-	var db core.DB = lambdaDB
 	if opts.TimeoutBuffer > 0 {
 		db = lambdaDB.WithLambdaTimeoutBuffer(opts.TimeoutBuffer)
 	}
