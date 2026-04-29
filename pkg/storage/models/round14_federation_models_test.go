@@ -7,6 +7,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 )
 
 func TestFederationModels_UpdateKeys(t *testing.T) {
@@ -128,4 +130,23 @@ func TestFederationModels_UpdateKeys(t *testing.T) {
 	t.Run("FederationHealthReport is a computed type", func(t *testing.T) {
 		assert.Equal(t, MainTableName, (FederationHealthReport{}).TableName())
 	})
+}
+
+func TestFederationTimeseriesModelsRegisterWithTableTheory(t *testing.T) {
+	db, err := tabletheory.New(session.Config{Region: "us-east-1"})
+	require.NoError(t, err)
+
+	ts := time.Unix(1700000000, 0).UTC()
+
+	federationWindow := NewFederationTimeseriesWindow(ts, ts)
+	err = db.Model(federationWindow).UpdateBuilder().Set("UpdatedAt", federationWindow.UpdatedAt).Execute()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "partition key PK is required for update")
+	require.NotContains(t, err.Error(), "failed to register model")
+
+	instanceWindow := NewInstanceTimeseriesWindow("example.com", ts, ts)
+	err = db.Model(instanceWindow).UpdateBuilder().Set("UpdatedAt", instanceWindow.UpdatedAt).Execute()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "partition key PK is required for update")
+	require.NotContains(t, err.Error(), "failed to register model")
 }

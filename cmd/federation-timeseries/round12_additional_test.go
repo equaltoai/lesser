@@ -21,7 +21,16 @@ type fakeQuery struct {
 	db *fakeDynamoDB
 }
 
-func (f *fakeQuery) Where(string, string, any) dynamormCore.Query                      { return f }
+type fakeWhereCall struct {
+	field string
+	op    string
+	value any
+}
+
+func (f *fakeQuery) Where(field string, op string, value any) dynamormCore.Query {
+	f.db.wheres = append(f.db.wheres, fakeWhereCall{field: field, op: op, value: value})
+	return f
+}
 func (f *fakeQuery) Index(string) dynamormCore.Query                                   { return f }
 func (f *fakeQuery) Filter(string, string, any) dynamormCore.Query                     { return f }
 func (f *fakeQuery) OrFilter(string, string, any) dynamormCore.Query                   { return f }
@@ -80,6 +89,7 @@ type fakeDynamoDB struct {
 	updateErr             error
 	failUpdatesAfterFirst bool
 	adds                  map[string]int64
+	wheres                []fakeWhereCall
 }
 
 func (f *fakeDynamoDB) Model(any) dynamormCore.Query { return &fakeQuery{db: f} }
@@ -241,6 +251,11 @@ func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
 		require.Equal(t, int64(5), db.adds["ActivityCount"])
 		require.Equal(t, int64(2), db.adds["UniqueActorCount"])
 		require.Equal(t, int64(1), db.adds["UniqueInstanceCount"])
+		require.Len(t, db.wheres, 4)
+		require.Equal(t, fakeWhereCall{field: "PK", op: "=", value: "TIMESERIES#FEDERATION"}, db.wheres[0])
+		require.Equal(t, fakeWhereCall{field: "SK", op: "=", value: "WINDOW#1970-01-01T00:00:00Z"}, db.wheres[1])
+		require.Equal(t, fakeWhereCall{field: "PK", op: "=", value: "TIMESERIES#INSTANCE#example.com"}, db.wheres[2])
+		require.Equal(t, fakeWhereCall{field: "SK", op: "=", value: "WINDOW#1970-01-01T00:00:00Z"}, db.wheres[3])
 	})
 }
 

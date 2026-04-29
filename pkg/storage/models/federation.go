@@ -160,14 +160,14 @@ type FederationTimeseriesWindow struct {
 
 	Type                string `theorydb:"attr:type" json:"type"`
 	Window              string `theorydb:"attr:window" json:"window"`
-	FollowCount         int    `theorydb:"attr:follow_count" json:"follow_count"`
-	LikeCount           int    `theorydb:"attr:like_count" json:"like_count"`
-	AnnounceCount       int    `theorydb:"attr:announce_count" json:"announce_count"`
-	ActivityCount       int    `theorydb:"attr:activity_count" json:"activity_count"`
-	UniqueActorCount    int    `theorydb:"attr:unique_actor_count" json:"unique_actor_count"`
-	UniqueInstanceCount int    `theorydb:"attr:unique_instance_count" json:"unique_instance_count"`
-	CreatedAt           string `theorydb:"attr:created_at" json:"created_at"`
-	UpdatedAt           string `theorydb:"attr:updated_at" json:"updated_at"`
+	FollowCount         int    `theorydb:"attr:followCount" json:"follow_count"`
+	LikeCount           int    `theorydb:"attr:likeCount" json:"like_count"`
+	AnnounceCount       int    `theorydb:"attr:announceCount" json:"announce_count"`
+	ActivityCount       int    `theorydb:"attr:activityCount" json:"activity_count"`
+	UniqueActorCount    int    `theorydb:"attr:uniqueActorCount" json:"unique_actor_count"`
+	UniqueInstanceCount int    `theorydb:"attr:uniqueInstanceCount" json:"unique_instance_count"`
+	CreatedAt           string `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt           string `theorydb:"attr:updatedAt" json:"updated_at"`
 	TTL                 int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
@@ -201,8 +201,8 @@ type InstanceTimeseriesWindow struct {
 	Type      string `theorydb:"attr:type" json:"type"`
 	Instance  string `theorydb:"attr:instance" json:"instance"`
 	Window    string `theorydb:"attr:window" json:"window"`
-	CreatedAt string `theorydb:"attr:created_at" json:"created_at"`
-	UpdatedAt string `theorydb:"attr:updated_at" json:"updated_at"`
+	CreatedAt string `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt string `theorydb:"attr:updatedAt" json:"updated_at"`
 	TTL       int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 

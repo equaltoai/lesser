@@ -217,7 +217,10 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 	// Atomically add the current stream batch into the existing window instead
 	// of overwriting previous records from the same 5-minute bucket.
 	timeseriesRecord := models.NewFederationTimeseriesWindow(window, now)
-	if err := tp.db.WithContext(ctx).Model(timeseriesRecord).UpdateBuilder().
+	if err := tp.db.WithContext(ctx).Model(timeseriesRecord).
+		Where("PK", "=", timeseriesRecord.PK).
+		Where("SK", "=", timeseriesRecord.SK).
+		UpdateBuilder().
 		SetIfNotExists("Type", nil, timeseriesRecord.Type).
 		SetIfNotExists("Window", nil, timeseriesRecord.Window).
 		SetIfNotExists("CreatedAt", nil, timeseriesRecord.CreatedAt).
@@ -236,7 +239,10 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 	// Also store per-instance metrics for detailed analytics
 	for instance := range metrics.UniqueInstances {
 		instanceRecord := models.NewInstanceTimeseriesWindow(instance, window, now)
-		if err := tp.db.WithContext(ctx).Model(instanceRecord).UpdateBuilder().
+		if err := tp.db.WithContext(ctx).Model(instanceRecord).
+			Where("PK", "=", instanceRecord.PK).
+			Where("SK", "=", instanceRecord.SK).
+			UpdateBuilder().
 			SetIfNotExists("Type", nil, instanceRecord.Type).
 			SetIfNotExists("Instance", nil, instanceRecord.Instance).
 			SetIfNotExists("Window", nil, instanceRecord.Window).
