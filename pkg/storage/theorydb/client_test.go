@@ -102,6 +102,19 @@ func TestWithTimeoutBuffer_NilAndNonLambdaDB(t *testing.T) {
 	assert.Equal(t, db, WithTimeoutBuffer(db, 0))
 }
 
+func TestWithTimeoutBuffer_LambdaDB(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	lambdaClient, err := getLambdaOptimizedClient()
+	require.NoError(t, err)
+	require.NotNil(t, lambdaClient)
+
+	db := WithTimeoutBuffer(lambdaClient, 123*time.Millisecond)
+	require.NotNil(t, db)
+	assert.Equal(t, 123*time.Millisecond, lambdaTimeoutBufferOf(t, db))
+}
+
 func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
 	resetClientState()
 	t.Cleanup(resetClientState)
@@ -116,6 +129,18 @@ func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
 
 	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
 	assert.Equal(t, deadline.Add(-defaultTimeoutBuffer), lambdaDeadlineOf(t, db))
+}
+
+func TestGetLambdaClientNilContextReturnsBufferedClient(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	db, err := GetLambdaClient(nil)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+	assert.True(t, lambdaDeadlineOf(t, db).IsZero())
 }
 
 func lambdaTimeoutBufferOf(t *testing.T, db core.DB) time.Duration {
