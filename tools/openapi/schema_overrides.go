@@ -40,7 +40,7 @@ func overrideCreateStatusRequest(schemas map[string]any) {
 	}
 
 	visibility["enum"] = []string{"public", "unlisted", "private", "direct"}
-	visibility["description"] = "Status visibility. `direct` messages must mention exactly one local or remote recipient using an @mention in the status content; group direct messages are not supported in v1."
+	visibility["description"] = "Status visibility. `direct` creates are 1:1 only: the content must contain exactly one resolvable local or remote @mention, and Lesser serializes that resolved actor into the ActivityPub addressing fields. Stored DM visibility and repair tooling use the addressing fields as the source of truth; content mentions alone do not authorize or backfill participants."
 }
 
 func overrideOAuthClientSchemas(schemas map[string]any) {

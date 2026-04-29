@@ -248,6 +248,26 @@ Notes:
 - GraphQL depth is capped for `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher.
 - Recommended rollout: enable in `dev`, validate behavior, then `staging`, then `live`.
 
+### Hardened auth + visibility rollout semantics
+
+The generated REST and GraphQL contracts document the same hardened defaults that operators should validate during
+rollout:
+
+- OAuth bearer authentication is required for write APIs and for non-public GraphQL fields. The anonymous GraphQL
+  public-read subset only exposes public/unlisted content.
+- `direct` status creation remains 1:1 in v1: the request content must contain exactly one resolvable local or remote
+  `@mention`. Lesser serializes the resolved actor into ActivityPub addressing (`to`/`cc`/`bto`/`bcc`) and those
+  addressing fields are the authoritative source for repair/backfill tooling.
+- Content mentions alone are not authorization. Operational tools that repair DM conversations must use stored
+  recipient fields and must not infer participants from message text.
+- New deployments remain locked-on-deploy until the operator unlocks the instance. Validate auth, public visibility,
+  direct-message visibility, VAPID push signing, stream retry behavior, and cost/date-range reporting in `dev` before
+  promoting to `staging` or `live`.
+- Lambda-optimized TableTheory clients retain a timeout safety buffer before applying Lambda context deadlines. If you
+  adjust timeout behavior, re-run the full local gate before deploying.
+
+Detailed operator notes live in `docs/security/hardened-auth-visibility-rollout.md`.
+
 ### Crawler protection
 
 ```bash

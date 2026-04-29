@@ -20,6 +20,8 @@ it captures the Lesser-specific “gotchas” and safe defaults.
 - Keep Route53 + ACM validation in the same account as the deployment where possible.
 - Rate limiting is enabled by default; use `DISABLE_RATE_LIMITING` / `DISABLE_FEDERATION_RATE_LIMITING` only for controlled debugging (see `docs/configuration.md`).
 - AWS WAF is not provisioned by default; add it in CDK if you need WAF-level protections.
+- Hardened auth, visibility, and stage-rollout semantics are summarized in
+  `docs/security/hardened-auth-visibility-rollout.md`.
 
 ## Tenant and instance isolation
 

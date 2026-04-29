@@ -1159,6 +1159,8 @@ type CostUpdate {
 #   `actor`, `object`, `timeline(type: PUBLIC|LOCAL|HASHTAG|ACTOR)`, `search`, `instance`,
 #   `instanceActivity`, `instancePeers`, `announcements`, `customEmojis`, `threadContext`
 # - Public note/thread queries only expose `public` and `unlisted` content to anonymous callers.
+# - `private`, `followers`, and `direct` visibility is never part of the anonymous public-read subset;
+#   those reads require an authenticated viewer and the same participant / recipient checks used by REST.
 # - All other Query fields remain auth-only unless explicitly documented otherwise.
 type Query {
   # Mastodon compatibility
