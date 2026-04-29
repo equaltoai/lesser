@@ -582,24 +582,14 @@ func generateNumericID(input string) string {
 
 // ActorToAccountWithContext provides context-aware actor to account conversion
 func ActorToAccountWithContext(ctx context.Context, actor *activitypub.Actor) (models.Account, error) {
-	// Extract baseURL from context or use default
-	baseURL := "https://example.com" // Fallback
-	if url, ok := ctx.Value("baseURL").(string); ok {
-		baseURL = url
-	}
-
+	baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 	account := ActorToAccountBase(actor, baseURL)
 	return account, nil
 }
 
 // ObjectToStatusWithContext provides context-aware object to status conversion
 func ObjectToStatusWithContext(ctx context.Context, obj map[string]interface{}) (models.Status, error) {
-	// Extract baseURL and actor from context
-	baseURL := "https://example.com" // Fallback
-	if url, ok := ctx.Value("baseURL").(string); ok {
-		baseURL = url
-	}
-
+	baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 	var actor *activitypub.Actor
 	if a, ok := ctx.Value("actor").(*activitypub.Actor); ok {
 		actor = a
