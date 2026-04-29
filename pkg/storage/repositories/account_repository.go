@@ -108,6 +108,21 @@ type userMetadataProjection struct {
 	Metadata map[string]interface{} `theorydb:"attr:metadata"`
 }
 
+type userEmailLookupProjection struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	Table string `json:"-"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
+
+	Username string `theorydb:"attr:username"`
+	Email    string `theorydb:"attr:email"`
+}
+
 func (p userMetadataProjection) TableName() string {
 	if strings.TrimSpace(p.Table) != "" {
 		return p.Table
@@ -116,6 +131,13 @@ func (p userMetadataProjection) TableName() string {
 }
 
 func (p userVersionProjection) TableName() string {
+	if strings.TrimSpace(p.Table) != "" {
+		return p.Table
+	}
+	return models.MainTableName
+}
+
+func (p userEmailLookupProjection) TableName() string {
 	if strings.TrimSpace(p.Table) != "" {
 		return p.Table
 	}
@@ -439,10 +461,38 @@ func (r *AccountRepository) DeleteAgentGovernanceState(ctx context.Context, user
 	return r.getAgentGovernanceRepository().DeleteAgentGovernanceState(ctx, username)
 }
 
-// GetUserByEmail is OBSOLETE - email is forbidden
-// This function exists for backwards compatibility but always returns an error
-func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*storage.User, error) {
-	return nil, fmt.Errorf("email-based authentication is not supported for %s - use wallet or passkey authentication", strings.TrimSpace(email))
+// GetUserByEmail retrieves legacy users by their historical email lookup GSI.
+//
+// New email-based authentication remains disabled; this method exists only to
+// preserve reads for deployed data that still carries gsi2PK=EMAIL#{email}.
+func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if err := common.ValidateRequiredParam("email", normalizedEmail); err != nil {
+		return nil, err
+	}
+	if r.db == nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, normalizedEmail)
+	}
+
+	projection := &userEmailLookupProjection{Table: r.tableName}
+	err := r.db.WithContext(ctx).Model(projection).
+		Index("gsi2").
+		Where("gsi2PK", "=", "EMAIL#"+normalizedEmail).
+		Limit(1).
+		First(projection)
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, EntityUser, normalizedEmail)
+	}
+
+	username := strings.TrimSpace(projection.Username)
+	if username == "" {
+		username = strings.TrimPrefix(strings.TrimSpace(projection.PK), "USER#")
+	}
+	if username == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, normalizedEmail)
+	}
+
+	return r.GetUser(ctx, username)
 }
 
 // UpdateUser updates user authentication data
@@ -1719,8 +1769,15 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 
 // GetAccountByEmail retrieves an account by email address (updated to match interface)
 func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) {
-	_, err := r.GetUserByEmail(ctx, email)
-	return nil, err
+	user, err := r.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || strings.TrimSpace(user.Username) == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, strings.TrimSpace(email))
+	}
+
+	return r.GetAccount(ctx, user.Username)
 }
 
 // UpdateAccount updates account data (updated to match interface)
