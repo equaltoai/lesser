@@ -243,9 +243,12 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 		model.SK = "FOLLOWING#alice"
 		model.State = models.RelationshipAccepted
 	case *models.Bookmark:
+		model.Username = "alice"
 		model.ObjectID = fmt.Sprintf("status-%d", at.Day())
 		model.CreatedAt = at
 		model.Locked = false
+		model.RecordType = models.BookmarkRecordTypeTime
+		_ = model.UpdateKeys()
 	case *models.Like:
 		model.Actor = fmt.Sprintf("https://example.com/users/user-%d", at.Day())
 		if at.Day()%2 == 0 {

@@ -23,8 +23,7 @@ func TestBookmarkRepository_Round08_CountUserBookmarks_ErrorPath(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("count failed")).Once()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	_, err := repo.CountUserBookmarks(ctx, "alice")
@@ -297,7 +296,7 @@ func TestBookmarkRepository_Round08_DynamoFindTimeBookmarkByObject_EmptyList(t *
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Bookmark)
 		*dest = []models.Bookmark{}
-	}).Return(nil).Once()
+	}).Return(nil).Twice()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	found, err := repo.dynamoFindTimeBookmarkByObject(ctx, "alice", "status-1")
