@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -45,9 +46,10 @@ func (e *upEnv) deployFromReleaseAssembly(ctx context.Context) (*upReceipt, erro
 	if err != nil {
 		return nil, fmt.Errorf("read shared deploy assembly template: %w", err)
 	}
-	// Replace the synthesis placeholder with the concrete app slug so that logical IDs,
-	// SSM paths, and all other embedded references resolve correctly.
-	sharedTemplate := strings.ReplaceAll(string(sharedTemplateRaw), releaseAssemblyAppSlugPlaceholder, e.app)
+	sharedTemplate, err := resolveReleaseAssemblyTemplate(sharedTemplateRaw, e.app)
+	if err != nil {
+		return nil, fmt.Errorf("resolve shared deploy assembly template: %w", err)
+	}
 
 	sharedStack := naming.SharedStackName(e.app)
 	fmt.Println("\nDeploying shared stack from release assembly:", sharedStack)
@@ -190,7 +192,10 @@ func uploadReleaseAssemblyAssets(
 		if err != nil {
 			return releaseAssemblyUploadResult{}, fmt.Errorf("read stage template %s: %w", templatePath, err)
 		}
-		resolvedTemplate := strings.ReplaceAll(string(rawTemplate), releaseAssemblyAppSlugPlaceholder, appSlug)
+		resolvedTemplate, err := resolveReleaseAssemblyTemplate(rawTemplate, appSlug)
+		if err != nil {
+			return releaseAssemblyUploadResult{}, fmt.Errorf("resolve stage template %s: %w", templatePath, err)
+		}
 		templateKey := path.Join(templatePrefix, path.Base(templatePath))
 		if _, err := putS3ObjectFn(ctx, s3Client, &s3.PutObjectInput{
 			Bucket: aws.String(bucket),
@@ -208,6 +213,99 @@ func uploadReleaseAssemblyAssets(
 	fmt.Printf("  s3: uploaded %d stage template(s)\n", len(uploaded.StageTemplateURLs))
 
 	return uploaded, nil
+}
+
+func resolveReleaseAssemblyTemplate(rawTemplate []byte, appSlug string) (string, error) {
+	logicalIDSegment, err := releaseAssemblyLogicalIDSegment(appSlug)
+	if err != nil {
+		return "", err
+	}
+
+	var template any
+	if err := json.Unmarshal(rawTemplate, &template); err != nil {
+		return "", fmt.Errorf("parse template JSON: %w", err)
+	}
+
+	resolved, err := resolveReleaseAssemblyTemplateValue(template, nil, logicalIDSegment)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := json.MarshalIndent(resolved, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal resolved template JSON: %w", err)
+	}
+	return string(append(data, '\n')), nil
+}
+
+func releaseAssemblyLogicalIDSegment(appSlug string) (string, error) {
+	var builder strings.Builder
+	for _, r := range strings.TrimSpace(appSlug) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		}
+	}
+	if builder.Len() == 0 {
+		return "", fmt.Errorf("release app slug %q has no alphanumeric characters for CloudFormation logical IDs", appSlug)
+	}
+	return builder.String(), nil
+}
+
+func resolveReleaseAssemblyTemplateValue(value any, path []string, logicalIDSegment string) (any, error) {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, child := range v {
+			resolvedKey := strings.ReplaceAll(key, releaseAssemblyAppSlugPlaceholder, logicalIDSegment)
+			if _, exists := out[resolvedKey]; exists {
+				return nil, fmt.Errorf("release assembly template logical ID collision at %s", strings.Join(append(path, key), "."))
+			}
+			resolvedChild, err := resolveReleaseAssemblyTemplateValue(child, append(path, key), logicalIDSegment)
+			if err != nil {
+				return nil, err
+			}
+			out[resolvedKey] = resolvedChild
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(v))
+		for i, child := range v {
+			resolvedChild, err := resolveReleaseAssemblyTemplateValue(child, append(path, fmt.Sprintf("[%d]", i)), logicalIDSegment)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = resolvedChild
+		}
+		return out, nil
+	case string:
+		if !strings.Contains(v, releaseAssemblyAppSlugPlaceholder) {
+			return v, nil
+		}
+		if releaseAssemblyTemplateStringIsLogicalRef(path) {
+			return strings.ReplaceAll(v, releaseAssemblyAppSlugPlaceholder, logicalIDSegment), nil
+		}
+		return nil, fmt.Errorf("release assembly template contains unresolved app slug placeholder at %s", strings.Join(path, "."))
+	default:
+		return value, nil
+	}
+}
+
+func releaseAssemblyTemplateStringIsLogicalRef(path []string) bool {
+	for _, part := range path {
+		switch part {
+		case "DependsOn", "Fn::GetAtt":
+			return true
+		}
+	}
+	if len(path) == 0 {
+		return false
+	}
+	return path[len(path)-1] == "Ref"
 }
 
 func presignReleaseAssemblyURL(

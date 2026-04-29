@@ -601,7 +601,7 @@ func firstObjectKey(destinations map[string]struct {
 func readAssetData(sourcePath string, packaging string) ([]byte, error) {
 	switch packaging {
 	case "file":
-		data, err := os.ReadFile(sourcePath) // #nosec G304 -- source path comes from synthesized asset manifest
+		data, err := readReleaseAssetFile(sourcePath)
 		if err != nil {
 			return nil, fmt.Errorf("read deploy asset %s: %w", sourcePath, err)
 		}

@@ -106,6 +106,21 @@ func TestWriteAuthUIBundle_ErrorsWhenDistFileUnreadable(t *testing.T) {
 	require.Contains(t, err.Error(), "read archive file")
 }
 
+func TestWriteAuthUIBundle_RejectsSymlinkedDistFile(t *testing.T) {
+	repoRoot := t.TempDir()
+	distDir := filepath.Join(repoRoot, "auth-ui", "dist")
+	require.NoError(t, os.MkdirAll(distDir, 0o755))
+	target := filepath.Join(repoRoot, "outside.html")
+	require.NoError(t, os.WriteFile(target, []byte("<html>outside</html>"), 0o644))
+	if err := os.Symlink(target, filepath.Join(distDir, "index.html")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	err := WriteAuthUIBundle(repoRoot, t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
+}
+
 func TestWriteArchiveFile_ErrorsWhenSourceMissing(t *testing.T) {
 	tw := tar.NewWriter(io.Discard)
 	err := writeArchiveFile(tw, localFile{
@@ -120,6 +135,19 @@ func TestWriteArchiveFile_ErrorsWhenSourceMissing(t *testing.T) {
 func TestListFiles_ErrorsWhenRootMissing(t *testing.T) {
 	_, err := listFiles(filepath.Join(t.TempDir(), "missing"))
 	require.Error(t, err)
+}
+
+func TestListFiles_RejectsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
+	if err := os.Symlink(target, filepath.Join(root, "link.txt")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	_, err := listFiles(root)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
 }
 
 func TestZipDirectory(t *testing.T) {
@@ -165,6 +193,20 @@ func TestZipDirectory_ErrorsWhenSourceUnreadable(t *testing.T) {
 	err := zipDirectory(sourceDir, filepath.Join(t.TempDir(), "site.zip"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "open zip source")
+}
+
+func TestZipDirectory_RejectsSymlinks(t *testing.T) {
+	sourceDir := filepath.Join(t.TempDir(), "site")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	target := filepath.Join(sourceDir, "target.js")
+	require.NoError(t, os.WriteFile(target, []byte("console.log('target')"), 0o644))
+	if err := os.Symlink(target, filepath.Join(sourceDir, "link.js")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	err := zipDirectory(sourceDir, filepath.Join(t.TempDir(), "site.zip"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
 }
 
 func readTarGzEntries(t *testing.T, archivePath string) []bundleEntry {

@@ -16,14 +16,35 @@ type localFile struct {
 }
 
 func listFiles(root string) ([]localFile, error) {
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return nil, err
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("release asset root %s is a symlink", root)
+	}
+	if !rootInfo.IsDir() {
+		return nil, fmt.Errorf("release asset root %s is not a directory", root)
+	}
+
 	var files []localFile
 
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("release asset %s is a symlink", path)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("stat release asset %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("release asset %s is not a regular file", path)
 		}
 
 		rel, err := filepath.Rel(root, path)
@@ -63,14 +84,15 @@ func zipDirectory(sourceDir string, outPath string) error {
 
 	zw := zip.NewWriter(f)
 	for _, file := range files {
-		info, err := os.Stat(file.FullPath)
+		src, info, err := openReleaseAssetFile(file.FullPath)
 		if err != nil {
 			_ = zw.Close()
-			return fmt.Errorf("stat zip source %s: %w", file.FullPath, err)
+			return fmt.Errorf("open zip source %s: %w", file.FullPath, err)
 		}
 
 		header, err := zip.FileInfoHeader(info)
 		if err != nil {
+			_ = src.Close()
 			_ = zw.Close()
 			return fmt.Errorf("create zip header %s: %w", file.RelativePath, err)
 		}
@@ -80,15 +102,11 @@ func zipDirectory(sourceDir string, outPath string) error {
 
 		writer, err := zw.CreateHeader(header)
 		if err != nil {
+			_ = src.Close()
 			_ = zw.Close()
 			return fmt.Errorf("create zip entry %s: %w", file.RelativePath, err)
 		}
 
-		src, err := os.Open(file.FullPath) // #nosec G304 -- file path comes from the synthesized asset directory
-		if err != nil {
-			_ = zw.Close()
-			return fmt.Errorf("open zip source %s: %w", file.FullPath, err)
-		}
 		if _, err := io.Copy(writer, src); err != nil {
 			_ = src.Close()
 			_ = zw.Close()
@@ -104,4 +122,37 @@ func zipDirectory(sourceDir string, outPath string) error {
 		return err
 	}
 	return nil
+}
+
+func readReleaseAssetFile(path string) ([]byte, error) {
+	if _, err := releaseAssetFileInfo(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path) // #nosec G304 -- callers pass repo-local release asset paths
+}
+
+func openReleaseAssetFile(path string) (*os.File, os.FileInfo, error) {
+	info, err := releaseAssetFileInfo(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := os.Open(path) // #nosec G304 -- callers pass repo-local release asset paths
+	if err != nil {
+		return nil, nil, err
+	}
+	return file, info, nil
+}
+
+func releaseAssetFileInfo(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("release asset %s is a symlink", path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("release asset %s is not a regular file", path)
+	}
+	return info, nil
 }

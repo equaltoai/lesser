@@ -35,7 +35,7 @@ func TestUploadReleaseAssemblyAssets(t *testing.T) {
 	stagingPath := filepath.Join(tempDir, "staging.template.json")
 	livePath := filepath.Join(tempDir, "live.template.json")
 	for _, path := range []string{devPath, stagingPath, livePath} {
-		require.NoError(t, os.WriteFile(path, []byte(`{"Description":"appslugplaceholder-template"}`), 0o644))
+		require.NoError(t, os.WriteFile(path, []byte(`{"Resources":{"Roleappslugplaceholder":{"Type":"Custom::Demo","DependsOn":"Otherappslugplaceholder"},"Otherappslugplaceholder":{"Type":"Custom::Demo"}}}`), 0o644))
 	}
 
 	var uploadedAssetKeys []string
@@ -71,12 +71,49 @@ func TestUploadReleaseAssemblyAssets(t *testing.T) {
 	result, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "bucket", "v1.2.3", "abcdef", "app", assembly)
 	require.NoError(t, err)
 	require.Equal(t, []string{"assets/plain.txt=plain.txt"}, uploadedAssetKeys)
-	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/dev.template.json"])
-	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/staging.template.json"])
-	require.Equal(t, `{"Description":"app-template"}`, templateBodies["release-assembly/v1.2.3/abcdef/templates/live.template.json"])
+	require.Contains(t, templateBodies["release-assembly/v1.2.3/abcdef/templates/dev.template.json"], `"Roleapp"`)
+	require.Contains(t, templateBodies["release-assembly/v1.2.3/abcdef/templates/dev.template.json"], `"DependsOn": "Otherapp"`)
+	require.Contains(t, templateBodies["release-assembly/v1.2.3/abcdef/templates/staging.template.json"], `"Roleapp"`)
+	require.Contains(t, templateBodies["release-assembly/v1.2.3/abcdef/templates/live.template.json"], `"Roleapp"`)
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/dev.template.json", result.StageTemplateURLs[naming.StageDev])
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/staging.template.json", result.StageTemplateURLs[naming.StageStaging])
 	require.Equal(t, "https://example.com/release-assembly/v1.2.3/abcdef/templates/live.template.json", result.StageTemplateURLs[naming.StageLive])
+}
+
+func TestResolveReleaseAssemblyTemplate_HyphenatedSlugUsesSafeLogicalIDs(t *testing.T) {
+	raw := []byte(`{
+  "Resources": {
+    "Roleappslugplaceholder": {
+      "Type": "Custom::Demo",
+      "DependsOn": ["Otherappslugplaceholder"],
+      "Properties": {
+        "Name": {"Fn::Sub": "${AppSlug}-role"},
+        "OtherRef": {"Ref": "Otherappslugplaceholder"},
+        "OtherArn": {"Fn::GetAtt": ["Otherappslugplaceholder", "Arn"]}
+      }
+    },
+    "Otherappslugplaceholder": {"Type": "Custom::Demo"}
+  }
+}`)
+
+	got, err := resolveReleaseAssemblyTemplate(raw, "my-app")
+	require.NoError(t, err)
+	require.Contains(t, got, `"Rolemyapp"`)
+	require.Contains(t, got, `"Othermyapp"`)
+	require.Contains(t, got, `"DependsOn": [`)
+	require.Contains(t, got, `"OtherRef": {`)
+	require.Contains(t, got, `"Ref": "Othermyapp"`)
+	require.Contains(t, got, `"Fn::Sub": "${AppSlug}-role"`)
+	require.NotContains(t, got, "my-app")
+	require.NotContains(t, got, releaseAssemblyAppSlugPlaceholder)
+}
+
+func TestResolveReleaseAssemblyTemplate_ErrorsOnPhysicalPlaceholder(t *testing.T) {
+	raw := []byte(`{"Resources":{"Bucket":{"Type":"Custom::Demo","Properties":{"BucketName":"appslugplaceholder-bucket"}}}}`)
+
+	_, err := resolveReleaseAssemblyTemplate(raw, "my-app")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unresolved app slug placeholder")
 }
 
 func TestUploadReleaseAssemblyAssets_Errors(t *testing.T) {
@@ -105,7 +142,7 @@ func TestUploadReleaseAssemblyAssets_Errors(t *testing.T) {
 		naming.StageLive:    filepath.Join(tempDir, "live.template.json"),
 	}
 	for _, path := range templatePaths {
-		require.NoError(t, os.WriteFile(path, []byte(`{"Description":"appslugplaceholder-template"}`), 0o644))
+		require.NoError(t, os.WriteFile(path, []byte(`{"Resources":{"Roleappslugplaceholder":{"Type":"Custom::Demo"}}}`), 0o644))
 	}
 
 	_, err := uploadReleaseAssemblyAssets(context.Background(), aws.Config{}, "", "v1.2.3", "abcdef", "app", releaseDeployAssemblyInstallResult{})
