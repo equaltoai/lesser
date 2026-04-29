@@ -82,8 +82,43 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 			cred, err := repo.GetWebAuthnCredential(ctx, "cred-1")
-			require.NoError(t, err)
+			require.Error(t, err)
 			require.Nil(t, cred)
+		})
+
+		t.Run("empty results prevent delete and update nil panics", func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				call func(*AuthRepository) error
+			}{
+				{
+					name: "delete",
+					call: func(repo *AuthRepository) error {
+						return repo.DeleteWebAuthnCredential(ctx, "missing")
+					},
+				},
+				{
+					name: "update",
+					call: func(repo *AuthRepository) error {
+						return repo.UpdateWebAuthnLastUsed(ctx, "missing", 1)
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					mockDB := new(mocks.MockDB)
+					mockQuery := new(mocks.MockQuery)
+					mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+						out := args.Get(0).(*[]models.WebAuthnCredential)
+						*out = nil
+					}).Return(nil).Once()
+					setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+					repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
+					require.NotPanics(t, func() {
+						require.Error(t, tc.call(repo))
+					})
+				})
+			}
 		})
 
 		t.Run("success", func(t *testing.T) {

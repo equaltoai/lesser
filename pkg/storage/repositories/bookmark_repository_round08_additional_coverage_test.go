@@ -29,19 +29,32 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	// CountUserBookmarks -> query.Count.
-	mockQuery.On("Count").Return(int64(3), nil).Once()
-
-	// queryUnlockedTimeBookmarks -> query.All.
+	base := time.Date(2025, 12, 28, 12, 0, 0, 0, time.UTC)
+	pk := buildBookmarkPK("alice")
+	allCalls := 0
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		allCalls++
 		dest := args.Get(0).(*[]models.Bookmark)
-		pk := buildBookmarkPK("alice")
-		*dest = []models.Bookmark{
-			{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
-			{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
-			{PK: pk, SK: "TIME#1", ObjectID: "o1", Locked: false},
+		if allCalls == 1 {
+			*dest = []models.Bookmark{
+				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
+				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
+				{PK: pk, SK: "OBJECT#o1", ObjectID: "o1", CreatedAt: base, RecordType: models.BookmarkRecordTypeObject},
+				{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
+			}
+			return
 		}
-	}).Return(nil).Once()
+		if allCalls == 2 {
+			*dest = []models.Bookmark{
+				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
+				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
+			}
+			return
+		}
+		*dest = []models.Bookmark{
+			{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
+		}
+	}).Return(nil)
 
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 
@@ -54,7 +67,12 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 	items, nextCursor, err := repo.queryUnlockedTimeBookmarks(ctx, "alice", 2, "")
 	require.NoError(t, err)
 	require.Len(t, items, 2)
-	require.Equal(t, "TIME#2", nextCursor)
+	require.Equal(t, "o3", items[0].ObjectID)
+	require.Equal(t, "o2", items[1].ObjectID)
+	pageCursor, err := parseBookmarkPageCursor(nextCursor)
+	require.NoError(t, err)
+	require.Equal(t, items[1].SK, pageCursor.TimeSK)
+	require.Empty(t, pageCursor.LegacySK)
 }
 
 func TestBookmarkRepository_Round08_CascadeDeleteUserBookmarks_FallbackDeletes(t *testing.T) {

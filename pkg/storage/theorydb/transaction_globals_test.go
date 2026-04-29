@@ -7,20 +7,25 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory"
 	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"github.com/theory-cloud/tabletheory/pkg/session"
 )
 
 type stubDB struct {
 	transactionCalls int
+	query            core.Query
 }
 
-func (s *stubDB) Model(any) core.Query { return nil }
+func (s *stubDB) Model(any) core.Query { return s.query }
 func (s *stubDB) Transaction(fn func(tx *core.Tx) error) error {
 	s.transactionCalls++
-	return fn(&core.Tx{})
+	tx := &core.Tx{}
+	tx.SetDB(s)
+	return fn(tx)
 }
 func (s *stubDB) Migrate() error                      { return nil }
 func (s *stubDB) AutoMigrate(...any) error            { return nil }
@@ -42,7 +47,11 @@ func TestExecuteTransaction_RunsFnWithClient(t *testing.T) {
 		return &config.Config{Region: "us-east-1"}
 	}
 
-	db := &stubDB{}
+	q := new(dynamormMocks.MockQuery)
+	q.On("Create").Return(nil).Maybe()
+	q.On("Update", mock.Anything).Return(nil).Maybe()
+	q.On("Update").Return(nil).Maybe()
+	db := &stubDB{query: q}
 	newDynamormStandardClient = func(session.Config) (core.DB, error) {
 		return db, nil
 	}

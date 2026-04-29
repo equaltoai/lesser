@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -108,6 +109,21 @@ type userMetadataProjection struct {
 	Metadata map[string]interface{} `theorydb:"attr:metadata"`
 }
 
+type userEmailLookupProjection struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	Table string `json:"-"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
+
+	Username string `theorydb:"attr:username"`
+	Email    string `theorydb:"attr:email"`
+}
+
 func (p userMetadataProjection) TableName() string {
 	if strings.TrimSpace(p.Table) != "" {
 		return p.Table
@@ -116,6 +132,13 @@ func (p userMetadataProjection) TableName() string {
 }
 
 func (p userVersionProjection) TableName() string {
+	if strings.TrimSpace(p.Table) != "" {
+		return p.Table
+	}
+	return models.MainTableName
+}
+
+func (p userEmailLookupProjection) TableName() string {
 	if strings.TrimSpace(p.Table) != "" {
 		return p.Table
 	}
@@ -439,10 +462,38 @@ func (r *AccountRepository) DeleteAgentGovernanceState(ctx context.Context, user
 	return r.getAgentGovernanceRepository().DeleteAgentGovernanceState(ctx, username)
 }
 
-// GetUserByEmail is OBSOLETE - email is forbidden
-// This function exists for backwards compatibility but always returns an error
-func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*storage.User, error) {
-	return nil, fmt.Errorf("email-based authentication is not supported for %s - use wallet or passkey authentication", strings.TrimSpace(email))
+// GetUserByEmail retrieves legacy users by their historical email lookup GSI.
+//
+// New email-based authentication remains disabled; this method exists only to
+// preserve reads for deployed data that still carries gsi2PK=EMAIL#{email}.
+func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if err := common.ValidateRequiredParam("email", normalizedEmail); err != nil {
+		return nil, err
+	}
+	if r.db == nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, normalizedEmail)
+	}
+
+	projection := &userEmailLookupProjection{Table: r.tableName}
+	err := r.db.WithContext(ctx).Model(projection).
+		Index("gsi2").
+		Where("gsi2PK", "=", "EMAIL#"+normalizedEmail).
+		Limit(1).
+		First(projection)
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, EntityUser, normalizedEmail)
+	}
+
+	username := strings.TrimSpace(projection.Username)
+	if username == "" {
+		username = strings.TrimPrefix(strings.TrimSpace(projection.PK), "USER#")
+	}
+	if username == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, normalizedEmail)
+	}
+
+	return r.GetUser(ctx, username)
 }
 
 // UpdateUser updates user authentication data
@@ -1719,8 +1770,15 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 
 // GetAccountByEmail retrieves an account by email address (updated to match interface)
 func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) {
-	_, err := r.GetUserByEmail(ctx, email)
-	return nil, err
+	user, err := r.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || strings.TrimSpace(user.Username) == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, strings.TrimSpace(email))
+	}
+
+	return r.GetAccount(ctx, user.Username)
 }
 
 // UpdateAccount updates account data (updated to match interface)
@@ -2121,6 +2179,20 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 		searchLimit = 20
 	}
 
+	if len(normalizedQuery) == 1 {
+		users, nextCursor, hasMore, err := r.searchAccountsByShortHandlePrefix(ctx, normalizedQuery, searchLimit, opts.Cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		return &interfaces.PaginatedResult[*storage.Account]{
+			Items:      r.usersToAccounts(users),
+			NextCursor: nextCursor,
+			HasMore:    hasMore,
+			Total:      -1,
+		}, nil
+	}
+
 	prefix := normalizedQuery
 	if len(prefix) > 2 {
 		prefix = prefix[:2]
@@ -2161,14 +2233,6 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 		users = users[:searchLimit]
 	}
 
-	accounts := make([]*storage.Account, 0, len(users))
-	for _, user := range users {
-		account := &storage.Account{
-			User: r.modelToStorageUser(&user),
-		}
-		accounts = append(accounts, account)
-	}
-
 	var nextCursor string
 	if hasMore && len(users) > 0 {
 		lastUser := users[len(users)-1]
@@ -2176,11 +2240,170 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	}
 
 	return &interfaces.PaginatedResult[*storage.Account]{
-		Items:      accounts,
+		Items:      r.usersToAccounts(users),
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
+}
+
+const accountHandleSecondChars = "-0123456789_abcdefghijklmnopqrstuvwxyz"
+
+func (r *AccountRepository) searchAccountsByShortHandlePrefix(ctx context.Context, normalizedQuery string, searchLimit int, cursor string) ([]models.User, string, bool, error) {
+	prefixKeys := handlePrefixKeysForShortSearch(normalizedQuery)
+	if len(prefixKeys) == 0 {
+		return nil, "", false, nil
+	}
+
+	skCursor := r.decodeShortHandleSearchCursor(prefixKeys, cursor)
+	seen := make(map[string]struct{})
+	users := make([]models.User, 0, searchLimit+1)
+	for _, prefixKey := range prefixKeys {
+		partitionUsers, err := r.queryShortHandlePrefixPartition(ctx, prefixKey, normalizedQuery, searchLimit, skCursor)
+		if err != nil {
+			return nil, "", false, ErrorHandler.HandleQueryError(err, EntityUser, "search")
+		}
+		users = appendUniqueShortSearchUsers(users, seen, partitionUsers, normalizedQuery, skCursor)
+	}
+
+	sortUsersBySearchKey(users)
+	users, nextCursor, hasMore := paginateSearchUsers(users, searchLimit)
+	return users, nextCursor, hasMore, nil
+}
+
+func (r *AccountRepository) decodeShortHandleSearchCursor(prefixKeys []string, cursor string) string {
+	if cursor == "" {
+		return ""
+	}
+
+	pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(cursor)
+	if err != nil {
+		r.logger.Warn("invalid search cursor provided",
+			zap.String("cursor", cursor),
+			zap.Error(err))
+		return ""
+	}
+	if skCursor == "" {
+		return ""
+	}
+	if pkCursor != "" && !containsString(prefixKeys, pkCursor) {
+		r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+			zap.String("expected_prefix", prefixKeys[0]),
+			zap.String("cursor_prefix", pkCursor))
+		return ""
+	}
+	return skCursor
+}
+
+func (r *AccountRepository) queryShortHandlePrefixPartition(ctx context.Context, prefixKey, normalizedQuery string, searchLimit int, skCursor string) ([]models.User, error) {
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("gsi5").
+		Where("gsi5PK", "=", prefixKey).
+		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("gsi5SK", "ASC").
+		Limit(searchLimit + 1)
+
+	if skCursor != "" {
+		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+	}
+
+	if err := queryBuilder.All(&users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func appendUniqueShortSearchUsers(result []models.User, seen map[string]struct{}, users []models.User, normalizedQuery, skCursor string) []models.User {
+	for _, user := range users {
+		gsiSK := userSearchSortKey(user)
+		if !strings.HasPrefix(gsiSK, normalizedQuery) {
+			continue
+		}
+		if skCursor != "" && gsiSK <= skCursor {
+			continue
+		}
+		identity := userSearchIdentity(user)
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		result = append(result, user)
+	}
+	return result
+}
+
+func sortUsersBySearchKey(users []models.User) {
+	sort.SliceStable(users, func(i, j int) bool {
+		left := userSearchSortKey(users[i])
+		right := userSearchSortKey(users[j])
+		if left == right {
+			return users[i].GSI5PK < users[j].GSI5PK
+		}
+		return left < right
+	})
+}
+
+func paginateSearchUsers(users []models.User, searchLimit int) ([]models.User, string, bool) {
+	hasMore := len(users) > searchLimit
+	if hasMore {
+		users = users[:searchLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(users) > 0 {
+		lastUser := users[len(users)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.GSI5PK, lastUser.GSI5SK)
+	}
+
+	return users, nextCursor, hasMore
+}
+
+func userSearchSortKey(user models.User) string {
+	if user.GSI5SK != "" {
+		return user.GSI5SK
+	}
+	return strings.ToLower(user.Username)
+}
+
+func userSearchIdentity(user models.User) string {
+	if user.PK != "" {
+		return user.PK
+	}
+	return strings.ToLower(user.Username)
+}
+
+func handlePrefixKeysForShortSearch(normalizedQuery string) []string {
+	if len(normalizedQuery) != 1 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(accountHandleSecondChars)+1)
+	keys = append(keys, fmt.Sprintf("USER_HANDLE_PREFIX#%s", normalizedQuery))
+	for _, second := range accountHandleSecondChars {
+		keys = append(keys, fmt.Sprintf("USER_HANDLE_PREFIX#%s%c", normalizedQuery, second))
+	}
+	return keys
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *AccountRepository) usersToAccounts(users []models.User) []*storage.Account {
+	accounts := make([]*storage.Account, 0, len(users))
+	for _, user := range users {
+		account := &storage.Account{
+			User: r.modelToStorageUser(&user),
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts
 }
 
 // GetSuggestedAccounts retrieves suggested accounts to follow

@@ -19,7 +19,8 @@ import (
 )
 
 type extendedMockDB struct {
-	inner *mocks.MockDB
+	inner      *mocks.MockDB
+	registered []reflect.Type
 }
 
 var _ core.ExtendedDB = (*extendedMockDB)(nil)
@@ -34,7 +35,8 @@ func (db *extendedMockDB) Close() error                          { return nil }
 func (db *extendedMockDB) WithContext(_ context.Context) core.DB { return db }
 
 func (db *extendedMockDB) AutoMigrateWithOptions(_ any, _ ...any) error { return nil }
-func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error {
+func (db *extendedMockDB) RegisterTypeConverter(t reflect.Type, _ pkgtypes.CustomConverter) error {
+	db.registered = append(db.registered, t)
 	return nil
 }
 func (db *extendedMockDB) CreateTable(_ any, _ ...any) error               { return nil }
@@ -51,6 +53,12 @@ func (db *extendedMockDB) TransactWrite(_ context.Context, fn func(core.Transact
 
 func TestRegisterStorageConverters_NonExtendedDB_Round22(t *testing.T) {
 	require.NoError(t, registerStorageConverters(new(mocks.MockDB)))
+}
+
+func TestRegisterStorageConverters_ExtendedDBRegistersDefaults_Round22(t *testing.T) {
+	db := &extendedMockDB{inner: new(mocks.MockDB)}
+	require.NoError(t, registerStorageConverters(db))
+	require.GreaterOrEqual(t, len(db.registered), 5)
 }
 
 func TestNewRepositoryFactory_Success_Round22(t *testing.T) {

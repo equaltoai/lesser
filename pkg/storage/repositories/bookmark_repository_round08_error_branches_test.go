@@ -23,8 +23,7 @@ func TestBookmarkRepository_Round08_CountUserBookmarks_ErrorPath(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("count failed")).Once()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	_, err := repo.CountUserBookmarks(ctx, "alice")
@@ -267,21 +266,29 @@ func TestBookmarkRepository_Round08_QueryUnlockedTimeBookmarks_HasMore(t *testin
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	allCalls := 0
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		allCalls++
 		dest := args.Get(0).(*[]models.Bookmark)
 		pk := buildBookmarkPK("alice")
-		*dest = []models.Bookmark{
-			{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
-			{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
+		if allCalls == 1 {
+			*dest = []models.Bookmark{
+				{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
+				{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
+			}
+			return
 		}
-	}).Return(nil).Once()
+		*dest = nil
+	}).Return(nil).Twice()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	items, cursor, err := repo.queryUnlockedTimeBookmarks(ctx, "alice", 1, "")
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "TIME#3", items[0].SK)
-	require.Equal(t, "TIME#3", cursor)
+	pageCursor, err := parseBookmarkPageCursor(cursor)
+	require.NoError(t, err)
+	require.Equal(t, "TIME#3", pageCursor.TimeSK)
 }
 
 func TestBookmarkRepository_Round08_DynamoFindTimeBookmarkByObject_EmptyList(t *testing.T) {
@@ -297,7 +304,7 @@ func TestBookmarkRepository_Round08_DynamoFindTimeBookmarkByObject_EmptyList(t *
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Bookmark)
 		*dest = []models.Bookmark{}
-	}).Return(nil).Once()
+	}).Return(nil).Twice()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	found, err := repo.dynamoFindTimeBookmarkByObject(ctx, "alice", "status-1")

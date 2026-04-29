@@ -113,7 +113,7 @@ func (r *AuthRepository) GetWebAuthnCredential(ctx context.Context, credentialID
 	}
 
 	if err := common.ValidateSliceNotEmpty("modelList", modelList); err != nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityWebAuthnCredential, credentialID)
 	}
 
 	model := modelList[0]

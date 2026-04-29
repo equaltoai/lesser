@@ -385,24 +385,17 @@ func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 
 // GetUserByProviderID gets a user by their OAuth provider ID
 func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
-	// Query the ProviderAccount by provider and providerID using GSI1
-	var providerAccounts []models.ProviderAccount
-	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "PROVIDER#"+provider).
-		Where("gsi1SK", "=", providerID+"#").
-		Limit(1).
-		All(&providerAccounts)
+	providerAccount, err := r.getProviderAccountByProviderID(ctx, provider, providerID)
 	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
+		return nil, err
 	}
 
-	if err := common.ValidateSliceNotEmpty("provider_accounts", providerAccounts); err != nil {
+	if providerAccount == nil {
 		return nil, ErrorHandler.HandleGetError(common.UserNotFoundError{Username: fmt.Sprintf("%s:%s", provider, providerID)}, EntityUser, providerID)
 	}
 
 	// Now get the user by UserID
-	return r.GetUser(ctx, providerAccounts[0].UserID)
+	return r.GetUser(ctx, providerAccount.UserID)
 }
 
 // LinkProviderAccount links an OAuth provider account to a user
@@ -411,6 +404,20 @@ func (r *UserRepository) LinkProviderAccount(ctx context.Context, username, prov
 	_, err := r.GetUser(ctx, username)
 	if err != nil {
 		return err
+	}
+
+	existing, err := r.getProviderAccountByProviderID(ctx, provider, providerID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if existing.UserID == username {
+			return nil
+		}
+		return ErrorHandler.HandleCreateError(common.ConflictError{
+			Resource: "provider_account",
+			Message:  fmt.Sprintf("provider account %s:%s already linked", provider, providerID),
+		}, "provider account", providerID)
 	}
 
 	// Create the provider account link
@@ -434,6 +441,33 @@ func (r *UserRepository) LinkProviderAccount(ctx context.Context, username, prov
 	}
 
 	return nil
+}
+
+func (r *UserRepository) getProviderAccountByProviderID(ctx context.Context, provider, providerID string) (*models.ProviderAccount, error) {
+	// ProviderAccount.GSI1SK is stored as "{providerID}#{userID}", so provider
+	// lookups must use a prefix match on the stored sort-key shape.
+	var providerAccounts []models.ProviderAccount
+	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", "PROVIDER#"+provider).
+		Where("gsi1SK", "BEGINS_WITH", providerID+"#").
+		Limit(2).
+		All(&providerAccounts)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
+	}
+
+	for _, providerAccount := range providerAccounts {
+		if providerAccount.ProviderID != "" && providerAccount.ProviderID != providerID {
+			continue
+		}
+		if providerAccount.Provider != "" && providerAccount.Provider != provider {
+			continue
+		}
+		return &providerAccount, nil
+	}
+
+	return nil, nil
 }
 
 // UnlinkProviderAccount unlinks an OAuth provider account from a user

@@ -152,6 +152,37 @@ func (activityPubContextValueConverter) FromAttributeValue(av types.AttributeVal
 		return fmt.Errorf("activityPubContextValueConverter: target must be *activitypub.ContextValue, got %T", target)
 	}
 
+	switch v := av.(type) {
+	case nil:
+		*dest = nil
+		return nil
+	case *types.AttributeValueMemberNULL:
+		*dest = nil
+		return nil
+	case *types.AttributeValueMemberS:
+		raw := strings.TrimSpace(v.Value)
+		if raw == "" || strings.EqualFold(raw, "null") {
+			*dest = nil
+			return nil
+		}
+
+		var decoded activitypub.ContextValue
+		if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+			*dest = decoded
+			return nil
+		}
+
+		*dest = activitypub.ContextValue{v.Value}
+		return nil
+	case *types.AttributeValueMemberM:
+		var out map[string]any
+		if err := (mapStringAnyConverter{}).FromAttributeValue(v, &out); err != nil {
+			return err
+		}
+		*dest = activitypub.ContextValue{out}
+		return nil
+	}
+
 	var out []any
 	if err := (sliceAnyConverter{}).FromAttributeValue(av, &out); err != nil {
 		return err

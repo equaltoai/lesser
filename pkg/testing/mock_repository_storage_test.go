@@ -198,3 +198,12 @@ func TestMockRepositoryStorage_MultipleOptions(t *testing.T) {
 	assert.Equal(t, logger, s.GetLogger())
 	assert.Equal(t, "multi-option-table", s.GetTableName())
 }
+
+func TestNewMockRepositoryStorage_DefaultRelationshipRepository(t *testing.T) {
+	s := NewMockRepositoryStorage()
+
+	repo := s.Relationship()
+	require.NotNil(t, repo)
+
+	var _ interfaces.ConcreteRelationshipRepository = repo
+}

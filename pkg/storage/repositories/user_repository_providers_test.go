@@ -55,6 +55,14 @@ func TestUserRepository_LinkProviderAccount_CreateConflict(t *testing.T) {
 		out.Username = "testuser"
 	}).Return(nil)
 
+	// Setup expectations - duplicate provider lookup finds no existing link
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "123#").Return(mockQuery)
+	mockQuery.On("Limit", 2).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil)
+
 	// Setup expectations - provider creation fails with condition failed (conflict)
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
 	mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed)
@@ -83,6 +91,14 @@ func TestUserRepository_LinkProviderAccount_CreateError(t *testing.T) {
 		out := args.Get(0).(*models.User)
 		out.Username = "testuser"
 	}).Return(nil)
+
+	// Setup expectations - duplicate provider lookup finds no existing link
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "123#").Return(mockQuery)
+	mockQuery.On("Limit", 2).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil)
 
 	// Setup expectations - provider creation fails with generic error
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)

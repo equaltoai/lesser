@@ -1172,7 +1172,7 @@ func (s *Service) GetFollowers(ctx context.Context, query *GetFollowersQuery) (*
 
 	// Get followers using relationship repository
 	relationshipRepo := s.storage.Relationship()
-	if relationshipRepo == nil {
+	if isNilInterface(relationshipRepo) {
 		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
@@ -1238,7 +1238,12 @@ func (s *Service) GetFollowing(ctx context.Context, query *GetFollowingQuery) (*
 	}
 
 	// Get following relationships from storage
-	followingUsernames, nextCursor, err := s.storage.Relationship().GetFollowing(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
+	relationshipRepo := s.storage.Relationship()
+	if isNilInterface(relationshipRepo) {
+		return nil, ErrRelationshipRepositoryNotAvailable
+	}
+
+	followingUsernames, nextCursor, err := relationshipRepo.GetFollowing(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
 	if err != nil {
 		return nil, ErrGetFollowingList
 	}
@@ -1280,7 +1285,7 @@ func (s *Service) GetFamiliarFollowers(ctx context.Context, query *GetFamiliarFo
 
 	// Get relationship repository
 	relationshipRepo := s.storage.Relationship()
-	if relationshipRepo == nil {
+	if isNilInterface(relationshipRepo) {
 		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
@@ -1582,7 +1587,7 @@ func (s *Service) RemoveFollower(ctx context.Context, cmd *RemoveFollowerCommand
 
 	// Get relationship repository
 	relationshipRepo := s.storage.Relationship()
-	if relationshipRepo == nil {
+	if isNilInterface(relationshipRepo) {
 		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
@@ -1739,12 +1744,22 @@ func (s *Service) buildCollectionMetadata(ctx context.Context, query *GetActivit
 func (s *Service) getCollectionCount(ctx context.Context, query *GetActivityPubCollectionQuery) int {
 	switch query.CollectionType {
 	case collectionFollowers:
-		if count, err := s.storage.Relationship().CountFollowers(ctx, query.Username); err == nil {
+		relationshipRepo := s.storage.Relationship()
+		if isNilInterface(relationshipRepo) {
+			s.logger.Warn("relationship repository unavailable for followers count")
+			return 0
+		}
+		if count, err := relationshipRepo.CountFollowers(ctx, query.Username); err == nil {
 			return count
 		}
 		s.logger.Warn("failed to get followers count")
 	case "following":
-		if count, err := s.storage.Relationship().CountFollowing(ctx, query.Username); err == nil {
+		relationshipRepo := s.storage.Relationship()
+		if isNilInterface(relationshipRepo) {
+			s.logger.Warn("relationship repository unavailable for following count")
+			return 0
+		}
+		if count, err := relationshipRepo.CountFollowing(ctx, query.Username); err == nil {
 			return count
 		}
 		s.logger.Warn("failed to get following count")
@@ -1798,7 +1813,13 @@ func (s *Service) getPageData(ctx context.Context, query *GetActivityPubCollecti
 
 // getFollowersPageData handles followers collection page data
 func (s *Service) getFollowersPageData(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) ([]any, string) {
-	usernames, nextCursor, err := s.storage.Relationship().GetFollowers(ctx, query.Username, query.Limit, query.Cursor)
+	relationshipRepo := s.storage.Relationship()
+	if isNilInterface(relationshipRepo) {
+		s.logger.Error("relationship repository unavailable for ActivityPub followers collection")
+		return []any{}, ""
+	}
+
+	usernames, nextCursor, err := relationshipRepo.GetFollowers(ctx, query.Username, query.Limit, query.Cursor)
 	if err != nil {
 		s.logger.Error("failed to get followers for ActivityPub collection", zap.Error(err))
 		return []any{}, ""
@@ -1811,7 +1832,13 @@ func (s *Service) getFollowersPageData(ctx context.Context, query *GetActivityPu
 
 // getFollowingPageData handles following collection page data
 func (s *Service) getFollowingPageData(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) ([]any, string) {
-	usernames, nextCursor, err := s.storage.Relationship().GetFollowing(ctx, query.Username, query.Limit, query.Cursor)
+	relationshipRepo := s.storage.Relationship()
+	if isNilInterface(relationshipRepo) {
+		s.logger.Error("relationship repository unavailable for ActivityPub following collection")
+		return []any{}, ""
+	}
+
+	usernames, nextCursor, err := relationshipRepo.GetFollowing(ctx, query.Username, query.Limit, query.Cursor)
 	if err != nil {
 		s.logger.Error("failed to get following for ActivityPub collection", zap.Error(err))
 		return []any{}, ""
@@ -2645,7 +2672,7 @@ func (s *Service) GetFollowRequestState(ctx context.Context, requesterID, target
 	}
 
 	relationshipRepo := s.storage.Relationship()
-	if relationshipRepo == nil {
+	if isNilInterface(relationshipRepo) {
 		return "", ErrRelationshipRepositoryNotAvailable
 	}
 
@@ -2757,7 +2784,7 @@ func (s *Service) GetAccountNote(ctx context.Context, currentUsername, targetAct
 
 // checkBlocking checks if one user has blocked another user
 func (s *Service) checkBlocking(ctx context.Context, relationshipRepo interfaces.ConcreteRelationshipRepository, blockerID, blockedID string) bool {
-	if relationshipRepo == nil {
+	if isNilInterface(relationshipRepo) {
 		return false
 	}
 
@@ -2818,7 +2845,7 @@ func (s *Service) validateRelationshipStorage() error {
 	if s.storage == nil {
 		return ErrStorageNotAvailable
 	}
-	if s.storage.Relationship() == nil {
+	if isNilInterface(s.storage.Relationship()) {
 		return ErrRelationshipRepositoryNotAvailable
 	}
 	return nil
@@ -2829,6 +2856,9 @@ func (s *Service) buildRelationshipData(ctx context.Context, username, targetAcc
 	data := &relationshipData{}
 
 	relationshipRepo := s.storage.Relationship()
+	if isNilInterface(relationshipRepo) {
+		return data
+	}
 
 	// Basic relationship checks
 	data.Following = s.checkFollowingStatus(ctx, relationshipRepo, username, targetAccount)
@@ -2851,6 +2881,10 @@ func (s *Service) buildRelationshipData(ctx context.Context, username, targetAcc
 
 // checkFollowingStatus checks if one user follows another
 func (s *Service) checkFollowingStatus(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, follower, followee string) bool {
+	if isNilInterface(repo) {
+		return false
+	}
+
 	following, err := repo.IsFollowing(ctx, follower, followee)
 	if err != nil {
 		s.logger.Warn("failed to check following status",
@@ -2864,6 +2898,10 @@ func (s *Service) checkFollowingStatus(ctx context.Context, repo interfaces.Conc
 
 // checkMutingStatus checks if one user has muted another
 func (s *Service) checkMutingStatus(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, muter, muted string) bool {
+	if isNilInterface(repo) {
+		return false
+	}
+
 	muting, err := repo.IsMuted(ctx, muter, muted)
 	if err != nil {
 		s.logger.Warn("failed to check muting status",
@@ -2877,7 +2915,7 @@ func (s *Service) checkMutingStatus(ctx context.Context, repo interfaces.Concret
 
 // checkMutingNotifications checks if notifications are muted for a muted user
 func (s *Service) checkMutingNotifications(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, username, targetAccount string, isMuting bool) bool {
-	if !isMuting {
+	if !isMuting || isNilInterface(repo) {
 		return false
 	}
 
@@ -2891,6 +2929,10 @@ func (s *Service) checkMutingNotifications(ctx context.Context, repo interfaces.
 
 // checkFollowRequest checks if there's a pending follow request
 func (s *Service) checkFollowRequest(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, requester, target string) bool {
+	if isNilInterface(repo) {
+		return false
+	}
+
 	requested, err := repo.HasFollowRequest(ctx, requester, target)
 	if err != nil {
 		return false

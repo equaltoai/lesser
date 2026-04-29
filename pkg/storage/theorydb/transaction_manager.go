@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -24,8 +26,10 @@ type TransactionOperation struct {
 	Type             OperationType
 	Item             any
 	Key              map[string]any
+	Fields           []string
 	UpdateExpression string
 	Condition        string
+	Conditions       []core.TransactCondition
 	Values           []any
 	TableName        string
 }
@@ -196,7 +200,20 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, operations .
 }
 
 // executeTransaction executes the actual transaction
-func (tm *TransactionManager) executeTransaction(_ context.Context, operations []TransactionOperation) error {
+func (tm *TransactionManager) executeTransaction(ctx context.Context, operations []TransactionOperation) error {
+	if client, ok := tm.client.(interface {
+		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
+	}); ok {
+		return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
+			for i, op := range operations {
+				if err := tm.executeBuilderOperation(tx, op); err != nil {
+					return fmt.Errorf("operation %d (%s) failed: %w", i, op.Type.String(), err)
+				}
+			}
+			return nil
+		})
+	}
+
 	return tm.client.Transaction(func(tx *core.Tx) error {
 		for i, op := range operations {
 			if err := tm.executeOperation(tx, op); err != nil {
@@ -205,6 +222,59 @@ func (tm *TransactionManager) executeTransaction(_ context.Context, operations [
 		}
 		return nil
 	})
+}
+
+func (tm *TransactionManager) executeBuilderOperation(tx core.TransactionBuilder, op TransactionOperation) error {
+	conditions := transactionConditions(op)
+
+	switch op.Type {
+	case OperationPut:
+		if op.Item == nil {
+			return fmt.Errorf("put operation requires item")
+		}
+		tx.Put(op.Item, conditions...)
+		return nil
+	case OperationUpdate:
+		if op.Item == nil {
+			return fmt.Errorf("update operation requires item")
+		}
+		fields := op.Fields
+		if len(fields) == 0 {
+			fields = inferTransactionUpdateFields(op.Item)
+		}
+		if len(fields) == 0 {
+			return fmt.Errorf("update operation requires fields")
+		}
+		tx.Update(op.Item, fields, conditions...)
+		return nil
+	case OperationDelete:
+		if op.Item != nil {
+			tx.Delete(op.Item, conditions...)
+			return nil
+		}
+		keyItem, err := newTransactionKeyItem(op.TableName, op.Key)
+		if err != nil {
+			return err
+		}
+		tx.Delete(keyItem, conditions...)
+		return nil
+	case OperationConditionCheck:
+		if op.Condition == "" && len(op.Conditions) == 0 {
+			return fmt.Errorf("condition check requires condition")
+		}
+		item := op.Item
+		if item == nil {
+			keyItem, err := newTransactionKeyItem(op.TableName, op.Key)
+			if err != nil {
+				return err
+			}
+			item = keyItem
+		}
+		tx.ConditionCheck(item, conditions...)
+		return nil
+	default:
+		return fmt.Errorf("unsupported operation type: %v", op.Type)
+	}
 }
 
 // executeOperation executes a single operation within a transaction
@@ -237,6 +307,69 @@ func (tm *TransactionManager) executeOperation(tx *core.Tx, op TransactionOperat
 	default:
 		return fmt.Errorf("unsupported operation type: %v", op.Type)
 	}
+}
+
+func transactionConditions(op TransactionOperation) []core.TransactCondition {
+	conditions := append([]core.TransactCondition(nil), op.Conditions...)
+	if strings.TrimSpace(op.Condition) != "" {
+		conditions = append(conditions, core.TransactCondition{
+			Kind:       core.TransactConditionKindExpression,
+			Expression: op.Condition,
+			Values:     transactionConditionValues(op.Values),
+		})
+	}
+	return conditions
+}
+
+func transactionConditionValues(values []any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+
+	result := make(map[string]any, len(values))
+	for i, value := range values {
+		result[fmt.Sprintf(":v%d", i)] = value
+	}
+	return result
+}
+
+func inferTransactionUpdateFields(item any) []string {
+	value := reflect.ValueOf(item)
+	if value.Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return nil
+	}
+
+	itemType := value.Type()
+	fields := make([]string, 0, itemType.NumField())
+	for i := range itemType.NumField() {
+		field := itemType.Field(i)
+		if field.PkgPath != "" || field.Anonymous {
+			continue
+		}
+		if skipTransactionUpdateField(field) {
+			continue
+		}
+		fields = append(fields, field.Name)
+	}
+	return fields
+}
+
+func skipTransactionUpdateField(field reflect.StructField) bool {
+	if field.Name == "PK" || field.Name == "SK" || field.Name == "Version" || strings.HasPrefix(field.Name, "GSI") {
+		return true
+	}
+	for _, part := range strings.Split(field.Tag.Get("theorydb"), ",") {
+		switch {
+		case part == "pk", part == "sk", part == "version", part == "ttl":
+			return true
+		case strings.HasPrefix(part, "index:"):
+			return true
+		}
+	}
+	return false
 }
 
 // validateOperations validates the provided operations

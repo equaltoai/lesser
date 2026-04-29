@@ -201,7 +201,7 @@ func TestBookmarkRepository_Round08_DynamoHelpers_TransactWriteBatchGetAndLookup
 	require.NoError(t, err)
 	require.NotNil(t, found)
 
-	mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Twice()
 	found, err = repo.dynamoFindTimeBookmarkByObject(ctx, "alice", "missing")
 	require.NoError(t, err)
 	require.Nil(t, found)
