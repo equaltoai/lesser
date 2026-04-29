@@ -654,6 +654,63 @@ func TestTransactionBuilder_Clear(t *testing.T) {
 	assert.Equal(t, 0, builder.GetOperationCount())
 }
 
+func TestTransactionManager_M10_AdditionalTransactionCoverage(t *testing.T) {
+	user := &TestUser{
+		StandardModel: StandardModel{PK: "user#123", SK: "user#123"},
+		Name:          "John Doe",
+	}
+
+	assert.Equal(t, "put", OperationPut.String())
+	assert.Equal(t, "update", OperationUpdate.String())
+	assert.Equal(t, "delete", OperationDelete.String())
+	assert.Equal(t, "condition_check", OperationConditionCheck.String())
+	assert.Equal(t, "unknown", OperationType(99).String())
+
+	keyItem, err := newTransactionKeyItem("users", map[string]any{"PK": "user#123", "SK": "user#123"})
+	assert.NoError(t, err)
+	assert.Equal(t, "users", keyItem.TableName())
+	_, err = newTransactionKeyItem("", map[string]any{"PK": "user#123"})
+	assert.Error(t, err)
+	_, err = newTransactionKeyItem("users", nil)
+	assert.Error(t, err)
+	_, err = newTransactionKeyItem("users", map[string]any{"SK": "user#123"})
+	assert.Error(t, err)
+
+	ops, config := NewTransactionBuilder().
+		WithConfig(TransactionConfig{MaxRetries: 1, BaseDelay: time.Millisecond}).
+		UpdateWithExpression(user, "SET #name = :name", "Jane").
+		Delete(user).
+		DeleteByKey("users", map[string]any{"PK": "user#123"}).
+		Build()
+	assert.Len(t, ops, 3)
+	assert.Equal(t, 1, config.MaxRetries)
+	assert.Equal(t, OperationUpdate, ops[0].Type)
+	assert.Equal(t, OperationDelete, ops[1].Type)
+	assert.Equal(t, OperationDelete, ops[2].Type)
+
+	values := transactionConditionValues([]any{"ok", 3})
+	assert.Equal(t, "ok", values[":v0"])
+	assert.Equal(t, 3, values[":v1"])
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("Update", []string{"Name"}).Return(nil).Once()
+	mockQuery.On("Delete").Return(nil).Once()
+	tx := &core.Tx{}
+	tx.SetDB(mockDB)
+
+	manager := NewTransactionManager(mockDB, zap.NewNop())
+	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationPut, Item: user}))
+	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationUpdate, Item: user}))
+	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationDelete, Item: user}))
+	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationDelete, TableName: "users", Key: map[string]any{"PK": "user#123"}}))
+	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}, Condition: "attribute_exists(PK)"}))
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 // Tests for convenience functions
 
 func TestExecuteSimpleTransaction(t *testing.T) {
@@ -720,4 +777,25 @@ func TestExecuteTransactionWithCostTracking(t *testing.T) {
 	// Verify cost tracking
 	costs := tracker.CalculateCost()
 	assert.Equal(t, int64(2), costs.DynamoDBWrites) // 1 operation * 2 for transaction
+}
+
+func TestExecuteTransactionWithLoggerAndRetryHelpers(t *testing.T) {
+	mockDB := new(mocks.MockExtendedDB)
+	builder := new(mocks.MockTransactionBuilder)
+	mockDB.TransactWriteBuilder = builder
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Twice()
+
+	user := &TestUser{
+		StandardModel: StandardModel{PK: "user#123", SK: "user#123"},
+		Name:          "John Doe",
+	}
+	builder.On("Put", user, mock.Anything).Return(builder).Twice()
+
+	logger := zap.NewNop()
+	manager := NewTransactionManager(mockDB, logger)
+	assert.NoError(t, manager.ExecuteWithRetry(context.Background(), TransactionOperation{Type: OperationPut, Item: user}))
+	assert.NoError(t, ExecuteTransactionWithLogger(context.Background(), mockDB, logger, TransactionOperation{Type: OperationPut, Item: user}))
+
+	mockDB.AssertExpectations(t)
+	builder.AssertExpectations(t)
 }
