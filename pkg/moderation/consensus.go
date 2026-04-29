@@ -147,6 +147,31 @@ func (e *ConsensusEngine) ProcessReview(ctx context.Context, eventID string, rev
 		return nil, fmt.Errorf("%w: %w", ErrModerationReviewsRetrievalFailed, err)
 	}
 
+	return e.processReviews(ctx, event, reviews)
+}
+
+// ProcessPersistedReview processes an already-persisted review stream event.
+//
+// DynamoDB Streams deliver moderation review INSERT records after the review is
+// already stored. Re-writing that same review from the stream handler can emit a
+// MODIFY for the review row and recursively re-enter the stream processor. This
+// path evaluates consensus from the persisted review set without storing the
+// triggering review again.
+func (e *ConsensusEngine) ProcessPersistedReview(ctx context.Context, eventID string) (*ModerationDecision, error) {
+	event, err := e.storage.GetModerationEvent(ctx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModerationEventRetrievalFailed, err)
+	}
+
+	reviews, err := e.storage.GetModerationReviews(ctx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModerationReviewsRetrievalFailed, err)
+	}
+
+	return e.processReviews(ctx, event, reviews)
+}
+
+func (e *ConsensusEngine) processReviews(ctx context.Context, event *ModerationEvent, reviews []*Review) (*ModerationDecision, error) {
 	// Check if we have enough reviews
 	if len(reviews) < e.config.MinReviewers {
 		return nil, nil // Not enough reviews yet
