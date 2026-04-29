@@ -18,7 +18,8 @@ func TestPlatformKeyringSecretWritersAvoidProcessArguments(t *testing.T) {
 	require.NotContains(t, darwinSource, `"-w", secret`)
 	require.NotContains(t, darwinSource, `"-w",secret`)
 	require.Contains(t, darwinSource, "\"-U\",\n\t\t\"-w\",")
-	require.Contains(t, darwinSource, "cmd.Stdin = strings.NewReader(secret")
+	require.Contains(t, darwinSource, "cmd.Stdin = strings.NewReader(macOSKeychainPromptInput(secret))")
+	require.Contains(t, darwinSource, `return secret + "\n" + secret + "\n"`)
 
 	windowsSource := readKeyringSource(t, filepath.Join(dir, "auth_keyring_windows.go"))
 	require.NotContains(t, windowsSource, "cmdkey")

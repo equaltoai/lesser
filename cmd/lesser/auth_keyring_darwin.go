@@ -54,7 +54,7 @@ func keyringSaveSecret(account string, secret string) error {
 		"-U",
 		"-w",
 	)
-	cmd.Stdin = strings.NewReader(secret + "\n")
+	cmd.Stdin = strings.NewReader(macOSKeychainPromptInput(secret))
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		return fmt.Errorf("security add-generic-password: %w", ctx.Err())
@@ -63,4 +63,12 @@ func keyringSaveSecret(account string, secret string) error {
 		return fmt.Errorf("security add-generic-password failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// macOSKeychainPromptInput returns the input expected by `security add-generic-password -w`
+// when -w is provided without an argv value. That prompt path asks for the
+// password twice, so feed matching entries while keeping the secret out of the
+// process argument list.
+func macOSKeychainPromptInput(secret string) string {
+	return secret + "\n" + secret + "\n"
 }
