@@ -22,7 +22,9 @@ func (db *transactionTestDB) Model(_ any) core.Query {
 }
 
 func (db *transactionTestDB) Transaction(fn func(tx *core.Tx) error) error {
-	return fn(&core.Tx{})
+	tx := &core.Tx{}
+	tx.SetDB(db)
+	return fn(tx)
 }
 
 func (db *transactionTestDB) Migrate() error { return nil }
@@ -52,7 +54,10 @@ func TestExampleCreateUserWithPosts_UsesInjectedClient_Round23(t *testing.T) {
 		}
 	})
 
-	db := &transactionTestDB{}
+	q := new(dynamormMocks.MockQuery)
+	q.On("Create").Return(nil).Maybe()
+
+	db := &transactionTestDB{query: q}
 	client = db
 	clientErr = nil
 	clientOnce = sync.Once{}
@@ -111,6 +116,8 @@ func TestExampleTransferBalance_SucceedsAndFailsForInsufficientFunds_Round23(t *
 
 	q := new(dynamormMocks.MockQuery)
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
+	q.On("Update", mock.Anything).Return(nil).Maybe()
+	q.On("Update").Return(nil).Maybe()
 
 	var firstCalls int
 	q.On("First", mock.Anything).Run(func(args mock.Arguments) {

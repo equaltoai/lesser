@@ -34,7 +34,19 @@ func NewTransaction(client core.DB) *Transaction {
 // Execute runs the provided function within a transaction
 // If the function returns an error, the transaction is aborted
 // Otherwise, the transaction is committed
-func (t *Transaction) Execute(_ context.Context, fn TransactionFunc) error {
+func (t *Transaction) Execute(ctx context.Context, fn TransactionFunc) error {
+	if client, ok := t.client.(interface {
+		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
+	}); ok {
+		return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
+			txWrapper := &Transaction{
+				tx:     &MockTx{Builder: tx},
+				client: t.client,
+			}
+			return fn(txWrapper)
+		})
+	}
+
 	// Create a new transaction
 	err := t.client.Transaction(func(tx *core.Tx) error {
 		// Create a transaction wrapper with a mock tx that implements TxOperations
