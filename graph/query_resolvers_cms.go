@@ -772,6 +772,9 @@ func cmsSeriesBelongsToTenant(series *models.Series, tenant string) bool {
 		return true
 	}
 	storedTenant := strings.ToLower(strings.TrimSpace(series.Tenant))
+	// Legacy series rows created before tenant stamping have no tenant value.
+	// Keep them readable/mutable for compatibility; all new rows are stamped
+	// and must match the current tenant before slug lookup or direct mutation.
 	return storedTenant == "" || strings.EqualFold(storedTenant, tenant)
 }
 

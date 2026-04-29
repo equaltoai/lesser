@@ -380,6 +380,66 @@ func TestRound12CMS_MutationPermissions(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRound12CMS_SeriesMutationRejectsCrossTenantSeries(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+	aliceCtx := round12AuthContext("alice")
+
+	cfg := resolver.Registry.GetConfig()
+	require.NotNil(t, cfg)
+
+	cfg.BaseURL = "https://tenant-a.example"
+	seriesSlug := "tenant-series"
+	tenantASeries, err := mut.CreateSeries(aliceCtx, model.CreateSeriesInput{
+		Title: "Tenant A Series",
+		Slug:  &seriesSlug,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantASeries)
+
+	authorID, rawSeriesID, ok := parseSeriesGraphQLID(tenantASeries.ID)
+	require.True(t, ok)
+	storedSeries, err := resolver.Registry.Series().GetSeries(context.Background(), authorID, rawSeriesID)
+	require.NoError(t, err)
+	require.Equal(t, "tenant-a.example", storedSeries.Tenant)
+
+	cfg.BaseURL = "https://tenant-b.example"
+	updatedTitle := "tenant-b takeover"
+	_, err = mut.UpdateSeries(aliceCtx, tenantASeries.ID, model.UpdateSeriesInput{Title: &updatedTitle})
+	require.Error(t, err)
+
+	articleSlug := "tenant-b-article"
+	_, err = mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:     &articleSlug,
+		Title:    "Tenant B Article",
+		Content:  "body",
+		SeriesID: &tenantASeries.ID,
+	})
+	require.Error(t, err)
+
+	article, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &articleSlug,
+		Title:   "Tenant B Article",
+		Content: "body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, article)
+
+	order := 1
+	_, err = mut.AddArticleToSeries(aliceCtx, tenantASeries.ID, article.ID, &order)
+	require.Error(t, err)
+
+	_, err = mut.RemoveArticleFromSeries(aliceCtx, tenantASeries.ID, article.ID)
+	require.Error(t, err)
+
+	_, err = mut.ReorderSeriesArticles(aliceCtx, tenantASeries.ID, []string{article.ID})
+	require.Error(t, err)
+
+	ok, err = mut.DeleteSeries(aliceCtx, tenantASeries.ID)
+	require.Error(t, err)
+	require.False(t, ok)
+}
+
 func TestRound12CMS_HelperBranches(t *testing.T) {
 	memberGetter := &round12PublicationMemberGetterStub{}
 

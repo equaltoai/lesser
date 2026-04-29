@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
+
+type cmsSeriesLoader interface {
+	GetSeries(ctx context.Context, authorID, seriesID string) (*models.Series, error)
+}
 
 func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDraftInput) (*model.Draft, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
@@ -554,15 +559,7 @@ func (r *mutationResolver) UpdateSeries(ctx context.Context, id string, input mo
 		return nil, errors.New("series service is not available")
 	}
 
-	authorID, seriesID, ok := parseSeriesGraphQLID(id)
-	if !ok {
-		return nil, errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return nil, errors.New("insufficient privileges for series update")
-	}
-
-	series, err := seriesSvc.GetSeries(ctx, authorID, seriesID)
+	series, _, _, err := r.loadAuthorizedCMSSeries(ctx, username, id, "update", seriesSvc)
 	if err != nil {
 		return nil, err
 	}
@@ -608,15 +605,7 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 		return false, ErrStorageUnavailable
 	}
 
-	authorID, seriesID, ok := parseSeriesGraphQLID(id)
-	if !ok {
-		return false, errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return false, errors.New("insufficient privileges for series delete")
-	}
-
-	series, err := seriesSvc.GetSeries(ctx, authorID, seriesID)
+	series, authorID, seriesID, err := r.loadAuthorizedCMSSeries(ctx, username, id, "delete", seriesSvc)
 	if err != nil {
 		return false, err
 	}
@@ -631,7 +620,7 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 		SeriesID: series.ID,
 	}
 	if err := slugIndex.UpdateKeys(); err == nil {
-		if tenant := strings.ToLower(strings.TrimSpace(r.getDomain())); tenant != "" {
+		if tenant := r.seriesTenantForSlugIndex(series); tenant != "" {
 			slugIndex.PK = models.CMSTenantSeriesSlugIndexPK(tenant, series.Slug)
 		}
 		if err := store.GetDB().WithContext(ctx).Model(slugIndex).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
@@ -673,15 +662,8 @@ func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID stri
 	seriesID = strings.TrimSpace(seriesID)
 	articleID = strings.TrimSpace(articleID)
 
-	authorID, rawID, ok := parseSeriesGraphQLID(seriesID)
-	if !ok {
-		return nil, errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return nil, errors.New("insufficient privileges for series update")
-	}
-
-	if _, err := seriesSvc.GetSeries(ctx, authorID, rawID); err != nil {
+	series, _, _, err := r.loadAuthorizedCMSSeries(ctx, username, seriesID, "update", seriesSvc)
+	if err != nil {
 		return nil, err
 	}
 
@@ -701,12 +683,6 @@ func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID stri
 	article.SeriesOrder = &orderVal
 
 	if err := articleSvc.UpdateArticle(ctx, article); err != nil {
-		return nil, err
-	}
-
-	// Return the updated series
-	series, err := seriesSvc.GetSeries(ctx, authorID, rawID)
-	if err != nil {
 		return nil, err
 	}
 
@@ -741,15 +717,8 @@ func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID
 	seriesID = strings.TrimSpace(seriesID)
 	articleID = strings.TrimSpace(articleID)
 
-	authorID, rawID, ok := parseSeriesGraphQLID(seriesID)
-	if !ok {
-		return nil, errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return nil, errors.New("insufficient privileges for series update")
-	}
-
-	if _, err := seriesSvc.GetSeries(ctx, authorID, rawID); err != nil {
+	series, _, _, err := r.loadAuthorizedCMSSeries(ctx, username, seriesID, "update", seriesSvc)
+	if err != nil {
 		return nil, err
 	}
 
@@ -773,11 +742,6 @@ func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID
 		if err := articleSvc.UpdateArticle(ctx, article); err != nil {
 			return nil, err
 		}
-	}
-
-	series, err := seriesSvc.GetSeries(ctx, authorID, rawID)
-	if err != nil {
-		return nil, err
 	}
 
 	return r.convertCMSSeries(ctx, series), nil
@@ -810,15 +774,8 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 
 	seriesID = strings.TrimSpace(seriesID)
 
-	authorID, rawID, ok := parseSeriesGraphQLID(seriesID)
-	if !ok {
-		return nil, errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return nil, errors.New("insufficient privileges for series update")
-	}
-
-	if _, err := seriesSvc.GetSeries(ctx, authorID, rawID); err != nil {
+	series, _, _, err := r.loadAuthorizedCMSSeries(ctx, username, seriesID, "update", seriesSvc)
+	if err != nil {
 		return nil, err
 	}
 
@@ -846,11 +803,6 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 		}
 	}
 
-	series, err := seriesSvc.GetSeries(ctx, authorID, rawID)
-	if err != nil {
-		return nil, err
-	}
-
 	return r.convertCMSSeries(ctx, series), nil
 }
 
@@ -859,22 +811,61 @@ func (r *mutationResolver) ensureCanUseCMSSeries(ctx context.Context, username s
 		return nil
 	}
 
-	authorID, rawID, ok := parseSeriesGraphQLID(*seriesID)
-	if !ok {
-		return errors.New("invalid series id")
-	}
-	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
-		return errors.New("insufficient privileges for series update")
-	}
-
-	seriesSvc := r.Registry.Series()
+	seriesSvc := r.seriesService()
 	if seriesSvc == nil {
 		return errors.New("series service is not available")
 	}
-	if _, err := seriesSvc.GetSeries(ctx, authorID, rawID); err != nil {
-		return err
+	_, _, _, err := r.loadAuthorizedCMSSeries(ctx, username, *seriesID, "update", seriesSvc)
+	return err
+}
+
+func (r *mutationResolver) seriesService() cmsSeriesLoader {
+	if r == nil || r.Registry == nil {
+		return nil
 	}
-	return nil
+	return r.Registry.Series()
+}
+
+func (r *mutationResolver) loadAuthorizedCMSSeries(
+	ctx context.Context,
+	username string,
+	graphQLID string,
+	action string,
+	loader cmsSeriesLoader,
+) (*models.Series, string, string, error) {
+	authorID, rawID, ok := parseSeriesGraphQLID(graphQLID)
+	if !ok {
+		return nil, "", "", errors.New("invalid series id")
+	}
+	if !r.isAdmin(ctx, username) && !strings.EqualFold(authorID, username) {
+		return nil, "", "", fmt.Errorf("insufficient privileges for series %s", action)
+	}
+	if loader == nil {
+		return nil, "", "", errors.New("series service is not available")
+	}
+
+	series, err := loader.GetSeries(ctx, authorID, rawID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if !cmsSeriesBelongsToTenant(series, r.currentCMSTenant()) {
+		return nil, "", "", errors.New("series not found")
+	}
+
+	return series, authorID, rawID, nil
+}
+
+func (r *mutationResolver) currentCMSTenant() string {
+	return strings.ToLower(strings.TrimSpace(r.getDomain()))
+}
+
+func (r *mutationResolver) seriesTenantForSlugIndex(series *models.Series) string {
+	if series != nil {
+		if tenant := strings.ToLower(strings.TrimSpace(series.Tenant)); tenant != "" {
+			return tenant
+		}
+	}
+	return r.currentCMSTenant()
 }
 
 func (r *mutationResolver) CreateCategory(ctx context.Context, input model.CreateCategoryInput) (*model.Category, error) {
