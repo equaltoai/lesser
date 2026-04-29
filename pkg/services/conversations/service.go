@@ -653,16 +653,16 @@ func (s *Service) consumeDirectMessageRateLimit(ctx context.Context, cmd *SendDi
 	if limiter, ok := s.rateLimitRepo.(fixedWindowRateLimiter); ok {
 		allowed, _, _, err := limiter.CheckFixedWindowRateLimit(ctx, identifier, bucket, limit, window)
 		if err != nil {
-			s.logger.Warn("failed to consume direct message rate limit",
+			s.logger.Warn("failed to consume direct message rate limit; allowing send",
 				zap.String("sender_id", cmd.SenderID),
 				zap.String("recipient_id", recipientID),
 				zap.String("bucket", bucket),
 				zap.Error(err))
-			s.auditDMEvent(ctx, cmd, conversationID, false, auditReason+"_storage_error", map[string]any{
+			s.auditDMEvent(ctx, cmd, conversationID, true, auditReason+"_storage_error_fail_open", map[string]any{
 				"recipient_id": recipientID,
 				"bucket":       bucket,
 			})
-			return errors.Join(ErrConversationValidationFailed, err)
+			return nil
 		}
 		if !allowed {
 			s.auditDMEvent(ctx, cmd, conversationID, false, auditReason, map[string]any{

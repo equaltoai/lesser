@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,10 +12,97 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
+
+func TestHandleReblogLift_UsesUnifiedBoostParserOnLiveRoute(t *testing.T) {
+	cfg := round11TestConfig()
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	t.Run("rejects invalid request body before pure boost", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ReblogNoteFunc: func(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
+					t.Fatal("reblog service should not be called for invalid JSON")
+					return nil, nil
+				},
+			},
+		})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, []byte(`{invalid}`))
+		ctx.Params["id"] = "status-1"
+
+		requireStatus(t, http.StatusBadRequest)(h.HandleReblogLift(ctx))
+	})
+
+	t.Run("preserves pure boost service path for empty bodies", func(t *testing.T) {
+		called := false
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ReblogNoteFunc: func(_ context.Context, cmd *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
+					called = true
+					require.Equal(t, "status-1", cmd.StatusID)
+					require.Equal(t, "alice", cmd.RebloggerID)
+					return &notes.LikeResult{Status: &storagemodels.Status{StatusID: cmd.StatusID, Content: "original"}}, nil
+				},
+			},
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "status-1"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleReblogLift(ctx))
+		var body models.Status
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.True(t, body.Reblogged)
+		require.True(t, called)
+	})
+
+	t.Run("routes quote comments through quote boost path", func(t *testing.T) {
+		objectID := cfg.BaseURL() + "/objects/status-1"
+		state := &round10QueryState{
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {Username: "alice", Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+					PreferredUsername: "alice",
+					Followers:         cfg.ActorURL("alice") + "/followers",
+				}},
+			},
+			objectsByID: map[string]storagemodels.Object{
+				objectID: {ID: objectID, Type: activitypub.NoteType, Content: "original", AttributedTo: "bob", Published: time.Now().Add(-time.Hour)},
+			},
+			notFoundPKSK: map[string]bool{
+				"ACTOR#bob#PROFILE": true,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ReblogNoteFunc: func(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
+					t.Fatal("pure reblog service should not be called for quote comments")
+					return nil, nil
+				},
+			},
+		})
+
+		comment := "quoted safely"
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{Comment: &comment})
+		require.NoError(t, err)
+		ctx.Params["id"] = "status-1"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleReblogLift(ctx))
+		var body models.Status
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.True(t, body.IsQuoteBoost)
+		require.Equal(t, comment, body.Content)
+		require.NotNil(t, body.QuotedStatusID)
+		require.Equal(t, objectID, *body.QuotedStatusID)
+	})
+}
 
 func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 	cfg := round11TestConfig()
