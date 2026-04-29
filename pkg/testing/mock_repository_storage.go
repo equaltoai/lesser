@@ -50,7 +50,7 @@ type MockRepositoryStorage struct {
 	scheduledStatusRepo  *repositories.ScheduledStatusRepository
 	announcementRepo     *repositories.AnnouncementRepository
 	domainBlockRepo      *repositories.DomainBlockRepository
-	relationshipRepo     *repositories.RelationshipRepository
+	relationshipRepo     interfaces.ConcreteRelationshipRepository
 	instanceRepo         *repositories.InstanceRepository
 	federationRepo       *repositories.FederationRepository
 	recoveryRepo         *repositories.RecoveryRepository
@@ -174,6 +174,14 @@ func WithModerationRepository(repo interfaces.ModerationRepository) Option {
 	}
 }
 
+// WithRelationshipRepository sets a custom relationship repository implementation.
+// Use this to inject a mock for testing specific relationship behavior.
+func WithRelationshipRepository(repo interfaces.ConcreteRelationshipRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.relationshipRepo = repo
+	}
+}
+
 // WithMediaAnalyticsRepository sets a custom media analytics repository implementation.
 // Use this to inject a mock for testing specific media analytics repository behavior.
 func WithMediaAnalyticsRepository(repo interfaces.MediaAnalyticsRepository) Option {
@@ -284,6 +292,7 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		timelineRepo:        inmemory.NewTimelineRepository(),
 		objectRepo:          inmemory.NewObjectRepository(),
 		activityRepo:        inmemory.NewActivityRepository(),
+		relationshipRepo:    inmemory.NewRelationshipRepository(),
 		trustRepo:           inmemory.NewTrustRepository(),
 		moderationRepo:      inmemory.NewModerationRepository(),
 		mediaAnalyticsRepo:  inmemory.NewMediaAnalyticsRepository(),
