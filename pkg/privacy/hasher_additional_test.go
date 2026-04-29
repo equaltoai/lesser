@@ -161,6 +161,70 @@ func TestHasher_PrivateDetectors(t *testing.T) {
 	}
 }
 
+func TestHasher_PartialHashesUseDigestMaterial(t *testing.T) {
+	hasher := createFastTestHasher(t)
+
+	t.Run("ip host hash does not include full-hash prefix", func(t *testing.T) {
+		hasher.config.IPLevel = LevelPartial
+
+		got, err := hasher.HashIP("192.168.1.100")
+		if err != nil {
+			t.Fatalf("HashIP() error = %v", err)
+		}
+		if strings.Contains(got, "full") {
+			t.Fatalf("HashIP() = %q, partial host hash must derive from digest bytes", got)
+		}
+	})
+
+	t.Run("email local hash does not include full-hash prefix", func(t *testing.T) {
+		hasher.config.EmailLevel = LevelPartial
+
+		got, err := hasher.HashEmail("alice@example.com")
+		if err != nil {
+			t.Fatalf("HashEmail() error = %v", err)
+		}
+		local, _, ok := strings.Cut(got, "@")
+		if !ok {
+			t.Fatalf("HashEmail() = %q, want local@domain", got)
+		}
+		if strings.Contains(local, "full") || strings.Contains(local, "email") {
+			t.Fatalf("HashEmail() = %q, local hash must derive from digest bytes", got)
+		}
+	})
+
+	t.Run("username middle hash does not include full-hash prefix", func(t *testing.T) {
+		hasher.config.UsernameLevel = LevelPartial
+
+		got, err := hasher.HashUsername("abcdef")
+		if err != nil {
+			t.Fatalf("HashUsername() error = %v", err)
+		}
+		if strings.Contains(got, "full") || strings.Contains(got, "username") {
+			t.Fatalf("HashUsername() = %q, middle hash must derive from digest bytes", got)
+		}
+	})
+
+	t.Run("pii partial hashes do not include full-hash prefix", func(t *testing.T) {
+		hasher.config.PIILevel = LevelPartial
+
+		got, err := hasher.HashPII("John Doe")
+		if err != nil {
+			t.Fatalf("HashPII() error = %v", err)
+		}
+		if strings.Contains(got, "full_pii") {
+			t.Fatalf("HashPII() = %q, partial hash must derive from digest bytes", got)
+		}
+
+		phone, err := hasher.HashPII("(555) 123-4567")
+		if err != nil {
+			t.Fatalf("HashPII(phone) error = %v", err)
+		}
+		if strings.Contains(phone, "full") || strings.Contains(phone, "pii") {
+			t.Fatalf("HashPII(phone) = %q, digit replacements must derive from digest bytes", phone)
+		}
+	})
+}
+
 func createFastTestHasher(t *testing.T) *Hasher {
 	t.Helper()
 
