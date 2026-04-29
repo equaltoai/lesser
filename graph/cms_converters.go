@@ -404,6 +404,12 @@ func (r *Resolver) ensureAuthorCanWriteCMS(ctx context.Context, username string,
 		return nil
 	}
 
+	if actorHost := cmsHostFromID(attributedTo); actorHost != "" {
+		if !strings.EqualFold(actorHost, r.getDomain()) {
+			return errors.New("insufficient privileges for CMS write")
+		}
+	}
+
 	if strings.EqualFold(cmsNormalizeUsername(attributedTo), username) {
 		return nil
 	}

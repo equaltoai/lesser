@@ -440,6 +440,56 @@ func TestRound12CMS_SeriesMutationRejectsCrossTenantSeries(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestRound12CMS_ArticleWritesRejectCrossTenantArticle(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+	aliceCtx := round12AuthContext("alice")
+
+	cfg := resolver.Registry.GetConfig()
+	require.NotNil(t, cfg)
+
+	cfg.BaseURL = "https://tenant-a.example"
+	articleSlug := "tenant-a-article"
+	tenantAArticle, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &articleSlug,
+		Title:   "Tenant A Article",
+		Content: "tenant a body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantAArticle)
+
+	revision := &models.Revision{
+		ID:           "tenant-a-rev-1",
+		ObjectID:     tenantAArticle.ID,
+		Version:      7,
+		Content:      "restored tenant a body",
+		ChangedBy:    "alice",
+		ChangeType:   "update",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		MetadataJSON: "{}",
+	}
+	require.NoError(t, revision.UpdateKeys())
+	require.NoError(t, storage.Revision().CreateRevision(aliceCtx, revision))
+
+	cfg.BaseURL = "https://tenant-b.example"
+	updatedTitle := "tenant-b takeover"
+	_, err = mut.UpdateArticle(aliceCtx, tenantAArticle.ID, model.UpdateArticleInput{Title: &updatedTitle})
+	require.Error(t, err)
+
+	restored, err := mut.RestoreRevision(aliceCtx, tenantAArticle.ID, 7)
+	require.Error(t, err)
+	require.Nil(t, restored)
+
+	ok, err := mut.DeleteArticle(aliceCtx, tenantAArticle.ID)
+	require.Error(t, err)
+	require.False(t, ok)
+
+	storedArticle, err := storage.Article().GetArticle(context.Background(), tenantAArticle.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Tenant A Article", storedArticle.Name)
+}
+
 func TestRound12CMS_HelperBranches(t *testing.T) {
 	memberGetter := &round12PublicationMemberGetterStub{}
 
