@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 )
 
 type cdkDeployRequest struct {
@@ -111,6 +113,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		"tipEnabled":                strings.TrimSpace(os.Getenv("TIP_ENABLED")),
 		"tipChainId":                strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
 		"tipContractAddress":        strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
+		"apiCorsAllowedOrigins":     firstNonEmpty(os.Getenv("API_CORS_ALLOWED_ORIGINS"), os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 	normalizeContext := func(key, value string) string {
 		value = strings.TrimSpace(value)
@@ -120,6 +123,8 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		switch key {
 		case "lesserHostUrl", "lesserHostAttestationsUrl":
 			return strings.TrimRight(value, "/")
+		case "apiCorsAllowedOrigins":
+			return browsercors.NormalizeAllowedOriginsForDeploy(value)
 		default:
 			return value
 		}

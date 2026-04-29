@@ -34,6 +34,7 @@ type upArgs struct {
 	LesserHostURL             string
 	LesserHostAttestationsURL string
 	LesserHostInstanceKeyARN  string
+	APICORSAllowedOrigins     string
 	TranslationEnabled        *bool
 
 	TipEnabled         *bool
@@ -536,6 +537,9 @@ func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	if v := strings.TrimSpace(e.args.TipContractAddress); v != "" {
 		contexts["tipContractAddress"] = v
 	}
+	if v := strings.TrimSpace(e.args.APICORSAllowedOrigins); v != "" {
+		contexts["apiCorsAllowedOrigins"] = v
+	}
 
 	fmt.Println("\nEnsuring API Gateway account logging role...")
 	if err := ensureAPIGatewayCloudWatchLogsRoleFn(ctx, e.awsCfg); err != nil {
@@ -639,6 +643,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1|2)")
 	fs.StringVar(&args.ReleaseDir, "release-dir", "", "directory containing release deploy assets (checksums.txt, lesser-release.json, lesser-lambda-bundle.tar.gz, lesser-lambda-bundle.json, lesser-auth-ui.tar.gz, lesser-deploy-assembly.tar.gz, lesser-deploy-assembly.json)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
+	fs.StringVar(&args.APICORSAllowedOrigins, "api-cors-allowed-origins", "", "comma-separated browser API CORS origins (env: API_CORS_ALLOWED_ORIGINS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
 	fs.BoolVar(&args.RebuildLambdas, "rebuild-lambdas", false, "force rebuild Lambda zip artifacts")
@@ -660,6 +665,9 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
 		args.BootstrapWalletAddress = strings.TrimSpace(os.Getenv("LESSER_BOOTSTRAP_WALLET_ADDRESS"))
+	}
+	if strings.TrimSpace(args.APICORSAllowedOrigins) == "" {
+		args.APICORSAllowedOrigins = firstNonEmpty(os.Getenv("API_CORS_ALLOWED_ORIGINS"), os.Getenv("CORS_ALLOWED_ORIGINS"))
 	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) != "" {
 		normalized, err := normalizeBootstrapWalletAddress(args.BootstrapWalletAddress)
@@ -747,6 +755,9 @@ func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput)
 	}
 	if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
 		args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
+	}
+	if strings.TrimSpace(args.APICORSAllowedOrigins) == "" {
+		args.APICORSAllowedOrigins = in.APICORSAllowedOrigins
 	}
 	if args.TranslationEnabled == nil {
 		args.TranslationEnabled = in.TranslationEnabled

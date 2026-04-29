@@ -30,6 +30,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/observability"
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -391,28 +392,7 @@ func apiCORSAllowedOriginsFromEnv() string {
 }
 
 func parseAPICORSAllowedOrigins(raw string) []string {
-	seen := map[string]struct{}{}
-	allowedOrigins := make([]string, 0)
-	for _, part := range strings.Split(raw, ",") {
-		origin := strings.TrimSpace(part)
-		if origin == "" {
-			continue
-		}
-		if origin == "*" {
-			return []string{"*"}
-		}
-
-		normalized, _, ok := normalizeOrigin(origin)
-		if !ok {
-			continue
-		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		allowedOrigins = append(allowedOrigins, normalized)
-	}
-	return allowedOrigins
+	return browsercors.ParseAllowedOrigins(raw)
 }
 
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {

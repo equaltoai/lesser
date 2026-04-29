@@ -106,6 +106,7 @@ func TestParseUpArgs(t *testing.T) {
   "admin_username": "app",
   "lesser_host_url": "https://lab.lesser.host",
   "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "api_cors_allowed_origins": "https://app.example.com",
   "translation_enabled": true,
   "tip_enabled": true,
   "tip_chain_id": 10,
@@ -125,6 +126,7 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
 		require.Equal(t, "https://lab.lesser.host", args.LesserHostURL)
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", args.LesserHostInstanceKeyARN)
+		require.Equal(t, "https://app.example.com", args.APICORSAllowedOrigins)
 		require.NotNil(t, args.TranslationEnabled)
 		require.True(t, *args.TranslationEnabled)
 		require.NotNil(t, args.TipEnabled)
@@ -134,6 +136,31 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0xabc", args.TipContractAddress)
 		require.NotNil(t, args.AIEnabled)
 		require.True(t, *args.AIEnabled)
+	})
+
+	t.Run("api cors flag overrides environment", func(t *testing.T) {
+		t.Setenv("API_CORS_ALLOWED_ORIGINS", "https://env.example.com")
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--stage", "dev",
+			"--bootstrap-wallet-address", "0x3333333333333333333333333333333333333333",
+			"--api-cors-allowed-origins", "https://flag.example.com",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "https://flag.example.com", args.APICORSAllowedOrigins)
+	})
+
+	t.Run("api cors falls back to environment", func(t *testing.T) {
+		t.Setenv("API_CORS_ALLOWED_ORIGINS", "https://env.example.com")
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--stage", "dev",
+			"--bootstrap-wallet-address", "0x3333333333333333333333333333333333333333",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "https://env.example.com", args.APICORSAllowedOrigins)
 	})
 
 	t.Run("rejects reserved wallet via provisioning input", func(t *testing.T) {

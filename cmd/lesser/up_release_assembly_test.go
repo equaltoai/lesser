@@ -313,3 +313,17 @@ func TestUpEnvDeployFromReleaseAssembly_ErrorsWhenStageTemplateURLMissing(t *tes
 	_, err := env.deployFromReleaseAssembly(context.Background())
 	require.ErrorContains(t, err, "release deploy assembly missing template URL for dev")
 }
+
+func TestReleaseStageTemplateParametersNormalizesAPICORS(t *testing.T) {
+	env := &upEnv{
+		app:        "demo",
+		baseDomain: "example.com",
+		hostedZone: hostedZone{ID: "Z123"},
+		args: upArgs{
+			APICORSAllowedOrigins: " https://APP.example.com/ , https://bad.example/path ",
+		},
+	}
+
+	params := env.releaseStageTemplateParameters("assets-bucket")
+	require.Equal(t, "https://app.example.com", params["ApiCorsAllowedOrigins"])
+}

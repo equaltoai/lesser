@@ -120,6 +120,70 @@ func TestCdkDeployWithOutputs_IncludesStageAndStagingFlags(t *testing.T) {
 	require.Contains(t, gotArgs, "lambdaAssetRoot=/tmp/lambda-assets")
 }
 
+func TestCdkDeployWithOutputs_NormalizesAPICORSContext(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+
+	repoRoot := t.TempDir()
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		Contexts: map[string]string{
+			"apiCorsAllowedOrigins": " https://APP.example.com/ , https://bad.example/path ",
+		},
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "apiCorsAllowedOrigins=https://app.example.com")
+	require.NotContains(t, gotArgs, "https://bad.example/path")
+}
+
+func TestCdkDeployWithOutputs_UsesAPICORSEnvFallback(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+	t.Setenv("API_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("CORS_ALLOWED_ORIGINS", " https://LEGACY.example.com/ ")
+
+	repoRoot := t.TempDir()
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "apiCorsAllowedOrigins=https://legacy.example.com")
+}
+
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousResolveOutputs := resolveStackOutputsFn

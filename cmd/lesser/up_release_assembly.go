@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 )
 
 const releaseAssemblyAppSlugPlaceholder = "appslugplaceholder"
@@ -122,6 +123,7 @@ func (e *upEnv) releaseStageTemplateParameters(releaseAssetBucket string) map[st
 		"TipEnabled":               optionalBoolString(e.args.TipEnabled),
 		"TipChainId":               optionalIntString(e.args.TipChainID),
 		"TipContractAddress":       strings.TrimSpace(e.args.TipContractAddress),
+		"ApiCorsAllowedOrigins":    normalizeReleaseStageParameter("apiCorsAllowedOrigins", e.args.APICORSAllowedOrigins),
 	}
 	return params
 }
@@ -134,6 +136,8 @@ func normalizeReleaseStageParameter(key string, value string) string {
 	switch key {
 	case "lesserHostUrl", "lesserHostAttestationsUrl":
 		return strings.TrimRight(value, "/")
+	case "apiCorsAllowedOrigins":
+		return browsercors.NormalizeAllowedOriginsForDeploy(value)
 	default:
 		return value
 	}

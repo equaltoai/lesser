@@ -90,6 +90,7 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
   "lesser_host_url": " https://lab.lesser.host/ ",
   "lesser_host_attestations_url": " https://attest.lab.lesser.host/ ",
   "lesser_host_instance_key_arn": " arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey ",
+  "api_cors_allowed_origins": " https://app.example.com ",
   "translation_enabled": false,
   "tip_enabled": true,
   "tip_chain_id": 10,
@@ -101,6 +102,7 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
 		require.Equal(t, "https://lab.lesser.host", in.LesserHostURL)
 		require.Equal(t, "https://attest.lab.lesser.host", in.LesserHostAttestationsURL)
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", in.LesserHostInstanceKeyARN)
+		require.Equal(t, "https://app.example.com", in.APICORSAllowedOrigins)
 		require.NotNil(t, in.TranslationEnabled)
 		require.False(t, *in.TranslationEnabled)
 		require.NotNil(t, in.TipEnabled)

@@ -23,6 +23,7 @@ type managedProvisioningInput struct {
 	LesserHostURL             string `json:"lesser_host_url,omitempty"`
 	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
+	APICORSAllowedOrigins     string `json:"api_cors_allowed_origins,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
 
 	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
@@ -73,6 +74,7 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	in.LesserHostURL = strings.TrimRight(strings.TrimSpace(in.LesserHostURL), "/")
 	in.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(in.LesserHostAttestationsURL), "/")
 	in.LesserHostInstanceKeyARN = strings.TrimSpace(in.LesserHostInstanceKeyARN)
+	in.APICORSAllowedOrigins = strings.TrimSpace(in.APICORSAllowedOrigins)
 	in.TipContractAddress = strings.TrimSpace(in.TipContractAddress)
 	if in.AdminUsername == "" {
 		in.AdminUsername = in.Slug

@@ -54,6 +54,7 @@ const (
 	placeholderTipEnabled                 = "TIP_ENABLED_PLACEHOLDER"
 	placeholderTipChainID                 = "TIP_CHAIN_ID_PLACEHOLDER"
 	placeholderTipContractAddress         = "TIP_CONTRACT_ADDRESS_PLACEHOLDER"
+	placeholderAPICORSAllowedOrigins      = "https://api-cors-placeholder.example.invalid"
 )
 
 var stageTemplateFileNames = map[naming.Stage]string{
@@ -70,6 +71,7 @@ var stageContextPlaceholders = map[string]string{
 	"tipEnabled":                placeholderTipEnabled,
 	"tipChainId":                placeholderTipChainID,
 	"tipContractAddress":        placeholderTipContractAddress,
+	"apiCorsAllowedOrigins":     placeholderAPICORSAllowedOrigins,
 }
 
 var stageLookupParameterNames = map[string]struct{}{
@@ -424,6 +426,7 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 	addStringParameter(template, "TipEnabled", "per-install tips toggle", true, "")
 	addStringParameter(template, "TipChainId", "per-install tip chain id", true, "")
 	addStringParameter(template, "TipContractAddress", "per-install tip contract address", true, "")
+	addStringParameter(template, "ApiCorsAllowedOrigins", "per-install API browser CORS origins", true, "")
 
 	replacements := orderedPlaceholderReplacements(map[string]string{
 		stagePlaceholderDomain(stage):        stageDomainSub(stage),
@@ -440,6 +443,7 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 		placeholderTipEnabled:                "${TipEnabled}",
 		placeholderTipChainID:                "${TipChainId}",
 		placeholderTipContractAddress:        "${TipContractAddress}",
+		placeholderAPICORSAllowedOrigins:     "${ApiCorsAllowedOrigins}",
 		assetBucketPlaceholder():             "${ReleaseAssetBucketName}",
 	})
 
@@ -947,6 +951,7 @@ func resolveDependsOnPlaceholders(value string) string {
 		"${TipEnabled}":                placeholderTipEnabled,
 		"${TipChainId}":                placeholderTipChainID,
 		"${TipContractAddress}":        placeholderTipContractAddress,
+		"${ApiCorsAllowedOrigins}":     placeholderAPICORSAllowedOrigins,
 	})
 	resolved, _ := applyPlaceholderReplacements(value, replacements)
 	return resolved

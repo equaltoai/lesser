@@ -251,9 +251,13 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 	}
 
 	gotAllowHeaders := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Headers")
-	wantAllowHeaders := "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,mcp-protocol-version,mcp-session-id,last-event-id'"
+	wantAllowHeaders := "'Accept,Authorization,Content-Type,User-Agent,X-Forwarded-For,X-Forwarded-Proto,X-Request-Id,X-Tenant-Id,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,mcp-protocol-version,mcp-session-id,last-event-id'"
 	if gotAllowHeaders != wantAllowHeaders {
 		t.Fatalf("unexpected OPTIONS /mcp allow-headers value: got %q want %q", gotAllowHeaders, wantAllowHeaders)
+	}
+	gotAllowOrigin := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Origin")
+	if gotAllowOrigin != "integration.response.body.allowedOrigin" {
+		t.Fatalf("expected OPTIONS /mcp allow-origin to be derived from the allowlist template (got %q)", gotAllowOrigin)
 	}
 
 	if !templateHasMcpInvokePermission(t, tpl, wantParamName) {
@@ -336,6 +340,53 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	}
 	if _, ok := gotRoutes["OPTIONS /mcp"]; ok {
 		t.Fatalf("unexpected OPTIONS /mcp route present when bodyEnabled=false")
+	}
+}
+
+func TestRestAPIPreflightDefaultsToInstanceOrigin(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment: "development",
+		Domain:      "dev.example.com",
+	})
+
+	integration := preflightIntegrationForRoute(t, tpl, "OPTIONS /api/v1/{proxy+}")
+	gotAllowOrigin := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Origin")
+	if gotAllowOrigin != "integration.response.body.allowedOrigin" {
+		t.Fatalf("expected dynamic allow-origin mapping, got %q", gotAllowOrigin)
+	}
+	if got := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Credentials"); got != "'false'" {
+		t.Fatalf("expected credentials to remain disabled, got %q", got)
+	}
+
+	template := firstRequestTemplateValue(integration, "application/json")
+	if !strings.Contains(template, `#set($defaultOrigin = "https://dev.example.com")`) {
+		t.Fatalf("expected default instance origin in preflight template, got:\n%s", template)
+	}
+	if !strings.Contains(template, `#set($configuredOrigins = "")`) {
+		t.Fatalf("expected empty configured origins to use default instance origin, got:\n%s", template)
+	}
+}
+
+func TestRestAPIPreflightUsesConfiguredAllowlist(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:           "development",
+		Domain:                "dev.example.com",
+		APICORSAllowedOrigins: " https://APP.example.com/ , https://bad.example/path ",
+	})
+
+	integration := preflightIntegrationForRoute(t, tpl, "OPTIONS /api/v1/{proxy+}")
+	template := firstRequestTemplateValue(integration, "application/json")
+	if !strings.Contains(template, `#set($defaultOrigin = "https://dev.example.com")`) {
+		t.Fatalf("expected default instance origin to remain available for empty deploy config, got:\n%s", template)
+	}
+	if !strings.Contains(template, `#set($configuredOrigins = "https://app.example.com")`) {
+		t.Fatalf("expected configured origins to be normalized before synthesis, got:\n%s", template)
+	}
+	if strings.Contains(template, `bad.example/path`) {
+		t.Fatalf("invalid configured origin leaked into preflight template:\n%s", template)
+	}
+	if got := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Origin"); got == "'*'" {
+		t.Fatalf("configured preflight must not synthesize wildcard allow-origin")
 	}
 }
 
@@ -518,6 +569,65 @@ func integrationURIReferencesSSMParameterDefault(t *testing.T, tpl map[string]an
 	}
 
 	return false
+}
+
+func synthesizeAPIGatewayTemplate(t *testing.T, props *APIGatewayProps) map[string]any {
+	t.Helper()
+
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: _jsii.String(outdir)})
+	stack := awscdk.NewStack(app, _jsii.String("TestStack"), nil)
+
+	dummy := awslambda.NewFunction(stack, _jsii.String("DummyFn"), &awslambda.FunctionProps{
+		Runtime: awslambda.Runtime_NODEJS_20_X(),
+		Handler: _jsii.String("index.handler"),
+		Code:    awslambda.Code_FromInline(_jsii.String("exports.handler = async () => ({ statusCode: 200, body: 'ok' });")),
+	})
+
+	props.Functions = &LambdaFunctions{
+		Functions: map[string]awslambda.Function{
+			"api":         dummy,
+			"graphql":     dummy,
+			"sse":         dummy,
+			"streaming":   dummy,
+			"graphql-ws":  dummy,
+			"actor":       dummy,
+			"collections": dummy,
+			"inbox":       dummy,
+			"objects":     dummy,
+			"outbox":      dummy,
+			"webfinger":   dummy,
+		},
+	}
+
+	_ = CreateAPIGateway(stack, props)
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	b, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template %s: %v", templatePath, err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(b, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+	return tpl
+}
+
+func preflightIntegrationForRoute(t *testing.T, tpl map[string]any, route string) map[string]any {
+	t.Helper()
+
+	optionsProps, ok := findMethodPropertiesByRouteKey(t, tpl, route)
+	if !ok {
+		t.Fatalf("expected %s route to exist", route)
+	}
+	integration, ok := optionsProps["Integration"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected %s integration properties to exist", route)
+	}
+	return integration
 }
 
 func templateHasMcpInvokePermission(t *testing.T, tpl map[string]any, wantParamName string) bool {
@@ -968,5 +1078,14 @@ func firstIntegrationResponseParameterValue(integration map[string]any, key stri
 	}
 
 	value, _ := responseParameters[key].(string)
+	return value
+}
+
+func firstRequestTemplateValue(integration map[string]any, key string) string {
+	rawTemplates, ok := integration["RequestTemplates"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := rawTemplates[key].(string)
 	return value
 }

@@ -575,6 +575,7 @@ func TestWriteDeployAssembly(t *testing.T) {
 	require.Contains(t, devTemplate, `{{resolve:ssm:/${AppSlug}/dev/lesser-body/exports/v1/mcp_lambda_arn}}`)
 	require.Contains(t, devTemplate, `dev.${BaseDomain}`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${LesserHostUrl}"`)
+	require.Contains(t, devTemplate, `"ApiCorsAllowedOrigins"`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${ReleaseAssetBucketName}"`)
 
 	zipEntries := readZipEntries(t, archiveEntries["assets/site.zip"])

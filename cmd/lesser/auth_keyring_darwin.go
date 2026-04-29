@@ -52,6 +52,7 @@ func keyringSaveSecret(account string, secret string) error {
 		"-s", lesserCLIKeyringServiceName,
 		"-a", account,
 		"-U",
+		"-w",
 	)
 	cmd.Stdin = strings.NewReader(secret + "\n")
 	output, err := cmd.CombinedOutput()

@@ -123,6 +123,7 @@ func main() {
 			"tipEnabled",
 			"tipChainId",
 			"tipContractAddress",
+			"apiCorsAllowedOrigins",
 		} {
 			if v := getContextString(app, key); v != "" {
 				config[key] = v

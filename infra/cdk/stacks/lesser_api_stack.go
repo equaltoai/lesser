@@ -975,14 +975,15 @@ func (s *LesserApiStack) configString(key string) string {
 
 func (s *LesserApiStack) createAPIGateway(domain string) {
 	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
-		AppName:              s.AppName,
-		Environment:          s.Environment,
-		Domain:               domain,
-		Certificate:          s.APICertificate,
-		WebSocketCertificate: s.WebSocketCertificate,
-		Functions:            s.Functions,
-		HostedZone:           s.HostedZone,
-		BodyEnabled:          s.bodyEnabled(),
+		AppName:               s.AppName,
+		Environment:           s.Environment,
+		Domain:                domain,
+		Certificate:           s.APICertificate,
+		WebSocketCertificate:  s.WebSocketCertificate,
+		Functions:             s.Functions,
+		HostedZone:            s.HostedZone,
+		BodyEnabled:           s.bodyEnabled(),
+		APICORSAllowedOrigins: s.configString("apiCorsAllowedOrigins"),
 	})
 
 	apis := []awsapigatewayv2.WebSocketApi{s.API.WebSocketApi}

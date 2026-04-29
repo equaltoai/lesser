@@ -160,6 +160,9 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	if v := getConfigString("agentAccessTokenDuration"); v != "" {
 		commonEnv["AGENT_ACCESS_TOKEN_DURATION"] = jsii.String(v)
 	}
+	if v := getConfigString("apiCorsAllowedOrigins"); v != "" {
+		commonEnv["API_CORS_ALLOWED_ORIGINS"] = jsii.String(v)
+	}
 
 	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
 	if props.JwtSecret != nil {
