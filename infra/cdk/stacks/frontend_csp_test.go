@@ -9,6 +9,7 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 	resources := synthClientFrontendResources(t)
 	authPolicyLogicalID, authPolicy, clientPolicyLogicalID, clientPolicy := findFrontendResponseHeadersPolicies(t, resources)
 	csp := extractResponseHeadersPolicyCSP(t, authPolicy)
+	clientCSP := extractResponseHeadersPolicyCSP(t, clientPolicy)
 
 	if strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
 		t.Fatalf("CSP must not include unsafe directives: %s", csp)
@@ -21,8 +22,14 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 		"'sha256-IV0HjYu959C/EiJIL2l/9Ty8PA4757JXhA/g112YXVE='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
 	})
-	if hasResponseHeadersPolicyCSP(clientPolicy) {
-		t.Fatalf("client SSR response headers policy must not inject CSP")
+	requireContainsAll(t, clientCSP, []string{
+		"default-src 'self'",
+		"frame-ancestors 'none'",
+		"object-src 'none'",
+		"connect-src 'self' https: wss:",
+	})
+	if strings.Contains(clientCSP, "unsafe-eval") {
+		t.Fatalf("client SSR fallback CSP must not include unsafe-eval: %s", clientCSP)
 	}
 
 	dist := findSingleCloudFrontDistribution(t, resources)
@@ -80,12 +87,16 @@ func findFrontendResponseHeadersPolicies(t *testing.T, resources map[string]any)
 		if !ok || typed["Type"] != "AWS::CloudFront::ResponseHeadersPolicy" {
 			continue
 		}
-		if hasResponseHeadersPolicyCSP(typed) {
+		comment := responseHeadersPolicyComment(typed)
+		if strings.Contains(comment, "static site") {
 			if authLogicalID != "" {
 				t.Fatalf("expected one auth ResponseHeadersPolicy, found multiple (%s, %s)", authLogicalID, id)
 			}
 			authLogicalID = id
 			authPolicy = typed
+			continue
+		}
+		if !strings.Contains(comment, "SSR client") {
 			continue
 		}
 		if clientLogicalID != "" {
@@ -98,6 +109,19 @@ func findFrontendResponseHeadersPolicies(t *testing.T, resources map[string]any)
 		t.Fatalf("expected auth and client ResponseHeadersPolicy resources")
 	}
 	return authLogicalID, authPolicy, clientLogicalID, clientPolicy
+}
+
+func responseHeadersPolicyComment(policy map[string]any) string {
+	props, ok := policy["Properties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	cfg, ok := props["ResponseHeadersPolicyConfig"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	comment, _ := cfg["Comment"].(string)
+	return comment
 }
 
 func extractResponseHeadersPolicyCSP(t *testing.T, policy map[string]any) string {

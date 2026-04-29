@@ -56,11 +56,15 @@ func NewFrontendStaticResponseHeadersPolicy(scope constructs.Construct, domainNa
 	})
 }
 
-// NewClientSSRResponseHeadersPolicy leaves CSP to the origin so FaceTheory responses can remain authoritative.
+// NewClientSSRResponseHeadersPolicy supplies a conservative fallback CSP while leaving origin CSP authoritative.
 func NewClientSSRResponseHeadersPolicy(scope constructs.Construct) awscloudfront.ResponseHeadersPolicy {
 	return awscloudfront.NewResponseHeadersPolicy(scope, _jsii.String("ClientSSRResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
-		Comment: _jsii.String("Lesser SSR client security headers without CloudFront-managed CSP"),
+		Comment: _jsii.String("Lesser SSR client security headers with non-overriding fallback CSP"),
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
+			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
+				ContentSecurityPolicy: _jsii.String(buildClientSSRFallbackCSP()),
+				Override:              _jsii.Bool(false),
+			},
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{Override: _jsii.Bool(true)},
 			FrameOptions: &awscloudfront.ResponseHeadersFrameOptions{
 				FrameOption: awscloudfront.HeadersFrameOption_DENY,
@@ -94,6 +98,20 @@ func NewClientSSRResponseHeadersPolicy(scope constructs.Construct) awscloudfront
 			_jsii.String("Server"),
 		},
 	})
+}
+
+func buildClientSSRFallbackCSP() string {
+	return strings.Join([]string{
+		"default-src 'self'",
+		"base-uri 'self'",
+		"object-src 'none'",
+		"frame-ancestors 'none'",
+		"img-src 'self' data: https:",
+		"font-src 'self' data: https:",
+		"style-src 'self' 'unsafe-inline'",
+		"script-src 'self'",
+		"connect-src 'self' https: wss:",
+	}, "; ") + ";"
 }
 
 func buildFrontendStaticCSP(domainName *string) string {

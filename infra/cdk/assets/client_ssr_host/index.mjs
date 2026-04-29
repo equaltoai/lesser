@@ -46,6 +46,7 @@ export async function handler(event, context) {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
+        ...securityHeaders(),
       },
       body: errorPage(),
     };
@@ -183,14 +184,17 @@ async function responseToLambda(response) {
 }
 
 function placeholderResponse(event) {
-  const host = String(event?.headers?.host || stageDomain || "");
-  const origin = host ? `https://${host}` : "";
+  const origin = publicOrigin(event);
+  const escapedOrigin = escapeHtml(origin);
+  const authLink = origin ? `<a href="${escapedOrigin}/auth">${escapedOrigin}/auth</a>` : "<code>/auth</code>";
+  const apiLink = origin ? `<a href="${escapedOrigin}/">${escapedOrigin}/</a>` : "<code>/</code>";
 
   return {
     statusCode: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
+      ...securityHeaders(),
     },
     body: `<!doctype html>
 <html lang="en">
@@ -203,8 +207,8 @@ function placeholderResponse(event) {
     <h1>Lesser is deployed</h1>
     <p>The FaceTheory client has not been installed yet.</p>
     <p>Client base path: <code>${escapeHtml(basePath)}</code></p>
-    <p>Auth UI: <a href="${origin}/auth">${origin}/auth</a></p>
-    <p>API: <a href="${origin}/">${origin}/</a></p>
+    <p>Auth UI: ${authLink}</p>
+    <p>API: ${apiLink}</p>
     <p>Setup status: <code>GET /setup/status</code></p>
   </body>
 </html>`,
@@ -261,9 +265,56 @@ function joinS3Path(root, suffix) {
     .join("/");
 }
 
+function securityHeaders() {
+  return {
+    "content-security-policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "cross-origin-resource-policy": "same-origin",
+    "permissions-policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+  };
+}
+
+function publicOrigin(event) {
+  const host = sanitizeHost(
+    headerValue(event, "x-lesser-forwarded-host") ||
+    headerValue(event, "host") ||
+    stageDomain,
+  );
+  return host ? `https://${host}` : "";
+}
+
+function headerValue(event, name) {
+  const headers = event?.headers || {};
+  const want = String(name || "").toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key || "").toLowerCase() === want) {
+      return Array.isArray(value) ? value[0] : value;
+    }
+  }
+  return "";
+}
+
+function sanitizeHost(value) {
+  const first = String(value || "").split(",")[0].trim();
+  if (!first || first.length > 253) {
+    return "";
+  }
+  if (first.includes("/") || first.includes("\\") || first.includes("@")) {
+    return "";
+  }
+  if (!/^(?:[a-zA-Z0-9.-]+|\[[0-9a-fA-F:.]+])(?::[0-9]{1,5})?$/.test(first)) {
+    return "";
+  }
+  return first.toLowerCase();
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
