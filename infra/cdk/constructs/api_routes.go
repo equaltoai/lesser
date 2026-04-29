@@ -18,18 +18,20 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type APIGatewayProps struct {
-	AppName              string
-	Environment          string
-	Domain               string
-	Certificate          awscertificatemanager.ICertificate
-	WebSocketCertificate awscertificatemanager.ICertificate
-	Functions            *LambdaFunctions
-	HostedZone           awsroute53.IHostedZone
-	BodyEnabled          bool
+	AppName               string
+	Environment           string
+	Domain                string
+	Certificate           awscertificatemanager.ICertificate
+	WebSocketCertificate  awscertificatemanager.ICertificate
+	Functions             *LambdaFunctions
+	HostedZone            awsroute53.IHostedZone
+	BodyEnabled           bool
+	APICORSAllowedOrigins string
 }
 
 type APIGateway struct {
@@ -59,7 +61,6 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	restProps := &apptheorycdk.AppTheoryRestApiRouterProps{
 		ApiName:     jsii.String(apiName),
 		Description: jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
-		Cors:        restAPICorsOptions(),
 		Stage: &apptheorycdk.AppTheoryRestApiRouterStageOptions{
 			StageName:          jsii.String(string(apiStage)),
 			AccessLogging:      logGroup,
@@ -84,12 +85,13 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	}
 
 	gateway.RestApi = apptheorycdk.NewAppTheoryRestApiRouter(scope, jsii.String("RestApi"), restProps)
-	addRestApiGatewayResponses(gateway.RestApi, gateway.RestApi.Api())
+	preflight := restAPIPreflightConfigForDomain(props.Domain, props.APICORSAllowedOrigins)
+	addRestApiGatewayResponses(gateway.RestApi, gateway.RestApi.Api(), preflight)
 
 	// Add routes
-	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
+	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds, preflight)
 	if props.BodyEnabled {
-		addMcpRoute(scope, gateway.RestApi, appName, apiStage)
+		addMcpRoute(scope, gateway.RestApi, appName, apiStage, preflight)
 	}
 
 	// Shared custom domain for all WebSocket APIs.
@@ -126,22 +128,58 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	return gateway
 }
 
-func restAPICorsOptions() *apptheorycdk.AppTheoryRestApiRouterCorsOptions {
-	return &apptheorycdk.AppTheoryRestApiRouterCorsOptions{
-		AllowHeaders: &[]*string{
-			jsii.String("Content-Type"),
-			jsii.String("Authorization"),
-			jsii.String("X-Amz-Date"),
-			jsii.String("X-Api-Key"),
-			jsii.String("X-Amz-Security-Token"),
-			jsii.String("mcp-protocol-version"),
-			jsii.String("mcp-session-id"),
-			jsii.String("last-event-id"),
-		},
+type restAPIPreflightConfig struct {
+	DefaultOrigin         string
+	ConfiguredOrigins     string
+	AllowHeaders          string
+	AllowMethods          string
+	MaxAgeSeconds         int
+	GatewayResponseOrigin string
+}
+
+func restAPIPreflightConfigForDomain(domain string, configuredOrigins string) restAPIPreflightConfig {
+	defaultOrigin := ""
+	if normalized, _, ok := browsercors.NormalizeOrigin("https://" + strings.TrimSpace(domain)); ok {
+		defaultOrigin = normalized
+	}
+	normalizedConfigured := browsercors.NormalizeAllowedOriginsForDeploy(configuredOrigins)
+
+	gatewayResponseOrigin := ""
+	if normalizedConfigured == "" {
+		gatewayResponseOrigin = defaultOrigin
+	} else if normalizedConfigured == "*" {
+		gatewayResponseOrigin = "*"
+	} else if normalizedConfigured != "" && !strings.Contains(normalizedConfigured, ",") &&
+		normalizedConfigured != browsercors.DenyAllAllowlist {
+		gatewayResponseOrigin = normalizedConfigured
+	}
+
+	return restAPIPreflightConfig{
+		DefaultOrigin:     defaultOrigin,
+		ConfiguredOrigins: normalizedConfigured,
+		AllowHeaders: strings.Join([]string{
+			"Accept",
+			"Authorization",
+			"Content-Type",
+			"User-Agent",
+			"X-Forwarded-For",
+			"X-Forwarded-Proto",
+			"X-Request-Id",
+			"X-Tenant-Id",
+			"X-Amz-Date",
+			"X-Api-Key",
+			"X-Amz-Security-Token",
+			"mcp-protocol-version",
+			"mcp-session-id",
+			"last-event-id",
+		}, ","),
+		AllowMethods:          "GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD",
+		MaxAgeSeconds:         600,
+		GatewayResponseOrigin: gatewayResponseOrigin,
 	}
 }
 
-func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRouter, appName string, stage naming.Stage) {
+func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRouter, appName string, stage naming.Stage, preflight restAPIPreflightConfig) {
 	if scope == nil || api == nil || strings.TrimSpace(appName) == "" || strings.TrimSpace(string(stage)) == "" {
 		return
 	}
@@ -163,25 +201,27 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 	options := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
 		Streaming: jsii.Bool(true),
 	}
-	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("POST")}, mcpLambda, options)
-	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("GET")}, mcpLambda, options)
-	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("DELETE")}, mcpLambda, nil)
-	api.AddLambdaIntegration(jsii.String("/mcp/{actor}"), &[]*string{jsii.String("POST")}, mcpLambda, options)
-	api.AddLambdaIntegration(jsii.String("/mcp/{actor}"), &[]*string{jsii.String("GET")}, mcpLambda, options)
-	api.AddLambdaIntegration(jsii.String("/mcp/{actor}"), &[]*string{jsii.String("DELETE")}, mcpLambda, nil)
-	api.AddLambdaIntegration(jsii.String("/.well-known/mcp.json"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
-	api.AddLambdaIntegration(jsii.String("/.well-known/oauth-protected-resource/mcp/{actor}"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
+	addLambdaIntegrationWithPreflight(api, "/mcp", &[]*string{jsii.String("POST")}, mcpLambda, options, preflight)
+	addLambdaIntegrationWithPreflight(api, "/mcp", &[]*string{jsii.String("GET")}, mcpLambda, options, preflight)
+	addLambdaIntegrationWithPreflight(api, "/mcp", &[]*string{jsii.String("DELETE")}, mcpLambda, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/mcp/{actor}", &[]*string{jsii.String("POST")}, mcpLambda, options, preflight)
+	addLambdaIntegrationWithPreflight(api, "/mcp/{actor}", &[]*string{jsii.String("GET")}, mcpLambda, options, preflight)
+	addLambdaIntegrationWithPreflight(api, "/mcp/{actor}", &[]*string{jsii.String("DELETE")}, mcpLambda, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/.well-known/mcp.json", &[]*string{jsii.String("GET")}, mcpLambda, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/.well-known/oauth-protected-resource/mcp/{actor}", &[]*string{jsii.String("GET")}, mcpLambda, nil, preflight)
 }
 
-func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi) {
+func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi, preflight restAPIPreflightConfig) {
 	if scope == nil || api == nil {
 		return
 	}
 
 	commonHeaders := map[string]*string{
-		"gatewayresponse.header.Access-Control-Allow-Origin":  jsii.String("'*'"),
-		"gatewayresponse.header.Access-Control-Allow-Headers": jsii.String("'*'"),
-		"gatewayresponse.header.Access-Control-Allow-Methods": jsii.String("'*'"),
+		"gatewayresponse.header.Access-Control-Allow-Headers": jsii.String("'" + preflight.AllowHeaders + "'"),
+		"gatewayresponse.header.Access-Control-Allow-Methods": jsii.String("'" + preflight.AllowMethods + "'"),
+	}
+	if strings.TrimSpace(preflight.GatewayResponseOrigin) != "" {
+		commonHeaders["gatewayresponse.header.Access-Control-Allow-Origin"] = jsii.String("'" + preflight.GatewayResponseOrigin + "'")
 	}
 
 	serviceUnavailableTemplate := map[string]*string{
@@ -235,7 +275,7 @@ func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.Re
 	})
 }
 
-func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, streamTimeoutSeconds int) {
+func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, streamTimeoutSeconds int, preflight restAPIPreflightConfig) {
 	apiFn := functions.Must("api")
 	graphqlFn := functions.Must("graphql")
 	sseFn := functions.Must("sse")
@@ -243,34 +283,34 @@ func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFun
 
 	// Root redirect is implemented in the API Lambda (GET/HEAD "/" → 302 "/l/"), but API Gateway requires an
 	// explicit route for "/" (the proxy route does not match the empty path).
-	api.AddLambdaIntegration(jsii.String("/"), &[]*string{jsii.String("GET")}, apiFn, nil)
-	api.AddLambdaIntegration(jsii.String("/"), &[]*string{jsii.String("HEAD")}, apiFn, nil)
+	addLambdaIntegrationWithPreflight(api, "/", &[]*string{jsii.String("GET")}, apiFn, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/", &[]*string{jsii.String("HEAD")}, apiFn, nil, preflight)
 
 	// Mastodon streaming (SSE) routes.
 	sseOptions := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
 		Streaming: jsii.Bool(true),
 		Timeout:   awscdk.Duration_Seconds(jsii.Number(float64(streamTimeoutSeconds))),
 	}
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/health"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user/notification"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/local"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/remote"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/oauth/device"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/health", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/user", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/user/notification", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/public", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/public/local", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/public/remote", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/hashtag", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/hashtag/local", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/list", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/direct", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/oauth/device", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
 
 	// Mastodon API routes (Lift handles internal routing).
-	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
-	api.AddLambdaIntegration(jsii.String("/api/v2/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
+	addLambdaIntegrationWithPreflight(api, "/api/v1/{proxy+}", &[]*string{jsii.String("ANY")}, apiFn, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/v2/{proxy+}", &[]*string{jsii.String("ANY")}, apiFn, nil, preflight)
 
 	// GraphQL routes.
-	api.AddLambdaIntegration(jsii.String("/api/graphql"), &[]*string{jsii.String("GET")}, graphqlFn, nil)
-	api.AddLambdaIntegration(jsii.String("/api/graphql"), &[]*string{jsii.String("POST")}, graphqlFn, nil)
+	addLambdaIntegrationWithPreflight(api, "/api/graphql", &[]*string{jsii.String("GET")}, graphqlFn, nil, preflight)
+	addLambdaIntegrationWithPreflight(api, "/api/graphql", &[]*string{jsii.String("POST")}, graphqlFn, nil, preflight)
 
 	// Federation routes (inventory-driven; Spec 03).
 	addInventoryRestRoutes(api, functions, map[string]struct{}{
@@ -280,16 +320,16 @@ func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFun
 		"objects":     {},
 		"outbox":      {},
 		"webfinger":   {},
-	})
+	}, preflight)
 
 	// Catch-all fallback to ensure unexpected routes reach the API Lambda.
-	api.AddLambdaIntegration(jsii.String("/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
+	addLambdaIntegrationWithPreflight(api, "/{proxy+}", &[]*string{jsii.String("ANY")}, apiFn, nil, preflight)
 
 	// Health check.
-	api.AddLambdaIntegration(jsii.String("/health"), &[]*string{jsii.String("GET")}, healthFn, nil)
+	addLambdaIntegrationWithPreflight(api, "/health", &[]*string{jsii.String("GET")}, healthFn, nil, preflight)
 }
 
-func addInventoryRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, include map[string]struct{}) {
+func addInventoryRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, include map[string]struct{}, preflight restAPIPreflightConfig) {
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		if _, ok := include[spec.Name]; !ok {
 			continue
@@ -297,9 +337,113 @@ func addInventoryRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *
 
 		handler := functions.Must(spec.Name)
 		for _, route := range spec.HTTPRoutes {
-			api.AddLambdaIntegration(jsii.String(route.Path), &[]*string{jsii.String(route.Method)}, handler, nil)
+			addLambdaIntegrationWithPreflight(api, route.Path, &[]*string{jsii.String(route.Method)}, handler, nil, preflight)
 		}
 	}
+}
+
+func addLambdaIntegrationWithPreflight(
+	api apptheorycdk.AppTheoryRestApiRouter,
+	path string,
+	methods *[]*string,
+	handler awslambda.IFunction,
+	options *apptheorycdk.AppTheoryRestApiRouterIntegrationOptions,
+	preflight restAPIPreflightConfig,
+) {
+	api.AddLambdaIntegration(jsii.String(path), methods, handler, options)
+	addRestPreflight(api.Api(), path, preflight)
+}
+
+func addRestPreflight(api awsapigateway.RestApi, path string, preflight restAPIPreflightConfig) {
+	if api == nil {
+		return
+	}
+	resource := restAPIResourceForPath(api, path)
+	if resource == nil || resource.Node().TryFindChild(jsii.String("OPTIONS")) != nil {
+		return
+	}
+
+	resource.AddMethod(
+		jsii.String("OPTIONS"),
+		awsapigateway.NewMockIntegration(&awsapigateway.IntegrationOptions{
+			IntegrationResponses: &[]*awsapigateway.IntegrationResponse{
+				{
+					StatusCode: jsii.String("200"),
+					ResponseParameters: &map[string]*string{
+						"method.response.header.Access-Control-Allow-Headers":     jsii.String("'" + preflight.AllowHeaders + "'"),
+						"method.response.header.Access-Control-Allow-Methods":     jsii.String("'" + preflight.AllowMethods + "'"),
+						"method.response.header.Access-Control-Allow-Origin":      jsii.String("integration.response.body.allowedOrigin"),
+						"method.response.header.Access-Control-Allow-Credentials": jsii.String("'false'"),
+						"method.response.header.Access-Control-Max-Age":           jsii.String(fmt.Sprintf("'%d'", preflight.MaxAgeSeconds)),
+					},
+				},
+			},
+			PassthroughBehavior: awsapigateway.PassthroughBehavior_WHEN_NO_MATCH,
+			RequestTemplates: &map[string]*string{
+				"application/json": jsii.String(restPreflightRequestTemplate(preflight)),
+			},
+		}),
+		&awsapigateway.MethodOptions{
+			MethodResponses: &[]*awsapigateway.MethodResponse{
+				{
+					StatusCode: jsii.String("200"),
+					ResponseParameters: &map[string]*bool{
+						"method.response.header.Access-Control-Allow-Headers":     jsii.Bool(true),
+						"method.response.header.Access-Control-Allow-Methods":     jsii.Bool(true),
+						"method.response.header.Access-Control-Allow-Origin":      jsii.Bool(true),
+						"method.response.header.Access-Control-Allow-Credentials": jsii.Bool(true),
+						"method.response.header.Access-Control-Max-Age":           jsii.Bool(true),
+					},
+				},
+			},
+		},
+	)
+}
+
+func restAPIResourceForPath(api awsapigateway.RestApi, inputPath string) awsapigateway.IResource {
+	current := api.Root()
+	trimmed := strings.Trim(strings.TrimSpace(inputPath), "/")
+	if trimmed == "" {
+		return current
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		part := strings.TrimSpace(segment)
+		if part == "" {
+			continue
+		}
+		next := current.GetResource(jsii.String(part))
+		if next == nil {
+			next = current.AddResource(jsii.String(part), nil)
+		}
+		current = next
+	}
+	return current
+}
+
+func restPreflightRequestTemplate(preflight restAPIPreflightConfig) string {
+	defaultOrigin := strings.TrimSpace(preflight.DefaultOrigin)
+	configuredOrigins := strings.TrimSpace(preflight.ConfiguredOrigins)
+	return fmt.Sprintf(`#set($origin = $input.params('Origin'))
+#set($defaultOrigin = "%s")
+#set($configuredOrigins = "%s")
+#set($allowedOrigin = "")
+#if($configuredOrigins == "")
+  #if($origin == $defaultOrigin)
+    #set($allowedOrigin = $origin)
+  #end
+#elseif($configuredOrigins == "*")
+  #if($origin != "")
+    #set($allowedOrigin = "*")
+  #end
+#else
+  #foreach($allowed in $configuredOrigins.split(","))
+    #set($candidate = $allowed.trim())
+    #if($origin == $candidate)
+      #set($allowedOrigin = $origin)
+    #end
+  #end
+#end
+{"statusCode": 200, "allowedOrigin": "$util.escapeJavaScript($allowedOrigin)"}`, defaultOrigin, configuredOrigins)
 }
 
 func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps, domainName awsapigatewayv2.DomainName) awsapigatewayv2.WebSocketApi {

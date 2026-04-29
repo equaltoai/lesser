@@ -112,6 +112,20 @@ func TestReadAssetData_ErrorsWhenFileMissing(t *testing.T) {
 	require.Contains(t, err.Error(), "read deploy asset")
 }
 
+func TestReadAssetData_RejectsFileSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	_, err := readAssetData(link, "file")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
+}
+
 func TestWriteArchiveEntries_IsDeterministic(t *testing.T) {
 	entries := []archiveEntry{
 		{Path: "manifest.json", Data: []byte(`{"schema":1}`)},
@@ -561,6 +575,7 @@ func TestWriteDeployAssembly(t *testing.T) {
 	require.Contains(t, devTemplate, `{{resolve:ssm:/${AppSlug}/dev/lesser-body/exports/v1/mcp_lambda_arn}}`)
 	require.Contains(t, devTemplate, `dev.${BaseDomain}`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${LesserHostUrl}"`)
+	require.Contains(t, devTemplate, `"ApiCorsAllowedOrigins"`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${ReleaseAssetBucketName}"`)
 
 	zipEntries := readZipEntries(t, archiveEntries["assets/site.zip"])

@@ -221,6 +221,22 @@ func TestRunDown_RejectsPartialOrMismatchedReceipt(t *testing.T) {
 	})
 }
 
+func TestReceiptDestroyStagesValidation(t *testing.T) {
+	_, err := receiptDestroyStages(nil)
+	require.ErrorContains(t, err, "no stage entries")
+
+	_, err = receiptDestroyStages(map[string]*stageReceipt{"preview": {StackName: "preview-stack"}})
+	require.ErrorContains(t, err, "unsupported stage")
+
+	stages, err := receiptDestroyStages(map[string]*stageReceipt{
+		"dev":     {StackName: "dev-stack"},
+		"staging": {StackName: "staging-stack"},
+		"live":    {StackName: "live-stack"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageLive, naming.StageStaging, naming.StageDev}, stages)
+}
+
 func TestDeleteBucketObjectsIfPresent_SkipsNotFound(t *testing.T) {
 	previousDeleteBucketObjects := deleteBucketObjectsFn
 	t.Cleanup(func() { deleteBucketObjectsFn = previousDeleteBucketObjects })

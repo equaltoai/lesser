@@ -6,10 +6,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -47,6 +50,19 @@ type initAdminArgs struct {
 	ReservedList          string
 }
 
+const (
+	initAdminConsentKind      = "lesser.init_admin_consent.v1"
+	initAdminConsentMaxFuture = time.Hour
+)
+
+type initAdminConsentMessage struct {
+	Kind      string `json:"kind"`
+	Instance  string `json:"instance"`
+	Username  string `json:"username"`
+	Nonce     string `json:"nonce"`
+	ExpiresAt string `json:"expires_at"`
+}
+
 var reservedAdminWallets = map[string]string{
 	"0x80189edb676d51b2fb2257b2ad38e018b20ca46e": "lesser.host admin wallet",
 	"0x1e14865a53a994b01b9ccfef42669dc0bfe98805": "Safe + 1% recipient (TipSplitter.lesserWallet)",
@@ -60,6 +76,7 @@ var (
 	ensureWalletCredentialFn         = ensureWalletCredential
 	ensureWalletIndexFn              = ensureWalletIndex
 	ensureInstanceActivatedFn        = ensureInstanceActivated
+	initAdminNowFn                   = time.Now
 )
 
 func runInitAdmin(argv []string) error {
@@ -130,6 +147,10 @@ func runInitAdmin(argv []string) error {
 		return errors.New("signature is required")
 	}
 
+	if err := validateInitAdminConsentMessage(message, stageDomain, username, initAdminNowFn().UTC()); err != nil {
+		return err
+	}
+
 	// Verify before touching AWS or state.
 	if err := verifyEthereumPersonalSign(walletAddr, message, signature); err != nil {
 		return err
@@ -164,7 +185,7 @@ func runInitAdmin(argv []string) error {
 		return err
 	}
 
-	now := time.Now().UTC()
+	now := initAdminNowFn().UTC()
 
 	if err := ensureAdminUserFn(ctx, db, username, now); err != nil {
 		return err
@@ -301,6 +322,111 @@ func rejectReservedWallet(walletAddr string, extraReservedCSV string) error {
 		}
 	}
 	return nil
+}
+
+func validateInitAdminConsentMessage(message string, stageDomain string, username string, now time.Time) error {
+	decoder := json.NewDecoder(strings.NewReader(strings.TrimSpace(message)))
+	decoder.DisallowUnknownFields()
+
+	var consent initAdminConsentMessage
+	if err := decoder.Decode(&consent); err != nil {
+		return fmt.Errorf("invalid init-admin consent message: %w", err)
+	}
+	if strings.TrimSpace(consent.Kind) != initAdminConsentKind {
+		return fmt.Errorf("invalid init-admin consent kind %q", consent.Kind)
+	}
+
+	messageInstance, err := normalizeInitAdminConsentInstance(consent.Instance)
+	if err != nil {
+		return err
+	}
+	expectedInstance, err := normalizeInitAdminConsentInstance(stageDomain)
+	if err != nil {
+		return fmt.Errorf("invalid target instance: %w", err)
+	}
+	if messageInstance != expectedInstance {
+		return fmt.Errorf("init-admin consent instance mismatch (expected %s, got %s)", expectedInstance, messageInstance)
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(consent.Username), strings.TrimSpace(username)) {
+		return fmt.Errorf("init-admin consent username mismatch (expected %s, got %s)", username, consent.Username)
+	}
+
+	if err := validateInitAdminConsentNonce(consent.Nonce); err != nil {
+		return err
+	}
+
+	expiresAt, err := parseInitAdminConsentExpiry(consent.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	now = now.UTC()
+	if !expiresAt.After(now) {
+		return fmt.Errorf("init-admin consent expired at %s", expiresAt.Format(time.RFC3339))
+	}
+	if expiresAt.After(now.Add(initAdminConsentMaxFuture)) {
+		return fmt.Errorf("init-admin consent expiry %s is too far in the future", expiresAt.Format(time.RFC3339))
+	}
+
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return errors.New("invalid init-admin consent message: trailing JSON value")
+	}
+	return nil
+}
+
+func normalizeInitAdminConsentInstance(value string) (string, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return "", errors.New("init-admin consent instance is required")
+	}
+
+	parseValue := raw
+	if !strings.Contains(parseValue, "://") {
+		parseValue = "https://" + parseValue
+	}
+	parsed, err := url.Parse(parseValue)
+	if err != nil {
+		return "", fmt.Errorf("invalid init-admin consent instance %q: %w", value, err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return "", fmt.Errorf("invalid init-admin consent instance %q", value)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("invalid init-admin consent instance %q", value)
+	}
+	if path := strings.TrimSpace(parsed.Path); path != "" && path != "/" {
+		return "", fmt.Errorf("invalid init-admin consent instance %q", value)
+	}
+	return strings.ToLower(strings.TrimSuffix(parsed.Host, ".")), nil
+}
+
+func validateInitAdminConsentNonce(nonce string) error {
+	nonce = strings.TrimSpace(nonce)
+	if len(nonce) < 16 {
+		return errors.New("init-admin consent nonce must be at least 16 characters")
+	}
+	if len(nonce) > 256 {
+		return errors.New("init-admin consent nonce must be at most 256 characters")
+	}
+	for _, r := range nonce {
+		if r < 0x21 || r > 0x7e {
+			return errors.New("init-admin consent nonce must contain printable non-space ASCII characters only")
+		}
+	}
+	return nil
+}
+
+func parseInitAdminConsentExpiry(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("init-admin consent expires_at is required")
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid init-admin consent expires_at: %w", err)
+	}
+	return expiresAt.UTC(), nil
 }
 
 func verifyEthereumPersonalSign(address, message, signature string) error {

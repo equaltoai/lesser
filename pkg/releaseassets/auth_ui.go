@@ -80,7 +80,7 @@ func WriteAuthUIBundle(repoRoot string, outDir string) error {
 }
 
 func writeArchiveFile(tw *tar.Writer, file localFile) error {
-	data, err := os.ReadFile(file.FullPath) // #nosec G304 -- file path comes from repo-local build output
+	data, err := readReleaseAssetFile(file.FullPath)
 	if err != nil {
 		return fmt.Errorf("read archive file %s: %w", file.FullPath, err)
 	}

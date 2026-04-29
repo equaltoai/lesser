@@ -184,6 +184,32 @@ GRAPHQL_PARSER_TOKEN_LIMIT=15000
 GRAPHQL_REQUEST_TIMEOUT=25s
 ```
 
+### Browser CORS + security headers
+
+Browser CORS is restrictive by default for the API Lambda: only the instance origin derived from `DOMAIN_NAME` / `DOMAIN`
+is allowed. Mastodon mobile clients and other non-browser clients are unaffected because CORS is enforced by browsers,
+not by the server for ordinary HTTP clients.
+
+Operators that serve a browser client from another trusted origin can opt in with a comma-separated allowlist:
+
+```bash
+# Preferred setting. Values must be origins only; paths, queries, fragments, and userinfo are ignored.
+API_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+
+# Backward-compatible alias, only used when API_CORS_ALLOWED_ORIGINS is unset.
+CORS_ALLOWED_ORIGINS="https://app.example.com"
+```
+
+For deployed API Gateway preflight responses, set the same value at deploy time with `lesser up
+--api-cors-allowed-origins ...`, `API_CORS_ALLOWED_ORIGINS`, or managed provisioning input field
+`api_cors_allowed_origins`. This keeps Lambda-handled responses and API Gateway `OPTIONS` responses on the same
+allowlist.
+
+Invalid entries are ignored fail-closed. `*` is accepted only as an explicit operator opt-in and should not be used for
+production instances that expose authenticated browser flows. API responses also receive restrictive default browser
+security headers (including CSP, HSTS, frame denial, MIME sniffing protection, referrer policy, permissions policy, and
+cross-origin policies); handlers that need a narrower route-specific CSP set their own value and are not overwritten.
+
 ### Device flow + CLI automation safety rails
 
 Device authorization is feature-gated and disabled by default:

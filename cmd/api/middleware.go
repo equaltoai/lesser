@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
@@ -106,8 +107,13 @@ func apiSecurityHeaders() apptheory.Middleware {
 
 			setDefault("x-content-type-options", []string{"nosniff"})
 			setDefault("x-frame-options", []string{"DENY"})
+			setDefault("content-security-policy", []string{"default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"})
+			setDefault("strict-transport-security", []string{"max-age=31536000; includeSubDomains"})
 			setDefault("referrer-policy", []string{"strict-origin-when-cross-origin"})
 			setDefault("cross-origin-resource-policy", []string{"same-origin"})
+			setDefault("cross-origin-opener-policy", []string{"same-origin"})
+			setDefault("permissions-policy", []string{"camera=(), geolocation=(), microphone=(), payment=(), usb=()"})
+			setDefault("x-permitted-cross-domain-policies", []string{"none"})
 			setDefault("x-robots-tag", []string{"noindex, nofollow"})
 			return resp, err
 		}
@@ -172,34 +178,7 @@ func isAllowedOAuthOrigin(origin string, cfg *config.Config) bool {
 }
 
 func normalizeOrigin(raw string) (string, *url.URL, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", nil, false
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return "", nil, false
-	}
-
-	if parsed.Scheme == "" || parsed.Host == "" || parsed.Opaque != "" || parsed.User != nil {
-		return "", nil, false
-	}
-
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", nil, false
-	}
-
-	if path := strings.TrimSpace(parsed.Path); path != "" && path != "/" {
-		return "", nil, false
-	}
-
-	normalized := (&url.URL{
-		Scheme: strings.ToLower(parsed.Scheme),
-		Host:   strings.ToLower(parsed.Host),
-	}).String()
-
-	return normalized, parsed, true
+	return browsercors.NormalizeOrigin(raw)
 }
 
 func isAllowedLocalDevelopmentOrigin(origin *url.URL) bool {

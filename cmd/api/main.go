@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/observability"
+	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -360,12 +362,45 @@ func newAPIOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
 	return auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
 }
 
+const (
+	apiCORSAllowedOriginsEnv       = "API_CORS_ALLOWED_ORIGINS"
+	apiCORSAllowedOriginsLegacyEnv = "CORS_ALLOWED_ORIGINS"
+)
+
+func apiCORSAllowedOrigins(cfg *config.Config) []string {
+	if raw := apiCORSAllowedOriginsFromEnv(); raw != "" {
+		return parseAPICORSAllowedOrigins(raw)
+	}
+
+	if cfg == nil {
+		return []string{}
+	}
+
+	instanceOrigin, _, ok := normalizeOrigin(cfg.BaseURL())
+	if !ok {
+		return []string{}
+	}
+
+	return []string{instanceOrigin}
+}
+
+func apiCORSAllowedOriginsFromEnv() string {
+	if raw := strings.TrimSpace(os.Getenv(apiCORSAllowedOriginsEnv)); raw != "" {
+		return raw
+	}
+	return strings.TrimSpace(os.Getenv(apiCORSAllowedOriginsLegacyEnv))
+}
+
+func parseAPICORSAllowedOrigins(raw string) []string {
+	return browsercors.ParseAllowedOrigins(raw)
+}
+
 func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	oauthService := newAPIOAuthService(lambdaLogger)
 
 	options := []apptheory.Option{
 		apptheory.WithCORS(apptheory.CORSConfig{
-			AllowedOrigins:   []string{"*"},
+			AllowedOrigins:   apiCORSAllowedOrigins(cfg),
 			AllowCredentials: false,
 			AllowHeaders: []string{
 				"Accept",
@@ -418,7 +453,7 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	// Security headers (web-friendly).
 	app.Use(apiSecurityHeaders())
 
-	// Restrict browser origins on OAuth-sensitive endpoints while keeping public API CORS broad.
+	// Restrict browser origins on OAuth-sensitive endpoints.
 	app.Use(createOAuthOriginRestrictionMiddleware(cfg))
 
 	// Standardized API error mapping.

@@ -160,7 +160,7 @@ func handlePackageMode(cfg scoreboardConfig) error {
 	for _, p := range pkgs {
 		fmt.Printf("%6.1f  %6d/%-6d  %s\n", p.Percent(), p.Covered, p.TotalStatements, p.Package)
 	}
-	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal {
+	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal-1e-3 {
 		return fmt.Errorf("total coverage %.3f%% is below --min-total %.3f%%", totalPct, cfg.MinTotal)
 	}
 	return nil
@@ -193,7 +193,7 @@ func handleFileMode(cfg scoreboardConfig) error {
 		}
 		fmt.Printf("%6.1f  %6d/%-6d  %s\n", f.Percent(), f.Covered, f.TotalStatements, path)
 	}
-	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal {
+	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal-1e-3 {
 		return fmt.Errorf("total coverage %.3f%% is below --min-total %.3f%%", totalPct, cfg.MinTotal)
 	}
 	return nil

@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
-	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -121,6 +120,7 @@ func TestRunInitAdmin_MessageFileReadErrors(t *testing.T) {
 }
 
 func TestRunInitAdmin_InvalidSignatureErrors(t *testing.T) {
+	msg := validInitAdminConsentMessage(t, "dev.example.com", "app")
 	err := runInitAdmin([]string{
 		"--app", "app",
 		"--base-domain", "example.com",
@@ -128,7 +128,7 @@ func TestRunInitAdmin_InvalidSignatureErrors(t *testing.T) {
 		"--stage", "dev",
 		"--wallet-address", "0x4444444444444444444444444444444444444444",
 		"--signature", "0xdeadbeef",
-		"--message", "consent",
+		"--message", msg,
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid signature length")
@@ -174,10 +174,8 @@ func TestRunInitAdmin_SuccessPath_WithDependencyStubs(t *testing.T) {
 	priv, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	addr := crypto.PubkeyToAddress(priv.PublicKey).Hex()
-	msg := "consent"
-	hash := accounts.TextHash([]byte(msg))
-	sig, err := crypto.Sign(hash, priv)
-	require.NoError(t, err)
+	msg := validInitAdminConsentMessage(t, "dev.example.com", "app")
+	sig := signInitAdminMessage(t, priv, msg)
 	// Exercise the V normalization logic (27/28 -> 0/1).
 	sig[64] += 27
 
@@ -206,10 +204,8 @@ func TestRunInitAdmin_LoadAWSConfigFailureSurfaces(t *testing.T) {
 	priv, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	addr := crypto.PubkeyToAddress(priv.PublicKey).Hex()
-	msg := "consent"
-	hash := accounts.TextHash([]byte(msg))
-	sig, err := crypto.Sign(hash, priv)
-	require.NoError(t, err)
+	msg := validInitAdminConsentMessage(t, "dev.example.com", "app")
+	sig := signInitAdminMessage(t, priv, msg)
 
 	err = runInitAdmin([]string{
 		"--app", "app",

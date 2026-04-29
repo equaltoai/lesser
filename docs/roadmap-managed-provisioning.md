@@ -33,8 +33,9 @@ Example:
   "lesser_host_url": "https://lab.lesser.host",
   "lesser_host_attestations_url": "https://lab.lesser.host",
   "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "api_cors_allowed_origins": "https://app.example.com",
   "translation_enabled": false,
-  "consent_message": "lesser.host requests your consent to provision a managed instance...\n",
+  "consent_message": "{\"kind\":\"lesser.init_admin_consent.v1\",\"instance\":\"dev.example.com\",\"username\":\"my-instance\",\"nonce\":\"nonce-16-plus-chars\",\"expires_at\":\"2026-04-29T13:30:00Z\"}",
   "consent_signature": "0x..."
 }
 ```
@@ -43,8 +44,10 @@ Notes:
 - `admin_username` defaults to `slug` when omitted.
 - `stage` supports `dev|staging|live` (managed runners typically use `dev` and `live`).
 - `admin_wallet_chain_id` overrides `--chain-id` for `init-admin` when supplied.
-- `lesser_host_*` and `translation_enabled` are optional integration config passed through `./lesser up` to the CDK deploy.
-- `consent_message` and `consent_signature` can satisfy `init-admin` without extra flags.
+- `lesser_host_*`, `api_cors_allowed_origins`, and `translation_enabled` are optional integration config passed through
+  `./lesser up` to the CDK deploy.
+- `consent_message` and `consent_signature` can satisfy `init-admin` without extra flags. `consent_message` must be the
+  exact structured JSON signed by the admin wallet (`kind`, `instance`, `username`, `nonce`, `expires_at`).
 - `--aws-profile` is optional when AWS ambient credentials are available.
 
 ## Runner Commands

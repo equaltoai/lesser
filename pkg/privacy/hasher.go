@@ -267,15 +267,22 @@ func (ph *Hasher) getLevel(dataType DataType) Level {
 
 // hashFull provides maximum privacy protection using HMAC-SHA256
 func (ph *Hasher) hashFull(data string, dataType DataType) (string, error) {
-	// Create HMAC with context-specific key derivation
+	hash := ph.hashDigestHex(data, dataType)
+
+	// Return hex-encoded hash with prefix to indicate full hashing
+	return fmt.Sprintf("full_%s_%s", dataType, hash), nil
+}
+
+func (ph *Hasher) hashDigestHex(data string, dataType DataType) string {
+	return hex.EncodeToString(ph.hashDigest(data, dataType))
+}
+
+func (ph *Hasher) hashDigest(data string, dataType DataType) []byte {
 	contextKey := ph.deriveContextKey(dataType)
 
 	h := hmac.New(sha256.New, contextKey)
 	h.Write([]byte(data))
-	hash := h.Sum(nil)
-
-	// Return hex-encoded hash with prefix to indicate full hashing
-	return fmt.Sprintf("full_%s_%s", dataType, hex.EncodeToString(hash)), nil
+	return h.Sum(nil)
 }
 
 // hashPartial provides partial privacy protection preserving some analytical value
@@ -308,10 +315,7 @@ func (ph *Hasher) hashIPPartial(ipAddress string) (string, error) {
 		network := fmt.Sprintf("%d.%d", ipv4[0], ipv4[1])
 		hostPortion := fmt.Sprintf("%d.%d", ipv4[2], ipv4[3])
 
-		hashedHost, err := ph.hashFull(hostPortion, DataTypeIP)
-		if err != nil {
-			return "", err
-		}
+		hashedHost := ph.hashDigestHex(hostPortion, DataTypeIP)
 
 		// Return format: network.hashedHost
 		return fmt.Sprintf("%s.%s", network, hashedHost[:8]), nil
@@ -327,10 +331,7 @@ func (ph *Hasher) hashIPPartial(ipAddress string) (string, error) {
 	networkBytes := ipv6[:8]
 	hostBytes := ipv6[8:]
 
-	hashedHost, err := ph.hashFull(hex.EncodeToString(hostBytes), DataTypeIP)
-	if err != nil {
-		return "", err
-	}
+	hashedHost := ph.hashDigestHex(hex.EncodeToString(hostBytes), DataTypeIP)
 
 	return fmt.Sprintf("%s::%s", hex.EncodeToString(networkBytes), hashedHost[:16]), nil
 }
@@ -346,10 +347,7 @@ func (ph *Hasher) hashEmailPartial(email string) (string, error) {
 	localPart := parts[0]
 	domain := parts[1]
 
-	hashedLocal, err := ph.hashFull(localPart, DataTypeEmail)
-	if err != nil {
-		return "", err
-	}
+	hashedLocal := ph.hashDigestHex(localPart, DataTypeEmail)
 
 	// Return format: hashedLocal@domain
 	return fmt.Sprintf("%s@%s", hashedLocal[:16], domain), nil
@@ -368,10 +366,7 @@ func (ph *Hasher) hashUsernamePartial(username string) (string, error) {
 	middlePart := username[1 : len(username)-1]
 
 	// Hash the middle portion
-	hashedMiddle, err := ph.hashFull(middlePart, DataTypeUsername)
-	if err != nil {
-		return "", err
-	}
+	hashedMiddle := ph.hashDigestHex(middlePart, DataTypeUsername)
 
 	// Calculate how many characters to show from the hash to preserve original length
 	// Use minimum of available hash length and required middle length
@@ -411,10 +406,7 @@ func (ph *Hasher) hashPIIPartial(pii string) (string, error) {
 
 	// For other PII types, preserve only length information
 	length := len(pii)
-	hashedData, err := ph.hashFull(pii, DataTypePII)
-	if err != nil {
-		return "", err
-	}
+	hashedData := ph.hashDigestHex(pii, DataTypePII)
 
 	// Return format indicating original length for analytics
 	return fmt.Sprintf("pii_len%d_%s", length, hashedData[:16]), nil
@@ -470,10 +462,7 @@ func (ph *Hasher) hashPhoneNumberPartial(phoneNumber string) (string, error) {
 	}
 
 	// Hash the digits
-	hashedDigits, err := ph.hashFull(digits.String(), DataTypePII)
-	if err != nil {
-		return "", err
-	}
+	hashedDigits := ph.hashDigestHex(digits.String(), DataTypePII)
 
 	// Replace X's in structure with hashed digits (cycling through hash if needed)
 	structureStr := structure.String()
