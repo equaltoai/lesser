@@ -151,6 +151,82 @@ func (FederationHealthReport) TableName() string {
 	return MainTableName
 }
 
+// FederationTimeseriesWindow stores aggregated federation stream metrics for a time window.
+type FederationTimeseriesWindow struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	Type                string `theorydb:"attr:type" json:"type"`
+	Window              string `theorydb:"attr:window" json:"window"`
+	FollowCount         int    `theorydb:"attr:follow_count" json:"follow_count"`
+	LikeCount           int    `theorydb:"attr:like_count" json:"like_count"`
+	AnnounceCount       int    `theorydb:"attr:announce_count" json:"announce_count"`
+	ActivityCount       int    `theorydb:"attr:activity_count" json:"activity_count"`
+	UniqueActorCount    int    `theorydb:"attr:unique_actor_count" json:"unique_actor_count"`
+	UniqueInstanceCount int    `theorydb:"attr:unique_instance_count" json:"unique_instance_count"`
+	CreatedAt           string `theorydb:"attr:created_at" json:"created_at"`
+	UpdatedAt           string `theorydb:"attr:updated_at" json:"updated_at"`
+	TTL                 int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing FederationTimeseriesWindow.
+func (FederationTimeseriesWindow) TableName() string {
+	return MainTableName
+}
+
+// NewFederationTimeseriesWindow builds the key envelope for a federation metrics window.
+func NewFederationTimeseriesWindow(window, now time.Time) *FederationTimeseriesWindow {
+	windowStr := window.Format(time.RFC3339)
+	nowStr := now.Format(time.RFC3339)
+	return &FederationTimeseriesWindow{
+		PK:        "TIMESERIES#FEDERATION",
+		SK:        fmt.Sprintf("WINDOW#%s", windowStr),
+		Type:      "FederationTimeseries",
+		Window:    windowStr,
+		CreatedAt: nowStr,
+		UpdatedAt: nowStr,
+		TTL:       now.Add(90 * 24 * time.Hour).Unix(),
+	}
+}
+
+// InstanceTimeseriesWindow stores per-instance stream observation metadata for a time window.
+type InstanceTimeseriesWindow struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	Type      string `theorydb:"attr:type" json:"type"`
+	Instance  string `theorydb:"attr:instance" json:"instance"`
+	Window    string `theorydb:"attr:window" json:"window"`
+	CreatedAt string `theorydb:"attr:created_at" json:"created_at"`
+	UpdatedAt string `theorydb:"attr:updated_at" json:"updated_at"`
+	TTL       int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing InstanceTimeseriesWindow.
+func (InstanceTimeseriesWindow) TableName() string {
+	return MainTableName
+}
+
+// NewInstanceTimeseriesWindow builds the key envelope for an instance metrics window.
+func NewInstanceTimeseriesWindow(instance string, window, now time.Time) *InstanceTimeseriesWindow {
+	windowStr := window.Format(time.RFC3339)
+	nowStr := now.Format(time.RFC3339)
+	return &InstanceTimeseriesWindow{
+		PK:        fmt.Sprintf("TIMESERIES#INSTANCE#%s", instance),
+		SK:        fmt.Sprintf("WINDOW#%s", windowStr),
+		Type:      "InstanceTimeseries",
+		Instance:  instance,
+		Window:    windowStr,
+		CreatedAt: nowStr,
+		UpdatedAt: nowStr,
+		TTL:       now.Add(30 * 24 * time.Hour).Unix(),
+	}
+}
+
 // FederationNode represents a node in the federation graph
 type FederationNode struct {
 	_ struct{} `theorydb:"naming:camelCase"`

@@ -18,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
@@ -210,62 +211,39 @@ func (tp *TimeseriesProcessor) extractInstance(actorID string) string {
 }
 
 func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID string, window time.Time, metrics *FederationMetrics) error {
+	now := time.Now().UTC()
 	windowStr := window.Format(time.RFC3339)
 
-	// Create timeseries record for federation metrics
-	timeseriesRecord := struct {
-		PK                  string `theorydb:"pk"`
-		SK                  string `theorydb:"sk"`
-		Type                string `json:"type"`
-		Window              string `json:"window"`
-		FollowCount         int    `json:"follow_count"`
-		LikeCount           int    `json:"like_count"`
-		AnnounceCount       int    `json:"announce_count"`
-		ActivityCount       int    `json:"activity_count"`
-		UniqueActorCount    int    `json:"unique_actor_count"`
-		UniqueInstanceCount int    `json:"unique_instance_count"`
-		CreatedAt           string `json:"created_at"`
-		TTL                 int64  `theorydb:"ttl"`
-	}{
-		PK:                  "TIMESERIES#FEDERATION",
-		SK:                  fmt.Sprintf("WINDOW#%s", windowStr),
-		Type:                "FederationTimeseries",
-		Window:              windowStr,
-		FollowCount:         metrics.FollowCount,
-		LikeCount:           metrics.LikeCount,
-		AnnounceCount:       metrics.AnnounceCount,
-		ActivityCount:       metrics.ActivityCount,
-		UniqueActorCount:    len(metrics.UniqueActors),
-		UniqueInstanceCount: len(metrics.UniqueInstances),
-		CreatedAt:           time.Now().Format(time.RFC3339),
-		TTL:                 time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
-	}
-
-	if err := tp.db.WithContext(ctx).Model(&timeseriesRecord).Create(); err != nil {
+	// Atomically add the current stream batch into the existing window instead
+	// of overwriting previous records from the same 5-minute bucket.
+	timeseriesRecord := models.NewFederationTimeseriesWindow(window, now)
+	if err := tp.db.WithContext(ctx).Model(timeseriesRecord).UpdateBuilder().
+		SetIfNotExists("Type", nil, timeseriesRecord.Type).
+		SetIfNotExists("Window", nil, timeseriesRecord.Window).
+		SetIfNotExists("CreatedAt", nil, timeseriesRecord.CreatedAt).
+		Add("FollowCount", metrics.FollowCount).
+		Add("LikeCount", metrics.LikeCount).
+		Add("AnnounceCount", metrics.AnnounceCount).
+		Add("ActivityCount", metrics.ActivityCount).
+		Add("UniqueActorCount", len(metrics.UniqueActors)).
+		Add("UniqueInstanceCount", len(metrics.UniqueInstances)).
+		Set("UpdatedAt", timeseriesRecord.UpdatedAt).
+		Set("TTL", timeseriesRecord.TTL).
+		Execute(); err != nil {
 		return fmt.Errorf("store timeseries metrics: %w", err)
 	}
 
 	// Also store per-instance metrics for detailed analytics
 	for instance := range metrics.UniqueInstances {
-		instanceRecord := struct {
-			PK        string `theorydb:"pk"`
-			SK        string `theorydb:"sk"`
-			Type      string `json:"type"`
-			Instance  string `json:"instance"`
-			Window    string `json:"window"`
-			CreatedAt string `json:"created_at"`
-			TTL       int64  `theorydb:"ttl"`
-		}{
-			PK:        fmt.Sprintf("TIMESERIES#INSTANCE#%s", instance),
-			SK:        fmt.Sprintf("WINDOW#%s", windowStr),
-			Type:      "InstanceTimeseries",
-			Instance:  instance,
-			Window:    windowStr,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
-		}
-
-		if err := tp.db.WithContext(ctx).Model(&instanceRecord).Create(); err != nil {
+		instanceRecord := models.NewInstanceTimeseriesWindow(instance, window, now)
+		if err := tp.db.WithContext(ctx).Model(instanceRecord).UpdateBuilder().
+			SetIfNotExists("Type", nil, instanceRecord.Type).
+			SetIfNotExists("Instance", nil, instanceRecord.Instance).
+			SetIfNotExists("Window", nil, instanceRecord.Window).
+			SetIfNotExists("CreatedAt", nil, instanceRecord.CreatedAt).
+			Set("UpdatedAt", instanceRecord.UpdatedAt).
+			Set("TTL", instanceRecord.TTL).
+			Execute(); err != nil {
 			tp.logger.Error("failed to store instance metrics",
 				zap.String("request_id", requestID),
 				zap.String("instance", instance),

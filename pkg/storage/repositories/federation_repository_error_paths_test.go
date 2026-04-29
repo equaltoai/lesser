@@ -584,6 +584,23 @@ func TestFederationRepository_GetStrongestConnectionsByType_LimitAndTypeBranches
 	require.Len(t, edges, 3)
 }
 
+func TestFederationRepository_GetStrongestConnectionsByType_AllReturnsConcreteEdges(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
+
+	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
+	edges, err := repo.GetStrongestConnectionsByType(ctx, ConnectionTypeAll, 2)
+	require.NoError(t, err)
+	require.Len(t, edges, 2)
+	require.NotEqual(t, ConnectionTypeAll, edges[0].ConnectionType)
+	require.GreaterOrEqual(t, edges[0].Strength, edges[1].Strength)
+	mockQuery.AssertNotCalled(t, "Where", "gsi8PK", "=", "FED_EDGES#TYPE#all")
+}
+
 func TestFederationRepository_FetchEdgePageWithCursor_CursorAndEmptyResultBranches(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
