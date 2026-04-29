@@ -23,6 +23,7 @@ import (
 type TrackingRepository struct {
 	*EnhancedBaseRepository[*models.DynamoDBCostRecord]
 
+	listByOperationTypeFn    func(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error)
 	listAggregatedByPeriodFn func(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error)
 }
 
@@ -37,6 +38,19 @@ const (
 	relayMetricsMaxLimit     = 500
 	aggregatedPageMaxLimit   = 500
 )
+
+var costOperationTypes = []string{
+	"GetItem",
+	"PutItem",
+	"UpdateItem",
+	"DeleteItem",
+	"Query",
+	"Scan",
+	"BatchGetItem",
+	"BatchWriteItem",
+	"TransactGetItems",
+	"TransactWriteItems",
+}
 
 func clampCostTableLimit(limit int) int {
 	if limit <= 0 {
@@ -107,6 +121,10 @@ func (r *TrackingRepository) Get(ctx context.Context, operationType, id string, 
 
 // ListByOperationType lists cost tracking records by operation type within a time range
 func (r *TrackingRepository) ListByOperationType(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+	if r.listByOperationTypeFn != nil {
+		return r.listByOperationTypeFn(ctx, operationType, startTime, endTime, limit)
+	}
+
 	// Construct SK range for time-based query
 	pk := fmt.Sprintf("cost#%s", operationType)
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
@@ -153,21 +171,21 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 
 // GetRecentCosts retrieves recent cost tracking records across all operations
 func (r *TrackingRepository) GetRecentCosts(ctx context.Context, since time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+	return r.listCostsAcrossOperationTypes(ctx, since, time.Now(), limit)
+}
+
+func (r *TrackingRepository) listCostsAcrossOperationTypes(ctx context.Context, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	var allCosts []*models.DynamoDBCostRecord
 
-	// Query each operation type (we need to iterate through known types)
-	operationTypes := []string{
-		"GetItem", "PutItem", "UpdateItem", "DeleteItem",
-		"Query", "Scan", "BatchGetItem", "BatchWriteItem",
-		"TransactGetItems", "TransactWriteItems",
-	}
-
-	for _, opType := range operationTypes {
-		costs, err := r.ListByOperationType(ctx, opType, since, time.Now(), limit/len(operationTypes))
+	perOperationLimit := perOperationCostLimit(limit)
+	for _, opType := range costOperationTypes {
+		costs, err := r.ListByOperationType(ctx, opType, startTime, endTime, perOperationLimit)
 		if err != nil {
-			r.logger.Warn("failed to get costs for operation type",
-				zap.String("operation_type", opType),
-				zap.Error(err))
+			if r.logger != nil {
+				r.logger.Warn("failed to get costs for operation type",
+					zap.String("operation_type", opType),
+					zap.Error(err))
+			}
 			continue
 		}
 		allCosts = append(allCosts, costs...)
@@ -177,6 +195,17 @@ func (r *TrackingRepository) GetRecentCosts(ctx context.Context, since time.Time
 	// Note: In production, you might want to use a more efficient sorting approach
 
 	return allCosts, nil
+}
+
+func perOperationCostLimit(limit int) int {
+	if limit <= 0 {
+		limit = costTableDefaultLimit
+	}
+	perOperationLimit := limit / len(costOperationTypes)
+	if perOperationLimit <= 0 {
+		return 1
+	}
+	return perOperationLimit
 }
 
 // GetAggregated retrieves aggregated cost tracking
@@ -882,13 +911,9 @@ func finalizeCostMetrics(mergedByWindow map[string]*models.DynamoDBCostAggregati
 
 // GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
 func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
-	// Query all operation types for the period
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
-		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
-
 	var allAggregates []*models.DynamoDBCostAggregation
 
-	for _, opType := range operationTypes {
+	for _, opType := range costOperationTypes {
 		opAggregates, err := r.fetchAggregatesForOperation(ctx, period, opType, startDate, endDate)
 		if err != nil {
 			// Depending on desired behavior, we could either continue or fail fast.
@@ -912,12 +937,9 @@ func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, per
 
 // GetCostsByOperationType retrieves costs grouped by operation type
 func (r *TrackingRepository) GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
-		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
-
 	result := make(map[string]*models.DynamoDBServiceCostStats)
 
-	for _, opType := range operationTypes {
+	for _, opType := range costOperationTypes {
 		costs, err := r.ListByOperationType(ctx, opType, startDate, endDate, 10000)
 		if err != nil {
 			r.logger.Warn("failed to get costs for operation type",
@@ -995,8 +1017,25 @@ func (r *TrackingRepository) GetCostsByService(ctx context.Context, startDate, e
 }
 
 // GetCostsByDateRange returns individual cost records for the specified date range
-func (r *TrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, _ time.Time) ([]*models.DynamoDBCostRecord, error) {
-	return r.GetRecentCosts(ctx, startDate, 1000) // Use existing method with reasonable limit
+func (r *TrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, endDate time.Time) ([]*models.DynamoDBCostRecord, error) {
+	if endDate.Before(startDate) {
+		return []*models.DynamoDBCostRecord{}, nil
+	}
+
+	costs, err := r.listCostsAcrossOperationTypes(ctx, startDate, endDate, 1000)
+	if err != nil {
+		return nil, err
+	}
+
+	filteredCosts := costs[:0]
+	for _, cost := range costs {
+		if cost.Timestamp.Before(startDate) || cost.Timestamp.After(endDate) {
+			continue
+		}
+		filteredCosts = append(filteredCosts, cost)
+	}
+
+	return filteredCosts, nil
 }
 
 // DailyAggregate represents aggregated costs for a single day
