@@ -798,7 +798,7 @@ func runCollections() {
 	handler.RegisterRoutes(app)
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
-		return app.HandleLambda(ctx, crawler.InjectTrustedSourceIPHeader(event, logger))
+		return app.HandleLambda(ctx, event)
 	})
 }
 

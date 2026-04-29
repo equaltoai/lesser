@@ -351,7 +351,7 @@ func runWebFinger(handler *WebFingerHandler, lambdaCtx *common.LambdaContext) {
 	app := buildApp(handler, lambdaLogger)
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
-		return app.HandleLambda(ctx, crawler.InjectTrustedSourceIPHeader(event, lambdaLogger))
+		return app.HandleLambda(ctx, event)
 	})
 }
 
