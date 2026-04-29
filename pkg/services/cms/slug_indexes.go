@@ -21,7 +21,15 @@ func cmsHostFromURL(value string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(parsed.Host)
+	return strings.ToLower(strings.TrimSpace(parsed.Host))
+}
+
+func cmsNormalizeTenant(tenant string) string {
+	return strings.ToLower(strings.TrimSpace(tenant))
+}
+
+func cmsTenantFromID(value string) string {
+	return cmsNormalizeTenant(cmsHostFromURL(value))
 }
 
 func cmsEnsureSlugIndex(ctx context.Context, db core.DB, pk string, slug string, targetID string, itemType string) (bool, error) {
@@ -75,22 +83,73 @@ func cmsEnsureArticleSlugIndex(ctx context.Context, db core.DB, slug string, art
 	return cmsEnsureSlugIndex(ctx, db, models.CMSArticleSlugIndexPK(slug), slug, articleID, "article slug")
 }
 
+func cmsEnsureArticleSlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string, articleID string) (bool, error) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		return cmsEnsureArticleSlugIndex(ctx, db, slug, articleID)
+	}
+	return cmsEnsureSlugIndex(ctx, db, models.CMSTenantArticleSlugIndexPK(tenant, slug), slug, articleID, "article slug")
+}
+
 func cmsDeleteArticleSlugIndex(ctx context.Context, db core.DB, slug string) {
 	cmsDeleteSlugIndex(ctx, db, models.CMSArticleSlugIndexPK(slug))
+}
+
+func cmsDeleteArticleSlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		cmsDeleteArticleSlugIndex(ctx, db, slug)
+		return
+	}
+	cmsDeleteSlugIndex(ctx, db, models.CMSTenantArticleSlugIndexPK(tenant, slug))
 }
 
 func cmsEnsureCategorySlugIndex(ctx context.Context, db core.DB, slug string, categoryID string) (bool, error) {
 	return cmsEnsureSlugIndex(ctx, db, models.CMSCategorySlugIndexPK(slug), slug, categoryID, "category slug")
 }
 
+func cmsEnsureCategorySlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string, categoryID string) (bool, error) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		return cmsEnsureCategorySlugIndex(ctx, db, slug, categoryID)
+	}
+	return cmsEnsureSlugIndex(ctx, db, models.CMSTenantCategorySlugIndexPK(tenant, slug), slug, categoryID, "category slug")
+}
+
 func cmsDeleteCategorySlugIndex(ctx context.Context, db core.DB, slug string) {
 	cmsDeleteSlugIndex(ctx, db, models.CMSCategorySlugIndexPK(slug))
+}
+
+func cmsDeleteCategorySlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		cmsDeleteCategorySlugIndex(ctx, db, slug)
+		return
+	}
+	cmsDeleteSlugIndex(ctx, db, models.CMSTenantCategorySlugIndexPK(tenant, slug))
 }
 
 func cmsEnsurePublicationSlugIndex(ctx context.Context, db core.DB, slug string, publicationID string) (bool, error) {
 	return cmsEnsureSlugIndex(ctx, db, models.CMSPublicationSlugIndexPK(slug), slug, publicationID, "publication slug")
 }
 
+func cmsEnsurePublicationSlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string, publicationID string) (bool, error) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		return cmsEnsurePublicationSlugIndex(ctx, db, slug, publicationID)
+	}
+	return cmsEnsureSlugIndex(ctx, db, models.CMSTenantPublicationSlugIndexPK(tenant, slug), slug, publicationID, "publication slug")
+}
+
 func cmsDeletePublicationSlugIndex(ctx context.Context, db core.DB, slug string) {
 	cmsDeleteSlugIndex(ctx, db, models.CMSPublicationSlugIndexPK(slug))
+}
+
+func cmsDeletePublicationSlugIndexForTenant(ctx context.Context, db core.DB, tenant string, slug string) {
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		cmsDeletePublicationSlugIndex(ctx, db, slug)
+		return
+	}
+	cmsDeleteSlugIndex(ctx, db, models.CMSTenantPublicationSlugIndexPK(tenant, slug))
 }

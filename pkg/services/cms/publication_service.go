@@ -83,14 +83,15 @@ func (s *PublicationService) CreatePublication(ctx context.Context, publication 
 		}
 	}
 
-	slugCreated, err := cmsEnsurePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug, publicationID)
+	tenant := cmsTenantFromID(publicationID)
+	slugCreated, err := cmsEnsurePublicationSlugIndexForTenant(ctx, s.pubRepo.GetDB(), tenant, slug, publicationID)
 	if err != nil {
 		return err
 	}
 
 	if err := s.pubRepo.CreatePublication(ctx, publication); err != nil {
 		if slugCreated {
-			cmsDeletePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug)
+			cmsDeletePublicationSlugIndexForTenant(ctx, s.pubRepo.GetDB(), tenant, slug)
 		}
 		return err
 	}
@@ -136,7 +137,8 @@ func (s *PublicationService) UpdatePublication(ctx context.Context, publication 
 		}
 	}
 
-	slugCreated, err := cmsEnsurePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug, publicationID)
+	tenant := cmsTenantFromID(publicationID)
+	slugCreated, err := cmsEnsurePublicationSlugIndexForTenant(ctx, s.pubRepo.GetDB(), tenant, slug, publicationID)
 	if err != nil {
 		return err
 	}
@@ -144,7 +146,7 @@ func (s *PublicationService) UpdatePublication(ctx context.Context, publication 
 	publication.UpdatedAt = time.Now()
 	if err := s.pubRepo.Update(ctx, publication); err != nil {
 		if slugCreated {
-			cmsDeletePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug)
+			cmsDeletePublicationSlugIndexForTenant(ctx, s.pubRepo.GetDB(), tenant, slug)
 		}
 		return err
 	}

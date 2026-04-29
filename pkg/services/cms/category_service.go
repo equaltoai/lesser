@@ -63,7 +63,7 @@ func (s *CategoryService) CreateCategory(ctx context.Context, category *models.C
 
 	if err := s.categoryRepo.CreateCategory(ctx, category); err != nil {
 		if slugCreated {
-			cmsDeleteCategorySlugIndex(ctx, s.categoryRepo.GetDB(), slug)
+			cmsDeleteCategorySlugIndexForTenant(ctx, s.categoryRepo.GetDB(), cmsTenantFromID(category.ID), slug)
 		}
 		return err
 	}
@@ -96,7 +96,7 @@ func (s *CategoryService) UpdateCategory(ctx context.Context, category *models.C
 	category.UpdatedAt = time.Now()
 	if err := s.categoryRepo.Update(ctx, category); err != nil {
 		if slugCreated {
-			cmsDeleteCategorySlugIndex(ctx, s.categoryRepo.GetDB(), slug)
+			cmsDeleteCategorySlugIndexForTenant(ctx, s.categoryRepo.GetDB(), cmsTenantFromID(category.ID), slug)
 		}
 		return err
 	}
@@ -134,7 +134,7 @@ func (s *CategoryService) reserveSlugIndex(ctx context.Context, category *models
 		}
 	}
 
-	created, err = cmsEnsureCategorySlugIndex(ctx, s.categoryRepo.GetDB(), slug, categoryID)
+	created, err = cmsEnsureCategorySlugIndexForTenant(ctx, s.categoryRepo.GetDB(), cmsTenantFromID(categoryID), slug, categoryID)
 	return slug, created, err
 }
 

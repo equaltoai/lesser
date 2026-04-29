@@ -413,6 +413,11 @@ func TestCMSSlugIndex(t *testing.T) {
 		assert.Equal(t, "", CMSArticleSlugIndexPK(" "))
 		assert.Equal(t, "", CMSCategorySlugIndexPK(""))
 		assert.Equal(t, "", CMSPublicationSlugIndexPK("\n"))
+		assert.Equal(t, "", CMSTenantArticleSlugIndexPK("", "slug"))
+		assert.Equal(t, "", CMSTenantArticleSlugIndexPK("example.com", " "))
+		assert.Equal(t, "CMS#TENANT#example.com#ARTICLE#SLUG#slug", CMSTenantArticleSlugIndexPK(" Example.COM ", "slug"))
+		assert.Equal(t, "CMS#TENANT#example.com#CATEGORY#SLUG#slug", CMSTenantCategorySlugIndexPK("example.com", "slug"))
+		assert.Equal(t, "CMS#TENANT#example.com#PUBLICATION#SLUG#slug", CMSTenantPublicationSlugIndexPK("example.com", "slug"))
 		assert.Equal(t, cmsSlugIndexSK, CMSSlugIndexSK())
 
 		i := &CMSSlugIndex{}

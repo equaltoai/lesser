@@ -492,9 +492,11 @@ func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateS
 	}
 
 	now := time.Now()
+	tenant := strings.ToLower(strings.TrimSpace(r.getDomain()))
 	series := &models.Series{
 		ID:          uuid.NewString(),
 		AuthorID:    username,
+		Tenant:      tenant,
 		Title:       input.Title,
 		Description: derefString(input.Description),
 		Slug:        slug,
@@ -511,6 +513,9 @@ func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateS
 	}
 	if err := slugIndex.UpdateKeys(); err != nil {
 		return nil, err
+	}
+	if tenant != "" {
+		slugIndex.PK = models.CMSTenantSeriesSlugIndexPK(tenant, slug)
 	}
 	if err := store.GetDB().WithContext(ctx).Model(slugIndex).IfNotExists().Create(); err != nil {
 		if dynamormerrors.IsConditionFailed(err) {
@@ -620,6 +625,9 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 		SeriesID: series.ID,
 	}
 	if err := slugIndex.UpdateKeys(); err == nil {
+		if tenant := strings.ToLower(strings.TrimSpace(r.getDomain())); tenant != "" {
+			slugIndex.PK = models.CMSTenantSeriesSlugIndexPK(tenant, series.Slug)
+		}
 		if err := store.GetDB().WithContext(ctx).Model(slugIndex).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
 			r.Logger.Warn("failed to delete series slug index",
 				zap.String("slug", series.Slug),

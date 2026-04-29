@@ -12,6 +12,7 @@ type Series struct {
 
 	ID          string `theorydb:"attr:id" json:"id"`
 	AuthorID    string `theorydb:"attr:authorID" json:"author_id"`
+	Tenant      string `theorydb:"attr:tenant,omitempty" json:"tenant,omitempty"`
 	Title       string `theorydb:"attr:title" json:"title"`
 	Description string `theorydb:"attr:description" json:"description,omitempty"`
 	Slug        string `theorydb:"attr:slug" json:"slug"`

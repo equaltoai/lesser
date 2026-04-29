@@ -102,14 +102,15 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		return err
 	}
 
-	slugCreated, err := cmsEnsureArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug, article.ID)
+	tenant := cmsTenantFromID(article.ID)
+	slugCreated, err := cmsEnsureArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), tenant, slug, article.ID)
 	if err != nil {
 		return err
 	}
 
 	if err := s.articleRepo.CreateArticle(ctx, article); err != nil {
 		if slugCreated {
-			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), tenant, slug)
 		}
 		return err
 	}
@@ -119,7 +120,7 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		// Best-effort rollback to avoid creating unreachable content.
 		s.deleteCMSArticleIndexes(ctx, article)
 		if slugCreated {
-			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), tenant, slug)
 		}
 		_ = s.articleRepo.DeleteArticle(ctx, article.ID)
 		return err
@@ -139,10 +140,53 @@ func (s *ArticleService) GetArticleBySlug(ctx context.Context, slug string) (*mo
 	if slug == "" {
 		return nil, apperrors.ValidationFailedWithField("slug")
 	}
+	return s.getArticleBySlugIndex(ctx, slug, models.CMSArticleSlugIndexPK(slug))
+}
+
+// GetArticleByTenantSlug retrieves an article by a tenant-scoped slug index with
+// legacy global-index compatibility. Legacy matches are only returned after the
+// resolved article ID is verified to belong to the requested tenant.
+func (s *ArticleService) GetArticleByTenantSlug(ctx context.Context, tenant string, slug string) (*models.Article, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, apperrors.ValidationFailedWithField("slug")
+	}
+	tenant = cmsNormalizeTenant(tenant)
+	if tenant == "" {
+		return s.GetArticleBySlug(ctx, slug)
+	}
+
+	article, err := s.getArticleBySlugIndex(ctx, slug, models.CMSTenantArticleSlugIndexPK(tenant, slug))
+	if err == nil {
+		if articleBelongsToTenant(article, tenant) {
+			return article, nil
+		}
+		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+	}
+	if err != nil && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+		return nil, err
+	}
+
+	article, err = s.getArticleBySlugIndex(ctx, slug, models.CMSArticleSlugIndexPK(slug))
+	if err != nil {
+		return nil, err
+	}
+	if !articleBelongsToTenant(article, tenant) {
+		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+	}
+
+	_, _ = cmsEnsureArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), tenant, slug, article.ID)
+	return article, nil
+}
+
+func (s *ArticleService) getArticleBySlugIndex(ctx context.Context, slug string, pk string) (*models.Article, error) {
+	if strings.TrimSpace(pk) == "" {
+		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+	}
 
 	var idx models.CMSSlugIndex
 	err := s.articleRepo.GetDB().WithContext(ctx).Model(&models.CMSSlugIndex{}).
-		Where("PK", "=", models.CMSArticleSlugIndexPK(slug)).
+		Where("PK", "=", pk).
 		Where("SK", "=", models.CMSSlugIndexSK()).
 		First(&idx)
 	if err != nil {
@@ -158,6 +202,13 @@ func (s *ArticleService) GetArticleBySlug(ctx context.Context, slug string) (*mo
 	}
 
 	return s.articleRepo.GetArticle(ctx, articleID)
+}
+
+func articleBelongsToTenant(article *models.Article, tenant string) bool {
+	if article == nil {
+		return false
+	}
+	return strings.EqualFold(cmsTenantFromID(article.ID), tenant)
 }
 
 // GetArticle retrieves an article by ID.
@@ -189,7 +240,8 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 			return err
 		}
 
-		created, err := cmsEnsureArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug, article.ID)
+		tenant := cmsTenantFromID(article.ID)
+		created, err := cmsEnsureArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), tenant, slug, article.ID)
 		if err != nil {
 			return err
 		}
@@ -212,7 +264,7 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 
 	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
 		if slugCreated {
-			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), cmsTenantFromID(article.ID), slug)
 		}
 		return err
 	}

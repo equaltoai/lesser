@@ -19,6 +19,8 @@ func TestCMS_Round25_cmsHostFromURL(t *testing.T) {
 	assert.Equal(t, "", cmsHostFromURL(""))
 	assert.Equal(t, "", cmsHostFromURL("not a url"))
 	assert.Equal(t, "example.com", cmsHostFromURL("https://example.com/articles/123"))
+	assert.Equal(t, "example.com", cmsHostFromURL("https://Example.COM/articles/123"))
+	assert.Equal(t, "example.com", cmsNormalizeTenant(" Example.COM "))
 }
 
 func TestCMS_Round25_cmsEnsureSlugIndex(t *testing.T) {

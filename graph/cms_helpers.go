@@ -80,6 +80,18 @@ func cmsExtractSlugFromURL(id string) string {
 	return id
 }
 
+func cmsHostFromID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	parsed, err := neturl.Parse(id)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Host))
+}
+
 func cmsNormalizeUsername(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

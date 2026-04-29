@@ -241,6 +241,24 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 		assert.Equal(t, "a4", got.ID)
 	})
 
+	t.Run("tenant slug lookup rejects legacy index target from other tenant", func(t *testing.T) {
+		db, q := newCMSMockDB(t)
+		repo.db = db
+
+		crossTenantID := "https://other.example/articles/shared"
+		repo.articles[crossTenantID] = &models.Article{Object: models.Object{ID: crossTenantID, Name: "n"}, Slug: "shared"}
+
+		q.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		q.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.CMSSlugIndex)
+			dest.TargetID = crossTenantID
+		}).Return(nil).Once()
+
+		_, err := svc.GetArticleByTenantSlug(ctx, "example.com", "shared")
+		require.Error(t, err)
+		assert.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
+	})
+
 	t.Run("update snapshots revision when configured", func(t *testing.T) {
 		db, q := newCMSMockDB(t)
 		repo.db = db
