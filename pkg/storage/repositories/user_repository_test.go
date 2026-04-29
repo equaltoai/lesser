@@ -64,8 +64,8 @@ func TestGetUserByProviderID_Success(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "=", "123#").Return(mockQuery)
-	mockQuery.On("Limit", 1).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "123#").Return(mockQuery)
+	mockQuery.On("Limit", 2).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return success but empty
 
 	user, err := repo.GetUserByProviderID(context.Background(), "google", "123")
@@ -91,6 +91,14 @@ func TestLinkProviderAccount_Success(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
 	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(nil) // User exists
+
+	// Set up expectations for duplicate provider lookup
+	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "123#").Return(mockQuery)
+	mockQuery.On("Limit", 2).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(nil)
 
 	// Set up expectations for the provider account creation
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
