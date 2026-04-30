@@ -17,7 +17,7 @@ Do not start without all of the following:
 - **`go test ./...` passes** on `main` as of your checkout.
 - **`go vet ./...` passes.**
 - **`gofmt -l .`** returns empty.
-- **`./lesser verify --smoke`** passes if the milestone touches contract-adjacent surfaces.
+- **Smoke tests are never run.** Contract-adjacent milestones use static contract verification (`./lesser verify ci` or targeted `./lesser verify schema`, `./lesser verify openapi`, `./lesser verify graphql-coverage`) plus targeted tests instead.
 - **The enumerated tasks are in-mission work** — not scope growth that slipped through.
 - **Specialist walks are complete** for tasks that touch federation trust, API contract, schema, framework consumption, or deploy.
 - **Advisor-dispatched milestones** have Aron's authorization from `review-advisor-brief` recorded.
@@ -63,7 +63,7 @@ PR description template:
 - `go test ./...`
 - `go vet ./...`
 - `gofmt -l .` (empty)
-- `./lesser verify --smoke`
+- `./lesser verify ci` or targeted contract verify modes when contract-adjacent
 - Targeted: <specific go test ./path>
 - `cdk synth` for representative stage (if CDK changed)
 
@@ -91,7 +91,7 @@ For each issue in the milestone, in enumerated order:
 3. **For bug fixes: add the regression test first.** The test should fail against current code.
 4. **Make the change.** Only files in the enumerated paths. Scope creep becomes a new task; it doesn't silently grow the current commit.
 5. **Run validation.** `go test ./...` minimum. Focused work: `go test ./pkg/<package>/...`. `go vet ./...`. `gofmt -l .` returns empty.
-6. **For contract-adjacent changes**: `./lesser verify --smoke` (or equivalent) passes. Regenerate `docs/contracts/graphql-schema.graphql` with `./lesser schema` if GraphQL changed. Update `docs/contracts/openapi.yaml` alongside REST handler changes.
+6. **For contract-adjacent changes**: do not run smoke tests. Use static contract verification (`./lesser verify ci` or targeted `./lesser verify schema`, `./lesser verify openapi`, `./lesser verify graphql-coverage`) plus targeted handler/resolver tests. Regenerate `docs/contracts/graphql-schema.graphql` with `./lesser schema` if GraphQL changed. Update `docs/contracts/openapi.yaml` alongside REST handler changes.
 7. **For schema-touching changes**: validate that TableTheory model tags match intended PK/SK/GSI semantics. Run storage-layer tests.
 8. **For federation-trust changes**: exercise signing and verification paths with test fixtures. If possible, test against a known Mastodon test server.
 9. **For CDK changes**: `cdk synth --context app=<name> --context stage=dev --context baseDomain=<domain>` succeeds. Never set timeouts on synth.
@@ -133,7 +133,7 @@ When all tasks are committed, pushed, and linked project items closed (if applic
 
 1. Run `go test ./...` one more time on the tip.
 2. Run `go vet ./...`, `gofmt -l .`.
-3. Run `./lesser verify --smoke` if contract-adjacent.
+3. For contract-adjacent changes, run static contract verification (`./lesser verify ci` or targeted `./lesser verify schema`, `./lesser verify openapi`, `./lesser verify graphql-coverage`) plus targeted tests. Do not run smoke tests.
 4. Run `./lesser schema` if GraphQL changed; commit regenerated contract if not already present.
 5. Run `cdk synth` if CDK changed.
 6. Promote the PR out of draft.
@@ -164,6 +164,7 @@ Once the milestone is merged to `main`, `deploy-instance` owns:
 - Will not merge PRs — required review is the process.
 - Will not skip required review for "small" changes.
 - Will not run deploy commands — that's `deploy-instance`.
+- Will not run smoke tests; they are not part of the lesser steward workflow.
 - Will not skip specialist walks for federation, contract, schema, framework, or advisor-brief work.
 - Will not delete published Lambda function versions.
 - Will not force-push, amend pushed commits, or rewrite history.

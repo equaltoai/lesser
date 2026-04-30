@@ -101,7 +101,7 @@ Each enumerated item fits in one commit:
 - `go test ./...` passes at the end of the commit
 - `go vet ./...` passes
 - `gofmt` / `goimports` leave the tree clean
-- `./lesser verify --smoke` (or equivalent) passes for contract-adjacent changes
+- Contract-adjacent changes use static contract verification (`./lesser verify ci` or targeted contract verify modes) plus targeted handler/resolver tests; do not run smoke tests
 - For CDK changes: `cdk synth` succeeds for at least one representative `(<app>, <stage>)`
 - No commit depends on a later item to compile or pass tests
 
@@ -118,7 +118,7 @@ Each enumerated item fits in one commit:
 - **Schema impact**: <none / walk complete via validate-schema>
 - **Framework consumption**: <idiomatic / reported upstream via coordinate-framework-feedback>
 - **Acceptance**: <one sentence: what makes this commit done>
-- **Validation**: <`go test ./<package>/...`, `go vet ./...`, `gofmt -l .`, `./lesser verify --smoke`, `cdk synth` for representative stage>
+- **Validation**: <`go test ./<package>/...`, `go vet ./...`, `gofmt -l .`, `./lesser verify ci` or targeted contract verify modes, `cdk synth` for representative stage>
 - **Conventional Commit subject**: `<type(scope): subject>` (lowercase present-tense also acceptable: "feat: milestone M2 federation delivery retry")
 ```
 
@@ -136,7 +136,7 @@ Each enumerated item fits in one commit:
 - [ ] GraphQL schema changes include `docs/contracts/graphql-schema.graphql` regeneration
 - [ ] OpenAPI changes ride with handler changes
 - [ ] Dependency bumps isolated
-- [ ] Every item has a test or verify-smoke validation
+- [ ] Every item has targeted tests or static verification validation; smoke tests are not used
 - [ ] No item requires a future item to compile
 - [ ] No hardcoded secrets or signing keys
 - [ ] No full-JWT / full-actor-private-key / raw-password / raw-credential logging
