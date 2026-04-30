@@ -682,16 +682,6 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *apptheory.Context) (*apptheory.R
 
 	// Collection response (metadata) when `page=true` is not set.
 	if page != "true" && page != "1" {
-		totalItems, countErr := op.countOutboxActivities(runCtx, username)
-		if countErr != nil {
-			op.logger.Warn("failed to count outbox activities",
-				zap.String("request_id", requestID),
-				zap.String("username", username),
-				zap.Error(countErr),
-			)
-			totalItems = 0
-		}
-
 		collection := &activitypub.OrderedCollection{
 			Collection: activitypub.Collection{
 				BaseObject: activitypub.BaseObject{
@@ -699,7 +689,12 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *apptheory.Context) (*apptheory.R
 					ID:      outboxID,
 					Type:    activitypub.OrderedCollectionType,
 				},
-				TotalItems: totalItems,
+				// Avoid counting the actor activity partition here. Without a
+				// public-only count/index, an exact total requires scanning every
+				// outbox activity and filtering private/followers-only records in
+				// memory. Return a conservative placeholder and expose the bounded
+				// page endpoint as the public read path.
+				TotalItems: 0,
 				First:      fmt.Sprintf("%s?page=true", outboxID),
 			},
 		}
@@ -745,29 +740,6 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *apptheory.Context) (*apptheory.R
 	}
 
 	return outboxActivityJSON(http.StatusOK, collectionPage)
-}
-
-func (op *OutboxProcessor) countOutboxActivities(ctx context.Context, username string) (int, error) {
-	pk := "ACTOR#" + username
-	const skPrefix = "ACTIVITY#"
-
-	var activities []*models.Activity
-	err := op.db.WithContext(ctx).Model(&models.Activity{}).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix).
-		OrderBy("SK", "DESC").
-		All(&activities)
-	if err != nil {
-		return 0, err
-	}
-
-	count := 0
-	for _, record := range activities {
-		if record != nil && activitypub.IsPublicAddressedActivity(record.Activity) {
-			count++
-		}
-	}
-	return count, nil
 }
 
 func filterPublicOutboxActivities(activities []*activitypub.Activity) []*activitypub.Activity {

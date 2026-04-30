@@ -226,27 +226,14 @@ func (h *Handler) isRemoteURL(accountID string) bool {
 func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string) (*storage.Account, error) {
 	skipLocalLookup := h.isRemoteURL(accountID)
 
-	if h != nil && h.registry != nil && h.registry.Accounts() != nil && !skipLocalLookup {
-		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
-		if err == nil && account != nil && h.accountLookupMatchesRequestedID(account, accountID) {
-			return account, nil
-		}
-		if !shouldFallbackAccountResolution(accountID) {
-			if err != nil {
-				return nil, err
-			}
-			return nil, fmt.Errorf("account not found")
-		}
+	account, shouldFallback, err := h.lookupRegistryStorageAccount(ctx, accountID, skipLocalLookup)
+	if err != nil || account != nil || !shouldFallback {
+		return account, err
 	}
 
-	if h != nil && (h.registry == nil || h.registry.Accounts() == nil) && h.repos != nil && h.repos.Account() != nil {
-		normalizedID := strings.TrimSpace(accountID)
-		if normalizedID != "" {
-			account, err := h.repos.Account().GetAccount(ctx, normalizedID)
-			if err == nil && account != nil && h.accountLookupMatchesRequestedID(account, accountID) {
-				return account, nil
-			}
-		}
+	account, err = h.lookupRepositoryStorageAccount(ctx, accountID)
+	if err != nil || account != nil {
+		return account, err
 	}
 
 	if h == nil || h.repos == nil {
@@ -266,6 +253,52 @@ func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string
 	}
 
 	return storageAccountFromActor(actor, h.cfg.Domain), nil
+}
+
+func (h *Handler) lookupRegistryStorageAccount(ctx context.Context, accountID string, skipLocalLookup bool) (*storage.Account, bool, error) {
+	if h == nil || h.registry == nil || h.registry.Accounts() == nil || skipLocalLookup {
+		return nil, true, nil
+	}
+
+	account, err := h.registry.Accounts().GetAccount(ctx, accountID)
+	if err == nil && account != nil {
+		visibleAccount, visibleErr := h.visibleRequestedStorageAccount(account, accountID)
+		return visibleAccount, visibleAccount == nil && visibleErr == nil, visibleErr
+	}
+	if !shouldFallbackAccountResolution(accountID) {
+		if err != nil {
+			return nil, false, err
+		}
+		return nil, false, fmt.Errorf("account not found")
+	}
+	return nil, true, nil
+}
+
+func (h *Handler) lookupRepositoryStorageAccount(ctx context.Context, accountID string) (*storage.Account, error) {
+	if h == nil || h.repos == nil || h.repos.Account() == nil || (h.registry != nil && h.registry.Accounts() != nil) {
+		return nil, nil
+	}
+
+	normalizedID := strings.TrimSpace(accountID)
+	if normalizedID == "" {
+		return nil, nil
+	}
+
+	account, err := h.repos.Account().GetAccount(ctx, normalizedID)
+	if err != nil || account == nil {
+		return nil, nil
+	}
+	return h.visibleRequestedStorageAccount(account, accountID)
+}
+
+func (h *Handler) visibleRequestedStorageAccount(account *storage.Account, accountID string) (*storage.Account, error) {
+	if storageAccountIsSuspended(account) {
+		return nil, fmt.Errorf("account not found")
+	}
+	if h.accountLookupMatchesRequestedID(account, accountID) {
+		return account, nil
+	}
+	return nil, nil
 }
 
 func (h *Handler) accountLookupMatchesRequestedID(account *storage.Account, accountID string) bool {
@@ -309,6 +342,9 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
 		account, err := h.registry.Accounts().GetAccount(ctx, username)
 		if err == nil && account != nil {
+			if storageAccountIsSuspended(account) {
+				return nil, fmt.Errorf("account not found")
+			}
 			if account.Actor == nil {
 				account.Actor = actor
 			}
@@ -320,6 +356,9 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 	if h != nil && h.repos != nil && h.repos.Account() != nil {
 		account, err := h.repos.Account().GetAccount(ctx, username)
 		if err == nil && account != nil {
+			if storageAccountIsSuspended(account) {
+				return nil, fmt.Errorf("account not found")
+			}
 			if account.Actor == nil {
 				account.Actor = actor
 			}
@@ -329,6 +368,69 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 	}
 
 	return storageAccountFromActor(actor, h.cfg.Domain), nil
+}
+
+func (h *Handler) rejectSuspendedLocalActor(ctx context.Context, actor *activitypub.Actor) (*activitypub.Actor, error) {
+	if h.localActorSuspended(ctx, actor) {
+		return nil, fmt.Errorf("account not found")
+	}
+	return actor, nil
+}
+
+func (h *Handler) localActorSuspended(ctx context.Context, actor *activitypub.Actor) bool {
+	if actor == nil || !h.actorAppearsLocal(actor) {
+		return false
+	}
+
+	username := strings.TrimSpace(actor.PreferredUsername)
+	if username == "" {
+		username = localActorPathUsername(actor)
+	}
+	return h.localAccountSuspended(ctx, username)
+}
+
+func (h *Handler) localAccountSuspended(ctx context.Context, username string) bool {
+	username = strings.TrimSpace(username)
+	if username == "" || h == nil {
+		return false
+	}
+
+	if h.registry != nil && h.registry.Accounts() != nil {
+		if account, err := h.registry.Accounts().GetAccount(ctx, username); err == nil && storageAccountIsSuspended(account) {
+			return true
+		}
+	}
+
+	if h.repos != nil && h.repos.Account() != nil {
+		if account, err := h.repos.Account().GetAccount(ctx, username); err == nil && storageAccountIsSuspended(account) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func storageAccountIsSuspended(account *storage.Account) bool {
+	return account != nil && account.User != nil && account.User.Suspended
+}
+
+func localActorPathUsername(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+
+	actorID := strings.Trim(strings.TrimSpace(actor.ID), "/")
+	if actorID == "" {
+		return ""
+	}
+	parts := strings.Split(actorID, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	if parts[len(parts)-2] != actorUsersPathSegment {
+		return ""
+	}
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {

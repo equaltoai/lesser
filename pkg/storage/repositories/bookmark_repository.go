@@ -793,6 +793,9 @@ func parseBookmarkPageCursor(cursor string) (bookmarkPageCursor, error) {
 	if pageCursor.Version == 0 {
 		pageCursor.Version = 2
 	}
+	if err := validateBookmarkPageCursor(pageCursor); err != nil {
+		return bookmarkPageCursor{}, err
+	}
 	return pageCursor, nil
 }
 
@@ -812,9 +815,22 @@ func legacyBookmarkPageCursor(cursor string) bookmarkPageCursor {
 		}
 		return pageCursor
 	}
-	pageCursor.TimeSK = cursor
-	pageCursor.LegacySK = cursor
 	return pageCursor
+}
+
+func validateBookmarkPageCursor(cursor bookmarkPageCursor) error {
+	if cursor.TimeSK != "" && !isTimeBookmarkSK(cursor.TimeSK) {
+		return fmt.Errorf("invalid bookmark cursor: time key out of range")
+	}
+	if cursor.LegacySK != "" && !isLegacyBookmarkCursorSK(cursor.LegacySK) {
+		return fmt.Errorf("invalid bookmark cursor: legacy key out of range")
+	}
+	return nil
+}
+
+func isLegacyBookmarkCursorSK(sk string) bool {
+	trimmed := strings.TrimSuffix(sk, "\xff")
+	return isLegacyBookmarkTimestampSK(trimmed)
 }
 
 func encodeBookmarkPageCursor(cursor bookmarkPageCursor) string {

@@ -74,7 +74,7 @@ After `./lesser up --stage dev` completes:
 - **Watch SQS DLQ depth** for federation-delivery, ai-processor, moderation-processor.
 - **Confirm DynamoDB Streams processors are healthy** — iterator age flat, invocations occurring on writes.
 - **For federation-trust changes**: exercise signing and verification with test fixtures; monitor HTTP Signature verification failure rate.
-- **For contract changes**: run `./lesser verify --smoke` or equivalent against the deployed endpoint.
+- **For contract changes**: do not run smoke tests. Use targeted API/manual verification against the deployed endpoint plus static contract verification from the release commit.
 - **For schema changes**: verify read and write paths against the new shape; confirm async processors see expected stream events.
 - **Soak duration** per roadmap. Non-trivial: hours to a day. Federation / schema / contract changes: longer.
 

@@ -772,10 +772,11 @@ func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
 
 	app := buildOutboxApp(processor)
 
-	// GET collection metadata (counts via DB)
+	// GET collection metadata does not count via DB.
 	resp := serveOutbox(app, "GET", "/users/alice/outbox", nil, nil, "")
 	require.Equal(t, 200, resp.Status)
 	require.Equal(t, contentTypeActivityJSON, resp.Headers["content-type"][0])
+	mockQuery.AssertNotCalled(t, "All", mock.Anything)
 
 	// GET page=true (activities via repository)
 	resp = serveOutbox(app, "GET", "/users/alice/outbox", map[string]string{
@@ -945,7 +946,7 @@ func TestOutboxProcessor_HandleOutboxGet_DirectErrorBranches_Round12(t *testing.
 	_ = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 }
 
-func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *testing.T) {
+func TestOutboxProcessor_HandleOutboxGet_MetadataAndActivitiesErrors_Round12(t *testing.T) {
 	mockDB := new(dynamock.MockDB)
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
@@ -984,6 +985,7 @@ func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *tes
 
 	body := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 0, body.TotalItems)
+	mockQuery.AssertNotCalled(t, "All", mock.Anything)
 
 	actorRepo.On("GetActorByUsername", mock.Anything, "bob").Return(&activitypub.Actor{
 		BaseObject: activitypub.BaseObject{

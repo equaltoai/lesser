@@ -143,7 +143,7 @@ Issue body template:
 <one sentence>
 
 ## Validation commands
-<go test ./..., ./lesser verify --smoke, cdk synth>
+<go test ./..., ./lesser verify ci or targeted contract verify modes, cdk synth>
 
 ## Stage rollout checkpoints
 - [ ] Merged to main

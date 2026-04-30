@@ -12,20 +12,6 @@ import (
 func TestHelpers_RecoveredActorAndStatusLinks_Round29(t *testing.T) {
 	h := &Handler{cfg: &config.Config{Domain: "example.com"}}
 
-	t.Run("normalize recovered actor fills local identity when missing", func(t *testing.T) {
-		normalizeRecoveredLocalActor(h, nil, "alice")
-
-		actor := &activitypub.Actor{}
-		normalizeRecoveredLocalActor(h, actor, "alice")
-		require.Equal(t, "alice", actor.PreferredUsername)
-		require.Equal(t, "https://example.com/users/alice", actor.ID)
-
-		actor.ID = "https://remote.example/users/alice"
-		normalizeRecoveredLocalActor(h, actor, "alice-renamed")
-		require.Equal(t, "alice-renamed", actor.PreferredUsername)
-		require.Equal(t, "https://remote.example/users/alice", actor.ID)
-	})
-
 	t.Run("remoteStatusURL prefers note id then first http url", func(t *testing.T) {
 		require.Empty(t, h.remoteStatusURL(nil))
 		require.Equal(t, "https://remote.example/notes/1", h.remoteStatusURL(&storagemodels.Status{
