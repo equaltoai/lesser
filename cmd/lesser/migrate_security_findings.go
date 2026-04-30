@@ -81,7 +81,7 @@ func runMigrate(argv []string) error {
 	case securityFindingsMigrationName:
 		return runMigrateSecurityFindingsFn(argv[1:])
 	case helpFlagShort, helpFlagLong, helpCommand:
-		fmt.Fprintln(os.Stderr, "Usage: lesser migrate security-findings [--app <slug>] [--base-domain <domain>] [--stage dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--operation all|numeric-ids|hashtag-indexes|cms-publication-members] [--apply]")
+		fmt.Fprintln(os.Stderr, "Usage: lesser migrate security-findings [--app <slug>] [--base-domain <domain>] [--stage dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--operation all|numeric-ids|hashtag-indexes|cms-publication-members] [--dry-run|--apply]")
 		return nil
 	default:
 		return fmt.Errorf("unknown migrate command %q", argv[0])
@@ -113,7 +113,7 @@ func parseSecurityFindingsMigrationOptions(argv []string) (securityFindingsMigra
 	fs := flag.NewFlagSet("lesser migrate security-findings", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	options := securityFindingsMigrationOptions{Stage: valueDev, Only: "all"}
+	options := securityFindingsMigrationOptions{Stage: valueDev, Only: valueAll}
 	fs.StringVar(&options.App, "app", envOrDefault("LESSER_APP", ""), "app slug (default: lesser)")
 	fs.StringVar(&options.BaseDomain, "base-domain", os.Getenv("LESSER_BASE_DOMAIN"), "base domain for operator confirmation output")
 	fs.StringVar(&options.Stage, "stage", valueDev, "deployment stage (dev|staging|live)")
@@ -144,7 +144,7 @@ func parseSecurityFindingsMigrationOptions(argv []string) (securityFindingsMigra
 	}
 	options.Only = strings.ToLower(strings.TrimSpace(options.Only))
 	if options.Only == "" {
-		options.Only = "all"
+		options.Only = valueAll
 	}
 	if !validSecurityFindingsOperationName(options.Only) {
 		return securityFindingsMigrationOptions{}, fmt.Errorf("unknown security findings migration operation %q", options.Only)
@@ -155,7 +155,7 @@ func parseSecurityFindingsMigrationOptions(argv []string) (securityFindingsMigra
 
 func validSecurityFindingsOperationName(name string) bool {
 	switch name {
-	case "all", "numeric-ids", "hashtag-indexes", "cms-publication-members":
+	case valueAll, "numeric-ids", "hashtag-indexes", "cms-publication-members":
 		return true
 	default:
 		return false
@@ -212,7 +212,7 @@ func executeSecurityFindingsMigration(ctx context.Context, migrationCtx security
 }
 
 func selectedSecurityFindingsMigrationOperations(only string) []securityFindingsMigrationOperation {
-	if only == "all" {
+	if only == valueAll {
 		return append([]securityFindingsMigrationOperation(nil), securityFindingsMigrationOperations...)
 	}
 	selected := make([]securityFindingsMigrationOperation, 0, 1)
