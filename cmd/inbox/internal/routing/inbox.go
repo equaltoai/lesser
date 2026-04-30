@@ -1082,6 +1082,9 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 		}
 		shouldProcess, err := ih.shouldProcessInboundActivityTarget(ctx.Context(), req.Activity, targetActor)
 		if err != nil {
+			for _, claimedTargetActor := range targetsToProcess {
+				ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, claimedTargetActor)
+			}
 			processingDuration := time.Since(processingStart)
 			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Failed to claim %s activity for idempotent processing: %v", req.Activity.Type, err), 0)
@@ -1114,9 +1117,11 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 
 	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
 
-	for _, targetActor := range targetsToProcess {
+	for i, targetActor := range targetsToProcess {
 		if err := ih.processActivityByTypeForTarget(ctx.Context(), req.Activity, targetActor, req.CostParams); err != nil {
-			ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, targetActor)
+			for _, unprocessedTargetActor := range targetsToProcess[i:] {
+				ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, unprocessedTargetActor)
+			}
 			processingDuration := time.Since(processingStart)
 			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
@@ -2411,75 +2416,157 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 
 	// Store the object if it's a Note
 	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
-		// Validate ActivityPub Note object
-		if err := common.ValidateActivityPubNote(objMap); err != nil {
-			log.Warn("invalid note object in create activity", zap.Error(err))
-			return invalidNoteError()
-		}
-
-		// Convert to Note object
-		objJSON, err := json.Marshal(objMap)
-		if err != nil {
-			return err
-		}
-
-		var note activitypub.Note
-		if err := common.ParseActivityPubObject(objJSON, &note); err != nil {
-			return err
-		}
-
-		directInfo := ih.classifyInboundDirectCreate(activity, &note, targetActor)
-		if directInfo.unsupportedGroup {
-			ih.logUnsupportedInboundDirectGroup(activity, &note, targetActor, directInfo)
-			return nil
-		}
-
-		var directConversation *models.Conversation
-		var createDirectConversation bool
-		if directInfo.isDirect {
-			directConversation, createDirectConversation, err = ih.prepareInboundDirectConversation(ctx, activity, &note, targetActor, directInfo)
-			if err != nil {
-				log.Error("failed to prepare inbound direct conversation",
-					zap.String("activity_id", activity.ID),
-					zap.String("target_actor", targetActor.ID),
-					zap.Error(err))
-				return err
-			}
-			note.ConversationID = directConversation.ID
-			note.Visibility = models.VisibilityDirect
-		}
-
-		// Store the note (it will be marked as remote)
-		if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
-			if !dynamormerrors.IsConditionFailed(err) && !stdErrors.Is(err, storage.ErrAlreadyExists) {
-				log.Error("failed to store remote note", zap.Error(err))
-				return err
-			}
-		}
-
-		status, err := ih.materializeRemoteNoteStatus(ctx, &note)
-		if err != nil {
-			log.Error("failed to materialize remote note status",
-				zap.String("note_id", note.ID),
-				zap.Error(err))
-			return err
-		}
-		if directInfo.isDirect {
-			if err := ih.persistInboundDirectConversation(ctx, directConversation, createDirectConversation, status, directInfo); err != nil {
-				log.Error("failed to persist inbound direct conversation",
-					zap.String("activity_id", activity.ID),
-					zap.String("conversation_id", directConversation.ID),
-					zap.Error(err))
-				return err
-			}
-			ih.createRemoteDirectNotification(ctx, activity, targetActor, &note, status, directConversation, directInfo)
-			ih.emitInboundDirectConversationEvent(ctx, directConversation, status, directInfo.localParticipantID)
-		} else {
-			ih.createRemoteCreateNotifications(ctx, activity, targetActor, &note, status)
-		}
+		return ih.processRemoteCreateNote(ctx, activity, targetActor, objMap)
 	}
 
 	return nil
+}
+
+func (ih *InboxHandler) processRemoteCreateNote(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor, objMap map[string]any) error {
+	log := common.WithContext(ctx)
+
+	// Validate ActivityPub Note object
+	if err := common.ValidateActivityPubNote(objMap); err != nil {
+		log.Warn("invalid note object in create activity", zap.Error(err))
+		return invalidNoteError()
+	}
+
+	// Convert to Note object
+	objJSON, err := json.Marshal(objMap)
+	if err != nil {
+		return err
+	}
+
+	var note activitypub.Note
+	if err := common.ParseActivityPubObject(objJSON, &note); err != nil {
+		return err
+	}
+
+	directInfo := ih.classifyInboundDirectCreate(activity, &note, targetActor)
+	if directInfo.unsupportedGroup {
+		ih.logUnsupportedInboundDirectGroup(activity, &note, targetActor, directInfo)
+		return nil
+	}
+
+	directConversation, createDirectConversation, skipCreate, err := ih.prepareDirectCreateState(ctx, activity, targetActor, &note, directInfo)
+	if err != nil {
+		return err
+	}
+	if skipCreate {
+		return nil
+	}
+
+	// Store the note (it will be marked as remote)
+	if err := ih.objectRepository.CreateObject(ctx, &note); err != nil {
+		if !dynamormerrors.IsConditionFailed(err) && !stdErrors.Is(err, storage.ErrAlreadyExists) {
+			log.Error("failed to store remote note", zap.Error(err))
+			return err
+		}
+	}
+
+	status, err := ih.materializeRemoteNoteStatus(ctx, &note)
+	if err != nil {
+		log.Error("failed to materialize remote note status",
+			zap.String("note_id", note.ID),
+			zap.Error(err))
+		return err
+	}
+
+	return ih.finishRemoteCreateDeliverySideEffects(ctx, activity, targetActor, &note, status, directConversation, createDirectConversation, directInfo)
+}
+
+func (ih *InboxHandler) prepareDirectCreateState(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	targetActor *activitypub.Actor,
+	note *activitypub.Note,
+	directInfo inboundDirectCreateInfo,
+) (*models.Conversation, bool, bool, error) {
+	if !directInfo.isDirect {
+		return nil, false, false, nil
+	}
+
+	log := common.WithContext(ctx)
+	existingStatus, err := ih.existingInboundDirectStatus(ctx, note)
+	if err != nil {
+		log.Error("failed to check existing inbound direct status",
+			zap.String("activity_id", activity.ID),
+			zap.String("note_id", note.ID),
+			zap.Error(err))
+		return nil, false, false, err
+	}
+	if existingStatus != nil {
+		log.Info("skipping replayed inbound direct status",
+			zap.String("activity_id", activity.ID),
+			zap.String("note_id", note.ID),
+			zap.String("status_id", existingStatus.StatusID),
+			zap.String("conversation_id", existingStatus.ConversationID))
+		return nil, false, true, nil
+	}
+
+	directConversation, createDirectConversation, err := ih.prepareInboundDirectConversation(ctx, activity, note, targetActor, directInfo)
+	if err != nil {
+		log.Error("failed to prepare inbound direct conversation",
+			zap.String("activity_id", activity.ID),
+			zap.String("target_actor", targetActor.ID),
+			zap.Error(err))
+		return nil, false, false, err
+	}
+
+	note.ConversationID = directConversation.ID
+	note.Visibility = models.VisibilityDirect
+	return directConversation, createDirectConversation, false, nil
+}
+
+func (ih *InboxHandler) finishRemoteCreateDeliverySideEffects(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	targetActor *activitypub.Actor,
+	note *activitypub.Note,
+	status *models.Status,
+	directConversation *models.Conversation,
+	createDirectConversation bool,
+	directInfo inboundDirectCreateInfo,
+) error {
+	if !directInfo.isDirect {
+		ih.createRemoteCreateNotifications(ctx, activity, targetActor, note, status)
+		return nil
+	}
+	if directConversation == nil {
+		return nil
+	}
+
+	log := common.WithContext(ctx)
+	if err := ih.persistInboundDirectConversation(ctx, directConversation, createDirectConversation, status, directInfo); err != nil {
+		log.Error("failed to persist inbound direct conversation",
+			zap.String("activity_id", activity.ID),
+			zap.String("conversation_id", directConversation.ID),
+			zap.Error(err))
+		return err
+	}
+	ih.createRemoteDirectNotification(ctx, activity, targetActor, note, status, directConversation, directInfo)
+	ih.emitInboundDirectConversationEvent(ctx, directConversation, status, directInfo.localParticipantID)
+	return nil
+}
+
+func (ih *InboxHandler) existingInboundDirectStatus(ctx context.Context, note *activitypub.Note) (*models.Status, error) {
+	if ih.statusRepository == nil || note == nil {
+		return nil, nil
+	}
+
+	statusID := models.CanonicalStatusIDForDomain(note.ID, ih.localDomain())
+	if statusID == "" {
+		return nil, nil
+	}
+
+	existing, err := ih.statusRepository.GetStatus(ctx, statusID)
+	if err == nil && existing != nil {
+		return existing, nil
+	}
+	if isRemoteStatusNotFound(err) {
+		return nil, nil
+	}
+	return nil, err
 }
 
 type inboundDirectCreateInfo struct {

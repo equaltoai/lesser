@@ -66,6 +66,15 @@ func VerifyHTTPSignatureV2(req *http.Request, publicKey crypto.PublicKey) error 
 // VerifyHTTPSignatureEnhanced verifies signatures with support for multiple algorithms
 func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, sig *HTTPSignature) error {
 	log := common.Logger()
+	if req == nil {
+		return common.AuthenticationError{Message: "missing request"}
+	}
+	if sig == nil {
+		return ErrMissingSignatureValue
+	}
+	if err := requireSignedRequestIntegrity(req, sig); err != nil {
+		return err
+	}
 	trace, _ := FollowTraceFromContext(req.Context())
 
 	// Build signature string
@@ -237,6 +246,9 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	// Set date header if not present
 	if err := common.ValidateRequiredParam("req.Header.Get(DateHeader)", req.Header.Get(DateHeader)); err != nil {
 		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
+	}
+	if err := ensureDigestHeaderForBody(req); err != nil {
+		return err
 	}
 
 	// Determine headers to sign

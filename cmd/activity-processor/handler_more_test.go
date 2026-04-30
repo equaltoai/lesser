@@ -93,8 +93,13 @@ func TestActivityHandler_ProcessFollowAcceptCreateLikeAnnounceDeleteBlockFlagMov
 	}
 	require.NoError(t, h.processFollowActivity(ctx, follow, "alice"))
 
-	// Accept (string object path uses context username as follower)
-	relationshipRepo.On("UpdateRelationship", mock.Anything, "bob", "alice", mock.Anything).Return(nil)
+	// Accept resolves the referenced persisted Follow before mutating relationship state.
+	activityRepo.On("GetActivity", mock.Anything, "follow-1").Return(follow, nil).Once()
+	relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+		State:      models.RelationshipPending,
+		ActivityID: "follow-1",
+	}, nil).Once()
+	relationshipRepo.On("AcceptFollowRequest", mock.Anything, "bob", "alice").Return(nil).Once()
 	notificationRepo.On("CreateNotification", mock.Anything, mock.Anything).Return(nil)
 
 	accept := &activitypub.Activity{

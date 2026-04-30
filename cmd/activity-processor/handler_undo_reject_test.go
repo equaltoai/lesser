@@ -21,7 +21,7 @@ func TestProcessUndoRejectRecreatesFollowRelationship(t *testing.T) {
 
 	mockDB := new(dynamock.MockDB)
 	mockQueryFetch := new(dynamock.MockQuery)
-	mockQueryCreate := new(dynamock.MockQuery)
+	mockQueryRelationship := new(dynamock.MockQuery)
 
 	followActivityID := "https://remote.example/activities/follow123"
 	rejectActor := "https://example.com/users/alice"
@@ -64,8 +64,17 @@ func TestProcessUndoRejectRecreatesFollowRelationship(t *testing.T) {
 		if rel, ok := args.Get(0).(*models.RelationshipRecord); ok {
 			createdRelationship = rel
 		}
-	}).Return(mockQueryCreate)
-	mockQueryCreate.On("Create").Return(nil)
+	}).Return(mockQueryRelationship)
+	mockQueryRelationship.On("Where", "PK", "=", "FOLLOW#bob").Return(mockQueryRelationship).Maybe()
+	mockQueryRelationship.On("Where", "SK", "=", "FOLLOWING#alice").Return(mockQueryRelationship).Maybe()
+	mockQueryRelationship.On("First", mock.AnythingOfType("*models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		relationship := args.Get(0).(*models.RelationshipRecord)
+		relationship.PK = "FOLLOW#bob"
+		relationship.SK = "FOLLOWING#alice"
+		relationship.ActivityID = followActivityID
+		relationship.State = models.RelationshipRejected
+	}).Return(nil).Once()
+	mockQueryRelationship.On("Create").Return(nil).Once()
 
 	handler := &ActivityHandler{
 		DB:               mockDB,
@@ -97,7 +106,7 @@ func TestProcessUndoRejectRecreatesFollowRelationship(t *testing.T) {
 	assert.Equal(t, followActivityID, createdRelationship.ActivityID)
 	assert.Equal(t, models.RelationshipPending, createdRelationship.State)
 
-	mockQueryCreate.AssertExpectations(t)
+	mockQueryRelationship.AssertExpectations(t)
 	mockQueryFetch.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
 }

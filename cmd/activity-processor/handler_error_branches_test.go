@@ -38,32 +38,64 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 	})
 
 	t.Run("accept relationship update fails", func(t *testing.T) {
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-err").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "follow-err", Type: ActivityTypeFollow},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://example.com/users/alice",
+		}, nil).Once()
 		relationshipRepo := testmocks.NewMockRelationshipRepository()
-		relationshipRepo.On("UpdateRelationship", mock.Anything, "bob", "alice", mock.Anything).Return(errors.New("boom"))
+		relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+			State:      models.RelationshipPending,
+			ActivityID: "follow-err",
+		}, nil).Once()
+		relationshipRepo.On("AcceptFollowRequest", mock.Anything, "bob", "alice").Return(errors.New("boom")).Once()
 
-		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+		handler := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo, RelationshipRepo: relationshipRepo}
 
 		accept := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{ID: "accept-err", Type: ActivityTypeAccept},
 			Actor:      "https://example.com/users/alice",
-			Object:     map[string]any{"actor": "https://remote.example/users/bob"},
+			Object: map[string]any{
+				"id":     "follow-err",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"object": "https://example.com/users/alice",
+			},
 		}
 		require.Error(t, handler.processAcceptActivity(ctx, accept, "ignored"))
+		activityRepo.AssertExpectations(t)
 		relationshipRepo.AssertExpectations(t)
 	})
 
 	t.Run("reject relationship delete fails", func(t *testing.T) {
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-reject-err").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "follow-reject-err", Type: ActivityTypeFollow},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://example.com/users/alice",
+		}, nil).Once()
 		relationshipRepo := testmocks.NewMockRelationshipRepository()
-		relationshipRepo.On("DeleteRelationship", mock.Anything, "bob", "alice").Return(errors.New("boom"))
+		relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+			State:      models.RelationshipPending,
+			ActivityID: "follow-reject-err",
+		}, nil).Once()
+		relationshipRepo.On("RejectFollowRequest", mock.Anything, "bob", "alice").Return(errors.New("boom")).Once()
 
-		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+		handler := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo, RelationshipRepo: relationshipRepo}
 
 		reject := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{ID: "reject-err", Type: ActivityTypeReject},
 			Actor:      "https://example.com/users/alice",
-			Object:     map[string]any{"actor": "https://remote.example/users/bob"},
+			Object: map[string]any{
+				"id":     "follow-reject-err",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"object": "https://example.com/users/alice",
+			},
 		}
 		require.Error(t, handler.processRejectActivity(ctx, reject, "ignored"))
+		activityRepo.AssertExpectations(t)
 		relationshipRepo.AssertExpectations(t)
 	})
 

@@ -189,6 +189,14 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 			zap.Error(err))
 		return nil, errors.Join(ErrFetchRemoteActorFailed, err)
 	}
+	if err := validateResolvedActorDomainForHandle(actor, domain); err != nil {
+		s.logger.Error("actor domain mismatch for resolved handle — possible spoofing",
+			zap.String("handle", cacheKey),
+			zap.String("actor_url", actorURL),
+			zap.String("actor_id", strings.TrimSpace(actor.ID)),
+			zap.Error(err))
+		return nil, errors.Join(ErrActorDomainMismatch, err)
+	}
 
 	// Cache the remote actor with 24 hour TTL
 	if err := s.cacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
@@ -737,6 +745,22 @@ func cachedRemoteActorMatchesHandle(actor *activitypub.Actor, handle string) boo
 
 	identity := DescribeActorIdentity(actor, "")
 	return strings.EqualFold(exactHandle(identity.Username, identity.Domain), exactHandle(username, domain))
+}
+
+func validateResolvedActorDomainForHandle(actor *activitypub.Actor, expectedDomain string) error {
+	expectedDomain = normalizeActorDomain(expectedDomain)
+	if actor == nil || expectedDomain == "" {
+		return ErrActorDomainMismatch
+	}
+
+	actorDomain := normalizeActorDomain(common.ExtractDomainFromActorID(actor.ID))
+	if actorDomain == "" {
+		return ErrActorDomainMismatch
+	}
+	if !strings.EqualFold(actorDomain, expectedDomain) {
+		return fmt.Errorf("resolved actor ID domain %q does not match requested handle domain %q", actorDomain, expectedDomain)
+	}
+	return nil
 }
 
 func cachedRemoteActorUsername(handle string) string {
