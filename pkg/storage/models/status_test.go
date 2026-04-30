@@ -269,10 +269,14 @@ func (suite *StatusModelTestSuite) TestSetupGSIKeys_HashtagIndex() {
 	testCases := []struct {
 		name       string
 		hashtags   []string
+		visibility string
 		expectGSI5 bool
 	}{
-		{"with hashtags", []string{"test", "golang"}, true},
-		{"without hashtags", []string{}, false},
+		{"public with hashtags", []string{"test", "golang"}, VisibilityPublic, true},
+		{"unlisted with hashtags", []string{"test", "golang"}, VisibilityUnlisted, false},
+		{"private with hashtags", []string{"test", "golang"}, VisibilityPrivate, false},
+		{"direct with hashtags", []string{"test", "golang"}, VisibilityDirect, false},
+		{"without hashtags", []string{}, VisibilityPublic, false},
 	}
 
 	for _, tc := range testCases {
@@ -280,6 +284,7 @@ func (suite *StatusModelTestSuite) TestSetupGSIKeys_HashtagIndex() {
 			status := &Status{
 				StatusID:    "123",
 				Hashtags:    tc.hashtags,
+				Visibility:  tc.visibility,
 				PublishedAt: time.Unix(1609459200, 0), // 2021-01-01 00:00:00 UTC
 			}
 

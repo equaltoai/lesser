@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
@@ -717,6 +718,27 @@ func TestStatusRepository_hashtag_queries(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotEmpty(t, page.Items)
 	})
+
+	t.Run("legacy_non_public_rows_are_filtered", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Status)
+			*dest = []models.Status{
+				{StatusID: "public-1", Visibility: models.VisibilityPublic},
+				{StatusID: "private-1", Visibility: models.VisibilityPrivate},
+				{StatusID: "direct-1", Visibility: models.VisibilityDirect},
+				{StatusID: "unlisted-1", Visibility: models.VisibilityUnlisted},
+			}
+		}).Return(nil).Once()
+		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
+
+		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+		page, err := repo.GetStatusesByHashtag(ctx, "go", interfaces.PaginationOptions{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, "public-1", page.Items[0].StatusID)
+	})
 }
 
 func TestStatusRepository_engagement_edge_cases(t *testing.T) {
@@ -771,6 +793,23 @@ func TestStatusRepository_canonicalize_and_hashtag_index_branches(t *testing.T) 
 
 	status.Visibility = models.VisibilityPrivate
 	assert.NoError(t, repo.canonicalizeStatusIndexes(ctx, status))
+}
+
+func TestStatusRepository_M15_SkipsNonPublicSupplementalHashtagIndexes(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+	err := repo.createHashtagTimelineIndexes(ctx, &models.Status{
+		StatusID:       "private-1",
+		AuthorID:       "https://localhost/users/alice",
+		AuthorUsername: "alice",
+		Visibility:     models.VisibilityPrivate,
+		PublishedAt:    time.Now(),
+		Hashtags:       []string{"secret"},
+	})
+	require.NoError(t, err)
+	mockDB.AssertNotCalled(t, "WithContext", mock.Anything)
 }
 
 func TestStatusRepository_home_timeline_relationship_repo_interface(t *testing.T) {

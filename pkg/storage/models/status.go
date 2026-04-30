@@ -318,9 +318,9 @@ func (s *Status) setupGSIKeys() {
 		s.GSI4SK = ""
 	}
 
-	// GSI5 - Primary hashtag index (use the first hashtag for primary record)
-	// Additional hashtag records will be created separately via CreateHashtagIndexRecords
-	if len(s.Hashtags) > 0 {
+	// GSI5 - Primary public hashtag index (use the first hashtag for primary record).
+	// Additional public hashtag records will be created separately via CreateHashtagIndexRecords.
+	if s.Visibility == VisibilityPublic && len(s.Hashtags) > 0 {
 		s.GSI5PK = "HASHTAG#" + s.Hashtags[0]
 		s.GSI5SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
 	} else {
