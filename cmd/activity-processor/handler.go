@@ -410,97 +410,159 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 //
 //nolint:unused // False positive - called from processInboxActivity
 func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing Accept activity",
+	return h.processFollowResponseActivity(ctx, activity, username, followResponseProcessingConfig{
+		responseName:     "Accept",
+		invalidObjectErr: services.ErrAcceptInvalidObjectType,
+		extractErr:       services.ErrExtractUsernamesFromAccept,
+		mutate: func(ctx context.Context, follower, responder string) error {
+			return h.RelationshipRepo.AcceptFollowRequest(ctx, follower, responder)
+		},
+		mutationFailureLog:      "Failed to accept persisted follow relationship",
+		mutationErr:             func(err error) error { return relationshipStatusUpdateFailed(err) },
+		notificationTitleFormat: "%s accepted your follow request",
+		notificationBodyFormat:  "You are now following %s",
+		notificationFailureLog:  "Failed to create accept notification",
+		successLog:              "Successfully processed Accept activity",
+		notificationSuccessNote: "relationship was updated successfully",
+	})
+}
+
+//nolint:unused // Called from stream-dispatched follow response handlers.
+type followResponseProcessingConfig struct {
+	responseName            string
+	invalidObjectErr        error
+	extractErr              error
+	mutate                  func(context.Context, string, string) error
+	mutationFailureLog      string
+	mutationErr             func(error) error
+	notificationTitleFormat string
+	notificationBodyFormat  string
+	notificationFailureLog  string
+	successLog              string
+	notificationSuccessNote string
+}
+
+//nolint:unused // Called from stream-dispatched follow response handlers.
+func (h *ActivityHandler) processFollowResponseActivity(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	username string,
+	cfg followResponseProcessingConfig,
+) error {
+	follower, responder, err := h.resolvePersistedFollowResponse(ctx, activity, username, cfg.responseName, cfg.invalidObjectErr, cfg.extractErr)
+	if err != nil {
+		return err
+	}
+
+	responderField := strings.ToLower(cfg.responseName) + "er"
+	if err := cfg.mutate(ctx, follower, responder); err != nil {
+		h.Logger.Error(cfg.mutationFailureLog,
+			zap.String("follower", follower),
+			zap.String(responderField, responder),
+			zap.String("activity_id", activity.ID),
+			zap.Error(err))
+		return cfg.mutationErr(err)
+	}
+
+	notification := models.NewNotificationBuilder().
+		ForUser(follower).
+		OfType("follow_request").
+		FromActor(responder, "remote_actor").
+		WithContent(
+			fmt.Sprintf(cfg.notificationTitleFormat, responder),
+			fmt.Sprintf(cfg.notificationBodyFormat, responder)).
+		Build()
+
+	if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+		h.Logger.Error(cfg.notificationFailureLog,
+			zap.String("follower", follower),
+			zap.String(responderField, responder),
+			zap.Error(err))
+		h.Logger.Debug("follow response notification skipped after successful state change",
+			zap.String("reason", cfg.notificationSuccessNote))
+	}
+
+	h.Logger.Info(cfg.successLog,
+		zap.String("follower", follower),
+		zap.String(responderField, responder),
+		zap.String("activity_id", activity.ID))
+
+	return nil
+}
+
+//nolint:unused // Called from stream-dispatched follow response handlers.
+func (h *ActivityHandler) resolvePersistedFollowResponse(
+	ctx context.Context,
+	activity *activitypub.Activity,
+	username string,
+	responseName string,
+	invalidObjectErr error,
+	extractErr error,
+) (string, string, error) {
+	h.Logger.Info("Processing "+responseName+" activity",
 		zap.String("username", username),
 		zap.String("activity_id", activity.ID),
 		zap.String("actor", activity.Actor),
 		zap.Any("object", activity.Object),
 	)
 
-	// Extract the activity being accepted (typically a Follow activity)
-	var followActivity interface{}
-	switch obj := activity.Object.(type) {
-	case string:
-		// Object is just an ID - we'll need to find the original activity
-		h.Logger.Debug("Accept activity references activity by ID",
-			zap.String("follow_activity_id", obj))
-		// For now, we'll extract info from the Accept activity itself
-		followActivity = obj
-	case map[string]interface{}:
-		followActivity = obj
-	default:
-		h.Logger.Error("Accept activity has invalid object type",
-			zap.String("activity_id", activity.ID),
-			zap.Any("object", activity.Object))
-		return services.ErrAcceptInvalidObjectType
+	followActivity, err := h.extractFollowResponseObject(activity, responseName, invalidObjectErr)
+	if err != nil {
+		return "", "", err
 	}
 
-	accepter := h.extractUsernameFromActorURI(activity.Actor)
-	if err := common.ValidateRequiredParam("accepter", accepter); err != nil {
-		h.Logger.Error("Failed to extract usernames from Accept activity",
-			zap.String("accepter", accepter),
+	responderField := strings.ToLower(responseName) + "er"
+	responder := h.extractUsernameFromActorURI(activity.Actor)
+	if err := common.ValidateRequiredParam(responderField, responder); err != nil {
+		h.Logger.Error("Failed to extract usernames from "+responseName+" activity",
+			zap.String(responderField, responder),
 			zap.String("activity_id", activity.ID))
-		return services.ErrExtractUsernamesFromAccept
+		return "", "", extractErr
 	}
 
 	followState, err := h.resolveFollowResponseState(ctx, followActivity)
 	if err != nil {
-		h.Logger.Warn("Accept activity did not reference a valid persisted Follow",
+		h.Logger.Warn(responseName+" activity did not reference a valid persisted Follow",
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return services.ErrExtractUsernamesFromAccept
+		return "", "", extractErr
 	}
 	if !h.followTargetMatchesActor(followState.Target, activity.Actor) {
-		h.Logger.Warn("Accept activity follow target does not match accepting actor",
+		h.Logger.Warn(responseName+" activity follow target does not match responding actor",
 			zap.String("activity_id", activity.ID),
-			zap.String("accept_actor", activity.Actor),
+			zap.String(strings.ToLower(responseName)+"_actor", activity.Actor),
 			zap.String("follow_target", followState.Target),
 			zap.String("follow_activity_id", followState.ID))
-		return services.ErrActorNotAuthorizedUndo
+		return "", "", services.ErrActorNotAuthorizedUndo
 	}
 
 	follower := h.extractUsernameFromActorURI(followState.Actor)
 	if err := common.ValidateRequiredParam("follower", follower); err != nil {
-		return services.ErrExtractUsernamesFromAccept
+		return "", "", extractErr
 	}
 
-	if err := h.requirePersistedFollowRelationshipState(ctx, follower, accepter, followState.ID, models.RelationshipPending); err != nil {
-		return err
+	if err := h.requirePersistedFollowRelationshipState(ctx, follower, responder, followState.ID, models.RelationshipPending); err != nil {
+		return "", "", err
 	}
 
-	if err := h.RelationshipRepo.AcceptFollowRequest(ctx, follower, accepter); err != nil {
-		h.Logger.Error("Failed to accept persisted follow relationship",
-			zap.String("follower", follower),
-			zap.String("accepter", accepter),
+	return follower, responder, nil
+}
+
+//nolint:unused // Called from stream-dispatched follow response handlers.
+func (h *ActivityHandler) extractFollowResponseObject(activity *activitypub.Activity, responseName string, invalidObjectErr error) (interface{}, error) {
+	switch obj := activity.Object.(type) {
+	case string:
+		h.Logger.Debug(responseName+" activity references activity by ID",
+			zap.String("follow_activity_id", obj))
+		return obj, nil
+	case map[string]interface{}:
+		return obj, nil
+	default:
+		h.Logger.Error(responseName+" activity has invalid object type",
 			zap.String("activity_id", activity.ID),
-			zap.Error(err))
-		return relationshipStatusUpdateFailed(err)
+			zap.Any("object", activity.Object))
+		return nil, invalidObjectErr
 	}
-
-	// Create notification for the follower that their follow request was accepted
-	notification := models.NewNotificationBuilder().
-		ForUser(follower).
-		OfType("follow_request").
-		FromActor(accepter, "remote_actor").
-		WithContent(
-			fmt.Sprintf("%s accepted your follow request", accepter),
-			fmt.Sprintf("You are now following %s", accepter)).
-		Build()
-
-	if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
-		h.Logger.Error("Failed to create accept notification",
-			zap.String("follower", follower),
-			zap.String("accepter", accepter),
-			zap.Error(err))
-		// Don't return error - the relationship was updated successfully
-	}
-
-	h.Logger.Info("Successfully processed Accept activity",
-		zap.String("follower", follower),
-		zap.String("accepter", accepter),
-		zap.String("activity_id", activity.ID))
-
-	return nil
 }
 
 // processCreateActivity processes a Create activity with visibility controls
@@ -886,96 +948,21 @@ func (h *ActivityHandler) extractStatusID(noteID string) string {
 //
 //nolint:unused // False positive - called from processInboxActivity
 func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing Reject activity",
-		zap.String("username", username),
-		zap.String("activity_id", activity.ID),
-		zap.String("actor", activity.Actor),
-		zap.Any("object", activity.Object),
-	)
-
-	// Extract the activity being rejected (typically a Follow activity)
-	var followActivity interface{}
-	switch obj := activity.Object.(type) {
-	case string:
-		h.Logger.Debug("Reject activity references activity by ID",
-			zap.String("follow_activity_id", obj))
-		followActivity = obj
-	case map[string]interface{}:
-		followActivity = obj
-	default:
-		h.Logger.Error("Reject activity has invalid object type",
-			zap.String("activity_id", activity.ID),
-			zap.Any("object", activity.Object))
-		return services.ErrRejectInvalidObjectType
-	}
-
-	rejecter := h.extractUsernameFromActorURI(activity.Actor)
-	if err := common.ValidateRequiredParam("rejecter", rejecter); err != nil {
-		h.Logger.Error("Failed to extract usernames from Reject activity",
-			zap.String("rejecter", rejecter),
-			zap.String("activity_id", activity.ID))
-		return services.ErrExtractUsernamesFromReject
-	}
-
-	followState, err := h.resolveFollowResponseState(ctx, followActivity)
-	if err != nil {
-		h.Logger.Warn("Reject activity did not reference a valid persisted Follow",
-			zap.String("activity_id", activity.ID),
-			zap.Error(err))
-		return services.ErrExtractUsernamesFromReject
-	}
-	if !h.followTargetMatchesActor(followState.Target, activity.Actor) {
-		h.Logger.Warn("Reject activity follow target does not match rejecting actor",
-			zap.String("activity_id", activity.ID),
-			zap.String("reject_actor", activity.Actor),
-			zap.String("follow_target", followState.Target),
-			zap.String("follow_activity_id", followState.ID))
-		return services.ErrActorNotAuthorizedUndo
-	}
-
-	follower := h.extractUsernameFromActorURI(followState.Actor)
-	if err := common.ValidateRequiredParam("follower", follower); err != nil {
-		return services.ErrExtractUsernamesFromReject
-	}
-
-	if err := h.requirePersistedFollowRelationshipState(ctx, follower, rejecter, followState.ID, models.RelationshipPending); err != nil {
-		return err
-	}
-
-	if err := h.RelationshipRepo.RejectFollowRequest(ctx, follower, rejecter); err != nil {
-		h.Logger.Error("Failed to reject persisted follow relationship",
-			zap.String("follower", follower),
-			zap.String("rejecter", rejecter),
-			zap.String("activity_id", activity.ID),
-			zap.Error(err))
-		return rejectedRelationshipDeletionFailed(err)
-	}
-
-	// Optional: Create notification for the follower that their follow request was rejected
-	// Some implementations might choose not to notify on rejection to avoid spam
-	notification := models.NewNotificationBuilder().
-		ForUser(follower).
-		OfType("follow_request").
-		FromActor(rejecter, "remote_actor").
-		WithContent(
-			fmt.Sprintf("%s declined your follow request", rejecter),
-			fmt.Sprintf("Your follow request to %s was declined", rejecter)).
-		Build()
-
-	if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
-		h.Logger.Error("Failed to create reject notification",
-			zap.String("follower", follower),
-			zap.String("rejecter", rejecter),
-			zap.Error(err))
-		// Don't return error - the relationship was deleted successfully
-	}
-
-	h.Logger.Info("Successfully processed Reject activity",
-		zap.String("follower", follower),
-		zap.String("rejecter", rejecter),
-		zap.String("activity_id", activity.ID))
-
-	return nil
+	return h.processFollowResponseActivity(ctx, activity, username, followResponseProcessingConfig{
+		responseName:     "Reject",
+		invalidObjectErr: services.ErrRejectInvalidObjectType,
+		extractErr:       services.ErrExtractUsernamesFromReject,
+		mutate: func(ctx context.Context, follower, responder string) error {
+			return h.RelationshipRepo.RejectFollowRequest(ctx, follower, responder)
+		},
+		mutationFailureLog:      "Failed to reject persisted follow relationship",
+		mutationErr:             func(err error) error { return rejectedRelationshipDeletionFailed(err) },
+		notificationTitleFormat: "%s declined your follow request",
+		notificationBodyFormat:  "Your follow request to %s was declined",
+		notificationFailureLog:  "Failed to create reject notification",
+		successLog:              "Successfully processed Reject activity",
+		notificationSuccessNote: "relationship was rejected successfully",
+	})
 }
 
 // processUpdateActivity processes an Update activity
@@ -2005,6 +1992,7 @@ func (h *ActivityHandler) requirePersistedFollowRelationshipState(
 	return nil
 }
 
+//nolint:unused // Used by follow response and Undo Reject state validation.
 func followActivityIDMatches(storedActivityID, referencedActivityID string) bool {
 	storedActivityID = strings.TrimSpace(storedActivityID)
 	referencedActivityID = strings.TrimSpace(referencedActivityID)
@@ -2018,6 +2006,7 @@ func followActivityIDMatches(storedActivityID, referencedActivityID string) bool
 	return activityIDLastSegment(storedActivityID) == activityIDLastSegment(referencedActivityID)
 }
 
+//nolint:unused // Used by follow response and Undo Reject state validation.
 func activityIDLastSegment(activityID string) string {
 	activityID = strings.TrimRight(strings.TrimSpace(activityID), "/")
 	if activityID == "" {
