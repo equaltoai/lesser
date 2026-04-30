@@ -96,8 +96,7 @@ func TestLambdaInitWithOptions(t *testing.T) {
 
 // TestParallelModelRegistration tests parallel vs sequential registration
 func TestParallelModelRegistration(t *testing.T) {
-	ctx := context.Background()
-	db, err := GetLambdaClient(ctx)
+	db, err := getLambdaOptimizedClient()
 	require.NoError(t, err)
 
 	// Test sequential registration (small number)

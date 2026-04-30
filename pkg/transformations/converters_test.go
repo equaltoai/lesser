@@ -368,6 +368,11 @@ func TestConverters_AdditionalBranches(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bob", account.Username)
 
+	account, err = ActorToAccountWithContext(ContextWithBaseURL(context.Background(), "https://typed.example"), &activitypub.Actor{PreferredUsername: "carol"})
+	require.NoError(t, err)
+	require.Equal(t, "https://typed.example/@carol", account.URL)
+	require.Equal(t, "https://typed.example/avatars/original/missing.png", account.Avatar)
+
 	require.Equal(t, "", ExtractUsernameFromActorID(""))
 
 	status := ObjectToStatusBase(map[string]interface{}{

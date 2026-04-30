@@ -21,7 +21,16 @@ type fakeQuery struct {
 	db *fakeDynamoDB
 }
 
-func (f *fakeQuery) Where(string, string, any) dynamormCore.Query                      { return f }
+type fakeWhereCall struct {
+	field string
+	op    string
+	value any
+}
+
+func (f *fakeQuery) Where(field string, op string, value any) dynamormCore.Query {
+	f.db.wheres = append(f.db.wheres, fakeWhereCall{field: field, op: op, value: value})
+	return f
+}
 func (f *fakeQuery) Index(string) dynamormCore.Query                                   { return f }
 func (f *fakeQuery) Filter(string, string, any) dynamormCore.Query                     { return f }
 func (f *fakeQuery) OrFilter(string, string, any) dynamormCore.Query                   { return f }
@@ -54,7 +63,7 @@ func (f *fakeQuery) Create() error {
 
 func (f *fakeQuery) CreateOrUpdate() error                        { return nil }
 func (f *fakeQuery) Update(...string) error                       { return nil }
-func (f *fakeQuery) UpdateBuilder() dynamormCore.UpdateBuilder    { return nil }
+func (f *fakeQuery) UpdateBuilder() dynamormCore.UpdateBuilder    { return &fakeUpdateBuilder{db: f.db} }
 func (f *fakeQuery) Delete() error                                { return nil }
 func (f *fakeQuery) Scan(any) error                               { return nil }
 func (f *fakeQuery) ParallelScan(int32, int32) dynamormCore.Query { return f }
@@ -76,6 +85,11 @@ type fakeDynamoDB struct {
 	createCalls           int
 	createErr             error
 	failCreatesAfterFirst bool
+	updateCalls           int
+	updateErr             error
+	failUpdatesAfterFirst bool
+	adds                  map[string]int64
+	wheres                []fakeWhereCall
 }
 
 func (f *fakeDynamoDB) Model(any) dynamormCore.Query { return &fakeQuery{db: f} }
@@ -86,6 +100,50 @@ func (f *fakeDynamoDB) Migrate() error                              { return nil
 func (f *fakeDynamoDB) AutoMigrate(...any) error                    { return nil }
 func (f *fakeDynamoDB) Close() error                                { return nil }
 func (f *fakeDynamoDB) WithContext(context.Context) dynamormCore.DB { return f }
+
+type fakeUpdateBuilder struct {
+	db *fakeDynamoDB
+}
+
+func (f *fakeUpdateBuilder) Set(string, any) dynamormCore.UpdateBuilder { return f }
+func (f *fakeUpdateBuilder) SetIfNotExists(string, any, any) dynamormCore.UpdateBuilder {
+	return f
+}
+func (f *fakeUpdateBuilder) Add(field string, value any) dynamormCore.UpdateBuilder {
+	if f.db.adds == nil {
+		f.db.adds = make(map[string]int64)
+	}
+	switch v := value.(type) {
+	case int:
+		f.db.adds[field] += int64(v)
+	case int64:
+		f.db.adds[field] += v
+	}
+	return f
+}
+func (f *fakeUpdateBuilder) AddAll(string, any) dynamormCore.UpdateBuilder              { return f }
+func (f *fakeUpdateBuilder) Increment(string) dynamormCore.UpdateBuilder                { return f }
+func (f *fakeUpdateBuilder) Decrement(string) dynamormCore.UpdateBuilder                { return f }
+func (f *fakeUpdateBuilder) Remove(string) dynamormCore.UpdateBuilder                   { return f }
+func (f *fakeUpdateBuilder) Delete(string, any) dynamormCore.UpdateBuilder              { return f }
+func (f *fakeUpdateBuilder) AppendToList(string, any) dynamormCore.UpdateBuilder        { return f }
+func (f *fakeUpdateBuilder) PrependToList(string, any) dynamormCore.UpdateBuilder       { return f }
+func (f *fakeUpdateBuilder) RemoveFromListAt(string, int) dynamormCore.UpdateBuilder    { return f }
+func (f *fakeUpdateBuilder) SetListElement(string, int, any) dynamormCore.UpdateBuilder { return f }
+func (f *fakeUpdateBuilder) Condition(string, string, any) dynamormCore.UpdateBuilder   { return f }
+func (f *fakeUpdateBuilder) OrCondition(string, string, any) dynamormCore.UpdateBuilder { return f }
+func (f *fakeUpdateBuilder) ConditionExists(string) dynamormCore.UpdateBuilder          { return f }
+func (f *fakeUpdateBuilder) ConditionNotExists(string) dynamormCore.UpdateBuilder       { return f }
+func (f *fakeUpdateBuilder) ConditionVersion(int64) dynamormCore.UpdateBuilder          { return f }
+func (f *fakeUpdateBuilder) ReturnValues(string) dynamormCore.UpdateBuilder             { return f }
+func (f *fakeUpdateBuilder) Execute() error {
+	f.db.updateCalls++
+	if f.db.failUpdatesAfterFirst && f.db.updateCalls > 1 {
+		return errors.New("update failed")
+	}
+	return f.db.updateErr
+}
+func (f *fakeUpdateBuilder) ExecuteWithResult(any) error { return f.Execute() }
 
 func TestInitializeFederationTimeseries_WiresGlobals(t *testing.T) {
 	origMustInit := mustInitializeLambdaFn
@@ -147,7 +205,7 @@ func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
 	requestID := "req"
 
 	t.Run("returns error when base record store fails", func(t *testing.T) {
-		db := &fakeDynamoDB{createErr: errors.New("nope")}
+		db := &fakeDynamoDB{updateErr: errors.New("nope")}
 		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
 		err := tp.storeMetrics(ctx, requestID, time.Unix(0, 0).UTC(), &FederationMetrics{
 			UniqueActors:    map[string]bool{},
@@ -157,7 +215,7 @@ func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
 	})
 
 	t.Run("logs and continues on per-instance store failures", func(t *testing.T) {
-		db := &fakeDynamoDB{failCreatesAfterFirst: true}
+		db := &fakeDynamoDB{failUpdatesAfterFirst: true}
 		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
 
 		metrics := &FederationMetrics{
@@ -170,7 +228,34 @@ func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
 		}
 
 		require.NoError(t, tp.storeMetrics(ctx, requestID, time.Unix(0, 0).UTC(), metrics))
-		require.GreaterOrEqual(t, db.createCalls, 1)
+		require.GreaterOrEqual(t, db.updateCalls, 1)
+	})
+
+	t.Run("adds counts into the current window instead of overwriting", func(t *testing.T) {
+		db := &fakeDynamoDB{}
+		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
+
+		metrics := &FederationMetrics{
+			FollowCount:     2,
+			LikeCount:       3,
+			AnnounceCount:   4,
+			ActivityCount:   5,
+			UniqueActors:    map[string]bool{"actor-1": true, "actor-2": true},
+			UniqueInstances: map[string]bool{"example.com": true},
+		}
+
+		require.NoError(t, tp.storeMetrics(ctx, requestID, time.Unix(0, 0).UTC(), metrics))
+		require.Equal(t, int64(2), db.adds["FollowCount"])
+		require.Equal(t, int64(3), db.adds["LikeCount"])
+		require.Equal(t, int64(4), db.adds["AnnounceCount"])
+		require.Equal(t, int64(5), db.adds["ActivityCount"])
+		require.Equal(t, int64(2), db.adds["UniqueActorCount"])
+		require.Equal(t, int64(1), db.adds["UniqueInstanceCount"])
+		require.Len(t, db.wheres, 4)
+		require.Equal(t, fakeWhereCall{field: "PK", op: "=", value: "TIMESERIES#FEDERATION"}, db.wheres[0])
+		require.Equal(t, fakeWhereCall{field: "SK", op: "=", value: "WINDOW#1970-01-01T00:00:00Z"}, db.wheres[1])
+		require.Equal(t, fakeWhereCall{field: "PK", op: "=", value: "TIMESERIES#INSTANCE#example.com"}, db.wheres[2])
+		require.Equal(t, fakeWhereCall{field: "SK", op: "=", value: "WINDOW#1970-01-01T00:00:00Z"}, db.wheres[3])
 	})
 }
 
@@ -271,7 +356,7 @@ func TestHandleFederationTimeseriesStreamRecord_DecodeAndDispatch(t *testing.T) 
 	}
 
 	require.NoError(t, handleFederationTimeseriesStreamRecord(&apptheory.EventContext{RequestID: "req"}, record))
-	require.GreaterOrEqual(t, db.createCalls, 1)
+	require.GreaterOrEqual(t, db.updateCalls, 1)
 }
 
 func TestMain_InvokesLambdaStart(t *testing.T) {
@@ -313,4 +398,13 @@ func TestMain_InvokesLambdaStart(t *testing.T) {
 
 	main()
 	require.True(t, called)
+}
+
+func TestTimeseriesProcessor_HandleDynamoDBRecord_NilAndNoopBranches(t *testing.T) {
+	var nilProcessor *TimeseriesProcessor
+	require.ErrorContains(t, nilProcessor.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{}), "timeseries processor is nil")
+
+	tp := &TimeseriesProcessor{db: &fakeDynamoDB{}, tableName: "table"}
+	require.NoError(t, tp.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{}))
+	require.NotNil(t, tp.logger)
 }

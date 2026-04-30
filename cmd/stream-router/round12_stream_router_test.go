@@ -394,8 +394,8 @@ func TestStreamRouterHandler_HandleDynamoDBRecord_Round12(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("HandleDynamoDBRecord swallows errors", func(t *testing.T) {
-		require.NoError(t, h.HandleDynamoDBRecord(nil, newUserModifyRecordWithoutID()))
+	t.Run("HandleDynamoDBRecord returns processing errors for retry", func(t *testing.T) {
+		require.Error(t, h.HandleDynamoDBRecord(nil, newUserModifyRecordWithoutID()))
 	})
 }
 

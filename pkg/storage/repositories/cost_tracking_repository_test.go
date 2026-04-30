@@ -92,6 +92,66 @@ func TestGetAggregatedCostsByPeriod(t *testing.T) {
 	})
 }
 
+func TestTrackingRepository_GetCostsByDateRangeHonorsEndDate(t *testing.T) {
+	ctx := context.Background()
+	startDate := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)
+
+	calls := 0
+	repo := &TrackingRepository{
+		EnhancedBaseRepository: &EnhancedBaseRepository[*models.DynamoDBCostRecord]{
+			BaseRepository: &BaseRepository[*models.DynamoDBCostRecord]{
+				logger: zap.NewNop(),
+			},
+		},
+	}
+	repo.listByOperationTypeFn = func(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+		calls++
+		require.Equal(t, startDate, startTime)
+		require.Equal(t, endDate, endTime)
+		require.Positive(t, limit)
+
+		if operationType != "GetItem" {
+			return nil, nil
+		}
+
+		return []*models.DynamoDBCostRecord{
+			{
+				ID:            "inside",
+				OperationType: operationType,
+				Timestamp:     startDate.Add(time.Hour),
+			},
+			{
+				ID:            "after-end",
+				OperationType: operationType,
+				Timestamp:     endDate.Add(time.Nanosecond),
+			},
+		}, nil
+	}
+
+	costs, err := repo.GetCostsByDateRange(ctx, startDate, endDate)
+	require.NoError(t, err)
+	require.Len(t, costs, 1)
+	require.Equal(t, "inside", costs[0].ID)
+	require.Equal(t, len(costOperationTypes), calls)
+}
+
+func TestTrackingRepository_GetCostsByDateRangeSkipsInvertedRange(t *testing.T) {
+	ctx := context.Background()
+	startDate := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.Add(-time.Hour)
+
+	repo := &TrackingRepository{}
+	repo.listByOperationTypeFn = func(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+		t.Fatal("inverted date ranges should not query operation type records")
+		return nil, nil
+	}
+
+	costs, err := repo.GetCostsByDateRange(ctx, startDate, endDate)
+	require.NoError(t, err)
+	require.Empty(t, costs)
+}
+
 func TestMergeAggregatesByWindow(t *testing.T) {
 	startDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 	agg1 := &models.DynamoDBCostAggregation{WindowStart: startDate, TotalOperations: 10, TotalCostMicroCents: 100, TableBreakdown: map[string]*models.DynamoDBTableCostStats{"table1": {OperationCount: 10}}}

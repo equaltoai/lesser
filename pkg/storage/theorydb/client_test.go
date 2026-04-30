@@ -3,14 +3,18 @@ package theorydb
 import (
 	"context"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 )
 
 func resetClientState() {
@@ -97,4 +101,106 @@ func TestWithTimeoutBuffer_NilAndNonLambdaDB(t *testing.T) {
 
 	db := fakeDB{}
 	assert.Equal(t, db, WithTimeoutBuffer(db, 0))
+}
+
+func TestWithTimeoutBuffer_LambdaDB(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	lambdaClient, err := getLambdaOptimizedClient()
+	require.NoError(t, err)
+	require.NotNil(t, lambdaClient)
+
+	db := WithTimeoutBuffer(lambdaClient, 123*time.Millisecond)
+	require.NotNil(t, db)
+	assert.Equal(t, 123*time.Millisecond, lambdaTimeoutBufferOf(t, db))
+}
+
+func TestRegisterDefaultTypeConverters_UsesRegistrarWithoutExtendedDB(t *testing.T) {
+	db := &recordingRegistrarDB{}
+
+	require.NoError(t, registerDefaultTypeConverters(db))
+
+	assert.ElementsMatch(t, []reflect.Type{
+		mapStringAnyType,
+		sliceAnyType,
+		activityPubNoteType,
+		activityPubContextValueType,
+		agentsCapabilitiesType,
+	}, db.registered)
+}
+
+func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	deadline := time.Now().Add(30 * time.Second).Round(0)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	db, err := GetLambdaClient(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+	assert.Equal(t, deadline, lambdaDeadlineOf(t, db))
+}
+
+func TestGetLambdaClientNilContextReturnsBufferedClient(t *testing.T) {
+	resetClientState()
+	t.Cleanup(resetClientState)
+
+	db, err := GetLambdaClient(nil)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+	assert.True(t, lambdaDeadlineOf(t, db).IsZero())
+}
+
+func lambdaTimeoutBufferOf(t *testing.T, db core.DB) time.Duration {
+	t.Helper()
+
+	field := tableTheoryDBField(t, db, "lambdaTimeoutBuffer")
+	return time.Duration(field.Int())
+}
+
+func lambdaDeadlineOf(t *testing.T, db core.DB) time.Time {
+	t.Helper()
+
+	field := tableTheoryDBField(t, db, "lambdaDeadline")
+	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface().(time.Time)
+}
+
+func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
+	t.Helper()
+
+	value := reflect.ValueOf(db)
+	require.Equal(t, reflect.Ptr, value.Kind())
+
+	elem := value.Elem()
+	field := elem.FieldByName(name)
+	if field.IsValid() {
+		return field
+	}
+
+	inner := elem.FieldByName("db")
+	require.True(t, inner.IsValid(), "expected returned Lambda client to expose %s", name)
+	require.Equal(t, reflect.Ptr, inner.Kind())
+	require.False(t, inner.IsNil())
+
+	innerValue := reflect.NewAt(inner.Type(), unsafe.Pointer(inner.UnsafeAddr())).Elem()
+	field = innerValue.Elem().FieldByName(name)
+	require.True(t, field.IsValid(), "expected returned Lambda client DB to expose %s", name)
+	return field
+}
+
+type recordingRegistrarDB struct {
+	fakeDB
+	registered []reflect.Type
+}
+
+func (db *recordingRegistrarDB) RegisterTypeConverter(typ reflect.Type, _ pkgtypes.CustomConverter) error {
+	db.registered = append(db.registered, typ)
+	return nil
 }

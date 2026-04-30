@@ -1073,7 +1073,7 @@ func (h *Handler) transformStatusBase(ctx context.Context, storageStatus *storag
 	}
 
 	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-	transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
+	transformCtx := transformations.ContextWithBaseURL(ctx, h.cfg.BaseURL())
 	baseStatus, err := transformer.Transform(transformCtx, statusMap)
 	if err == nil && baseStatus.ID != "" {
 		return baseStatus

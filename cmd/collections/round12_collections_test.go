@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -761,4 +762,98 @@ func TestReturnCollectionPageReverse_Links_Round12(t *testing.T) {
 	page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	require.NotEmpty(t, page.Next)
 	require.NotEmpty(t, page.Prev)
+}
+
+func TestCollectionsCoverageMarginHelpers_Round12(t *testing.T) {
+	origCfg := cfg
+	origLogger := logger
+	t.Cleanup(func() {
+		cfg = origCfg
+		logger = origLogger
+	})
+	logger = zap.NewNop()
+
+	cfg = nil
+	require.Equal(t, "", collectionLocalDomain())
+	require.Equal(t, "alice", (&CollectionsHandler{}).localCollectionActorID("alice"))
+
+	cfg = &config.Config{Domain: "https://example.com:8443/path"}
+	require.Equal(t, "example.com", collectionLocalDomain())
+
+	username, domain, ok := parseCollectionHandle("@alice@remote.example ")
+	require.True(t, ok)
+	require.Equal(t, "alice", username)
+	require.Equal(t, "remote.example", domain)
+
+	_, _, ok = parseCollectionHandle("alice")
+	require.False(t, ok)
+	_, _, ok = parseCollectionHandle("@alice@")
+	require.False(t, ok)
+	_, _, ok = parseCollectionHandle("@@remote.example")
+	require.False(t, ok)
+
+	ch := &CollectionsHandler{}
+	cfg = &config.Config{Domain: "example.com"}
+	require.Equal(t, "https://example.com/users/alice", ch.localCollectionActorID("alice"))
+	require.Equal(t, "not-a-handle", ch.remoteCollectionActorURL("not-a-handle"))
+	require.Equal(t, "https://example.com/users/alice", ch.remoteCollectionActorURL("alice@example.com"))
+	require.Equal(t, "https://remote.example/users/bob", ch.remoteCollectionActorURL("@bob@remote.example"))
+
+	require.Equal(t, "", collectionsActorURL(nil))
+	require.Equal(t, "https://example.com/users/alice", collectionsActorURL(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"},
+		URL:        "https://example.com/@alice",
+	}))
+	require.Equal(t, "https://example.com/@alice", collectionsActorURL(&activitypub.Actor{
+		URL: "https://example.com/@alice",
+	}))
+
+	queryCtx := &apptheory.Context{Request: apptheory.Request{Query: map[string][]string{"limit": {"5"}}}}
+	require.Equal(t, "", collectionsQueryValue(nil, "limit"))
+	require.Equal(t, "", collectionsQueryValue(queryCtx, " "))
+	require.Equal(t, "", collectionsQueryValue(queryCtx, "missing"))
+	require.Equal(t, "5", collectionsQueryValue(queryCtx, " limit "))
+
+	require.Equal(t, "", collectionsContextRequestID(nil))
+	require.Equal(t, " explicit ", collectionsRequestID(&apptheory.Context{RequestID: " explicit "}, "ignored"))
+	generated := collectionsRequestID(&apptheory.Context{}, " ")
+	require.Contains(t, generated, "collections-")
+	ctxWithStoredID := &apptheory.Context{}
+	ctxWithStoredID.Set("requestID", " stored ")
+	require.Equal(t, "stored", collectionsContextRequestID(ctxWithStoredID))
+	require.Equal(t, "request-id", collectionsContextRequestID(&apptheory.Context{RequestID: "request-id"}))
+
+	resp := collectionsJSONError(http.StatusBadRequest, " ")
+	require.Equal(t, http.StatusBadRequest, resp.Status)
+	activityResp, err := collectionsActivityJSON(http.StatusAccepted, map[string]string{"ok": "yes"})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, activityResp.Status)
+	require.Equal(t, []string{contentTypeActivityJSON}, activityResp.Headers["content-type"])
+}
+
+func TestCollectionsMiddlewareCoverageMargin_Round12(t *testing.T) {
+	recovered, err := collectionsPanicRecovery(nil)(func(*apptheory.Context) (*apptheory.Response, error) {
+		panic("boom")
+	})(&apptheory.Context{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusInternalServerError, recovered.Status)
+
+	okResp, err := collectionsPanicRecovery(zap.NewNop())(func(*apptheory.Context) (*apptheory.Response, error) {
+		return collectionsJSONError(http.StatusTeapot, "short and stout"), nil
+	})(&apptheory.Context{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusTeapot, okResp.Status)
+
+	nilResp, err := collectionsActivityPubSecurityHeaders()(func(*apptheory.Context) (*apptheory.Response, error) {
+		return nil, nil
+	})(&apptheory.Context{})
+	require.NoError(t, err)
+	require.Nil(t, nilResp)
+
+	secured, err := collectionsActivityPubSecurityHeaders()(func(*apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{Status: http.StatusOK}, nil
+	})(&apptheory.Context{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"nosniff"}, secured.Headers["x-content-type-options"])
+	require.Equal(t, []string{"cross-origin"}, secured.Headers["cross-origin-resource-policy"])
 }

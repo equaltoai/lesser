@@ -5,9 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"time"
 
@@ -80,22 +78,21 @@ func ValidateVAPIDKeysForProduction(ctx context.Context, cfg *config.Config, rep
 	return nil
 }
 
-// generateVAPIDKeyPair generates a new ECDSA P-256 key pair for VAPID
-func generateVAPIDKeyPair() (publicKeyB64 string, privateKeyPEM string, err error) {
+// generateVAPIDKeyPair generates a new ECDSA P-256 key pair for VAPID.
+//
+// The push-delivery processor expects the private key as the raw P-256 scalar
+// encoded with base64url, matching the format produced by the API's runtime
+// /api/v1/instance VAPID bootstrap path.
+func generateVAPIDKeyPair() (publicKeyB64 string, privateKeyB64 string, err error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return "", "", err
 	}
 
-	privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
+	privateKeyBytes, err := privateKey.Bytes()
 	if err != nil {
 		return "", "", err
 	}
-
-	privPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	})
 
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
@@ -103,6 +100,7 @@ func generateVAPIDKeyPair() (publicKeyB64 string, privateKeyPEM string, err erro
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyB64 = base64.RawURLEncoding.EncodeToString(publicKeyBytes)
+	privateKeyB64 = base64.RawURLEncoding.EncodeToString(privateKeyBytes)
 
-	return publicKeyB64, string(privPEM), nil
+	return publicKeyB64, privateKeyB64, nil
 }

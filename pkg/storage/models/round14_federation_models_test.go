@@ -7,6 +7,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 )
 
 func TestFederationModels_UpdateKeys(t *testing.T) {
@@ -110,7 +112,41 @@ func TestFederationModels_UpdateKeys(t *testing.T) {
 		assert.Equal(t, MainTableName, ic.TableName())
 	})
 
+	t.Run("timeseries window records", func(t *testing.T) {
+		ts := time.Unix(1700000000, 0).UTC()
+		fw := NewFederationTimeseriesWindow(ts, ts)
+		assert.Equal(t, "TIMESERIES#FEDERATION", fw.PK)
+		assert.Equal(t, "WINDOW#2023-11-14T22:13:20Z", fw.SK)
+		assert.Equal(t, "FederationTimeseries", fw.Type)
+		assert.Equal(t, MainTableName, fw.TableName())
+
+		iw := NewInstanceTimeseriesWindow("example.com", ts, ts)
+		assert.Equal(t, "TIMESERIES#INSTANCE#example.com", iw.PK)
+		assert.Equal(t, "WINDOW#2023-11-14T22:13:20Z", iw.SK)
+		assert.Equal(t, "InstanceTimeseries", iw.Type)
+		assert.Equal(t, MainTableName, iw.TableName())
+	})
+
 	t.Run("FederationHealthReport is a computed type", func(t *testing.T) {
 		assert.Equal(t, MainTableName, (FederationHealthReport{}).TableName())
 	})
+}
+
+func TestFederationTimeseriesModelsRegisterWithTableTheory(t *testing.T) {
+	db, err := tabletheory.New(session.Config{Region: "us-east-1"})
+	require.NoError(t, err)
+
+	ts := time.Unix(1700000000, 0).UTC()
+
+	federationWindow := NewFederationTimeseriesWindow(ts, ts)
+	err = db.Model(federationWindow).UpdateBuilder().Set("UpdatedAt", federationWindow.UpdatedAt).Execute()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "partition key PK is required for update")
+	require.NotContains(t, err.Error(), "failed to register model")
+
+	instanceWindow := NewInstanceTimeseriesWindow("example.com", ts, ts)
+	err = db.Model(instanceWindow).UpdateBuilder().Set("UpdatedAt", instanceWindow.UpdatedAt).Execute()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "partition key PK is required for update")
+	require.NotContains(t, err.Error(), "failed to register model")
 }

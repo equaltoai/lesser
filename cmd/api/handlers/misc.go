@@ -254,7 +254,7 @@ func (h *Handler) convertThinStatusResultToAPI(ctx *apptheory.Context, sr *stora
 
 	// Use centralized transformation framework - ELIMINATES 8+ LINES OF DUPLICATE CODE
 	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-	transformCtx := context.WithValue(ctx.Context(), baseURLContextKey, h.cfg.BaseURL())
+	transformCtx := transformations.ContextWithBaseURL(ctx.Context(), h.cfg.BaseURL())
 
 	status, err := transformer.Transform(transformCtx, statusMap)
 	if err != nil || status.ID == "" {

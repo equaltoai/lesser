@@ -21,6 +21,32 @@ const (
 	propertyValueType = "PropertyValue"
 )
 
+type contextKey string
+
+const baseURLContextKey contextKey = "baseURL"
+
+// ContextWithBaseURL stores the API base URL using the typed key consumed by
+// response transformers.
+func ContextWithBaseURL(ctx context.Context, baseURL string) context.Context {
+	return context.WithValue(ctx, baseURLContextKey, baseURL)
+}
+
+// BaseURLFromContext retrieves the API base URL from transformer contexts.
+func BaseURLFromContext(ctx context.Context, fallback string) string {
+	if ctx == nil {
+		return fallback
+	}
+	if baseURL, ok := ctx.Value(baseURLContextKey).(string); ok && strings.TrimSpace(baseURL) != "" {
+		return baseURL
+	}
+	// Backward-compatible read for existing tests/callers that used a plain
+	// string key before the Lift handler and transformer key types were aligned.
+	if baseURL, ok := ctx.Value("baseURL").(string); ok && strings.TrimSpace(baseURL) != "" {
+		return baseURL
+	}
+	return fallback
+}
+
 // ActivityPubRegistry is the global transformation registry for ActivityPub transformations
 var ActivityPubRegistry *common.TransformationRegistry
 
@@ -438,10 +464,7 @@ func NewActorToMastodonTransformer() common.Transformer[*activitypub.Actor, *mod
 	return common.NewBaseTransformer(
 		"actor_to_mastodon",
 		func(ctx context.Context, actor *activitypub.Actor) (*models.Account, error) {
-			baseURL := defaultBaseURL // Default fallback
-			if url, ok := ctx.Value("baseURL").(string); ok {
-				baseURL = url
-			}
+			baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 			return ActivityPubActorToMastodon(actor, baseURL)
 		},
 		nil,
@@ -481,10 +504,7 @@ func NewObjectToMastodonTransformer() common.Transformer[*activitypub.Note, *mod
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
 
-			baseURL := defaultBaseURL // Default fallback
-			if url, ok := ctx.Value("baseURL").(string); ok {
-				baseURL = url
-			}
+			baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 
 			return ActivityPubObjectToMastodon(obj, actor, baseURL)
 		},
@@ -521,17 +541,11 @@ func NewActorBatchToMastodonTransformer() common.BatchTransformer[*activitypub.A
 	return common.NewBatchTransformer(
 		"actors_to_mastodon_batch",
 		func(ctx context.Context, actor *activitypub.Actor) (*models.Account, error) {
-			baseURL := defaultBaseURL // Default fallback
-			if url, ok := ctx.Value("baseURL").(string); ok {
-				baseURL = url
-			}
+			baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 			return ActivityPubActorToMastodon(actor, baseURL)
 		},
 		func(ctx context.Context, actors []*activitypub.Actor) ([]*models.Account, error) {
-			baseURL := defaultBaseURL // Default fallback
-			if url, ok := ctx.Value("baseURL").(string); ok {
-				baseURL = url
-			}
+			baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 
 			accounts := make([]*models.Account, 0, len(actors))
 			for _, actor := range actors {
@@ -558,10 +572,7 @@ func NewObjectBatchToMastodonTransformer() common.BatchTransformer[*activitypub.
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
 
-			baseURL := defaultBaseURL // Default fallback
-			if url, ok := ctx.Value("baseURL").(string); ok {
-				baseURL = url
-			}
+			baseURL := BaseURLFromContext(ctx, defaultBaseURL)
 
 			return ActivityPubObjectToMastodon(obj, actor, baseURL)
 		},

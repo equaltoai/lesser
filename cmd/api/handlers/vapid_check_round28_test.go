@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/config"
@@ -9,6 +11,25 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+func TestGenerateVAPIDKeyPair_round28_rawScalarPrivateKey(t *testing.T) {
+	t.Parallel()
+
+	publicKey, privateKey, err := generateVAPIDKeyPair()
+	require.NoError(t, err)
+	require.NotEmpty(t, publicKey)
+	require.NotEmpty(t, privateKey)
+	require.False(t, strings.Contains(privateKey, "BEGIN EC PRIVATE KEY"))
+
+	publicKeyBytes, err := base64.RawURLEncoding.DecodeString(publicKey)
+	require.NoError(t, err)
+	require.Len(t, publicKeyBytes, 65)
+	require.Equal(t, byte(4), publicKeyBytes[0])
+
+	privateKeyBytes, err := base64.RawURLEncoding.DecodeString(privateKey)
+	require.NoError(t, err)
+	require.Len(t, privateKeyBytes, 32)
+}
 
 func TestValidateVAPIDKeysForProduction_round28_more_coverage(t *testing.T) {
 	t.Parallel()

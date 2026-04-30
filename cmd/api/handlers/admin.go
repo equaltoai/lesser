@@ -23,13 +23,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// contextKey is the type for context keys to avoid untyped string context keys
-type contextKey string
-
-const (
-	baseURLContextKey contextKey = "baseURL"
-)
-
 // Admin action constants
 const (
 	actionSuspend = "suspend"

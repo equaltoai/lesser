@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2488,8 +2489,16 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 	}
 
 	connectionType = strings.TrimSpace(connectionType)
-	if connectionType == "" {
-		connectionType = ConnectionTypeAll
+	if connectionType == "" || strings.EqualFold(connectionType, ConnectionTypeAll) {
+		edges, err := r.GetAllFederationEdges(ctx, 1000)
+		if err != nil {
+			return nil, err
+		}
+		sortFederationEdgesByStrength(edges)
+		if len(edges) > limit {
+			edges = edges[:limit]
+		}
+		return edges, nil
 	}
 
 	gsi8PK := fmt.Sprintf("FED_EDGES#TYPE#%s", connectionType)
@@ -2524,6 +2533,21 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 	}
 
 	return result, nil
+}
+
+func sortFederationEdgesByStrength(edges []*storage.FederationEdge) {
+	sort.SliceStable(edges, func(i, j int) bool {
+		if edges[i].Strength != edges[j].Strength {
+			return edges[i].Strength > edges[j].Strength
+		}
+		if !edges[i].LastActivity.Equal(edges[j].LastActivity) {
+			return edges[i].LastActivity.After(edges[j].LastActivity)
+		}
+		if edges[i].SourceDomain != edges[j].SourceDomain {
+			return edges[i].SourceDomain < edges[j].SourceDomain
+		}
+		return edges[i].TargetDomain < edges[j].TargetDomain
+	})
 }
 
 // StoreDetailedFederationMetrics stores detailed federation time series record with 5-minute aggregation
