@@ -2317,6 +2317,43 @@ func TestService_round15_additional_branch_coverage(t *testing.T) {
 	})
 }
 
+func TestService_M15_GetInteractionListsRequireVisibleStatus(t *testing.T) {
+	ctx := context.Background()
+	statusRepo := testingmocks.NewMockStatusRepositoryInterface()
+	relationshipRepo := testingmocks.NewMockRelationshipRepository()
+	service := &Service{
+		noteRepo:         statusRepo,
+		relationshipRepo: relationshipRepo,
+		logger:           zap.NewNop(),
+		domainName:       "example.com",
+	}
+
+	privateStatus := &models.Status{
+		StatusID:       "private-1",
+		Visibility:     models.VisibilityPrivate,
+		AuthorUsername: "alice",
+	}
+	statusRepo.On("GetStatus", mock.Anything, "private-1").Return(privateStatus, nil).Twice()
+	relationshipRepo.On("IsFollowing", mock.Anything, "bob", "alice").Return(false, nil).Twice()
+
+	_, err := service.GetLikers(ctx, &GetLikersQuery{
+		StatusID:   "private-1",
+		ViewerID:   "bob",
+		Pagination: interfaces.PaginationOptions{Limit: 2},
+	})
+	require.ErrorIs(t, err, ErrStatusNotFound)
+
+	_, err = service.GetRebloggers(ctx, &GetRebloggersQuery{
+		StatusID:   "private-1",
+		ViewerID:   "bob",
+		Pagination: interfaces.PaginationOptions{Limit: 2},
+	})
+	require.ErrorIs(t, err, ErrStatusNotFound)
+
+	statusRepo.AssertExpectations(t)
+	relationshipRepo.AssertExpectations(t)
+}
+
 func TestService_round15_createReblog_and_boost_idempotency(t *testing.T) {
 	ctx := context.Background()
 	actorURL := "https://example.com/users/bob"
