@@ -330,8 +330,8 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 			searchFn: func(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 				return &interfaces.PaginatedResult[*models.Status]{
 					Items: []*models.Status{
-						{Content: "check this out https://example.com"},
-						{Content: "no link here"},
+						{StatusID: "public-1", Visibility: models.VisibilityPublic, Content: "check this out https://example.com"},
+						{StatusID: "public-2", Visibility: models.VisibilityPublic, Content: "no link here"},
 					},
 				}, nil
 			},
@@ -341,6 +341,30 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 		results, err := repo.GetStatusesByLink(ctx, "https://example.com", 0)
 		require.NoError(t, err)
 		require.Len(t, results, 1)
+	})
+
+	t.Run("statuses by link filters non-public matches", func(t *testing.T) {
+		statusRepo := &stubStatusRepository{
+			searchFn: func(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+				return &interfaces.PaginatedResult[*models.Status]{
+					Items: []*models.Status{
+						{StatusID: "public-1", Visibility: models.VisibilityPublic, Content: "see https://example.com/private-topic"},
+						{StatusID: "private-1", Visibility: models.VisibilityPrivate, Content: "see https://example.com/private-topic"},
+						{StatusID: "direct-1", Visibility: models.VisibilityDirect, Content: "see https://example.com/private-topic"},
+						{StatusID: "unlisted-1", Visibility: models.VisibilityUnlisted, Content: "see https://example.com/private-topic"},
+						{StatusID: "deleted-1", Visibility: models.VisibilityPublic, Deleted: true, Content: "see https://example.com/private-topic"},
+					},
+				}, nil
+			},
+		}
+		repo.SetStatusRepository(statusRepo)
+
+		results, err := repo.GetStatusesByLink(ctx, "https://example.com/private-topic", 20)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		result, ok := results[0].(*storage.TrendingStatus)
+		require.True(t, ok)
+		require.Equal(t, "public-1", result.StatusID)
 	})
 
 	t.Run("engagement ranking and aggregation", func(t *testing.T) {
