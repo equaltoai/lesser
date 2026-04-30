@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 
@@ -342,6 +343,30 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.Equal(t, "public", outbox[0].ID)
 		require.Equal(t, "unlisted", outbox[1].ID)
 		require.Equal(t, "object", outbox[2].ID)
+	})
+
+	t.Run("GetOutboxActivities stops after bounded non-public pages", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		allCalls := 0
+		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			allCalls++
+			out := args.Get(0).(*[]*models.Activity)
+			if allCalls <= 6 {
+				*out = []*models.Activity{
+					{PK: "ACTOR#alice", SK: fmt.Sprintf("ACTIVITY#z%d#private", allCalls), Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: fmt.Sprintf("private-%d-a", allCalls), To: []string{"https://example.com/users/bob"}}}},
+					{PK: "ACTOR#alice", SK: fmt.Sprintf("ACTIVITY#y%d#private", allCalls), Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: fmt.Sprintf("private-%d-b", allCalls), To: []string{"https://example.com/users/bob"}}}},
+				}
+			}
+		}).Return(nil)
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+		outbox, cursor, err := repo.GetOutboxActivities(ctx, "alice", 1, "")
+		require.NoError(t, err)
+		require.Empty(t, outbox)
+		require.NotEmpty(t, cursor)
+		require.Equal(t, 4, allCalls)
 	})
 
 	t.Run("GetOutboxActivities decodes valid cursor and handles query error", func(t *testing.T) {

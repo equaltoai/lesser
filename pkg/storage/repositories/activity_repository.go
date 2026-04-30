@@ -147,8 +147,9 @@ func (r *ActivityRepository) DeleteActivity(ctx context.Context, id string) erro
 
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation
 const (
-	activityDefaultLimit = 20
-	activityMaxLimit     = 100
+	activityDefaultLimit      = 20
+	activityMaxLimit          = 100
+	maxOutboxPublicQueryPages = 4
 )
 
 func clampActivityLimit(limit int) int {
@@ -263,7 +264,7 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 
 	result := make([]*activitypub.Activity, 0, safeLimit)
 	var nextCursor string
-	for {
+	for pagesQueried := 0; pagesQueried < maxOutboxPublicQueryPages; pagesQueried++ {
 		activities, hasMore, batchCursor, err := r.queryOutboxActivityRecords(ctx, username, safeLimit, cursorData)
 		if err != nil {
 			r.logger.Error("failed to query outbox activities",
@@ -303,6 +304,17 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 				zap.String("username", username))
 			break
 		}
+
+		if pagesQueried == maxOutboxPublicQueryPages-1 {
+			nextCursor = activityEncodeQueryCursor(batchCursor)
+			r.logger.Warn("stopping public outbox pagination after bounded query budget",
+				zap.String("username", username),
+				zap.Int("pages_queried", pagesQueried+1),
+				zap.Int("returned_public_activities", len(result)),
+				zap.Bool("has_more_private_or_filtered_activities", nextCursor != ""))
+			break
+		}
+
 		cursorData = batchCursor
 	}
 
@@ -687,6 +699,17 @@ func activityQueryCursor(data map[string]string) string {
 		return ""
 	}
 	return string(jsonData)
+}
+
+func activityEncodeQueryCursor(cursorData string) string {
+	if strings.TrimSpace(cursorData) == "" {
+		return ""
+	}
+	var data map[string]string
+	if err := json.Unmarshal([]byte(cursorData), &data); err != nil {
+		return ""
+	}
+	return activityEncodeCursor(data)
 }
 
 // activityDecodeCursor decodes a string cursor to a map
