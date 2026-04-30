@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,7 +169,7 @@ func TestAccountsFullRound21_ResolveAccountIDFull_RejectsMissingNumericIDMapping
 	actor, err := h.resolveAccountIDFull(context.Background(), numericID)
 	require.Error(t, err)
 	require.Nil(t, actor)
-	require.True(t, isMissingAccountLookup(err), "expected missing-account lookup error, got %v", err)
+	require.Contains(t, strings.ToLower(err.Error()), "not found")
 }
 
 func TestAccountsRound21_VerifyCredentialsEnsuresOwnNumericIDStillWorks(t *testing.T) {
@@ -231,5 +232,5 @@ func TestAccountsFullRound21_ResolveAccountIDFull_RejectsLegacyMixedCaseNumericI
 	actor, err := h.resolveAccountIDFull(context.Background(), requestedNumericID)
 	require.Error(t, err)
 	require.Nil(t, actor)
-	require.True(t, isMissingAccountLookup(err), "expected missing-account lookup error, got %v", err)
+	require.Contains(t, strings.ToLower(err.Error()), "not found")
 }

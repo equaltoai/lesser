@@ -80,8 +80,12 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 		if strings.EqualFold(host, h.cfg.Domain) {
 			path := strings.Trim(parsed.Path, "/")
 			parts := strings.Split(path, "/")
-			if len(parts) >= 2 && parts[0] == "users" && strings.TrimSpace(parts[1]) != "" {
-				return h.repos.Actor().GetActor(ctx, parts[1])
+			if len(parts) >= 2 && parts[0] == actorUsersPathSegment && strings.TrimSpace(parts[1]) != "" {
+				actor, err := h.repos.Actor().GetActor(ctx, parts[1])
+				if err != nil {
+					return nil, err
+				}
+				return h.rejectSuspendedLocalActor(ctx, actor)
 			}
 			return nil, invalidAccountURL()
 		}
@@ -97,8 +101,8 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 		return nil, err
 	}
 	// If the resolved actor appears to be local, verify it is not suspended.
-	if resolution.Actor != nil && common.IsLocalActorID(resolution.Actor.ID, h.cfg.Domain) && h.repos != nil && h.repos.Account() != nil {
-		if account, acctErr := h.repos.Account().GetAccount(ctx, resolution.Actor.PreferredUsername); acctErr == nil && account != nil && account.User != nil && account.User.Suspended {
+	if resolution.Actor != nil {
+		if h.localActorSuspended(ctx, resolution.Actor) {
 			return nil, fmt.Errorf("account not found")
 		}
 	}
@@ -139,17 +143,10 @@ func normalizeReadableStatusID(statusID string) (string, error) {
 
 func (h *Handler) resolveNumericAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	actor, err := h.repos.Actor().GetActorByNumericID(ctx, accountID)
-	return actor, err
-}
-
-func isMissingAccountLookup(err error) bool {
-	if err == nil {
-		return false
+	if err != nil {
+		return nil, err
 	}
-	if common.IsNotFound(err) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "not found")
+	return h.rejectSuspendedLocalActor(ctx, actor)
 }
 
 func normalizeLocalActorDomain(domain string) string {
