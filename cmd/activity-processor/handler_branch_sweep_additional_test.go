@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -248,6 +249,10 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 
 	t.Run("relationship creation fails", func(t *testing.T) {
 		relationshipRepo := testmocks.NewMockRelationshipRepository()
+		relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+			State:      models.RelationshipRejected,
+			ActivityID: "follow-1",
+		}, nil).Once()
 		relationshipRepo.On("CreateRelationship", mock.Anything, "bob", "alice", "follow-1").Return(errors.New("boom")).Once()
 
 		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}

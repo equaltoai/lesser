@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -65,12 +66,24 @@ func TestActivityHandler_ProcessRejectUpdateAndStreamRecordNoop(t *testing.T) {
 	ctx := context.Background()
 
 	relationshipRepo := testmocks.NewMockRelationshipRepository()
+	activityRepo := testmocks.NewMockActivityRepository()
 	notificationRepo := testmocks.NewMockNotificationRepository()
 
-	relationshipRepo.On("DeleteRelationship", mock.Anything, "bob", "alice").Return(nil)
+	follow := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "follow-1", Type: ActivityTypeFollow},
+		Actor:      "https://remote.example/users/bob",
+		Object:     "https://example.com/users/alice",
+	}
+	activityRepo.On("GetActivity", mock.Anything, "follow-1").Return(follow, nil).Once()
+	relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+		State:      models.RelationshipPending,
+		ActivityID: "follow-1",
+	}, nil).Once()
+	relationshipRepo.On("RejectFollowRequest", mock.Anything, "bob", "alice").Return(nil).Once()
 	notificationRepo.On("CreateNotification", mock.Anything, mock.Anything).Return(nil)
 
 	handler := &ActivityHandler{
+		ActivityRepo:     activityRepo,
 		Logger:           zap.NewNop(),
 		RelationshipRepo: relationshipRepo,
 		NotificationRepo: notificationRepo,
@@ -89,5 +102,6 @@ func TestActivityHandler_ProcessRejectUpdateAndStreamRecordNoop(t *testing.T) {
 	require.NoError(t, handler.processRecord(ctx, events.DynamoDBEventRecord{EventName: "MODIFY"}))
 
 	relationshipRepo.AssertExpectations(t)
+	activityRepo.AssertExpectations(t)
 	notificationRepo.AssertExpectations(t)
 }
