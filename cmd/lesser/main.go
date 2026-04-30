@@ -47,6 +47,7 @@ var (
 	runMigrateNumericIDsFn                       = runMigrateNumericIDs
 	runMigrateMCPAuthCutoverFn                   = runMigrateMCPAuthCutover
 	runMigrateRemoteNoteStatusesFn               = runMigrateRemoteNoteStatuses
+	runMigrateFn                                 = runMigrate
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -106,6 +107,7 @@ func commandRunner(cmd string) (func([]string) error, bool) {
 		"auth":                  func(argv []string) error { return runAuthFn(argv) },
 		"api":                   func(argv []string) error { return runAPIFn(argv) },
 		"soul":                  func(argv []string) error { return runSoulFn(argv) },
+		"migrate":               func(argv []string) error { return runMigrateFn(argv) },
 		"migrate-user-keys":     func(argv []string) error { return runMigrateUserKeysFn(argv) },
 		"migrate-conversations": func(argv []string) error { return runMigrateConversationsFn(argv) },
 		"migrate-conversation-metadata": func(argv []string) error {
@@ -177,6 +179,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser auth login|logout|status|whoami|device [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser api request --method GET --path /api/v1/accounts/verify_credentials [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser soul ens set|preview|publish [flags...]")
+	_, _ = fmt.Fprintln(w, "  lesser migrate security-findings [--app <slug>] [--base-domain <domain>] [--stage dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--operation all|numeric-ids|hashtag-indexes|cms-publication-members] [--dry-run|--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-user-keys [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversations [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversation-metadata [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
