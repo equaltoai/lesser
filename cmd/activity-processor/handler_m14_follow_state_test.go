@@ -63,6 +63,61 @@ func TestActivityHandler_M14_InlineFollowResponsesRequirePersistedPendingState(t
 		relationshipRepo.AssertNotCalled(t, "RejectFollowRequest", mock.Anything, "bob", "alice")
 		relationshipRepo.AssertExpectations(t)
 	})
+
+	t.Run("accept rejects inline follow target with same username on another domain", func(t *testing.T) {
+		relationshipRepo := testmocks.NewMockRelationshipRepository()
+
+		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+		accept := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "accept-forged-target", Type: ActivityTypeAccept},
+			Actor:      "https://example.com/users/alice",
+			Object: map[string]any{
+				"id":     "https://remote.example/activities/follow-1",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"object": "https://evil.example/users/alice",
+			},
+		}
+
+		require.ErrorIs(t, handler.processAcceptActivity(ctx, accept, "ignored"), services.ErrActorNotAuthorizedUndo)
+		relationshipRepo.AssertNotCalled(t, "GetRelationship", mock.Anything, "bob", "alice")
+		relationshipRepo.AssertNotCalled(t, "AcceptFollowRequest", mock.Anything, "bob", "alice")
+		relationshipRepo.AssertExpectations(t)
+	})
+
+	t.Run("accept rejects inline follow id matching only the last path segment", func(t *testing.T) {
+		relationshipRepo := testmocks.NewMockRelationshipRepository()
+		relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
+			State:      models.RelationshipPending,
+			ActivityID: "https://remote.example/activities/follow-1",
+		}, nil).Once()
+
+		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+		accept := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "accept-forged-id-segment", Type: ActivityTypeAccept},
+			Actor:      "https://example.com/users/alice",
+			Object: map[string]any{
+				"id":     "https://evil.example/activities/follow-1",
+				"type":   ActivityTypeFollow,
+				"actor":  "https://remote.example/users/bob",
+				"object": "https://example.com/users/alice",
+			},
+		}
+
+		require.ErrorIs(t, handler.processAcceptActivity(ctx, accept, "ignored"), services.ErrActorNotAuthorizedUndo)
+		relationshipRepo.AssertNotCalled(t, "AcceptFollowRequest", mock.Anything, "bob", "alice")
+		relationshipRepo.AssertExpectations(t)
+	})
+}
+
+func TestActivityHandler_M14_FollowResponseTrustMatchingIsStrict(t *testing.T) {
+	handler := &ActivityHandler{Logger: zap.NewNop()}
+
+	require.True(t, handler.followTargetMatchesActor("https://example.com/users/alice/", "https://example.com/users/alice"))
+	require.False(t, handler.followTargetMatchesActor("https://evil.example/users/alice", "https://example.com/users/alice"))
+
+	require.True(t, followActivityIDMatches("https://remote.example/activities/follow-1/", "https://remote.example/activities/follow-1"))
+	require.False(t, followActivityIDMatches("https://remote.example/activities/follow-1", "https://evil.example/activities/follow-1"))
 }
 
 func TestActivityHandler_M14_UndoRejectRequiresPersistedRejectedState(t *testing.T) {

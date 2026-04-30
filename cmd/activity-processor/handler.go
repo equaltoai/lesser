@@ -1930,15 +1930,12 @@ func validateUndoRejectFollowState(state undoRejectFollowState) (undoRejectFollo
 
 //nolint:unused // Used by follow response and Undo Reject handlers.
 func (h *ActivityHandler) followTargetMatchesActor(followTarget, actorID string) bool {
-	followTarget = strings.TrimSpace(followTarget)
-	actorID = strings.TrimSpace(actorID)
+	followTarget = normalizeFollowTrustID(followTarget)
+	actorID = normalizeFollowTrustID(actorID)
 	if followTarget == "" || actorID == "" {
 		return false
 	}
-	if followTarget == actorID {
-		return true
-	}
-	return h.extractUsernameFromActorURI(followTarget) == h.extractUsernameFromActorURI(actorID)
+	return followTarget == actorID
 }
 
 //nolint:unused // Used by follow response and Undo Reject handlers.
@@ -1994,29 +1991,17 @@ func (h *ActivityHandler) requirePersistedFollowRelationshipState(
 
 //nolint:unused // Used by follow response and Undo Reject state validation.
 func followActivityIDMatches(storedActivityID, referencedActivityID string) bool {
-	storedActivityID = strings.TrimSpace(storedActivityID)
-	referencedActivityID = strings.TrimSpace(referencedActivityID)
+	storedActivityID = normalizeFollowTrustID(storedActivityID)
+	referencedActivityID = normalizeFollowTrustID(referencedActivityID)
 	if storedActivityID == "" || referencedActivityID == "" {
 		return false
 	}
-	if storedActivityID == referencedActivityID {
-		return true
-	}
-
-	return activityIDLastSegment(storedActivityID) == activityIDLastSegment(referencedActivityID)
+	return storedActivityID == referencedActivityID
 }
 
-//nolint:unused // Used by follow response and Undo Reject state validation.
-func activityIDLastSegment(activityID string) string {
-	activityID = strings.TrimRight(strings.TrimSpace(activityID), "/")
-	if activityID == "" {
-		return ""
-	}
-	idx := strings.LastIndex(activityID, "/")
-	if idx < 0 {
-		return activityID
-	}
-	return activityID[idx+1:]
+//nolint:unused // Used by follow response and Undo Reject trust matching helpers.
+func normalizeFollowTrustID(id string) string {
+	return strings.TrimRight(strings.TrimSpace(id), "/")
 }
 
 // processUndoFlag processes an undo of a Flag activity
