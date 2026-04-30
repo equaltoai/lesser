@@ -2,8 +2,12 @@ package federation
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -252,6 +256,70 @@ func TestVerifyHTTPSignature(t *testing.T) {
 	req.Header.Del("Signature")
 	err = VerifyHTTPSignature(req, publicKey)
 	assert.Error(t, err)
+}
+
+func TestVerifyHTTPSignatureRequiresSignedRequestIntegrity(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+	keyID := "https://example.com/users/alice#main-key"
+
+	signWithHeaders := func(t *testing.T, req *http.Request, headers []string) {
+		t.Helper()
+
+		sigString, err := buildSignatureString(req, headers)
+		require.NoError(t, err)
+
+		hash := sha256.Sum256([]byte(sigString))
+		signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hash[:])
+		require.NoError(t, err)
+
+		req.Header.Set(SignatureHeader, fmt.Sprintf(
+			`keyId="%s",algorithm="%s",headers="%s",signature="%s"`,
+			keyID,
+			AlgorithmRSASHA256,
+			strings.Join(headers, " "),
+			base64.StdEncoding.EncodeToString(signature),
+		))
+	}
+
+	t.Run("get succeeds with signed freshness host and request target", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+
+		require.NoError(t, SignHTTPRequest(req, privateKey, keyID))
+		require.NoError(t, VerifyHTTPSignature(req, publicKey))
+	})
+
+	t.Run("get rejects signature missing request target coverage", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
+		signWithHeaders(t, req, []string{"host", "date"})
+
+		require.Error(t, VerifyHTTPSignature(req, publicKey))
+	})
+
+	t.Run("get rejects stale signed freshness", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, "Mon, 01 Jan 2024 12:00:00 GMT")
+		signWithHeaders(t, req, []string{RequestTargetHeader, "host", "date"})
+
+		require.Error(t, VerifyHTTPSignature(req, publicKey))
+	})
+
+	t.Run("post rejects unsigned digest coverage", func(t *testing.T) {
+		body := []byte(`{"type":"Create"}`)
+		req := httptest.NewRequest(http.MethodPost, "https://example.com/inbox", bytes.NewReader(body))
+		req.Host = "example.com"
+		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
+		req.Header.Set(DigestHeader, calculateDigest(body))
+		req.Header.Set("Content-Type", "application/activity+json")
+		signWithHeaders(t, req, []string{RequestTargetHeader, "host", "date"})
+
+		require.Error(t, VerifyHTTPSignature(req, publicKey))
+	})
 }
 
 func TestSignHTTPRequest(t *testing.T) {
@@ -599,7 +667,7 @@ func TestRequireSignedBodyIntegrity(t *testing.T) {
 		req.Host = "example.com"
 		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
 		req.Header.Set("Content-Type", "application/activity+json")
-		require.NoError(t, SignHTTPRequestWithAlgorithm(req, privateKey, "https://example.com/users/alice#main-key", AlgorithmRSASHA256))
+		req.Header.Set(SignatureHeader, `keyId="https://example.com/users/alice#main-key",algorithm="rsa-sha256",headers="(request-target) host date",signature="dGVzdA=="`)
 
 		require.Error(t, RequireSignedBodyIntegrity(req))
 	})
@@ -630,12 +698,16 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 	dummySignature := func(headers string) string {
 		return `keyId="https://example.com/users/alice#main-key",algorithm="rsa-sha256",headers="` + headers + `",signature="dGVzdA=="`
 	}
+	setFreshDate := func(req *http.Request) {
+		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
+	}
 
 	require.Error(t, RequireSignedBodyIntegrity(nil))
 
 	t.Run("missing required signed host header is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = "example.com"
+		setFreshDate(req)
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) date"))
 
 		require.Error(t, RequireSignedBodyIntegrity(req))
@@ -644,6 +716,7 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 	t.Run("get without body or digest does not require digest", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = "example.com"
+		setFreshDate(req)
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
 		require.NoError(t, RequireSignedBodyIntegrity(req))
@@ -652,6 +725,7 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 	t.Run("get with digest header requires digest to be signed", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = "example.com"
+		setFreshDate(req)
 		req.Header.Set(DigestHeader, calculateDigest([]byte("body")))
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
@@ -661,6 +735,7 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 	t.Run("host header fallback is accepted", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = ""
+		setFreshDate(req)
 		req.Header.Set(common.HostHeader, "example.com")
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
@@ -670,6 +745,7 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 	t.Run("invalid signed host authority is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = "example.com/path"
+		setFreshDate(req)
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
 		require.Error(t, RequireSignedBodyIntegrity(req))
@@ -679,6 +755,7 @@ func TestRequireSignedBodyIntegrity_BoundaryBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox", nil)
 		req.Host = "example.com"
 		req.URL.Host = ""
+		setFreshDate(req)
 		req.Header.Set(SignatureHeader, dummySignature("(request-target) host date"))
 
 		require.Error(t, RequireSignedBodyIntegrity(req))

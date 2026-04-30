@@ -91,7 +91,7 @@ func TestVerifyHTTPSignatureV2_StructuredSignature_Success(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/inbox?x=1", nil)
 	req.Host = "example.com"
-	req.Header.Set(DateHeader, "Mon, 01 Jan 2024 12:00:00 GMT")
+	req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
 
 	signatureInput := `sig=("@method" "@path" "host" "date");keyid="https://example.com/users/alice#main-key";alg="rsa-sha256"`
 	headers := []string{RequestTargetHeader, RequestTargetHeader, "host", "date"}

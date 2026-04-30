@@ -232,11 +232,12 @@ func ParsePrivateKeyPEM(pemData []byte) (crypto.PrivateKey, error) {
 	}
 }
 
-// RequireSignedBodyIntegrity enforces the minimum signed-header set for
-// body-bearing inbound ActivityPub requests. Digest must be present and signed
-// with host/date/(request-target) so a proxy or attacker cannot alter the body
-// and Digest header without invalidating the HTTP signature.
-func RequireSignedBodyIntegrity(req *http.Request) error {
+// RequireSignedRequestIntegrity enforces the minimum signed-header set for
+// inbound ActivityPub requests. All requests must sign host/date/(request-target)
+// so replays and host/path rewrites fail verification. Body-bearing requests
+// must also include and sign Digest so a proxy or attacker cannot alter the
+// body and Digest header without invalidating the HTTP signature.
+func RequireSignedRequestIntegrity(req *http.Request) error {
 	if req == nil {
 		return common.AuthenticationError{Message: "missing request"}
 	}
@@ -244,6 +245,23 @@ func RequireSignedBodyIntegrity(req *http.Request) error {
 	sig, err := ParseSignatureHeader(req.Header.Get(SignatureHeader))
 	if err != nil {
 		return errors.Join(ErrSignatureParseFailed, err)
+	}
+
+	return requireSignedRequestIntegrity(req, sig)
+}
+
+// RequireSignedBodyIntegrity is kept for callers that adopted the earlier
+// body-oriented name; the invariant is now request-wide.
+func RequireSignedBodyIntegrity(req *http.Request) error {
+	return RequireSignedRequestIntegrity(req)
+}
+
+func requireSignedRequestIntegrity(req *http.Request, sig *HTTPSignature) error {
+	if req == nil {
+		return common.AuthenticationError{Message: "missing request"}
+	}
+	if sig == nil {
+		return common.AuthenticationError{Message: "missing signature"}
 	}
 
 	signedHeaders := make(map[string]struct{}, len(sig.Headers))
@@ -257,6 +275,9 @@ func RequireSignedBodyIntegrity(req *http.Request) error {
 	}
 
 	if err := validateSignedHostBinding(req); err != nil {
+		return err
+	}
+	if err := verifyTimestamp(req.Header.Get(DateHeader)); err != nil {
 		return err
 	}
 
@@ -355,27 +376,30 @@ func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID stri
 		req.Header.Set(DateHeader, time.Now().UTC().Format(http.TimeFormat))
 	}
 
-	// Calculate and set digest header if there's a body
-	if req.Body != nil && req.ContentLength != 0 {
-		// Read body
-		bodyBytes, err := io.ReadAll(req.Body)
-		if err != nil {
-			common.Logger().Error("failed to read request body", zap.Error(err))
-			return errors.Join(ErrReadRequestBodyFailed, err)
-		}
-
-		// Reset body for future reads
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-		// Calculate and set digest
-		digest := calculateDigest(bodyBytes)
-		req.Header.Set(DigestHeader, digest)
+	if err := ensureDigestHeaderForBody(req); err != nil {
+		return err
 	}
 
 	// Use enhanced signing for better algorithm support
 	algorithm := DetermineSigningAlgorithm(privateKey, true) // Use legacy for max compatibility
 
 	return SignHTTPRequestWithAlgorithm(req, privateKey, keyID, algorithm)
+}
+
+func ensureDigestHeaderForBody(req *http.Request) error {
+	if req == nil || req.Body == nil || req.ContentLength == 0 || req.Header.Get(DigestHeader) != "" {
+		return nil
+	}
+
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		common.Logger().Error("failed to read request body", zap.Error(err))
+		return errors.Join(ErrReadRequestBodyFailed, err)
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.Header.Set(DigestHeader, calculateDigest(bodyBytes))
+	return nil
 }
 
 // GenerateRSAKeyPair generates a new RSA key pair
