@@ -66,7 +66,9 @@ var newSecurityFindingsMigrationClientFn = func(cfg aws.Config) securityFindings
 
 var runMigrateSecurityFindingsFn = runMigrateSecurityFindings
 
-var securityFindingsMigrationOperations = []securityFindingsMigrationOperation{}
+var securityFindingsMigrationOperations = []securityFindingsMigrationOperation{
+	{Name: "numeric-ids", Execute: executeSecurityFindingsNumericIDBackfill},
+}
 
 func runMigrate(argv []string) error {
 	if len(argv) == 0 {
