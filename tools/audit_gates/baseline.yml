@@ -31,6 +31,7 @@ goDynamoDBQueryScan:
   cmd/lesser/migrate_conversations.go: 1
   cmd/lesser/migrate_mcp_auth_cutover.go: 1
   cmd/lesser/migrate_numeric_ids.go: 1
+  cmd/lesser/migrate_security_findings_hashtags.go: 1
   cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1
   pkg/federation/relationship_tracker.go: 4
