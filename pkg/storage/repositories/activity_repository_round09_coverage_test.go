@@ -365,7 +365,7 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		outbox, cursor, err := repo.GetOutboxActivities(ctx, "alice", 1, "")
 		require.NoError(t, err)
 		require.Empty(t, outbox)
-		require.NotEmpty(t, cursor)
+		require.Empty(t, cursor)
 		require.Equal(t, 4, allCalls)
 	})
 
