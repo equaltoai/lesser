@@ -1771,7 +1771,7 @@ func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *a
 	if err != nil {
 		return err
 	}
-	if followState.Target != rejectActor && h.extractUsernameFromActorURI(followState.Target) != rejecter {
+	if !h.followTargetMatchesActor(followState.Target, rejectActor) {
 		h.Logger.Warn("Undo Reject referenced Follow target does not match Reject actor",
 			zap.String("reject_actor", rejectActor),
 			zap.String("follow_target", followState.Target),

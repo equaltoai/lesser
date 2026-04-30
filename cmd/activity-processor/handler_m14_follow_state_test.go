@@ -148,3 +148,29 @@ func TestActivityHandler_M14_UndoRejectRequiresPersistedRejectedState(t *testing
 	relationshipRepo.AssertNotCalled(t, "CreateRelationship", mock.Anything, "bob", "alice", "follow-1")
 	relationshipRepo.AssertExpectations(t)
 }
+
+func TestActivityHandler_M14_UndoRejectRequiresExactFollowTarget(t *testing.T) {
+	ctx := context.Background()
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+
+	handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+	reject := map[string]any{
+		"type":  ActivityTypeReject,
+		"actor": "https://example.com/users/alice",
+		"object": map[string]any{
+			"id":     "https://remote.example/activities/follow-1",
+			"type":   ActivityTypeFollow,
+			"actor":  "https://remote.example/users/bob",
+			"object": "https://evil.example/users/alice",
+		},
+	}
+	undo := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "undo-reject-forged-target", Type: ActivityTypeUndo},
+		Actor:      "https://example.com/users/alice",
+	}
+
+	require.ErrorIs(t, handler.processUndoReject(ctx, undo, reject, "alice"), services.ErrActorNotAuthorizedUndo)
+	relationshipRepo.AssertNotCalled(t, "GetRelationship", mock.Anything, "bob", "alice")
+	relationshipRepo.AssertNotCalled(t, "CreateRelationship", mock.Anything, "bob", "alice", "https://remote.example/activities/follow-1")
+	relationshipRepo.AssertExpectations(t)
+}
