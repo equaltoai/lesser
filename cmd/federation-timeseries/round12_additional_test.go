@@ -399,3 +399,12 @@ func TestMain_InvokesLambdaStart(t *testing.T) {
 	main()
 	require.True(t, called)
 }
+
+func TestTimeseriesProcessor_HandleDynamoDBRecord_NilAndNoopBranches(t *testing.T) {
+	var nilProcessor *TimeseriesProcessor
+	require.ErrorContains(t, nilProcessor.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{}), "timeseries processor is nil")
+
+	tp := &TimeseriesProcessor{db: &fakeDynamoDB{}, tableName: "table"}
+	require.NoError(t, tp.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{}))
+	require.NotNil(t, tp.logger)
+}
