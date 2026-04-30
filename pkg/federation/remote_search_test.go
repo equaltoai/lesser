@@ -222,6 +222,51 @@ func TestRemoteSearchService_ResolveActor_WebFingerAndFetch(t *testing.T) {
 	assert.True(t, cached)
 }
 
+func TestRemoteSearchService_ResolveActor_RejectsHandleDomainMismatch(t *testing.T) {
+	actorRepo := &fakeRemoteSearchActorRepo{
+		localByUsername: map[string]*activitypub.Actor{},
+		cachedByHandle:  map[string]*activitypub.Actor{},
+	}
+	userRepo := &fakeRemoteSearchUserRepo{}
+
+	const actorURL = "https://evil.example/users/bob"
+	httpClient := &fakeHTTPMux{}
+	httpClient.do = func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Hostname() + req.URL.Path {
+		case "remote.example/.well-known/webfinger":
+			return jsonResponse(http.StatusOK, activitypub.WebFingerResource{
+				Links: []activitypub.WebFingerLink{
+					{Rel: "self", Type: "application/activity+json", Href: actorURL},
+				},
+			}), nil
+		case "evil.example/users/bob":
+			return jsonResponse(http.StatusOK, &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: actorURL, Type: activitypub.PersonType},
+				Inbox:             actorURL + "/inbox",
+				Outbox:            actorURL + "/outbox",
+				PreferredUsername: "bob",
+			}), nil
+		default:
+			return nil, errors.New("unexpected url: " + req.URL.String())
+		}
+	}
+
+	svc := &RemoteSearchService{
+		actorRepo:  actorRepo,
+		userRepo:   userRepo,
+		httpClient: httpClient,
+		logger:     common.Logger(),
+	}
+
+	_, err := svc.ResolveActor(context.Background(), "bob@remote.example")
+	require.ErrorIs(t, err, ErrActorDomainMismatch)
+
+	userRepo.mu.Lock()
+	_, cached := userRepo.cached["bob@remote.example"]
+	userRepo.mu.Unlock()
+	assert.False(t, cached)
+}
+
 func TestRemoteSearchService_ResolveActor_WebFingerErrors(t *testing.T) {
 	svc := &RemoteSearchService{
 		actorRepo: &fakeRemoteSearchActorRepo{},
