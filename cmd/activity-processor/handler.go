@@ -1863,7 +1863,18 @@ func (h *ActivityHandler) resolveUndoRejectFollowState(ctx context.Context, foll
 	case *activitypub.Activity:
 		return h.followStateFromActivity(follow)
 	case map[string]interface{}:
-		return h.followStateFromMap(follow)
+		inlineState, err := h.followStateFromMap(follow)
+		if err != nil {
+			return undoRejectFollowState{}, err
+		}
+		resolved, err := h.getActivityByID(ctx, inlineState.ID)
+		if err != nil {
+			h.Logger.Warn("Failed to resolve inline follow activity by ID",
+				zap.String("follow_activity_id", inlineState.ID),
+				zap.Error(err))
+			return undoRejectFollowState{}, services.ErrExtractUsernamesFromReject
+		}
+		return h.followStateFromActivity(resolved)
 	default:
 		h.Logger.Warn("Undo Reject follow activity has unexpected type",
 			zap.Any("follow_activity", follow))

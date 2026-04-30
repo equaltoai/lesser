@@ -248,6 +248,12 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 	})
 
 	t.Run("relationship creation fails", func(t *testing.T) {
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-1").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "follow-1", Type: ActivityTypeFollow},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://example.com/users/alice",
+		}, nil).Once()
 		relationshipRepo := testmocks.NewMockRelationshipRepository()
 		relationshipRepo.On("GetRelationship", mock.Anything, "bob", "alice").Return(&models.RelationshipRecord{
 			State:      models.RelationshipRejected,
@@ -255,7 +261,7 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		}, nil).Once()
 		relationshipRepo.On("CreateRelationship", mock.Anything, "bob", "alice", "follow-1").Return(errors.New("boom")).Once()
 
-		handler := &ActivityHandler{Logger: zap.NewNop(), RelationshipRepo: relationshipRepo}
+		handler := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo, RelationshipRepo: relationshipRepo}
 
 		reject := map[string]any{
 			"type":  ActivityTypeReject,
@@ -273,11 +279,18 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		}
 
 		require.Error(t, handler.processUndoReject(ctx, undo, reject, "alice"))
+		activityRepo.AssertExpectations(t)
 		relationshipRepo.AssertExpectations(t)
 	})
 
 	t.Run("forged follow target is rejected", func(t *testing.T) {
-		handler := &ActivityHandler{Logger: zap.NewNop()}
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-forged").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "follow-forged", Type: ActivityTypeFollow},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://example.com/users/mallory",
+		}, nil).Once()
+		handler := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo}
 		reject := map[string]any{
 			"type":  ActivityTypeReject,
 			"actor": "https://example.com/users/alice",
@@ -291,6 +304,7 @@ func TestActivityHandler_ProcessUndoReject_AdditionalBranches(t *testing.T) {
 		undo := &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "undo-forged", Type: ActivityTypeUndo}, Actor: "https://example.com/users/alice"}
 
 		require.ErrorIs(t, handler.processUndoReject(ctx, undo, reject, "alice"), services.ErrActorNotAuthorizedUndo)
+		activityRepo.AssertExpectations(t)
 	})
 }
 

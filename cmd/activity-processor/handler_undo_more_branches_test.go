@@ -325,7 +325,15 @@ func TestActivityHandler_UndoRejectHelperBranches(t *testing.T) {
 	})
 
 	t.Run("resolves embedded follow map with object id", func(t *testing.T) {
-		state, err := h.resolveUndoRejectFollowState(ctx, map[string]any{
+		activityRepo := testmocks.NewMockActivityRepository()
+		activityRepo.On("GetActivity", mock.Anything, "follow-embedded").Return(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "follow-embedded", Type: ActivityTypeFollow},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://example.com/users/alice",
+		}, nil).Once()
+
+		withActivityRepo := &ActivityHandler{Logger: zap.NewNop(), ActivityRepo: activityRepo}
+		state, err := withActivityRepo.resolveUndoRejectFollowState(ctx, map[string]any{
 			"id":    "follow-embedded",
 			"type":  ActivityTypeFollow,
 			"actor": "https://remote.example/users/bob",
@@ -335,6 +343,7 @@ func TestActivityHandler_UndoRejectHelperBranches(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, "https://example.com/users/alice", state.Target)
+		activityRepo.AssertExpectations(t)
 	})
 
 	t.Run("empty follow id string is rejected", func(t *testing.T) {
