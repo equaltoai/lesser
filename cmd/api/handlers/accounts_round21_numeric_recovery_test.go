@@ -50,7 +50,7 @@ func round21LocalActor(baseURL, username string) storagemodels.Actor {
 	return actor
 }
 
-func TestAccountsRound21_RelationshipListsRecoverMissingNumericIDMapping(t *testing.T) {
+func TestAccountsRound21_RelationshipListsRejectMissingNumericIDMapping(t *testing.T) {
 	cfg := round10TestConfig()
 	username := "Agent-0"
 	numericID := common.GenerateNumericID(username)
@@ -86,23 +86,22 @@ func TestAccountsRound21_RelationshipListsRecoverMissingNumericIDMapping(t *test
 	ctxFollowers, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/"+numericID+"/followers", nil, nil, nil)
 	require.NoError(t, err)
 	ctxFollowers.Params["id"] = numericID
-	requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowersLift(ctxFollowers))
+	requireStatus(t, http.StatusNotFound)(h.HandleGetAccountFollowersLift(ctxFollowers))
 
 	ctxFollowing, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/"+numericID+"/following", nil, nil, nil)
 	require.NoError(t, err)
 	ctxFollowing.Params["id"] = numericID
-	requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowingLift(ctxFollowing))
+	requireStatus(t, http.StatusNotFound)(h.HandleGetAccountFollowingLift(ctxFollowing))
 
-	require.Equal(t, username, followersUsername)
-	require.Equal(t, username, followingUsername)
+	require.Empty(t, followersUsername)
+	require.Empty(t, followingUsername)
 }
 
-func TestInteractionsRound21_FollowRecoversMissingNumericIDMapping(t *testing.T) {
+func TestInteractionsRound21_FollowRejectsMissingNumericIDMapping(t *testing.T) {
 	cfg := round10TestConfig()
 	followerUsername := "Agent-0"
 	targetUsername := "simulacrum"
 	targetNumericID := common.GenerateNumericID(targetUsername)
-	targetActorID := cfg.BaseURL() + "/users/" + targetUsername
 
 	state := &round10QueryState{
 		usersByUsername: map[string]storagemodels.User{
@@ -143,12 +142,12 @@ func TestInteractionsRound21_FollowRecoversMissingNumericIDMapping(t *testing.T)
 	require.NoError(t, err)
 	ctx.Params["id"] = targetNumericID
 
-	requireStatus(t, http.StatusOK)(h.HandleFollowLift(ctx))
-	require.Equal(t, followerUsername, gotFollowerID)
-	require.Equal(t, targetActorID, gotFollowingID)
+	requireStatus(t, http.StatusNotFound)(h.HandleFollowLift(ctx))
+	require.Empty(t, gotFollowerID)
+	require.Empty(t, gotFollowingID)
 }
 
-func TestAccountsFullRound21_ResolveAccountIDFull_RecoversMissingNumericIDMapping(t *testing.T) {
+func TestAccountsFullRound21_ResolveAccountIDFull_RejectsMissingNumericIDMapping(t *testing.T) {
 	cfg := round10TestConfig()
 	username := "simulacrum"
 	numericID := common.GenerateNumericID(username)
@@ -167,9 +166,9 @@ func TestAccountsFullRound21_ResolveAccountIDFull_RecoversMissingNumericIDMappin
 
 	h, _, _ := round11NewHandler(t, cfg, state)
 	actor, err := h.resolveAccountIDFull(context.Background(), numericID)
-	require.NoError(t, err)
-	require.NotNil(t, actor)
-	require.Equal(t, username, actor.PreferredUsername)
+	require.Error(t, err)
+	require.Nil(t, actor)
+	require.True(t, isMissingAccountLookup(err), "expected missing-account lookup error, got %v", err)
 }
 
 func TestAccountsRound21_VerifyCredentialsEnsuresOwnNumericIDStillWorks(t *testing.T) {
@@ -206,7 +205,7 @@ func TestAccountsRound21_VerifyCredentialsEnsuresOwnNumericIDStillWorks(t *testi
 	requireStatus(t, http.StatusOK)(h.HandleVerifyCredentialsLift(ctx))
 }
 
-func TestAccountsFullRound21_ResolveAccountIDFull_RecoversLegacyMixedCaseNumericIDRows(t *testing.T) {
+func TestAccountsFullRound21_ResolveAccountIDFull_RejectsLegacyMixedCaseNumericIDRowsWithoutMapping(t *testing.T) {
 	cfg := round10TestConfig()
 	username := "agent-0"
 	requestedNumericID := common.GenerateNumericID(username)
@@ -230,7 +229,7 @@ func TestAccountsFullRound21_ResolveAccountIDFull_RecoversLegacyMixedCaseNumeric
 
 	h, _, _ := round11NewHandler(t, cfg, state)
 	actor, err := h.resolveAccountIDFull(context.Background(), requestedNumericID)
-	require.NoError(t, err)
-	require.NotNil(t, actor)
-	require.Equal(t, username, actor.PreferredUsername)
+	require.Error(t, err)
+	require.Nil(t, actor)
+	require.True(t, isMissingAccountLookup(err), "expected missing-account lookup error, got %v", err)
 }
