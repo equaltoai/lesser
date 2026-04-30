@@ -2437,6 +2437,23 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 		var directConversation *models.Conversation
 		var createDirectConversation bool
 		if directInfo.isDirect {
+			existingStatus, err := ih.existingInboundDirectStatus(ctx, &note)
+			if err != nil {
+				log.Error("failed to check existing inbound direct status",
+					zap.String("activity_id", activity.ID),
+					zap.String("note_id", note.ID),
+					zap.Error(err))
+				return err
+			}
+			if existingStatus != nil {
+				log.Info("skipping replayed inbound direct status",
+					zap.String("activity_id", activity.ID),
+					zap.String("note_id", note.ID),
+					zap.String("status_id", existingStatus.StatusID),
+					zap.String("conversation_id", existingStatus.ConversationID))
+				return nil
+			}
+
 			directConversation, createDirectConversation, err = ih.prepareInboundDirectConversation(ctx, activity, &note, targetActor, directInfo)
 			if err != nil {
 				log.Error("failed to prepare inbound direct conversation",
@@ -2480,6 +2497,26 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 	}
 
 	return nil
+}
+
+func (ih *InboxHandler) existingInboundDirectStatus(ctx context.Context, note *activitypub.Note) (*models.Status, error) {
+	if ih.statusRepository == nil || note == nil {
+		return nil, nil
+	}
+
+	statusID := models.CanonicalStatusIDForDomain(note.ID, ih.localDomain())
+	if statusID == "" {
+		return nil, nil
+	}
+
+	existing, err := ih.statusRepository.GetStatus(ctx, statusID)
+	if err == nil && existing != nil {
+		return existing, nil
+	}
+	if isRemoteStatusNotFound(err) {
+		return nil, nil
+	}
+	return nil, err
 }
 
 type inboundDirectCreateInfo struct {

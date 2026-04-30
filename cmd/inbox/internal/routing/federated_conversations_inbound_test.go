@@ -296,6 +296,91 @@ func TestInboxHandler_FederatedConversation_PrepareAndPersistUpdateBranch(t *tes
 	require.Equal(t, env.remoteActorID, stateResult.Items[0].CounterpartID)
 }
 
+func TestInboxHandler_M14_ReplayedRemoteDirectDoesNotOverwriteConversationMetadata(t *testing.T) {
+	env := newInboxTestEnv(t)
+	ctx := context.Background()
+	notifications := inmemory.NewNotificationRepository()
+	conversations := inmemory.NewConversationRepository()
+	statuses := inmemory.NewStatusRepository()
+	objects := inmemory.NewObjectRepository()
+	publisher := &inboundDirectCapturePublisher{}
+	env.handler.notificationRepository = notifications
+	env.handler.conversationRepository = conversations
+	env.handler.statusRepository = statuses
+	env.handler.objectRepository = objects
+	env.handler.publisher = publisher
+
+	originalPublished := time.Date(2026, 4, 27, 18, 0, 0, 0, time.UTC)
+	replayPublished := originalPublished.Add(-2 * time.Hour)
+	noteID := "https://remote.example/users/bob/statuses/direct-replay"
+	statusID := models.CanonicalStatusIDForDomain(noteID, env.handler.localDomain())
+	conversationID := "conv-replay-protected"
+	participantRefs := models.NormalizeConversationParticipantRefs([]models.ConversationParticipantRef{
+		{
+			ParticipantType: models.ConversationParticipantTypeLocalUser,
+			ParticipantID:   "alice",
+		},
+		{
+			ParticipantType: models.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   env.remoteActorID,
+			Acct:            "bob@remote.example",
+			Domain:          "remote.example",
+			ResolvedAt:      &originalPublished,
+		},
+	})
+	participants := models.ConversationParticipantIDsFromRefs(participantRefs)
+	existingConversation := &models.Conversation{
+		ID:                conversationID,
+		Participants:      participants,
+		ParticipantRefs:   participantRefs,
+		LastStatusID:      "newer-direct-status",
+		LastMessageTime:   originalPublished.Add(time.Hour),
+		TotalMessageCount: 7,
+		CreatedAt:         originalPublished,
+		UpdatedAt:         originalPublished.Add(time.Hour),
+	}
+	require.NoError(t, conversations.CreateConversationWithParticipantStates(ctx, existingConversation, participants, nil))
+	require.NoError(t, statuses.CreateStatus(ctx, &models.Status{
+		StatusID:       statusID,
+		AuthorID:       env.remoteActorID,
+		Content:        "<p>original direct</p>",
+		Visibility:     models.VisibilityDirect,
+		ConversationID: conversationID,
+		PublishedAt:    originalPublished,
+		CreatedAt:      originalPublished,
+		UpdatedAt:      originalPublished,
+	}))
+
+	forgedActor := "https://evil.example/users/eve"
+	replayedNote := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        noteID,
+			Type:      activitypub.NoteType,
+			Published: &replayPublished,
+			To:        []string{env.local.ID},
+		},
+		AttributedTo: forgedActor,
+		Content:      "<p>replayed direct attempting metadata overwrite</p>",
+	}
+	activity := remoteCreateActivityForNote(t, forgedActor, replayedNote, "https://evil.example/activities/replay-direct")
+
+	require.NoError(t, env.handler.processRemoteCreateActivity(ctx, activity, env.local))
+
+	stored, err := conversations.GetConversation(ctx, conversationID)
+	require.NoError(t, err)
+	require.Equal(t, "newer-direct-status", stored.LastStatusID)
+	require.Equal(t, int64(7), stored.TotalMessageCount)
+	require.Equal(t, originalPublished.Add(time.Hour), stored.LastMessageTime)
+	require.ElementsMatch(t, participants, stored.Participants)
+	require.Equal(t, participantRefs, stored.ParticipantRefs)
+
+	result, err := notifications.GetUserNotifications(ctx, "alice", interfaces.PaginationOptions{Limit: 10})
+	require.NoError(t, err)
+	require.Empty(t, result.Items)
+	require.Empty(t, publisher.events)
+}
+
 func TestInboxHandler_FederatedConversation_HelperFallbackBranches(t *testing.T) {
 	env := newInboxTestEnv(t)
 	ctx := context.Background()
