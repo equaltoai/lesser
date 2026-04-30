@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/theory-cloud/tabletheory"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
+	tabletypes "github.com/theory-cloud/tabletheory/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -31,30 +33,34 @@ var (
 	newDynamormLambdaOptimized = tabletheory.NewLambdaOptimized
 )
 
+type typeConverterRegistrar interface {
+	RegisterTypeConverter(reflect.Type, tabletypes.CustomConverter) error
+}
+
 func registerDefaultTypeConverters(db core.DB) error {
 	if db == nil {
 		return fmt.Errorf("db is nil")
 	}
 
-	extended, ok := db.(core.ExtendedDB)
+	registrar, ok := db.(typeConverterRegistrar)
 	if !ok {
-		// Non-fatal: tests may use mocked core.DB without ExtendedDB support.
+		// Non-fatal: tests may use mocked core.DB without converter support.
 		return nil
 	}
 
-	if err := extended.RegisterTypeConverter(mapStringAnyType, mapStringAnyConverter{}); err != nil {
+	if err := registrar.RegisterTypeConverter(mapStringAnyType, mapStringAnyConverter{}); err != nil {
 		return fmt.Errorf("register map[string]any converter: %w", err)
 	}
-	if err := extended.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
+	if err := registrar.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
 		return fmt.Errorf("register []any converter: %w", err)
 	}
-	if err := extended.RegisterTypeConverter(activityPubNoteType, activityPubNoteConverter{}); err != nil {
+	if err := registrar.RegisterTypeConverter(activityPubNoteType, activityPubNoteConverter{}); err != nil {
 		return fmt.Errorf("register activitypub.Note converter: %w", err)
 	}
-	if err := extended.RegisterTypeConverter(activityPubContextValueType, activityPubContextValueConverter{}); err != nil {
+	if err := registrar.RegisterTypeConverter(activityPubContextValueType, activityPubContextValueConverter{}); err != nil {
 		return fmt.Errorf("register activitypub.ContextValue converter: %w", err)
 	}
-	if err := extended.RegisterTypeConverter(agentsCapabilitiesType, agentCapabilitiesConverter{}); err != nil {
+	if err := registrar.RegisterTypeConverter(agentsCapabilitiesType, agentCapabilitiesConverter{}); err != nil {
 		return fmt.Errorf("register agents.Capabilities converter: %w", err)
 	}
 
@@ -119,14 +125,22 @@ func getLambdaOptimizedClient() (*tabletheory.LambdaDB, error) {
 			zap.L().Error("failed to initialize DynamORM", zap.Error(err))
 			return
 		}
+		if lambdaDB == nil {
+			clientErr = fmt.Errorf("initialize Lambda-optimized DynamORM: nil client")
+			zap.L().Error("failed to initialize DynamORM", zap.Error(clientErr))
+			return
+		}
 
 		// Store the standard client interface for compatibility
+		lambdaDB = lambdaDB.WithLambdaTimeoutConfig(tabletheory.LambdaTimeoutConfig{
+			Buffer: defaultTimeoutBuffer,
+		})
 		if err := registerDefaultTypeConverters(lambdaDB); err != nil {
 			clientErr = err
 			zap.L().Error("failed to register type converters", zap.Error(err))
 			return
 		}
-		client = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
+		client = lambdaDB
 
 		zap.L().Info("DynamORM initialized", zap.Duration("duration", time.Since(startTime)))
 	})
@@ -150,10 +164,7 @@ func GetLambdaClient(ctx context.Context) (core.DB, error) {
 
 	// Apply Lambda context timeout if available
 	if ctx != nil {
-		if extended, ok := client.(core.ExtendedDB); ok {
-			return extended.WithLambdaTimeout(ctx), clientErr
-		}
-		return client.WithContext(ctx), clientErr
+		return lambdaClient.WithLambdaTimeout(ctx), clientErr
 	}
 
 	return client, clientErr
@@ -184,5 +195,7 @@ func WithTimeoutBuffer(db core.DB, buffer time.Duration) core.DB {
 		return db
 	}
 
-	return lambdaDB.WithLambdaTimeoutBuffer(buffer)
+	return lambdaDB.WithLambdaTimeoutConfig(tabletheory.LambdaTimeoutConfig{
+		Buffer: buffer,
+	})
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 )
 
 func resetClientState() {
@@ -115,6 +116,20 @@ func TestWithTimeoutBuffer_LambdaDB(t *testing.T) {
 	assert.Equal(t, 123*time.Millisecond, lambdaTimeoutBufferOf(t, db))
 }
 
+func TestRegisterDefaultTypeConverters_UsesRegistrarWithoutExtendedDB(t *testing.T) {
+	db := &recordingRegistrarDB{}
+
+	require.NoError(t, registerDefaultTypeConverters(db))
+
+	assert.ElementsMatch(t, []reflect.Type{
+		mapStringAnyType,
+		sliceAnyType,
+		activityPubNoteType,
+		activityPubContextValueType,
+		agentsCapabilitiesType,
+	}, db.registered)
+}
+
 func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
 	resetClientState()
 	t.Cleanup(resetClientState)
@@ -128,7 +143,7 @@ func TestGetLambdaClientPreservesDefaultTimeoutBuffer(t *testing.T) {
 	require.NotNil(t, db)
 
 	assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
-	assert.Equal(t, deadline.Add(-defaultTimeoutBuffer), lambdaDeadlineOf(t, db))
+	assert.Equal(t, deadline, lambdaDeadlineOf(t, db))
 }
 
 func TestGetLambdaClientNilContextReturnsBufferedClient(t *testing.T) {
@@ -165,6 +180,27 @@ func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
 
 	elem := value.Elem()
 	field := elem.FieldByName(name)
-	require.True(t, field.IsValid(), "expected returned Lambda client to expose %s", name)
+	if field.IsValid() {
+		return field
+	}
+
+	inner := elem.FieldByName("db")
+	require.True(t, inner.IsValid(), "expected returned Lambda client to expose %s", name)
+	require.Equal(t, reflect.Ptr, inner.Kind())
+	require.False(t, inner.IsNil())
+
+	innerValue := reflect.NewAt(inner.Type(), unsafe.Pointer(inner.UnsafeAddr())).Elem()
+	field = innerValue.Elem().FieldByName(name)
+	require.True(t, field.IsValid(), "expected returned Lambda client DB to expose %s", name)
 	return field
+}
+
+type recordingRegistrarDB struct {
+	fakeDB
+	registered []reflect.Type
+}
+
+func (db *recordingRegistrarDB) RegisterTypeConverter(typ reflect.Type, _ pkgtypes.CustomConverter) error {
+	db.registered = append(db.registered, typ)
+	return nil
 }

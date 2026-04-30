@@ -49,7 +49,7 @@ require (
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.11.1
 	github.com/theory-cloud/apptheory v1.2.0
-	github.com/theory-cloud/tabletheory v1.7.1
+	github.com/theory-cloud/tabletheory v1.8.0-rc
 	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.32

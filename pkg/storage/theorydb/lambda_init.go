@@ -1,7 +1,6 @@
 package theorydb
 
 import (
-	"context"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -91,22 +90,19 @@ func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
 
 	zap.L().Info("initializing Lambda-optimized DynamORM client")
 
-	// Get the Lambda-optimized client
-	db, err := GetLambdaClient(context.Background())
-	if err != nil {
-		zap.L().Error("failed to initialize DynamORM", zap.Error(err))
-		return nil, err
-	}
-
 	lambdaDB, err := getLambdaOptimizedClient()
 	if err != nil {
 		zap.L().Error("failed to initialize Lambda DynamORM", zap.Error(err))
 		return nil, err
 	}
+	db := core.DB(lambdaDB)
 
 	// Apply timeout buffer if specified
 	if opts.TimeoutBuffer > 0 {
-		db = lambdaDB.WithLambdaTimeoutBuffer(opts.TimeoutBuffer)
+		lambdaDB = lambdaDB.WithLambdaTimeoutConfig(tabletheory.LambdaTimeoutConfig{
+			Buffer: opts.TimeoutBuffer,
+		})
+		db = lambdaDB
 	}
 
 	// Pre-register models to reduce cold start time
