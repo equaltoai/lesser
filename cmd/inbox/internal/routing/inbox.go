@@ -1082,6 +1082,9 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 		}
 		shouldProcess, err := ih.shouldProcessInboundActivityTarget(ctx.Context(), req.Activity, targetActor)
 		if err != nil {
+			for _, claimedTargetActor := range targetsToProcess {
+				ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, claimedTargetActor)
+			}
 			processingDuration := time.Since(processingStart)
 			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Failed to claim %s activity for idempotent processing: %v", req.Activity.Type, err), 0)
@@ -1114,9 +1117,11 @@ func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *Inb
 
 	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
 
-	for _, targetActor := range targetsToProcess {
+	for i, targetActor := range targetsToProcess {
 		if err := ih.processActivityByTypeForTarget(ctx.Context(), req.Activity, targetActor, req.CostParams); err != nil {
-			ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, targetActor)
+			for _, unprocessedTargetActor := range targetsToProcess[i:] {
+				ih.releaseInboundActivityTargetClaim(ctx.Context(), req.Activity, unprocessedTargetActor)
+			}
 			processingDuration := time.Since(processingStart)
 			req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)

@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -306,6 +307,63 @@ func TestInboxHandler_Round10_StoreAndProcessActivity_ErrorBranches(t *testing.T
 		}
 		require.Error(t, badHandler.storeAndProcessActivity(ctx, req))
 	})
+}
+
+func TestInboxHandler_M14_ReleasesUnprocessedTargetClaimsOnProcessingFailure(t *testing.T) {
+	env := newInboxTestEnv(t)
+	recorder := newRecordingInboxProcessingRecorder()
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+
+	failingHandler := *env.handler
+	failingHandler.inboxProcessingRepository = recorder
+	failingHandler.relationshipRepository = relationshipRepo
+
+	carol := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   env.cfg.ActorURL("carol"),
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "carol",
+	}
+
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: activitypub.Context,
+			Type:    activitypub.FollowType,
+			ID:      "https://remote.example/activities/follow-multi-target-fail",
+			To:      []string{env.local.ID, carol.ID},
+		},
+		Actor:  env.remoteActorID,
+		Object: env.local.ID,
+	}
+
+	relationshipRepo.On("IsBlockedBidirectional", mock.Anything, env.remoteActorID, env.local.ID).Return(false, nil).Once()
+	relationshipRepo.On("CreateRelationship", mock.Anything, mock.Anything, env.local.PreferredUsername, activity.ID).Return(errors.New("relationship unavailable")).Once()
+
+	now := time.Now()
+	req := &InboxRequest{
+		Activity:     activity,
+		Actor:        env.local,
+		TargetActors: []*activitypub.Actor{env.local, carol},
+		ActorDomain:  "remote.example",
+		StartTime:    now,
+		CostParams: &federation.CostCalculationParams{
+			ActivityID:    activity.ID,
+			Domain:        "remote.example",
+			ActivityType:  activity.Type,
+			Direction:     "inbound",
+			OperationType: "inbox_processing",
+			Timestamp:     now,
+		},
+	}
+	ctx := newAppTheoryContext("POST", "/inbox", map[string]string{"Host": env.cfg.Domain}, nil, nil)
+
+	require.Error(t, failingHandler.storeAndProcessActivity(ctx, req))
+	require.ElementsMatch(t, []string{
+		activity.ID + "\x00" + env.local.ID,
+		activity.ID + "\x00" + carol.ID,
+	}, recorder.released)
+	relationshipRepo.AssertExpectations(t)
 }
 
 func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
