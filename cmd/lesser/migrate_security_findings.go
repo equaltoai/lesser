@@ -68,6 +68,7 @@ var runMigrateSecurityFindingsFn = runMigrateSecurityFindings
 
 var securityFindingsMigrationOperations = []securityFindingsMigrationOperation{
 	{Name: "numeric-ids", Execute: executeSecurityFindingsNumericIDBackfill},
+	{Name: "hashtag-indexes", Execute: executeSecurityFindingsHashtagIndexCleanup},
 }
 
 func runMigrate(argv []string) error {
