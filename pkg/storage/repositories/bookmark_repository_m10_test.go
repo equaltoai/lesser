@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -219,6 +220,16 @@ func TestBookmarkRepository_M10_BookmarkPageCursorCompatibility(t *testing.T) {
 	require.Equal(t, legacySK, decoded.LegacySK)
 
 	_, err = parseBookmarkPageCursor(bookmarkPageCursorPrefix + "not-base64!")
+	require.Error(t, err)
+
+	invalidLegacy, err := parseBookmarkPageCursor("zzzz-attacker-cursor")
+	require.NoError(t, err)
+	require.Equal(t, 2, invalidLegacy.Version)
+	require.Empty(t, invalidLegacy.TimeSK)
+	require.Empty(t, invalidLegacy.LegacySK)
+
+	malicious := bookmarkPageCursorPrefix + base64.RawURLEncoding.EncodeToString([]byte(`{"v":2,"t":"zzzz-attacker-cursor","l":"zzzz-attacker-cursor"}`))
+	_, err = parseBookmarkPageCursor(malicious)
 	require.Error(t, err)
 }
 
