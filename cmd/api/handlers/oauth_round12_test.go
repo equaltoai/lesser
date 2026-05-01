@@ -1076,7 +1076,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.True(t, storedRefresh.AbsoluteExpiresAt.IsZero())
 	})
 
-	t.Run("refresh_token public agent client rotates legacy runtime state into standard refresh state", func(t *testing.T) {
+	t.Run("refresh_token public agent client preserves legacy refresh expiry", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now)
 		token.Resource = agent1Resource
@@ -1130,9 +1130,10 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.True(t, newToken.SessionCreatedAt.IsZero())
 		require.True(t, newToken.IdleExpiresAt.IsZero())
 		require.True(t, newToken.AbsoluteExpiresAt.IsZero())
+		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 	})
 
-	t.Run("refresh_token public agent client ignores legacy runtime session bounds", func(t *testing.T) {
+	t.Run("refresh_token public agent client preserves legacy runtime session bounds", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-aged", "agent1", "client-agent", "sid-agent-aged", "family-agent-aged", "Connector App", 1, true, false, now)
 		token.Resource = agent1Resource
@@ -1192,6 +1193,56 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.False(t, newToken.Current)
 		require.Empty(t, newToken.DeviceLabel)
 		require.Zero(t, newToken.AccessTTLSeconds)
+		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
+		require.False(t, newToken.ExpiresAt.After(token.IdleExpiresAt))
+		require.False(t, newToken.ExpiresAt.After(token.AbsoluteExpiresAt))
+	})
+
+	t.Run("refresh_token legacy agent client class is bounded by current client metadata", func(t *testing.T) {
+		now := time.Now().UTC()
+		token := storagemodels.RefreshToken{
+			Token:     "rt-agent-legacy-class",
+			ClientID:  "client-agent",
+			Username:  "agent1",
+			Resource:  agent1Resource,
+			Scopes:    []string{auth.ScopeRead},
+			CreatedAt: now.Add(-1 * time.Hour),
+			ExpiresAt: now.Add(2 * time.Hour),
+		}
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Connector App",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     now.Add(-96 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-legacy-class&client_id=client-agent"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.RefreshToken)
+
+		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
+		require.Equal(t, token.Resource, newToken.Resource)
+		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 	})
 
 	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
