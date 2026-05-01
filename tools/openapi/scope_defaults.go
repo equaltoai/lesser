@@ -37,6 +37,8 @@ func defaultScopesForRoute(route routeDef) []string {
 
 func scopesForKnownPrefixes(method, path string) []string {
 	switch {
+	case method == methodGET && (path == "/api/v1/souls/mine" || path == "/api/v1/souls/bound/me"):
+		return []string{"read", "write"}
 	case strings.HasPrefix(path, "/api/v1/admin/"):
 		return scopesByMethod(method, "admin:read", "admin:write")
 	case strings.HasPrefix(path, "/api/v1/follow_requests"):

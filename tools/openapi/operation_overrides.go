@@ -12,7 +12,25 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applyOAuthOverrides(op, route)
 	applyAppRegistrationOverrides(op, route)
 	applyMediaOverrides(op, route)
+	applySoulOverrides(op, route)
 	applyStatusOverrides(op, route)
+}
+
+func applySoulOverrides(op *operation, route routeDef) {
+	if op == nil {
+		return
+	}
+
+	if route.Method != methodGET || route.Path != "/api/v1/souls/bound/me" {
+		return
+	}
+
+	op.Description = "Return the active soul identity bound to the authenticated local runtime-agent principal. The endpoint is fail-closed: unbound, inactive, missing host identity, or wrong-domain identities return 404."
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+	ensureResponseRef(op.Responses, "404", "NotFound")
+	ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
 }
 
 func applyGraphQLOverrides(op *operation, route routeDef) {

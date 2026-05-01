@@ -1322,6 +1322,113 @@ func TestService_ResolveBoundAgent_ReturnsNilWhenUnbound(t *testing.T) {
 	require.Nil(t, soul)
 }
 
+func TestService_ResolveBoundAgent_FailsClosedForUnavailableHostIdentity(t *testing.T) {
+	t.Parallel()
+
+	const agentAlpha = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	testCases := []struct {
+		name     string
+		response map[string]any
+	}{
+		{
+			name: "wrong domain",
+			response: map[string]any{
+				"agent_id":         agentAlpha,
+				"domain":           "other.example",
+				"local_id":         "alpha",
+				"wallet":           "0x1111111111111111111111111111111111111111",
+				"status":           "active",
+				"lifecycle_status": "active",
+			},
+		},
+		{
+			name: "inactive lifecycle",
+			response: map[string]any{
+				"agent_id":         agentAlpha,
+				"domain":           "example.com",
+				"local_id":         "alpha",
+				"wallet":           "0x1111111111111111111111111111111111111111",
+				"status":           "active",
+				"lifecycle_status": "retired",
+			},
+		},
+		{
+			name: "inactive status",
+			response: map[string]any{
+				"agent_id": agentAlpha,
+				"domain":   "example.com",
+				"local_id": "alpha",
+				"wallet":   "0x1111111111111111111111111111111111111111",
+				"status":   "inactive",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/soul/agents/"+agentAlpha, r.URL.Path)
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"version": "1",
+					"agent":   tc.response,
+				}))
+			}))
+			defer host.Close()
+
+			service := NewService(
+				nil,
+				&fakeInstanceRepo{
+					trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL},
+					bindingsByUser: map[string]*storageModels.InstanceSoulBodyBinding{
+						"agent-alpha": {
+							AgentID:  agentAlpha,
+							Username: "agent-alpha",
+						},
+					},
+				},
+				&config.Config{Domain: "example.com"},
+				zap.NewNop(),
+			).WithHTTPClient(host.Client())
+
+			soul, err := service.ResolveBoundAgent(context.Background(), "agent-alpha")
+			require.ErrorIs(t, err, ErrSoulNotAvailable)
+			require.Nil(t, soul)
+		})
+	}
+}
+
+func TestService_ResolveBoundAgent_FailsClosedWhenHostIdentityMissing(t *testing.T) {
+	t.Parallel()
+
+	const agentAlpha = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	host := httptest.NewServer(http.NotFoundHandler())
+	defer host.Close()
+
+	service := NewService(
+		nil,
+		&fakeInstanceRepo{
+			trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL},
+			bindingsByUser: map[string]*storageModels.InstanceSoulBodyBinding{
+				"agent-alpha": {
+					AgentID:  agentAlpha,
+					Username: "agent-alpha",
+				},
+			},
+		},
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	soul, err := service.ResolveBoundAgent(context.Background(), "agent-alpha")
+	require.ErrorIs(t, err, ErrSoulNotAvailable)
+	require.Nil(t, soul)
+}
+
 type erroringInstanceRepo struct {
 	instanceRepository
 	getBindingErr error

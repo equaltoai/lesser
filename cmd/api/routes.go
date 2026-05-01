@@ -380,6 +380,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift, requireAuth)
 
 	// Souls
+	app.Get("/api/v1/souls/bound/me", apiHandler.HandleGetBoundSoulMeLift, requireReadOrWrite)
 	app.Get("/api/v1/souls/mine", apiHandler.HandleGetMySoulsLift, requireReadOrWrite)
 	app.Post("/api/v1/souls/{agentId}/incorporate", apiHandler.HandleIncorporateSoulLift, requireWrite)
 

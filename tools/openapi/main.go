@@ -1806,7 +1806,7 @@ func (a *handlerAuthAnalyzer) handleCall(call *ast.CallExpr) {
 
 	a.callees[sel.Sel.Name] = struct{}{}
 	switch sel.Sel.Name {
-	case "authenticateUser", "authenticateUserWithWriteScope", "authenticateAdminRequest", "authenticateWithScope":
+	case "authenticateUser", "authenticateUserWithWriteScope", "authenticateAdminRequest", "authenticateWithScope", "authenticateWithAnyScope":
 		a.hasRequiredAuth = true
 	case "authenticateUserOptional", "getOptionalAuthenticatedUser", "getAuthenticatedUserLift":
 		a.hasOptionalAuth = true
