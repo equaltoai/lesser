@@ -939,8 +939,15 @@ func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *
 		return nil
 	}
 
+	if safeURL, ok := common.SafeHTTPURL(status.URL); ok {
+		status.URL = safeURL
+	} else {
+		status.URL = ""
+	}
 	if url := strings.TrimSpace(notificationSnapshotString(snapshot, "url")); url != "" {
-		status.URL = url
+		if safeURL, ok := common.SafeHTTPURL(url); ok {
+			status.URL = safeURL
+		}
 	}
 	if visibility := strings.TrimSpace(notificationSnapshotString(snapshot, "visibility")); visibility != "" {
 		status.Visibility = visibility

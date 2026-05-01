@@ -356,10 +356,12 @@ func buildNotificationPostSnapshot(id, url, content, createdAt, visibility, inRe
 
 	snapshot := map[string]interface{}{
 		"id":         id,
-		"url":        firstNonEmptyString(url, id),
 		"content":    content,
 		"createdAt":  createdAt,
 		"visibility": firstNonEmptyString(visibility, models.VisibilityPublic),
+	}
+	if safeURL := firstSafeHTTPURL(url, id); safeURL != "" {
+		snapshot["url"] = safeURL
 	}
 
 	if trimmed := strings.TrimSpace(inReplyToID); trimmed != "" {
@@ -370,6 +372,15 @@ func buildNotificationPostSnapshot(id, url, content, createdAt, visibility, inRe
 	}
 
 	return snapshot
+}
+
+func firstSafeHTTPURL(candidates ...string) string {
+	for _, candidate := range candidates {
+		if safeURL, ok := common.SafeHTTPURL(candidate); ok {
+			return safeURL
+		}
+	}
+	return ""
 }
 
 func cloneNotificationPostSnapshot(snapshot map[string]interface{}) map[string]interface{} {

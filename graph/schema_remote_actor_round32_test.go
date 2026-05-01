@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -31,4 +32,30 @@ func TestRound32Resolver_ConvertAccountToActor_PreservesRemoteIdentity(t *testin
 	require.Equal(t, remoteActor.ID, actor.ID)
 	require.Equal(t, remoteActor.PreferredUsername, actor.PreferredUsername)
 	require.Equal(t, remoteActor.URL, actor.URL)
+}
+
+func TestRound32ActivityResolver_ActorPreservesRemoteIdentifiers(t *testing.T) {
+	resolver, graphStorage := newRound12GraphResolver(t)
+	graphStorage.SeedAccountUser(&storage.User{
+		Username:    "alice",
+		DisplayName: "Local Alice",
+		Approved:    true,
+	})
+
+	activityResolver := resolver.Activity()
+	ctx := context.Background()
+
+	remoteActorURL := "https://remote.example/users/alice"
+	urlActor, err := activityResolver.Actor(ctx, &activitypub.Activity{Actor: remoteActorURL})
+	require.NoError(t, err)
+	require.NotNil(t, urlActor)
+	require.Equal(t, remoteActorURL, urlActor.ID)
+	require.Equal(t, "alice", urlActor.PreferredUsername)
+
+	remoteActorHandle := "alice@remote.example"
+	handleActor, err := activityResolver.Actor(ctx, &activitypub.Activity{Actor: remoteActorHandle})
+	require.NoError(t, err)
+	require.NotNil(t, handleActor)
+	require.Equal(t, remoteActorHandle, handleActor.ID)
+	require.Equal(t, "alice", handleActor.PreferredUsername)
 }

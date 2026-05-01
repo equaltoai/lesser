@@ -1016,15 +1016,7 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 		}
 
 		for i := range members {
-			member := &members[i]
-			membershipItems = append(membershipItems, member)
-
-			// Best-effort self-heal: ensure GSI keys exist so future lookups use the index.
-			if member.GSI1PK == "" || member.GSI1SK == "" {
-				if err := member.UpdateKeys(); err == nil {
-					_ = store.PublicationMember().Update(ctx, member)
-				}
-			}
+			membershipItems = append(membershipItems, &members[i])
 		}
 	}
 

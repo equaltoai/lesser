@@ -297,7 +297,7 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 	draft.Status = "failed"
 	draft.ScheduledAt = nil
 	draft.UpdatedAt = now
-	if updateErr := draftRepo.UpdateDraft(ctx, draft); updateErr != nil {
+	if updateErr := draftRepo.UpdateDraft(ctx, authorID, draft); updateErr != nil {
 		p.logger.Warn("failed to mark scheduled draft as failed",
 			zap.String("draft_id", draftID),
 			zap.String("author_id", authorID),

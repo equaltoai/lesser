@@ -19,8 +19,8 @@ type DraftRepository interface {
 	// GetDraft retrieves a draft by author ID and draft ID
 	GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error)
 
-	// UpdateDraft updates an existing draft
-	UpdateDraft(ctx context.Context, draft *models.Draft) error
+	// UpdateDraft updates an existing draft owned by authorID
+	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
 
 	// DeleteDraft deletes a draft
 	DeleteDraft(ctx context.Context, authorID, draftID string) error

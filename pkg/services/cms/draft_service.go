@@ -24,7 +24,7 @@ const (
 
 type draftRepository interface {
 	CreateDraft(ctx context.Context, draft *models.Draft) error
-	UpdateDraft(ctx context.Context, draft *models.Draft) error
+	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
 	GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error)
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 }
@@ -73,22 +73,47 @@ func (s *DraftService) CreateDraft(ctx context.Context, draft *models.Draft) err
 	return s.draftRepo.CreateDraft(ctx, draft)
 }
 
+func validateDraftWriteAuthor(authorID string, draft *models.Draft) error {
+	authorID = strings.TrimSpace(authorID)
+	if authorID == "" {
+		return stdErrors.New("authorID is required")
+	}
+	if draft == nil {
+		return stdErrors.New("draft is required")
+	}
+	draftAuthor := strings.TrimSpace(draft.AuthorID)
+	if draftAuthor == "" {
+		return stdErrors.New("draft author is required")
+	}
+	if draftAuthor != authorID {
+		return stdErrors.New("draft does not belong to author")
+	}
+	draft.AuthorID = draftAuthor
+	return nil
+}
+
 // UpdateDraft updates an existing draft
-func (s *DraftService) UpdateDraft(ctx context.Context, draft *models.Draft) error {
+func (s *DraftService) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
+		return err
+	}
 	now := time.Now()
 	draft.UpdatedAt = now
 	draft.LastSavedAt = now
-	return s.draftRepo.UpdateDraft(ctx, draft)
+	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
 // Autosave updates the draft content without changing its primary status
-func (s *DraftService) Autosave(ctx context.Context, draft *models.Draft) error {
+func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
+		return err
+	}
 	s.logger.Debug("autosaving draft", zap.String("id", draft.ID))
 	now := time.Now()
 	draft.LastSavedAt = now
 	draft.UpdatedAt = now
 	draft.AutosaveVersion++
-	return s.draftRepo.UpdateDraft(ctx, draft)
+	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
 // GetDraft retrieves a draft
@@ -98,6 +123,14 @@ func (s *DraftService) GetDraft(ctx context.Context, authorID, draftID string) (
 
 // DeleteDraft deletes a draft
 func (s *DraftService) DeleteDraft(ctx context.Context, authorID, draftID string) error {
+	authorID = strings.TrimSpace(authorID)
+	draftID = strings.TrimSpace(draftID)
+	if authorID == "" {
+		return stdErrors.New("authorID is required")
+	}
+	if draftID == "" {
+		return stdErrors.New("draftID is required")
+	}
 	return s.draftRepo.DeleteDraft(ctx, authorID, draftID)
 }
 
@@ -115,7 +148,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 	draft.ScheduledAt = &scheduledAt
 	draft.Status = draftStatusScheduled
 	draft.UpdatedAt = time.Now()
-	return s.draftRepo.UpdateDraft(ctx, draft)
+	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
 // PublishDraft converts a draft into an article
@@ -146,7 +179,7 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 	}
 
 	now := time.Now()
-	if err := s.transitionDraftToPublishing(ctx, draft, now); err != nil {
+	if err := s.transitionDraftToPublishing(ctx, authorID, draft, now); err != nil {
 		return nil, err
 	}
 
@@ -218,23 +251,26 @@ func (s *DraftService) cleanupPublishedDraft(ctx context.Context, authorID, draf
 	return article, nil
 }
 
-func (s *DraftService) transitionDraftToPublishing(ctx context.Context, draft *models.Draft, now time.Time) error {
+func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft, now time.Time) error {
+	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
+		return err
+	}
 	draft.Status = draftStatusPublishing
 	draft.ScheduledAt = nil
 	draft.UpdatedAt = now
-	return s.draftRepo.UpdateDraft(ctx, draft)
+	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
 func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time) (*models.Article, error) {
 	article, err := s.articleService.GetArticle(ctx, objectID)
 	if err != nil {
-		s.markDraftFailed(ctx, draft, draftID, err)
+		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
 	}
 
 	if strings.TrimSpace(article.AttributedTo) != common.GenerateActorID(domain, authorID) {
 		err := stdErrors.New("draft does not have permission to update this article")
-		s.markDraftFailed(ctx, draft, draftID, err)
+		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
 	}
 
@@ -252,7 +288,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 	article.Updated = now
 
 	if err := s.articleService.UpdateArticle(ctx, article); err != nil {
-		s.markDraftFailed(ctx, draft, draftID, err)
+		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
 	}
 
@@ -283,7 +319,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 			existing, getErr := s.resolveExistingArticleBySlug(ctx, domain, slug)
 			if getErr == nil && existing != nil {
 				if strings.TrimSpace(existing.AttributedTo) != common.GenerateActorID(domain, authorID) {
-					s.markDraftFailed(ctx, draft, draftID, err)
+					s.markDraftFailed(ctx, authorID, draft, draftID, err)
 					return nil, err
 				}
 
@@ -292,7 +328,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 			}
 		}
 
-		s.markDraftFailed(ctx, draft, draftID, err)
+		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
 	}
 
@@ -337,15 +373,15 @@ func (s *DraftService) deleteDraftAfterPublish(ctx context.Context, draft *model
 		draft.Status = draftStatusPublished
 		draft.ObjectID = &objectID
 		draft.UpdatedAt = time.Now()
-		_ = s.draftRepo.UpdateDraft(ctx, draft)
+		_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
 	}
 }
 
-func (s *DraftService) markDraftFailed(ctx context.Context, draft *models.Draft, draftID string, err error) {
+func (s *DraftService) markDraftFailed(ctx context.Context, authorID string, draft *models.Draft, draftID string, err error) {
 	s.logger.Warn("draft publish failed", zap.String("draft_id", draftID), zap.Error(err))
 	draft.Status = draftStatusFailed
 	draft.UpdatedAt = time.Now()
-	_ = s.draftRepo.UpdateDraft(ctx, draft)
+	_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
 // CancelScheduledDraft cancels a scheduled draft publish.
@@ -359,5 +395,5 @@ func (s *DraftService) CancelScheduledDraft(ctx context.Context, authorID, draft
 	draft.Status = draftStatusDraft
 	draft.UpdatedAt = time.Now()
 
-	return s.draftRepo.UpdateDraft(ctx, draft)
+	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
