@@ -6,8 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	"go.uber.org/zap"
 )
 
 type rateLimitSelectiveErrRepo struct {
@@ -91,6 +96,35 @@ func TestOAuthService_HelperEarlyReturns(t *testing.T) {
 	require.NoError(t, svc.validateAccessTokenNotRevoked(&Claims{
 		RegisteredClaims: jwt.RegisteredClaims{ID: "jti"},
 	}))
+}
+
+func TestOAuthService_RevocationLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	jti := "jti-read-error"
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+	accountRepo := repositories.NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	svc := &OAuthService{repos: reposWithAccount{account: accountRepo}}
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.MatchedBy(func(model *models.RevokedAccessToken) bool {
+		return model != nil
+	})).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "REVOKEDTOKEN#"+jti).Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", repositories.SKToken).Return(mockQuery)
+	mockQuery.On("ConsistentRead").Return(mockQuery)
+	mockQuery.On("First", mock.MatchedBy(func(dest *models.RevokedAccessToken) bool {
+		return dest != nil
+	})).Return(errors.New("read failed"))
+
+	err := svc.validateAccessTokenNotRevoked(&Claims{
+		RegisteredClaims: jwt.RegisteredClaims{ID: jti},
+	})
+	require.ErrorIs(t, err, ErrInvalidToken)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestRateLimiter_ErrorBranches(t *testing.T) {
