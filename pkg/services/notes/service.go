@@ -3086,6 +3086,7 @@ type UnlikeNoteCommand struct {
 // GetLikersQuery represents a request to get users who liked a status
 type GetLikersQuery struct {
 	StatusID   string                       `json:"status_id" validate:"required"`
+	ViewerID   string                       `json:"viewer_id,omitempty"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -3191,8 +3192,18 @@ func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*Like
 // GetLikers retrieves users who liked a status
 func (s *Service) GetLikers(ctx context.Context, query *GetLikersQuery) (*UsersResult, error) {
 	// Get the status first to validate it exists
-	_, err := s.noteRepo.GetStatus(ctx, query.StatusID)
+	status, err := s.noteRepo.GetStatus(ctx, query.StatusID)
 	if err != nil {
+		return nil, ErrStatusNotFound
+	}
+	if status.Deleted {
+		return nil, ErrStatusNotFound
+	}
+	canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
+	if err != nil {
+		return nil, ErrCheckViewPermissions
+	}
+	if !canView {
 		return nil, ErrStatusNotFound
 	}
 
@@ -3369,6 +3380,7 @@ type UnreblogNoteCommand struct {
 // GetRebloggersQuery represents a request to get users who reblogged a status
 type GetRebloggersQuery struct {
 	StatusID   string                       `json:"status_id" validate:"required"`
+	ViewerID   string                       `json:"viewer_id,omitempty"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -3458,8 +3470,18 @@ func (s *Service) UnreblogNote(ctx context.Context, cmd *UnreblogNoteCommand) (*
 // GetRebloggers retrieves users who reblogged a status
 func (s *Service) GetRebloggers(ctx context.Context, query *GetRebloggersQuery) (*UsersResult, error) {
 	// Get the status first to validate it exists
-	_, err := s.noteRepo.GetStatus(ctx, query.StatusID)
+	status, err := s.noteRepo.GetStatus(ctx, query.StatusID)
 	if err != nil {
+		return nil, ErrStatusNotFound
+	}
+	if status.Deleted {
+		return nil, ErrStatusNotFound
+	}
+	canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
+	if err != nil {
+		return nil, ErrCheckViewPermissions
+	}
+	if !canView {
 		return nil, ErrStatusNotFound
 	}
 

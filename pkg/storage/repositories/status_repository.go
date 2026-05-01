@@ -256,6 +256,13 @@ func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, sta
 	if status == nil || len(status.Hashtags) == 0 {
 		return nil
 	}
+	if !isPublicHashtagVisibility(status.Visibility) {
+		r.logger.Debug("skipping non-public supplemental hashtag timeline indexes",
+			zap.String("status_id", status.StatusID),
+			zap.String("visibility", status.Visibility),
+			zap.Int("hashtag_count", len(status.Hashtags)))
+		return nil
+	}
 
 	now := time.Now()
 	records := make([]*models.HashtagStatusIndex, 0, len(status.Hashtags))
@@ -1377,10 +1384,13 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 		zap.Int("result_count", len(statuses)),
 		zap.Int("limit", limit))
 
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
+	// Convert to pointer slice and suppress legacy non-public hashtag rows.
+	result := make([]*models.Status, 0, len(statuses))
 	for i := range statuses {
-		result[i] = &statuses[i]
+		if statuses[i].Visibility != models.VisibilityPublic || statuses[i].Deleted {
+			continue
+		}
+		result = append(result, &statuses[i])
 	}
 
 	return &interfaces.PaginatedResult[*models.Status]{

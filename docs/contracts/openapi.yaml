@@ -15670,6 +15670,8 @@ paths:
             operationId: get_api_v1_statuses_by_id_favourited_by
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
@@ -15692,6 +15694,10 @@ paths:
                                 type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -15700,6 +15706,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/statuses/{id}/history:
         get:
             operationId: get_api_v1_statuses_by_id_history
@@ -16042,6 +16050,8 @@ paths:
             operationId: get_api_v1_statuses_by_id_reblogged_by
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
@@ -16064,6 +16074,10 @@ paths:
                                 type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -16072,6 +16086,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/statuses/{id}/source:
         get:
             operationId: get_api_v1_statuses_by_id_source

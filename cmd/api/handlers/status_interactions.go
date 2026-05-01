@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -51,6 +52,14 @@ func (h *Handler) handleStatusInteractions(ctx *apptheory.Context, interactionTy
 		return common.RespondValidationError(ctx, err)
 	}
 
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
 	// Parse pagination parameters
 	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFollowLimit(limitStr)
@@ -69,6 +78,7 @@ func (h *Handler) handleStatusInteractions(ctx *apptheory.Context, interactionTy
 	case statusFavourites:
 		result, err := h.registry.Notes().GetLikers(ctx.Context(), &notes.GetLikersQuery{
 			StatusID: statusID,
+			ViewerID: claims.Username,
 			Pagination: interfaces.PaginationOptions{
 				Limit:  limit,
 				Cursor: cursor,
@@ -94,6 +104,7 @@ func (h *Handler) handleStatusInteractions(ctx *apptheory.Context, interactionTy
 	case statusReblogs:
 		result, err := h.registry.Notes().GetRebloggers(ctx.Context(), &notes.GetRebloggersQuery{
 			StatusID: statusID,
+			ViewerID: claims.Username,
 			Pagination: interfaces.PaginationOptions{
 				Limit:  limit,
 				Cursor: cursor,

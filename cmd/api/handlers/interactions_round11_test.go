@@ -122,12 +122,12 @@ func TestInteractionsHandlers_Round11(t *testing.T) {
 	ctxUnreblog.Params["id"] = "1"
 	requireStatus(t, http.StatusOK)(handler.HandleUnreblogLift(ctxUnreblog))
 
-	ctxFavBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, map[string]string{"limit": "2"}, nil)
+	ctxFavBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", readHeaders, map[string]string{"limit": "2"}, nil)
 	require.NoError(t, err)
 	ctxFavBy.Params["id"] = "1"
 	requireStatus(t, http.StatusOK)(handler.HandleGetStatusFavouritedByLift(ctxFavBy))
 
-	ctxReblogBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", nil, map[string]string{"limit": "2"}, nil)
+	ctxReblogBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", readHeaders, map[string]string{"limit": "2"}, nil)
 	require.NoError(t, err)
 	ctxReblogBy.Params["id"] = "1"
 	requireStatus(t, http.StatusOK)(handler.HandleGetStatusRebloggedByLift(ctxReblogBy))

@@ -16,6 +16,7 @@ import (
 func TestStatusInteractions_Round12(t *testing.T) {
 	cfg := round11TestConfig()
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	readHeaders := map[string]string{"Authorization": "Bearer " + round10SignAccessToken(t, cfg.JWTSecret, "alice")}
 
 	t.Run("getStatusInteractionConfig default", func(t *testing.T) {
 		cfg := getStatusInteractionConfig(statusInteractionType(99))
@@ -44,7 +45,7 @@ func TestStatusInteractions_Round12(t *testing.T) {
 			},
 		}
 
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, map[string]string{"limit": "nope"}, nil)
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", readHeaders, map[string]string{"limit": "nope"}, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "1"
 		resp := requireStatus(t, http.StatusOK)(handler.HandleGetStatusFavouritedByLift(ctx))
@@ -60,7 +61,7 @@ func TestStatusInteractions_Round12(t *testing.T) {
 			},
 		}
 
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", nil, nil, nil)
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", readHeaders, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "1"
 		requireStatus(t, http.StatusNotFound)(handler.HandleGetStatusRebloggedByLift(ctx))
@@ -75,9 +76,36 @@ func TestStatusInteractions_Round12(t *testing.T) {
 			},
 		}
 
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, nil, nil)
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", readHeaders, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "1"
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusFavouritedByLift(ctx))
+	})
+
+	t.Run("missing auth is rejected", func(t *testing.T) {
+		handler.registry = &RegistryStub{NotesSvc: &NotesServiceStub{}}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "1"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetStatusFavouritedByLift(ctx))
+	})
+
+	t.Run("passes authenticated viewer to service", func(t *testing.T) {
+		handler.registry = &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				GetRebloggersFunc: func(_ context.Context, query *notes.GetRebloggersQuery) (*notes.UsersResult, error) {
+					require.Equal(t, "alice", query.ViewerID)
+					return &notes.UsersResult{
+						Users:      []*storage.Account{},
+						Pagination: &interfaces.PaginatedResult[*storage.Account]{},
+					}, nil
+				},
+			},
+		}
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", readHeaders, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "1"
+		requireStatus(t, http.StatusOK)(handler.HandleGetStatusRebloggedByLift(ctx))
 	})
 }

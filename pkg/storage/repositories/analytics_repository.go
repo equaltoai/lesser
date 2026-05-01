@@ -1113,12 +1113,15 @@ func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL stri
 		return nil, fmt.Errorf("failed to get statuses by link: %w", err)
 	}
 
-	// Filter results to only include statuses that actually contain the exact link
-	var matchingStatuses []*models.Status
+	// Filter results to publicly visible statuses that actually contain the exact link.
+	// The link timeline is unauthenticated, so private/direct/unlisted/deleted statuses
+	// must not be exposed even when legacy status search rows still match the URL.
+	matchingStatuses := make([]*storage.TrendingStatus, 0, len(statuses.Items))
 	for _, status := range statuses.Items {
-		if status != nil && strings.Contains(status.Content, linkURL) {
-			matchingStatuses = append(matchingStatuses, status)
+		if !publicStatusContainsLink(status, linkURL) {
+			continue
 		}
+		matchingStatuses = append(matchingStatuses, trendingStatusFromStatus(status))
 	}
 
 	// Convert status objects to any slice for interface compatibility
@@ -1133,6 +1136,54 @@ func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL stri
 		zap.Int("count", len(results)))
 
 	return results, nil
+}
+
+func publicStatusContainsLink(status *models.Status, linkURL string) bool {
+	if status == nil || status.Deleted || status.Visibility != models.VisibilityPublic {
+		return false
+	}
+
+	normalizedLink := strings.TrimSpace(linkURL)
+	if normalizedLink == "" {
+		return false
+	}
+
+	for _, candidate := range status.URLs {
+		if strings.EqualFold(strings.TrimSpace(candidate), normalizedLink) {
+			return true
+		}
+	}
+
+	return strings.Contains(status.Content, normalizedLink)
+}
+
+func trendingStatusFromStatus(status *models.Status) *storage.TrendingStatus {
+	if status == nil {
+		return nil
+	}
+
+	statusURL := ""
+	if status.Note != nil {
+		statusURL = strings.TrimSpace(status.Note.ID)
+	}
+
+	return &storage.TrendingStatus{
+		ID:              status.StatusID,
+		StatusID:        status.StatusID,
+		AuthorID:        status.AuthorID,
+		Content:         status.Content,
+		URL:             statusURL,
+		ReblogsCount:    status.ReblogCount,
+		FavouritesCount: status.LikeCount,
+		RepliesCount:    status.ReplyCount,
+		Engagements:     int64(status.LikeCount + status.ReblogCount + status.ReplyCount),
+		PublishedAt:     status.PublishedAt,
+		UpdatedAt:       status.UpdatedAt,
+		CreatedAt:       status.CreatedAt,
+		Likes:           status.LikeCount,
+		Boosts:          status.ReblogCount,
+		Replies:         status.ReplyCount,
+	}
 }
 
 // IndexByEngagement creates an index entry for engagement-based discovery
