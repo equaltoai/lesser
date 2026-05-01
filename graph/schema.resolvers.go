@@ -4863,17 +4863,36 @@ func (r *queryResolver) estimateFederationCostCount(ctx context.Context, usernam
 
 // Actor implements ActivityResolver
 func (r *activityResolver) Actor(ctx context.Context, obj *activitypub.Activity) (*activitypub.Actor, error) {
-	// If we have an actor ID, fetch the account
-	if obj.Actor != "" {
-		account, err := r.Registry.Accounts().GetAccount(ctx, obj.Actor)
-		if err != nil {
-			return nil, errors.Join(errors.New("failed to get activity actor"), err)
-		}
-
-		return r.convertAccountToActor(account), nil
+	if obj == nil {
+		return nil, nil
 	}
 
-	return nil, nil
+	actorID := strings.TrimSpace(obj.Actor)
+	if actorID == "" {
+		return nil, nil
+	}
+
+	if resolution, err := r.resolveStoredActorLookup(ctx, actorID); err == nil && resolution != nil {
+		return r.materializeActorResolution(ctx, resolution), nil
+	} else if err != nil && !graphActorLookupNotFound(err) {
+		return nil, errors.Join(errors.New("failed to get activity actor"), err)
+	}
+
+	if actorIdentifierLooksRemote(actorID, r.localActorDomain()) {
+		return r.buildPlaceholderActor(actorID, ""), nil
+	}
+
+	username := r.localUsernameForLookup(actorID)
+	if username == "" || r.Registry == nil || r.Registry.Accounts() == nil {
+		return nil, nil
+	}
+
+	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to get activity actor"), err)
+	}
+
+	return r.convertAccountToActor(account), nil
 }
 
 // Cost implements ActivityResolver - returns cost in microcents
