@@ -1123,14 +1123,75 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, token.SessionID, newToken.SessionID)
 		require.Equal(t, agent1Resource, newToken.Resource)
 		require.Empty(t, newToken.FamilyID)
-		require.Zero(t, newToken.Generation)
-		require.False(t, newToken.Current)
+		require.Equal(t, 1, newToken.Generation)
+		require.True(t, newToken.Current)
 		require.Empty(t, newToken.DeviceLabel)
-		require.Zero(t, newToken.AccessTTLSeconds)
-		require.True(t, newToken.SessionCreatedAt.IsZero())
-		require.True(t, newToken.IdleExpiresAt.IsZero())
-		require.True(t, newToken.AbsoluteExpiresAt.IsZero())
+		require.Equal(t, token.AccessTTLSeconds, newToken.AccessTTLSeconds)
+		require.WithinDuration(t, newToken.CreatedAt, newToken.SessionCreatedAt, 2*time.Second)
+		require.WithinDuration(t, newToken.ExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
+		require.WithinDuration(t, newToken.ExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
 		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
+	})
+
+	t.Run("refresh_token public agent client preserves access ttl cap across rotations", func(t *testing.T) {
+		now := time.Now().UTC()
+		accessTTLSeconds := int((10 * time.Minute).Seconds())
+		token := storagemodels.RefreshToken{
+			Token:            "rt-agent-capped",
+			ClientID:         "client-agent",
+			Username:         "agent1",
+			Resource:         agent1Resource,
+			Scopes:           []string{auth.ScopeRead},
+			CreatedAt:        now.Add(-1 * time.Hour),
+			ExpiresAt:        now.Add(2 * time.Hour),
+			ClientClass:      auth.ClientClassAgent,
+			SessionID:        "sid-agent-capped",
+			AccessTTLSeconds: accessTTLSeconds,
+		}
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Connector App",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     now.Add(-24 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		refreshToken := token.Token
+		for i := 0; i < 2; i++ {
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(refreshToken)+"&client_id=client-agent"))
+			resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+			var body apimodels.OAuthTokenResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.NotEmpty(t, body.AccessToken)
+			require.NotEmpty(t, body.RefreshToken)
+			require.NotEqual(t, refreshToken, body.RefreshToken)
+
+			claims := round12DecodeJWTClaims(t, body.AccessToken)
+			require.NotNil(t, claims.IssuedAt)
+			require.NotNil(t, claims.ExpiresAt)
+			require.InDelta(t, float64(accessTTLSeconds), claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time).Seconds(), 5)
+
+			newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+			require.True(t, ok)
+			require.Equal(t, accessTTLSeconds, newToken.AccessTTLSeconds)
+			require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
+			require.Equal(t, token.SessionID, newToken.SessionID)
+			refreshToken = body.RefreshToken
+		}
 	})
 
 	t.Run("refresh_token public agent client preserves legacy runtime session bounds", func(t *testing.T) {
@@ -1189,13 +1250,73 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, token.SessionID, newToken.SessionID)
 		require.Equal(t, token.Resource, newToken.Resource)
 		require.Empty(t, newToken.FamilyID)
-		require.Zero(t, newToken.Generation)
-		require.False(t, newToken.Current)
+		require.Equal(t, 1, newToken.Generation)
+		require.True(t, newToken.Current)
 		require.Empty(t, newToken.DeviceLabel)
-		require.Zero(t, newToken.AccessTTLSeconds)
+		require.Equal(t, token.AccessTTLSeconds, newToken.AccessTTLSeconds)
+		require.WithinDuration(t, newToken.CreatedAt, newToken.SessionCreatedAt, 2*time.Second)
+		require.WithinDuration(t, newToken.ExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
+		require.WithinDuration(t, newToken.ExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
 		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 		require.False(t, newToken.ExpiresAt.After(token.IdleExpiresAt))
 		require.False(t, newToken.ExpiresAt.After(token.AbsoluteExpiresAt))
+	})
+
+	t.Run("refresh_token public agent client rejects revoked or non-current runtime compatibility state", func(t *testing.T) {
+		now := time.Now().UTC()
+		cases := []struct {
+			name    string
+			current bool
+			revoked bool
+		}{
+			{name: "revoked", current: true, revoked: true},
+			{name: "non_current", current: false, revoked: false},
+			{name: "revoked_non_current", current: false, revoked: true},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				token := buildRuntimeRefreshToken(t, "rt-agent-compat-"+tc.name, "agent1", "client-agent", "sid-agent-compat-"+tc.name, "family-agent-compat-"+tc.name, "Connector App", 1, true, false, now)
+				token.Resource = agent1Resource
+				token.Current = tc.current
+				token.Revoked = tc.revoked
+				if tc.revoked {
+					token.RevokedAt = now.Add(-2 * time.Minute)
+					token.RevokedReason = "rotated"
+				} else {
+					token.RevokedAt = time.Time{}
+					token.RevokedReason = ""
+				}
+
+				state := &round10QueryState{
+					oauthClientsByID: map[string]storagemodels.OAuthClient{
+						"client-agent": {
+							ClientID:      "client-agent",
+							ClientSecret:  "secret",
+							Name:          "Connector App",
+							RedirectURIs:  []string{"https://example.com/callback"},
+							Scopes:        []string{auth.ScopeRead},
+							ClientClass:   auth.ClientClassAgent,
+							AgentUsername: "agent1",
+							CreatedAt:     now.Add(-96 * time.Hour),
+						},
+					},
+					refreshTokensByToken: map[string]storagemodels.RefreshToken{
+						token.Token: token,
+					},
+					usersByUsername: map[string]storagemodels.User{
+						"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+					},
+				}
+				h, _, _ := round11NewHandler(t, cfg, state)
+
+				ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(token.Token)+"&client_id=client-agent"))
+				resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+				var body map[string]string
+				require.NoError(t, json.Unmarshal(resp.Body, &body))
+				require.Equal(t, "invalid_grant", body["error"])
+			})
+		}
 	})
 
 	t.Run("refresh_token legacy agent client class is bounded by current client metadata", func(t *testing.T) {

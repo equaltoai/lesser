@@ -1366,9 +1366,39 @@ func refreshGrantClientClass(client *storage.OAuthClient, storedToken *storage.R
 	return ""
 }
 
-func agentRefreshGrantLifetimes(now time.Time, cfg *config.Config, storedToken *storage.RefreshToken) (time.Duration, time.Time, error) {
+func refreshTokenCarriesRuntimeDecisionState(token *storage.RefreshToken) bool {
+	if token == nil {
+		return false
+	}
+	return strings.TrimSpace(token.FamilyID) != "" ||
+		token.Generation > 0 ||
+		token.Current ||
+		strings.TrimSpace(token.DeviceLabel) != "" ||
+		!token.LastUsedAt.IsZero() ||
+		!token.IdleExpiresAt.IsZero() ||
+		!token.AbsoluteExpiresAt.IsZero() ||
+		!token.SessionCreatedAt.IsZero() ||
+		!token.ReuseDetectedAt.IsZero() ||
+		strings.TrimSpace(token.ReuseDetectedFromIP) != "" ||
+		strings.TrimSpace(token.ReuseDetectedFromUA) != ""
+}
+
+func validateAgentRefreshGrantState(storedToken *storage.RefreshToken) error {
 	if storedToken == nil {
-		return 0, time.Time{}, auth.ErrInvalidToken
+		return auth.ErrInvalidToken
+	}
+	if storedToken.Revoked || !storedToken.RevokedAt.IsZero() {
+		return auth.ErrInvalidToken
+	}
+	if refreshTokenCarriesRuntimeDecisionState(storedToken) && !storedToken.Current {
+		return auth.ErrInvalidToken
+	}
+	return nil
+}
+
+func agentRefreshGrantLifetimes(now time.Time, cfg *config.Config, storedToken *storage.RefreshToken) (time.Duration, time.Time, error) {
+	if err := validateAgentRefreshGrantState(storedToken); err != nil {
+		return 0, time.Time{}, err
 	}
 
 	refreshExpiry := storedToken.ExpiresAt
@@ -1487,6 +1517,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		LastAuthFailureAt:   storedToken.LastAuthFailureAt,
 		LastAuthFailureMsg:  storedToken.LastAuthFailureMsg,
 		LastAuthSuccessAt:   now,
+	}
+	if clientClass == auth.ClientClassAgent && storedToken.AccessTTLSeconds > 0 {
+		newOAuthRefreshToken.AccessTTLSeconds = storedToken.AccessTTLSeconds
 	}
 
 	// Store new refresh token
