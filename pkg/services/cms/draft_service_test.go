@@ -39,14 +39,17 @@ func (r *memDraftRepo) CreateDraft(ctx context.Context, draft *models.Draft) err
 	return nil
 }
 
-func (r *memDraftRepo) UpdateDraft(ctx context.Context, draft *models.Draft) error {
-	if draft == nil {
+func (r *memDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
+	if draft == nil || strings.TrimSpace(authorID) == "" {
 		return apperrors.ValidationFailedWithField("draft")
 	}
 	if err := draft.UpdateKeys(); err != nil {
 		return err
 	}
-	r.items[r.key(draft.AuthorID, draft.ID)] = cloneDraft(draft)
+	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return apperrors.NotFound("draft")
+	}
+	r.items[r.key(authorID, draft.ID)] = cloneDraft(draft)
 	return nil
 }
 

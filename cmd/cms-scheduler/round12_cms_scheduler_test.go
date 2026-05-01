@@ -44,7 +44,7 @@ func (f *fakeInstanceStateRepo) GetInstanceState(context.Context) (*models.Insta
 type fakeDraftRepo struct {
 	listFn   func(context.Context, time.Time, int, string) ([]*models.Draft, string, error)
 	getFn    func(context.Context, string, string) (*models.Draft, error)
-	updateFn func(context.Context, *models.Draft) error
+	updateFn func(context.Context, string, *models.Draft) error
 
 	listCalls   int
 	getCalls    int
@@ -62,11 +62,11 @@ func (f *fakeDraftRepo) GetDraft(ctx context.Context, authorID, draftID string) 
 	return nil, errors.New("not implemented")
 }
 
-func (f *fakeDraftRepo) UpdateDraft(ctx context.Context, draft *models.Draft) error {
+func (f *fakeDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
 	f.updateCalls++
 	f.lastUpdated = draft
 	if f.updateFn != nil {
-		return f.updateFn(ctx, draft)
+		return f.updateFn(ctx, authorID, draft)
 	}
 	return nil
 }
@@ -239,7 +239,7 @@ func TestCMSSchedulerProcessor_markScheduledDraftFailed_Round12(t *testing.T) {
 			getFn: func(context.Context, string, string) (*models.Draft, error) {
 				return &models.Draft{ID: "draft", AuthorID: "author", Status: "scheduled"}, nil
 			},
-			updateFn: func(context.Context, *models.Draft) error { return errors.New("boom") },
+			updateFn: func(context.Context, string, *models.Draft) error { return errors.New("boom") },
 		}
 		p.markScheduledDraftFailed(context.Background(), repo, "author", "draft", errors.New("cause"))
 		require.Equal(t, 1, repo.updateCalls)

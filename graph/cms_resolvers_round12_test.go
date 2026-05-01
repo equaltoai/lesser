@@ -76,6 +76,12 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.NotNil(t, fetched)
 	require.Equal(t, draft.ID, fetched.ID)
 
+	crossUserTitle := "Cross User Update"
+	_, err = mut.UpdateDraft(round12AuthContext("bob"), draft.ID, model.UpdateDraftInput{
+		Title: &crossUserTitle,
+	})
+	require.Error(t, err)
+
 	toDeleteTitle := "Delete Me"
 	toDelete, err := mut.CreateDraft(ctx, model.CreateDraftInput{
 		ContentType:   model.ObjectTypeArticle,
@@ -84,7 +90,11 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 		ContentFormat: model.ContentFormatMarkdown,
 	})
 	require.NoError(t, err)
-	ok, err := mut.DeleteDraft(ctx, toDelete.ID)
+	ok, err := mut.DeleteDraft(round12AuthContext("bob"), toDelete.ID)
+	require.Error(t, err)
+	require.False(t, ok)
+
+	ok, err = mut.DeleteDraft(ctx, toDelete.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 

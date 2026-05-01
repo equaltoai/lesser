@@ -89,15 +89,18 @@ func (r *DraftRepository) GetDraft(_ context.Context, authorID, draftID string) 
 }
 
 // UpdateDraft updates an existing draft
-func (r *DraftRepository) UpdateDraft(_ context.Context, draft *models.Draft) error {
+func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft *models.Draft) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if draft == nil || draft.AuthorID == "" || draft.ID == "" {
+	if draft == nil || strings.TrimSpace(authorID) == "" || draft.AuthorID == "" || draft.ID == "" {
 		return storage.ErrInvalidInput
 	}
+	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return storage.ErrNotFound
+	}
 
-	key := draftKey(draft.AuthorID, draft.ID)
+	key := draftKey(authorID, draft.ID)
 	oldDraft, exists := r.drafts[key]
 	if !exists {
 		return storage.ErrNotFound
@@ -126,6 +129,12 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, draft *models.Draft) er
 func (r *DraftRepository) DeleteDraft(_ context.Context, authorID, draftID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	authorID = strings.TrimSpace(authorID)
+	draftID = strings.TrimSpace(draftID)
+	if authorID == "" || draftID == "" {
+		return storage.ErrInvalidInput
+	}
 
 	key := draftKey(authorID, draftID)
 	draft, exists := r.drafts[key]

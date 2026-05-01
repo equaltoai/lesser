@@ -99,7 +99,7 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 		draft.ContentFormat = cmsContentFormatToStorage(*input.ContentFormat)
 	}
 
-	if err := draftSvc.UpdateDraft(ctx, draft); err != nil {
+	if err := draftSvc.UpdateDraft(ctx, username, draft); err != nil {
 		return nil, err
 	}
 
@@ -127,7 +127,7 @@ func (r *mutationResolver) AutosaveDraft(ctx context.Context, id string, content
 	}
 
 	draft.Content = content
-	if err := draftSvc.Autosave(ctx, draft); err != nil {
+	if err := draftSvc.Autosave(ctx, username, draft); err != nil {
 		return nil, err
 	}
 

@@ -32,6 +32,25 @@ func NewDraftRepository(db core.DB, tableName string, logger *zap.Logger, costSe
 	}
 }
 
+func validateDraftWriteOwner(authorID string, draft *models.Draft) error {
+	authorID = strings.TrimSpace(authorID)
+	if err := common.ValidateRequiredParam("authorID", authorID); err != nil {
+		return err
+	}
+	if draft == nil {
+		return common.ValidationError{Field: "draft", Message: "is required"}
+	}
+	draftAuthor := strings.TrimSpace(draft.AuthorID)
+	if err := common.ValidateRequiredParam("draft.AuthorID", draftAuthor); err != nil {
+		return err
+	}
+	if draftAuthor != authorID {
+		return common.ValidationError{Field: "authorID", Message: "does not match draft author"}
+	}
+	draft.AuthorID = draftAuthor
+	return nil
+}
+
 // CreateDraft creates a new draft
 func (r *DraftRepository) CreateDraft(ctx context.Context, draft *models.Draft) error {
 	return r.ValidateAndCreate(ctx, draft)
@@ -51,7 +70,10 @@ func (r *DraftRepository) GetDraft(ctx context.Context, authorID, draftID string
 }
 
 // UpdateDraft updates an existing draft
-func (r *DraftRepository) UpdateDraft(ctx context.Context, draft *models.Draft) error {
+func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteOwner(authorID, draft); err != nil {
+		return err
+	}
 	if err := draft.UpdateKeys(); err != nil {
 		return err
 	}
@@ -61,6 +83,14 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, draft *models.Draft) 
 
 // DeleteDraft deletes a draft
 func (r *DraftRepository) DeleteDraft(ctx context.Context, authorID, draftID string) error {
+	authorID = strings.TrimSpace(authorID)
+	draftID = strings.TrimSpace(draftID)
+	if err := common.ValidateRequiredParam("authorID", authorID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("draftID", draftID); err != nil {
+		return err
+	}
 	pk := fmt.Sprintf("USER#%s#DRAFT", authorID)
 	sk := fmt.Sprintf("ID#%s", draftID)
 	return r.Delete(ctx, pk, sk)

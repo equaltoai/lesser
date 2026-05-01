@@ -42,8 +42,9 @@ func TestRound10_DraftRepository_CRUDAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
-	require.Error(t, repo.UpdateDraft(ctx, &models.Draft{ID: "draft-1"})) // missing AuthorID
-	require.NoError(t, repo.UpdateDraft(ctx, draft))
+	require.Error(t, repo.UpdateDraft(ctx, "user-1", &models.Draft{ID: "draft-1"})) // missing AuthorID
+	require.Error(t, repo.UpdateDraft(ctx, "other-user", draft))
+	require.NoError(t, repo.UpdateDraft(ctx, "user-1", draft))
 
 	require.NoError(t, repo.DeleteDraft(ctx, "user-1", "draft-1"))
 

@@ -39,8 +39,8 @@ func (m *MockDraftRepository) GetDraft(ctx context.Context, authorID, draftID st
 }
 
 // UpdateDraft mocks the UpdateDraft method
-func (m *MockDraftRepository) UpdateDraft(ctx context.Context, draft *models.Draft) error {
-	args := m.Called(ctx, draft)
+func (m *MockDraftRepository) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
+	args := m.Called(ctx, authorID, draft)
 	return args.Error(0)
 }
 

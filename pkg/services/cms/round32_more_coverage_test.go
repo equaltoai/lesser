@@ -38,15 +38,18 @@ func TestDraftService_SimpleCRUDWrappers(t *testing.T) {
 	require.False(t, draft.UpdatedAt.IsZero())
 	require.False(t, draft.LastSavedAt.IsZero())
 
+	require.Error(t, svc.UpdateDraft(ctx, "bob", draft))
+
 	beforeUpdated := draft.UpdatedAt
 	time.Sleep(1 * time.Millisecond)
-	require.NoError(t, svc.UpdateDraft(ctx, draft))
+	require.NoError(t, svc.UpdateDraft(ctx, "alice", draft))
 	require.True(t, draft.UpdatedAt.After(beforeUpdated))
 	require.True(t, draft.LastSavedAt.After(beforeUpdated))
 
+	require.Error(t, svc.Autosave(ctx, "bob", draft))
 	autosaveBefore := draft.AutosaveVersion
 	time.Sleep(1 * time.Millisecond)
-	require.NoError(t, svc.Autosave(ctx, draft))
+	require.NoError(t, svc.Autosave(ctx, "alice", draft))
 	require.Equal(t, autosaveBefore+1, draft.AutosaveVersion)
 
 	got, err := svc.GetDraft(ctx, "alice", "draft-1")
