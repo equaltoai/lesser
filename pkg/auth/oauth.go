@@ -550,7 +550,7 @@ func (s *OAuthService) validateAccessTokenNotRevoked(claims *Claims) error {
 		if s.auditLogger != nil && s.auditLogger.logger != nil {
 			s.auditLogger.logger.Warn("access token revocation check failed", zap.Error(err))
 		}
-		return nil
+		return ErrInvalidToken
 	}
 
 	if revoked {
@@ -607,9 +607,9 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 		return nil, err
 	}
 
-	// Best-effort access token revocation check (RFC 7009).
-	// This is a read-after-parse DynamoDB lookup keyed by token JTI; if storage is unavailable,
-	// we accept the token to avoid turning storage blips into auth outages.
+	// Access-token revocation check (RFC 7009). This is a read-after-parse
+	// DynamoDB lookup keyed by token JTI; if storage is unavailable, fail closed
+	// rather than accepting a potentially revoked token.
 	if err := s.validateAccessTokenNotRevoked(claims); err != nil {
 		return nil, err
 	}

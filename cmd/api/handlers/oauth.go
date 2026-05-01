@@ -1354,6 +1354,102 @@ func validateRefreshGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthS
 	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
 }
 
+func refreshGrantClientClass(client *storage.OAuthClient, storedToken *storage.RefreshToken) string {
+	if storedToken != nil {
+		if clientClass := strings.TrimSpace(storedToken.ClientClass); clientClass != "" {
+			return strings.ToLower(clientClass)
+		}
+	}
+	if client != nil {
+		return strings.ToLower(strings.TrimSpace(client.ClientClass))
+	}
+	return ""
+}
+
+func refreshTokenCarriesRuntimeDecisionState(token *storage.RefreshToken) bool {
+	if token == nil {
+		return false
+	}
+	return strings.TrimSpace(token.FamilyID) != "" ||
+		token.Generation > 0 ||
+		token.Current ||
+		strings.TrimSpace(token.DeviceLabel) != "" ||
+		!token.LastUsedAt.IsZero() ||
+		!token.IdleExpiresAt.IsZero() ||
+		!token.AbsoluteExpiresAt.IsZero() ||
+		!token.SessionCreatedAt.IsZero() ||
+		!token.ReuseDetectedAt.IsZero() ||
+		strings.TrimSpace(token.ReuseDetectedFromIP) != "" ||
+		strings.TrimSpace(token.ReuseDetectedFromUA) != ""
+}
+
+func validateAgentRefreshGrantState(storedToken *storage.RefreshToken) error {
+	if storedToken == nil {
+		return auth.ErrInvalidToken
+	}
+	if storedToken.Revoked || !storedToken.RevokedAt.IsZero() {
+		return auth.ErrInvalidToken
+	}
+	if refreshTokenCarriesRuntimeDecisionState(storedToken) && !storedToken.Current {
+		return auth.ErrInvalidToken
+	}
+	return nil
+}
+
+func agentRefreshGrantLifetimes(now time.Time, cfg *config.Config, storedToken *storage.RefreshToken) (time.Duration, time.Time, error) {
+	if err := validateAgentRefreshGrantState(storedToken); err != nil {
+		return 0, time.Time{}, err
+	}
+
+	refreshExpiry := storedToken.ExpiresAt
+	if refreshExpiry.IsZero() || !refreshExpiry.After(now) {
+		return 0, time.Time{}, auth.ErrInvalidToken
+	}
+
+	accessTTL := auth.AgentAccessTokenTTL(cfg)
+	if storedToken.AccessTTLSeconds > 0 {
+		storedAccessTTL := time.Duration(storedToken.AccessTTLSeconds) * time.Second
+		if storedAccessTTL > 0 && storedAccessTTL < accessTTL {
+			accessTTL = storedAccessTTL
+		}
+	}
+
+	for _, expiry := range []time.Time{storedToken.IdleExpiresAt, storedToken.AbsoluteExpiresAt} {
+		if expiry.IsZero() {
+			continue
+		}
+		remaining := expiry.Sub(now)
+		if remaining <= 0 {
+			return 0, time.Time{}, auth.ErrInvalidToken
+		}
+		if expiry.Before(refreshExpiry) {
+			refreshExpiry = expiry
+		}
+		if remaining < accessTTL {
+			accessTTL = remaining
+		}
+	}
+
+	if remaining := refreshExpiry.Sub(now); remaining < accessTTL {
+		accessTTL = remaining
+	}
+	if accessTTL <= 0 {
+		return 0, time.Time{}, auth.ErrInvalidToken
+	}
+
+	return accessTTL, refreshExpiry, nil
+}
+
+func standardRefreshGrantLifetimes(now time.Time, cfg *config.Config, client *storage.OAuthClient, storedToken *storage.RefreshToken) (time.Duration, time.Time, string, error) {
+	clientClass := refreshGrantClientClass(client, storedToken)
+	if clientClass == auth.ClientClassAgent {
+		accessTTL, refreshExpiry, err := agentRefreshGrantLifetimes(now, cfg, storedToken)
+		return accessTTL, refreshExpiry, clientClass, err
+	}
+
+	return auth.AccessTokenDuration, now.Add(auth.RefreshTokenDuration), clientClass, nil
+}
+
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
 func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, ipAddress, userAgent string) (string, string, []string, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
@@ -1364,7 +1460,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
-	_, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
+	client, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -1386,30 +1482,22 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
+	now := time.Now().UTC()
+
 	// Check expiration
-	if time.Now().After(storedToken.ExpiresAt) {
+	if now.After(storedToken.ExpiresAt) {
 		// Clean up expired token
 		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
-	accessTTL := auth.AccessTokenDuration
-	refreshExpiry := time.Now().Add(auth.RefreshTokenDuration)
-
-	// Delegated agent tokens are bounded by the stored refresh token expiry.
-	if storedToken.ClientID == delegatedAgentClientID {
-		remaining := time.Until(storedToken.ExpiresAt)
-		if remaining <= 0 {
-			_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
-			return "", "", nil, auth.ErrInvalidToken
-		}
-		if remaining < accessTTL {
-			accessTTL = remaining
-		}
-		refreshExpiry = storedToken.ExpiresAt
+	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, storedToken)
+	if err != nil {
+		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
+		return "", "", nil, err
 	}
 
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID, storedToken.Resource)
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, clientClass, storedToken.SessionID, storedToken.Resource)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
@@ -1421,14 +1509,17 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		ClientID:            clientID,
 		Resource:            storedToken.Resource,
 		Scopes:              storedToken.Scopes,
-		CreatedAt:           time.Now(),
+		CreatedAt:           now,
 		ExpiresAt:           refreshExpiry,
-		ClientClass:         storedToken.ClientClass,
+		ClientClass:         clientClass,
 		SessionID:           storedToken.SessionID,
 		LastAuthFailureCode: storedToken.LastAuthFailureCode,
 		LastAuthFailureAt:   storedToken.LastAuthFailureAt,
 		LastAuthFailureMsg:  storedToken.LastAuthFailureMsg,
-		LastAuthSuccessAt:   time.Now().UTC(),
+		LastAuthSuccessAt:   now,
+	}
+	if clientClass == auth.ClientClassAgent && storedToken.AccessTTLSeconds > 0 {
+		newOAuthRefreshToken.AccessTTLSeconds = storedToken.AccessTTLSeconds
 	}
 
 	// Store new refresh token

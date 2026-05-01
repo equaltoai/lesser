@@ -561,9 +561,9 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	governance, err := r.loadAgentGovernanceState(ctx, username)
+	governance, err := r.requireAgentGovernanceState(ctx, username)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+		return nil, graphAgentGovernanceLoadError(err)
 	}
 
 	if !isAgentOwnerOrAdmin(claims, account.User, r.agentOwnerActorURL(claims.Username)) {

@@ -605,6 +605,24 @@ func TestDelegateToAgent_MissingGovernanceFailsClosed(t *testing.T) {
 	require.ErrorIs(t, err, ErrAgentGovernanceUnavailable)
 }
 
+func TestUpdateAgent_MissingGovernanceFailsClosed(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{"read"})
+	delete(state.governance, "agent1")
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("owner", auth.ScopeWrite)
+	displayName := "Updated Agent"
+
+	var err error
+	require.NotPanics(t, func() {
+		_, err = resolver.Mutation().UpdateAgent(ctx, "agent1", model.UpdateAgentInput{
+			DisplayName: &displayName,
+		})
+	})
+	require.ErrorIs(t, err, ErrAgentGovernanceUnavailable)
+	require.Equal(t, "Agent One", state.user("agent1").DisplayName)
+}
+
 func TestAdminUnverifyAgent_ClearsStaleVerificationFields(t *testing.T) {
 	state := newDelegationGraphState("agent1", []string{"read"})
 	verifiedAt := time.Now().UTC().Add(-time.Hour)
