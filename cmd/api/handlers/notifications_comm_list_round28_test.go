@@ -263,6 +263,25 @@ func TestNotifications_ListHandlesSnapshotAndLegacyStatuses_Round28(t *testing.T
 							},
 						},
 						{
+							ID:         "notif-snapshot-unsafe",
+							Type:       apiModels.NotificationTypeReply,
+							ActorID:    "bob",
+							UserID:     "alice",
+							TargetID:   "status-snapshot-unsafe",
+							TargetType: "status",
+							CreatedAt:  now.Add(-2 * time.Minute),
+							Data: map[string]interface{}{
+								"postSnapshot": map[string]interface{}{
+									"id":           "https://example.com/objects/status-snapshot-unsafe",
+									"url":          "javascript:alert(1)",
+									"content":      "unsafe snapshot body",
+									"createdAt":    now.Add(-90 * time.Second).Format(time.RFC3339),
+									"visibility":   "unlisted",
+									"attributedTo": cfg.BaseURL() + "/users/bob",
+								},
+							},
+						},
+						{
 							ID:         "notif-legacy-1",
 							Type:       apiModels.NotificationTypeReply,
 							ActorID:    "bob",
@@ -290,10 +309,13 @@ func TestNotifications_ListHandlesSnapshotAndLegacyStatuses_Round28(t *testing.T
 
 	var out []apiModels.Notification
 	require.NoError(t, json.Unmarshal(resp.Body, &out))
-	require.Len(t, out, 2)
+	require.Len(t, out, 3)
 	require.NotNil(t, out[0].Status)
 	require.Equal(t, "snapshot body", out[0].Status.Content)
 	require.Equal(t, "https://example.com/@bob/status-snapshot", out[0].Status.URL)
 	require.NotNil(t, out[1].Status)
-	require.Equal(t, "legacy body", out[1].Status.Content)
+	require.Equal(t, "unsafe snapshot body", out[1].Status.Content)
+	require.Equal(t, "https://example.com/objects/status-snapshot-unsafe", out[1].Status.URL)
+	require.NotNil(t, out[2].Status)
+	require.Equal(t, "legacy body", out[2].Status.Content)
 }

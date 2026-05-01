@@ -52,6 +52,34 @@ func TestNotificationService_PostSnapshotHelpers_Round32(t *testing.T) {
 		assert.Equal(t, parentID, snapshot["inReplyToId"])
 	})
 
+	t.Run("snapshot status urls fall back when unsafe", func(t *testing.T) {
+		svc := &notificationService{logger: zap.NewNop()}
+
+		snapshot := svc.buildPostSnapshotFromObject(&models.Object{
+			ID:           "https://local.example/objects/safe-id",
+			URL:          "javascript:alert(1)",
+			Content:      "<p>body</p>",
+			Published:    publishedAt,
+			Visibility:   models.VisibilityPublic,
+			AttributedTo: "https://local.example/users/alice",
+		}, "", "")
+
+		require.NotNil(t, snapshot)
+		assert.Equal(t, "https://local.example/objects/safe-id", snapshot["url"])
+
+		controlSnapshot := svc.buildPostSnapshotFromObject(map[string]interface{}{
+			"id":           "https://local.example/objects/control-safe-id",
+			"url":          "https://local.example/@alice/control\nlocation:https://evil.example/",
+			"content":      "<p>body</p>",
+			"published":    publishedAt.Format(time.RFC3339),
+			"visibility":   models.VisibilityPublic,
+			"attributedTo": "https://local.example/users/alice",
+		}, "", "")
+
+		require.NotNil(t, controlSnapshot)
+		assert.Equal(t, "https://local.example/objects/control-safe-id", controlSnapshot["url"])
+	})
+
 	t.Run("postSnapshotForActivity returns nil when lookup fails", func(t *testing.T) {
 		svc := &notificationService{
 			storage: &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
