@@ -6,8 +6,17 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	"go.uber.org/zap"
 )
 
 func TestRound12CMS_DraftLifecycle(t *testing.T) {
@@ -338,6 +347,122 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	ok, err = mut.DeleteCategory(adminCtx, category.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
+}
+
+func TestRound12CMS_MyPublicationsDoesNotSelfHealFallbackRows(t *testing.T) {
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	fallbackMember := models.PublicationMember{
+		PublicationID: "pub-1",
+		UserID:        "alice",
+		Role:          "owner",
+		// Deliberately blank GSI keys model pre-M12 rows that need repair outside
+		// of read resolvers.
+		GSI1PK: "",
+		GSI1SK: "",
+	}
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", "SK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Limit", 1000).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		members, ok := args.Get(0).(*[]models.PublicationMember)
+		require.True(t, ok)
+		*members = []models.PublicationMember{fallbackMember}
+	}).Return(nil).Once()
+
+	pubRepo := inmemory.NewPublicationRepository()
+	now := time.Now().UTC()
+	require.NoError(t, pubRepo.CreatePublication(context.Background(), &models.Publication{
+		ID:        "pub-1",
+		Name:      "Publication",
+		Slug:      "publication",
+		ActorID:   "https://localhost/users/publication",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}))
+	memberRepo := &round12NoHealPublicationMemberRepo{}
+	baseStorage := pkgtesting.NewMockRepositoryStorage(
+		pkgtesting.WithPublicationRepository(pubRepo),
+		pkgtesting.WithPublicationMemberRepository(memberRepo),
+	)
+	storage := &round12NoHealCMSStorage{
+		RepositoryStorage: baseStorage,
+		db:                mockDB,
+		publication:       pubRepo,
+		member:            memberRepo,
+	}
+	resolver := &Resolver{
+		Config: &config.Config{
+			Domain:                       "localhost",
+			CMSLongFormPublishingEnabled: true,
+		},
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	}
+
+	publications, err := resolver.Query().MyPublications(round12AuthContext("alice"))
+	require.NoError(t, err)
+	require.Len(t, publications, 1)
+	require.Equal(t, "pub-1", publications[0].ID)
+	require.Zero(t, memberRepo.updates, "read resolvers must not self-heal publication member rows")
+}
+
+type round12NoHealCMSStorage struct {
+	core.RepositoryStorage
+	db          dynamormcore.DB
+	publication interfaces.PublicationRepository
+	member      interfaces.PublicationMemberRepository
+}
+
+func (s *round12NoHealCMSStorage) GetDB() dynamormcore.DB { return s.db }
+func (s *round12NoHealCMSStorage) Publication() interfaces.PublicationRepository {
+	return s.publication
+}
+func (s *round12NoHealCMSStorage) PublicationMember() interfaces.PublicationMemberRepository {
+	return s.member
+}
+
+type round12NoHealPublicationMemberRepo struct {
+	*inmemory.PublicationMemberRepository
+	updates int
+}
+
+func (r *round12NoHealPublicationMemberRepo) ensure() {
+	if r.PublicationMemberRepository == nil {
+		r.PublicationMemberRepository = inmemory.NewPublicationMemberRepository()
+	}
+}
+
+func (r *round12NoHealPublicationMemberRepo) CreateMember(ctx context.Context, member *models.PublicationMember) error {
+	r.ensure()
+	return r.PublicationMemberRepository.CreateMember(ctx, member)
+}
+
+func (r *round12NoHealPublicationMemberRepo) GetMember(ctx context.Context, publicationID, userID string) (*models.PublicationMember, error) {
+	r.ensure()
+	return r.PublicationMemberRepository.GetMember(ctx, publicationID, userID)
+}
+
+func (r *round12NoHealPublicationMemberRepo) DeleteMember(ctx context.Context, publicationID, userID string) error {
+	r.ensure()
+	return r.PublicationMemberRepository.DeleteMember(ctx, publicationID, userID)
+}
+
+func (r *round12NoHealPublicationMemberRepo) ListMembers(ctx context.Context, publicationID string) ([]*models.PublicationMember, error) {
+	r.ensure()
+	return r.PublicationMemberRepository.ListMembers(ctx, publicationID)
+}
+
+func (r *round12NoHealPublicationMemberRepo) ListMembershipsForUserPaginated(context.Context, string, int, string) ([]*models.PublicationMember, string, error) {
+	return nil, "", nil
+}
+
+func (r *round12NoHealPublicationMemberRepo) Update(context.Context, *models.PublicationMember) error {
+	r.updates++
+	return nil
 }
 
 func TestRound12CMS_MutationPermissions(t *testing.T) {
