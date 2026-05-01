@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
@@ -46,6 +47,44 @@ func (h *Handler) HandleGetMySoulsLift(ctx *apptheory.Context) (*apptheory.Respo
 	return okJSON(apimodels.SoulsMineResponse{
 		Souls: items,
 		Count: len(items),
+	})
+}
+
+// HandleGetBoundSoulMeLift returns the active soul bound to the authenticated local runtime-agent principal.
+func (h *Handler) HandleGetBoundSoulMeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, err := h.authenticateWithAnyScope(ctx, auth.ScopeRead, auth.ScopeWrite)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
+	svc := h.getSoulService()
+	if svc == nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	soul, err := svc.ResolveBoundAgent(ctx.Context(), claims.Username)
+	if err != nil {
+		if errors.Is(err, soulservice.ErrSoulNotAvailable) {
+			return respondBoundSoulNotFound("soul_not_available", "bound soul is not available")
+		}
+		return h.respondSoulServiceError(ctx, err)
+	}
+	if soul == nil || !soul.Bound {
+		return respondBoundSoulNotFound("soul_not_bound", "no bound soul for authenticated principal")
+	}
+
+	item := toAPISoulInventoryItem(*soul)
+	if item.Binding == nil || item.BindingState != "bound" {
+		return respondBoundSoulNotFound("soul_not_bound", "no bound soul for authenticated principal")
+	}
+
+	return okJSON(apimodels.BoundSoulResponse{
+		Agent:        item.Agent,
+		BindingState: item.BindingState,
+		Binding:      *item.Binding,
 	})
 }
 
@@ -99,6 +138,14 @@ func (h *Handler) getSoulService() soulHandlerService {
 		return nil
 	}
 	return soulservice.NewService(h.repos.Account(), h.repos.Instance(), h.cfg, h.logger)
+}
+
+func respondBoundSoulNotFound(code string, message string) (*apptheory.Response, error) {
+	return apptheory.JSON(http.StatusNotFound, common.StandardErrorResponse{
+		Error:       message,
+		Description: message,
+		Code:        code,
+	})
 }
 
 func (h *Handler) respondSoulServiceError(ctx *apptheory.Context, err error) (*apptheory.Response, error) {

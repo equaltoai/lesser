@@ -10,6 +10,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/stretchr/testify/require"
 )
@@ -217,6 +218,189 @@ func TestHandleGetMySoulsLift_AuthFailures(t *testing.T) {
 
 		requireStatus(t, http.StatusForbidden)(h.HandleGetMySoulsLift(ctx))
 	})
+}
+
+func TestHandleGetBoundSoulMeLift_ReturnsActiveBoundSoul(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC)
+	cfg := round10TestConfig()
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:               "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Domain:                "example.com",
+			LocalID:               "ops",
+			Wallet:                "0x1111111111111111111111111111111111111111",
+			PrincipalAddress:      "0x2222222222222222222222222222222222222222",
+			Status:                "active",
+			LifecycleStatus:       "active",
+			Bound:                 true,
+			BoundAgentUsername:    "ops",
+			BoundPrincipalAddress: "0x2222222222222222222222222222222222222222",
+			BoundAt:               now,
+			BoundUpdatedAt:        now,
+		},
+	}
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+	token := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-bound")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleGetBoundSoulMeLift(ctx))
+
+	var body apimodels.BoundSoulResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "ops", service.lastTargetAgent)
+	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", body.Agent.AgentID)
+	require.Equal(t, "ops", body.Agent.LocalID)
+	require.Equal(t, "bound", body.BindingState)
+	require.Equal(t, "ops", body.Binding.AgentUsername)
+	require.Equal(t, "0x2222222222222222222222222222222222222222", body.Binding.PrincipalAddress)
+	require.NotContains(t, string(resp.Body), "available_for_incorporation")
+}
+
+func TestHandleGetBoundSoulMeLift_AuthGuards(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	readToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-bound-read")
+	writeToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeWrite}, "sess-bound-write")
+	adminToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeAdmin}, "sess-bound-admin")
+	h := &Handler{
+		cfg:    cfg,
+		logger: round10TestLogger(t),
+		soulsService: &stubSoulHandlerService{
+			resolveBoundOut: &soulservice.Soul{
+				AgentID:            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				Domain:             "example.com",
+				LocalID:            "ops",
+				Wallet:             "0x1111111111111111111111111111111111111111",
+				Status:             "active",
+				Bound:              true,
+				BoundAgentUsername: "ops",
+				BoundAt:            time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+				BoundUpdatedAt:     time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	testCases := []struct {
+		name       string
+		headers    map[string]string
+		wantStatus int
+	}{
+		{
+			name:       "missing token",
+			headers:    nil,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "insufficient scope",
+			headers: map[string]string{
+				"Authorization": "Bearer " + adminToken,
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "read scope works",
+			headers: map[string]string{
+				"Authorization": "Bearer " + readToken,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "write scope works",
+			headers: map[string]string{
+				"Authorization": "Bearer " + writeToken,
+			},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me", tc.headers, nil, nil)
+			require.NoError(t, err)
+
+			requireStatus(t, tc.wantStatus)(h.HandleGetBoundSoulMeLift(ctx))
+		})
+	}
+}
+
+func TestHandleGetBoundSoulMeLift_MapsServiceFailures(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	token := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-bound-errors")
+
+	testCases := []struct {
+		name       string
+		service    *stubSoulHandlerService
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "unbound",
+			service:    &stubSoulHandlerService{},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "soul_not_bound",
+		},
+		{
+			name:       "unavailable",
+			service:    &stubSoulHandlerService{resolveBoundErr: soulservice.ErrSoulNotAvailable},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "soul_not_available",
+		},
+		{
+			name:       "trust not configured",
+			service:    &stubSoulHandlerService{resolveBoundErr: soulservice.ErrTrustNotConfigured},
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "unexpected",
+			service:    &stubSoulHandlerService{resolveBoundErr: errors.New("boom")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: tc.service}
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me", map[string]string{
+				"Authorization": "Bearer " + token,
+			}, nil, nil)
+			require.NoError(t, err)
+
+			resp := requireStatus(t, tc.wantStatus)(h.HandleGetBoundSoulMeLift(ctx))
+			if tc.wantCode != "" {
+				var body common.StandardErrorResponse
+				require.NoError(t, json.Unmarshal(resp.Body, &body))
+				require.Equal(t, tc.wantCode, body.Code)
+			}
+		})
+	}
+}
+
+func TestHandleGetBoundSoulMeLift_ReturnsInternalWhenServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+	token := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-bound-service")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	requireStatus(t, http.StatusInternalServerError)(h.HandleGetBoundSoulMeLift(ctx))
 }
 
 func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {

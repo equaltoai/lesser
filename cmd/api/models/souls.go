@@ -69,6 +69,13 @@ type SoulsMineResponse struct {
 	Count int                 `json:"count"`
 }
 
+// BoundSoulResponse represents GET /api/v1/souls/bound/me.
+type BoundSoulResponse struct {
+	Agent        SoulAgentIdentity `json:"agent"`
+	BindingState string            `json:"binding_state"`
+	Binding      SoulAgentBinding  `json:"binding"`
+}
+
 // SoulIncorporateRequest represents POST /api/v1/souls/{agentId}/incorporate.
 type SoulIncorporateRequest struct {
 	TargetAgentUsername string `json:"target_agent_username"`

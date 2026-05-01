@@ -1816,6 +1816,20 @@ components:
                 - challenge_id
                 - signature
             type: object
+        BoundSoulResponse:
+            additionalProperties: false
+            properties:
+                agent:
+                    $ref: '#/components/schemas/SoulAgentIdentity'
+                binding:
+                    $ref: '#/components/schemas/SoulAgentBinding'
+                binding_state:
+                    type: string
+            required:
+                - agent
+                - binding
+                - binding_state
+            type: object
         ClearNotificationsRequest:
             additionalProperties: false
             properties: {}
@@ -15292,11 +15306,47 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write
+    /api/v1/souls/bound/me:
+        get:
+            operationId: get_api_v1_souls_bound_me
+            description: 'Return the active soul identity bound to the authenticated local runtime-agent principal. The endpoint is fail-closed: unbound, inactive, missing host identity, or wrong-domain identities return 404.'
+            tags:
+                - souls
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BoundSoulResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetBoundSoulMeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+                - write
     /api/v1/souls/mine:
         get:
             operationId: get_api_v1_souls_mine
             tags:
                 - souls
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -15316,6 +15366,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+                - write
     /api/v1/statuses:
         post:
             operationId: post_api_v1_statuses
