@@ -988,7 +988,7 @@ func TestService_SendDirectMessage_WithResolvedRemoteRecipient(t *testing.T) {
 			state.CounterpartDomain == "remote.com" &&
 			state.RequestState == models.DmRequestStateAccepted &&
 			state.Folder == models.UserConversationFolderInbox &&
-			!state.Unread
+			!state.Unread && state.PreviewStatusID == transition.Status.StatusID && !state.PreviewStatusPublishedAt.IsZero() && !state.SortAt.IsZero() && !state.UpdatedAt.IsZero()
 	}), mock.Anything).Return(nil).Once()
 
 	result, err := service.SendDirectMessage(ctx, cmd)

@@ -938,6 +938,21 @@ func applyConversationCounterpartRef(state *models.UserConversationState, ref *m
 	state.CounterpartResolvedAt = ref.ResolvedAt
 }
 
+// applyDirectMessageStatusPreview applies the status projection fields to a
+// UserConversationState for a newly created direct message. This is a narrow
+// private helper that keeps sender/recipient status-projection branches from
+// drifting — the same four-field assignment is used for both local and remote
+// recipient paths.
+func applyDirectMessageStatusPreview(state *models.UserConversationState, statusID string, publishedAt time.Time) {
+	if state == nil {
+		return
+	}
+	state.PreviewStatusID = statusID
+	state.PreviewStatusPublishedAt = publishedAt
+	state.SortAt = publishedAt
+	state.UpdatedAt = publishedAt
+}
+
 func isRemoteConversationParticipant(conversation *models.Conversation, participantID string) bool {
 	if ref := conversationParticipantRefByID(conversation, participantID); ref != nil {
 		return ref.ParticipantType == models.ConversationParticipantTypeRemoteActor
@@ -1008,6 +1023,9 @@ func buildDirectMessageParticipantStatesForSend(
 		senderState.AcceptedAt = &t
 	}
 
+	if status != nil {
+		applyDirectMessageStatusPreview(senderState, status.StatusID, now)
+	}
 	if isRemoteConversationParticipant(conversation, recipientID) {
 		return []*models.UserConversationState{senderState}
 	}
@@ -1056,15 +1074,7 @@ func buildDirectMessageParticipantStatesForSend(
 	}
 
 	if status != nil {
-		senderState.PreviewStatusID = status.StatusID
-		senderState.PreviewStatusPublishedAt = now
-		senderState.SortAt = now
-		senderState.UpdatedAt = now
-
-		recipientState.PreviewStatusID = status.StatusID
-		recipientState.PreviewStatusPublishedAt = now
-		recipientState.SortAt = now
-		recipientState.UpdatedAt = now
+		applyDirectMessageStatusPreview(recipientState, status.StatusID, now)
 	}
 
 	return []*models.UserConversationState{senderState, recipientState}
