@@ -542,25 +542,53 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		resp, err := h.HandleTrustCreatePublishJobLift(ctx)
 		require.Nil(t, resp)
 		require.Error(t, err)
+	})
+
+	t.Run("allows_unauthenticated_jwks_and_attestation_reads", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/.well-known/jwks.json":
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write([]byte(`{"keys":[]}`))
+			case "/attestations":
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write([]byte(`[]`))
+			case "/attestations/att-1":
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write([]byte(`{"id":"att-1","jws":"x"}`))
+			default:
+				require.FailNow(t, "unexpected upstream request", "%s %s", r.Method, r.URL.Path)
+			}
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := round11TestConfig()
+		cfg.LesserHostURL = upstream.URL
+		cfg.LesserHostAttestationsURL = ""
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+
+		allowLocalLesserHostProxyForTests(t)
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", nil, nil, nil)
 		require.NoError(t, err)
-		resp, err = h.HandleTrustJWKSJSONLift(ctx2)
-		require.Nil(t, resp)
-		require.Error(t, err)
+		jwksResp, jwksErr := h.HandleTrustJWKSJSONLift(ctx2)
+		require.NoError(t, jwksErr)
+		require.Equal(t, http.StatusOK, jwksResp.Status)
 
 		ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", nil, nil, nil)
 		require.NoError(t, err)
-		resp, err = h.HandleTrustLookupAttestationLift(ctx3)
-		require.Nil(t, resp)
-		require.Error(t, err)
+		attResp, attErr := h.HandleTrustLookupAttestationLift(ctx3)
+		require.NoError(t, attErr)
+		require.Equal(t, http.StatusOK, attResp.Status)
 
 		ctx4, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/att-1", nil, nil, nil)
 		require.NoError(t, err)
 		ctx4.Params["id"] = "att-1"
-		resp, err = h.HandleTrustGetAttestationLift(ctx4)
-		require.Nil(t, resp)
-		require.Error(t, err)
+		getResp, getErr := h.HandleTrustGetAttestationLift(ctx4)
+		require.NoError(t, getErr)
+		require.Equal(t, http.StatusOK, getResp.Status)
 	})
 
 	t.Run("upstream_connection_failure_returns_503", func(t *testing.T) {

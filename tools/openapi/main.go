@@ -2045,6 +2045,11 @@ func applyAuthOverrides(method, path, handler, lambda string, current authMode) 
 		return authModeSetupBearer
 	case "/setup/finalize":
 		return authModeBearerRequired
+	case pathTrustJWKS, pathTrustAttest, pathTrustAttestID:
+		// These trust-discovery reads are part of the explicit public surface.
+		// The shared proxy helper also backs authenticated trust write/read
+		// routes, so AST auth propagation would otherwise over-classify them.
+		return authModePublic
 	case pathApps:
 		// Public app registration may opportunistically attach an owner from a valid
 		// bearer token, but it is not an OAuth-protected route in the published contract.
