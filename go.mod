@@ -1,6 +1,6 @@
 module github.com/equaltoai/lesser
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/99designs/gqlgen v0.17.88
@@ -54,9 +54,9 @@ require (
 	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.32
 	go.uber.org/zap v1.27.1
-	golang.org/x/crypto v0.49.0
+	golang.org/x/crypto v0.50.0
 	golang.org/x/image v0.39.0
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.36.0
 	golang.org/x/tools v0.43.0
@@ -135,7 +135,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.34.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
