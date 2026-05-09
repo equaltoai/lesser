@@ -17249,32 +17249,22 @@ paths:
             operationId: get_api_v1_trust_attestations
             tags:
                 - trust
-            security:
-                - bearerAuth: []
             responses:
                 "200":
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleTrustLookupAttestationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - read
     /api/v1/trust/attestations/{id}:
         get:
             operationId: get_api_v1_trust_attestations_by_id
             tags:
                 - trust
-            security:
-                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -17286,10 +17276,6 @@ paths:
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -17298,32 +17284,22 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - read
     /api/v1/trust/jwks.json:
         get:
             operationId: get_api_v1_trust_jwks_json
             tags:
                 - trust
-            security:
-                - bearerAuth: []
             responses:
                 "200":
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "401":
-                    $ref: '#/components/responses/Unauthorized'
-                "403":
-                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleTrustJWKSJSONLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - read
     /api/v1/trust/previews:
         post:
             operationId: post_api_v1_trust_previews

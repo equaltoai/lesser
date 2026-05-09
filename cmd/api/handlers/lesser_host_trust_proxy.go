@@ -772,7 +772,6 @@ func (h *Handler) HandleTrustJWKSJSONLift(ctx *apptheory.Context) (*apptheory.Re
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/.well-known/jwks.json",
-		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -784,7 +783,6 @@ func (h *Handler) HandleTrustLookupAttestationLift(ctx *apptheory.Context) (*app
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations",
-		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -800,7 +798,6 @@ func (h *Handler) HandleTrustGetAttestationLift(ctx *apptheory.Context) (*appthe
 		method:              http.MethodGet,
 		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations/" + url.PathEscape(id),
-		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})

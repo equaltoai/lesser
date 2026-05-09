@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lesser": {
+      "type": "http",
+      "url": "https://lab.theorymcp.ai/equaltoai/agents/lesser/mcp"
+    }
+  }
+}
