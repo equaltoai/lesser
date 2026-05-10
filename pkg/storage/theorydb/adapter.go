@@ -1646,22 +1646,6 @@ func (s *StorageAdapter) GetUnreadNotificationCount(ctx context.Context, usernam
 	return 0, fmt.Errorf("notification repository does not support unread count")
 }
 
-// MarkNotificationAsRead marks a notification as read
-func (s *StorageAdapter) MarkNotificationAsRead(ctx context.Context, notificationID string) error {
-	notifRepo := s.Notification()
-	if markRepo, ok := notifRepo.(interface {
-		MarkNotificationAsRead(ctx context.Context, notificationID string) error
-	}); ok {
-		return markRepo.MarkNotificationAsRead(ctx, notificationID)
-	}
-	if markReadRepo, ok := notifRepo.(interface {
-		MarkNotificationRead(ctx context.Context, notificationID string) error
-	}); ok {
-		return markReadRepo.MarkNotificationRead(ctx, notificationID)
-	}
-	return fmt.Errorf("notification repository does not support marking as read")
-}
-
 // MarkAllNotificationsAsRead marks all notifications as read
 func (s *StorageAdapter) MarkAllNotificationsAsRead(ctx context.Context, username string) error {
 	notifRepo := s.Notification()
@@ -1676,15 +1660,6 @@ func (s *StorageAdapter) MarkAllNotificationsAsRead(ctx context.Context, usernam
 		return markAllReadRepo.MarkAllNotificationsRead(ctx, username)
 	}
 	return fmt.Errorf("notification repository does not support marking all as read")
-}
-
-// DeleteNotification deletes a notification
-func (s *StorageAdapter) DeleteNotification(ctx context.Context, notificationID string) error {
-	repo := s.Notification()
-	if notificationRepo, ok := repo.(*repositories.NotificationRepository); ok {
-		return notificationRepo.DeleteNotification(ctx, notificationID)
-	}
-	return fmt.Errorf("notification repository not available")
 }
 
 // DeleteNotificationsByObject deletes notifications for an object

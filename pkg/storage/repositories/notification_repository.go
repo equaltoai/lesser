@@ -112,19 +112,40 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, notific
 	return nil
 }
 
-// GetNotification retrieves a notification by ID using BaseRepository
-func (r *NotificationRepository) GetNotification(ctx context.Context, notificationID string) (*models.Notification, error) {
-	var notification models.Notification
-	// Use notification ID patterns - these need to be determined based on the model
-	pk := fmt.Sprintf("NOTIFICATION#%s", notificationID)
-	sk := models.SKMetadata // Assuming standard metadata pattern
-
-	err := r.Get(ctx, pk, sk, &notification)
-	if err != nil {
-		return nil, err // BaseRepository handles error formatting
+// GetUserNotification retrieves a concrete notification by the recipient-owned
+// notification identity: (userID, notificationID).
+//
+// Notifications are stored canonically in the recipient partition as
+// USER#{userID} / notif#{timestamp}#{notificationID}. Direct dereference uses
+// the same row's GSI4 access path (NOTIF_ID#{notificationID}, USER#{userID});
+// there is intentionally no duplicated NOTIFICATION#{id} canonical row.
+func (r *NotificationRepository) GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error) {
+	userID = strings.TrimSpace(userID)
+	notificationID = strings.TrimSpace(notificationID)
+	if userID == "" || notificationID == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
-	return &notification, nil
+	var notifications []models.Notification
+	err := r.db.WithContext(ctx).Model(&models.Notification{}).
+		Index("gsi4").
+		Where("gsi4PK", "=", "NOTIF_ID#"+notificationID).
+		Where("gsi4SK", "=", "USER#"+userID).
+		Limit(1).
+		All(&notifications)
+	if err != nil {
+		r.logger.Error("GetUserNotification query error",
+			zap.String("user_id", userID),
+			zap.String("notification_id", notificationID),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "user notification lookup")
+	}
+
+	if len(notifications) > 0 && notifications[0].ID == notificationID && notifications[0].UserID == userID {
+		return &notifications[0], nil
+	}
+
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 }
 
 // UpdateNotification updates an existing notification using BaseRepository
@@ -136,9 +157,11 @@ func (r *NotificationRepository) UpdateNotification(ctx context.Context, notific
 	return r.Update(ctx, notification)
 }
 
-// DeleteNotification deletes a notification
-func (r *NotificationRepository) DeleteNotification(ctx context.Context, notificationID string) error {
-	notification, err := r.GetNotification(ctx, notificationID)
+// DeleteUserNotification deletes a recipient-owned notification by
+// (userID, notificationID). Wrong-user IDs resolve as not found and are not
+// mutated.
+func (r *NotificationRepository) DeleteUserNotification(ctx context.Context, userID, notificationID string) error {
+	notification, err := r.GetUserNotification(ctx, userID, notificationID)
 	if err != nil {
 		return err
 	}
@@ -334,34 +357,6 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	return result, nil
 }
 
-// MarkNotificationRead marks a notification as read
-func (r *NotificationRepository) MarkNotificationRead(ctx context.Context, notificationID string) error {
-	notification, err := r.GetNotification(ctx, notificationID)
-	if err != nil {
-		return err
-	}
-	if notification == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
-	}
-
-	notification.MarkRead()
-	return r.UpdateNotification(ctx, notification)
-}
-
-// MarkNotificationUnread marks a notification as unread
-func (r *NotificationRepository) MarkNotificationUnread(ctx context.Context, notificationID string) error {
-	notification, err := r.GetNotification(ctx, notificationID)
-	if err != nil {
-		return err
-	}
-	if notification == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
-	}
-
-	notification.MarkUnread()
-	return r.UpdateNotification(ctx, notification)
-}
-
 // MarkAllNotificationsRead marks all notifications as read for a user
 func (r *NotificationRepository) MarkAllNotificationsRead(ctx context.Context, userID string) error {
 	// Query all unread notifications
@@ -420,34 +415,6 @@ func (r *NotificationRepository) MarkNotificationsReadByType(ctx context.Context
 	}
 
 	return nil
-}
-
-// MarkNotificationPushSent marks a notification's push as sent
-func (r *NotificationRepository) MarkNotificationPushSent(ctx context.Context, notificationID string) error {
-	notification, err := r.GetNotification(ctx, notificationID)
-	if err != nil {
-		return err
-	}
-	if notification == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
-	}
-
-	notification.MarkPushSent()
-	return r.UpdateNotification(ctx, notification)
-}
-
-// MarkNotificationPushFailed marks a notification's push as failed
-func (r *NotificationRepository) MarkNotificationPushFailed(ctx context.Context, notificationID, errorMsg string) error {
-	notification, err := r.GetNotification(ctx, notificationID)
-	if err != nil {
-		return err
-	}
-	if notification == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
-	}
-
-	notification.MarkPushFailed(errorMsg)
-	return r.UpdateNotification(ctx, notification)
 }
 
 // GetPendingPushNotifications retrieves notifications that need push delivery
@@ -912,7 +879,7 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 	deleted := 0
 	for _, notification := range result.Items {
 		if notification.CreatedAt.Before(olderThan) {
-			if err := r.DeleteNotification(ctx, notification.ID); err != nil {
+			if err := r.db.WithContext(ctx).Model(notification).Delete(); err != nil {
 				r.logger.Warn("failed to delete old notification",
 					zap.String("notification_id", notification.ID),
 					zap.Error(err))

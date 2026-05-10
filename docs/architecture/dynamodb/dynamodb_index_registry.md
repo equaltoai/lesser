@@ -135,11 +135,14 @@ To make this actionable, the rest of this document treats each `(pkAttr, skAttr)
 `GSI4`, `cost-date-index`, `gsi4`, `language-timeline-index`, `popularity-index`.
 
 **Index-name variants used in `.Index("...")` calls (string literals)**:
-`GSI4`, `popularity-index`.
+`GSI4`, `gsi4`, `popularity-index`.
 
 **Core access patterns (examples)**
 - Actor popularity rank: `Actor` uses `gsi4PK="ACTOR_RANK#{bucket}"` (`pkg/storage/models/actor.go:33`)
 - Status replies: `Status` uses `gsi4PK="REPLIES#{parent_status_id}"` (`pkg/storage/models/status.go:41`)
+- Notification direct lookup: `Notification` uses `gsi4PK="NOTIF_ID#{notification_id}"` and
+  `gsi4SK="USER#{recipient_user_id}"` to dereference concrete notification IDs without a
+  duplicated `NOTIFICATION#{id}` row (`pkg/storage/models/notification.go`)
 
 ### 4.5 Slot `gsi5PK/gsi5SK` (CDK: `GSI5`)
 

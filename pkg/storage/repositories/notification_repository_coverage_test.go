@@ -80,20 +80,14 @@ func TestRound07_NotificationRepository_SweepSuccess(t *testing.T) {
 	require.NoError(t, repo.CreateNotification(ctx, notification))
 	require.NotZero(t, dispatcher.calls)
 
-	_, _ = repo.GetNotification(ctx, "n1")
 	require.NoError(t, repo.UpdateNotification(ctx, notification))
-	require.NoError(t, repo.DeleteNotification(ctx, "n1"))
 
 	_, _ = repo.GetUserNotifications(ctx, "user-1", interfaces.PaginationOptions{Limit: 1})
 	_, _ = repo.GetUnreadNotifications(ctx, "user-1", interfaces.PaginationOptions{Limit: 1})
 	_, _ = repo.GetNotificationsByType(ctx, "user-1", "mention", interfaces.PaginationOptions{Limit: 1})
 
-	_ = repo.MarkNotificationRead(ctx, "n1")
-	_ = repo.MarkNotificationUnread(ctx, "n1")
 	_ = repo.MarkAllNotificationsRead(ctx, "user-1")
 	_ = repo.MarkNotificationsReadByType(ctx, "user-1", "mention")
-	_ = repo.MarkNotificationPushSent(ctx, "n1")
-	_ = repo.MarkNotificationPushFailed(ctx, "n1", "error")
 
 	_, _ = repo.GetPendingPushNotifications(ctx, interfaces.PaginationOptions{Limit: 1})
 	_, _ = repo.GetNotificationGroups(ctx, "user-1", interfaces.PaginationOptions{Limit: 1})
@@ -480,7 +474,7 @@ func TestRound07_NotificationRepository_CreateNotifications_DeleteByType_Object_
 	require.Equal(t, int64(0), deleted)
 }
 
-func TestRound07_NotificationRepository_UnreadCountAndMarkRead_ErrorBranches(t *testing.T) {
+func TestRound07_NotificationRepository_UnreadCount_ErrorBranch(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
@@ -493,37 +487,6 @@ func TestRound07_NotificationRepository_UnreadCountAndMarkRead_ErrorBranches(t *
 	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	_, err := repo.GetUnreadNotificationCount(context.Background(), "user-1")
 	require.Error(t, err)
-
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("First", mock.Anything).Return(errors.New("get-failed")).Once()
-	require.Error(t, repo.MarkNotificationRead(context.Background(), "n1"))
-}
-
-func TestRound07_NotificationRepository_DeleteNotification_GetAndDeleteErrors(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-
-	// GetNotification error path.
-	mockQuery.On("First", mock.Anything).Return(errors.New("get-failed")).Once()
-	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	require.Error(t, repo.DeleteNotification(context.Background(), "n1"))
-
-	// Delete error path.
-	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-		notif := args.Get(0).(*models.Notification)
-		notif.ID = "n1"
-		notif.UserID = "user-1"
-		notif.Type = "mention"
-		notif.ActorID = "https://example.com/users/a1"
-		notif.PK = "NOTIFICATION#n1"
-		notif.SK = models.SKMetadata
-	}).Return(nil).Once()
-	mockQuery.On("Delete").Return(errors.New("delete-failed")).Once()
-	require.Error(t, repo.DeleteNotification(context.Background(), "n1"))
 }
 
 func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *testing.T) {
@@ -628,21 +591,6 @@ func TestRound07_NotificationRepository_NotificationQueries_UsePrefixSafeRangeWh
 	require.Zero(t, countMockCalls(mockQuery, "Where", "SK", "<"))
 	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "Type", "="))
-}
-
-func TestRound07_NotificationRepository_MarkUnreadAndPush_GetErrorBranches(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("First", mock.Anything).Return(errors.New("get-failed")).Maybe()
-
-	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	require.Error(t, repo.MarkNotificationUnread(context.Background(), "n1"))
-	require.Error(t, repo.MarkNotificationPushSent(context.Background(), "n1"))
-	require.Error(t, repo.MarkNotificationPushFailed(context.Background(), "n1", "err"))
 }
 
 func TestRound07_NotificationRepository_GetPreferencesAndUpdatePreferences_ErrorBranches(t *testing.T) {

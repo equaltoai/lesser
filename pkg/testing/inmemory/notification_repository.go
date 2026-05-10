@@ -135,6 +135,20 @@ func (r *NotificationRepository) GetNotification(_ context.Context, notification
 	return copyNotification(entry.notification), nil
 }
 
+// GetUserNotification retrieves a recipient-owned notification by
+// (userID, notificationID).
+func (r *NotificationRepository) GetUserNotification(_ context.Context, userID, notificationID string) (*models.Notification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	entry, exists := r.notifications[notificationID]
+	if !exists || entry.notification.UserID != userID {
+		return nil, storage.ErrNotFound
+	}
+
+	return copyNotification(entry.notification), nil
+}
+
 // UpdateNotification updates an existing notification
 func (r *NotificationRepository) UpdateNotification(_ context.Context, notification *models.Notification) error {
 	r.mu.Lock()
@@ -173,6 +187,22 @@ func (r *NotificationRepository) DeleteNotification(_ context.Context, notificat
 	// Remove from indexes
 	r.removeFromIndexes(entry.notification)
 
+	delete(r.notifications, notificationID)
+	return nil
+}
+
+// DeleteUserNotification deletes a recipient-owned notification by
+// (userID, notificationID). Wrong-user IDs resolve as not found.
+func (r *NotificationRepository) DeleteUserNotification(_ context.Context, userID, notificationID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	entry, exists := r.notifications[notificationID]
+	if !exists || entry.notification.UserID != userID {
+		return storage.ErrNotFound
+	}
+
+	r.removeFromIndexes(entry.notification)
 	delete(r.notifications, notificationID)
 	return nil
 }

@@ -43,6 +43,15 @@ func (m *MockNotificationRepository) GetNotification(ctx context.Context, notifi
 	return args.Get(0).(*models.Notification), args.Error(1)
 }
 
+// GetUserNotification mocks the GetUserNotification method
+func (m *MockNotificationRepository) GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error) {
+	args := m.Called(ctx, userID, notificationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Notification), args.Error(1)
+}
+
 // UpdateNotification mocks the UpdateNotification method
 func (m *MockNotificationRepository) UpdateNotification(ctx context.Context, notification *models.Notification) error {
 	args := m.Called(ctx, notification)
@@ -52,6 +61,12 @@ func (m *MockNotificationRepository) UpdateNotification(ctx context.Context, not
 // DeleteNotification mocks the DeleteNotification method
 func (m *MockNotificationRepository) DeleteNotification(ctx context.Context, notificationID string) error {
 	args := m.Called(ctx, notificationID)
+	return args.Error(0)
+}
+
+// DeleteUserNotification mocks the DeleteUserNotification method
+func (m *MockNotificationRepository) DeleteUserNotification(ctx context.Context, userID, notificationID string) error {
+	args := m.Called(ctx, userID, notificationID)
 	return args.Error(0)
 }
 

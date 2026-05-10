@@ -29,6 +29,10 @@ type Notification struct {
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{created_at}#{id}"
 
+	// GSI4 - Direct notification ID lookup, scoped by recipient
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk"` // Format: "NOTIF_ID#{notificationID}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk"` // Format: "USER#{userID}"
+
 	// Core notification data
 	ID     string `theorydb:"attr:id" json:"id"`
 	UserID string `theorydb:"attr:userID" json:"user_id"` // User receiving the notification
@@ -159,6 +163,11 @@ func (n *Notification) setupGSIKeys() {
 	// GSI3 - Group key for notification consolidation
 	n.GSI3PK = "NOTIF_GROUP#" + n.GroupKey
 	n.GSI3SK = fmt.Sprintf("%s#%s", createdAtStr, n.ID)
+
+	// GSI4 - Direct notification ID lookup scoped to the recipient. This is a
+	// same-item secondary access path, not a duplicated canonical row.
+	n.GSI4PK = "NOTIF_ID#" + n.ID
+	n.GSI4SK = "USER#" + n.UserID
 }
 
 // Validate performs validation on the Notification

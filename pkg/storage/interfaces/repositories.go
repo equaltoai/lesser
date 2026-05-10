@@ -236,9 +236,9 @@ type NotificationRepository interface {
 
 	// Core notification operations
 	CreateNotification(ctx context.Context, notification *models.Notification) error
-	GetNotification(ctx context.Context, notificationID string) (*models.Notification, error)
+	GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error)
 	UpdateNotification(ctx context.Context, notification *models.Notification) error
-	DeleteNotification(ctx context.Context, notificationID string) error
+	DeleteUserNotification(ctx context.Context, userID, notificationID string) error
 
 	// User notification queries
 	GetUserNotifications(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Notification], error)
@@ -246,14 +246,10 @@ type NotificationRepository interface {
 	GetNotificationsByType(ctx context.Context, userID, notificationType string, opts PaginationOptions) (*PaginatedResult[*models.Notification], error)
 
 	// Notification status management
-	MarkNotificationRead(ctx context.Context, notificationID string) error
-	MarkNotificationUnread(ctx context.Context, notificationID string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	MarkNotificationsReadByType(ctx context.Context, userID, notificationType string) error
 
 	// Push notification tracking
-	MarkNotificationPushSent(ctx context.Context, notificationID string) error
-	MarkNotificationPushFailed(ctx context.Context, notificationID, errorMsg string) error
 	GetPendingPushNotifications(ctx context.Context, opts PaginationOptions) (*PaginatedResult[*models.Notification], error)
 
 	// Notification grouping and consolidation

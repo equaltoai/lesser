@@ -152,6 +152,13 @@ func TestMiscNotificationsAndGrouping_Round11(t *testing.T) {
 			ClearNotificationsFunc: func(ctx context.Context, cmd *notifications.ClearCommand) (*notifications.ClearResult, error) {
 				return &notifications.ClearResult{ClearedCount: 3}, nil
 			},
+			GetNotificationFunc: func(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+				notif := state.notificationsByID[query.NotificationID]
+				if notif.UserID != query.UserID {
+					return nil, storage.ErrNotFound
+				}
+				return &notif, nil
+			},
 			MarkAsReadFunc: func(ctx context.Context, cmd *notifications.MarkAsReadCommand) (*notifications.NotificationResult, error) {
 				return &notifications.NotificationResult{Notification: &storagemodels.Notification{ID: cmd.NotificationID}}, nil
 			},
