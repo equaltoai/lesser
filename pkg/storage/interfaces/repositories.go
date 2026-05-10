@@ -237,8 +237,10 @@ type NotificationRepository interface {
 	// Core notification operations
 	CreateNotification(ctx context.Context, notification *models.Notification) error
 	GetNotification(ctx context.Context, notificationID string) (*models.Notification, error)
+	GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error)
 	UpdateNotification(ctx context.Context, notification *models.Notification) error
 	DeleteNotification(ctx context.Context, notificationID string) error
+	DeleteUserNotification(ctx context.Context, userID, notificationID string) error
 
 	// User notification queries
 	GetUserNotifications(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Notification], error)

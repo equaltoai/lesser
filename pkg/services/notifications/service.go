@@ -477,15 +477,12 @@ func (s *Service) MarkAsRead(ctx context.Context, cmd *MarkAsReadCommand) (*Noti
 		zap.String("notification_id", cmd.NotificationID),
 		zap.String("user_id", cmd.UserID))
 
-	// Get the notification
-	notification, err := s.notificationRepo.GetNotification(ctx, cmd.NotificationID)
+	// Resolve the recipient-owned notification. Concrete notification IDs are
+	// user-scoped state transitions; wrong-user access is indistinguishable from
+	// not-found by construction.
+	notification, err := s.notificationRepo.GetUserNotification(ctx, cmd.UserID, cmd.NotificationID)
 	if err != nil {
 		return nil, ErrNotificationNotFound
-	}
-
-	// Verify ownership
-	if notification.UserID != cmd.UserID {
-		return nil, ErrNotificationAccessDenied
 	}
 
 	// Check if already read
@@ -573,15 +570,12 @@ func (s *Service) GetNotification(ctx context.Context, query *GetNotificationQue
 		zap.String("notification_id", query.NotificationID),
 		zap.String("user_id", query.UserID))
 
-	// Get the notification
-	notification, err := s.notificationRepo.GetNotification(ctx, query.NotificationID)
+	// Resolve by the canonical recipient-owned identity. Wrong-user access
+	// returns not-found and does not reveal that another user's notification
+	// exists.
+	notification, err := s.notificationRepo.GetUserNotification(ctx, query.UserID, query.NotificationID)
 	if err != nil {
 		return nil, ErrNotificationNotFound
-	}
-
-	// Verify ownership
-	if notification.UserID != query.UserID {
-		return nil, common.ErrNotFound("notification") // Don't reveal it exists for other users
 	}
 
 	return notification, nil
@@ -722,17 +716,7 @@ func (s *Service) clearAllNotifications(ctx context.Context, userID string, olde
 func (s *Service) clearSpecificNotifications(ctx context.Context, userID string, notificationIDs []string) (int64, error) {
 	var count int64
 	for _, id := range notificationIDs {
-		// Verify ownership before deletion
-		notification, err := s.notificationRepo.GetNotification(ctx, id)
-		if err != nil {
-			continue // Skip notifications that don't exist
-		}
-
-		if notification.UserID != userID {
-			continue // Skip notifications that don't belong to the user
-		}
-
-		if err := s.notificationRepo.DeleteNotification(ctx, id); err != nil {
+		if err := s.notificationRepo.DeleteUserNotification(ctx, userID, id); err != nil {
 			s.logger.Warn("failed to delete notification",
 				zap.String("notification_id", id),
 				zap.Error(err))

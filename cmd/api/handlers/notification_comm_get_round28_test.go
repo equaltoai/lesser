@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -8,6 +9,8 @@ import (
 
 	apiModels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -43,6 +46,17 @@ func TestNotifications_GetIncludesCommDetails_Round28(t *testing.T) {
 	}
 
 	h, _, _ := round11NewHandler(t, cfg, state)
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			GetNotificationFunc: func(_ context.Context, query *notifications.GetNotificationQuery) (*storageModels.Notification, error) {
+				notif := state.notificationsByID[query.NotificationID]
+				if notif.UserID != query.UserID {
+					return nil, storage.ErrNotFound
+				}
+				return &notif, nil
+			},
+		},
+	}
 
 	readToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"read:notifications", auth.ScopeRead})
 	headers := map[string]string{

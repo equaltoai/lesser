@@ -42,6 +42,14 @@ func (m *MockNotificationRepository) GetNotification(ctx context.Context, notifi
 	return args.Get(0).(*models.Notification), args.Error(1)
 }
 
+func (m *MockNotificationRepository) GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error) {
+	args := m.Called(ctx, userID, notificationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Notification), args.Error(1)
+}
+
 func (m *MockNotificationRepository) UpdateNotification(ctx context.Context, notification *models.Notification) error {
 	args := m.Called(ctx, notification)
 	return args.Error(0)
@@ -49,6 +57,11 @@ func (m *MockNotificationRepository) UpdateNotification(ctx context.Context, not
 
 func (m *MockNotificationRepository) DeleteNotification(ctx context.Context, notificationID string) error {
 	args := m.Called(ctx, notificationID)
+	return args.Error(0)
+}
+
+func (m *MockNotificationRepository) DeleteUserNotification(ctx context.Context, userID, notificationID string) error {
+	args := m.Called(ctx, userID, notificationID)
 	return args.Error(0)
 }
 
@@ -592,7 +605,7 @@ func TestService_MarkAsRead_Success(t *testing.T) {
 	notification.ID = "notif123"
 	notification.IsRead = false
 
-	mockNotificationRepo.On("GetNotification", ctx, "notif123").Return(notification, nil)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "notif123").Return(notification, nil)
 	mockNotificationRepo.On("UpdateNotification", ctx, notification).Return(nil)
 
 	cmd := &MarkAsReadCommand{
@@ -626,7 +639,7 @@ func TestService_MarkAsRead_AlreadyRead(t *testing.T) {
 	readTime := time.Now()
 	notification.ReadAt = &readTime
 
-	mockNotificationRepo.On("GetNotification", ctx, "notif123").Return(notification, nil)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "notif123").Return(notification, nil)
 
 	cmd := &MarkAsReadCommand{
 		NotificationID: "notif123",
@@ -651,10 +664,7 @@ func TestService_MarkAsRead_Unauthorized(t *testing.T) {
 	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
-	notification := createTestNotification("otheruser", "mention", "actor")
-	notification.ID = "notif123"
-
-	mockNotificationRepo.On("GetNotification", ctx, "notif123").Return(notification, nil)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "notif123").Return(nil, storage.ErrNotFound)
 
 	cmd := &MarkAsReadCommand{
 		NotificationID: "notif123",
@@ -665,7 +675,7 @@ func TestService_MarkAsRead_Unauthorized(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "Access denied")
+	assert.Contains(t, err.Error(), "notification not found")
 
 	mockNotificationRepo.AssertExpectations(t)
 }
@@ -728,10 +738,8 @@ func TestService_ClearNotifications_SpecificIDs(t *testing.T) {
 	notification2 := createTestNotification("testuser", "follow", "actor2")
 	notification2.ID = "notif2"
 
-	mockNotificationRepo.On("GetNotification", ctx, "notif1").Return(notification1, nil)
-	mockNotificationRepo.On("GetNotification", ctx, "notif2").Return(notification2, nil)
-	mockNotificationRepo.On("DeleteNotification", ctx, "notif1").Return(nil)
-	mockNotificationRepo.On("DeleteNotification", ctx, "notif2").Return(nil)
+	mockNotificationRepo.On("DeleteUserNotification", ctx, "testuser", "notif1").Return(nil)
+	mockNotificationRepo.On("DeleteUserNotification", ctx, "testuser", "notif2").Return(nil)
 
 	cmd := &ClearCommand{
 		UserID:          "testuser",
@@ -772,7 +780,7 @@ func TestService_GetNotification_Success(t *testing.T) {
 	notification := createTestNotification("testuser", "mention", "actor")
 	notification.ID = "notif123"
 
-	mockNotificationRepo.On("GetNotification", ctx, "notif123").Return(notification, nil)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "notif123").Return(notification, nil)
 
 	query := &GetNotificationQuery{
 		NotificationID: "notif123",
@@ -793,10 +801,7 @@ func TestService_GetNotification_Unauthorized(t *testing.T) {
 	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
-	notification := createTestNotification("otheruser", "mention", "actor")
-	notification.ID = "notif123"
-
-	mockNotificationRepo.On("GetNotification", ctx, "notif123").Return(notification, nil)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "notif123").Return(nil, storage.ErrNotFound)
 
 	query := &GetNotificationQuery{
 		NotificationID: "notif123",
@@ -807,7 +812,7 @@ func TestService_GetNotification_Unauthorized(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "Resource not found")
+	assert.Contains(t, err.Error(), "notification not found")
 
 	mockNotificationRepo.AssertExpectations(t)
 }
@@ -1014,7 +1019,7 @@ func TestService_MarkAsRead_NotificationNotFound(t *testing.T) {
 	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
-	mockNotificationRepo.On("GetNotification", ctx, "nonexistent").Return(nil, assert.AnError)
+	mockNotificationRepo.On("GetUserNotification", ctx, "testuser", "nonexistent").Return(nil, assert.AnError)
 
 	cmd := &MarkAsReadCommand{
 		NotificationID: "nonexistent",

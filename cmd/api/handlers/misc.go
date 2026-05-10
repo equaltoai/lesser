@@ -676,6 +676,9 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 	includeRead := len(notificationFilter.ExcludeTypes) == 0
 
 	// Use the Notifications service to get notifications
+	if h.registry == nil {
+		return common.RespondServiceUnavailable(ctx, "notification")
+	}
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
 		return common.RespondServiceUnavailable(ctx, "notification")
@@ -1411,14 +1414,20 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondMissingAuth(ctx)
 	}
 
-	// Get notification
-	notification, err := h.repos.Notification().GetNotification(ctx.Context(), notificationID)
-	if err != nil {
-		return common.RespondNotFound(ctx, "notification")
+	if h.registry == nil {
+		return common.RespondServiceUnavailable(ctx, "notification")
+	}
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	// Verify ownership
-	if notification.UserID != username {
+	// Get notification through the service-owned user-scoped identity contract.
+	notification, err := notificationService.GetNotification(ctx.Context(), &notifications.GetNotificationQuery{
+		NotificationID: notificationID,
+		UserID:         username,
+	})
+	if err != nil {
 		return common.RespondNotFound(ctx, "notification")
 	}
 

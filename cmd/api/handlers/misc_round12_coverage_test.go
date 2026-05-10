@@ -437,6 +437,19 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		// Also cover HandleGetNotificationLift status attach path.
 		handler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				GetNotificationFunc: func(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+					return &storagemodels.Notification{
+						ID:         query.NotificationID,
+						UserID:     query.UserID,
+						ActorID:    "alice",
+						Type:       models.NotificationTypeMention,
+						TargetID:   "status-1",
+						TargetType: "status",
+						CreatedAt:  now,
+					}, nil
+				},
+			},
 			NotesSvc: &NotesServiceStub{
 				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
 					statusID := ""
@@ -746,13 +759,14 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 	})
 
 	t.Run("notification not found", func(t *testing.T) {
-		state := &round10QueryState{
-			notFoundPKs: map[string]bool{
-				"NOTIFICATION#missing": true,
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				GetNotificationFunc: func(context.Context, *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+					return nil, storage.ErrNotFound
+				},
 			},
 		}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-		handler.registry = &RegistryStub{}
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/missing", readHeaders, nil, nil)
 		require.NoError(t, err)
@@ -762,19 +776,14 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 	})
 
 	t.Run("ownership mismatch", func(t *testing.T) {
-		state := &round10QueryState{
-			notificationsByID: map[string]storagemodels.Notification{
-				"n1": {
-					ID:        "n1",
-					UserID:    "bob",
-					ActorID:   "alice",
-					Type:      models.NotificationTypeMention,
-					CreatedAt: now,
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				GetNotificationFunc: func(context.Context, *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+					return nil, storage.ErrNotFound
 				},
 			},
 		}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-		handler.registry = &RegistryStub{}
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/n1", readHeaders, nil, nil)
 		require.NoError(t, err)
@@ -799,7 +808,19 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
-		handler.registry = &RegistryStub{}
+		handler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				GetNotificationFunc: func(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+					return &storagemodels.Notification{
+						ID:        query.NotificationID,
+						UserID:    query.UserID,
+						ActorID:   "alice",
+						Type:      models.NotificationTypeMention,
+						CreatedAt: now,
+					}, nil
+				},
+			},
+		}
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/n1", readHeaders, nil, nil)
 		require.NoError(t, err)

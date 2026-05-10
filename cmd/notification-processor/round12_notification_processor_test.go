@@ -33,11 +33,14 @@ type fakeNotificationRepo struct {
 	markPushSentCalls int
 }
 
-func (f *fakeNotificationRepo) GetNotification(_ context.Context, notificationID string) (*models.Notification, error) {
+func (f *fakeNotificationRepo) GetUserNotification(_ context.Context, userID, notificationID string) (*models.Notification, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	if n, ok := f.notifications[notificationID]; ok {
+		if n.UserID != userID {
+			return nil, errors.New("not found")
+		}
 		return n, nil
 	}
 	return nil, errors.New("not found")
@@ -51,8 +54,13 @@ func (f *fakeNotificationRepo) UpdateNotification(_ context.Context, notificatio
 	return f.updateErr
 }
 
-func (f *fakeNotificationRepo) MarkNotificationPushSent(_ context.Context, _ string) error {
+func (f *fakeNotificationRepo) MarkNotificationPushSent(_ context.Context, notificationID string) error {
 	f.markPushSentCalls++
+	if f.notifications != nil {
+		if notification, ok := f.notifications[notificationID]; ok {
+			notification.MarkPushSent()
+		}
+	}
 	return f.markPushSentErr
 }
 
@@ -387,7 +395,7 @@ func TestNotificationProcessor_processMessage_Branches(t *testing.T) {
 		p.webSocketSubscriptionRepo = subRepo
 		p.wsClient = wsClient
 		p.snsClient = snsPublisher
-		nRepo.markPushSentErr = errors.New("mark failed")
+		nRepo.updateErr = errors.New("mark failed")
 
 		body, err := json.Marshal(NotificationDeliveryRequest{
 			NotificationID: "n1",
@@ -398,6 +406,7 @@ func TestNotificationProcessor_processMessage_Branches(t *testing.T) {
 
 		require.NoError(t, p.processMessage(context.Background(), events.SQSMessage{Body: string(body)}))
 		require.GreaterOrEqual(t, snsPublisher.publishCalls, 1)
+		nRepo.updateErr = nil
 	})
 
 	t.Run("schedule retry when delivery fails and under max retries", func(t *testing.T) {

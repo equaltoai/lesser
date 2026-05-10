@@ -141,6 +141,7 @@ type NotesService interface {
 type NotificationsService interface {
 	ClearNotifications(ctx context.Context, cmd *notifications.ClearCommand) (*notifications.ClearResult, error)
 	CreateNotification(ctx context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error)
+	GetNotification(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error)
 	ListNotifications(ctx context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error)
 	MarkAsRead(ctx context.Context, cmd *notifications.MarkAsReadCommand) (*notifications.NotificationResult, error)
 }

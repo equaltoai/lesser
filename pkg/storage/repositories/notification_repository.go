@@ -23,6 +23,7 @@ type NotificationRepository struct {
 }
 
 const notificationSortKeyPrefix = "notif#"
+const notificationIDLookupPageLimit = 100
 
 // NewNotificationRepository creates a new notification repository with enhanced functionality and cost tracking
 func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
@@ -127,6 +128,51 @@ func (r *NotificationRepository) GetNotification(ctx context.Context, notificati
 	return &notification, nil
 }
 
+// GetUserNotification retrieves a concrete notification by the recipient-owned
+// notification identity: (userID, notificationID).
+//
+// Notifications are stored canonically in the recipient partition as
+// USER#{userID} / notif#{timestamp}#{notificationID}. There is intentionally no
+// duplicated NOTIFICATION#{id} canonical row, so concrete ID dereferences must
+// page through the user's notification sort-key range until the ID is found.
+func (r *NotificationRepository) GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error) {
+	userID = strings.TrimSpace(userID)
+	notificationID = strings.TrimSpace(notificationID)
+	if userID == "" || notificationID == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
+	}
+
+	cursor := ""
+	for {
+		result, err := r.GetUserNotifications(ctx, userID, interfaces.PaginationOptions{
+			Limit:  notificationIDLookupPageLimit,
+			Cursor: cursor,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if result == nil {
+			break
+		}
+
+		for _, notification := range result.Items {
+			if notification == nil {
+				continue
+			}
+			if notification.ID == notificationID && notification.UserID == userID {
+				return notification, nil
+			}
+		}
+
+		if !result.HasMore || strings.TrimSpace(result.NextCursor) == "" || result.NextCursor == cursor {
+			break
+		}
+		cursor = result.NextCursor
+	}
+
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
+}
+
 // UpdateNotification updates an existing notification using BaseRepository
 func (r *NotificationRepository) UpdateNotification(ctx context.Context, notification *models.Notification) error {
 	if err := notification.BeforeUpdate(); err != nil {
@@ -139,6 +185,26 @@ func (r *NotificationRepository) UpdateNotification(ctx context.Context, notific
 // DeleteNotification deletes a notification
 func (r *NotificationRepository) DeleteNotification(ctx context.Context, notificationID string) error {
 	notification, err := r.GetNotification(ctx, notificationID)
+	if err != nil {
+		return err
+	}
+	if notification == nil {
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
+	}
+
+	err = r.db.WithContext(ctx).Model(notification).Delete()
+	if err != nil {
+		return ErrorHandler.HandleDeleteError(err, EntityNotification, notificationID)
+	}
+
+	return nil
+}
+
+// DeleteUserNotification deletes a recipient-owned notification by
+// (userID, notificationID). Wrong-user IDs resolve as not found and are not
+// mutated.
+func (r *NotificationRepository) DeleteUserNotification(ctx context.Context, userID, notificationID string) error {
+	notification, err := r.GetUserNotification(ctx, userID, notificationID)
 	if err != nil {
 		return err
 	}
@@ -912,7 +978,7 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 	deleted := 0
 	for _, notification := range result.Items {
 		if notification.CreatedAt.Before(olderThan) {
-			if err := r.DeleteNotification(ctx, notification.ID); err != nil {
+			if err := r.db.WithContext(ctx).Model(notification).Delete(); err != nil {
 				r.logger.Warn("failed to delete old notification",
 					zap.String("notification_id", notification.ID),
 					zap.Error(err))

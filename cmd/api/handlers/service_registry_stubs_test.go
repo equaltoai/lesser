@@ -674,6 +674,7 @@ func (s *NotesServiceStub) UnreblogNote(ctx context.Context, cmd *notes.Unreblog
 type NotificationsServiceStub struct {
 	ClearNotificationsFunc func(ctx context.Context, cmd *notifications.ClearCommand) (*notifications.ClearResult, error)
 	CreateNotificationFunc func(ctx context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error)
+	GetNotificationFunc    func(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error)
 	ListNotificationsFunc  func(ctx context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error)
 	MarkAsReadFunc         func(ctx context.Context, cmd *notifications.MarkAsReadCommand) (*notifications.NotificationResult, error)
 }
@@ -692,6 +693,13 @@ func (s *NotificationsServiceStub) CreateNotification(ctx context.Context, cmd *
 		return s.CreateNotificationFunc(ctx, cmd)
 	}
 	return nil, missingStub("NotificationsService.CreateNotification")
+}
+
+func (s *NotificationsServiceStub) GetNotification(ctx context.Context, query *notifications.GetNotificationQuery) (*storagemodels.Notification, error) {
+	if s != nil && s.GetNotificationFunc != nil {
+		return s.GetNotificationFunc(ctx, query)
+	}
+	return nil, missingStub("NotificationsService.GetNotification")
 }
 
 func (s *NotificationsServiceStub) ListNotifications(ctx context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error) {

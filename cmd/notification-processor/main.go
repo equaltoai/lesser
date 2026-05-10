@@ -34,9 +34,8 @@ import (
 )
 
 type notificationRepository interface {
-	GetNotification(ctx context.Context, notificationID string) (*models.Notification, error)
+	GetUserNotification(ctx context.Context, userID, notificationID string) (*models.Notification, error)
 	UpdateNotification(ctx context.Context, notification *models.Notification) error
-	MarkNotificationPushSent(ctx context.Context, notificationID string) error
 }
 
 type userRepository interface {
@@ -282,8 +281,9 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 		return np.requeueScheduledNotification(ctx, request)
 	}
 
-	// Get the notification
-	notification, err := np.notificationRepo.GetNotification(ctx, request.NotificationID)
+	// Get the recipient-owned notification. Queue messages carry the recipient
+	// user ID so push delivery updates the authoritative USER#{userID} row.
+	notification, err := np.notificationRepo.GetUserNotification(ctx, request.UserID, request.NotificationID)
 	if err != nil {
 		np.logger.Error("failed to get notification",
 			zap.String("notification_id", request.NotificationID),
@@ -575,8 +575,9 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 		zap.String("notification_id", notification.ID),
 		zap.String("user_id", notification.UserID))
 
-	// Mark push as sent in the notification
-	if err := np.notificationRepo.MarkNotificationPushSent(ctx, notification.ID); err != nil {
+	// Mark push as sent on the already-loaded authoritative row.
+	notification.MarkPushSent()
+	if err := np.notificationRepo.UpdateNotification(ctx, notification); err != nil {
 		np.logger.Warn("failed to mark push as sent", zap.Error(err))
 	}
 

@@ -164,15 +164,10 @@ func TestService_clearHelpers_round27_coverage(t *testing.T) {
 	})
 
 	t.Run("clear_specific_skips_missing_wrong_owner_and_delete_errors", func(t *testing.T) {
-		mine := &models.Notification{ID: "ok", UserID: "alice"}
-		other := &models.Notification{ID: "other", UserID: "bob"}
-
-		notificationRepo.On("GetNotification", ctx, "missing").Return(nil, assert.AnError).Once()
-		notificationRepo.On("GetNotification", ctx, "other").Return(other, nil).Once()
-		notificationRepo.On("GetNotification", ctx, "faildelete").Return(&models.Notification{ID: "faildelete", UserID: "alice"}, nil).Once()
-		notificationRepo.On("DeleteNotification", ctx, "faildelete").Return(assert.AnError).Once()
-		notificationRepo.On("GetNotification", ctx, "ok").Return(mine, nil).Once()
-		notificationRepo.On("DeleteNotification", ctx, "ok").Return(nil).Once()
+		notificationRepo.On("DeleteUserNotification", ctx, "alice", "missing").Return(assert.AnError).Once()
+		notificationRepo.On("DeleteUserNotification", ctx, "alice", "other").Return(assert.AnError).Once()
+		notificationRepo.On("DeleteUserNotification", ctx, "alice", "faildelete").Return(assert.AnError).Once()
+		notificationRepo.On("DeleteUserNotification", ctx, "alice", "ok").Return(nil).Once()
 
 		result, err := service.ClearNotifications(ctx, &ClearCommand{UserID: "alice", NotificationIDs: []string{"missing", "other", "faildelete", "ok"}})
 		require.NoError(t, err)
