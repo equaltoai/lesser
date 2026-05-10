@@ -219,7 +219,7 @@ func TestGroupedNotificationsService_Round25_MarkGroupAsRead(t *testing.T) {
 		}
 		return nil
 	})
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Equal(t, 2, calls, "should attempt to mark each unread notification")
 	assert.True(t, group.IsRead, "group should be marked read even if some updates fail")
 }

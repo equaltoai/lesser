@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -340,6 +341,7 @@ func (gns *GroupedNotificationsService) MarkGroupAsRead(
 	group *GroupedNotification,
 	markReadFunc func(context.Context, string) error,
 ) error {
+	var joinedErr error
 	for _, notif := range group.AllNotifications {
 		if !notif.IsRead {
 			if err := markReadFunc(ctx, notif.ID); err != nil {
@@ -347,10 +349,11 @@ func (gns *GroupedNotificationsService) MarkGroupAsRead(
 					zap.String("notification_id", notif.ID),
 					zap.Error(err))
 				// Continue with other notifications
+				joinedErr = errors.Join(joinedErr, err)
 			}
 		}
 	}
 
 	group.IsRead = true
-	return nil
+	return joinedErr
 }

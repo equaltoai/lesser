@@ -2108,24 +2108,89 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Get notification service
+	if h.registry == nil {
+		return common.RespondServiceUnavailable(ctx, "notification")
+	}
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
 		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	// Mark notifications as read based on group ID
-	// For now, this is a simplified implementation
-	// In a full implementation, you would:
-	// 1. Parse the group_id to extract grouping criteria
-	// 2. Find all notifications matching that criteria
-	// 3. Mark them all as read
+	if !strings.HasPrefix(groupID, "group_") {
+		_, err = notificationService.MarkAsRead(ctx.Context(), &notifications.MarkAsReadCommand{
+			NotificationID: groupID,
+			UserID:         username,
+		})
+		if err != nil {
+			h.logger.Error("failed to mark notification as read",
+				zap.String("notification_id", groupID),
+				zap.String("username", username),
+				zap.Error(err))
+			if errors.Is(err, notifications.ErrNotificationNotFound) || errors.Is(err, storage.ErrNotFound) || common.IsNotFound(err) {
+				return common.RespondNotFound(ctx, "notification")
+			}
+			return common.RespondInternalServerError(ctx, "failed to mark group as read")
+		}
 
-	_, err = notificationService.MarkAsRead(ctx.Context(), &notifications.MarkAsReadCommand{
-		NotificationID: groupID,
-		UserID:         username,
+		return okJSON(models.MessageResponse{Message: "group marked as read"})
+	}
+
+	groupKey := strings.TrimPrefix(groupID, "group_")
+	if groupKey == "" {
+		return common.RespondBadRequest(ctx, "invalid group_id")
+	}
+
+	listResult, err := notificationService.ListNotifications(ctx.Context(), &notifications.ListNotificationsQuery{
+		UserID:      username,
+		IncludeRead: true,
+		Pagination: interfaces.PaginationOptions{
+			Limit: 500,
+		},
 	})
 	if err != nil {
-		h.logger.Error("failed to mark group as read",
+		h.logger.Error("failed to list notifications for group read",
+			zap.String("group_id", groupID),
+			zap.String("username", username),
+			zap.Error(err))
+		return common.RespondFailedToGet(ctx, "notifications")
+	}
+	if listResult == nil {
+		return common.RespondNotFound(ctx, "notification group")
+	}
+
+	groupingService := notifications.NewGroupedNotificationsService(h.logger)
+	groups, err := groupingService.GroupNotifications(ctx.Context(), listResult.Notifications, notifications.DefaultGroupingStrategy())
+	if err != nil {
+		h.logger.Error("failed to group notifications for group read",
+			zap.String("group_id", groupID),
+			zap.String("username", username),
+			zap.Error(err))
+		return common.RespondInternalServerError(ctx, "failed to group notifications")
+	}
+
+	var targetGroup *notifications.GroupedNotification
+	for _, group := range groups {
+		if group == nil {
+			continue
+		}
+		if group.GroupKey == groupKey && group.ID == groupID {
+			targetGroup = group
+			break
+		}
+	}
+	if targetGroup == nil {
+		return common.RespondNotFound(ctx, "notification group")
+	}
+
+	err = groupingService.MarkGroupAsRead(ctx.Context(), targetGroup, func(ctx context.Context, notificationID string) error {
+		_, err := notificationService.MarkAsRead(ctx, &notifications.MarkAsReadCommand{
+			NotificationID: notificationID,
+			UserID:         username,
+		})
+		return err
+	})
+	if err != nil {
+		h.logger.Error("failed to mark notification group as read",
 			zap.String("group_id", groupID),
 			zap.String("username", username),
 			zap.Error(err))

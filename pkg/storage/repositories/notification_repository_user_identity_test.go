@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestNotificationRepository_GetUserNotificationPagesUserSortKeyRange(t *testing.T) {
+func TestNotificationRepository_GetUserNotificationUsesScopedGSI(t *testing.T) {
 	t.Parallel()
 
 	mockDB := new(mocks.MockDB)
@@ -21,29 +20,15 @@ func TestNotificationRepository_GetUserNotificationPagesUserSortKeyRange(t *test
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("Index", "gsi4").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi4PK", "=", "NOTIF_ID#target-notification").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi4SK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Limit", 1).Return(mockQuery).Once()
 
-	firstPage := make([]models.Notification, 101)
-	base := time.Date(2026, time.May, 10, 12, 0, 0, 0, time.UTC)
-	for i := range firstPage {
-		id := fmt.Sprintf("newer-%03d", i)
-		firstPage[i] = notificationRow("alice", id, base.Add(time.Duration(200-i)*time.Second))
-	}
-	cursorRow := firstPage[99]
-	target := notificationRow("alice", "target-notification", base.Add(30*time.Second))
-
+	target := notificationRow("alice", "target-notification", time.Date(2026, time.May, 10, 12, 0, 0, 0, time.UTC))
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.Notification)
-		*ptr = firstPage
-	}).Return(nil).Once()
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.Notification)
-		*ptr = []models.Notification{
-			cursorRow, // inclusive cursor duplicate from BETWEEN query
-			target,
-		}
+		*ptr = []models.Notification{target}
 	}).Return(nil).Once()
 
 	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -52,16 +37,13 @@ func TestNotificationRepository_GetUserNotificationPagesUserSortKeyRange(t *test
 	require.Equal(t, "target-notification", got.ID)
 	require.Equal(t, "USER#alice", got.PK)
 	require.Contains(t, got.SK, "target-notification")
+	require.Equal(t, "NOTIF_ID#target-notification", got.GSI4PK)
+	require.Equal(t, "USER#alice", got.GSI4SK)
 
-	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
-	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "between"))
-	require.Equal(t, 1, countMockLimitCalls(mockQuery, 101))
-	require.Equal(t, 1, countMockLimitCalls(mockQuery, 102))
-	for _, call := range mockQuery.Calls {
-		if call.Method == "Where" && len(call.Arguments) >= 3 && call.Arguments.Get(0) == "PK" && call.Arguments.Get(1) == "=" {
-			require.NotEqual(t, "NOTIFICATION#target-notification", call.Arguments.Get(2))
-		}
-	}
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "PK", "="))
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "SK", "begins_with"))
+	require.Equal(t, 0, countMockCalls(mockQuery, "Where", "SK", "between"))
+	require.Equal(t, 1, countMockLimitCalls(mockQuery, 1))
 }
 
 func TestNotificationRepository_DeleteUserNotificationDeletesAuthoritativeRow(t *testing.T) {
@@ -72,9 +54,10 @@ func TestNotificationRepository_DeleteUserNotificationDeletesAuthoritativeRow(t 
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("Index", "gsi4").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi4PK", "=", "NOTIF_ID#delete-me").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi4SK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Limit", 1).Return(mockQuery).Once()
 	mockQuery.On("Delete").Return(nil).Once()
 
 	target := notificationRow("alice", "delete-me", time.Date(2026, time.May, 10, 12, 0, 0, 0, time.UTC))
@@ -98,6 +81,8 @@ func TestNotificationRepository_DeleteUserNotificationDeletesAuthoritativeRow(t 
 	require.NotNil(t, deletedModel)
 	require.Equal(t, "USER#alice", deletedModel.PK)
 	require.Contains(t, deletedModel.SK, "delete-me")
+	require.Equal(t, "NOTIF_ID#delete-me", deletedModel.GSI4PK)
+	require.Equal(t, "USER#alice", deletedModel.GSI4SK)
 }
 
 func notificationRow(userID, id string, createdAt time.Time) models.Notification {

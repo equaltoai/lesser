@@ -232,9 +232,7 @@ type Storage interface {
 	CreateNotification(ctx context.Context, notification interface{}) error
 	GetNotifications(ctx context.Context, username string, limit int, cursor string) ([]interface{}, string, error)
 	GetUnreadNotificationCount(ctx context.Context, username string) (int64, error)
-	MarkNotificationAsRead(ctx context.Context, notificationID string) error
 	MarkAllNotificationsAsRead(ctx context.Context, username string) error
-	DeleteNotification(ctx context.Context, notificationID string) error
 	DeleteNotificationsByObject(ctx context.Context, objectID string) error
 
 	// =======================================
