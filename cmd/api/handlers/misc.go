@@ -17,7 +17,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -43,6 +42,10 @@ const (
 	pathComponentStatuses = "statuses"
 
 	notificationPostSnapshotKey = "postSnapshot"
+
+	notificationActorTypeUser        = "user"
+	notificationActorTypeRemoteActor = "remote_actor"
+	notificationActorTypeExternal    = "external"
 )
 
 // SearchParams holds search request parameters
@@ -707,41 +710,10 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 		cursor = listResult.Pagination.NextCursor
 	}
 
-	// Convert notifications to storage format for API converter
-	storageNotifications := make([]*storage.Notification, 0, len(notificationsList))
-	for _, notification := range notificationsList {
-		var data map[string]interface{}
-		if len(notification.Data) > 0 || notification.Title != "" || notification.Body != "" {
-			data = make(map[string]interface{}, len(notification.Data)+2)
-			for key, value := range notification.Data {
-				data[key] = value
-			}
-			if notification.Title != "" {
-				data["subject"] = notification.Title
-			}
-			if notification.Body != "" {
-				data["body"] = notification.Body
-			}
-		}
-
-		storageNotif := &storage.Notification{
-			ID:        notification.ID,
-			Type:      notification.Type,
-			AccountID: notification.ActorID,
-			TargetID:  notification.TargetID,
-			Read:      notification.IsRead,
-			CreatedAt: notification.CreatedAt,
-			Username:  notification.UserID,
-			Data:      data,
-		}
-		if notification.TargetType == notificationTargetTypeStatus {
-			storageNotif.StatusID = notification.TargetID
-		}
-		storageNotifications = append(storageNotifications, storageNotif)
-	}
-
-	// Convert notifications to API format
-	apiNotifications := h.convertNotificationsToAPI(ctx, storageNotifications)
+	// Convert canonical notifications to API format without passing through the
+	// legacy storage.Notification DTO. The JSON boundary stays Mastodon-compatible;
+	// the internal renderer keeps actor/target semantics intact.
+	apiNotifications := h.convertNotificationsToAPI(ctx, notificationsList)
 
 	// Set pagination header if needed
 	if cursor != "" {
@@ -806,8 +778,96 @@ func (h *Handler) parseNotificationExcludeTypes(ctx *apptheory.Context, filter *
 	}
 }
 
-// convertNotificationsToAPI converts storage notifications to API format
-func (h *Handler) convertNotificationsToAPI(ctx *apptheory.Context, notifications []*storage.Notification) []*models.Notification {
+type notificationView struct {
+	ID         string
+	Type       string
+	ActorID    string
+	ActorType  string
+	TargetID   string
+	TargetType string
+	UserID     string
+	IsRead     bool
+	ReadAt     *time.Time
+	CreatedAt  time.Time
+	Title      string
+	Body       string
+	Data       map[string]interface{}
+}
+
+func notificationViewFromModel(notification *storagemodels.Notification) *notificationView {
+	if notification == nil {
+		return nil
+	}
+
+	return &notificationView{
+		ID:         notification.ID,
+		Type:       notification.Type,
+		ActorID:    notification.ActorID,
+		ActorType:  notification.ActorType,
+		TargetID:   notification.TargetID,
+		TargetType: notification.TargetType,
+		UserID:     notification.UserID,
+		IsRead:     notification.IsRead,
+		ReadAt:     notification.ReadAt,
+		CreatedAt:  notification.CreatedAt,
+		Title:      notification.Title,
+		Body:       notification.Body,
+		Data:       notification.Data,
+	}
+}
+
+func (view *notificationView) communicationData() map[string]interface{} {
+	if view == nil {
+		return nil
+	}
+	return notificationDataWithCommunicationFields(view.Data, view.Title, view.Body)
+}
+
+func notificationDataWithCommunicationFields(data map[string]interface{}, title, body string) map[string]interface{} {
+	if len(data) == 0 && strings.TrimSpace(title) == "" && strings.TrimSpace(body) == "" {
+		return nil
+	}
+
+	merged := make(map[string]interface{}, len(data)+2)
+	for key, value := range data {
+		merged[key] = value
+	}
+	if strings.TrimSpace(title) != "" {
+		merged["subject"] = title
+	}
+	if strings.TrimSpace(body) != "" {
+		merged["body"] = body
+	}
+	return merged
+}
+
+func (view *notificationView) statusID() string {
+	if view == nil {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(view.TargetType), notificationTargetTypeStatus) {
+		return strings.TrimSpace(view.TargetID)
+	}
+	if strings.TrimSpace(view.TargetType) == "" && common.ValidateMastodonStatusID(view.TargetID) == nil {
+		return strings.TrimSpace(view.TargetID)
+	}
+	return ""
+}
+
+func notificationTypeSupportsStatus(notifType string) bool {
+	switch notifType {
+	case models.NotificationTypeMention,
+		models.NotificationTypeReply,
+		models.NotificationTypeFavourite,
+		models.NotificationTypeReblog:
+		return true
+	default:
+		return false
+	}
+}
+
+// convertNotificationsToAPI converts canonical storage-model notifications to API format.
+func (h *Handler) convertNotificationsToAPI(ctx *apptheory.Context, notifications []*storagemodels.Notification) []*models.Notification {
 	apiNotifications := make([]*models.Notification, 0, len(notifications))
 
 	for _, notif := range notifications {
@@ -820,97 +880,96 @@ func (h *Handler) convertNotificationsToAPI(ctx *apptheory.Context, notification
 	return apiNotifications
 }
 
-// convertSingleNotification converts a single notification to API format
-func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *storage.Notification) *models.Notification {
-	// Get the account that triggered the notification
-	actor := h.notificationActor(ctx.Context(), notif.AccountID)
+// convertSingleNotification converts a single canonical notification to API format.
+func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *storagemodels.Notification) *models.Notification {
+	return h.convertNotificationViewToAPI(ctx, notificationViewFromModel(notif))
+}
+
+func (h *Handler) convertNotificationViewToAPI(ctx *apptheory.Context, view *notificationView) *models.Notification {
+	if view == nil {
+		return nil
+	}
+
+	actor := h.notificationActorForView(ctx.Context(), view)
 	if actor == nil {
 		return nil
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
 	apiNotif := &models.Notification{
-		ID:        notif.ID,
-		Type:      notif.Type,
-		CreatedAt: notif.CreatedAt,
+		ID:        view.ID,
+		Type:      view.Type,
+		CreatedAt: view.CreatedAt,
 		Account:   account,
-		Read:      notif.Read,
+		Read:      view.IsRead,
 	}
-	apiNotif.Communication = communicationNotificationFromData(notif.Type, notif.CreatedAt, notif.Data)
+	apiNotif.Communication = communicationNotificationFromData(view.Type, view.CreatedAt, view.communicationData())
 
-	// Add status if applicable
-	if h.shouldIncludeStatus(notif) {
-		h.attachStatusToNotification(ctx, notif, apiNotif)
+	if h.shouldIncludeStatus(view) {
+		h.attachStatusToNotification(ctx, view, apiNotif)
 	}
 
 	return apiNotif
 }
 
-// shouldIncludeStatus checks if a status should be included in the notification
-func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
-	if notif == nil {
+// shouldIncludeStatus checks if a status should be included in the notification.
+func (h *Handler) shouldIncludeStatus(view *notificationView) bool {
+	if view == nil || !notificationTypeSupportsStatus(view.Type) {
 		return false
 	}
 
-	if notif.Type != models.NotificationTypeMention &&
-		notif.Type != models.NotificationTypeReply &&
-		notif.Type != models.NotificationTypeFavourite &&
-		notif.Type != models.NotificationTypeReblog {
-		return false
-	}
-
-	if _, ok := h.notificationPostSnapshot(notif); ok {
+	if _, ok := h.notificationPostSnapshot(view); ok {
 		return true
 	}
 
-	return common.ValidateMastodonStatusID(notif.StatusID) == nil
+	return view.statusID() != ""
 }
 
-// attachStatusToNotification attaches status information to a notification
-func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, notif *storage.Notification, apiNotif *models.Notification) {
-	if snapshotStatus := h.statusFromNotificationSnapshot(ctx, notif); snapshotStatus != nil {
+// attachStatusToNotification attaches status information to a notification.
+func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, view *notificationView, apiNotif *models.Notification) {
+	if snapshotStatus := h.statusFromNotificationSnapshot(ctx, view); snapshotStatus != nil {
 		apiNotif.Status = snapshotStatus
 		return
 	}
 
-	// Get the status
-	obj, err := h.repos.Object().GetObject(ctx.Context(), notif.StatusID)
+	statusID := view.statusID()
+	if statusID == "" {
+		return
+	}
+
+	obj, err := h.repos.Object().GetObject(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Warn("failed to get status for notification",
-			zap.String("notification_id", notif.ID),
-			zap.String("status_id", notif.StatusID),
+			zap.String("notification_id", view.ID),
+			zap.String("status_id", statusID),
 			zap.Error(err))
 		return
 	}
 
-	if !h.notificationObjectVisibleToViewer(ctx.Context(), notif, obj) {
+	if !h.notificationObjectVisibleToViewer(ctx.Context(), view, obj) {
 		h.logger.Debug("skipping notification status expansion due to visibility",
-			zap.String("notification_id", notif.ID),
-			zap.String("status_id", notif.StatusID),
-			zap.String("viewer", notif.Username))
+			zap.String("notification_id", view.ID),
+			zap.String("status_id", statusID),
+			zap.String("viewer", view.UserID))
 		return
 	}
 
-	// Get status author
 	statusActor := h.extractStatusAuthor(ctx, obj)
-
-	// Convert obj to map for transformation
 	if objMap, ok := obj.(map[string]interface{}); ok {
 		status := transformations.ObjectToStatusBase(objMap, statusActor, h.cfg.BaseURL())
 		apiNotif.Status = &status
 	} else {
-		// Fallback for non-map objects
 		status := transformations.ObjectToStatusAny(obj, statusActor, h.cfg.BaseURL())
 		apiNotif.Status = &status
 	}
 }
 
-func (h *Handler) notificationPostSnapshot(notif *storage.Notification) (map[string]interface{}, bool) {
-	if notif == nil || len(notif.Data) == 0 {
+func (h *Handler) notificationPostSnapshot(view *notificationView) (map[string]interface{}, bool) {
+	if view == nil || len(view.Data) == 0 {
 		return nil, false
 	}
 
-	rawSnapshot, ok := notif.Data[notificationPostSnapshotKey]
+	rawSnapshot, ok := view.Data[notificationPostSnapshotKey]
 	if !ok {
 		return nil, false
 	}
@@ -923,16 +982,16 @@ func (h *Handler) notificationPostSnapshot(notif *storage.Notification) (map[str
 	return snapshot, true
 }
 
-func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *storage.Notification) *models.Status {
-	snapshot, ok := h.notificationPostSnapshot(notif)
+func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, view *notificationView) *models.Status {
+	snapshot, ok := h.notificationPostSnapshot(view)
 	if !ok {
 		return nil
 	}
 
-	if !h.notificationSnapshotVisibleToViewer(ctx.Context(), notif, snapshot) {
+	if !h.notificationSnapshotVisibleToViewer(ctx.Context(), view, snapshot) {
 		h.logger.Debug("skipping notification snapshot expansion due to visibility",
-			zap.String("notification_id", notif.ID),
-			zap.String("viewer", notif.Username))
+			zap.String("notification_id", view.ID),
+			zap.String("viewer", view.UserID))
 		return nil
 	}
 
@@ -959,9 +1018,9 @@ func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *
 	return &status
 }
 
-func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, notif *storage.Notification, snapshot map[string]interface{}) bool {
+func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, view *notificationView, snapshot map[string]interface{}) bool {
 	return h.notificationStatusVisibleToViewer(ctx,
-		notif,
+		view,
 		notificationSnapshotString(snapshot, "visibility"),
 		notificationSnapshotString(snapshot, "attributedTo"),
 		nil,
@@ -969,14 +1028,14 @@ func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, notif
 	)
 }
 
-func (h *Handler) notificationObjectVisibleToViewer(ctx context.Context, notif *storage.Notification, obj any) bool {
+func (h *Handler) notificationObjectVisibleToViewer(ctx context.Context, view *notificationView, obj any) bool {
 	visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(obj)
-	return h.notificationStatusVisibleToViewer(ctx, notif, visibility, attributedTo, recipients, mentions)
+	return h.notificationStatusVisibleToViewer(ctx, view, visibility, attributedTo, recipients, mentions)
 }
 
 func (h *Handler) notificationStatusVisibleToViewer(
 	ctx context.Context,
-	notif *storage.Notification,
+	view *notificationView,
 	visibility string,
 	attributedTo string,
 	recipients []string,
@@ -992,10 +1051,10 @@ func (h *Handler) notificationStatusVisibleToViewer(
 		return true
 	}
 
-	if notif == nil {
+	if view == nil {
 		return false
 	}
-	viewer := strings.TrimSpace(notif.Username)
+	viewer := strings.TrimSpace(view.UserID)
 	if viewer == "" {
 		return false
 	}
@@ -1011,7 +1070,7 @@ func (h *Handler) notificationStatusVisibleToViewer(
 		return h.notificationDirectVisibleToViewer(viewer, recipients, mentions)
 	default:
 		h.logger.Warn("unknown notification status visibility",
-			zap.String("notification_id", notif.ID),
+			zap.String("notification_id", view.ID),
 			zap.String("visibility", visibility))
 		return false
 	}
@@ -1078,12 +1137,40 @@ func (h *Handler) notificationSnapshotActor(ctx *apptheory.Context, snapshot map
 	return statusActor
 }
 
-func (h *Handler) notificationActor(ctx context.Context, actorID string) *activitypub.Actor {
-	actorID = strings.TrimSpace(actorID)
+func (h *Handler) notificationActorForView(ctx context.Context, view *notificationView) *activitypub.Actor {
+	if view == nil {
+		return nil
+	}
+	actorID := strings.TrimSpace(view.ActorID)
 	if actorID == "" {
 		return nil
 	}
 
+	actorType := strings.ToLower(strings.TrimSpace(view.ActorType))
+	switch {
+	case actorType == notificationActorTypeExternal || isCommunicationNotificationType(view.Type):
+		if actor := h.externalNotificationActor(view); actor != nil {
+			return actor
+		}
+		return h.fallbackNotificationActor(actorID)
+	case actorType == notificationActorTypeRemoteActor || notificationActorIDLooksURL(actorID):
+		return h.remoteNotificationActor(ctx, actorID)
+	case actorType == notificationActorTypeUser:
+		return h.localNotificationActor(ctx, actorID)
+	case actorType == "" && notificationActorIDLooksEmailLike(actorID):
+		if actor := h.cachedRemoteNotificationActor(ctx, actorID); actor != nil {
+			return actor
+		}
+		if actor := h.externalNotificationActor(view); actor != nil {
+			return actor
+		}
+		return h.fallbackNotificationActor(actorID)
+	default:
+		return h.localNotificationActor(ctx, actorID)
+	}
+}
+
+func (h *Handler) localNotificationActor(ctx context.Context, actorID string) *activitypub.Actor {
 	if h != nil && h.repos != nil && h.repos.Actor() != nil {
 		if actor, err := h.repos.Actor().GetActor(ctx, actorID); err == nil && actor != nil {
 			return actor
@@ -1097,6 +1184,60 @@ func (h *Handler) notificationActor(ctx context.Context, actorID string) *activi
 		}
 	}
 	return h.fallbackNotificationActor(actorID)
+}
+
+func (h *Handler) remoteNotificationActor(ctx context.Context, actorID string) *activitypub.Actor {
+	if actor := h.cachedRemoteNotificationActor(ctx, actorID); actor != nil {
+		return actor
+	}
+	return h.fallbackNotificationActor(actorID)
+}
+
+func (h *Handler) externalNotificationActor(view *notificationView) *activitypub.Actor {
+	if view == nil {
+		return nil
+	}
+
+	data := view.communicationData()
+	from, _ := data["from"].(map[string]interface{})
+	address := extractStringFromNotificationData(from, "address")
+	displayName := extractStringFromNotificationData(from, "displayName", "display_name")
+	soulAgentID := extractStringFromNotificationData(from, "soulAgentId", "soul_agent_id")
+
+	actorID := strings.TrimSpace(view.ActorID)
+	fallbackID := address
+	if fallbackID == "" {
+		fallbackID = actorID
+	}
+	if fallbackID == "" {
+		fallbackID = soulAgentID
+	}
+
+	actor := h.fallbackNotificationActor(fallbackID)
+	if actor == nil && soulAgentID != "" {
+		actor = h.fallbackNotificationActor(soulAgentID)
+	}
+	if actor == nil {
+		return nil
+	}
+	if displayName != "" {
+		actor.Name = displayName
+	}
+	return actor
+}
+
+func notificationActorIDLooksURL(actorID string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(actorID))
+	if err != nil || parsed == nil {
+		return false
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	return (scheme == schemeHTTPS || scheme == schemeHTTP) && strings.TrimSpace(parsed.Host) != ""
+}
+
+func notificationActorIDLooksEmailLike(actorID string) bool {
+	actorID = strings.TrimSpace(actorID)
+	return actorID != "" && !strings.Contains(actorID, "://") && strings.Contains(actorID, "@")
 }
 
 func (h *Handler) cachedRemoteNotificationActor(ctx context.Context, actorID string) *activitypub.Actor {
@@ -1431,58 +1572,9 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondNotFound(ctx, "notification")
 	}
 
-	// Get the account that triggered the notification
-	actor := h.notificationActor(ctx.Context(), notification.ActorID)
-	if actor == nil {
+	apiNotif := h.convertSingleNotification(ctx, notification)
+	if apiNotif == nil {
 		return common.RespondFailedToGet(ctx, "notification details")
-	}
-
-	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-	apiNotif := &models.Notification{
-		ID:        notification.ID,
-		Type:      notification.Type,
-		CreatedAt: notification.CreatedAt,
-		Account:   account,
-		Read:      notification.IsRead,
-	}
-	{
-		var data map[string]interface{}
-		if len(notification.Data) > 0 || notification.Title != "" || notification.Body != "" {
-			data = make(map[string]interface{}, len(notification.Data)+2)
-			for key, value := range notification.Data {
-				data[key] = value
-			}
-			if notification.Title != "" {
-				data["subject"] = notification.Title
-			}
-			if notification.Body != "" {
-				data["body"] = notification.Body
-			}
-		}
-		apiNotif.Communication = communicationNotificationFromData(notification.Type, notification.CreatedAt, data)
-	}
-
-	// Add status if applicable
-	if notification.TargetID != "" && notification.TargetType == notificationTargetTypeStatus && (notification.Type == models.NotificationTypeMention ||
-		notification.Type == models.NotificationTypeFavourite ||
-		notification.Type == models.NotificationTypeReblog) {
-		statusModel, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
-			StatusID: notification.TargetID,
-			ViewerID: username,
-		})
-		if err == nil && statusModel != nil && statusModel.Note != nil {
-			// Convert note to status format
-			var statusActor *activitypub.Actor
-			if statusModel.AuthorUsername != "" {
-				account, _ := h.registry.Accounts().GetAccount(ctx.Context(), statusModel.AuthorUsername)
-				if account != nil {
-					statusActor = account.Actor
-				}
-			}
-			// Use the embedded Note from the status model
-			status := transformations.ObjectToStatusAny(statusModel.Note, statusActor, h.cfg.BaseURL())
-			apiNotif.Status = &status
-		}
 	}
 
 	return okJSON(apiNotif)
@@ -2007,6 +2099,9 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 	apiResponse := make([]models.GroupedNotificationGroup, 0, len(groupedNotifications))
 
 	for _, group := range groupedNotifications {
+		resolvedSampleAccounts := h.resolveGroupedNotificationSampleAccounts(ctx.Context(), group)
+		group.SampleAccounts = resolvedSampleAccounts
+
 		groupResponse := models.GroupedNotificationGroup{
 			ID:                group.ID,
 			Type:              group.Type,
@@ -2015,7 +2110,7 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 			LatestCreatedAt:   group.LatestCreatedAt.Format(time.RFC3339),
 			EarliestCreatedAt: group.EarliestCreatedAt.Format(time.RFC3339),
 			Read:              group.IsRead,
-			SampleAccounts:    h.convertNotificationAccountsToAPI(group.SampleAccounts),
+			SampleAccounts:    h.convertNotificationAccountsToAPI(resolvedSampleAccounts),
 			Summary:           h.generateGroupSummary(group),
 		}
 
@@ -2061,6 +2156,83 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 	}
 
 	return apiResponse
+}
+
+func (h *Handler) resolveGroupedNotificationSampleAccounts(
+	ctx context.Context,
+	group *notifications.GroupedNotification,
+) []notifications.NotificationAccount {
+	if group == nil || len(group.SampleAccounts) == 0 {
+		return nil
+	}
+
+	notificationsByActorID := make(map[string]*storagemodels.Notification, len(group.AllNotifications))
+	for _, notif := range group.AllNotifications {
+		if notif == nil {
+			continue
+		}
+		actorID := strings.TrimSpace(notif.ActorID)
+		if actorID == "" {
+			continue
+		}
+		if _, exists := notificationsByActorID[actorID]; !exists {
+			notificationsByActorID[actorID] = notif
+		}
+	}
+
+	resolved := make([]notifications.NotificationAccount, 0, len(group.SampleAccounts))
+	for _, sample := range group.SampleAccounts {
+		account := sample
+		if notif := notificationsByActorID[strings.TrimSpace(sample.ID)]; notif != nil {
+			account = h.resolveGroupedNotificationAccount(ctx, sample, notif)
+		}
+		account.DisplayName = notificationAccountDisplayName(account)
+		resolved = append(resolved, account)
+	}
+
+	return resolved
+}
+
+func (h *Handler) resolveGroupedNotificationAccount(
+	ctx context.Context,
+	sample notifications.NotificationAccount,
+	notif *storagemodels.Notification,
+) notifications.NotificationAccount {
+	view := notificationViewFromModel(notif)
+	actor := h.notificationActorForView(ctx, view)
+	if actor == nil {
+		return sample
+	}
+
+	apiAccount := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+	accountID := strings.TrimSpace(sample.ID)
+	if accountID == "" {
+		accountID = apiAccount.ID
+	}
+
+	createdAt := sample.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = notif.CreatedAt
+	}
+
+	return notifications.NotificationAccount{
+		ID:          accountID,
+		Username:    apiAccount.Username,
+		DisplayName: apiAccount.DisplayName,
+		Avatar:      apiAccount.Avatar,
+		IsBot:       apiAccount.Bot,
+		CreatedAt:   createdAt,
+	}
+}
+
+func notificationAccountDisplayName(account notifications.NotificationAccount) string {
+	if strings.TrimSpace(account.DisplayName) != "" {
+		return account.DisplayName
+	}
+	if strings.TrimSpace(account.Username) != "" {
+		return account.Username
+	}
+	return strings.TrimSpace(account.ID)
 }
 
 // convertNotificationAccountsToAPI converts notification accounts to API format

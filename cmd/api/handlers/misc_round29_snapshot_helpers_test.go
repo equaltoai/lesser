@@ -6,7 +6,6 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -22,9 +21,9 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 
 	t.Run("shouldIncludeStatus handles snapshot and unsupported types", func(t *testing.T) {
 		require.False(t, handler.shouldIncludeStatus(nil))
-		require.False(t, handler.shouldIncludeStatus(&storage.Notification{Type: models.NotificationTypeFollow, StatusID: "123"}))
-		require.False(t, handler.shouldIncludeStatus(&storage.Notification{Type: models.NotificationTypeMention, StatusID: "not valid"}))
-		require.True(t, handler.shouldIncludeStatus(&storage.Notification{
+		require.False(t, handler.shouldIncludeStatus(&notificationView{Type: models.NotificationTypeFollow, TargetID: "123"}))
+		require.False(t, handler.shouldIncludeStatus(&notificationView{Type: models.NotificationTypeMention, TargetID: "not valid"}))
+		require.True(t, handler.shouldIncludeStatus(&notificationView{
 			Type: models.NotificationTypeMention,
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{"id": "https://example.com/objects/s1"},
@@ -33,10 +32,10 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 	})
 
 	t.Run("notificationPostSnapshot rejects invalid payloads", func(t *testing.T) {
-		_, ok := handler.notificationPostSnapshot(&storage.Notification{})
+		_, ok := handler.notificationPostSnapshot(&notificationView{})
 		require.False(t, ok)
 
-		_, ok = handler.notificationPostSnapshot(&storage.Notification{
+		_, ok = handler.notificationPostSnapshot(&notificationView{
 			Data: map[string]interface{}{"postSnapshot": "bad"},
 		})
 		require.False(t, ok)
@@ -46,7 +45,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := handler.statusFromNotificationSnapshot(ctx, &storage.Notification{
+		status := handler.statusFromNotificationSnapshot(ctx, &notificationView{
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{
 					"id": 123,
@@ -72,10 +71,10 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := handler.statusFromNotificationSnapshot(ctx, &storage.Notification{
-			ID:       "n-private",
-			Type:     models.NotificationTypeMention,
-			Username: "alice",
+		status := handler.statusFromNotificationSnapshot(ctx, &notificationView{
+			ID:     "n-private",
+			Type:   models.NotificationTypeMention,
+			UserID: "alice",
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{
 					"id":           "https://example.com/objects/private-1",
@@ -101,10 +100,10 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := followerHandler.statusFromNotificationSnapshot(ctx, &storage.Notification{
-			ID:       "n-private",
-			Type:     models.NotificationTypeMention,
-			Username: "alice",
+		status := followerHandler.statusFromNotificationSnapshot(ctx, &notificationView{
+			ID:     "n-private",
+			Type:   models.NotificationTypeMention,
+			UserID: "alice",
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{
 					"id":           "https://example.com/objects/private-1",
@@ -124,7 +123,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 
 		require.False(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct", Username: "alice"},
+			&notificationView{ID: "n-direct", UserID: "alice"},
 			"direct",
 			"https://example.com/users/bob",
 			[]string{"https://example.com/users/carol"},
@@ -132,7 +131,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		))
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct", Username: "alice"},
+			&notificationView{ID: "n-direct", UserID: "alice"},
 			"direct",
 			"https://example.com/users/bob",
 			[]string{"https://example.com/users/alice"},
@@ -257,7 +256,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 		))
 		require.False(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-private-empty-viewer"},
+			&notificationView{ID: "n-private-empty-viewer"},
 			storagemodels.VisibilityPrivate,
 			"https://example.com/users/bob",
 			nil,
@@ -268,7 +267,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 	t.Run("author always sees own private status", func(t *testing.T) {
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-author", Username: "bob"},
+			&notificationView{ID: "n-author", UserID: "bob"},
 			storagemodels.VisibilityPrivate,
 			"https://example.com/users/bob",
 			nil,
@@ -279,7 +278,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 	t.Run("followers see private status from followed author", func(t *testing.T) {
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-private-follow", Username: "alice"},
+			&notificationView{ID: "n-private-follow", UserID: "alice"},
 			storagemodels.VisibilityPrivate,
 			"https://example.com/users/bob",
 			nil,
@@ -287,7 +286,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 		))
 		require.False(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-private-miss", Username: "alice"},
+			&notificationView{ID: "n-private-miss", UserID: "alice"},
 			storagemodels.VisibilityPrivate,
 			"https://example.com/users/carol",
 			nil,
@@ -298,7 +297,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 	t.Run("direct visibility accepts legacy snapshots and explicit recipients", func(t *testing.T) {
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct-legacy", Username: "alice"},
+			&notificationView{ID: "n-direct-legacy", UserID: "alice"},
 			storagemodels.VisibilityDirect,
 			"https://example.com/users/bob",
 			nil,
@@ -306,7 +305,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 		))
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct-recipient", Username: "alice"},
+			&notificationView{ID: "n-direct-recipient", UserID: "alice"},
 			storagemodels.VisibilityDirect,
 			"https://example.com/users/bob",
 			[]string{"https://example.com/users/alice"},
@@ -314,7 +313,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 		))
 		require.True(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct-mention", Username: "alice"},
+			&notificationView{ID: "n-direct-mention", UserID: "alice"},
 			storagemodels.VisibilityDirect,
 			"https://example.com/users/bob",
 			nil,
@@ -322,7 +321,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 		))
 		require.False(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-direct-miss", Username: "alice"},
+			&notificationView{ID: "n-direct-miss", UserID: "alice"},
 			storagemodels.VisibilityDirect,
 			"https://example.com/users/bob",
 			[]string{"https://example.com/users/carol"},
@@ -333,7 +332,7 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 	t.Run("unknown visibility fails closed", func(t *testing.T) {
 		require.False(t, handler.notificationStatusVisibleToViewer(
 			ctx.Context(),
-			&storage.Notification{ID: "n-unknown", Username: "alice"},
+			&notificationView{ID: "n-unknown", UserID: "alice"},
 			"friends-only",
 			"https://example.com/users/bob",
 			nil,
