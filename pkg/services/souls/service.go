@@ -246,6 +246,13 @@ func (s *Service) ResolveBoundAgent(ctx context.Context, agentUsername string) (
 	if err != nil {
 		return nil, err
 	}
+	bindingAgentID, err := validateAgentID(binding.AgentID)
+	if err != nil {
+		return nil, ErrSoulNotAvailable
+	}
+	if !strings.EqualFold(identity.AgentID, bindingAgentID) {
+		return nil, ErrSoulNotAvailable
+	}
 	if !domainMatches(identity.Domain, instanceDomain) || !identityIsActive(identity) {
 		return nil, ErrSoulNotAvailable
 	}
