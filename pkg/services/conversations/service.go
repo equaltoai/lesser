@@ -426,15 +426,56 @@ func (s *Service) validateSendDirectMessageCommand(ctx context.Context, cmd *Sen
 	}
 
 	recipientID := cmd.Recipients[0]
-	if strings.TrimSpace(recipientID) == "" ||
-		models.CanonicalConversationParticipantID(recipientID) == models.CanonicalConversationParticipantID(cmd.SenderID) {
+	if strings.TrimSpace(recipientID) == "" {
 		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient", map[string]any{
 			"recipient_id": recipientID,
 		})
 		return "", errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
 	}
+	if isDirectMessageSelfRecipient(cmd.SenderID, recipientID, s.domainName) {
+		s.auditDMEvent(ctx, cmd, "", false, "direct_self_post_not_allowed", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return "", errors.Join(ErrDirectSelfPostNotAllowed, ErrConversationValidationFailed, ErrInvalidRecipient)
+	}
 
 	return recipientID, nil
+}
+
+func isDirectMessageSelfRecipient(senderID, recipientID, localDomain string) bool {
+	sender := models.CanonicalConversationParticipantID(senderID)
+	recipient := strings.TrimSpace(recipientID)
+	if sender == "" || recipient == "" {
+		return false
+	}
+
+	if models.CanonicalConversationParticipantID(recipient) == sender {
+		return true
+	}
+
+	normalizedLocalDomain := normalizeDirectMessageMentionDomain(localDomain)
+	if username, domain := directMessageMentionHandleParts(recipient); username != "" && domain != "" &&
+		normalizedLocalDomain != "" && normalizeDirectMessageMentionDomain(domain) == normalizedLocalDomain &&
+		models.CanonicalConversationParticipantID(username) == sender {
+		return true
+	}
+
+	parsed, err := url.Parse(recipient)
+	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" ||
+		normalizedLocalDomain == "" || normalizeDirectMessageMentionDomain(parsed.Hostname()) != normalizedLocalDomain {
+		return false
+	}
+
+	path := strings.Trim(parsed.EscapedPath(), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] != "users" {
+		return false
+	}
+	username, err := url.PathUnescape(parts[1])
+	if err != nil {
+		username = parts[1]
+	}
+	return models.CanonicalConversationParticipantID(username) == sender
 }
 
 func (s *Service) enforceDirectMessageNotBlocked(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) error {

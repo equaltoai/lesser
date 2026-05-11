@@ -108,7 +108,7 @@ func applyStatusOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	op.Description = "Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service. Failure classes distinguish invalid references (400), acquisition timeouts (408), fetched-but-unusable parents (422), and upstream unavailability (503)."
+	op.Description = "Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service. Self-directed direct posts are intentionally rejected with `DIRECT_SELF_POST_NOT_ALLOWED`. Failure classes distinguish invalid references (400), acquisition timeouts (408), fetched-but-unusable parents (422), and upstream unavailability (503)."
 	if op.Responses == nil {
 		op.Responses = map[string]response{}
 	}

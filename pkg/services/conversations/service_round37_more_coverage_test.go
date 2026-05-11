@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -345,12 +346,25 @@ func TestService_validateSendDirectMessageCommand_RejectsInvalidRecipientForms(t
 	})
 	require.ErrorIs(t, err, ErrInvalidRecipient)
 
-	_, err = service.validateSendDirectMessageCommand(ctx, &SendDirectMessageCommand{
+	for _, recipient := range []string{"alice", "Alice", "alice@example.com", "https://example.com/users/alice"} {
+		_, err = service.validateSendDirectMessageCommand(ctx, &SendDirectMessageCommand{
+			SenderID:   "alice",
+			Recipients: []string{recipient},
+			Content:    "hi",
+		})
+		require.ErrorIs(t, err, ErrInvalidRecipient)
+		appErr, ok := apperrors.AsAppError(err)
+		require.True(t, ok)
+		require.Equal(t, "DIRECT_SELF_POST_NOT_ALLOWED", appErr.Code.String())
+	}
+
+	recipientID, err := service.validateSendDirectMessageCommand(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
-		Recipients: []string{"alice"},
+		Recipients: []string{"alice@remote.example"},
 		Content:    "hi",
 	})
-	require.ErrorIs(t, err, ErrInvalidRecipient)
+	require.NoError(t, err)
+	require.Equal(t, "alice@remote.example", recipientID)
 }
 
 func TestService_enforceDirectMessageNotBlocked_ReturnsValidationErrorOnRepoFailure(t *testing.T) {

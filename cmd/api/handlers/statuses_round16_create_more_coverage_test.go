@@ -307,6 +307,26 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
 	})
 
+	t.Run("direct visibility self mention returns structured rejection", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: conversations.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "example.com"),
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@alice hello myself",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleCreateStatusLift(ctx))
+		decoded := decodeStandardErrorResponse(t, resp)
+		require.Equal(t, "DIRECT_SELF_POST_NOT_ALLOWED", decoded.Code)
+		require.Equal(t, "direct messages cannot be sent to yourself", decoded.Error)
+	})
+
 	t.Run("direct visibility surfaces generic service failures as 500", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			ConversationsSvc: &ConversationsServiceStub{
