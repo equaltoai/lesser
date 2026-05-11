@@ -102,6 +102,8 @@ GET /api/v1/scheduled_statuses
 GET /api/v1/scheduled_statuses/{id}
 GET /api/v1/search/statuses
 GET /api/v1/souls/bound/me
+GET /api/v1/souls/bound/me/mint-conversations
+GET /api/v1/souls/bound/me/mint-conversations/{conversationId}
 GET /api/v1/souls/mine
 GET /api/v1/statuses/{id}
 GET /api/v1/statuses/{id}/context

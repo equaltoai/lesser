@@ -21,16 +21,80 @@ func applySoulOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	if route.Method != methodGET || route.Path != "/api/v1/souls/bound/me" {
+	if route.Method != methodGET {
 		return
 	}
 
+	switch route.Path {
+	case "/api/v1/souls/bound/me":
+		applyBoundSoulMeOverride(op)
+	case "/api/v1/souls/bound/me/mint-conversations":
+		applyBoundSoulMintConversationsOverride(op)
+	case "/api/v1/souls/bound/me/mint-conversations/{conversationId}":
+		applyBoundSoulMintConversationOverride(op)
+	}
+}
+
+func applyBoundSoulMeOverride(op *operation) {
 	op.Description = "Return the active soul identity bound to the authenticated local runtime-agent principal. The endpoint is fail-closed: unbound, inactive, missing host identity, or wrong-domain identities return 404."
 	if op.Responses == nil {
 		op.Responses = map[string]response{}
 	}
 	ensureResponseRef(op.Responses, "404", "NotFound")
 	ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+}
+
+func applyBoundSoulMintConversationsOverride(op *operation) {
+	op.Description = "Return compact private mint-conversation metadata for the authenticated local principal's bound soul. Lesser derives the Host agent ID from the existing bound-self authority and calls lesser-host with instance trust only; caller bearer tokens are never forwarded upstream."
+	ensureQueryParam(op, parameter{
+		Name:        "limit",
+		In:          "query",
+		Required:    false,
+		Description: "Maximum compact conversations to return. Defaults to 20 and is capped at 50.",
+		Schema: schemaRef{
+			Type:    "integer",
+			Default: 20,
+			Minimum: intPtr(1),
+			Maximum: intPtr(50),
+		},
+	})
+	ensureSoulMintConversationErrorResponses(op)
+}
+
+func applyBoundSoulMintConversationOverride(op *operation) {
+	op.Description = "Return one bounded private mint-conversation record for the authenticated local principal's bound soul. Lesser validates the opaque conversation ID, derives the Host agent ID from bound self, and calls lesser-host with instance trust only."
+	ensureQueryParam(op, parameter{
+		Name:        "conversationId",
+		In:          "path",
+		Required:    true,
+		Description: "Opaque safe mint-conversation identifier.",
+		Schema: schemaRef{
+			Type:      "string",
+			Pattern:   "^[A-Za-z0-9._:-]{1,128}$",
+			MinLength: intPtr(1),
+			MaxLength: intPtr(128),
+		},
+	})
+	ensureSoulMintConversationErrorResponses(op)
+}
+
+func ensureSoulMintConversationErrorResponses(op *operation) {
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+	ensureResponseRef(op.Responses, "404", "NotFound")
+	ensureResponseRef(op.Responses, "409", "Conflict")
+	ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+	ensureResponseRef(op.Responses, "429", "TooManyRequests")
+	ensureResponseRef(op.Responses, "503", "ServiceUnavailable")
+	if _, ok := op.Responses["413"]; !ok {
+		op.Responses["413"] = response{
+			Description: "Private conversation response too large",
+			Content: map[string]mediaType{
+				"application/json": {Schema: schemaRef{Ref: "#/components/schemas/Error"}},
+			},
+		}
+	}
 }
 
 func applyGraphQLOverrides(op *operation, route routeDef) {
@@ -504,4 +568,8 @@ func ensureJSONResponseSchema(op *operation, statusCode, schemaName string) {
 	mt.Schema = schemaRef{Ref: "#/components/schemas/" + schemaName}
 	resp.Content["application/json"] = mt
 	op.Responses[statusCode] = resp
+}
+
+func intPtr(value int) *int {
+	return &value
 }

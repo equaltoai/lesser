@@ -114,6 +114,12 @@ type schemaRef struct {
 	Type                 string               `yaml:"type,omitempty"`
 	Format               string               `yaml:"format,omitempty"`
 	Ref                  string               `yaml:"$ref,omitempty"`
+	Pattern              string               `yaml:"pattern,omitempty"`
+	Default              any                  `yaml:"default,omitempty"`
+	Minimum              *int                 `yaml:"minimum,omitempty"`
+	Maximum              *int                 `yaml:"maximum,omitempty"`
+	MinLength            *int                 `yaml:"minLength,omitempty"`
+	MaxLength            *int                 `yaml:"maxLength,omitempty"`
 	Properties           map[string]schemaRef `yaml:"properties,omitempty"`
 	Required             []string             `yaml:"required,omitempty"`
 	AdditionalProperties any                  `yaml:"additionalProperties,omitempty"`

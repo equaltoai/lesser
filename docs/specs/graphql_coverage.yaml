@@ -66,6 +66,8 @@ exemptions:
       match:
         exact:
             - /api/v1/souls/bound/me
+            - /api/v1/souls/bound/me/mint-conversations
+            - /api/v1/souls/bound/me/mint-conversations/{conversationId}
     - id: admin_agent_unlock
       reason: Agent operator unlock is currently exposed as a REST-only admin operation.
       match:
@@ -1168,6 +1170,14 @@ routes:
         - Query.search
     - method: GET
       path: /api/v1/souls/bound/me
+      policy: rest_only
+      exemptedBy: lesser_body_mcp
+    - method: GET
+      path: /api/v1/souls/bound/me/mint-conversations
+      policy: rest_only
+      exemptedBy: lesser_body_mcp
+    - method: GET
+      path: /api/v1/souls/bound/me/mint-conversations/{conversationId}
       policy: rest_only
       exemptedBy: lesser_body_mcp
     - method: GET

@@ -8,6 +8,7 @@ func applySchemaOverrides(spec *openAPISpec) {
 	overrideCreateStatusRequest(spec.Components.Schemas)
 	overrideOAuthClientSchemas(spec.Components.Schemas)
 	overrideCommunityNoteSchemas(spec.Components.Schemas)
+	overrideSoulMintConversationSchemas(spec.Components.Schemas)
 }
 
 func overrideCreateStatusRequest(schemas map[string]any) {
@@ -70,6 +71,45 @@ func overrideCommunityNoteSchemas(schemas map[string]any) {
 	})
 	mutateSchemaProperty(schemas, "VoteCommunityNoteRequest", "reason", func(property map[string]any) {
 		property["maxLength"] = 200
+	})
+}
+
+func overrideSoulMintConversationSchemas(schemas map[string]any) {
+	for _, schemaName := range []string{"SoulMintConversation", "SoulMintConversationSummary"} {
+		mutateSchemaProperty(schemas, schemaName, "agent_id", func(property map[string]any) {
+			property["pattern"] = "^0x[0-9a-fA-F]{64}$"
+		})
+		mutateSchemaProperty(schemas, schemaName, "conversation_id", func(property map[string]any) {
+			property["minLength"] = 1
+			property["maxLength"] = 128
+			property["pattern"] = "^[A-Za-z0-9._:-]{1,128}$"
+		})
+		mutateSchemaProperty(schemas, schemaName, "status", func(property map[string]any) {
+			property["enum"] = []string{"in_progress", "completed", "failed"}
+		})
+		mutateSchemaProperty(schemas, schemaName, "charged_credits", func(property map[string]any) {
+			property["minimum"] = 0
+		})
+		mutateSchemaProperty(schemas, schemaName, "created_at", func(property map[string]any) {
+			property["format"] = "date-time"
+		})
+		mutateSchemaProperty(schemas, schemaName, "completed_at", func(property map[string]any) {
+			property["format"] = "date-time"
+		})
+	}
+
+	mutateSchemaProperty(schemas, "SoulMintConversationsResponse", "version", func(property map[string]any) {
+		property["enum"] = []string{"1"}
+	})
+	mutateSchemaProperty(schemas, "SoulMintConversationsResponse", "count", func(property map[string]any) {
+		property["minimum"] = 0
+	})
+	mutateSchemaProperty(schemas, "SoulMintConversationsResponse", "limit", func(property map[string]any) {
+		property["minimum"] = 1
+		property["maximum"] = 50
+	})
+	mutateSchemaProperty(schemas, "SoulMintConversationResponse", "version", func(property map[string]any) {
+		property["enum"] = []string{"1"}
 	})
 }
 

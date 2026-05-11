@@ -76,6 +76,46 @@ type BoundSoulResponse struct {
 	Binding      SoulAgentBinding  `json:"binding"`
 }
 
+// SoulMintConversationSummary represents compact mint-conversation metadata for self-scoped private reads.
+type SoulMintConversationSummary struct {
+	AgentID        string         `json:"agent_id"`
+	ConversationID string         `json:"conversation_id"`
+	Model          string         `json:"model,omitempty"`
+	Status         string         `json:"status"`
+	Usage          map[string]any `json:"usage,omitempty"`
+	ChargedCredits *int64         `json:"charged_credits,omitempty"`
+	CreatedAt      string         `json:"created_at"`
+	CompletedAt    string         `json:"completed_at,omitempty"`
+}
+
+// SoulMintConversationsResponse represents GET /api/v1/souls/bound/me/mint-conversations.
+type SoulMintConversationsResponse struct {
+	Version       string                        `json:"version"`
+	Conversations []SoulMintConversationSummary `json:"conversations"`
+	Count         int                           `json:"count"`
+	Limit         int                           `json:"limit"`
+}
+
+// SoulMintConversation represents a bounded private mint-conversation record.
+type SoulMintConversation struct {
+	AgentID              string         `json:"agent_id"`
+	ConversationID       string         `json:"conversation_id"`
+	Model                string         `json:"model"`
+	Messages             string         `json:"messages,omitempty"`
+	ProducedDeclarations string         `json:"produced_declarations,omitempty"`
+	Status               string         `json:"status"`
+	Usage                map[string]any `json:"usage,omitempty"`
+	ChargedCredits       *int64         `json:"charged_credits,omitempty"`
+	CreatedAt            string         `json:"created_at"`
+	CompletedAt          string         `json:"completed_at,omitempty"`
+}
+
+// SoulMintConversationResponse represents GET /api/v1/souls/bound/me/mint-conversations/{conversationId}.
+type SoulMintConversationResponse struct {
+	Version      string               `json:"version"`
+	Conversation SoulMintConversation `json:"conversation"`
+}
+
 // SoulIncorporateRequest represents POST /api/v1/souls/{agentId}/incorporate.
 type SoulIncorporateRequest struct {
 	TargetAgentUsername string `json:"target_agent_username"`
