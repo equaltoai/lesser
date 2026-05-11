@@ -190,11 +190,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("note object attaches status and author", func(t *testing.T) {
-		notif := &storage.Notification{
+		notif := &storagemodels.Notification{
 			ID:        "n1",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "status-1",
+			ActorID:   "alice",
+			TargetID:  "status-1",
 			CreatedAt: now,
 		}
 		apiNotif := handler.convertSingleNotification(ctx, notif)
@@ -203,11 +203,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 	})
 
 	t.Run("non-note object uses map branch", func(t *testing.T) {
-		notif := &storage.Notification{
+		notif := &storagemodels.Notification{
 			ID:        "n2",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "obj-1",
+			ActorID:   "alice",
+			TargetID:  "obj-1",
 			CreatedAt: now,
 		}
 		apiNotif := handler.convertSingleNotification(ctx, notif)
@@ -219,11 +219,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		errState := &round10QueryState{firstErrorOnce: errors.New("boom")}
 		errHandler, _, _ := round11NewHandler(t, cfg, errState)
 
-		apiNotif := errHandler.convertSingleNotification(ctx, &storage.Notification{
+		apiNotif := errHandler.convertSingleNotification(ctx, &storagemodels.Notification{
 			ID:        "n3",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "status-1",
+			ActorID:   "alice",
+			TargetID:  "status-1",
 			CreatedAt: now,
 		})
 		require.NotNil(t, apiNotif)
@@ -231,11 +231,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 	})
 
 	t.Run("invalid status id is excluded", func(t *testing.T) {
-		apiNotif := handler.convertSingleNotification(ctx, &storage.Notification{
+		apiNotif := handler.convertSingleNotification(ctx, &storagemodels.Notification{
 			ID:        "n4",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "",
+			ActorID:   "alice",
+			TargetID:  "",
 			CreatedAt: now,
 		})
 		require.NotNil(t, apiNotif)
@@ -251,11 +251,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		}
 		snapshotHandler, _, _ := round11NewHandler(t, cfg, errState)
 
-		apiNotif := snapshotHandler.convertSingleNotification(ctx, &storage.Notification{
+		apiNotif := snapshotHandler.convertSingleNotification(ctx, &storagemodels.Notification{
 			ID:        "n-snapshot",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "status-snapshot",
+			ActorID:   "alice",
+			TargetID:  "status-snapshot",
 			CreatedAt: now,
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{
@@ -294,11 +294,11 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		}
 		errHandler, _, _ := round11NewHandler(t, cfg, errState)
 
-		apiNotif := errHandler.convertSingleNotification(ctx, &storage.Notification{
+		apiNotif := errHandler.convertSingleNotification(ctx, &storagemodels.Notification{
 			ID:        "n5",
 			Type:      models.NotificationTypeMention,
-			AccountID: "alice",
-			StatusID:  "status-1",
+			ActorID:   "alice",
+			TargetID:  "status-1",
 			CreatedAt: now,
 		})
 		require.NotNil(t, apiNotif)

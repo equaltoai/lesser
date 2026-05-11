@@ -1957,7 +1957,11 @@ type NotificationFilter struct {
 	ExcludeTypes []string `json:"exclude_types,omitempty"`
 }
 
-// Notification represents a user notification
+// Notification represents a user notification.
+//
+// Legacy DTO: notification API rendering uses pkg/storage/models.Notification
+// directly so actor and target semantics are preserved. Keep new rendering code
+// off this compatibility shape.
 type Notification struct {
 	ID        string                 `json:"id"`
 	Type      string                 `json:"type"` // "mention", "status", "reblog", "follow", etc.
