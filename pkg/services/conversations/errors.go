@@ -17,6 +17,13 @@ var (
 	// ErrInvalidRecipient is returned when recipient validation fails
 	ErrInvalidRecipient = apperrors.NewValidationError("recipient", "invalid")
 
+	// ErrDirectSelfPostNotAllowed is returned when a direct status targets the sender as its sole recipient.
+	ErrDirectSelfPostNotAllowed = apperrors.NewValidationErrorWithCode(
+		apperrors.CodeDirectSelfPostNotAllowed,
+		"recipient",
+		"direct messages cannot be sent to yourself",
+	)
+
 	// ErrLookupExistingConversation is returned when looking up existing conversation fails
 	ErrLookupExistingConversation = apperrors.FailedToQuery("existing conversation", errors.New("failed to lookup existing conversation"))
 

@@ -59,13 +59,14 @@ const (
 
 // Validation error codes
 const (
-	CodeValidationFailed     ErrorCode = "VALIDATION_FAILED"
-	CodeRequiredFieldMissing ErrorCode = "REQUIRED_FIELD_MISSING"
-	CodeFieldTooLong         ErrorCode = "FIELD_TOO_LONG"
-	CodeFieldTooShort        ErrorCode = "FIELD_TOO_SHORT"
-	CodeInvalidFormat        ErrorCode = "INVALID_FORMAT"
-	CodeInvalidCharacters    ErrorCode = "INVALID_CHARACTERS"
-	CodeValueOutOfRange      ErrorCode = "VALUE_OUT_OF_RANGE"
+	CodeValidationFailed         ErrorCode = "VALIDATION_FAILED"
+	CodeRequiredFieldMissing     ErrorCode = "REQUIRED_FIELD_MISSING"
+	CodeFieldTooLong             ErrorCode = "FIELD_TOO_LONG"
+	CodeFieldTooShort            ErrorCode = "FIELD_TOO_SHORT"
+	CodeInvalidFormat            ErrorCode = "INVALID_FORMAT"
+	CodeInvalidCharacters        ErrorCode = "INVALID_CHARACTERS"
+	CodeValueOutOfRange          ErrorCode = "VALUE_OUT_OF_RANGE"
+	CodeDirectSelfPostNotAllowed ErrorCode = "DIRECT_SELF_POST_NOT_ALLOWED"
 )
 
 // API error codes
@@ -163,7 +164,7 @@ func (c ErrorCode) GetHTTPStatusCode() int {
 		return 422
 	case CodeInvalidInput, CodeValidationFailed, CodeRequiredFieldMissing, CodeFieldTooLong,
 		CodeFieldTooShort, CodeInvalidFormat, CodeInvalidCharacters, CodeValueOutOfRange,
-		CodeBadRequest, CodeContentTooLarge:
+		CodeDirectSelfPostNotAllowed, CodeBadRequest, CodeContentTooLarge:
 		return 400
 	case CodeMethodNotAllowed:
 		return 405
