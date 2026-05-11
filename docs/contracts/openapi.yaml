@@ -5493,6 +5493,126 @@ components:
                 - available_for_incorporation
                 - binding_state
             type: object
+        SoulMintConversation:
+            additionalProperties: false
+            properties:
+                agent_id:
+                    pattern: ^0x[0-9a-fA-F]{64}$
+                    type: string
+                charged_credits:
+                    anyOf:
+                        - type: integer
+                        - type: "null"
+                    minimum: 0
+                completed_at:
+                    format: date-time
+                    type: string
+                conversation_id:
+                    maxLength: 128
+                    minLength: 1
+                    pattern: ^[A-Za-z0-9._:-]{1,128}$
+                    type: string
+                created_at:
+                    format: date-time
+                    type: string
+                messages:
+                    type: string
+                model:
+                    type: string
+                produced_declarations:
+                    type: string
+                status:
+                    enum:
+                        - in_progress
+                        - completed
+                        - failed
+                    type: string
+                usage:
+                    additionalProperties: {}
+                    type: object
+            required:
+                - agent_id
+                - conversation_id
+                - created_at
+                - model
+                - status
+            type: object
+        SoulMintConversationResponse:
+            additionalProperties: false
+            properties:
+                conversation:
+                    $ref: '#/components/schemas/SoulMintConversation'
+                version:
+                    enum:
+                        - "1"
+                    type: string
+            required:
+                - conversation
+                - version
+            type: object
+        SoulMintConversationSummary:
+            additionalProperties: false
+            properties:
+                agent_id:
+                    pattern: ^0x[0-9a-fA-F]{64}$
+                    type: string
+                charged_credits:
+                    anyOf:
+                        - type: integer
+                        - type: "null"
+                    minimum: 0
+                completed_at:
+                    format: date-time
+                    type: string
+                conversation_id:
+                    maxLength: 128
+                    minLength: 1
+                    pattern: ^[A-Za-z0-9._:-]{1,128}$
+                    type: string
+                created_at:
+                    format: date-time
+                    type: string
+                model:
+                    type: string
+                status:
+                    enum:
+                        - in_progress
+                        - completed
+                        - failed
+                    type: string
+                usage:
+                    additionalProperties: {}
+                    type: object
+            required:
+                - agent_id
+                - conversation_id
+                - created_at
+                - status
+            type: object
+        SoulMintConversationsResponse:
+            additionalProperties: false
+            properties:
+                conversations:
+                    items:
+                        $ref: '#/components/schemas/SoulMintConversationSummary'
+                    type: array
+                count:
+                    minimum: 0
+                    type: integer
+                limit:
+                    maximum: 50
+                    minimum: 1
+                    type: integer
+                version:
+                    enum:
+                        - "1"
+                    type: string
+            required:
+                - conversations
+                - count
+                - limit
+                - version
+            type: object
         SoulsMineResponse:
             additionalProperties: false
             properties:
@@ -15340,6 +15460,115 @@ paths:
             x-oauth-scopes:
                 - read
                 - write
+    /api/v1/souls/bound/me/mint-conversations:
+        get:
+            operationId: get_api_v1_souls_bound_me_mint_conversations
+            description: Return compact private mint-conversation metadata for the authenticated local principal's bound soul. Lesser derives the Host agent ID from the existing bound-self authority and calls lesser-host with instance trust only; caller bearer tokens are never forwarded upstream.
+            tags:
+                - souls
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: limit
+                  in: query
+                  description: Maximum compact conversations to return. Defaults to 20 and is capped at 50.
+                  schema:
+                    type: integer
+                    default: 20
+                    minimum: 1
+                    maximum: 50
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulMintConversationsResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "413":
+                    description: Private conversation response too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-handler: HandleListBoundSoulMintConversationsLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/souls/bound/me/mint-conversations/{conversationId}:
+        get:
+            operationId: get_api_v1_souls_bound_me_mint_conversations_by_conversationId
+            description: Return one bounded private mint-conversation record for the authenticated local principal's bound soul. Lesser validates the opaque conversation ID, derives the Host agent ID from bound self, and calls lesser-host with instance trust only.
+            tags:
+                - souls
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  description: Opaque safe mint-conversation identifier.
+                  schema:
+                    type: string
+                    pattern: ^[A-Za-z0-9._:-]{1,128}$
+                    minLength: 1
+                    maxLength: 128
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulMintConversationResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "413":
+                    description: Private conversation response too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-handler: HandleGetBoundSoulMintConversationLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/souls/mine:
         get:
             operationId: get_api_v1_souls_mine

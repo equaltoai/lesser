@@ -381,6 +381,8 @@ func configureRoutes(app *apptheory.App) {
 
 	// Souls
 	app.Get("/api/v1/souls/bound/me", apiHandler.HandleGetBoundSoulMeLift, requireReadOrWrite)
+	app.Get("/api/v1/souls/bound/me/mint-conversations", apiHandler.HandleListBoundSoulMintConversationsLift, requireRead)
+	app.Get("/api/v1/souls/bound/me/mint-conversations/{conversationId}", apiHandler.HandleGetBoundSoulMintConversationLift, requireRead)
 	app.Get("/api/v1/souls/mine", apiHandler.HandleGetMySoulsLift, requireReadOrWrite)
 	app.Post("/api/v1/souls/{agentId}/incorporate", apiHandler.HandleIncorporateSoulLift, requireWrite)
 

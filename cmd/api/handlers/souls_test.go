@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 type stubSoulHandlerService struct {
@@ -42,6 +48,22 @@ func (s *stubSoulHandlerService) Incorporate(_ context.Context, username string,
 func (s *stubSoulHandlerService) ResolveBoundAgent(_ context.Context, agentUsername string) (*soulservice.Soul, error) {
 	s.lastTargetAgent = agentUsername
 	return s.resolveBoundOut, s.resolveBoundErr
+}
+
+type soulPrivateHostReadClientFunc func(*http.Request) (*http.Response, error)
+
+func (f soulPrivateHostReadClientFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type soulPrivateFailingBody struct{}
+
+func (soulPrivateFailingBody) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (soulPrivateFailingBody) Close() error {
+	return nil
 }
 
 func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
@@ -401,6 +423,746 @@ func TestHandleGetBoundSoulMeLift_ReturnsInternalWhenServiceUnavailable(t *testi
 	require.NoError(t, err)
 
 	requireStatus(t, http.StatusInternalServerError)(h.HandleGetBoundSoulMeLift(ctx))
+}
+
+func TestHandleListBoundSoulMintConversationsLift_ProxiesThroughInstanceTrust(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const (
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		instanceKey = "instance-key-raw"
+	)
+
+	var sawUpstream atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawUpstream.Store(true)
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/api/v1/soul/instance/agents/"+agentID+"/mint-conversations", r.URL.Path)
+		require.Equal(t, "20", r.URL.Query().Get("limit"))
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.NotContains(t, r.Header.Get("Authorization"), "user-token")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"version":"1",
+			"conversations":[{
+				"agent_id":"` + agentID + `",
+				"conversation_id":"conv-1",
+				"model":"gpt-test",
+				"messages":"private list leak",
+				"produced_declarations":"private declaration leak",
+				"status":"completed",
+				"usage":{"input_tokens":1},
+				"charged_credits":0,
+				"created_at":"2026-05-11T21:00:00Z",
+				"completed_at":"2026-05-11T21:01:00Z"
+			}],
+			"count":1,
+			"limit":20
+		}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := round10TestConfig()
+	cfg.LesserHostURL = upstream.URL
+	cfg.LesserHostInstanceKey = instanceKey
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+			BoundAt:            time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+			BoundUpdatedAt:     time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+		},
+	}
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+	userToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "user-token")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", map[string]string{
+		"Authorization": "Bearer " + userToken,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleListBoundSoulMintConversationsLift(ctx))
+	require.True(t, sawUpstream.Load())
+	require.Equal(t, "ops", service.lastTargetAgent)
+	require.NotContains(t, string(resp.Body), "messages")
+	require.NotContains(t, string(resp.Body), "produced_declarations")
+	require.NotContains(t, string(resp.Body), "private list leak")
+
+	var body apimodels.SoulMintConversationsResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "1", body.Version)
+	require.Equal(t, 1, body.Count)
+	require.Equal(t, 20, body.Limit)
+	require.Len(t, body.Conversations, 1)
+	require.Equal(t, agentID, body.Conversations[0].AgentID)
+	require.Equal(t, "conv-1", body.Conversations[0].ConversationID)
+}
+
+func TestHandleGetBoundSoulMintConversationLift_ReturnsExplicitSingleRecord(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const (
+		agentID        = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		conversationID = "conv:single.1"
+		instanceKey    = "instance-key-raw"
+	)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/api/v1/soul/instance/agents/"+agentID+"/mint-conversations/"+conversationID, r.URL.Path)
+		require.Empty(t, r.URL.RawQuery)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"version":"1",
+			"conversation":{
+				"agent_id":"` + agentID + `",
+				"conversation_id":"` + conversationID + `",
+				"model":"gpt-test",
+				"messages":"[{\"role\":\"user\",\"content\":\"private\"}]",
+				"produced_declarations":"{}",
+				"status":"completed",
+				"usage":{"output_tokens":2},
+				"charged_credits":7,
+				"created_at":"2026-05-11T21:00:00Z",
+				"completed_at":"2026-05-11T21:01:00Z"
+			}
+		}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := round10TestConfig()
+	cfg.LesserHostURL = upstream.URL
+	cfg.LesserHostInstanceKey = instanceKey
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+			BoundAt:            time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+			BoundUpdatedAt:     time.Date(2026, 5, 1, 14, 30, 0, 0, time.UTC),
+		},
+	}
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+	userToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-private-single")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations/"+conversationID, map[string]string{
+		"Authorization": "Bearer " + userToken,
+	}, nil, nil)
+	require.NoError(t, err)
+	ctx.Params["conversationId"] = conversationID
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleGetBoundSoulMintConversationLift(ctx))
+
+	var body apimodels.SoulMintConversationResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "1", body.Version)
+	require.Equal(t, agentID, body.Conversation.AgentID)
+	require.Equal(t, conversationID, body.Conversation.ConversationID)
+	require.Contains(t, body.Conversation.Messages, "private")
+	require.Equal(t, "{}", body.Conversation.ProducedDeclarations)
+	require.NotNil(t, body.Conversation.ChargedCredits)
+	require.Equal(t, int64(7), *body.Conversation.ChargedCredits)
+}
+
+func TestBoundSoulMintConversationHandlers_GuardsInputsAndBinding(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const agentID = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+	var upstreamHits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamHits.Add(1)
+		_, _ = w.Write([]byte(`{"version":"1","conversations":[],"count":0,"limit":20}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := round10TestConfig()
+	cfg.LesserHostURL = upstream.URL
+	cfg.LesserHostInstanceKey = "instance-key-raw"
+	readToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-private-guards")
+
+	boundService := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+		},
+	}
+
+	testCases := []struct {
+		name        string
+		handler     func(*Handler, *apptheory.Context) (*apptheory.Response, error)
+		path        string
+		query       map[string]string
+		param       string
+		service     *stubSoulHandlerService
+		headers     map[string]string
+		body        any
+		wantStatus  int
+		wantCode    string
+		wantNoProxy bool
+	}{
+		{
+			name: "missing auth",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleListBoundSoulMintConversationsLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations",
+			service:     boundService,
+			wantStatus:  http.StatusUnauthorized,
+			wantNoProxy: true,
+		},
+		{
+			name: "unbound self",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleListBoundSoulMintConversationsLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			service:     &stubSoulHandlerService{},
+			wantStatus:  http.StatusNotFound,
+			wantCode:    "SOUL_BOUND_AGENT_NOT_FOUND",
+			wantNoProxy: true,
+		},
+		{
+			name: "limit too high",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleListBoundSoulMintConversationsLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			query:       map[string]string{"limit": "51"},
+			service:     boundService,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "SOUL_PRIVATE_LIMIT_INVALID",
+			wantNoProxy: true,
+		},
+		{
+			name: "cursor unsupported",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleListBoundSoulMintConversationsLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			query:       map[string]string{"cursor": "abc"},
+			service:     boundService,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "SOUL_PRIVATE_CURSOR_UNSUPPORTED",
+			wantNoProxy: true,
+		},
+		{
+			name: "conversation id invalid",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleGetBoundSoulMintConversationLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations/bad",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			param:       "bad/slash",
+			service:     boundService,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "SOUL_PRIVATE_CONVERSATION_ID_INVALID",
+			wantNoProxy: true,
+		},
+		{
+			name: "get query unsupported",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleGetBoundSoulMintConversationLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations/conv-1",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			query:       map[string]string{"agentId": agentID},
+			param:       "conv-1",
+			service:     boundService,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "SOUL_PRIVATE_QUERY_UNSUPPORTED",
+			wantNoProxy: true,
+		},
+		{
+			name: "body rejected",
+			handler: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+				return h.HandleListBoundSoulMintConversationsLift(ctx)
+			},
+			path:        "/api/v1/souls/bound/me/mint-conversations",
+			headers:     map[string]string{"Authorization": "Bearer " + readToken},
+			body:        map[string]string{"agent_id": agentID},
+			service:     boundService,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "SOUL_PRIVATE_REQUEST_BODY_UNSUPPORTED",
+			wantNoProxy: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			before := upstreamHits.Load()
+			h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: tc.service}
+			ctx, err := round10NewLiftContext(http.MethodGet, tc.path, tc.headers, tc.query, tc.body)
+			require.NoError(t, err)
+			if strings.Contains(tc.path, "/mint-conversations/") {
+				ctx.Params["conversationId"] = tc.param
+			}
+
+			resp := requireStatus(t, tc.wantStatus)(tc.handler(h, ctx))
+			if tc.wantCode != "" {
+				require.Equal(t, tc.wantCode, decodeStandardErrorResponse(t, resp).Code)
+			}
+			if tc.wantNoProxy {
+				require.Equal(t, before, upstreamHits.Load())
+			}
+		})
+	}
+}
+
+func TestBoundSoulMintConversationHandlers_TranslateHostErrors(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const agentID = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	cfg := round10TestConfig()
+	readToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-private-errors")
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+		},
+	}
+
+	testCases := []struct {
+		upstreamStatus int
+		wantStatus     int
+		wantCode       string
+	}{
+		{upstreamStatus: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantCode: "SOUL_PRIVATE_INVALID_REQUEST"},
+		{upstreamStatus: http.StatusUnauthorized, wantStatus: http.StatusConflict, wantCode: "SOUL_PRIVATE_INSTANCE_TRUST_REJECTED"},
+		{upstreamStatus: http.StatusForbidden, wantStatus: http.StatusConflict, wantCode: "SOUL_PRIVATE_INSTANCE_TRUST_REJECTED"},
+		{upstreamStatus: http.StatusNotFound, wantStatus: http.StatusNotFound, wantCode: "SOUL_PRIVATE_CONVERSATION_NOT_FOUND"},
+		{upstreamStatus: http.StatusRequestEntityTooLarge, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "SOUL_PRIVATE_RESPONSE_TOO_LARGE"},
+		{upstreamStatus: http.StatusTooManyRequests, wantStatus: http.StatusTooManyRequests, wantCode: "SOUL_PRIVATE_RATE_LIMITED"},
+		{upstreamStatus: http.StatusInternalServerError, wantStatus: http.StatusServiceUnavailable, wantCode: "SOUL_PRIVATE_HOST_UNAVAILABLE"},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(http.StatusText(tc.upstreamStatus), func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.upstreamStatus == http.StatusTooManyRequests {
+					w.Header().Set("Retry-After", "7")
+				}
+				w.WriteHeader(tc.upstreamStatus)
+				_, _ = w.Write([]byte(`{"error":{"message":"private secret should not leak"}}`))
+			}))
+			t.Cleanup(upstream.Close)
+
+			cfg := *cfg
+			cfg.LesserHostURL = upstream.URL
+			cfg.LesserHostInstanceKey = "instance-key-raw"
+			h := &Handler{cfg: &cfg, logger: round10TestLogger(t), soulsService: service}
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations/conv-err", map[string]string{
+				"Authorization": "Bearer " + readToken,
+			}, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["conversationId"] = "conv-err"
+
+			resp := requireStatus(t, tc.wantStatus)(h.HandleGetBoundSoulMintConversationLift(ctx))
+			body := decodeStandardErrorResponse(t, resp)
+			require.Equal(t, tc.wantCode, body.Code)
+			require.NotContains(t, string(resp.Body), "private secret")
+			if tc.upstreamStatus == http.StatusTooManyRequests {
+				require.Equal(t, []string{"7"}, resp.Headers["retry-after"])
+			}
+		})
+	}
+}
+
+func TestBoundSoulMintConversationHandlers_FailClosedOnHostIdentityMismatch(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const (
+		agentID        = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		otherAgentID   = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+		conversationID = "conv-mismatch"
+	)
+
+	cfg := round10TestConfig()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"version":"1",
+			"conversation":{
+				"agent_id":"` + otherAgentID + `",
+				"conversation_id":"` + conversationID + `",
+				"model":"gpt-test",
+				"messages":"private secret should not leak",
+				"status":"completed",
+				"created_at":"2026-05-11T21:00:00Z"
+			}
+		}`))
+	}))
+	t.Cleanup(upstream.Close)
+	cfg.LesserHostURL = upstream.URL
+	cfg.LesserHostInstanceKey = "instance-key-raw"
+
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+		},
+	}
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+	readToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-private-mismatch")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations/"+conversationID, map[string]string{
+		"Authorization": "Bearer " + readToken,
+	}, nil, nil)
+	require.NoError(t, err)
+	ctx.Params["conversationId"] = conversationID
+
+	resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleGetBoundSoulMintConversationLift(ctx))
+	require.Equal(t, "SOUL_PRIVATE_UPSTREAM_SCOPE_MISMATCH", decodeStandardErrorResponse(t, resp).Code)
+	require.NotContains(t, string(resp.Body), "private secret")
+}
+
+func TestBoundSoulMintConversationHandlers_AdditionalFailureCoverage(t *testing.T) {
+	allowLocalLesserHostProxyForTests(t)
+
+	const (
+		agentID      = "0x1111111111111111111111111111111111111111111111111111111111111111"
+		otherAgentID = "0x2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	cfg := round10TestConfig()
+	cfg.LesserHostInstanceKey = "instance-key-raw"
+	readToken := round11SignToken(t, cfg.JWTSecret, "ops", []string{auth.ScopeRead}, "sess-private-extra")
+	service := &stubSoulHandlerService{
+		resolveBoundOut: &soulservice.Soul{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "ops",
+			Status:             "active",
+			Bound:              true,
+			BoundAgentUsername: "ops",
+		},
+	}
+
+	t.Run("list invalid host json", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{`))
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := *cfg
+		cfg.LesserHostURL = upstream.URL
+		h := &Handler{cfg: &cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleListBoundSoulMintConversationsLift(ctx))
+		require.Equal(t, "SOUL_PRIVATE_HOST_RESPONSE_INVALID", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("list scope mismatch", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{
+				"version":"1",
+				"conversations":[{
+					"agent_id":"` + otherAgentID + `",
+					"conversation_id":"conv-list-mismatch",
+					"status":"completed",
+					"created_at":"2026-05-11T21:00:00Z"
+				}],
+				"count":1,
+				"limit":20
+			}`))
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := *cfg
+		cfg.LesserHostURL = upstream.URL
+		h := &Handler{cfg: &cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleListBoundSoulMintConversationsLift(ctx))
+		require.Equal(t, "SOUL_PRIVATE_UPSTREAM_SCOPE_MISMATCH", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("get invalid host json", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{`))
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := *cfg
+		cfg.LesserHostURL = upstream.URL
+		h := &Handler{cfg: &cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations/conv-extra", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["conversationId"] = "conv-extra"
+
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleGetBoundSoulMintConversationLift(ctx))
+		require.Equal(t, "SOUL_PRIVATE_HOST_RESPONSE_INVALID", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("host response too large", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(strings.Repeat("x", soulPrivateMintConversationListMaxBytes+1)))
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := *cfg
+		cfg.LesserHostURL = upstream.URL
+		h := &Handler{cfg: &cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusRequestEntityTooLarge)(h.HandleListBoundSoulMintConversationsLift(ctx))
+		require.Equal(t, "SOUL_PRIVATE_RESPONSE_TOO_LARGE", decodeStandardErrorResponse(t, resp).Code)
+	})
+}
+
+func TestSoulPrivateMintConversationResolveBoundAgentFailures(t *testing.T) {
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", nil, nil, nil)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name       string
+		handler    *Handler
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "service nil",
+			handler:    &Handler{logger: round10TestLogger(t)},
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "trust not configured",
+			handler:    &Handler{logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{resolveBoundErr: soulservice.ErrTrustNotConfigured}},
+			wantStatus: http.StatusUnprocessableEntity,
+			wantCode:   "SOUL_PRIVATE_TRUST_NOT_CONFIGURED",
+		},
+		{
+			name:       "soul not available",
+			handler:    &Handler{logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{resolveBoundErr: soulservice.ErrSoulNotAvailable}},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "SOUL_BOUND_AGENT_NOT_AVAILABLE",
+		},
+		{
+			name:       "unexpected service error",
+			handler:    &Handler{logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{resolveBoundErr: errors.New("boom")}},
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "not bound",
+			handler:    &Handler{logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{resolveBoundOut: &soulservice.Soul{AgentID: "", Bound: false}}},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "SOUL_BOUND_AGENT_NOT_FOUND",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, resp := tc.handler.resolveSoulPrivateBoundAgent(ctx, "ops")
+			require.NotNil(t, resp)
+			require.Equal(t, tc.wantStatus, resp.Status)
+			if tc.wantCode != "" {
+				require.Equal(t, tc.wantCode, decodeStandardErrorResponse(t, resp).Code)
+			}
+		})
+	}
+}
+
+func TestSoulPrivateHostReadConfigurationFailures(t *testing.T) {
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations", nil, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("missing base url", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = ""
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_TRUST_NOT_CONFIGURED", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("invalid base url", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "://bad"
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_TRUST_NOT_CONFIGURED", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("missing instance key", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "https://lesser-host.example"
+		cfg.LesserHostInstanceKey = ""
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_TRUST_NOT_CONFIGURED", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("proxy url validation rejected", func(t *testing.T) {
+		prevValidate := validateLesserHostProxyURL
+		validateLesserHostProxyURL = func(*url.URL) error { return errors.New("blocked") }
+		t.Cleanup(func() { validateLesserHostProxyURL = prevValidate })
+
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "https://lesser-host.example"
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_HOST_UNAVAILABLE", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("client error", func(t *testing.T) {
+		prevValidate := validateLesserHostProxyURL
+		prevClient := newLesserHostProxyClient
+		validateLesserHostProxyURL = func(*url.URL) error { return nil }
+		newLesserHostProxyClient = func() lesserHostProxyHTTPClient {
+			return soulPrivateHostReadClientFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("dial failed")
+			})
+		}
+		t.Cleanup(func() {
+			validateLesserHostProxyURL = prevValidate
+			newLesserHostProxyClient = prevClient
+		})
+
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "https://lesser-host.example"
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_HOST_UNAVAILABLE", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("response read error", func(t *testing.T) {
+		prevValidate := validateLesserHostProxyURL
+		prevClient := newLesserHostProxyClient
+		validateLesserHostProxyURL = func(*url.URL) error { return nil }
+		newLesserHostProxyClient = func() lesserHostProxyHTTPClient {
+			return soulPrivateHostReadClientFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{},
+					Body:       soulPrivateFailingBody{},
+				}, nil
+			})
+		}
+		t.Cleanup(func() {
+			validateLesserHostProxyURL = prevValidate
+			newLesserHostProxyClient = prevClient
+		})
+
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "https://lesser-host.example"
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		_, resp := h.getSoulPrivateHostRead(ctx, "agent", "", nil, 1024)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.Status)
+		require.Equal(t, "SOUL_PRIVATE_HOST_UNAVAILABLE", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("success direct helper preserves status and body", func(t *testing.T) {
+		prevValidate := validateLesserHostProxyURL
+		prevClient := newLesserHostProxyClient
+		validateLesserHostProxyURL = func(*url.URL) error { return nil }
+		newLesserHostProxyClient = func() lesserHostProxyHTTPClient {
+			return soulPrivateHostReadClientFunc(func(req *http.Request) (*http.Response, error) {
+				require.Equal(t, "Bearer instance-key-raw", req.Header.Get("Authorization"))
+				require.Contains(t, req.URL.Path, "/mint-conversations/conv-direct")
+				return &http.Response{
+					StatusCode: http.StatusAccepted,
+					Header:     http.Header{"X-Test": []string{"ok"}},
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+				}, nil
+			})
+		}
+		t.Cleanup(func() {
+			validateLesserHostProxyURL = prevValidate
+			newLesserHostProxyClient = prevClient
+		})
+
+		cfg := round10TestConfig()
+		cfg.LesserHostURL = "https://lesser-host.example"
+		cfg.LesserHostInstanceKey = "instance-key-raw"
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+
+		result, resp := h.getSoulPrivateHostRead(ctx, "agent", "conv-direct", nil, 1024)
+		require.Nil(t, resp)
+		require.Equal(t, http.StatusAccepted, result.status)
+		require.Equal(t, []byte(`{"ok":true}`), result.body)
+		require.Equal(t, "ok", result.headers.Get("x-test"))
+	})
+}
+
+func TestSoulPrivateMintConversationUtilityBranches(t *testing.T) {
+	require.Empty(t, firstQueryValue(nil, "limit"))
+	require.False(t, soulPrivateCursorPresent(nil))
+	require.Empty(t, soulPrivateHash(""))
+	require.Empty(t, soulPrivateErrorCode(nil))
+	require.Empty(t, soulPrivateErrorCode(&apptheory.Response{Body: []byte(`not-json`)}))
+	require.Equal(t, "list_mint_conversations", soulPrivateRouteClass(""))
+	require.Equal(t, "get_mint_conversation", soulPrivateRouteClass("conv-1"))
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bound/me/mint-conversations/", nil, nil, nil)
+	require.NoError(t, err)
+	conversationID, resp := validateSoulPrivateConversationID(ctx)
+	require.Empty(t, conversationID)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.Status)
+	require.Equal(t, "SOUL_PRIVATE_CONVERSATION_ID_REQUIRED", decodeStandardErrorResponse(t, resp).Code)
+
+	var nilHandler *Handler
+	nilHandler.logSoulPrivateRead(ctx, "ops", "agent", "conv-1", "get_mint_conversation", "success", http.StatusOK, 0, 0, false, "", http.StatusOK, time.Now())
+	(&Handler{}).logSoulPrivateRead(ctx, "ops", "agent", "conv-1", "get_mint_conversation", "success", http.StatusOK, 0, 0, false, "", http.StatusOK, time.Now())
 }
 
 func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
