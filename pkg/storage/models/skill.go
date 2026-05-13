@@ -238,6 +238,11 @@ type SkillProposal struct {
 	ConversationMessageID  string               `theorydb:"attr:conversationMessageID,omitempty" json:"conversation_message_id,omitempty"`
 	PrincipalID            string               `theorydb:"attr:principalID,omitempty" json:"principal_id,omitempty"`
 	PrincipalApprovalID    string               `theorydb:"attr:principalApprovalID,omitempty" json:"principal_approval_id,omitempty"`
+	PromotedRevisionID     string               `theorydb:"attr:promotedRevisionID,omitempty" json:"promoted_revision_id,omitempty"`
+	PromotedRevisionNumber int                  `theorydb:"attr:promotedRevisionNumber,omitempty" json:"promoted_revision_number,omitempty"`
+	PromotionDigest        string               `theorydb:"attr:promotionDigest,omitempty" json:"promotion_digest,omitempty"`
+	PromotedBy             string               `theorydb:"attr:promotedBy,omitempty" json:"promoted_by,omitempty"`
+	PromotedAt             *time.Time           `theorydb:"attr:promotedAt" json:"promoted_at,omitempty"`
 	Provenance             []SkillProvenanceRef `theorydb:"attr:provenance" json:"provenance,omitempty"`
 	CreatedBy              string               `theorydb:"attr:createdBy,omitempty" json:"created_by,omitempty"`
 	ReviewedBy             string               `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
@@ -385,6 +390,59 @@ func SkillRevisionApprovalDigest(revision *SkillRevision, principalID, authority
 		principalID,
 		authorityType,
 		authorityID,
+	}, "\x1f")
+	sum := sha256.Sum256([]byte(material))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+// SkillPromotionDigest returns the canonical digest that identifies a proposal promotion.
+func SkillPromotionDigest(proposal *SkillProposal, revision *SkillRevision) (string, error) {
+	if proposal == nil {
+		return "", fmt.Errorf("skill proposal is required")
+	}
+	if revision == nil {
+		return "", fmt.Errorf("skill revision is required")
+	}
+	proposalID := normalizeSkillID(proposal.ID)
+	if err := common.ValidateRequiredParam("proposalID", proposalID); err != nil {
+		return "", err
+	}
+	skillID := normalizeSkillID(proposal.SkillID)
+	if err := common.ValidateRequiredParam("proposalSkillID", skillID); err != nil {
+		return "", err
+	}
+	revisionSkillID := normalizeSkillID(revision.SkillID)
+	if err := common.ValidateRequiredParam("revisionSkillID", revisionSkillID); err != nil {
+		return "", err
+	}
+	if skillID != revisionSkillID {
+		return "", fmt.Errorf("proposal skill does not match revision skill")
+	}
+	if revision.RevisionNumber <= 0 {
+		return "", fmt.Errorf("revision number is required")
+	}
+	if normalizeSkillID(revision.ID) == "" {
+		return "", fmt.Errorf("revision id is required")
+	}
+	if normalizeSkillDigest(revision.ManifestDigest) == "" {
+		return "", fmt.Errorf("manifest digest is required")
+	}
+	if normalizeSkillDigest(revision.ApprovalDigest) == "" {
+		return "", fmt.Errorf("approval digest is required")
+	}
+
+	material := strings.Join([]string{
+		"lesser-skill-promotion-v1",
+		proposalID,
+		skillID,
+		normalizeSkillDigest(proposal.ProposedManifestDigest),
+		normalizeSkillDigest(proposal.SourceDigest),
+		strings.TrimSpace(proposal.ConversationID),
+		strings.TrimSpace(proposal.ConversationMessageID),
+		normalizeSkillID(revision.ID),
+		fmt.Sprintf("%08d", revision.RevisionNumber),
+		normalizeSkillDigest(revision.ManifestDigest),
+		normalizeSkillDigest(revision.ApprovalDigest),
 	}, "\x1f")
 	sum := sha256.Sum256([]byte(material))
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
@@ -633,6 +691,13 @@ func (p *SkillProposal) prepareForWrite(isCreate bool) error {
 	p.ConversationMessageID = strings.TrimSpace(p.ConversationMessageID)
 	p.PrincipalID = strings.TrimSpace(p.PrincipalID)
 	p.PrincipalApprovalID = strings.TrimSpace(p.PrincipalApprovalID)
+	p.PromotedRevisionID = normalizeSkillID(p.PromotedRevisionID)
+	p.PromotionDigest = normalizeSkillDigest(p.PromotionDigest)
+	p.PromotedBy = strings.TrimSpace(p.PromotedBy)
+	p.PromotedAt = normalizeSkillTimePtr(p.PromotedAt)
+	if err := p.validatePromotionState(); err != nil {
+		return err
+	}
 	p.Provenance = normalizeSkillProvenance(p.Provenance)
 	if err := validateSkillProvenance(p.Provenance); err != nil {
 		return err
@@ -705,6 +770,39 @@ func (a *SkillAssignment) prepareForWrite(isCreate bool) error {
 	a.GSI1SK = fmt.Sprintf("SUBJECT#%s#%s#ASSIGNMENT#%s", a.SubjectType, a.SubjectID, a.ID)
 	a.GSI2PK = "SKILL_ASSIGNMENT#STATUS#" + a.Status
 	a.GSI2SK = fmt.Sprintf("UPDATED#%s#SUBJECT#%s#%s#SKILL#%s#REVISION#%08d#ASSIGNMENT#%s", formatSkillTime(a.UpdatedAt), a.SubjectType, a.SubjectID, a.SkillID, a.RevisionNumber, a.ID)
+	return nil
+}
+
+func (p *SkillProposal) validatePromotionState() error {
+	if p == nil {
+		return fmt.Errorf("skill proposal is required")
+	}
+	hasPromotion := p.PromotedRevisionID != "" || p.PromotedRevisionNumber > 0 || p.PromotionDigest != "" || p.PromotedBy != "" || p.PromotedAt != nil
+	if !hasPromotion {
+		return nil
+	}
+	required := []struct {
+		name  string
+		value string
+	}{
+		{"promotedRevisionID", p.PromotedRevisionID},
+		{"promotionDigest", p.PromotionDigest},
+		{"promotedBy", p.PromotedBy},
+	}
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			return fmt.Errorf("%s is required for promoted skill proposal", field.name)
+		}
+	}
+	if p.PromotedRevisionNumber <= 0 {
+		return fmt.Errorf("promoted revision number is required for promoted skill proposal")
+	}
+	if p.PromotedAt == nil {
+		return fmt.Errorf("promoted at is required for promoted skill proposal")
+	}
+	if p.Status != SkillProposalStatusAccepted {
+		return fmt.Errorf("promoted skill proposal must be accepted")
+	}
 	return nil
 }
 

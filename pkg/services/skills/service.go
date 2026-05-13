@@ -3,13 +3,18 @@ package skills
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	tableerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 var (
@@ -33,6 +38,10 @@ var (
 	ErrApprovalDigestMismatch = errors.New("approval digest mismatch")
 	// ErrExposureViolation indicates the requested exposure exceeds the canonical revision exposure.
 	ErrExposureViolation = errors.New("skill exposure violation")
+	// ErrPromotionDigestMismatch indicates promotion source/output digest validation failed.
+	ErrPromotionDigestMismatch = errors.New("skill promotion digest mismatch")
+	// ErrPromotionConflict indicates a proposal was already promoted into a conflicting canonical revision.
+	ErrPromotionConflict = errors.New("skill promotion conflict")
 )
 
 // Viewer identifies the caller for exposure and self-resolution checks.
@@ -96,6 +105,24 @@ type AssignmentRevocationCommand struct {
 	RevocationCommand
 }
 
+// PromotionCommand promotes accepted proposal/conversation output into a canonical revision.
+type PromotionCommand struct {
+	ActorUsername          string
+	ProposalID             string
+	ExpectedManifestDigest string
+	ExpectedSourceDigest   string
+	ApprovalID             string
+	PrincipalID            string
+	PrincipalApprovalID    string
+	ApprovalAuthorityType  string
+	ApprovalAuthorityID    string
+	ApprovalDigest         string
+	ApprovalSignature      string
+	ApprovalRef            string
+	ApprovalReason         string
+	ApprovedAt             time.Time
+}
+
 // ResolveCommand resolves active assignments for a subject.
 type ResolveCommand struct {
 	SubjectType string
@@ -117,6 +144,13 @@ type ResolveResult struct {
 	SubjectID   string
 	Items       []EffectiveSkill
 	NextCursor  string
+}
+
+// PromotionResult describes the canonical revision produced by a proposal promotion.
+type PromotionResult struct {
+	Revision *models.SkillRevision
+	Proposal *models.SkillProposal
+	Created  bool
 }
 
 // Service owns canonical skill approval, assignment, and resolution semantics.
@@ -339,6 +373,76 @@ func (s *Service) RevokeAssignment(ctx context.Context, cmd AssignmentRevocation
 		return nil, err
 	}
 	return assignment, nil
+}
+
+// PromoteProposal promotes accepted proposal output into an approved canonical revision.
+func (s *Service) PromoteProposal(ctx context.Context, skillID string, cmd PromotionCommand) (*PromotionResult, error) {
+	if err := s.ensureRepo(); err != nil {
+		return nil, err
+	}
+	cmd = normalizePromotionCommand(cmd)
+	if cmd.ActorUsername == "" {
+		return nil, errors.Join(ErrInvalidInput, errors.New("promotion actor is required"))
+	}
+	if cmd.ProposalID == "" {
+		return nil, errors.Join(ErrInvalidInput, errors.New("proposal id is required"))
+	}
+	skill, err := s.repo.GetSkill(ctx, skillID)
+	if err != nil {
+		return nil, ErrSkillNotFound
+	}
+	proposal, err := s.repo.GetSkillProposal(ctx, cmd.ProposalID)
+	if err != nil {
+		return nil, ErrSkillProposalNotFound
+	}
+	if !strings.EqualFold(strings.TrimSpace(proposal.SkillID), strings.TrimSpace(skill.ID)) {
+		return nil, ErrPromotionConflict
+	}
+	if proposal.Status != models.SkillProposalStatusAccepted {
+		return nil, ErrInvalidState
+	}
+
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(proposal.ProposedManifestJSON)
+	if err != nil {
+		return nil, errors.Join(ErrInvalidInput, err)
+	}
+	if proposal.ProposedManifestDigest == "" {
+		return nil, errors.Join(ErrInvalidInput, errors.New("proposal manifest digest is required"))
+	}
+	if !sameDigest(proposal.ProposedManifestDigest, manifestDigest) {
+		return nil, ErrPromotionDigestMismatch
+	}
+	if cmd.ExpectedManifestDigest != "" && !sameDigest(cmd.ExpectedManifestDigest, manifestDigest) {
+		return nil, ErrPromotionDigestMismatch
+	}
+	if cmd.ExpectedSourceDigest != "" && !sameDigest(cmd.ExpectedSourceDigest, proposal.SourceDigest) {
+		return nil, ErrPromotionDigestMismatch
+	}
+
+	revision := buildPromotionRevision(skill, proposal, manifestJSON, manifestDigest, cmd, s.currentTime())
+	if err := applyPromotionApproval(revision, proposal, cmd, s.currentTime()); err != nil {
+		return nil, err
+	}
+	promotionDigest, err := models.SkillPromotionDigest(proposal, revision)
+	if err != nil {
+		return nil, errors.Join(ErrInvalidInput, err)
+	}
+
+	if result, ok, err := s.resolveExistingPromotion(ctx, skill, proposal, revision, promotionDigest, cmd.ActorUsername); ok || err != nil {
+		return result, err
+	}
+
+	if err := s.repo.CreateSkillRevision(ctx, revision); err != nil {
+		return nil, err
+	}
+	if err := s.promoteSkillPointer(ctx, skill, revision, cmd.ActorUsername); err != nil {
+		return nil, err
+	}
+	applyProposalPromotion(proposal, revision, promotionDigest, cmd.ActorUsername, s.currentTime())
+	if err := s.repo.UpdateSkillProposal(ctx, proposal); err != nil {
+		return nil, err
+	}
+	return &PromotionResult{Revision: revision, Proposal: proposal, Created: true}, nil
 }
 
 // ResolveEffectiveSkills returns active approved skill revisions for a subject.
@@ -656,6 +760,251 @@ func applyAssignmentRevocation(assignment *models.SkillAssignment, cmd Revocatio
 	assignment.RevokedAt = ptrTime(when)
 	assignment.RevokedReason = strings.TrimSpace(cmd.Reason)
 	_ = assignment.UpdateKeys()
+}
+
+func normalizePromotionCommand(cmd PromotionCommand) PromotionCommand {
+	cmd.ActorUsername = strings.TrimSpace(cmd.ActorUsername)
+	cmd.ProposalID = strings.ToLower(strings.TrimSpace(cmd.ProposalID))
+	cmd.ExpectedManifestDigest = strings.ToLower(strings.TrimSpace(cmd.ExpectedManifestDigest))
+	cmd.ExpectedSourceDigest = strings.ToLower(strings.TrimSpace(cmd.ExpectedSourceDigest))
+	cmd.ApprovalID = strings.TrimSpace(cmd.ApprovalID)
+	cmd.PrincipalID = strings.TrimSpace(cmd.PrincipalID)
+	cmd.PrincipalApprovalID = strings.TrimSpace(cmd.PrincipalApprovalID)
+	cmd.ApprovalAuthorityType = strings.ToLower(strings.TrimSpace(cmd.ApprovalAuthorityType))
+	cmd.ApprovalAuthorityID = strings.TrimSpace(cmd.ApprovalAuthorityID)
+	cmd.ApprovalDigest = strings.ToLower(strings.TrimSpace(cmd.ApprovalDigest))
+	cmd.ApprovalSignature = strings.TrimSpace(cmd.ApprovalSignature)
+	cmd.ApprovalRef = strings.TrimSpace(cmd.ApprovalRef)
+	cmd.ApprovalReason = strings.TrimSpace(cmd.ApprovalReason)
+	return cmd
+}
+
+func canonicalizeSkillManifest(raw string) (string, string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", errors.New("proposal manifest json is required")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var manifest map[string]any
+	if err := decoder.Decode(&manifest); err != nil {
+		return "", "", fmt.Errorf("proposal manifest json is malformed: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return "", "", errors.New("proposal manifest json has trailing data")
+	}
+	if len(manifest) == 0 {
+		return "", "", errors.New("proposal manifest json must be a non-empty object")
+	}
+	canonical, err := json.Marshal(manifest)
+	if err != nil {
+		return "", "", fmt.Errorf("canonicalize proposal manifest: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	return string(canonical), "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func buildPromotionRevision(skill *models.Skill, proposal *models.SkillProposal, manifestJSON, manifestDigest string, cmd PromotionCommand, now time.Time) *models.SkillRevision {
+	revisionNumber := proposal.ProposedRevisionNumber
+	if revisionNumber <= 0 && skill != nil {
+		revisionNumber = skill.CurrentRevisionNumber + 1
+	}
+	if revisionNumber <= 0 {
+		revisionNumber = 1
+	}
+	exposure := proposal.RequestedExposure
+	if exposure == "" {
+		exposure = models.SkillExposurePrivate
+	}
+	actor := strings.TrimSpace(cmd.ActorUsername)
+	revision := &models.SkillRevision{
+		SkillID:         skill.ID,
+		RevisionNumber:  revisionNumber,
+		Status:          models.SkillRevisionStatusProposed,
+		ProposalID:      proposal.ID,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		ContentDigest:   proposal.SourceDigest,
+		Capabilities:    capabilitiesFromManifest(manifestJSON),
+		DefaultExposure: exposure,
+		CreatedBy:       actor,
+		UpdatedBy:       actor,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Provenance:      promotionProvenance(proposal, manifestDigest),
+	}
+	if revision.ID == "" {
+		revision.ID = fmt.Sprintf("%s-r%d", skill.ID, revisionNumber)
+	}
+	return revision
+}
+
+func capabilitiesFromManifest(manifestJSON string) []string {
+	var manifest struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+		return nil
+	}
+	return manifest.Capabilities
+}
+
+func promotionProvenance(proposal *models.SkillProposal, manifestDigest string) []models.SkillProvenanceRef {
+	out := append([]models.SkillProvenanceRef(nil), proposal.Provenance...)
+	sourceType := proposal.SourceType
+	if sourceType == "" {
+		sourceType = models.SkillSourceTypeManual
+	}
+	sourceRef := strings.TrimSpace(proposal.ConversationMessageID)
+	if sourceRef == "" {
+		sourceRef = strings.TrimSpace(proposal.ConversationID)
+	}
+	sourceDigest := strings.TrimSpace(proposal.SourceDigest)
+	if sourceDigest == "" {
+		sourceDigest = manifestDigest
+	}
+	out = append(out, models.SkillProvenanceRef{
+		SourceType: sourceType,
+		SourceURI:  strings.TrimSpace(proposal.SourceURI),
+		Digest:     sourceDigest,
+		Ref:        sourceRef,
+	})
+	out = append(out, models.SkillProvenanceRef{
+		SourceType: models.SkillSourceTypeProposal,
+		Digest:     manifestDigest,
+		Ref:        proposal.ID,
+	})
+	return out
+}
+
+func applyPromotionApproval(revision *models.SkillRevision, proposal *models.SkillProposal, cmd PromotionCommand, now time.Time) error {
+	approval := ApprovalCommand{
+		ActorUsername:         cmd.ActorUsername,
+		ApprovalID:            cmd.ApprovalID,
+		PrincipalID:           defaultTrimmed(cmd.PrincipalID, proposal.PrincipalID),
+		PrincipalApprovalID:   defaultTrimmed(cmd.PrincipalApprovalID, proposal.PrincipalApprovalID),
+		ApprovalAuthorityType: cmd.ApprovalAuthorityType,
+		ApprovalAuthorityID:   cmd.ApprovalAuthorityID,
+		ApprovalDigest:        cmd.ApprovalDigest,
+		ApprovalSignature:     cmd.ApprovalSignature,
+		ApprovalRef:           cmd.ApprovalRef,
+		ApprovalReason:        defaultTrimmed(cmd.ApprovalReason, proposal.ReviewReason),
+		ApprovedAt:            cmd.ApprovedAt,
+	}
+	applyApprovalDefaults(&approval, revision, now)
+	return applyApprovalCommand(revision, approval)
+}
+
+func (s *Service) resolveExistingPromotion(ctx context.Context, skill *models.Skill, proposal *models.SkillProposal, revision *models.SkillRevision, promotionDigest, actor string) (*PromotionResult, bool, error) {
+	if proposal.PromotedRevisionID != "" || proposal.PromotedRevisionNumber > 0 || proposal.PromotionDigest != "" {
+		if !samePromotionMetadata(proposal, revision, promotionDigest) {
+			return nil, true, ErrPromotionConflict
+		}
+		existing, err := s.repo.GetSkillRevision(ctx, skill.ID, proposal.PromotedRevisionNumber)
+		if err != nil {
+			return nil, true, ErrPromotionConflict
+		}
+		if !samePromotedRevision(existing, proposal, revision) {
+			return nil, true, ErrPromotionConflict
+		}
+		if err := s.promoteSkillPointer(ctx, skill, existing, actor); err != nil {
+			return nil, true, err
+		}
+		return &PromotionResult{Revision: existing, Proposal: proposal, Created: false}, true, nil
+	}
+
+	existing, err := s.repo.GetSkillRevision(ctx, skill.ID, revision.RevisionNumber)
+	if err == nil {
+		return s.reconcileExistingPromotion(ctx, skill, proposal, existing, revision, promotionDigest, actor)
+	}
+	if !isSkillNotFound(err) {
+		return nil, true, err
+	}
+
+	existing, err = s.repo.GetSkillRevisionByDigest(ctx, revision.ManifestDigest)
+	if err == nil {
+		return s.reconcileExistingPromotion(ctx, skill, proposal, existing, revision, promotionDigest, actor)
+	}
+	if !isSkillNotFound(err) {
+		return nil, true, err
+	}
+	return nil, false, nil
+}
+
+func (s *Service) reconcileExistingPromotion(ctx context.Context, skill *models.Skill, proposal *models.SkillProposal, existing, expected *models.SkillRevision, promotionDigest, actor string) (*PromotionResult, bool, error) {
+	if !samePromotedRevision(existing, proposal, expected) {
+		return nil, true, ErrPromotionConflict
+	}
+	if err := s.promoteSkillPointer(ctx, skill, existing, actor); err != nil {
+		return nil, true, err
+	}
+	applyProposalPromotion(proposal, existing, promotionDigest, actor, s.currentTime())
+	if err := s.repo.UpdateSkillProposal(ctx, proposal); err != nil {
+		return nil, true, err
+	}
+	return &PromotionResult{Revision: existing, Proposal: proposal, Created: false}, true, nil
+}
+
+func (s *Service) promoteSkillPointer(ctx context.Context, skill *models.Skill, revision *models.SkillRevision, actor string) error {
+	if skill == nil || revision == nil {
+		return ErrInvalidInput
+	}
+	if skill.CurrentRevisionNumber > revision.RevisionNumber {
+		return nil
+	}
+	if skill.CurrentRevisionNumber != revision.RevisionNumber {
+		if err := s.supersedeCurrentRevision(ctx, skill, revision); err != nil {
+			return err
+		}
+	}
+	updateSkillCurrentRevision(skill, revision, actor)
+	skill.UpdatedAt = s.currentTime()
+	return s.repo.UpdateSkill(ctx, skill)
+}
+
+func applyProposalPromotion(proposal *models.SkillProposal, revision *models.SkillRevision, promotionDigest, actor string, now time.Time) {
+	proposal.Status = models.SkillProposalStatusAccepted
+	proposal.ProposedRevisionNumber = revision.RevisionNumber
+	proposal.ProposedManifestDigest = revision.ManifestDigest
+	proposal.PromotedRevisionID = revision.ID
+	proposal.PromotedRevisionNumber = revision.RevisionNumber
+	proposal.PromotionDigest = promotionDigest
+	proposal.PromotedBy = strings.TrimSpace(actor)
+	proposal.PromotedAt = ptrTime(now)
+	proposal.UpdatedAt = now.UTC()
+	_ = proposal.UpdateKeys()
+}
+
+func samePromotionMetadata(proposal *models.SkillProposal, revision *models.SkillRevision, promotionDigest string) bool {
+	return proposal.PromotedRevisionNumber == revision.RevisionNumber &&
+		strings.EqualFold(proposal.PromotedRevisionID, revision.ID) &&
+		sameDigest(proposal.PromotionDigest, promotionDigest)
+}
+
+func samePromotedRevision(existing *models.SkillRevision, proposal *models.SkillProposal, expected *models.SkillRevision) bool {
+	if existing == nil || proposal == nil || expected == nil {
+		return false
+	}
+	return existing.Status == models.SkillRevisionStatusApproved &&
+		strings.EqualFold(existing.SkillID, expected.SkillID) &&
+		existing.RevisionNumber == expected.RevisionNumber &&
+		strings.EqualFold(existing.ProposalID, proposal.ID) &&
+		sameDigest(existing.ManifestDigest, expected.ManifestDigest) &&
+		sameDigest(existing.ApprovalDigest, expected.ApprovalDigest)
+}
+
+func sameDigest(left, right string) bool {
+	left = strings.ToLower(strings.TrimSpace(left))
+	right = strings.ToLower(strings.TrimSpace(right))
+	return left != "" && left == right
+}
+
+func isSkillNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return tableerrors.IsNotFound(err) || strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func canExposeAssignment(viewer Viewer, assignment *models.SkillAssignment) bool {

@@ -1,18 +1,17 @@
 # Canonical skill authority foundation
 
-Status: Project 21 M3 foundation (#698/#699), model layer only.
+Status: Project 21 M3 canonical authority (#698/#699/#700/#701/#702).
 
 ## Purpose
 
 M3 establishes **Lesser as the canonical skill authority**. Repo-backed `SKILL.md`
 files and lesser-host mint conversations may be used as source material or
 provenance, but neither is the system of record. The canonical authority lives in
-Lesser's single DynamoDB table and later milestones expose approval, exposure,
-effective-resolution, and publication APIs from that state.
+Lesser's single DynamoDB table and exposes approval, exposure, effective-resolution,
+and proposal-promotion APIs from that state.
 
-This slice intentionally stops at storage models, repository seams, and seed
-inventory. It does **not** implement approval/revoke/resolve APIs, conversation
-promotion, runtime bundle publication, or lesser-body catalog tooling.
+This milestone intentionally stops before M4 publication/catalog/bundle behavior
+and before lesser-body skills MCP tool work.
 
 ## Entity model
 
@@ -30,6 +29,9 @@ The model keeps revision and assignment boundaries separate:
   principal approval, and provenance without making the proposal or source canonical.
 - A `SkillProposal` represents import/source material from local files, lesser-host
   conversations, or manual drafting. It is never authoritative by itself.
+  Accepted proposals may be promoted into canonical `SkillRevision` rows; the
+  proposal then records the resulting promoted revision ID/number, promotion
+  digest, promoting actor, and promotion timestamp.
 - A `SkillAssignment` binds a skill/revision to a subject (`instance`, `actor`, or
   `principal`) with exposure and lifecycle state for later resolution APIs.
 
@@ -49,6 +51,23 @@ The foundation records hooks for later milestones without implementing their API
 - source fields for `local_file`, `host_conversation`, and `manual`
 - manifest/content/bundle digests and file-level digests
 - conversation IDs as provenance only; lesser-host remains non-canonical
+
+Promotion from conversation output is fail-closed:
+
+- the source `SkillProposal` must already be `accepted`;
+- `proposedManifestJSON` must be present, valid JSON object material and its
+  canonical digest must match `proposedManifestDigest` and any caller-supplied
+  expected digest;
+- optional source digest expectations must match the proposal's source digest;
+- the resulting `SkillRevision` is written as an approved canonical row using the
+  same approval/principal digest semantics as direct revision approval;
+- idempotent replays return the existing revision when proposal, revision,
+  manifest digest, approval digest, and promotion digest match;
+- conflicting existing revisions or conflicting promoted proposal metadata return
+  a conflict rather than silently rewriting authority;
+- promotion updates the skill's current revision pointer but does not create any
+  `SkillAssignment` rows and does not broaden exposure beyond the proposal's
+  accepted requested exposure.
 
 ## Schema-integrity audit
 

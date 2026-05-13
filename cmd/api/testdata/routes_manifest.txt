@@ -197,6 +197,7 @@ POST /api/v1/admin/reports/{id}/resolve
 POST /api/v1/admin/reports/{id}/unassign
 POST /api/v1/admin/skills/{skillId}/assignments
 POST /api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke
+POST /api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote
 POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve
 POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke
 POST /api/v1/admin/statuses/{id}/sensitive

@@ -75,6 +75,32 @@ func seedApprovedRevision(t *testing.T, ctx context.Context, repo *fakeSkillRepo
 	require.NoError(t, repo.CreateSkillRevision(ctx, revision))
 }
 
+func acceptedPromotionProposal(t *testing.T, id, skillID string) *models.SkillProposal {
+	t.Helper()
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{"capabilities":["social.post","memory.read"],"name":"Skill A","version":1}`)
+	require.NoError(t, err)
+	reviewedAt := time.Date(2026, 5, 13, 12, 15, 0, 0, time.UTC)
+	return &models.SkillProposal{
+		ID:                     id,
+		SkillID:                skillID,
+		Status:                 models.SkillProposalStatusAccepted,
+		RequestedExposure:      models.SkillExposurePrivate,
+		ProposedRevisionNumber: 1,
+		ProposedManifestJSON:   manifestJSON,
+		ProposedManifestDigest: manifestDigest,
+		SourceType:             models.SkillSourceTypeHostConversation,
+		SourceURI:              "lesser-host://conversations/conv-1/messages/msg-1",
+		SourceDigest:           "sha256:source",
+		ConversationID:         "conv-1",
+		ConversationMessageID:  "msg-1",
+		PrincipalID:            "principal-1",
+		PrincipalApprovalID:    "principal-approval-1",
+		ReviewedBy:             "ops",
+		ReviewedAt:             &reviewedAt,
+		ReviewReason:           "reviewed source output",
+	}
+}
+
 func (f *fakeSkillRepo) CreateSkill(_ context.Context, skill *models.Skill) error {
 	if err := skill.UpdateKeys(); err != nil {
 		return err
@@ -336,6 +362,212 @@ func TestServiceApproveRevisionRejectsDigestMismatch(t *testing.T) {
 		ApprovalDigest: "sha256:not-the-server-digest",
 	})
 	require.ErrorIs(t, err, ErrApprovalDigestMismatch)
+}
+
+func TestServicePromoteProposalCreatesApprovedRevision(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 5, 13, 17, 0, 0, 0, time.UTC)
+	repo := newFakeSkillRepo()
+	svc := NewService(repo).WithNow(func() time.Time { return now })
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusDraft, DefaultExposure: models.SkillExposurePrivate}))
+	proposal := acceptedPromotionProposal(t, "proposal-1", "skill-a")
+	require.NoError(t, repo.CreateSkillProposal(ctx, proposal))
+
+	result, err := svc.PromoteProposal(ctx, "skill-a", PromotionCommand{
+		ActorUsername:          "ops",
+		ProposalID:             "proposal-1",
+		ExpectedManifestDigest: proposal.ProposedManifestDigest,
+		ExpectedSourceDigest:   proposal.SourceDigest,
+		ApprovalRef:            "lesser://approvals/principal-approval-1",
+	})
+	require.NoError(t, err)
+	require.True(t, result.Created)
+	require.Equal(t, models.SkillRevisionStatusApproved, result.Revision.Status)
+	require.Equal(t, "skill-a-r1", result.Revision.ID)
+	require.Equal(t, "proposal-1", result.Revision.ProposalID)
+	require.Equal(t, proposal.ProposedManifestDigest, result.Revision.ManifestDigest)
+	require.Equal(t, "sha256:source", result.Revision.ContentDigest)
+	require.Equal(t, []string{"memory.read", "social.post"}, result.Revision.Capabilities)
+	require.Equal(t, models.SkillExposurePrivate, result.Revision.DefaultExposure)
+	require.Equal(t, "principal-1", result.Revision.PrincipalID)
+	require.Equal(t, "principal-approval-1", result.Revision.PrincipalApprovalID)
+	require.Equal(t, "ops", result.Revision.ApprovedBy)
+	require.NotEmpty(t, result.Revision.ApprovalDigest)
+	require.Len(t, result.Revision.Provenance, 3)
+	require.Equal(t, models.SkillSourceTypeHostConversation, result.Revision.Provenance[0].SourceType)
+	require.Equal(t, "msg-1", result.Revision.Provenance[0].Ref)
+	require.Equal(t, models.SkillSourceTypeProposal, result.Revision.Provenance[1].SourceType)
+	require.Equal(t, models.SkillSourceTypeApproval, result.Revision.Provenance[2].SourceType)
+
+	skill, err := repo.GetSkill(ctx, "skill-a")
+	require.NoError(t, err)
+	require.Equal(t, models.SkillStatusActive, skill.Status)
+	require.Equal(t, 1, skill.CurrentRevisionNumber)
+	require.Equal(t, models.SkillExposurePrivate, skill.DefaultExposure)
+
+	promoted, err := repo.GetSkillProposal(ctx, "proposal-1")
+	require.NoError(t, err)
+	require.Equal(t, "skill-a-r1", promoted.PromotedRevisionID)
+	require.Equal(t, 1, promoted.PromotedRevisionNumber)
+	require.NotEmpty(t, promoted.PromotionDigest)
+	require.Equal(t, "ops", promoted.PromotedBy)
+	require.NotNil(t, promoted.PromotedAt)
+}
+
+func TestServicePromoteProposalFailsClosedForSourceAndApprovalState(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a"}))
+
+	proposed := acceptedPromotionProposal(t, "proposal-proposed", "skill-a")
+	proposed.Status = models.SkillProposalStatusProposed
+	require.NoError(t, repo.CreateSkillProposal(ctx, proposed))
+	_, err := svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-proposed"})
+	require.ErrorIs(t, err, ErrInvalidState)
+
+	missing := acceptedPromotionProposal(t, "proposal-missing", "skill-a")
+	missing.ProposedManifestJSON = ""
+	require.NoError(t, repo.CreateSkillProposal(ctx, missing))
+	_, err = svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-missing"})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	malformed := acceptedPromotionProposal(t, "proposal-malformed", "skill-a")
+	malformed.ProposedManifestJSON = "{"
+	require.NoError(t, repo.CreateSkillProposal(ctx, malformed))
+	_, err = svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-malformed"})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	mismatch := acceptedPromotionProposal(t, "proposal-mismatch", "skill-a")
+	mismatch.ProposedManifestDigest = "sha256:not-the-manifest"
+	require.NoError(t, repo.CreateSkillProposal(ctx, mismatch))
+	_, err = svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-mismatch"})
+	require.ErrorIs(t, err, ErrPromotionDigestMismatch)
+
+	proposal := acceptedPromotionProposal(t, "proposal-unauthorized", "skill-a")
+	require.NoError(t, repo.CreateSkillProposal(ctx, proposal))
+	_, err = svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ProposalID: "proposal-unauthorized"})
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestServicePromoteProposalIdempotencyAndConflict(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 5, 13, 18, 0, 0, 0, time.UTC)
+	repo := newFakeSkillRepo()
+	svc := NewService(repo).WithNow(func() time.Time { return now })
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a"}))
+	proposal := acceptedPromotionProposal(t, "proposal-1", "skill-a")
+	require.NoError(t, repo.CreateSkillProposal(ctx, proposal))
+
+	first, err := svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-1"})
+	require.NoError(t, err)
+	require.True(t, first.Created)
+	second, err := svc.PromoteProposal(ctx, "skill-a", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-1"})
+	require.NoError(t, err)
+	require.False(t, second.Created)
+	require.Equal(t, first.Revision.ID, second.Revision.ID)
+
+	conflictRepo := newFakeSkillRepo()
+	conflictSvc := NewService(conflictRepo).WithNow(func() time.Time { return now })
+	require.NoError(t, conflictRepo.CreateSkill(ctx, &models.Skill{ID: "skill-b"}))
+	conflictProposal := acceptedPromotionProposal(t, "proposal-2", "skill-b")
+	require.NoError(t, conflictRepo.CreateSkillProposal(ctx, conflictProposal))
+	seedApprovedRevision(t, ctx, conflictRepo, &models.SkillRevision{
+		SkillID:         "skill-b",
+		RevisionNumber:  1,
+		ProposalID:      "other-proposal",
+		ManifestDigest:  conflictProposal.ProposedManifestDigest,
+		DefaultExposure: models.SkillExposurePrivate,
+		PrincipalID:     "principal-1",
+	})
+	_, err = conflictSvc.PromoteProposal(ctx, "skill-b", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-2"})
+	require.ErrorIs(t, err, ErrPromotionConflict)
+
+	digestConflictRepo := newFakeSkillRepo()
+	digestConflictSvc := NewService(digestConflictRepo).WithNow(func() time.Time { return now })
+	require.NoError(t, digestConflictRepo.CreateSkill(ctx, &models.Skill{ID: "skill-c"}))
+	digestConflictProposal := acceptedPromotionProposal(t, "proposal-3", "skill-c")
+	digestConflictProposal.ProposedRevisionNumber = 2
+	require.NoError(t, digestConflictRepo.CreateSkillProposal(ctx, digestConflictProposal))
+	seedApprovedRevision(t, ctx, digestConflictRepo, &models.SkillRevision{
+		SkillID:         "skill-c",
+		RevisionNumber:  1,
+		ProposalID:      "other-proposal",
+		ManifestDigest:  digestConflictProposal.ProposedManifestDigest,
+		DefaultExposure: models.SkillExposurePrivate,
+		PrincipalID:     "principal-1",
+	})
+	_, err = digestConflictSvc.PromoteProposal(ctx, "skill-c", PromotionCommand{ActorUsername: "ops", ProposalID: "proposal-3"})
+	require.ErrorIs(t, err, ErrPromotionConflict)
+}
+
+func TestServicePromoteProposalReconcilesExistingRevision(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 5, 13, 18, 30, 0, 0, time.UTC)
+	repo := newFakeSkillRepo()
+	svc := NewService(repo).WithNow(func() time.Time { return now })
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+		ID:                    "skill-a",
+		Status:                models.SkillStatusActive,
+		DefaultExposure:       models.SkillExposurePrivate,
+		CurrentRevisionNumber: 1,
+		CurrentRevisionID:     "skill-a-r1",
+	}))
+	proposal := acceptedPromotionProposal(t, "proposal-1", "skill-a")
+	proposal.ProposedRevisionNumber = 2
+	require.NoError(t, repo.CreateSkillProposal(ctx, proposal))
+
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(proposal.ProposedManifestJSON)
+	require.NoError(t, err)
+	expected := buildPromotionRevision(&models.Skill{ID: "skill-a", CurrentRevisionNumber: 1}, proposal, manifestJSON, manifestDigest, PromotionCommand{ActorUsername: "ops"}, now)
+	require.NoError(t, applyPromotionApproval(expected, proposal, PromotionCommand{ActorUsername: "ops"}, now))
+	require.NoError(t, repo.CreateSkillRevision(ctx, expected))
+
+	result, err := svc.PromoteProposal(ctx, "skill-a", PromotionCommand{
+		ActorUsername:          "ops",
+		ProposalID:             "proposal-1",
+		ExpectedManifestDigest: manifestDigest,
+	})
+	require.NoError(t, err)
+	require.False(t, result.Created)
+	require.Equal(t, expected.ID, result.Revision.ID)
+
+	promoted, err := repo.GetSkillProposal(ctx, "proposal-1")
+	require.NoError(t, err)
+	require.Equal(t, expected.ID, promoted.PromotedRevisionID)
+	require.NotEmpty(t, promoted.PromotionDigest)
+
+	skill, err := repo.GetSkill(ctx, "skill-a")
+	require.NoError(t, err)
+	require.Equal(t, 2, skill.CurrentRevisionNumber)
+}
+
+func TestServicePromotionHelperBranches(t *testing.T) {
+	_, _, err := canonicalizeSkillManifest(`{"name":"Skill"} trailing`)
+	require.Error(t, err)
+
+	require.Nil(t, capabilitiesFromManifest("{"))
+
+	fallbackProposal := &models.SkillProposal{
+		ID:                "proposal-1",
+		SkillID:           "skill-a",
+		SourceType:        models.SkillSourceTypeManual,
+		RequestedExposure: models.SkillExposurePrivate,
+	}
+	provenance := promotionProvenance(fallbackProposal, "sha256:manifest")
+	require.Len(t, provenance, 2)
+	require.Equal(t, "sha256:manifest", provenance[0].Digest)
+
+	require.False(t, samePromotedRevision(nil, fallbackProposal, &models.SkillRevision{}))
+	require.False(t, isSkillNotFound(errors.New("boom")))
+
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	skill := &models.Skill{ID: "skill-a", CurrentRevisionNumber: 3, CurrentRevisionID: "skill-a-r3"}
+	revision := &models.SkillRevision{ID: "skill-a-r2", SkillID: "skill-a", RevisionNumber: 2}
+	require.NoError(t, svc.promoteSkillPointer(ctx, skill, revision, "ops"))
+	require.Equal(t, 3, skill.CurrentRevisionNumber)
 }
 
 func TestServiceAssignAndResolveEffectiveSkills(t *testing.T) {
