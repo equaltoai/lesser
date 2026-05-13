@@ -71,6 +71,7 @@ func (m *mockStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsReposit
 func (m *mockStorage) Audit() *repositories.AuditRepository                             { return nil }
 func (m *mockStorage) MediaMetadata() *repositories.MediaMetadataRepository             { return nil }
 func (m *mockStorage) OAuth() *repositories.OAuthRepository                             { return nil }
+func (m *mockStorage) Skill() interfaces.SkillRepository                                { return nil }
 func (m *mockStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
 func (m *mockStorage) DNSCache() *repositories.DNSCacheRepository                       { return nil }
 func (m *mockStorage) Filter() *repositories.FilterRepository                           { return nil }

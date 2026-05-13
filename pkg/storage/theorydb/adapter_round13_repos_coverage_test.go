@@ -177,6 +177,7 @@ func (s *permissiveRepositoryStorage) MediaMetadata() *repositories.MediaMetadat
 	return s.mediaMeta
 }
 func (s *permissiveRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return s.dnsCache }
+func (s *permissiveRepositoryStorage) Skill() interfaces.SkillRepository          { return nil }
 func (s *permissiveRepositoryStorage) Analytics() *repositories.TrendingRepository {
 	return s.analytics
 }

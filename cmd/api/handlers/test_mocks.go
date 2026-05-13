@@ -433,6 +433,15 @@ func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository {
 	return args.Get(0).(*repositories.OAuthRepository)
 }
 
+// Skill returns a mock skill repository for testing.
+func (m *MockRepositoryStorage) Skill() interfaces.SkillRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(interfaces.SkillRepository)
+}
+
 // DNSCache returns a mock DNS cache repository for testing
 func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
 	args := m.Called()

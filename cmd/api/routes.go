@@ -379,6 +379,13 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/vouches/{actor_id}", apiHandler.HandleGetVouchesLift)
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift, requireAuth)
 
+	// Canonical skill authority (Lesser-exclusive additive API)
+	app.Get("/api/v1/skills", apiHandler.HandleListSkillsLift, optionalAuth)
+	app.Get("/api/v1/skills/resolve", apiHandler.HandleResolveEffectiveSkillsLift, requireRead)
+	app.Get("/api/v1/skills/{skillId}", apiHandler.HandleGetSkillLift, optionalAuth)
+	app.Get("/api/v1/skills/{skillId}/revisions", apiHandler.HandleListSkillRevisionsLift, optionalAuth)
+	app.Get("/api/v1/skills/{skillId}/revisions/{revisionNumber}", apiHandler.HandleGetSkillRevisionLift, optionalAuth)
+
 	// Souls
 	app.Get("/api/v1/souls/bound/me", apiHandler.HandleGetBoundSoulMeLift, requireReadOrWrite)
 	app.Get("/api/v1/souls/bound/me/mint-conversations", apiHandler.HandleListBoundSoulMintConversationsLift, requireRead)
@@ -445,6 +452,15 @@ func configureRoutes(app *apptheory.App) {
 
 	// Soul governance (Admin only)
 	app.Put("/api/v1/admin/soul/well-known", apiHandler.HandleAdminSetSoulWellKnownProofLift, requireAdmin)
+
+	// Canonical skill authority administration (Admin only)
+	app.Get("/api/v1/admin/skills/proposals", apiHandler.HandleAdminListSkillProposalsLift, requireAuth)
+	app.Get("/api/v1/admin/skills/proposals/{proposalId}", apiHandler.HandleAdminGetSkillProposalLift, requireAuth)
+	app.Get("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminListSkillAssignmentsLift, requireAuth)
+	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve", apiHandler.HandleAdminApproveSkillRevisionLift, requireAuth)
+	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke", apiHandler.HandleAdminRevokeSkillRevisionLift, requireAuth)
+	app.Post("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminCreateSkillAssignmentLift, requireAuth)
+	app.Post("/api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke", apiHandler.HandleAdminRevokeSkillAssignmentLift, requireAuth)
 
 	// Domain blocks (Admin only)
 	app.Get("/api/v1/admin/domain_blocks", apiHandler.HandleGetAdminDomainBlocksLift, requireAuth)

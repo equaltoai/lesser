@@ -16,6 +16,7 @@ type SkillRepository interface {
 	GetSkill(ctx context.Context, skillID string) (*models.Skill, error)
 	UpdateSkill(ctx context.Context, skill *models.Skill) error
 	ListSkillsByStatus(ctx context.Context, status string, limit int, cursor string) ([]*models.Skill, string, error)
+	ListSkillsByExposure(ctx context.Context, exposure string, limit int, cursor string) ([]*models.Skill, string, error)
 
 	// Revision operations.
 	CreateSkillRevision(ctx context.Context, revision *models.SkillRevision) error

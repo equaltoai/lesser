@@ -52,6 +52,9 @@ GET /api/v1/admin/moderation/reviewers
 GET /api/v1/admin/moderation/trust/graph
 GET /api/v1/admin/reports
 GET /api/v1/admin/reports/{id}
+GET /api/v1/admin/skills/proposals
+GET /api/v1/admin/skills/proposals/{proposalId}
+GET /api/v1/admin/skills/{skillId}/assignments
 GET /api/v1/admin/statuses
 GET /api/v1/admin/statuses/{id}
 GET /api/v1/agents
@@ -101,6 +104,11 @@ GET /api/v1/reputation/{actor_id}
 GET /api/v1/scheduled_statuses
 GET /api/v1/scheduled_statuses/{id}
 GET /api/v1/search/statuses
+GET /api/v1/skills
+GET /api/v1/skills/resolve
+GET /api/v1/skills/{skillId}
+GET /api/v1/skills/{skillId}/revisions
+GET /api/v1/skills/{skillId}/revisions/{revisionNumber}
 GET /api/v1/souls/bound/me
 GET /api/v1/souls/bound/me/mint-conversations
 GET /api/v1/souls/bound/me/mint-conversations/{conversationId}
@@ -187,6 +195,10 @@ POST /api/v1/admin/reports/{id}/assign_to_self
 POST /api/v1/admin/reports/{id}/reopen
 POST /api/v1/admin/reports/{id}/resolve
 POST /api/v1/admin/reports/{id}/unassign
+POST /api/v1/admin/skills/{skillId}/assignments
+POST /api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke
+POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve
+POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke
 POST /api/v1/admin/statuses/{id}/sensitive
 POST /api/v1/admin/statuses/{id}/unsensitive
 POST /api/v1/agents/auth/challenge

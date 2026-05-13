@@ -127,6 +127,7 @@ func (s *permissiveRegistryStorage) Severance() *repositories.SeveranceRepositor
 func (s *permissiveRegistryStorage) ModerationML() *repositories.ModerationMLRepository {
 	return s.moderationMLRepo
 }
+func (s *permissiveRegistryStorage) Skill() interfaces.SkillRepository { return nil }
 func (s *permissiveRegistryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return s.mediaAnalyticsRepo
 }

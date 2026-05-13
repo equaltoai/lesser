@@ -48,6 +48,8 @@ func TestSkillRepositoryNilDatabasePaths(t *testing.T) {
 	require.Error(t, err)
 	_, _, err = repo.ListSkillsByStatus(ctx, "", 0, "")
 	require.Error(t, err)
+	_, _, err = repo.ListSkillsByExposure(ctx, "", 0, "")
+	require.Error(t, err)
 
 	revision := &models.SkillRevision{
 		ID:              "skill-a-r1",

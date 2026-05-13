@@ -524,6 +524,7 @@ func (s *repoStorageStub) StreamingCloudWatch() *repositories.StreamingCloudWatc
 }
 func (s *repoStorageStub) Audit() *repositories.AuditRepository                  { return nil }
 func (s *repoStorageStub) OAuth() *repositories.OAuthRepository                  { return nil }
+func (s *repoStorageStub) Skill() interfaces.SkillRepository                     { return nil }
 func (s *repoStorageStub) DNSCache() *repositories.DNSCacheRepository            { return nil }
 func (s *repoStorageStub) Filter() *repositories.FilterRepository                { return nil }
 func (s *repoStorageStub) Thread() *repositories.ThreadRepository                { return nil }

@@ -338,6 +338,7 @@ func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository   
 func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository                 { return nil }
 func (m *MockRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
 func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository                 { return nil }
+func (m *MockRepositoryStorage) Skill() interfaces.SkillRepository                    { return nil }
 func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
 	return nil
 }

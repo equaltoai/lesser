@@ -329,6 +329,7 @@ func (s *testRepositoryStorage) StreamingCloudWatch() *repositories.StreamingClo
 }
 func (s *testRepositoryStorage) Audit() *repositories.AuditRepository       { return nil }
 func (s *testRepositoryStorage) OAuth() *repositories.OAuthRepository       { return nil }
+func (s *testRepositoryStorage) Skill() interfaces.SkillRepository          { return nil }
 func (s *testRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return nil }
 func (s *testRepositoryStorage) Filter() *repositories.FilterRepository     { return nil }
 func (s *testRepositoryStorage) Thread() *repositories.ThreadRepository     { return nil }
