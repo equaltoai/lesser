@@ -39,7 +39,13 @@ The foundation records hooks for later milestones without implementing their API
 
 - exposure: `public`, `instance`, `private`
 - revision/proposal/assignment status fields
-- `approvalID`, `principalID`, `principalApprovalID`
+- explicit revision approval semantics:
+  - `approvalID`
+  - `approvalAuthorityType` / `approvalAuthorityID`
+  - `approvalDigest` and optional `approvalSignature` / `approvalRef`
+  - `approvedBy` / `approvedAt`
+  - `principalID` / `principalApprovalID`
+  - `revokedBy` / `revokedAt` / `revokedReason`
 - source fields for `local_file`, `host_conversation`, and `manual`
 - manifest/content/bundle digests and file-level digests
 - conversation IDs as provenance only; lesser-host remains non-canonical
@@ -92,7 +98,26 @@ sparse prefixes on existing `gsi1`/`gsi2`:
 | `SkillProposal` | `gsi1` | `SKILL#{skillID}#PROPOSAL` / `STATUS#{status}#CREATED#{time}#PROPOSAL#{proposalID}` | proposals for a skill |
 | `SkillProposal` | `gsi2` | `SKILL_PROPOSAL#STATUS#{status}` / `CREATED#{time}#SKILL#{skillID}#PROPOSAL#{proposalID}` | later review queues |
 | `SkillAssignment` | `gsi1` | `SKILL#{skillID}#ASSIGNMENT` / `SUBJECT#{type}#{id}#ASSIGNMENT#{assignmentID}` | assignment audit/revocation by skill |
-| `SkillAssignment` | `gsi2` | `SKILL_ASSIGNMENT#STATUS#{status}` / `UPDATED#{time}#SUBJECT#{type}#{id}#SKILL#{skillID}` | pending/revoked queues |
+| `SkillAssignment` | `gsi2` | `SKILL_ASSIGNMENT#STATUS#{status}` / `UPDATED#{time}#SUBJECT#{type}#{id}#SKILL#{skillID}#REVISION#{n}#ASSIGNMENT#{assignmentID}` | pending/revoked queues |
+
+### Approval / provenance semantics added for #701
+
+Approved `SkillRevision` rows are fail-closed:
+
+- approved revisions require a local approval actor (`approvedBy`), timestamp
+  (`approvedAt`), approval ID, principal ID, authority type/ID, and approval
+  digest;
+- optional signatures or external approval references are metadata over that
+  digest, not a substitute for the Lesser-owned canonical row;
+- revoked revisions require `revokedBy` and `revokedAt`;
+- unknown status, exposure, source, subject, or approval-authority vocabularies
+  are rejected before writes so GSI prefixes cannot fragment silently.
+
+The canonical approval digest is computed over the Lesser-owned revision identity
+(`skillID`, revision number, revision ID), source/proposal references, content
+digests, principal ID, and approval authority. That keeps seed/import source,
+proposal provenance, approval actor, and canonical revision identity inspectable
+without making a local `SKILL.md` file or lesser-host conversation authoritative.
 
 Consumer impact is additive: no existing repository, Lambda, GraphQL resolver,
 Mastodon REST handler, or ActivityPub endpoint reads these prefixes today.

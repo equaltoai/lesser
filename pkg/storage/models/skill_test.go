@@ -69,11 +69,17 @@ func TestSkillRevision_UpdateKeysCapturesDigestAndRevisionBoundary(t *testing.T)
 
 	approved := time.Date(2026, 5, 13, 4, 0, 0, 0, time.UTC)
 	revision := &SkillRevision{
-		SkillID:        " Skill-A ",
-		RevisionNumber: 7,
-		Status:         " Approved ",
-		ManifestDigest: " SHA256:ABCDEF ",
-		BundleDigest:   " SHA256:BUNDLE ",
+		SkillID:               " Skill-A ",
+		RevisionNumber:        7,
+		Status:                " Approved ",
+		ManifestDigest:        " SHA256:ABCDEF ",
+		BundleDigest:          " SHA256:BUNDLE ",
+		ApprovalID:            " approval-1 ",
+		ApprovalAuthorityType: " Admin ",
+		ApprovalAuthorityID:   " ops ",
+		ApprovalDigest:        " SHA256:APPROVAL ",
+		ApprovedBy:            " ops ",
+		PrincipalID:           " principal-1 ",
 		Files: []SkillRevisionFile{
 			{Path: " skill.json ", Digest: " SHA256:2 ", Role: " Manifest "},
 			{Path: " SKILL.md ", Digest: " SHA256:1 ", Role: " Primary "},
@@ -90,6 +96,8 @@ func TestSkillRevision_UpdateKeysCapturesDigestAndRevisionBoundary(t *testing.T)
 	require.Equal(t, SkillRevisionStatusApproved, revision.Status)
 	require.Equal(t, "sha256:abcdef", revision.ManifestDigest)
 	require.Equal(t, SkillExposurePublic, revision.DefaultExposure)
+	require.Equal(t, SkillApprovalAuthorityAdmin, revision.ApprovalAuthorityType)
+	require.Equal(t, "sha256:approval", revision.ApprovalDigest)
 	require.Equal(t, "SKILL_REVISION#STATUS#approved", revision.GSI1PK)
 	require.Contains(t, revision.GSI1SK, "#SKILL#skill-a#REVISION#00000007")
 	require.Equal(t, "SKILL_REVISION_DIGEST#sha256:abcdef", revision.GSI2PK)
@@ -162,7 +170,7 @@ func TestSkillAssignment_UpdateKeysDefinesSubjectBoundary(t *testing.T) {
 	require.Equal(t, "SKILL#skill-a#ASSIGNMENT", assignment.GSI1PK)
 	require.Equal(t, "SUBJECT#actor#alice#ASSIGNMENT#assignment-1", assignment.GSI1SK)
 	require.Equal(t, "SKILL_ASSIGNMENT#STATUS#pending", assignment.GSI2PK)
-	require.Contains(t, assignment.GSI2SK, "#SUBJECT#actor#alice#SKILL#skill-a")
+	require.Contains(t, assignment.GSI2SK, "#SUBJECT#actor#alice#SKILL#skill-a#REVISION#00000003#ASSIGNMENT#assignment-1")
 	require.False(t, assignment.AssignedAt.IsZero())
 	require.NotNil(t, assignment.RevokedAt)
 	require.Equal(t, revoked, *assignment.RevokedAt)
@@ -176,4 +184,49 @@ func TestSkillAuthorityModels_RequireIdentifiers(t *testing.T) {
 	require.Error(t, (&SkillRevision{SkillID: "skill-a"}).UpdateKeys())
 	require.Error(t, (&SkillProposal{ID: "proposal-1"}).UpdateKeys())
 	require.Error(t, (&SkillAssignment{ID: "assignment-1", SkillID: "skill-a", SubjectType: "actor"}).UpdateKeys())
+}
+
+func TestSkillAuthorityModels_FailClosedVocabularies(t *testing.T) {
+	t.Parallel()
+
+	require.Error(t, (&Skill{ID: "skill-a", Status: "mystery"}).UpdateKeys())
+	require.Error(t, (&Skill{ID: "skill-a", DefaultExposure: "friends"}).UpdateKeys())
+	require.Error(t, (&SkillRevision{SkillID: "skill-a", RevisionNumber: 1, Status: "reviewing"}).UpdateKeys())
+	require.Error(t, (&SkillProposal{ID: "proposal-1", SkillID: "skill-a", SourceType: "host"}).UpdateKeys())
+	require.Error(t, (&SkillAssignment{ID: "assignment-1", SkillID: "skill-a", SubjectType: "group", SubjectID: "alice"}).UpdateKeys())
+	require.Error(t, (&Skill{
+		ID: "skill-a",
+		Provenance: []SkillProvenanceRef{{
+			SourceURI: ".codex/skills/example/SKILL.md",
+		}},
+	}).UpdateKeys())
+}
+
+func TestSkillRevisionApprovalDigestIsStableAndAuthorityScoped(t *testing.T) {
+	t.Parallel()
+
+	revision := &SkillRevision{
+		ID:             "skill-a-r1",
+		SkillID:        "skill-a",
+		RevisionNumber: 1,
+		ManifestDigest: "sha256:manifest",
+		ContentDigest:  "sha256:content",
+		BundleDigest:   "sha256:bundle",
+	}
+
+	first, err := SkillRevisionApprovalDigest(revision, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.NoError(t, err)
+	second, err := SkillRevisionApprovalDigest(revision, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Contains(t, first, "sha256:")
+
+	other, err := SkillRevisionApprovalDigest(revision, "principal-1", SkillApprovalAuthorityPrincipal, "principal-1")
+	require.NoError(t, err)
+	require.NotEqual(t, first, other)
+
+	_, err = SkillRevisionApprovalDigest(revision, "", SkillApprovalAuthorityAdmin, "ops")
+	require.Error(t, err)
+	_, err = SkillRevisionApprovalDigest(revision, "principal-1", "unknown", "ops")
+	require.Error(t, err)
 }

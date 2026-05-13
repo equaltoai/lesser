@@ -58,6 +58,7 @@ type RepositoryStorage interface {
 	StreamingCloudWatch() *repositories.StreamingCloudWatchRepository
 	Audit() *repositories.AuditRepository
 	OAuth() *repositories.OAuthRepository
+	Skill() interfaces.SkillRepository
 	DNSCache() *repositories.DNSCacheRepository
 	Filter() *repositories.FilterRepository
 	Thread() *repositories.ThreadRepository
