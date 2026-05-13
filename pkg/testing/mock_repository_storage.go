@@ -86,6 +86,7 @@ type MockRepositoryStorage struct {
 	mediaPopularityRepo  interfaces.MediaPopularityRepository
 	mediaSessionRepo     interfaces.MediaSessionRepository
 	streamingConnRepo    interfaces.StreamingConnectionRepository
+	skillRepo            interfaces.SkillRepository
 
 	// CMS repositories (interface types for mockability)
 	articleRepo           interfaces.ArticleRepository
@@ -211,6 +212,14 @@ func WithMediaSessionRepository(repo interfaces.MediaSessionRepository) Option {
 func WithStreamingConnectionRepository(repo interfaces.StreamingConnectionRepository) Option {
 	return func(s *MockRepositoryStorage) {
 		s.streamingConnRepo = repo
+	}
+}
+
+// WithSkillRepository sets a custom canonical skill repository implementation.
+// Use this to inject a mock for testing specific skill authority behavior.
+func WithSkillRepository(repo interfaces.SkillRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.skillRepo = repo
 	}
 }
 
@@ -597,6 +606,11 @@ func (s *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository
 // StreamingConnection returns the streaming connection repository.
 func (s *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return s.streamingConnRepo
+}
+
+// Skill returns the skill repository (interface type for mockability).
+func (s *MockRepositoryStorage) Skill() interfaces.SkillRepository {
+	return s.skillRepo
 }
 
 // CMS Repository accessors

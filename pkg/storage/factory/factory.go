@@ -87,6 +87,7 @@ type RepositoryFactory struct {
 	mediaPopularityRepo     *repositories.MediaPopularityRepository
 	mediaSessionRepo        *repositories.MediaSessionRepository
 	streamingConnectionRepo *repositories.StreamingConnectionRepository
+	skillRepo               *repositories.SkillRepository
 
 	// CMS Repositories
 	articleRepo           *repositories.ArticleRepository
@@ -218,6 +219,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.mediaPopularityRepo = repositories.NewMediaPopularityRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaSessionRepo = repositories.NewMediaSessionRepository(f.db, f.logger, nil)
 	f.streamingConnectionRepo = repositories.NewStreamingConnectionRepository(f.db, f.tableName, f.db, f.tableName, f.logger, nil)
+	f.skillRepo = repositories.NewSkillRepository(f.db, f.tableName, f.logger, nil)
 
 	// Initialize CMS repositories
 	f.articleRepo = repositories.NewArticleRepository(f.db, f.tableName, f.logger, nil)
@@ -592,6 +594,11 @@ func (f *RepositoryFactory) MediaSession() interfaces.MediaSessionRepository {
 // StreamingConnection returns the StreamingConnection repository instance
 func (f *RepositoryFactory) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return f.streamingConnectionRepo
+}
+
+// Skill returns the Skill repository instance.
+func (f *RepositoryFactory) Skill() interfaces.SkillRepository {
+	return f.skillRepo
 }
 
 // CMS Repository Getters (interface types for mockability)
