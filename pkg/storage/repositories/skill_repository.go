@@ -113,6 +113,15 @@ func (r *SkillRepository) ListSkillRevisions(ctx context.Context, skillID string
 	return listByPKSKPrefixPaginated[*models.SkillRevision](ctx, r.db, &models.SkillRevision{}, models.SkillPartitionKey(skillID), models.SKSkillRevisionPrefix, sanitizeSkillLimit(limit), cursor)
 }
 
+// ListSkillRevisionsByStatus lists canonical revisions by lifecycle status.
+func (r *SkillRepository) ListSkillRevisionsByStatus(ctx context.Context, status string, limit int, cursor string) ([]*models.SkillRevision, string, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = models.SkillRevisionStatusApproved
+	}
+	return querySkillGSIPage[*models.SkillRevision](ctx, r.db, &models.SkillRevision{}, models.IndexGSI1, "gsi1PK", gsi1SKField, "SKILL_REVISION#STATUS#"+status, limit, cursor)
+}
+
 // GetSkillRevisionByDigest resolves a revision by manifest digest when the digest index is populated.
 func (r *SkillRepository) GetSkillRevisionByDigest(ctx context.Context, manifestDigest string) (*models.SkillRevision, error) {
 	manifestDigest = strings.ToLower(strings.TrimSpace(manifestDigest))

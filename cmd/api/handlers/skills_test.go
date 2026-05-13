@@ -94,6 +94,8 @@ type skillHandlerStub struct {
 	nilSkillService
 	skill       *storagemodels.Skill
 	revisions   []*storagemodels.SkillRevision
+	catalog     []skillservice.CatalogEntry
+	bundle      *skillservice.CatalogEntry
 	proposal    *storagemodels.SkillProposal
 	assignment  *storagemodels.SkillAssignment
 	resolveItem skillservice.EffectiveSkill
@@ -114,6 +116,56 @@ func (s *skillHandlerStub) ListRevisions(context.Context, skillservice.Viewer, s
 
 func (s *skillHandlerStub) GetRevision(context.Context, skillservice.Viewer, string, int) (*storagemodels.SkillRevision, error) {
 	return s.revisions[0], nil
+}
+
+func (s *skillHandlerStub) ListCatalog(context.Context, skillservice.Viewer, skillservice.CatalogFilter) ([]skillservice.CatalogEntry, string, error) {
+	if s.catalog != nil {
+		return s.catalog, "next-catalog", nil
+	}
+	return []skillservice.CatalogEntry{{Skill: s.skill, Revision: s.revisions[0], Bundle: testSkillBundle()}}, "next-catalog", nil
+}
+
+func (s *skillHandlerStub) GetBundle(context.Context, skillservice.Viewer, string, int, bool) (*skillservice.CatalogEntry, error) {
+	if s.bundle != nil {
+		return s.bundle, nil
+	}
+	entry := skillservice.CatalogEntry{Skill: s.skill, Revision: s.revisions[0], Bundle: testSkillBundle()}
+	return &entry, nil
+}
+
+func testSkillBundle() skillservice.SkillBundle {
+	return skillservice.SkillBundle{
+		SchemaVersion:     skillservice.SkillBundleSchemaVersion,
+		BundleID:          "skill:skill-a:revision:00000001",
+		BundleDigest:      "sha256:bundle",
+		PublicationDigest: "sha256:publication",
+		ManifestDigest:    "sha256:manifest",
+		ContentDigest:     "sha256:content",
+		ApprovalDigest:    "sha256:approval",
+		Files: []skillservice.SkillBundleFile{{
+			Path:            "SKILL.md",
+			Digest:          "sha256:file",
+			ContentType:     "text/markdown",
+			Role:            "entrypoint",
+			SizeBytes:       42,
+			InstallPath:     "skill-a/SKILL.md",
+			Content:         "# Skill A\n",
+			Encoding:        "utf-8",
+			ContentIncluded: true,
+		}},
+		InstallHints: skillservice.SkillInstallHints{
+			Layout:         "skill-directory-v1",
+			RuntimeTargets: []string{"codex"},
+			DirectoryName:  "skill-a",
+			EntryPoint:     "SKILL.md",
+			RequiredFiles:  []string{"SKILL.md"},
+		},
+		Provenance: []storagemodels.SkillProvenanceRef{{
+			SourceType: storagemodels.SkillSourceTypeProposal,
+			Digest:     "sha256:manifest",
+			Ref:        "proposal-1",
+		}},
+	}
 }
 
 func TestSkillHandlers_PublicReadHandlers(t *testing.T) {
@@ -172,6 +224,24 @@ func TestSkillHandlers_PublicReadHandlers(t *testing.T) {
 	ctx.Params["revisionNumber"] = "bad"
 	resp = requireStatus(t, http.StatusBadRequest)(h.HandleGetSkillRevisionLift(ctx))
 	require.Contains(t, string(resp.Body), "revision_number")
+
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/skills/catalog", nil, map[string]string{"limit": "1"}, nil)
+	require.NoError(t, err)
+	resp = requireStatus(t, http.StatusOK)(h.HandleListSkillCatalogLift(ctx))
+	require.Contains(t, string(resp.Body), "next-catalog")
+	require.Contains(t, string(resp.Body), "publication_digest")
+
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a/revisions/1/bundle", nil, map[string]string{"include_content": "true"}, nil)
+	require.NoError(t, err)
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["revisionNumber"] = "1"
+	resp = requireStatus(t, http.StatusOK)(h.HandleGetSkillBundleLift(ctx))
+	require.Contains(t, string(resp.Body), "skill:skill-a:revision:00000001")
+	require.Contains(t, string(resp.Body), "# Skill A")
+
+	ctx.Params["revisionNumber"] = "bad"
+	resp = requireStatus(t, http.StatusBadRequest)(h.HandleGetSkillBundleLift(ctx))
+	require.Contains(t, string(resp.Body), "revision_number")
 }
 
 func TestSkillHandlers_HelperCoverage(t *testing.T) {
@@ -181,6 +251,9 @@ func TestSkillHandlers_HelperCoverage(t *testing.T) {
 	require.Equal(t, 25, parseSkillLimit("-1"))
 	require.Equal(t, 100, parseSkillLimit("500"))
 	require.Equal(t, 10, parseSkillLimit("10"))
+	require.True(t, parseSkillBool("true"))
+	require.True(t, parseSkillBool("1"))
+	require.False(t, parseSkillBool("false"))
 	_, err := parseSkillRevisionNumber("0")
 	require.Error(t, err)
 	gotRevision, err := parseSkillRevisionNumber("7")
@@ -255,6 +328,32 @@ func TestSkillHandlers_MappingHelpers(t *testing.T) {
 	})
 	require.Equal(t, "assign-1", assignment.ID)
 	require.Equal(t, "rotated", assignment.RevokedReason)
+
+	entry := skillservice.CatalogEntry{
+		Skill: &storagemodels.Skill{ID: "skill-a", Slug: "skill-a", Name: "Skill A"},
+		Revision: &storagemodels.SkillRevision{
+			ID: "skill-a-r1", SkillID: "skill-a", RevisionNumber: 1, Status: storagemodels.SkillRevisionStatusApproved,
+			DefaultExposure:       storagemodels.SkillExposurePublic,
+			ApprovalID:            "approval-1",
+			ApprovalAuthorityType: storagemodels.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovalDigest:        "sha256:approval",
+			ApprovalSignature:     "sig",
+			ApprovalRef:           "ref",
+			ApprovedBy:            "ops",
+			ApprovedAt:            &now,
+			PrincipalID:           "principal-1",
+			PrincipalApprovalID:   "principal-approval-1",
+		},
+		Bundle: testSkillBundle(),
+	}
+	catalogEntry := toAPISkillCatalogEntry(entry)
+	require.Equal(t, "skill-a", catalogEntry.Skill.ID)
+	require.Equal(t, "sha256:publication", catalogEntry.Bundle.Digests.PublicationDigest)
+	require.True(t, catalogEntry.Bundle.Published)
+	require.Equal(t, "# Skill A\n", catalogEntry.Bundle.Files[0].Content)
+	require.Equal(t, []string{"codex"}, catalogEntry.Bundle.InstallHints.RuntimeTargets)
+	require.Empty(t, toAPISkillBundle(nil).BundleID)
 }
 
 func (s *skillHandlerStub) ListProposals(context.Context, string, string, int, string) ([]*storagemodels.SkillProposal, string, error) {
@@ -314,6 +413,14 @@ func (s skillHandlerErrorStub) ListRevisions(context.Context, skillservice.Viewe
 }
 
 func (s skillHandlerErrorStub) GetRevision(context.Context, skillservice.Viewer, string, int) (*storagemodels.SkillRevision, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) ListCatalog(context.Context, skillservice.Viewer, skillservice.CatalogFilter) ([]skillservice.CatalogEntry, string, error) {
+	return nil, "", s.err
+}
+
+func (s skillHandlerErrorStub) GetBundle(context.Context, skillservice.Viewer, string, int, bool) (*skillservice.CatalogEntry, error) {
 	return nil, s.err
 }
 
@@ -411,6 +518,26 @@ func TestSkillHandlers_ServiceErrorsFromEndpoints(t *testing.T) {
 				return ctx
 			},
 			handle: h.HandleGetSkillRevisionLift,
+		},
+		{
+			name: "catalog",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/catalog", nil, nil, nil)
+				require.NoError(t, err)
+				return ctx
+			},
+			handle: h.HandleListSkillCatalogLift,
+		},
+		{
+			name: "bundle",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a/revisions/1/bundle", nil, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["revisionNumber"] = "1"
+				return ctx
+			},
+			handle: h.HandleGetSkillBundleLift,
 		},
 		{
 			name: "resolve",
@@ -538,6 +665,18 @@ func TestSkillHandlers_AuthenticatedAndAdminHandlers(t *testing.T) {
 	require.NoError(t, err)
 	resp := requireStatus(t, http.StatusOK)(h.HandleResolveEffectiveSkillsLift(ctx))
 	require.Contains(t, string(resp.Body), "next-effective")
+
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/skills/catalog", nil, nil, nil)
+	require.NoError(t, err)
+	resp = requireStatus(t, http.StatusOK)(h.HandleListSkillCatalogLift(ctx))
+	require.Contains(t, string(resp.Body), "next-catalog")
+
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a/revisions/1/bundle", nil, nil, nil)
+	require.NoError(t, err)
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["revisionNumber"] = "1"
+	resp = requireStatus(t, http.StatusOK)(h.HandleGetSkillBundleLift(ctx))
+	require.Contains(t, string(resp.Body), "bundle_id")
 
 	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", adminReadHeaders, nil, nil)
 	require.NoError(t, err)
@@ -680,6 +819,10 @@ func TestSkillHandlers_AdminAuthFailuresAndNilService(t *testing.T) {
 	_, _, err = nilSvc.ListRevisions(context.Background(), skillservice.Viewer{}, "skill-a", 10, "")
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
 	_, err = nilSvc.GetRevision(context.Background(), skillservice.Viewer{}, "skill-a", 1)
+	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
+	_, _, err = nilSvc.ListCatalog(context.Background(), skillservice.Viewer{}, skillservice.CatalogFilter{})
+	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
+	_, err = nilSvc.GetBundle(context.Background(), skillservice.Viewer{}, "skill-a", 1, false)
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
 	_, _, err = nilSvc.ListProposals(context.Background(), "", "", 10, "")
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)

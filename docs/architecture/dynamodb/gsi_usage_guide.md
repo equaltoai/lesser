@@ -66,9 +66,9 @@ This model uses GSIs to track media transcoding jobs.
 
 These models use sparse GSI keys to support later approval, catalog, digest, and assignment queries without adding a new physical index.
 
--   **GSI1: Lifecycle and parent-scoped listings**
+-   **GSI1: Lifecycle, catalog, and parent-scoped listings**
     -   `Skill`: `SKILL#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}`
-    -   `SkillRevision`: `SKILL_REVISION#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}#REVISION#{n}`
+    -   `SkillRevision`: `SKILL_REVISION#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}#REVISION#{n}` (approved catalog publication reads `status=approved`)
     -   `SkillProposal`: `SKILL#{skillID}#PROPOSAL` / `STATUS#{status}#CREATED#{time}#PROPOSAL#{proposalID}`
     -   `SkillAssignment`: `SKILL#{skillID}#ASSIGNMENT` / `SUBJECT#{type}#{id}#ASSIGNMENT#{assignmentID}`
 -   **GSI2: Exposure, digest, and review queues**

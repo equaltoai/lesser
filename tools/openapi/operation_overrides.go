@@ -21,6 +21,50 @@ func applySkillOverrides(op *operation, route routeDef) {
 	if op == nil {
 		return
 	}
+	if route.Path == "/api/v1/skills/catalog" && route.Method == methodGET {
+		ensureQueryParam(op, parameter{
+			Name:        "exposure",
+			In:          "query",
+			Required:    false,
+			Description: "Optional approved catalog exposure filter: public, instance, or private. Visibility remains fail-closed for the caller.",
+			Schema:      schemaRef{Type: "string"},
+		})
+		ensureQueryParam(op, parameter{
+			Name:        "limit",
+			In:          "query",
+			Required:    false,
+			Description: "Maximum catalog entries to return. Defaults to 25 and is capped at 100.",
+			Schema: schemaRef{
+				Type:    "integer",
+				Default: 25,
+				Minimum: intPtr(1),
+				Maximum: intPtr(100),
+			},
+		})
+		ensureQueryParam(op, parameter{
+			Name:        "cursor",
+			In:          "query",
+			Required:    false,
+			Description: "Opaque pagination cursor returned by a previous catalog response.",
+			Schema:      schemaRef{Type: "string"},
+		})
+	}
+	if route.Path == "/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle" && route.Method == methodGET {
+		ensureQueryParam(op, parameter{
+			Name:        "include_content",
+			In:          "query",
+			Required:    false,
+			Description: "When true, include inline file content that is present in the approved canonical revision manifest. Lesser never writes files into the caller workspace.",
+			Schema: schemaRef{
+				Type:    "boolean",
+				Default: false,
+			},
+		})
+		if op.Responses == nil {
+			op.Responses = map[string]response{}
+		}
+		ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+	}
 	if route.Path == "/api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote" && route.Method == methodPOST {
 		if op.Responses == nil {
 			op.Responses = map[string]response{}

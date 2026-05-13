@@ -4,11 +4,14 @@ package skills
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +60,66 @@ type ListFilter struct {
 	Exposure string
 	Limit    int
 	Cursor   string
+}
+
+const (
+	// SkillBundleSchemaVersion is the stable publication contract version emitted by Lesser.
+	SkillBundleSchemaVersion = "lesser.skill.bundle.v1"
+	defaultSkillBundleLayout = "skill-directory-v1"
+	defaultRuntimeTarget     = "generic"
+	defaultSkillEntrypoint   = "SKILL.md"
+	defaultSkillDirectory    = "skill"
+	skillBundleBase64        = "base64"
+)
+
+// CatalogFilter constrains approved skill catalog listing.
+type CatalogFilter struct {
+	Exposure string
+	Limit    int
+	Cursor   string
+}
+
+// CatalogEntry binds an approved canonical revision to its publication bundle.
+type CatalogEntry struct {
+	Skill    *models.Skill
+	Revision *models.SkillRevision
+	Bundle   SkillBundle
+}
+
+// SkillBundle is the approved revision publication contract consumed by downstream clients.
+type SkillBundle struct {
+	SchemaVersion     string
+	BundleID          string
+	BundleDigest      string
+	PublicationDigest string
+	ManifestDigest    string
+	ContentDigest     string
+	ApprovalDigest    string
+	Files             []SkillBundleFile
+	InstallHints      SkillInstallHints
+	Provenance        []models.SkillProvenanceRef
+}
+
+// SkillBundleFile is one file record in a published skill bundle.
+type SkillBundleFile struct {
+	Path            string
+	Digest          string
+	ContentType     string
+	Role            string
+	SizeBytes       int64
+	InstallPath     string
+	Content         string
+	Encoding        string
+	ContentIncluded bool
+}
+
+// SkillInstallHints are advisory, client-consumed placement hints. Lesser never writes a client workspace.
+type SkillInstallHints struct {
+	Layout         string
+	RuntimeTargets []string
+	DirectoryName  string
+	EntryPoint     string
+	RequiredFiles  []string
 }
 
 // ApprovalCommand approves a canonical skill revision.
@@ -239,6 +302,60 @@ func (s *Service) GetRevision(ctx context.Context, viewer Viewer, skillID string
 		return nil, ErrSkillRevisionNotFound
 	}
 	return revision, nil
+}
+
+// ListCatalog returns approved canonical skill revisions as publishable catalog entries.
+func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter CatalogFilter) ([]CatalogEntry, string, error) {
+	if err := s.ensureRepo(); err != nil {
+		return nil, "", err
+	}
+	if err := validateCatalogFilter(filter); err != nil {
+		return nil, "", err
+	}
+	revisions, cursor, err := s.repo.ListSkillRevisionsByStatus(ctx, models.SkillRevisionStatusApproved, filter.Limit, filter.Cursor)
+	if err != nil {
+		return nil, "", err
+	}
+	exposure := strings.ToLower(strings.TrimSpace(filter.Exposure))
+	out := make([]CatalogEntry, 0, len(revisions))
+	for _, revision := range revisions {
+		if revision == nil || revision.Status != models.SkillRevisionStatusApproved {
+			continue
+		}
+		if exposure != "" && revision.DefaultExposure != exposure {
+			continue
+		}
+		skill, err := s.repo.GetSkill(ctx, revision.SkillID)
+		if err != nil || !CanInspectSkill(viewer, skill) || !CanInspectRevision(viewer, revision) {
+			continue
+		}
+		entry, err := buildCatalogEntry(skill, revision, false)
+		if err != nil {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out, cursor, nil
+}
+
+// GetBundle returns the publication bundle for one approved canonical skill revision.
+func (s *Service) GetBundle(ctx context.Context, viewer Viewer, skillID string, revisionNumber int, includeContent bool) (*CatalogEntry, error) {
+	skill, err := s.GetSkill(ctx, viewer, skillID)
+	if err != nil {
+		return nil, err
+	}
+	revision, err := s.repo.GetSkillRevision(ctx, skillID, revisionNumber)
+	if err != nil {
+		return nil, ErrSkillRevisionNotFound
+	}
+	if revision.Status != models.SkillRevisionStatusApproved || !CanInspectRevision(viewer, revision) {
+		return nil, ErrSkillRevisionNotFound
+	}
+	entry, err := buildCatalogEntry(skill, revision, includeContent)
+	if err != nil {
+		return nil, ErrInvalidState
+	}
+	return &entry, nil
 }
 
 // ListProposals returns proposal records for admin inspection.
@@ -826,6 +943,7 @@ func buildPromotionRevision(skill *models.Skill, proposal *models.SkillProposal,
 		ManifestJSON:    manifestJSON,
 		ManifestDigest:  manifestDigest,
 		ContentDigest:   proposal.SourceDigest,
+		Files:           revisionFilesFromManifest(manifestJSON),
 		Capabilities:    capabilitiesFromManifest(manifestJSON),
 		DefaultExposure: exposure,
 		CreatedBy:       actor,
@@ -848,6 +966,41 @@ func capabilitiesFromManifest(manifestJSON string) []string {
 		return nil
 	}
 	return manifest.Capabilities
+}
+
+func revisionFilesFromManifest(manifestJSON string) []models.SkillRevisionFile {
+	manifest, err := parseSkillBundleManifest(manifestJSON)
+	if err != nil {
+		return nil
+	}
+	files := make([]models.SkillRevisionFile, 0, len(manifest.Files))
+	for _, file := range manifest.Files {
+		cleanPath := safeBundlePath(file.Path)
+		if cleanPath == "" {
+			continue
+		}
+		digest := strings.ToLower(strings.TrimSpace(file.Digest))
+		_, _, decoded, hasContent, err := manifestFileContent(file)
+		if err != nil {
+			continue
+		}
+		if digest == "" && hasContent {
+			sum := sha256.Sum256(decoded)
+			digest = "sha256:" + hex.EncodeToString(sum[:])
+		}
+		size := file.SizeBytes
+		if size <= 0 && hasContent {
+			size = int64(len(decoded))
+		}
+		files = append(files, models.SkillRevisionFile{
+			Path:        cleanPath,
+			Digest:      digest,
+			ContentType: strings.TrimSpace(file.ContentType),
+			Role:        strings.TrimSpace(file.Role),
+			SizeBytes:   size,
+		})
+	}
+	return files
 }
 
 func promotionProvenance(proposal *models.SkillProposal, manifestDigest string) []models.SkillProvenanceRef {
@@ -1053,6 +1206,403 @@ func defaultTrimmed(value, fallback string) string {
 		return strings.TrimSpace(fallback)
 	}
 	return value
+}
+
+type skillBundleManifest struct {
+	RuntimeTargets []string                  `json:"runtime_targets"`
+	Runtimes       []string                  `json:"runtimes"`
+	InstallHints   skillManifestInstallHints `json:"install_hints"`
+	Files          []skillManifestBundleFile `json:"files"`
+}
+
+type skillManifestInstallHints struct {
+	Layout         string   `json:"layout"`
+	RuntimeTargets []string `json:"runtime_targets"`
+	DirectoryName  string   `json:"directory_name"`
+	EntryPoint     string   `json:"entrypoint"`
+	RequiredFiles  []string `json:"required_files"`
+}
+
+type skillManifestBundleFile struct {
+	Path         string `json:"path"`
+	Digest       string `json:"digest"`
+	ContentType  string `json:"content_type"`
+	Role         string `json:"role"`
+	SizeBytes    int64  `json:"size_bytes"`
+	Content      string `json:"content"`
+	InlineText   string `json:"inline_text"`
+	InlineBase64 string `json:"inline_base64"`
+	Encoding     string `json:"encoding"`
+}
+
+func buildCatalogEntry(skill *models.Skill, revision *models.SkillRevision, includeContent bool) (CatalogEntry, error) {
+	if skill == nil || revision == nil {
+		return CatalogEntry{}, ErrInvalidInput
+	}
+	if revision.Status != models.SkillRevisionStatusApproved {
+		return CatalogEntry{}, ErrSkillRevisionNotFound
+	}
+	bundle, err := buildSkillBundle(skill, revision, includeContent)
+	if err != nil {
+		return CatalogEntry{}, err
+	}
+	return CatalogEntry{Skill: skill, Revision: revision, Bundle: bundle}, nil
+}
+
+func buildSkillBundle(skill *models.Skill, revision *models.SkillRevision, includeContent bool) (SkillBundle, error) {
+	manifest, err := parseSkillBundleManifest(revision.ManifestJSON)
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	files, err := bundleFiles(skill, revision, manifest, includeContent)
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	hints := buildInstallHints(skill, manifest, files)
+	bundle := SkillBundle{
+		SchemaVersion:  SkillBundleSchemaVersion,
+		BundleID:       skillBundleID(revision),
+		BundleDigest:   effectiveBundleDigest(revision, files, hints),
+		ManifestDigest: strings.TrimSpace(revision.ManifestDigest),
+		ContentDigest:  strings.TrimSpace(revision.ContentDigest),
+		ApprovalDigest: strings.TrimSpace(revision.ApprovalDigest),
+		Files:          files,
+		InstallHints:   hints,
+		Provenance:     append([]models.SkillProvenanceRef(nil), revision.Provenance...),
+	}
+	bundle.PublicationDigest = skillBundlePublicationDigest(skill, revision, bundle)
+	return bundle, nil
+}
+
+func parseSkillBundleManifest(raw string) (skillBundleManifest, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return skillBundleManifest{}, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var manifest skillBundleManifest
+	if err := decoder.Decode(&manifest); err != nil {
+		return skillBundleManifest{}, fmt.Errorf("skill manifest json is malformed: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return skillBundleManifest{}, errors.New("skill manifest json has trailing data")
+	}
+	return manifest, nil
+}
+
+func bundleFiles(skill *models.Skill, revision *models.SkillRevision, manifest skillBundleManifest, includeContent bool) ([]SkillBundleFile, error) {
+	manifestByPath := map[string]skillManifestBundleFile{}
+	for _, file := range manifest.Files {
+		cleanPath := safeBundlePath(file.Path)
+		if cleanPath == "" {
+			return nil, fmt.Errorf("skill bundle file path is unsafe")
+		}
+		file.Path = cleanPath
+		manifestByPath[cleanPath] = file
+	}
+
+	files := make([]SkillBundleFile, 0, len(revision.Files)+len(manifest.Files))
+	seen := map[string]struct{}{}
+	for _, file := range revision.Files {
+		cleanPath := safeBundlePath(file.Path)
+		if cleanPath == "" {
+			return nil, fmt.Errorf("skill bundle file path is unsafe")
+		}
+		manifestFile := manifestByPath[cleanPath]
+		bundleFile, err := materializeBundleFile(skill, file, manifestFile, includeContent)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, bundleFile)
+		seen[cleanPath] = struct{}{}
+	}
+	for _, file := range manifest.Files {
+		if _, ok := seen[file.Path]; ok {
+			continue
+		}
+		bundleFile, err := materializeBundleFile(skill, models.SkillRevisionFile{}, file, includeContent)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, bundleFile)
+	}
+	return files, nil
+}
+
+func materializeBundleFile(skill *models.Skill, file models.SkillRevisionFile, manifestFile skillManifestBundleFile, includeContent bool) (SkillBundleFile, error) {
+	cleanPath := safeBundlePath(defaultTrimmed(file.Path, manifestFile.Path))
+	if cleanPath == "" {
+		return SkillBundleFile{}, fmt.Errorf("skill bundle file path is unsafe")
+	}
+	content, encoding, decodedBytes, hasContent, err := manifestFileContent(manifestFile)
+	if err != nil {
+		return SkillBundleFile{}, err
+	}
+	digest := strings.ToLower(strings.TrimSpace(defaultTrimmed(file.Digest, manifestFile.Digest)))
+	if digest == "" && hasContent {
+		sum := sha256.Sum256(decodedBytes)
+		digest = "sha256:" + hex.EncodeToString(sum[:])
+	}
+	if digest == "" {
+		return SkillBundleFile{}, fmt.Errorf("skill bundle file digest is required")
+	}
+	size := file.SizeBytes
+	if size <= 0 {
+		size = manifestFile.SizeBytes
+	}
+	if size <= 0 && hasContent {
+		size = int64(len(decodedBytes))
+	}
+	out := SkillBundleFile{
+		Path:        cleanPath,
+		Digest:      digest,
+		ContentType: defaultTrimmed(file.ContentType, manifestFile.ContentType),
+		Role:        defaultTrimmed(file.Role, manifestFile.Role),
+		SizeBytes:   size,
+		InstallPath: skillInstallPath(skill, cleanPath),
+	}
+	if out.ContentType == "" {
+		out.ContentType = "text/markdown"
+	}
+	if out.Role == "" && cleanPath == defaultSkillEntrypoint {
+		out.Role = "entrypoint"
+	}
+	if includeContent && hasContent {
+		out.Content = content
+		out.Encoding = encoding
+		out.ContentIncluded = true
+	}
+	return out, nil
+}
+
+func manifestFileContent(file skillManifestBundleFile) (content string, encoding string, decoded []byte, ok bool, err error) {
+	encoding = strings.ToLower(strings.TrimSpace(file.Encoding))
+	switch {
+	case strings.TrimSpace(file.InlineBase64) != "":
+		content = strings.TrimSpace(file.InlineBase64)
+		decoded, err = base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return "", "", nil, false, fmt.Errorf("skill bundle file content is invalid base64: %w", err)
+		}
+		return content, skillBundleBase64, decoded, true, nil
+	case encoding == skillBundleBase64 && strings.TrimSpace(file.Content) != "":
+		content = strings.TrimSpace(file.Content)
+		decoded, err = base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return "", "", nil, false, fmt.Errorf("skill bundle file content is invalid base64: %w", err)
+		}
+		return content, skillBundleBase64, decoded, true, nil
+	case file.InlineText != "":
+		content = file.InlineText
+	case file.Content != "":
+		content = file.Content
+	default:
+		return "", "", nil, false, nil
+	}
+	if encoding == "" || encoding == "text" {
+		encoding = "utf-8"
+	}
+	return content, encoding, []byte(content), true, nil
+}
+
+func buildInstallHints(skill *models.Skill, manifest skillBundleManifest, files []SkillBundleFile) SkillInstallHints {
+	hints := SkillInstallHints{
+		Layout:         strings.TrimSpace(manifest.InstallHints.Layout),
+		RuntimeTargets: normalizedBundleStrings(manifest.InstallHints.RuntimeTargets),
+		DirectoryName:  safeBundlePath(manifest.InstallHints.DirectoryName),
+		EntryPoint:     safeBundlePath(manifest.InstallHints.EntryPoint),
+		RequiredFiles:  safeBundlePaths(manifest.InstallHints.RequiredFiles),
+	}
+	if hints.Layout == "" {
+		hints.Layout = defaultSkillBundleLayout
+	}
+	if len(hints.RuntimeTargets) == 0 {
+		hints.RuntimeTargets = normalizedBundleStrings(manifest.RuntimeTargets)
+	}
+	if len(hints.RuntimeTargets) == 0 {
+		hints.RuntimeTargets = normalizedBundleStrings(manifest.Runtimes)
+	}
+	if len(hints.RuntimeTargets) == 0 {
+		hints.RuntimeTargets = []string{defaultRuntimeTarget}
+	}
+	if hints.DirectoryName == "" {
+		hints.DirectoryName = safeBundlePath(defaultTrimmed(skill.Slug, skill.ID))
+	}
+	if hints.DirectoryName == "" {
+		hints.DirectoryName = defaultSkillDirectory
+	}
+	if hints.EntryPoint == "" {
+		hints.EntryPoint = entryPointFromFiles(files)
+	}
+	if hints.EntryPoint == "" {
+		hints.EntryPoint = defaultSkillEntrypoint
+	}
+	if len(hints.RequiredFiles) == 0 {
+		hints.RequiredFiles = requiredFilesFromBundle(files, hints.EntryPoint)
+	}
+	sort.Strings(hints.RequiredFiles)
+	return hints
+}
+
+func entryPointFromFiles(files []SkillBundleFile) string {
+	for _, file := range files {
+		if strings.EqualFold(file.Role, "entrypoint") || strings.EqualFold(file.Role, "skill") {
+			return file.Path
+		}
+	}
+	for _, file := range files {
+		if file.Path == defaultSkillEntrypoint {
+			return file.Path
+		}
+	}
+	if len(files) > 0 {
+		return files[0].Path
+	}
+	return ""
+}
+
+func requiredFilesFromBundle(files []SkillBundleFile, entryPoint string) []string {
+	set := map[string]struct{}{}
+	for _, file := range files {
+		if file.Path != "" {
+			set[file.Path] = struct{}{}
+		}
+	}
+	if entryPoint != "" {
+		set[entryPoint] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for value := range set {
+		out = append(out, value)
+	}
+	return out
+}
+
+func normalizedBundleStrings(values []string) []string {
+	set := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, ok := set[value]; ok {
+			continue
+		}
+		set[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func safeBundlePaths(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if clean := safeBundlePath(value); clean != "" {
+			out = append(out, clean)
+		}
+	}
+	return out
+}
+
+func safeBundlePath(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" {
+		return ""
+	}
+	clean := path.Clean(value)
+	if clean == "." || strings.HasPrefix(clean, "../") || clean == ".." || strings.HasPrefix(clean, "/") {
+		return ""
+	}
+	return clean
+}
+
+func skillInstallPath(skill *models.Skill, filePath string) string {
+	dir := defaultSkillDirectory
+	if skill != nil {
+		dir = safeBundlePath(defaultTrimmed(skill.Slug, skill.ID))
+		if dir == "" {
+			dir = defaultSkillDirectory
+		}
+	}
+	return path.Join(dir, filePath)
+}
+
+func skillBundleID(revision *models.SkillRevision) string {
+	if revision == nil {
+		return ""
+	}
+	return fmt.Sprintf("skill:%s:revision:%08d", revision.SkillID, revision.RevisionNumber)
+}
+
+func effectiveBundleDigest(revision *models.SkillRevision, files []SkillBundleFile, hints SkillInstallHints) string {
+	if revision == nil {
+		return ""
+	}
+	if digest := strings.ToLower(strings.TrimSpace(revision.BundleDigest)); digest != "" {
+		return digest
+	}
+	material := []string{
+		"lesser-skill-bundle-v1",
+		strings.TrimSpace(revision.SkillID),
+		fmt.Sprintf("%08d", revision.RevisionNumber),
+		strings.TrimSpace(revision.ID),
+		strings.ToLower(strings.TrimSpace(revision.ManifestDigest)),
+		strings.ToLower(strings.TrimSpace(revision.ContentDigest)),
+		strings.ToLower(strings.TrimSpace(revision.ApprovalDigest)),
+		hints.Layout,
+		strings.Join(hints.RuntimeTargets, ","),
+		hints.DirectoryName,
+		hints.EntryPoint,
+	}
+	for _, file := range sortedBundleFiles(files) {
+		material = append(material, file.Path, strings.ToLower(strings.TrimSpace(file.Digest)), file.ContentType, file.Role, fmt.Sprintf("%d", file.SizeBytes))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(material, "\x1f")))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func skillBundlePublicationDigest(skill *models.Skill, revision *models.SkillRevision, bundle SkillBundle) string {
+	material := []string{
+		"lesser-skill-bundle-publication-v1",
+		defaultTrimmed(skill.ID, ""),
+		defaultTrimmed(skill.Slug, ""),
+		strings.TrimSpace(revision.ID),
+		fmt.Sprintf("%08d", revision.RevisionNumber),
+		strings.TrimSpace(revision.Status),
+		strings.TrimSpace(revision.DefaultExposure),
+		bundle.BundleID,
+		bundle.BundleDigest,
+		bundle.ManifestDigest,
+		bundle.ContentDigest,
+		bundle.ApprovalDigest,
+	}
+	for _, file := range sortedBundleFiles(bundle.Files) {
+		material = append(material, file.Path, strings.ToLower(strings.TrimSpace(file.Digest)), file.InstallPath)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(material, "\x1f")))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func sortedBundleFiles(files []SkillBundleFile) []SkillBundleFile {
+	out := append([]SkillBundleFile(nil), files...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Path == out[j].Path {
+			return out[i].Digest < out[j].Digest
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
+func validateCatalogFilter(filter CatalogFilter) error {
+	if filter.Exposure != "" && exposureRank(strings.ToLower(strings.TrimSpace(filter.Exposure))) < 0 {
+		return errors.Join(ErrInvalidInput, errors.New("unsupported exposure"))
+	}
+	return nil
 }
 
 func validateListFilter(filter ListFilter) error {

@@ -105,10 +105,12 @@ GET /api/v1/scheduled_statuses
 GET /api/v1/scheduled_statuses/{id}
 GET /api/v1/search/statuses
 GET /api/v1/skills
+GET /api/v1/skills/catalog
 GET /api/v1/skills/resolve
 GET /api/v1/skills/{skillId}
 GET /api/v1/skills/{skillId}/revisions
 GET /api/v1/skills/{skillId}/revisions/{revisionNumber}
+GET /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle
 GET /api/v1/souls/bound/me
 GET /api/v1/souls/bound/me/mint-conversations
 GET /api/v1/souls/bound/me/mint-conversations/{conversationId}

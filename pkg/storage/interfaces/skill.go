@@ -23,6 +23,7 @@ type SkillRepository interface {
 	GetSkillRevision(ctx context.Context, skillID string, revisionNumber int) (*models.SkillRevision, error)
 	UpdateSkillRevision(ctx context.Context, revision *models.SkillRevision) error
 	ListSkillRevisions(ctx context.Context, skillID string, limit int, cursor string) ([]*models.SkillRevision, string, error)
+	ListSkillRevisionsByStatus(ctx context.Context, status string, limit int, cursor string) ([]*models.SkillRevision, string, error)
 	GetSkillRevisionByDigest(ctx context.Context, manifestDigest string) (*models.SkillRevision, error)
 
 	// Proposal operations.
