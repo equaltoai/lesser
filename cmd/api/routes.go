@@ -16,6 +16,8 @@ func configureRoutes(app *apptheory.App) {
 	requireRead := apptheory.RequireScope(auth.ScopeRead)
 	requireWrite := apptheory.RequireScope(auth.ScopeWrite)
 	requireAdmin := apptheory.RequireScope(auth.ScopeAdmin)
+	requireAdminRead := apptheory.RequireAnyScope(auth.ScopeAdmin, "admin:read")
+	requireAdminWrite := apptheory.RequireAnyScope(auth.ScopeAdmin, "admin:write")
 	requireReadOrWrite := apptheory.RequireAnyScope(auth.ScopeRead, auth.ScopeWrite)
 	requireWriteOrAdmin := apptheory.RequireAnyScope(auth.ScopeWrite, auth.ScopeAdmin)
 	requireAccountRead := apptheory.RequireAnyScope("read:accounts", auth.ScopeRead)
@@ -379,6 +381,13 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/vouches/{actor_id}", apiHandler.HandleGetVouchesLift)
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift, requireAuth)
 
+	// Canonical skill authority (Lesser-exclusive additive API)
+	app.Get("/api/v1/skills", apiHandler.HandleListSkillsLift, optionalAuth)
+	app.Get("/api/v1/skills/resolve", apiHandler.HandleResolveEffectiveSkillsLift, requireRead)
+	app.Get("/api/v1/skills/{skillId}", apiHandler.HandleGetSkillLift, optionalAuth)
+	app.Get("/api/v1/skills/{skillId}/revisions", apiHandler.HandleListSkillRevisionsLift, optionalAuth)
+	app.Get("/api/v1/skills/{skillId}/revisions/{revisionNumber}", apiHandler.HandleGetSkillRevisionLift, optionalAuth)
+
 	// Souls
 	app.Get("/api/v1/souls/bound/me", apiHandler.HandleGetBoundSoulMeLift, requireReadOrWrite)
 	app.Get("/api/v1/souls/bound/me/mint-conversations", apiHandler.HandleListBoundSoulMintConversationsLift, requireRead)
@@ -445,6 +454,15 @@ func configureRoutes(app *apptheory.App) {
 
 	// Soul governance (Admin only)
 	app.Put("/api/v1/admin/soul/well-known", apiHandler.HandleAdminSetSoulWellKnownProofLift, requireAdmin)
+
+	// Canonical skill authority administration (admin scope plus local admin role)
+	app.Get("/api/v1/admin/skills/proposals", apiHandler.HandleAdminListSkillProposalsLift, requireAdminRead)
+	app.Get("/api/v1/admin/skills/proposals/{proposalId}", apiHandler.HandleAdminGetSkillProposalLift, requireAdminRead)
+	app.Get("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminListSkillAssignmentsLift, requireAdminRead)
+	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve", apiHandler.HandleAdminApproveSkillRevisionLift, requireAdminWrite)
+	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke", apiHandler.HandleAdminRevokeSkillRevisionLift, requireAdminWrite)
+	app.Post("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminCreateSkillAssignmentLift, requireAdminWrite)
+	app.Post("/api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke", apiHandler.HandleAdminRevokeSkillAssignmentLift, requireAdminWrite)
 
 	// Domain blocks (Admin only)
 	app.Get("/api/v1/admin/domain_blocks", apiHandler.HandleGetAdminDomainBlocksLift, requireAuth)

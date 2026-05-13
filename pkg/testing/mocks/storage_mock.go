@@ -4130,6 +4130,7 @@ type MockRepositoryStorage struct {
 	importRepo           *repositories.ImportRepository
 	dlqRepo              *repositories.DLQRepository
 	threadRepo           *repositories.ThreadRepository
+	skillRepo            interfaces.SkillRepository
 }
 
 // NewMockRepositoryStorage creates a new mock repository storage with mock repositories
@@ -4180,6 +4181,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	emojiRepo := repositories.NewEmojiRepository(nil, "test-table", logger, nil)
 	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger, nil)
 	threadRepo := repositories.NewThreadRepository(nil, logger)
+	skillRepo := repositories.NewSkillRepository(nil, "test-table", logger, nil)
 
 	return &MockRepositoryStorage{
 		accountRepo:          accountRepo,
@@ -4223,6 +4225,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		importRepo:           importRepo,
 		dlqRepo:              dlqRepo,
 		threadRepo:           threadRepo,
+		skillRepo:            skillRepo,
 	}
 }
 
@@ -4525,6 +4528,11 @@ func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository {
 		return nil
 	}
 	return args.Get(0).(*repositories.OAuthRepository)
+}
+
+// Skill returns the mock skill repository.
+func (m *MockRepositoryStorage) Skill() interfaces.SkillRepository {
+	return m.skillRepo
 }
 
 // StreamingCloudWatch returns the StreamingCloudWatch repository mock

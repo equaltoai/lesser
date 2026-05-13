@@ -45,6 +45,20 @@ func TestConfigureRoutes_AuthOptions(t *testing.T) {
 		authRequired:   true,
 		requiredScopes: []string{"admin"},
 	}, routes["GET /api/v1/admin/agents/policy"])
+	require.Equal(t, routeAuthState{
+		authRequired: true,
+		requiredAnyScope: []string{
+			"admin",
+			"admin:read",
+		},
+	}, routes["GET /api/v1/admin/skills/proposals"])
+	require.Equal(t, routeAuthState{
+		authRequired: true,
+		requiredAnyScope: []string{
+			"admin",
+			"admin:write",
+		},
+	}, routes["POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve"])
 	require.Equal(t, routeAuthState{authRequired: true}, routes["POST /api/v1/trust/previews"])
 	require.Equal(t, routeAuthState{}, routes["POST /api/v1/notifications/deliver"])
 	require.Equal(t, routeAuthState{}, routes["POST /api/v1/agents/{username}/access-leases/{leaseID}/token"])

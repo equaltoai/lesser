@@ -76,6 +76,15 @@ func (r *SkillRepository) ListSkillsByStatus(ctx context.Context, status string,
 	return querySkillGSIPage[*models.Skill](ctx, r.db, &models.Skill{}, models.IndexGSI1, "gsi1PK", gsi1SKField, "SKILL#STATUS#"+status, limit, cursor)
 }
 
+// ListSkillsByExposure lists canonical skills by their default exposure class.
+func (r *SkillRepository) ListSkillsByExposure(ctx context.Context, exposure string, limit int, cursor string) ([]*models.Skill, string, error) {
+	exposure = strings.ToLower(strings.TrimSpace(exposure))
+	if exposure == "" {
+		exposure = models.SkillExposurePublic
+	}
+	return querySkillGSIPage[*models.Skill](ctx, r.db, &models.Skill{}, models.IndexGSI2, "gsi2PK", gsi2SKField, "SKILL#EXPOSURE#"+exposure, limit, cursor)
+}
+
 // CreateSkillRevision creates a canonical skill revision.
 func (r *SkillRepository) CreateSkillRevision(ctx context.Context, revision *models.SkillRevision) error {
 	return r.revisionRepo.ValidateAndCreate(ctx, revision)

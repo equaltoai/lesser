@@ -33,6 +33,7 @@ type Handler struct {
 	streamQueue   streaming.StreamQueueService
 	remoteSearch  remoteSearchServiceFactory
 	soulsService  soulHandlerService
+	skillsService skillHandlerService
 
 	// DataLoader instances for batched data loading to prevent N+1 queries
 	loaders *graph.Loaders
@@ -138,6 +139,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		streamQueue:         streamQueue,
 		remoteSearch:        defaultRemoteSearchServiceFactory,
 		soulsService:        nil,
+		skillsService:       nil,
 		loaders:             loaders,
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,

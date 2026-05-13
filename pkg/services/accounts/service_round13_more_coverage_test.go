@@ -94,6 +94,7 @@ func (s *permissiveAccountsStorage) Instance() *repositories.InstanceRepository 
 func (s *permissiveAccountsStorage) DomainBlock() *repositories.DomainBlockRepository {
 	return s.domainBlock
 }
+func (s *permissiveAccountsStorage) Skill() interfaces.SkillRepository       { return nil }
 func (s *permissiveAccountsStorage) Quote() *repositories.QuoteRepository    { return s.quote }
 func (s *permissiveAccountsStorage) Activity() interfaces.ActivityRepository { return s.activity }
 func (s *permissiveAccountsStorage) GetDB() dynamormcore.DB                  { return s.db }

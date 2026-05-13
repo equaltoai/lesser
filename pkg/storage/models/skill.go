@@ -1,6 +1,8 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
@@ -81,6 +83,10 @@ const (
 	SkillSourceTypeHostConversation = "host_conversation"
 	// SkillSourceTypeManual records operator or maintainer-created skill material.
 	SkillSourceTypeManual = "manual"
+	// SkillSourceTypeProposal records provenance that points at a Lesser-owned SkillProposal.
+	SkillSourceTypeProposal = "proposal"
+	// SkillSourceTypeApproval records provenance that points at a principal approval artifact.
+	SkillSourceTypeApproval = "approval"
 )
 
 const (
@@ -90,6 +96,15 @@ const (
 	SkillAssignmentSubjectActor = "actor"
 	// SkillAssignmentSubjectPrincipal assigns a skill to an approving or owning principal.
 	SkillAssignmentSubjectPrincipal = "principal"
+)
+
+const (
+	// SkillApprovalAuthorityAdmin means a local Lesser admin approved the revision.
+	SkillApprovalAuthorityAdmin = "admin"
+	// SkillApprovalAuthorityPrincipal means the named principal approved the revision.
+	SkillApprovalAuthorityPrincipal = "principal"
+	// SkillApprovalAuthorityInstance means instance-level governance approved the revision.
+	SkillApprovalAuthorityInstance = "instance"
 )
 
 // SkillProvenanceRef captures source/provenance for canonical skills, proposals, and revisions.
@@ -158,29 +173,38 @@ type SkillRevision struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"`
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"`
 
-	ID                  string               `theorydb:"attr:id" json:"id"`
-	SkillID             string               `theorydb:"attr:skillID" json:"skill_id"`
-	RevisionNumber      int                  `theorydb:"attr:revisionNumber" json:"revision_number"`
-	Status              string               `theorydb:"attr:status" json:"status"`
-	ProposalID          string               `theorydb:"attr:proposalID,omitempty" json:"proposal_id,omitempty"`
-	ManifestJSON        string               `theorydb:"attr:manifestJSON,omitempty" json:"manifest_json,omitempty"`
-	ManifestDigest      string               `theorydb:"attr:manifestDigest,omitempty" json:"manifest_digest,omitempty"`
-	BundleDigest        string               `theorydb:"attr:bundleDigest,omitempty" json:"bundle_digest,omitempty"`
-	ContentDigest       string               `theorydb:"attr:contentDigest,omitempty" json:"content_digest,omitempty"`
-	Files               []SkillRevisionFile  `theorydb:"attr:files" json:"files,omitempty"`
-	Capabilities        []string             `theorydb:"attr:capabilities" json:"capabilities,omitempty"`
-	DefaultExposure     string               `theorydb:"attr:defaultExposure" json:"default_exposure"`
-	ApprovalID          string               `theorydb:"attr:approvalID,omitempty" json:"approval_id,omitempty"`
-	ApprovedBy          string               `theorydb:"attr:approvedBy,omitempty" json:"approved_by,omitempty"`
-	ApprovedAt          *time.Time           `theorydb:"attr:approvedAt" json:"approved_at,omitempty"`
-	PrincipalID         string               `theorydb:"attr:principalID,omitempty" json:"principal_id,omitempty"`
-	PrincipalApprovalID string               `theorydb:"attr:principalApprovalID,omitempty" json:"principal_approval_id,omitempty"`
-	Provenance          []SkillProvenanceRef `theorydb:"attr:provenance" json:"provenance,omitempty"`
-	CreatedBy           string               `theorydb:"attr:createdBy,omitempty" json:"created_by,omitempty"`
-	UpdatedBy           string               `theorydb:"attr:updatedBy,omitempty" json:"updated_by,omitempty"`
-	CreatedAt           time.Time            `theorydb:"attr:createdAt" json:"created_at"`
-	UpdatedAt           time.Time            `theorydb:"attr:updatedAt" json:"updated_at"`
-	Version             int                  `theorydb:"version,attr:version" json:"version"`
+	ID                    string               `theorydb:"attr:id" json:"id"`
+	SkillID               string               `theorydb:"attr:skillID" json:"skill_id"`
+	RevisionNumber        int                  `theorydb:"attr:revisionNumber" json:"revision_number"`
+	Status                string               `theorydb:"attr:status" json:"status"`
+	ProposalID            string               `theorydb:"attr:proposalID,omitempty" json:"proposal_id,omitempty"`
+	ManifestJSON          string               `theorydb:"attr:manifestJSON,omitempty" json:"manifest_json,omitempty"`
+	ManifestDigest        string               `theorydb:"attr:manifestDigest,omitempty" json:"manifest_digest,omitempty"`
+	BundleDigest          string               `theorydb:"attr:bundleDigest,omitempty" json:"bundle_digest,omitempty"`
+	ContentDigest         string               `theorydb:"attr:contentDigest,omitempty" json:"content_digest,omitempty"`
+	Files                 []SkillRevisionFile  `theorydb:"attr:files" json:"files,omitempty"`
+	Capabilities          []string             `theorydb:"attr:capabilities" json:"capabilities,omitempty"`
+	DefaultExposure       string               `theorydb:"attr:defaultExposure" json:"default_exposure"`
+	ApprovalID            string               `theorydb:"attr:approvalID,omitempty" json:"approval_id,omitempty"`
+	ApprovalAuthorityType string               `theorydb:"attr:approvalAuthorityType,omitempty" json:"approval_authority_type,omitempty"`
+	ApprovalAuthorityID   string               `theorydb:"attr:approvalAuthorityID,omitempty" json:"approval_authority_id,omitempty"`
+	ApprovalDigest        string               `theorydb:"attr:approvalDigest,omitempty" json:"approval_digest,omitempty"`
+	ApprovalSignature     string               `theorydb:"attr:approvalSignature,omitempty" json:"approval_signature,omitempty"`
+	ApprovalRef           string               `theorydb:"attr:approvalRef,omitempty" json:"approval_ref,omitempty"`
+	ApprovalReason        string               `theorydb:"attr:approvalReason,omitempty" json:"approval_reason,omitempty"`
+	ApprovedBy            string               `theorydb:"attr:approvedBy,omitempty" json:"approved_by,omitempty"`
+	ApprovedAt            *time.Time           `theorydb:"attr:approvedAt" json:"approved_at,omitempty"`
+	PrincipalID           string               `theorydb:"attr:principalID,omitempty" json:"principal_id,omitempty"`
+	PrincipalApprovalID   string               `theorydb:"attr:principalApprovalID,omitempty" json:"principal_approval_id,omitempty"`
+	Provenance            []SkillProvenanceRef `theorydb:"attr:provenance" json:"provenance,omitempty"`
+	RevokedBy             string               `theorydb:"attr:revokedBy,omitempty" json:"revoked_by,omitempty"`
+	RevokedAt             *time.Time           `theorydb:"attr:revokedAt" json:"revoked_at,omitempty"`
+	RevokedReason         string               `theorydb:"attr:revokedReason,omitempty" json:"revoked_reason,omitempty"`
+	CreatedBy             string               `theorydb:"attr:createdBy,omitempty" json:"created_by,omitempty"`
+	UpdatedBy             string               `theorydb:"attr:updatedBy,omitempty" json:"updated_by,omitempty"`
+	CreatedAt             time.Time            `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt             time.Time            `theorydb:"attr:updatedAt" json:"updated_at"`
+	Version               int                  `theorydb:"version,attr:version" json:"version"`
 }
 
 // SkillProposal stores non-authoritative source material proposed for canonicalization.
@@ -319,6 +343,53 @@ func SkillAssignmentSortKey(skillID, assignmentID string) string {
 	return fmt.Sprintf("%s%s#ASSIGNMENT#%s", SKSkillAssignmentPrefix, skillID, assignmentID)
 }
 
+// SkillRevisionApprovalDigest returns the canonical digest an approval signs for a revision.
+func SkillRevisionApprovalDigest(revision *SkillRevision, principalID, authorityType, authorityID string) (string, error) {
+	if revision == nil {
+		return "", fmt.Errorf("skill revision is required")
+	}
+	skillID := normalizeSkillID(revision.SkillID)
+	if err := common.ValidateRequiredParam("SkillID", skillID); err != nil {
+		return "", err
+	}
+	if revision.RevisionNumber <= 0 {
+		return "", fmt.Errorf("revision number is required")
+	}
+	principalID = strings.TrimSpace(principalID)
+	if err := common.ValidateRequiredParam("principalID", principalID); err != nil {
+		return "", err
+	}
+	authorityType = normalizeSkillApprovalAuthority(authorityType)
+	if err := validateSkillApprovalAuthority("approvalAuthorityType", authorityType); err != nil {
+		return "", err
+	}
+	authorityID = strings.TrimSpace(authorityID)
+	if err := common.ValidateRequiredParam("approvalAuthorityID", authorityID); err != nil {
+		return "", err
+	}
+	exposure := normalizeSkillExposure(revision.DefaultExposure, SkillExposurePrivate)
+	if err := validateSkillExposure("defaultExposure", exposure); err != nil {
+		return "", err
+	}
+
+	material := strings.Join([]string{
+		"lesser-skill-revision-approval-v1",
+		skillID,
+		fmt.Sprintf("%08d", revision.RevisionNumber),
+		normalizeSkillID(revision.ID),
+		normalizeSkillID(revision.ProposalID),
+		normalizeSkillDigest(revision.ManifestDigest),
+		normalizeSkillDigest(revision.ContentDigest),
+		normalizeSkillDigest(revision.BundleDigest),
+		exposure,
+		principalID,
+		authorityType,
+		authorityID,
+	}, "\x1f")
+	sum := sha256.Sum256([]byte(material))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
 // BeforeCreate normalizes a Skill before insert.
 func (s *Skill) BeforeCreate() error { return s.prepareForWrite(true) }
 
@@ -433,11 +504,20 @@ func (s *Skill) prepareForWrite(isCreate bool) error {
 		s.Name = s.Slug
 	}
 	s.Status = normalizeSkillStatus(s.Status, SkillStatusDraft)
+	if err := validateSkillStatus("Status", s.Status, SkillStatusDraft, SkillStatusActive, SkillStatusArchived); err != nil {
+		return err
+	}
 	s.DefaultExposure = normalizeSkillExposure(s.DefaultExposure, SkillExposurePrivate)
+	if err := validateSkillExposure("DefaultExposure", s.DefaultExposure); err != nil {
+		return err
+	}
 	s.CurrentRevisionID = normalizeSkillID(s.CurrentRevisionID)
 	s.Capabilities = normalizeSkillStringSet(s.Capabilities, false)
 	s.Tags = normalizeSkillStringSet(s.Tags, true)
 	s.Provenance = normalizeSkillProvenance(s.Provenance)
+	if err := validateSkillProvenance(s.Provenance); err != nil {
+		return err
+	}
 	s.CreatedBy = strings.TrimSpace(s.CreatedBy)
 	s.UpdatedBy = strings.TrimSpace(s.UpdatedBy)
 	s.applyTimestamps(isCreate)
@@ -466,6 +546,9 @@ func (r *SkillRevision) prepareForWrite(isCreate bool) error {
 		r.ID = fmt.Sprintf("%s-r%d", r.SkillID, r.RevisionNumber)
 	}
 	r.Status = normalizeSkillStatus(r.Status, SkillRevisionStatusDraft)
+	if err := validateSkillStatus("Status", r.Status, SkillRevisionStatusDraft, SkillRevisionStatusProposed, SkillRevisionStatusApproved, SkillRevisionStatusSuperseded, SkillRevisionStatusRevoked); err != nil {
+		return err
+	}
 	r.ProposalID = normalizeSkillID(r.ProposalID)
 	r.ManifestDigest = normalizeSkillDigest(r.ManifestDigest)
 	r.BundleDigest = normalizeSkillDigest(r.BundleDigest)
@@ -473,14 +556,32 @@ func (r *SkillRevision) prepareForWrite(isCreate bool) error {
 	r.Files = normalizeSkillRevisionFiles(r.Files)
 	r.Capabilities = normalizeSkillStringSet(r.Capabilities, false)
 	r.DefaultExposure = normalizeSkillExposure(r.DefaultExposure, SkillExposurePrivate)
+	if err := validateSkillExposure("DefaultExposure", r.DefaultExposure); err != nil {
+		return err
+	}
 	r.ApprovalID = strings.TrimSpace(r.ApprovalID)
+	r.ApprovalAuthorityType = normalizeSkillApprovalAuthority(r.ApprovalAuthorityType)
+	r.ApprovalAuthorityID = strings.TrimSpace(r.ApprovalAuthorityID)
+	r.ApprovalDigest = normalizeSkillDigest(r.ApprovalDigest)
+	r.ApprovalSignature = strings.TrimSpace(r.ApprovalSignature)
+	r.ApprovalRef = strings.TrimSpace(r.ApprovalRef)
+	r.ApprovalReason = strings.TrimSpace(r.ApprovalReason)
 	r.ApprovedBy = strings.TrimSpace(r.ApprovedBy)
 	r.ApprovedAt = normalizeSkillTimePtr(r.ApprovedAt)
 	r.PrincipalID = strings.TrimSpace(r.PrincipalID)
 	r.PrincipalApprovalID = strings.TrimSpace(r.PrincipalApprovalID)
 	r.Provenance = normalizeSkillProvenance(r.Provenance)
+	if err := validateSkillProvenance(r.Provenance); err != nil {
+		return err
+	}
+	r.RevokedBy = strings.TrimSpace(r.RevokedBy)
+	r.RevokedAt = normalizeSkillTimePtr(r.RevokedAt)
+	r.RevokedReason = strings.TrimSpace(r.RevokedReason)
 	r.CreatedBy = strings.TrimSpace(r.CreatedBy)
 	r.UpdatedBy = strings.TrimSpace(r.UpdatedBy)
+	if err := r.validateApprovalState(); err != nil {
+		return err
+	}
 	r.applyTimestamps(isCreate)
 	r.PK = SkillPartitionKey(r.SkillID)
 	r.SK = SkillRevisionSortKey(r.RevisionNumber)
@@ -511,9 +612,21 @@ func (p *SkillProposal) prepareForWrite(isCreate bool) error {
 	p.Title = strings.TrimSpace(p.Title)
 	p.Summary = strings.TrimSpace(p.Summary)
 	p.Status = normalizeSkillStatus(p.Status, SkillProposalStatusProposed)
+	if err := validateSkillStatus("Status", p.Status, SkillProposalStatusProposed, SkillProposalStatusAccepted, SkillProposalStatusRejected, SkillProposalStatusWithdrawn); err != nil {
+		return err
+	}
 	p.RequestedExposure = normalizeSkillExposure(p.RequestedExposure, SkillExposurePrivate)
+	if err := validateSkillExposure("RequestedExposure", p.RequestedExposure); err != nil {
+		return err
+	}
 	p.ProposedManifestDigest = normalizeSkillDigest(p.ProposedManifestDigest)
 	p.SourceType = normalizeSkillSourceType(p.SourceType)
+	if p.SourceType == "" {
+		p.SourceType = SkillSourceTypeManual
+	}
+	if err := validateSkillSourceType("SourceType", p.SourceType, false); err != nil {
+		return err
+	}
 	p.SourceURI = strings.TrimSpace(p.SourceURI)
 	p.SourceDigest = normalizeSkillDigest(p.SourceDigest)
 	p.ConversationID = strings.TrimSpace(p.ConversationID)
@@ -521,6 +634,9 @@ func (p *SkillProposal) prepareForWrite(isCreate bool) error {
 	p.PrincipalID = strings.TrimSpace(p.PrincipalID)
 	p.PrincipalApprovalID = strings.TrimSpace(p.PrincipalApprovalID)
 	p.Provenance = normalizeSkillProvenance(p.Provenance)
+	if err := validateSkillProvenance(p.Provenance); err != nil {
+		return err
+	}
 	p.CreatedBy = strings.TrimSpace(p.CreatedBy)
 	p.ReviewedBy = strings.TrimSpace(p.ReviewedBy)
 	p.ReviewedAt = normalizeSkillTimePtr(p.ReviewedAt)
@@ -552,16 +668,28 @@ func (a *SkillAssignment) prepareForWrite(isCreate bool) error {
 	if err := common.ValidateRequiredParam("SubjectType", a.SubjectType); err != nil {
 		return err
 	}
+	if err := validateSkillSubjectType("SubjectType", a.SubjectType); err != nil {
+		return err
+	}
 	a.SubjectID = normalizeSkillID(a.SubjectID)
 	if err := common.ValidateRequiredParam("SubjectID", a.SubjectID); err != nil {
 		return err
 	}
 	a.Exposure = normalizeSkillExposure(a.Exposure, SkillExposurePrivate)
+	if err := validateSkillExposure("Exposure", a.Exposure); err != nil {
+		return err
+	}
 	a.Status = normalizeSkillStatus(a.Status, SkillAssignmentStatusActive)
+	if err := validateSkillStatus("Status", a.Status, SkillAssignmentStatusActive, SkillAssignmentStatusPending, SkillAssignmentStatusRevoked); err != nil {
+		return err
+	}
 	a.ApprovalID = strings.TrimSpace(a.ApprovalID)
 	a.PrincipalID = strings.TrimSpace(a.PrincipalID)
 	a.PrincipalApprovalID = strings.TrimSpace(a.PrincipalApprovalID)
 	a.Provenance = normalizeSkillProvenance(a.Provenance)
+	if err := validateSkillProvenance(a.Provenance); err != nil {
+		return err
+	}
 	a.AssignedBy = strings.TrimSpace(a.AssignedBy)
 	a.RevokedBy = strings.TrimSpace(a.RevokedBy)
 	a.RevokedAt = normalizeSkillTimePtr(a.RevokedAt)
@@ -576,7 +704,67 @@ func (a *SkillAssignment) prepareForWrite(isCreate bool) error {
 	a.GSI1PK = "SKILL#" + a.SkillID + "#ASSIGNMENT"
 	a.GSI1SK = fmt.Sprintf("SUBJECT#%s#%s#ASSIGNMENT#%s", a.SubjectType, a.SubjectID, a.ID)
 	a.GSI2PK = "SKILL_ASSIGNMENT#STATUS#" + a.Status
-	a.GSI2SK = fmt.Sprintf("UPDATED#%s#SUBJECT#%s#%s#SKILL#%s", formatSkillTime(a.UpdatedAt), a.SubjectType, a.SubjectID, a.SkillID)
+	a.GSI2SK = fmt.Sprintf("UPDATED#%s#SUBJECT#%s#%s#SKILL#%s#REVISION#%08d#ASSIGNMENT#%s", formatSkillTime(a.UpdatedAt), a.SubjectType, a.SubjectID, a.SkillID, a.RevisionNumber, a.ID)
+	return nil
+}
+
+func (r *SkillRevision) validateApprovalState() error {
+	if r == nil {
+		return fmt.Errorf("skill revision is required")
+	}
+	if r.ApprovalSignature != "" && r.ApprovalDigest == "" {
+		return fmt.Errorf("approval digest is required when approval signature is present")
+	}
+	if r.ApprovalAuthorityType != "" {
+		if err := validateSkillApprovalAuthority("ApprovalAuthorityType", r.ApprovalAuthorityType); err != nil {
+			return err
+		}
+	}
+
+	switch r.Status {
+	case SkillRevisionStatusApproved:
+		return r.validateApprovedState()
+	case SkillRevisionStatusRevoked:
+		if r.RevokedBy == "" {
+			return fmt.Errorf("revoked by is required for revoked skill revision")
+		}
+		if r.RevokedAt == nil {
+			return fmt.Errorf("revoked at is required for revoked skill revision")
+		}
+	}
+	return nil
+}
+
+func (r *SkillRevision) validateApprovedState() error {
+	required := []struct {
+		name  string
+		value string
+	}{
+		{"approvalID", r.ApprovalID},
+		{"approvalAuthorityType", r.ApprovalAuthorityType},
+		{"approvalAuthorityID", r.ApprovalAuthorityID},
+		{"approvalDigest", r.ApprovalDigest},
+		{"approvedBy", r.ApprovedBy},
+		{"principalID", r.PrincipalID},
+	}
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			return fmt.Errorf("%s is required for approved skill revision", field.name)
+		}
+	}
+	if r.ApprovedAt == nil {
+		return fmt.Errorf("approved at is required for approved skill revision")
+	}
+	if err := validateSkillApprovalAuthority("approvalAuthorityType", r.ApprovalAuthorityType); err != nil {
+		return err
+	}
+	expectedDigest, err := SkillRevisionApprovalDigest(r, r.PrincipalID, r.ApprovalAuthorityType, r.ApprovalAuthorityID)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(r.ApprovalDigest, expectedDigest) {
+		return fmt.Errorf("approval digest does not match approved skill revision")
+	}
 	return nil
 }
 
@@ -659,6 +847,43 @@ func normalizeSkillSubjectType(value string) string {
 	return normalizeSkillToken(value)
 }
 
+func normalizeSkillApprovalAuthority(value string) string {
+	return normalizeSkillToken(value)
+}
+
+func validateSkillStatus(field, value string, allowed ...string) error {
+	return validateSkillEnum(field, value, allowed...)
+}
+
+func validateSkillExposure(field, value string) error {
+	return validateSkillEnum(field, value, SkillExposurePublic, SkillExposureInstance, SkillExposurePrivate)
+}
+
+func validateSkillSourceType(field, value string, allowEmpty bool) error {
+	if allowEmpty && strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return validateSkillEnum(field, value, SkillSourceTypeLocalFile, SkillSourceTypeHostConversation, SkillSourceTypeManual, SkillSourceTypeProposal, SkillSourceTypeApproval)
+}
+
+func validateSkillSubjectType(field, value string) error {
+	return validateSkillEnum(field, value, SkillAssignmentSubjectInstance, SkillAssignmentSubjectActor, SkillAssignmentSubjectPrincipal)
+}
+
+func validateSkillApprovalAuthority(field, value string) error {
+	return validateSkillEnum(field, value, SkillApprovalAuthorityAdmin, SkillApprovalAuthorityPrincipal, SkillApprovalAuthorityInstance)
+}
+
+func validateSkillEnum(field, value string, allowed ...string) error {
+	value = strings.TrimSpace(value)
+	for _, allowedValue := range allowed {
+		if value == allowedValue {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s has unsupported value %q", field, value)
+}
+
 func normalizeSkillStringSet(values []string, lower bool) []string {
 	if len(values) == 0 {
 		return nil
@@ -706,6 +931,18 @@ func normalizeSkillProvenance(values []SkillProvenanceRef) []SkillProvenanceRef 
 		return nil
 	}
 	return out
+}
+
+func validateSkillProvenance(values []SkillProvenanceRef) error {
+	for _, value := range values {
+		if value.SourceType == "" {
+			return fmt.Errorf("provenance source type is required")
+		}
+		if err := validateSkillSourceType("provenance.sourceType", value.SourceType, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func normalizeSkillRevisionFiles(values []SkillRevisionFile) []SkillRevisionFile {

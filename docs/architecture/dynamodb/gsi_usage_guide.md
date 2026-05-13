@@ -75,7 +75,7 @@ These models use sparse GSI keys to support later approval, catalog, digest, and
     -   `Skill`: `SKILL#EXPOSURE#{exposure}` / `NAME#{slug}#SKILL#{skillID}`
     -   `SkillRevision`: `SKILL_REVISION_DIGEST#{manifestDigest}` / `SKILL#{skillID}#REVISION#{n}`
     -   `SkillProposal`: `SKILL_PROPOSAL#STATUS#{status}` / `CREATED#{time}#SKILL#{skillID}#PROPOSAL#{proposalID}`
-    -   `SkillAssignment`: `SKILL_ASSIGNMENT#STATUS#{status}` / `UPDATED#{time}#SUBJECT#{type}#{id}#SKILL#{skillID}`
+    -   `SkillAssignment`: `SKILL_ASSIGNMENT#STATUS#{status}` / `UPDATED#{time}#SUBJECT#{type}#{id}#SKILL#{skillID}#REVISION#{n}#ASSIGNMENT#{assignmentID}`
 
 **Note on Naming Consistency:** Some models and repositories use descriptive index names (e.g., `index:user-jobs-index`). DynamoDB does **not** provide index aliases, so these names must match a real DynamoDB `IndexName` on the table to work. For clarity and correctness, standardize on one physical naming scheme end-to-end (CDK ↔ DynamoDB ↔ model tags ↔ `.Index(...)` calls).
 

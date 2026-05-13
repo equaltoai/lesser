@@ -91,6 +91,7 @@ func (s *serviceTestStorage) StreamingCloudWatch() *repositories.StreamingCloudW
 }
 func (s *serviceTestStorage) Audit() *repositories.AuditRepository                  { return nil }
 func (s *serviceTestStorage) OAuth() *repositories.OAuthRepository                  { return nil }
+func (s *serviceTestStorage) Skill() interfaces.SkillRepository                     { return nil }
 func (s *serviceTestStorage) DNSCache() *repositories.DNSCacheRepository            { return nil }
 func (s *serviceTestStorage) Filter() *repositories.FilterRepository                { return nil }
 func (s *serviceTestStorage) Thread() *repositories.ThreadRepository                { return nil }

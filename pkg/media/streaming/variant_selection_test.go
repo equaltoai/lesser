@@ -104,6 +104,7 @@ func (m *MockAnalytics) CloudWatchMetrics() *repositories.CloudWatchMetricsRepos
 func (m *MockAnalytics) Audit() *repositories.AuditRepository                             { return nil }
 func (m *MockAnalytics) MediaMetadata() *repositories.MediaMetadataRepository             { return nil }
 func (m *MockAnalytics) OAuth() *repositories.OAuthRepository                             { return nil }
+func (m *MockAnalytics) Skill() interfaces.SkillRepository                                { return nil }
 func (m *MockAnalytics) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
 func (m *MockAnalytics) DNSCache() *repositories.DNSCacheRepository                       { return nil }
 func (m *MockAnalytics) Filter() *repositories.FilterRepository                           { return nil }
