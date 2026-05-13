@@ -69,6 +69,7 @@ func TestSkillRevision_UpdateKeysCapturesDigestAndRevisionBoundary(t *testing.T)
 
 	approved := time.Date(2026, 5, 13, 4, 0, 0, 0, time.UTC)
 	revision := &SkillRevision{
+		ID:                    "skill-a-r7",
 		SkillID:               " Skill-A ",
 		RevisionNumber:        7,
 		Status:                " Approved ",
@@ -88,6 +89,9 @@ func TestSkillRevision_UpdateKeysCapturesDigestAndRevisionBoundary(t *testing.T)
 		DefaultExposure: " Public ",
 		ApprovedAt:      &approved,
 	}
+	approvalDigest, err := SkillRevisionApprovalDigest(revision, revision.PrincipalID, revision.ApprovalAuthorityType, revision.ApprovalAuthorityID)
+	require.NoError(t, err)
+	revision.ApprovalDigest = approvalDigest
 
 	require.NoError(t, revision.UpdateKeys())
 	require.Equal(t, "SKILL#skill-a", revision.PK)
@@ -97,7 +101,7 @@ func TestSkillRevision_UpdateKeysCapturesDigestAndRevisionBoundary(t *testing.T)
 	require.Equal(t, "sha256:abcdef", revision.ManifestDigest)
 	require.Equal(t, SkillExposurePublic, revision.DefaultExposure)
 	require.Equal(t, SkillApprovalAuthorityAdmin, revision.ApprovalAuthorityType)
-	require.Equal(t, "sha256:approval", revision.ApprovalDigest)
+	require.Equal(t, approvalDigest, revision.ApprovalDigest)
 	require.Equal(t, "SKILL_REVISION#STATUS#approved", revision.GSI1PK)
 	require.Contains(t, revision.GSI1SK, "#SKILL#skill-a#REVISION#00000007")
 	require.Equal(t, "SKILL_REVISION_DIGEST#sha256:abcdef", revision.GSI2PK)
@@ -206,12 +210,13 @@ func TestSkillRevisionApprovalDigestIsStableAndAuthorityScoped(t *testing.T) {
 	t.Parallel()
 
 	revision := &SkillRevision{
-		ID:             "skill-a-r1",
-		SkillID:        "skill-a",
-		RevisionNumber: 1,
-		ManifestDigest: "sha256:manifest",
-		ContentDigest:  "sha256:content",
-		BundleDigest:   "sha256:bundle",
+		ID:              "skill-a-r1",
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestDigest:  "sha256:manifest",
+		ContentDigest:   "sha256:content",
+		BundleDigest:    "sha256:bundle",
+		DefaultExposure: SkillExposurePrivate,
 	}
 
 	first, err := SkillRevisionApprovalDigest(revision, "principal-1", SkillApprovalAuthorityAdmin, "ops")
@@ -225,8 +230,39 @@ func TestSkillRevisionApprovalDigestIsStableAndAuthorityScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, first, other)
 
+	revision.DefaultExposure = SkillExposurePublic
+	publicDigest, err := SkillRevisionApprovalDigest(revision, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.NoError(t, err)
+	require.NotEqual(t, first, publicDigest)
+
 	_, err = SkillRevisionApprovalDigest(revision, "", SkillApprovalAuthorityAdmin, "ops")
 	require.Error(t, err)
 	_, err = SkillRevisionApprovalDigest(revision, "principal-1", "unknown", "ops")
 	require.Error(t, err)
+}
+
+func TestSkillRevisionApprovedStateRequiresCurrentApprovalDigest(t *testing.T) {
+	t.Parallel()
+
+	approved := time.Date(2026, 5, 13, 7, 0, 0, 0, time.UTC)
+	revision := &SkillRevision{
+		ID:                    "skill-a-r1",
+		SkillID:               "skill-a",
+		RevisionNumber:        1,
+		Status:                SkillRevisionStatusApproved,
+		DefaultExposure:       SkillExposurePrivate,
+		ApprovalID:            "approval-1",
+		ApprovalAuthorityType: SkillApprovalAuthorityAdmin,
+		ApprovalAuthorityID:   "ops",
+		ApprovedBy:            "ops",
+		ApprovedAt:            &approved,
+		PrincipalID:           "principal-1",
+	}
+	digest, err := SkillRevisionApprovalDigest(revision, revision.PrincipalID, revision.ApprovalAuthorityType, revision.ApprovalAuthorityID)
+	require.NoError(t, err)
+	revision.ApprovalDigest = digest
+	require.NoError(t, revision.UpdateKeys())
+
+	revision.DefaultExposure = SkillExposurePublic
+	require.ErrorContains(t, revision.UpdateKeys(), "approval digest does not match")
 }

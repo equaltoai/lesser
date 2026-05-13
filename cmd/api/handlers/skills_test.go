@@ -2,14 +2,17 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
 	skillservice "github.com/equaltoai/lesser/pkg/services/skills"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestSkillHandlers_ServiceErrorMapping(t *testing.T) {
@@ -30,6 +33,7 @@ func TestSkillHandlers_ServiceErrorMapping(t *testing.T) {
 		{name: "invalid_state", err: skillservice.ErrInvalidState, wantStatus: http.StatusUnprocessableEntity},
 		{name: "digest_mismatch", err: skillservice.ErrApprovalDigestMismatch, wantStatus: http.StatusUnprocessableEntity},
 		{name: "exposure_violation", err: skillservice.ErrExposureViolation, wantStatus: http.StatusForbidden},
+		{name: "unknown", err: errors.New("boom"), wantStatus: http.StatusInternalServerError},
 	}
 
 	for _, tc := range cases {
@@ -279,6 +283,210 @@ func (s *skillHandlerStub) ResolveEffectiveSkills(context.Context, skillservice.
 	return &skillservice.ResolveResult{SubjectType: storagemodels.SkillAssignmentSubjectActor, SubjectID: "alice", Items: []skillservice.EffectiveSkill{s.resolveItem}, NextCursor: "next-effective"}, nil
 }
 
+type skillHandlerErrorStub struct {
+	nilSkillService
+	err error
+}
+
+func (s skillHandlerErrorStub) ListSkills(context.Context, skillservice.Viewer, skillservice.ListFilter) ([]*storagemodels.Skill, string, error) {
+	return nil, "", s.err
+}
+
+func (s skillHandlerErrorStub) GetSkill(context.Context, skillservice.Viewer, string) (*storagemodels.Skill, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) ListRevisions(context.Context, skillservice.Viewer, string, int, string) ([]*storagemodels.SkillRevision, string, error) {
+	return nil, "", s.err
+}
+
+func (s skillHandlerErrorStub) GetRevision(context.Context, skillservice.Viewer, string, int) (*storagemodels.SkillRevision, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) ListProposals(context.Context, string, string, int, string) ([]*storagemodels.SkillProposal, string, error) {
+	return nil, "", s.err
+}
+
+func (s skillHandlerErrorStub) GetProposal(context.Context, string) (*storagemodels.SkillProposal, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) ListAssignmentsForSkill(context.Context, string, int, string) ([]*storagemodels.SkillAssignment, string, error) {
+	return nil, "", s.err
+}
+
+func (s skillHandlerErrorStub) ApproveRevision(context.Context, string, int, skillservice.ApprovalCommand) (*storagemodels.SkillRevision, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) RevokeRevision(context.Context, string, int, skillservice.RevocationCommand) (*storagemodels.SkillRevision, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) AssignSkill(context.Context, skillservice.AssignmentCommand) (*storagemodels.SkillAssignment, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) RevokeAssignment(context.Context, skillservice.AssignmentRevocationCommand) (*storagemodels.SkillAssignment, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) ResolveEffectiveSkills(context.Context, skillservice.Viewer, skillservice.ResolveCommand) (*skillservice.ResolveResult, error) {
+	return nil, s.err
+}
+
+func TestSkillHandlers_ServiceErrorsFromEndpoints(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	state := &round10QueryState{usersByUsername: map[string]storagemodels.User{
+		"admin": {PK: "USER#admin", SK: storagemodels.SKMetadata, Username: "admin", Role: "admin", Approved: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+	}}
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.skillsService = skillHandlerErrorStub{err: skillservice.ErrInvalidInput}
+	readHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeRead})}
+	adminReadHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"admin:read"})}
+	adminWriteHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"admin:write"})}
+
+	cases := []struct {
+		name    string
+		context func() *apptheory.Context
+		handle  func(*apptheory.Context) (*apptheory.Response, error)
+	}{
+		{
+			name: "list skills",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills", nil, nil, nil)
+				require.NoError(t, err)
+				return ctx
+			},
+			handle: h.HandleListSkillsLift,
+		},
+		{
+			name: "get skill",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a", nil, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				return ctx
+			},
+			handle: h.HandleGetSkillLift,
+		},
+		{
+			name: "list revisions",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a/revisions", nil, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				return ctx
+			},
+			handle: h.HandleListSkillRevisionsLift,
+		},
+		{
+			name: "get revision",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/skill-a/revisions/1", nil, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["revisionNumber"] = "1"
+				return ctx
+			},
+			handle: h.HandleGetSkillRevisionLift,
+		},
+		{
+			name: "resolve",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/resolve", readHeaders, map[string]string{"subject_type": "actor", "subject_id": "alice"}, nil)
+				require.NoError(t, err)
+				return ctx
+			},
+			handle: h.HandleResolveEffectiveSkillsLift,
+		},
+		{
+			name: "list proposals",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", adminReadHeaders, nil, nil)
+				require.NoError(t, err)
+				return ctx
+			},
+			handle: h.HandleAdminListSkillProposalsLift,
+		},
+		{
+			name: "get proposal",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals/proposal-1", adminReadHeaders, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["proposalId"] = "proposal-1"
+				return ctx
+			},
+			handle: h.HandleAdminGetSkillProposalLift,
+		},
+		{
+			name: "list assignments",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/skill-a/assignments", adminReadHeaders, nil, nil)
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				return ctx
+			},
+			handle: h.HandleAdminListSkillAssignmentsLift,
+		},
+		{
+			name: "approve",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/approve", adminWriteHeaders, nil, apimodels.ApproveSkillRevisionRequest{PrincipalID: "principal-1"})
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["revisionNumber"] = "1"
+				return ctx
+			},
+			handle: h.HandleAdminApproveSkillRevisionLift,
+		},
+		{
+			name: "revoke revision",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/revoke", adminWriteHeaders, nil, apimodels.RevokeSkillRevisionRequest{Reason: "rotated"})
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["revisionNumber"] = "1"
+				return ctx
+			},
+			handle: h.HandleAdminRevokeSkillRevisionLift,
+		},
+		{
+			name: "create assignment",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, apimodels.CreateSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", RevisionNumber: 1})
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				return ctx
+			},
+			handle: h.HandleAdminCreateSkillAssignmentLift,
+		},
+		{
+			name: "revoke assignment",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments/assign-1/revoke", adminWriteHeaders, nil, apimodels.RevokeSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", Reason: "rotated"})
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["assignmentId"] = "assign-1"
+				return ctx
+			},
+			handle: h.HandleAdminRevokeSkillAssignmentLift,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			resp := requireStatus(t, http.StatusBadRequest)(tc.handle(tc.context()))
+			require.Contains(t, string(resp.Body), "error")
+		})
+	}
+}
+
 func TestSkillHandlers_AuthenticatedAndAdminHandlers(t *testing.T) {
 	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	state := &round10QueryState{usersByUsername: map[string]storagemodels.User{
@@ -294,51 +502,53 @@ func TestSkillHandlers_AuthenticatedAndAdminHandlers(t *testing.T) {
 	}
 	stub.resolveItem = skillservice.EffectiveSkill{Skill: stub.skill, Revision: stub.revisions[0], Assignment: stub.assignment}
 	h.skillsService = stub
-	headers := map[string]string{"Authorization": "Bearer " + round10SignAccessToken(t, cfg.JWTSecret, "admin")}
+	readHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeRead})}
+	adminReadHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"admin:read"})}
+	adminWriteHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"admin:write"})}
 
-	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/resolve", headers, map[string]string{"subject_type": "actor", "subject_id": "alice"}, nil)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/skills/resolve", readHeaders, map[string]string{"subject_type": "actor", "subject_id": "alice"}, nil)
 	require.NoError(t, err)
 	resp := requireStatus(t, http.StatusOK)(h.HandleResolveEffectiveSkillsLift(ctx))
 	require.Contains(t, string(resp.Body), "next-effective")
 
-	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", headers, nil, nil)
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", adminReadHeaders, nil, nil)
 	require.NoError(t, err)
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminListSkillProposalsLift(ctx))
 	require.Contains(t, string(resp.Body), "next-proposal")
 
-	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals/proposal-1", headers, nil, nil)
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals/proposal-1", adminReadHeaders, nil, nil)
 	require.NoError(t, err)
 	ctx.Params["proposalId"] = "proposal-1"
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminGetSkillProposalLift(ctx))
 	require.Contains(t, string(resp.Body), "proposal-1")
 
-	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/skill-a/assignments", headers, nil, nil)
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/skill-a/assignments", adminReadHeaders, nil, nil)
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminListSkillAssignmentsLift(ctx))
 	require.Contains(t, string(resp.Body), "next-assignment")
 
-	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/approve", headers, nil, apimodels.ApproveSkillRevisionRequest{PrincipalID: "principal-1"})
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/approve", adminWriteHeaders, nil, apimodels.ApproveSkillRevisionRequest{PrincipalID: "principal-1"})
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
 	ctx.Params["revisionNumber"] = "1"
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminApproveSkillRevisionLift(ctx))
 	require.Contains(t, string(resp.Body), "skill-a-r1")
 
-	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/revoke", headers, nil, apimodels.RevokeSkillRevisionRequest{Reason: "rotated"})
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/revoke", adminWriteHeaders, nil, apimodels.RevokeSkillRevisionRequest{Reason: "rotated"})
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
 	ctx.Params["revisionNumber"] = "1"
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminRevokeSkillRevisionLift(ctx))
 	require.Contains(t, string(resp.Body), "skill-a-r1")
 
-	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", headers, nil, apimodels.CreateSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", RevisionNumber: 1})
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, apimodels.CreateSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", RevisionNumber: 1})
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
 	resp = requireStatus(t, http.StatusCreated)(h.HandleAdminCreateSkillAssignmentLift(ctx))
 	require.Contains(t, string(resp.Body), "assign-1")
 
-	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments/assign-1/revoke", headers, nil, apimodels.RevokeSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", Reason: "rotated"})
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments/assign-1/revoke", adminWriteHeaders, nil, apimodels.RevokeSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", Reason: "rotated"})
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
 	ctx.Params["assignmentId"] = "assign-1"
@@ -346,11 +556,74 @@ func TestSkillHandlers_AuthenticatedAndAdminHandlers(t *testing.T) {
 	require.Contains(t, string(resp.Body), "assign-1")
 }
 
+func TestSkillHandlers_AdminValidationBranches(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	state := &round10QueryState{usersByUsername: map[string]storagemodels.User{
+		"admin": {PK: "USER#admin", SK: storagemodels.SKMetadata, Username: "admin", Role: "admin", Approved: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+	}}
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.skillsService = &skillHandlerStub{}
+	adminWriteHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"admin:write"})}
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/1/approve", adminWriteHeaders, nil, []byte("{"))
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["revisionNumber"] = "1"
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleAdminApproveSkillRevisionLift(ctx))
+	require.Contains(t, string(resp.Body), "invalid request body")
+
+	ctxWithReq, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/revisions/bad/revoke", adminWriteHeaders, nil, apimodels.RevokeSkillRevisionRequest{Reason: "rotated"})
+	require.NoError(t, err)
+	ctxWithReq.Params["skillId"] = "skill-a"
+	ctxWithReq.Params["revisionNumber"] = "bad"
+	resp = requireStatus(t, http.StatusBadRequest)(h.HandleAdminRevokeSkillRevisionLift(ctxWithReq))
+	require.Contains(t, string(resp.Body), "revision_number")
+
+	ctx = round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, []byte("{"))
+	ctx.Params["skillId"] = "skill-a"
+	resp = requireStatus(t, http.StatusBadRequest)(h.HandleAdminCreateSkillAssignmentLift(ctx))
+	require.Contains(t, string(resp.Body), "invalid request body")
+
+	ctx = round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments/assign-1/revoke", adminWriteHeaders, nil, []byte("{"))
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["assignmentId"] = "assign-1"
+	resp = requireStatus(t, http.StatusBadRequest)(h.HandleAdminRevokeSkillAssignmentLift(ctx))
+	require.Contains(t, string(resp.Body), "invalid request body")
+}
+
 func TestSkillHandlers_AdminAuthFailuresAndNilService(t *testing.T) {
 	t.Parallel()
 
+	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	state := &round10QueryState{usersByUsername: map[string]storagemodels.User{
+		"admin": {PK: "USER#admin", SK: storagemodels.SKMetadata, Username: "admin", Role: "admin", Approved: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+	}}
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.skillsService = &skillHandlerStub{}
+	readWriteHeaders := map[string]string{"Authorization": "Bearer " + round10SignAccessToken(t, cfg.JWTSecret, "admin")}
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", readWriteHeaders, nil, nil)
+	require.NoError(t, err)
+	resp := requireStatus(t, http.StatusForbidden)(h.HandleAdminListSkillProposalsLift(ctx))
+	require.Contains(t, string(resp.Body), "insufficient")
+
+	adminHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin})}
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", adminHeaders, nil, nil)
+	require.NoError(t, err)
+	resp = requireStatus(t, http.StatusOK)(h.HandleAdminListSkillProposalsLift(ctx))
+	require.Contains(t, string(resp.Body), "proposals")
+
+	state.usersByUsername["operator"] = storagemodels.User{PK: "USER#operator", SK: storagemodels.SKMetadata, Username: "operator", Role: "user", Approved: true, Version: 1, CreatedAt: now, UpdatedAt: now}
+	operatorHeaders := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "operator", []string{auth.ScopeAdmin})}
+	ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/admin/skills/proposals", operatorHeaders, nil, nil)
+	require.NoError(t, err)
+	resp = requireStatus(t, http.StatusForbidden)(h.HandleAdminListSkillProposalsLift(ctx))
+	require.Contains(t, string(resp.Body), "admin access")
+
 	nilSvc := nilSkillService{}
-	_, _, err := nilSvc.ListSkills(context.Background(), skillservice.Viewer{}, skillservice.ListFilter{})
+	_, _, err = nilSvc.ListSkills(context.Background(), skillservice.Viewer{}, skillservice.ListFilter{})
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
 	_, err = nilSvc.GetSkill(context.Background(), skillservice.Viewer{}, "skill-a")
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)

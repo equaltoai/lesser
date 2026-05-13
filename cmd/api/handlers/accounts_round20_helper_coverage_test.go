@@ -174,6 +174,31 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		require.True(t, shouldFallbackAccountResolution("alice@example.com"))
 	})
 
+	t.Run("localActorPathUsername extracts canonical local actor usernames", func(t *testing.T) {
+		require.Empty(t, localActorPathUsername(nil))
+		require.Empty(t, localActorPathUsername(&activitypub.Actor{}))
+		require.Empty(t, localActorPathUsername(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/@alice", Type: "Person"}}))
+		require.Empty(t, localActorPathUsername(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/   ", Type: "Person"}}))
+		require.Equal(t, "alice", localActorPathUsername(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice/", Type: "Person"}}))
+	})
+
+	t.Run("visibleRequestedStorageAccount rejects suspended and mismatched numeric ids", func(t *testing.T) {
+		h := &Handler{cfg: round10TestConfig()}
+		account := &storage.Account{User: &storage.User{Username: "alice", ID: "1234567890"}}
+		visible, err := h.visibleRequestedStorageAccount(account, "1234567890")
+		require.NoError(t, err)
+		require.Same(t, account, visible)
+
+		visible, err = h.visibleRequestedStorageAccount(account, "9999999999")
+		require.NoError(t, err)
+		require.Nil(t, visible)
+
+		visible, err = h.visibleRequestedStorageAccount(&storage.Account{User: &storage.User{Username: "bob", Suspended: true}}, "bob")
+		require.Error(t, err)
+		require.Nil(t, visible)
+		require.False(t, h.accountLookupMatchesRequestedID(nil, "1234567890"))
+	})
+
 	t.Run("actorAppearsLocal honors base url and username style", func(t *testing.T) {
 		cfg := round10TestConfig()
 		h := &Handler{cfg: cfg}

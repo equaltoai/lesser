@@ -115,9 +115,10 @@ Approved `SkillRevision` rows are fail-closed:
 
 The canonical approval digest is computed over the Lesser-owned revision identity
 (`skillID`, revision number, revision ID), source/proposal references, content
-digests, principal ID, and approval authority. That keeps seed/import source,
-proposal provenance, approval actor, and canonical revision identity inspectable
-without making a local `SKILL.md` file or lesser-host conversation authoritative.
+digests, revision default exposure, principal ID, and approval authority. That
+keeps seed/import source, proposal provenance, approval actor, exposure boundary,
+and canonical revision identity inspectable without making a local `SKILL.md`
+file or lesser-host conversation authoritative.
 
 Consumer impact is additive: no existing repository, Lambda, GraphQL resolver,
 Mastodon REST handler, or ActivityPub endpoint reads these prefixes today.

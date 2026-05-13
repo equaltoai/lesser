@@ -367,6 +367,10 @@ func SkillRevisionApprovalDigest(revision *SkillRevision, principalID, authority
 	if err := common.ValidateRequiredParam("approvalAuthorityID", authorityID); err != nil {
 		return "", err
 	}
+	exposure := normalizeSkillExposure(revision.DefaultExposure, SkillExposurePrivate)
+	if err := validateSkillExposure("defaultExposure", exposure); err != nil {
+		return "", err
+	}
 
 	material := strings.Join([]string{
 		"lesser-skill-revision-approval-v1",
@@ -377,6 +381,7 @@ func SkillRevisionApprovalDigest(revision *SkillRevision, principalID, authority
 		normalizeSkillDigest(revision.ManifestDigest),
 		normalizeSkillDigest(revision.ContentDigest),
 		normalizeSkillDigest(revision.BundleDigest),
+		exposure,
 		principalID,
 		authorityType,
 		authorityID,
@@ -750,7 +755,17 @@ func (r *SkillRevision) validateApprovedState() error {
 	if r.ApprovedAt == nil {
 		return fmt.Errorf("approved at is required for approved skill revision")
 	}
-	return validateSkillApprovalAuthority("approvalAuthorityType", r.ApprovalAuthorityType)
+	if err := validateSkillApprovalAuthority("approvalAuthorityType", r.ApprovalAuthorityType); err != nil {
+		return err
+	}
+	expectedDigest, err := SkillRevisionApprovalDigest(r, r.PrincipalID, r.ApprovalAuthorityType, r.ApprovalAuthorityID)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(r.ApprovalDigest, expectedDigest) {
+		return fmt.Errorf("approval digest does not match approved skill revision")
+	}
+	return nil
 }
 
 func (s *Skill) applyTimestamps(isCreate bool) {

@@ -127,7 +127,7 @@ func (h *Handler) HandleResolveEffectiveSkillsLift(ctx *apptheory.Context) (*app
 
 // HandleAdminListSkillProposalsLift handles GET /api/v1/admin/skills/proposals.
 func (h *Handler) HandleAdminListSkillProposalsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	if _, resp, err := h.requireSkillAdmin(ctx); err != nil {
+	if _, resp, err := h.requireSkillAdmin(ctx, "admin:read"); resp != nil || err != nil {
 		return resp, err
 	}
 	items, cursor, err := h.getSkillService().ListProposals(
@@ -149,7 +149,7 @@ func (h *Handler) HandleAdminListSkillProposalsLift(ctx *apptheory.Context) (*ap
 
 // HandleAdminGetSkillProposalLift handles GET /api/v1/admin/skills/proposals/{proposalId}.
 func (h *Handler) HandleAdminGetSkillProposalLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	if _, resp, err := h.requireSkillAdmin(ctx); err != nil {
+	if _, resp, err := h.requireSkillAdmin(ctx, "admin:read"); resp != nil || err != nil {
 		return resp, err
 	}
 	proposal, err := h.getSkillService().GetProposal(ctx.Context(), ctx.Param("proposalId"))
@@ -161,7 +161,7 @@ func (h *Handler) HandleAdminGetSkillProposalLift(ctx *apptheory.Context) (*appt
 
 // HandleAdminListSkillAssignmentsLift handles GET /api/v1/admin/skills/{skillId}/assignments.
 func (h *Handler) HandleAdminListSkillAssignmentsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	if _, resp, err := h.requireSkillAdmin(ctx); err != nil {
+	if _, resp, err := h.requireSkillAdmin(ctx, "admin:read"); resp != nil || err != nil {
 		return resp, err
 	}
 	items, cursor, err := h.getSkillService().ListAssignmentsForSkill(
@@ -182,8 +182,8 @@ func (h *Handler) HandleAdminListSkillAssignmentsLift(ctx *apptheory.Context) (*
 
 // HandleAdminApproveSkillRevisionLift handles POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve.
 func (h *Handler) HandleAdminApproveSkillRevisionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	claims, resp, err := h.requireSkillAdmin(ctx)
-	if err != nil {
+	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
+	if resp != nil || err != nil {
 		return resp, err
 	}
 	revisionNumber, err := parseSkillRevisionNumber(ctx.Param("revisionNumber"))
@@ -214,8 +214,8 @@ func (h *Handler) HandleAdminApproveSkillRevisionLift(ctx *apptheory.Context) (*
 
 // HandleAdminRevokeSkillRevisionLift handles POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke.
 func (h *Handler) HandleAdminRevokeSkillRevisionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	claims, resp, err := h.requireSkillAdmin(ctx)
-	if err != nil {
+	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
+	if resp != nil || err != nil {
 		return resp, err
 	}
 	revisionNumber, err := parseSkillRevisionNumber(ctx.Param("revisionNumber"))
@@ -238,8 +238,8 @@ func (h *Handler) HandleAdminRevokeSkillRevisionLift(ctx *apptheory.Context) (*a
 
 // HandleAdminCreateSkillAssignmentLift handles POST /api/v1/admin/skills/{skillId}/assignments.
 func (h *Handler) HandleAdminCreateSkillAssignmentLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	claims, resp, err := h.requireSkillAdmin(ctx)
-	if err != nil {
+	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
+	if resp != nil || err != nil {
 		return resp, err
 	}
 	var req apimodels.CreateSkillAssignmentRequest
@@ -266,8 +266,8 @@ func (h *Handler) HandleAdminCreateSkillAssignmentLift(ctx *apptheory.Context) (
 
 // HandleAdminRevokeSkillAssignmentLift handles POST /api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke.
 func (h *Handler) HandleAdminRevokeSkillAssignmentLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	claims, resp, err := h.requireSkillAdmin(ctx)
-	if err != nil {
+	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
+	if resp != nil || err != nil {
 		return resp, err
 	}
 	var req apimodels.RevokeSkillAssignmentRequest
@@ -315,9 +315,14 @@ func (h *Handler) skillViewer(ctx context.Context, claims *auth.Claims) skillser
 	return viewer
 }
 
-func (h *Handler) requireSkillAdmin(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
-	claims, err := h.requireAdminLift(ctx)
+func (h *Handler) requireSkillAdmin(ctx *apptheory.Context, operationScope string) (*auth.Claims, *apptheory.Response, error) {
+	claims, err := h.authenticateWithAnyScope(ctx, auth.ScopeAdmin, operationScope)
 	if err != nil {
+		resp, respErr := h.respondSkillAuthError(ctx, err)
+		return nil, resp, respErr
+	}
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
+	if err != nil || user.Role != roleAdmin {
 		resp, respErr := common.RespondForbidden(ctx, common.ErrorAdminAccessRequired)
 		return nil, resp, respErr
 	}

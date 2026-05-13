@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,44 @@ func newFakeSkillRepo() *fakeSkillRepo {
 		assignments: map[string]*models.SkillAssignment{},
 		proposals:   map[string]*models.SkillProposal{},
 	}
+}
+
+func seedApprovedRevision(t *testing.T, ctx context.Context, repo *fakeSkillRepo, revision *models.SkillRevision) {
+	t.Helper()
+
+	revision.SkillID = strings.ToLower(strings.TrimSpace(revision.SkillID))
+	if revision.ID == "" {
+		revision.ID = fmt.Sprintf("%s-r%d", revision.SkillID, revision.RevisionNumber)
+	}
+	if revision.Status == "" {
+		revision.Status = models.SkillRevisionStatusApproved
+	}
+	if strings.TrimSpace(revision.DefaultExposure) == "" {
+		revision.DefaultExposure = models.SkillExposurePrivate
+	}
+	if revision.ApprovalID == "" {
+		revision.ApprovalID = "approval-" + revision.ID
+	}
+	if revision.ApprovalAuthorityType == "" {
+		revision.ApprovalAuthorityType = models.SkillApprovalAuthorityAdmin
+	}
+	if revision.ApprovalAuthorityID == "" {
+		revision.ApprovalAuthorityID = "ops"
+	}
+	if revision.ApprovedBy == "" {
+		revision.ApprovedBy = "ops"
+	}
+	if revision.PrincipalID == "" {
+		revision.PrincipalID = "principal-1"
+	}
+	if revision.ApprovedAt == nil {
+		approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+		revision.ApprovedAt = &approvedAt
+	}
+	digest, err := models.SkillRevisionApprovalDigest(revision, revision.PrincipalID, revision.ApprovalAuthorityType, revision.ApprovalAuthorityID)
+	require.NoError(t, err)
+	revision.ApprovalDigest = digest
+	require.NoError(t, repo.CreateSkillRevision(ctx, revision))
 }
 
 func (f *fakeSkillRepo) CreateSkill(_ context.Context, skill *models.Skill) error {
@@ -313,7 +352,7 @@ func TestServiceAssignAndResolveEffectiveSkills(t *testing.T) {
 		CurrentRevisionNumber: 1,
 	}))
 	approved := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "skill-a",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -321,11 +360,10 @@ func TestServiceAssignAndResolveEffectiveSkills(t *testing.T) {
 		ApprovalID:            "approval-1",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:approval",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approved,
 		PrincipalID:           "principal-1",
-	}))
+	})
 
 	_, err := svc.AssignSkill(ctx, AssignmentCommand{
 		ActorUsername:  "ops",
@@ -394,7 +432,44 @@ func TestServiceInspectAndAdminReadPaths(t *testing.T) {
 	privateSkill := &models.Skill{ID: "private", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePrivate}
 	require.NoError(t, repo.CreateSkill(ctx, publicSkill))
 	require.NoError(t, repo.CreateSkill(ctx, privateSkill))
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{SkillID: "public", RevisionNumber: 1, Status: models.SkillRevisionStatusDraft}))
+	approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:               "public",
+		RevisionNumber:        1,
+		Status:                models.SkillRevisionStatusApproved,
+		DefaultExposure:       models.SkillExposurePublic,
+		ApprovalID:            "approval-public",
+		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+		ApprovalAuthorityID:   "ops",
+		ApprovedBy:            "ops",
+		ApprovedAt:            &approvedAt,
+		PrincipalID:           "principal-1",
+	})
+	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{SkillID: "public", RevisionNumber: 2, Status: models.SkillRevisionStatusDraft}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:               "public",
+		RevisionNumber:        3,
+		Status:                models.SkillRevisionStatusApproved,
+		DefaultExposure:       models.SkillExposurePrivate,
+		ApprovalID:            "approval-private",
+		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+		ApprovalAuthorityID:   "ops",
+		ApprovedBy:            "ops",
+		ApprovedAt:            &approvedAt,
+		PrincipalID:           "principal-1",
+	})
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:               "public",
+		RevisionNumber:        4,
+		Status:                models.SkillRevisionStatusApproved,
+		DefaultExposure:       models.SkillExposureInstance,
+		ApprovalID:            "approval-instance",
+		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+		ApprovalAuthorityID:   "ops",
+		ApprovedBy:            "ops",
+		ApprovedAt:            &approvedAt,
+		PrincipalID:           "principal-1",
+	})
 	require.NoError(t, repo.CreateSkillProposal(ctx, &models.SkillProposal{ID: "proposal-1", SkillID: "public", Status: models.SkillProposalStatusProposed}))
 	require.NoError(t, repo.CreateSkillAssignment(ctx, &models.SkillAssignment{
 		ID:             "assign-1",
@@ -420,10 +495,26 @@ func TestServiceInspectAndAdminReadPaths(t *testing.T) {
 	revisions, _, err := svc.ListRevisions(ctx, Viewer{}, "public", 10, "")
 	require.NoError(t, err)
 	require.Len(t, revisions, 1)
+	require.Equal(t, 1, revisions[0].RevisionNumber)
+
+	revisions, _, err = svc.ListRevisions(ctx, Viewer{Username: "alice", Authenticated: true}, "public", 10, "")
+	require.NoError(t, err)
+	require.Len(t, revisions, 2)
+
+	revisions, _, err = svc.ListRevisions(ctx, Viewer{Username: "ops", Authenticated: true, Admin: true}, "public", 10, "")
+	require.NoError(t, err)
+	require.Len(t, revisions, 4)
 
 	revision, err := svc.GetRevision(ctx, Viewer{}, "public", 1)
 	require.NoError(t, err)
 	require.Equal(t, 1, revision.RevisionNumber)
+
+	_, err = svc.GetRevision(ctx, Viewer{}, "public", 2)
+	require.ErrorIs(t, err, ErrSkillRevisionNotFound)
+	_, err = svc.GetRevision(ctx, Viewer{}, "public", 3)
+	require.ErrorIs(t, err, ErrSkillRevisionNotFound)
+	_, err = svc.GetRevision(ctx, Viewer{Username: "alice", Authenticated: true}, "public", 4)
+	require.NoError(t, err)
 
 	_, err = svc.GetRevision(ctx, Viewer{}, "public", 2)
 	require.ErrorIs(t, err, ErrSkillRevisionNotFound)
@@ -462,7 +553,7 @@ func TestServiceApproveRevisionSupersedesCurrent(t *testing.T) {
 		CurrentRevisionID:     "skill-a-r1",
 		CurrentRevisionNumber: 1,
 	}))
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "skill-a",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -470,11 +561,10 @@ func TestServiceApproveRevisionSupersedesCurrent(t *testing.T) {
 		ApprovalID:            "approval-1",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:approval-1",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approvedAt,
 		PrincipalID:           "principal-1",
-	}))
+	})
 	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
 		SkillID:         "skill-a",
 		RevisionNumber:  2,
@@ -513,7 +603,7 @@ func TestServiceRevokeRevisionClearsCurrent(t *testing.T) {
 		CurrentRevisionID:     "skill-a-r1",
 		CurrentRevisionNumber: 1,
 	}))
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "skill-a",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -521,11 +611,10 @@ func TestServiceRevokeRevisionClearsCurrent(t *testing.T) {
 		ApprovalID:            "approval-1",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:approval-1",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approvedAt,
 		PrincipalID:           "principal-1",
-	}))
+	})
 
 	revision, err := svc.RevokeRevision(ctx, "skill-a", 1, RevocationCommand{ActorUsername: "ops", Reason: "unsafe"})
 	require.NoError(t, err)
@@ -557,7 +646,7 @@ func TestServiceRevokeAssignment(t *testing.T) {
 		CurrentRevisionNumber: 1,
 	}))
 	approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "skill-a",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -565,11 +654,10 @@ func TestServiceRevokeAssignment(t *testing.T) {
 		ApprovalID:            "approval-1",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:approval",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approvedAt,
 		PrincipalID:           "principal-1",
-	}))
+	})
 	assignment, err := svc.AssignSkill(ctx, AssignmentCommand{
 		ActorUsername:  "ops",
 		AssignmentID:   "assign-1",
@@ -627,6 +715,13 @@ func TestServiceValidationAndVisibilityHelpers(t *testing.T) {
 
 	require.False(t, CanInspectSkill(Viewer{Admin: true}, nil))
 	require.False(t, CanInspectSkill(Viewer{Authenticated: true}, &models.Skill{DefaultExposure: "unknown"}))
+	require.False(t, CanInspectRevision(Viewer{}, nil))
+	require.False(t, CanInspectRevision(Viewer{}, &models.SkillRevision{Status: models.SkillRevisionStatusDraft, DefaultExposure: models.SkillExposurePublic}))
+	require.True(t, CanInspectRevision(Viewer{}, &models.SkillRevision{Status: models.SkillRevisionStatusApproved, DefaultExposure: models.SkillExposurePublic}))
+	require.True(t, CanInspectRevision(Viewer{Authenticated: true}, &models.SkillRevision{Status: models.SkillRevisionStatusApproved, DefaultExposure: models.SkillExposureInstance}))
+	require.False(t, CanInspectRevision(Viewer{}, &models.SkillRevision{Status: models.SkillRevisionStatusApproved, DefaultExposure: models.SkillExposureInstance}))
+	require.False(t, CanInspectRevision(Viewer{Authenticated: true}, &models.SkillRevision{Status: models.SkillRevisionStatusApproved, DefaultExposure: models.SkillExposurePrivate}))
+	require.True(t, CanInspectRevision(Viewer{Admin: true}, &models.SkillRevision{Status: models.SkillRevisionStatusDraft, DefaultExposure: models.SkillExposurePrivate}))
 	require.True(t, CanResolveSubject(Viewer{Admin: true}, models.SkillAssignmentSubjectInstance, "site"))
 	require.False(t, CanResolveSubject(Viewer{}, models.SkillAssignmentSubjectActor, "alice"))
 	require.False(t, ExposureWithin("unknown", models.SkillExposurePublic))
@@ -673,7 +768,7 @@ func TestServiceResolveFiltersInvalidAssignments(t *testing.T) {
 	svc := NewService(repo)
 	approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "valid", Status: models.SkillStatusActive, CurrentRevisionNumber: 1, DefaultExposure: models.SkillExposurePublic}))
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "valid",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -681,11 +776,10 @@ func TestServiceResolveFiltersInvalidAssignments(t *testing.T) {
 		ApprovalID:            "approval-valid",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:valid",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approvedAt,
 		PrincipalID:           "principal-1",
-	}))
+	})
 	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "draft", Status: models.SkillStatusDraft, CurrentRevisionNumber: 1, DefaultExposure: models.SkillExposurePublic}))
 	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{SkillID: "draft", RevisionNumber: 1, Status: models.SkillRevisionStatusDraft, DefaultExposure: models.SkillExposurePublic}))
 
@@ -714,7 +808,7 @@ func TestServiceMutationValidationBranches(t *testing.T) {
 	svc := NewService(repo)
 	approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusActive, CurrentRevisionNumber: 1, DefaultExposure: models.SkillExposurePrivate}))
-	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 		SkillID:               "skill-a",
 		RevisionNumber:        1,
 		Status:                models.SkillRevisionStatusApproved,
@@ -722,11 +816,10 @@ func TestServiceMutationValidationBranches(t *testing.T) {
 		ApprovalID:            "approval-1",
 		ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 		ApprovalAuthorityID:   "ops",
-		ApprovalDigest:        "sha256:approval-1",
 		ApprovedBy:            "ops",
 		ApprovedAt:            &approvedAt,
 		PrincipalID:           "principal-1",
-	}))
+	})
 
 	_, err := svc.RevokeRevision(ctx, "skill-a", 1, RevocationCommand{})
 	require.ErrorIs(t, err, ErrInvalidInput)
@@ -760,7 +853,7 @@ func TestServiceRepositoryErrorBranches(t *testing.T) {
 	approvedAt := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	seed := func(repo *fakeSkillRepo) {
 		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusActive, CurrentRevisionNumber: 1, DefaultExposure: models.SkillExposurePublic}))
-		require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
 			SkillID:               "skill-a",
 			RevisionNumber:        1,
 			Status:                models.SkillRevisionStatusApproved,
@@ -768,11 +861,10 @@ func TestServiceRepositoryErrorBranches(t *testing.T) {
 			ApprovalID:            "approval-1",
 			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
 			ApprovalAuthorityID:   "ops",
-			ApprovalDigest:        "sha256:approval-1",
 			ApprovedBy:            "ops",
 			ApprovedAt:            &approvedAt,
 			PrincipalID:           "principal-1",
-		}))
+		})
 		require.NoError(t, repo.CreateSkillProposal(ctx, &models.SkillProposal{ID: "proposal-1", SkillID: "skill-a", Status: models.SkillProposalStatusProposed}))
 	}
 

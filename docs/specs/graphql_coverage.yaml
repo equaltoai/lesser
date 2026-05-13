@@ -1764,4 +1764,3 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
-

@@ -174,7 +174,7 @@ func (s *Service) GetSkill(ctx context.Context, viewer Viewer, skillID string) (
 	return skill, nil
 }
 
-// ListRevisions returns revisions for an inspectable skill.
+// ListRevisions returns revision records visible to the viewer.
 func (s *Service) ListRevisions(ctx context.Context, viewer Viewer, skillID string, limit int, cursor string) ([]*models.SkillRevision, string, error) {
 	if _, err := s.GetSkill(ctx, viewer, skillID); err != nil {
 		return nil, "", err
@@ -183,16 +183,25 @@ func (s *Service) ListRevisions(ctx context.Context, viewer Viewer, skillID stri
 	if err != nil {
 		return nil, "", err
 	}
-	return items, next, nil
+	out := make([]*models.SkillRevision, 0, len(items))
+	for _, item := range items {
+		if CanInspectRevision(viewer, item) {
+			out = append(out, item)
+		}
+	}
+	return out, next, nil
 }
 
-// GetRevision returns one revision for an inspectable skill.
+// GetRevision returns one revision when both the skill and revision are visible to the viewer.
 func (s *Service) GetRevision(ctx context.Context, viewer Viewer, skillID string, revisionNumber int) (*models.SkillRevision, error) {
 	if _, err := s.GetSkill(ctx, viewer, skillID); err != nil {
 		return nil, err
 	}
 	revision, err := s.repo.GetSkillRevision(ctx, skillID, revisionNumber)
 	if err != nil {
+		return nil, ErrSkillRevisionNotFound
+	}
+	if !CanInspectRevision(viewer, revision) {
 		return nil, ErrSkillRevisionNotFound
 	}
 	return revision, nil
@@ -368,6 +377,29 @@ func CanInspectSkill(viewer Viewer, skill *models.Skill) bool {
 		return viewer.Authenticated || viewer.Admin
 	case models.SkillExposurePrivate:
 		return viewer.Admin
+	default:
+		return false
+	}
+}
+
+// CanInspectRevision reports whether a viewer can inspect a skill revision record.
+func CanInspectRevision(viewer Viewer, revision *models.SkillRevision) bool {
+	if revision == nil {
+		return false
+	}
+	if viewer.Admin {
+		return true
+	}
+	if revision.Status != models.SkillRevisionStatusApproved {
+		return false
+	}
+	switch strings.TrimSpace(revision.DefaultExposure) {
+	case models.SkillExposurePublic:
+		return true
+	case models.SkillExposureInstance:
+		return viewer.Authenticated
+	case models.SkillExposurePrivate:
+		return false
 	default:
 		return false
 	}
