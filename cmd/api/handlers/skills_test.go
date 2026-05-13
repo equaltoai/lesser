@@ -32,6 +32,8 @@ func TestSkillHandlers_ServiceErrorMapping(t *testing.T) {
 		{name: "invalid_input", err: skillservice.ErrInvalidInput, wantStatus: http.StatusBadRequest},
 		{name: "invalid_state", err: skillservice.ErrInvalidState, wantStatus: http.StatusUnprocessableEntity},
 		{name: "digest_mismatch", err: skillservice.ErrApprovalDigestMismatch, wantStatus: http.StatusUnprocessableEntity},
+		{name: "promotion_digest_mismatch", err: skillservice.ErrPromotionDigestMismatch, wantStatus: http.StatusUnprocessableEntity},
+		{name: "promotion_conflict", err: skillservice.ErrPromotionConflict, wantStatus: http.StatusConflict},
 		{name: "exposure_violation", err: skillservice.ErrExposureViolation, wantStatus: http.StatusForbidden},
 		{name: "unknown", err: errors.New("boom"), wantStatus: http.StatusInternalServerError},
 	}
@@ -95,6 +97,7 @@ type skillHandlerStub struct {
 	proposal    *storagemodels.SkillProposal
 	assignment  *storagemodels.SkillAssignment
 	resolveItem skillservice.EffectiveSkill
+	promotion   *skillservice.PromotionResult
 }
 
 func (s *skillHandlerStub) ListSkills(context.Context, skillservice.Viewer, skillservice.ListFilter) ([]*storagemodels.Skill, string, error) {
@@ -236,10 +239,13 @@ func TestSkillHandlers_MappingHelpers(t *testing.T) {
 		RequestedExposure: storagemodels.SkillExposurePublic, ProposedRevisionNumber: 2, ProposedManifestDigest: "sha256:manifest",
 		SourceType: storagemodels.SkillSourceTypeLocalFile, SourceURI: "file://skill", SourceDigest: "sha256:source",
 		ConversationID: "conv", ConversationMessageID: "msg", PrincipalID: "principal-1", PrincipalApprovalID: "principal-approval-1",
+		PromotedRevisionID: "skill-a-r2", PromotedRevisionNumber: 2, PromotionDigest: "sha256:promotion", PromotedBy: "ops", PromotedAt: &now,
 		Provenance: provenance, CreatedBy: "ops", ReviewedBy: "ops", ReviewedAt: &now, ReviewReason: "ok", CreatedAt: now, UpdatedAt: now, Version: 4,
 	})
 	require.Equal(t, "proposal-1", proposal.ID)
 	require.Equal(t, "principal-approval-1", proposal.PrincipalApprovalID)
+	require.Equal(t, "skill-a-r2", proposal.PromotedRevisionID)
+	require.Equal(t, "sha256:promotion", proposal.PromotionDigest)
 
 	assignment := toAPISkillAssignment(&storagemodels.SkillAssignment{
 		ID: "assign-1", SkillID: "skill-a", RevisionID: "skill-a-r1", RevisionNumber: 1,
@@ -269,6 +275,13 @@ func (s *skillHandlerStub) ApproveRevision(context.Context, string, int, skillse
 
 func (s *skillHandlerStub) RevokeRevision(context.Context, string, int, skillservice.RevocationCommand) (*storagemodels.SkillRevision, error) {
 	return s.revisions[0], nil
+}
+
+func (s *skillHandlerStub) PromoteProposal(context.Context, string, skillservice.PromotionCommand) (*skillservice.PromotionResult, error) {
+	if s.promotion != nil {
+		return s.promotion, nil
+	}
+	return &skillservice.PromotionResult{Revision: s.revisions[0], Proposal: s.proposal, Created: true}, nil
 }
 
 func (s *skillHandlerStub) AssignSkill(context.Context, skillservice.AssignmentCommand) (*storagemodels.SkillAssignment, error) {
@@ -321,6 +334,10 @@ func (s skillHandlerErrorStub) ApproveRevision(context.Context, string, int, ski
 }
 
 func (s skillHandlerErrorStub) RevokeRevision(context.Context, string, int, skillservice.RevocationCommand) (*storagemodels.SkillRevision, error) {
+	return nil, s.err
+}
+
+func (s skillHandlerErrorStub) PromoteProposal(context.Context, string, skillservice.PromotionCommand) (*skillservice.PromotionResult, error) {
 	return nil, s.err
 }
 
@@ -456,6 +473,17 @@ func TestSkillHandlers_ServiceErrorsFromEndpoints(t *testing.T) {
 			handle: h.HandleAdminRevokeSkillRevisionLift,
 		},
 		{
+			name: "promote proposal",
+			context: func() *apptheory.Context {
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/proposals/proposal-1/promote", adminWriteHeaders, nil, apimodels.PromoteSkillProposalRequest{ExpectedManifestDigest: "sha256:manifest"})
+				require.NoError(t, err)
+				ctx.Params["skillId"] = "skill-a"
+				ctx.Params["proposalId"] = "proposal-1"
+				return ctx
+			},
+			handle: h.HandleAdminPromoteSkillProposalLift,
+		},
+		{
 			name: "create assignment",
 			context: func() *apptheory.Context {
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, apimodels.CreateSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", RevisionNumber: 1})
@@ -542,6 +570,22 @@ func TestSkillHandlers_AuthenticatedAndAdminHandlers(t *testing.T) {
 	resp = requireStatus(t, http.StatusOK)(h.HandleAdminRevokeSkillRevisionLift(ctx))
 	require.Contains(t, string(resp.Body), "skill-a-r1")
 
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/proposals/proposal-1/promote", adminWriteHeaders, nil, apimodels.PromoteSkillProposalRequest{ExpectedManifestDigest: "sha256:manifest"})
+	require.NoError(t, err)
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["proposalId"] = "proposal-1"
+	resp = requireStatus(t, http.StatusCreated)(h.HandleAdminPromoteSkillProposalLift(ctx))
+	require.Contains(t, string(resp.Body), "skill-a-r1")
+	require.Contains(t, string(resp.Body), "\"created\":true")
+
+	stub.promotion = &skillservice.PromotionResult{Revision: stub.revisions[0], Proposal: stub.proposal, Created: false}
+	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/proposals/proposal-1/promote", adminWriteHeaders, nil, apimodels.PromoteSkillProposalRequest{ExpectedManifestDigest: "sha256:manifest"})
+	require.NoError(t, err)
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["proposalId"] = "proposal-1"
+	resp = requireStatus(t, http.StatusCreated)(h.HandleAdminPromoteSkillProposalLift(ctx))
+	require.Contains(t, string(resp.Body), "\"created\":false")
+
 	ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, apimodels.CreateSkillAssignmentRequest{SubjectType: "actor", SubjectID: "alice", RevisionNumber: 1})
 	require.NoError(t, err)
 	ctx.Params["skillId"] = "skill-a"
@@ -580,6 +624,12 @@ func TestSkillHandlers_AdminValidationBranches(t *testing.T) {
 	ctxWithReq.Params["revisionNumber"] = "bad"
 	resp = requireStatus(t, http.StatusBadRequest)(h.HandleAdminRevokeSkillRevisionLift(ctxWithReq))
 	require.Contains(t, string(resp.Body), "revision_number")
+
+	ctx = round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/skills/skill-a/proposals/proposal-1/promote", adminWriteHeaders, nil, []byte("{"))
+	ctx.Params["skillId"] = "skill-a"
+	ctx.Params["proposalId"] = "proposal-1"
+	resp = requireStatus(t, http.StatusBadRequest)(h.HandleAdminPromoteSkillProposalLift(ctx))
+	require.Contains(t, string(resp.Body), "invalid request body")
 
 	ctx = round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/skills/skill-a/assignments", adminWriteHeaders, nil, []byte("{"))
 	ctx.Params["skillId"] = "skill-a"
@@ -640,6 +690,8 @@ func TestSkillHandlers_AdminAuthFailuresAndNilService(t *testing.T) {
 	_, err = nilSvc.ApproveRevision(context.Background(), "skill-a", 1, skillservice.ApprovalCommand{})
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
 	_, err = nilSvc.RevokeRevision(context.Background(), "skill-a", 1, skillservice.RevocationCommand{})
+	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
+	_, err = nilSvc.PromoteProposal(context.Background(), "skill-a", skillservice.PromotionCommand{})
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)
 	_, err = nilSvc.AssignSkill(context.Background(), skillservice.AssignmentCommand{})
 	require.ErrorIs(t, err, skillservice.ErrRepositoryUnavailable)

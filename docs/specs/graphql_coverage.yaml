@@ -513,6 +513,10 @@ routes:
       policy: rest_only
       exemptedBy: canonical_skill_authority
     - method: POST
+      path: /api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote
+      policy: rest_only
+      exemptedBy: canonical_skill_authority
+    - method: POST
       path: /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve
       policy: rest_only
       exemptedBy: canonical_skill_authority

@@ -13,7 +13,20 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applyAppRegistrationOverrides(op, route)
 	applyMediaOverrides(op, route)
 	applySoulOverrides(op, route)
+	applySkillOverrides(op, route)
 	applyStatusOverrides(op, route)
+}
+
+func applySkillOverrides(op *operation, route routeDef) {
+	if op == nil {
+		return
+	}
+	if route.Path == "/api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote" && route.Method == methodPOST {
+		if op.Responses == nil {
+			op.Responses = map[string]response{}
+		}
+		ensureResponseRef(op.Responses, "409", "Conflict")
+	}
 }
 
 func applySoulOverrides(op *operation, route routeDef) {

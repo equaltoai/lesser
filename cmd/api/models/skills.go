@@ -92,6 +92,11 @@ type SkillProposalResource struct {
 	ConversationMessageID  string               `json:"conversation_message_id,omitempty"`
 	PrincipalID            string               `json:"principal_id,omitempty"`
 	PrincipalApprovalID    string               `json:"principal_approval_id,omitempty"`
+	PromotedRevisionID     string               `json:"promoted_revision_id,omitempty"`
+	PromotedRevisionNumber int                  `json:"promoted_revision_number,omitempty"`
+	PromotionDigest        string               `json:"promotion_digest,omitempty"`
+	PromotedBy             string               `json:"promoted_by,omitempty"`
+	PromotedAt             *time.Time           `json:"promoted_at,omitempty"`
 	Provenance             []SkillProvenanceRef `json:"provenance,omitempty"`
 	CreatedBy              string               `json:"created_by,omitempty"`
 	ReviewedBy             string               `json:"reviewed_by,omitempty"`
@@ -206,6 +211,28 @@ type ApproveSkillRevisionRequest struct {
 // RevokeSkillRevisionRequest represents an admin revision revocation request.
 type RevokeSkillRevisionRequest struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+// PromoteSkillProposalRequest represents an admin proposal promotion request.
+type PromoteSkillProposalRequest struct {
+	ExpectedManifestDigest string `json:"expected_manifest_digest,omitempty"`
+	ExpectedSourceDigest   string `json:"expected_source_digest,omitempty"`
+	ApprovalID             string `json:"approval_id,omitempty"`
+	PrincipalID            string `json:"principal_id,omitempty"`
+	PrincipalApprovalID    string `json:"principal_approval_id,omitempty"`
+	ApprovalAuthorityType  string `json:"approval_authority_type,omitempty"`
+	ApprovalAuthorityID    string `json:"approval_authority_id,omitempty"`
+	ApprovalDigest         string `json:"approval_digest,omitempty"`
+	ApprovalSignature      string `json:"approval_signature,omitempty"`
+	ApprovalRef            string `json:"approval_ref,omitempty"`
+	ApprovalReason         string `json:"approval_reason,omitempty"`
+}
+
+// PromoteSkillProposalResponse represents the canonical revision produced by promotion.
+type PromoteSkillProposalResponse struct {
+	Revision SkillRevisionResource `json:"revision"`
+	Proposal SkillProposalResource `json:"proposal"`
+	Created  bool                  `json:"created"`
 }
 
 // CreateSkillAssignmentRequest represents an admin assignment request.

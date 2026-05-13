@@ -148,6 +148,33 @@ func TestSkillProposal_UpdateKeysKeepsSeedSourceNonCanonical(t *testing.T) {
 	require.Equal(t, MainTableName, proposal.TableName())
 }
 
+func TestSkillProposal_UpdateKeysValidatesPromotionMetadata(t *testing.T) {
+	t.Parallel()
+
+	promotedAt := time.Date(2026, 5, 13, 8, 0, 0, 0, time.UTC)
+	proposal := &SkillProposal{
+		ID:                     " Proposal-1 ",
+		SkillID:                " Skill-A ",
+		Status:                 SkillProposalStatusAccepted,
+		RequestedExposure:      SkillExposurePrivate,
+		ProposedRevisionNumber: 2,
+		PromotedRevisionID:     " Skill-A-R2 ",
+		PromotedRevisionNumber: 2,
+		PromotionDigest:        " SHA256:PROMOTION ",
+		PromotedBy:             " ops ",
+		PromotedAt:             &promotedAt,
+	}
+
+	require.NoError(t, proposal.UpdateKeys())
+	require.Equal(t, "skill-a-r2", proposal.PromotedRevisionID)
+	require.Equal(t, "sha256:promotion", proposal.PromotionDigest)
+	require.Equal(t, "ops", proposal.PromotedBy)
+	require.NotNil(t, proposal.PromotedAt)
+
+	proposal.Status = SkillProposalStatusProposed
+	require.ErrorContains(t, proposal.UpdateKeys(), "promoted skill proposal must be accepted")
+}
+
 func TestSkillAssignment_UpdateKeysDefinesSubjectBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -238,6 +265,43 @@ func TestSkillRevisionApprovalDigestIsStableAndAuthorityScoped(t *testing.T) {
 	_, err = SkillRevisionApprovalDigest(revision, "", SkillApprovalAuthorityAdmin, "ops")
 	require.Error(t, err)
 	_, err = SkillRevisionApprovalDigest(revision, "principal-1", "unknown", "ops")
+	require.Error(t, err)
+}
+
+func TestSkillPromotionDigestBindsProposalAndRevision(t *testing.T) {
+	t.Parallel()
+
+	proposal := &SkillProposal{
+		ID:                     "proposal-1",
+		SkillID:                "skill-a",
+		ProposedManifestDigest: "sha256:manifest",
+		SourceDigest:           "sha256:source",
+		ConversationID:         "conv-1",
+		ConversationMessageID:  "msg-1",
+	}
+	revision := &SkillRevision{
+		ID:              "skill-a-r1",
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestDigest:  "sha256:manifest",
+		ApprovalDigest:  "sha256:approval",
+		DefaultExposure: SkillExposurePrivate,
+	}
+
+	first, err := SkillPromotionDigest(proposal, revision)
+	require.NoError(t, err)
+	second, err := SkillPromotionDigest(proposal, revision)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Contains(t, first, "sha256:")
+
+	revision.ApprovalDigest = "sha256:other"
+	other, err := SkillPromotionDigest(proposal, revision)
+	require.NoError(t, err)
+	require.NotEqual(t, first, other)
+
+	revision.SkillID = "skill-b"
+	_, err = SkillPromotionDigest(proposal, revision)
 	require.Error(t, err)
 }
 

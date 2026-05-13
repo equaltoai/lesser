@@ -4429,6 +4429,46 @@ components:
             items:
                 $ref: '#/components/schemas/PreviewCard'
             type: array
+        PromoteSkillProposalRequest:
+            additionalProperties: false
+            properties:
+                approval_authority_id:
+                    type: string
+                approval_authority_type:
+                    type: string
+                approval_digest:
+                    type: string
+                approval_id:
+                    type: string
+                approval_reason:
+                    type: string
+                approval_ref:
+                    type: string
+                approval_signature:
+                    type: string
+                expected_manifest_digest:
+                    type: string
+                expected_source_digest:
+                    type: string
+                principal_approval_id:
+                    type: string
+                principal_id:
+                    type: string
+            type: object
+        PromoteSkillProposalResponse:
+            additionalProperties: false
+            properties:
+                created:
+                    type: boolean
+                proposal:
+                    $ref: '#/components/schemas/SkillProposalResource'
+                revision:
+                    $ref: '#/components/schemas/SkillRevisionResource'
+            required:
+                - created
+                - proposal
+                - revision
+            type: object
         PushNotification:
             additionalProperties: false
             properties:
@@ -5533,6 +5573,18 @@ components:
                 principal_approval_id:
                     type: string
                 principal_id:
+                    type: string
+                promoted_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                promoted_by:
+                    type: string
+                promoted_revision_id:
+                    type: string
+                promoted_revision_number:
+                    type: integer
+                promotion_digest:
                     type: string
                 proposed_manifest_digest:
                     type: string
@@ -11618,6 +11670,56 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleAdminRevokeSkillAssignmentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin:write
+    /api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote:
+        post:
+            operationId: post_api_v1_admin_skills_by_skillId_proposals_by_proposalId_promote
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: proposalId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: skillId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PromoteSkillProposalRequest'
+            responses:
+                "201":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PromoteSkillProposalResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminPromoteSkillProposalLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

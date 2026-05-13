@@ -461,6 +461,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminListSkillAssignmentsLift, requireAdminRead)
 	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve", apiHandler.HandleAdminApproveSkillRevisionLift, requireAdminWrite)
 	app.Post("/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke", apiHandler.HandleAdminRevokeSkillRevisionLift, requireAdminWrite)
+	app.Post("/api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote", apiHandler.HandleAdminPromoteSkillProposalLift, requireAdminWrite)
 	app.Post("/api/v1/admin/skills/{skillId}/assignments", apiHandler.HandleAdminCreateSkillAssignmentLift, requireAdminWrite)
 	app.Post("/api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke", apiHandler.HandleAdminRevokeSkillAssignmentLift, requireAdminWrite)
 

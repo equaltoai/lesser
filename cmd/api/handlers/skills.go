@@ -24,6 +24,7 @@ type skillHandlerService interface {
 	ListAssignmentsForSkill(context.Context, string, int, string) ([]*storagemodels.SkillAssignment, string, error)
 	ApproveRevision(context.Context, string, int, skillservice.ApprovalCommand) (*storagemodels.SkillRevision, error)
 	RevokeRevision(context.Context, string, int, skillservice.RevocationCommand) (*storagemodels.SkillRevision, error)
+	PromoteProposal(context.Context, string, skillservice.PromotionCommand) (*skillservice.PromotionResult, error)
 	AssignSkill(context.Context, skillservice.AssignmentCommand) (*storagemodels.SkillAssignment, error)
 	RevokeAssignment(context.Context, skillservice.AssignmentRevocationCommand) (*storagemodels.SkillAssignment, error)
 	ResolveEffectiveSkills(context.Context, skillservice.Viewer, skillservice.ResolveCommand) (*skillservice.ResolveResult, error)
@@ -236,6 +237,42 @@ func (h *Handler) HandleAdminRevokeSkillRevisionLift(ctx *apptheory.Context) (*a
 	return okJSON(apimodels.SkillRevisionResponse{Revision: toAPISkillRevision(revision)})
 }
 
+// HandleAdminPromoteSkillProposalLift handles POST /api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote.
+func (h *Handler) HandleAdminPromoteSkillProposalLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
+	if resp != nil || err != nil {
+		return resp, err
+	}
+	var req apimodels.PromoteSkillProposalRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
+	}
+	result, err := h.getSkillService().PromoteProposal(ctx.Context(), ctx.Param("skillId"), skillservice.PromotionCommand{
+		ActorUsername:          claims.Username,
+		ProposalID:             ctx.Param("proposalId"),
+		ExpectedManifestDigest: req.ExpectedManifestDigest,
+		ExpectedSourceDigest:   req.ExpectedSourceDigest,
+		ApprovalID:             req.ApprovalID,
+		PrincipalID:            req.PrincipalID,
+		PrincipalApprovalID:    req.PrincipalApprovalID,
+		ApprovalAuthorityType:  req.ApprovalAuthorityType,
+		ApprovalAuthorityID:    req.ApprovalAuthorityID,
+		ApprovalDigest:         req.ApprovalDigest,
+		ApprovalSignature:      req.ApprovalSignature,
+		ApprovalRef:            req.ApprovalRef,
+		ApprovalReason:         req.ApprovalReason,
+	})
+	if err != nil {
+		return h.respondSkillServiceError(ctx, err)
+	}
+	out := apimodels.PromoteSkillProposalResponse{
+		Revision: toAPISkillRevision(result.Revision),
+		Proposal: toAPISkillProposal(result.Proposal),
+		Created:  result.Created,
+	}
+	return createdJSON(out)
+}
+
 // HandleAdminCreateSkillAssignmentLift handles POST /api/v1/admin/skills/{skillId}/assignments.
 func (h *Handler) HandleAdminCreateSkillAssignmentLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, resp, err := h.requireSkillAdmin(ctx, "admin:write")
@@ -351,6 +388,10 @@ func (h *Handler) respondSkillServiceError(ctx *apptheory.Context, err error) (*
 		return common.RespondUnprocessableEntity(ctx, "invalid skill state")
 	case errors.Is(err, skillservice.ErrApprovalDigestMismatch):
 		return common.RespondUnprocessableEntity(ctx, "approval digest mismatch")
+	case errors.Is(err, skillservice.ErrPromotionDigestMismatch):
+		return common.RespondUnprocessableEntity(ctx, "promotion digest mismatch")
+	case errors.Is(err, skillservice.ErrPromotionConflict):
+		return common.RespondConflict(ctx, "skill promotion conflict")
 	case errors.Is(err, skillservice.ErrExposureViolation):
 		return common.RespondForbidden(ctx, "skill exposure violation")
 	default:
@@ -460,6 +501,11 @@ func toAPISkillProposal(proposal *storagemodels.SkillProposal) apimodels.SkillPr
 		ConversationMessageID:  proposal.ConversationMessageID,
 		PrincipalID:            proposal.PrincipalID,
 		PrincipalApprovalID:    proposal.PrincipalApprovalID,
+		PromotedRevisionID:     proposal.PromotedRevisionID,
+		PromotedRevisionNumber: proposal.PromotedRevisionNumber,
+		PromotionDigest:        proposal.PromotionDigest,
+		PromotedBy:             proposal.PromotedBy,
+		PromotedAt:             proposal.PromotedAt,
 		Provenance:             toAPISkillProvenance(proposal.Provenance),
 		CreatedBy:              proposal.CreatedBy,
 		ReviewedBy:             proposal.ReviewedBy,
@@ -560,6 +606,9 @@ func (nilSkillService) ApproveRevision(context.Context, string, int, skillservic
 	return nil, skillservice.ErrRepositoryUnavailable
 }
 func (nilSkillService) RevokeRevision(context.Context, string, int, skillservice.RevocationCommand) (*storagemodels.SkillRevision, error) {
+	return nil, skillservice.ErrRepositoryUnavailable
+}
+func (nilSkillService) PromoteProposal(context.Context, string, skillservice.PromotionCommand) (*skillservice.PromotionResult, error) {
 	return nil, skillservice.ErrRepositoryUnavailable
 }
 func (nilSkillService) AssignSkill(context.Context, skillservice.AssignmentCommand) (*storagemodels.SkillAssignment, error) {
