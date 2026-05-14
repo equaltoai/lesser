@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/golang-jwt/jwt/v5"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
@@ -234,7 +235,7 @@ func (r *appTheoryPrincipalResolver) logFields(ctx *apptheory.Context, fields ..
 		out = append(out, zap.String("service", serviceName))
 	}
 	if ctx != nil {
-		out = append(out, zap.String("path", ctx.Request.Path))
+		out = append(out, zap.String("path", logging.SanitizeLogPath(ctx.Request.Path)))
 		out = append(out, zap.Bool("has_auth_header", common.ExtractAuthHeader(ctx) != ""))
 	}
 	out = append(out, fields...)

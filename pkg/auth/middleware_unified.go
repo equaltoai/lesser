@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/logging"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -117,7 +118,7 @@ func OptionalAuth(config MiddlewareConfig) apptheory.Middleware {
 					if authHeader != "" {
 						config.Logger.Warn("optional authentication failed - header present but validation failed",
 							zap.String("service", config.ServiceName),
-							zap.String("path", ctx.Request.Path),
+							zap.String("path", logging.SanitizeLogPath(ctx.Request.Path)),
 							zap.Bool("has_auth_header", true),
 						)
 					}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/logging"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -50,7 +51,7 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) apptheory.Middleware 
 
 						config.Logger.Error("panic recovered in error middleware",
 							zap.String("service", config.ServiceName),
-							zap.String("path", ctx.Request.Path),
+							zap.String("path", sanitizedRequestLogPath(ctx)),
 							zap.String("method", ctx.Request.Method),
 							zap.Any("panic", r),
 							zap.String("stack", string(buf)))
@@ -158,6 +159,13 @@ func appTheoryStatusForErrorCode(code string) int {
 	}
 }
 
+func sanitizedRequestLogPath(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return logging.SanitizeLogPath(ctx.Request.Path)
+}
+
 // handleAppError processes AppError instances with safe user message handling
 func handleAppError(ctx *apptheory.Context, appErr *errors.AppError, config ErrorMiddlewareConfig) (*apptheory.Response, error) {
 	path := ""
@@ -165,7 +173,7 @@ func handleAppError(ctx *apptheory.Context, appErr *errors.AppError, config Erro
 	requestID := ""
 	var username any
 	if ctx != nil {
-		path = ctx.Request.Path
+		path = sanitizedRequestLogPath(ctx)
 		method = ctx.Request.Method
 		requestID = ctx.RequestID
 		username = ctx.Get("username")
@@ -299,7 +307,7 @@ func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Mi
 			if err != nil && isTimeoutError(err) {
 				logger.Warn("request timeout",
 					zap.String("service", serviceName),
-					zap.String("path", ctx.Request.Path),
+					zap.String("path", sanitizedRequestLogPath(ctx)),
 					zap.Error(err))
 
 				return RespondServiceUnavailable(ctx, "request timeout")

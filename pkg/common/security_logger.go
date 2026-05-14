@@ -139,7 +139,7 @@ func LogCSRFFailure(reason string, username string, ip string, path string, user
 		zap.String("reason", reason),
 		zap.String("username", username),
 		zap.String("ip", normalizeIPPrefix(ip)),
-		zap.String("path", path),
+		zap.String("path", logging.SanitizeLogPath(path)),
 		zap.String("user_agent", userAgent),
 		zap.String("request_id", requestID),
 	)

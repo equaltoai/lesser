@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -1154,7 +1155,7 @@ func (h *Handler) parsePaginationParams(ctx *apptheory.Context) *PaginationParam
 func (h *Handler) respondWithError(ctx *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
 	path := ""
 	if ctx != nil {
-		path = ctx.Request.Path
+		path = logging.SanitizeLogPath(ctx.Request.Path)
 	}
 
 	h.logger.Error("API error",

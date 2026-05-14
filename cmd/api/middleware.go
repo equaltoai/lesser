@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -46,9 +47,10 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 			ctx.Set("logger", contextLogger)
 
 			// Log request start
+			logPath := logging.SanitizeLogPath(ctx.Request.Path)
 			contextLogger.Info("request_start",
 				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logPath),
 				zap.String("user_agent", headerValue(ctx, "User-Agent")),
 				zap.String("remote_addr", headerValue(ctx, "X-Forwarded-For")),
 			)
@@ -75,7 +77,7 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 
 			contextLogger.Log(logLevel, "request_complete",
 				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logPath),
 				zap.Int("status", statusCode),
 				zap.Duration("duration", duration),
 				zap.Bool("success", err == nil && statusCode < 400),
@@ -222,7 +224,7 @@ func handleLockedReadRequest(ctx *apptheory.Context, repos core.RepositoryStorag
 		logger.Warn("failed to get instance lock state; defaulting to locked",
 			zap.Error(err),
 			zap.String("method", method),
-			zap.String("path", path))
+			zap.String("path", logging.SanitizeLogPath(path)))
 	}
 	if !locked {
 		return next(ctx)
@@ -237,7 +239,7 @@ func handleLockedWriteRequest(ctx *apptheory.Context, repos core.RepositoryStora
 		logger.Warn("failed to get instance lock state; defaulting to locked",
 			zap.Error(err),
 			zap.String("method", method),
-			zap.String("path", path))
+			zap.String("path", logging.SanitizeLogPath(path)))
 		return common.RespondForbidden(ctx, "instance is locked")
 	}
 	if !locked {

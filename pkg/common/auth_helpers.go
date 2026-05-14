@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/logging"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -168,7 +169,7 @@ func ExtractOptionalAuth(ctx *apptheory.Context, oauthService OAuthServiceInterf
 		if logger := Logger(); logger != nil {
 			logger.Debug("optional auth: invalid bearer token format",
 				zap.Error(err),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logging.SanitizeLogPath(ctx.Request.Path)),
 			)
 		}
 		return &AuthenticationResult{
@@ -188,7 +189,7 @@ func ExtractOptionalAuth(ctx *apptheory.Context, oauthService OAuthServiceInterf
 			}
 			logger.Warn("optional auth: token validation failed",
 				zap.Error(err),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logging.SanitizeLogPath(ctx.Request.Path)),
 				zap.String("token_preview", tokenPreview),
 			)
 		}
