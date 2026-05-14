@@ -72,3 +72,27 @@ func TestReputationActorPartitionKeyForRecordReadsInstanceURLAliases(t *testing.
 		require.Equal(t, "ACTOR#alice", pk)
 	}
 }
+
+func TestReputationActorPartitionKeyForRecordForcedCanonicalForImportedRemote(t *testing.T) {
+	remoteImported := &storage.Reputation{
+		ActorID:                "https://remote1.example/users/alice",
+		InstanceURL:            "https://remote1.example",
+		ForceCanonicalActorKey: true,
+		CalculatedAt:           time.Now().UTC(),
+	}
+
+	pk, err := models.ReputationActorPartitionKeyForRecord(remoteImported.ActorID, remoteImported)
+	require.NoError(t, err)
+	require.Equal(t, "ACTOR#https://remote1.example/users/alice", pk)
+
+	secondRemote := &storage.Reputation{
+		ActorID:                "https://remote2.example/users/alice",
+		InstanceURL:            "https://remote2.example",
+		ForceCanonicalActorKey: true,
+		CalculatedAt:           time.Now().UTC(),
+	}
+	secondPK, err := models.ReputationActorPartitionKeyForRecord(secondRemote.ActorID, secondRemote)
+	require.NoError(t, err)
+	require.Equal(t, "ACTOR#https://remote2.example/users/alice", secondPK)
+	require.NotEqual(t, pk, secondPK)
+}

@@ -461,6 +461,67 @@ func (m *round20VouchManager) RevokeVouch(ctx context.Context, vouchID, actorID 
 	return m.revokeErr
 }
 
+func TestImportReputationForcesCanonicalActorPartitionForRemoteSameNameActors(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	var storedPKs []string
+	userRepo := &round20UserRepo{
+		storeFn: func(_ context.Context, actorID string, reputation *storage.Reputation) error {
+			reputationModel := &models.Reputation{}
+			require.NoError(t, reputationModel.UpdateKeys(actorID, reputation))
+			storedPKs = append(storedPKs, reputationModel.PK)
+			return nil
+		},
+	}
+
+	svc := &Service{
+		userRepo:     userRepo,
+		verifier:     &round20Verifier{verifyResult: &VerificationResult{Valid: true}},
+		vouchManager: &round20VouchManager{},
+		logger:       zap.NewNop(),
+		instanceURL:  "https://local.example",
+	}
+
+	for _, doc := range []PortableReputation{
+		{
+			Actor:  "https://remote1.example/users/alice",
+			Issuer: "https://remote1.example",
+			Reputation: &Reputation{
+				ActorID:      "https://remote1.example/users/alice",
+				InstanceURL:  "https://remote1.example",
+				TotalScore:   100,
+				CalculatedAt: now,
+				Version:      "1",
+			},
+		},
+		{
+			Actor:  "https://remote2.example/users/alice",
+			Issuer: "https://remote2.example",
+			Reputation: &Reputation{
+				ActorID:      "https://remote2.example/users/alice",
+				InstanceURL:  "https://remote2.example",
+				TotalScore:   200,
+				CalculatedAt: now.Add(time.Second),
+				Version:      "1",
+			},
+		},
+	} {
+		docBytes, err := json.Marshal(doc)
+		require.NoError(t, err)
+
+		result, err := svc.ImportReputation(ctx, string(docBytes))
+		require.NoError(t, err)
+		require.True(t, result.Success)
+	}
+
+	require.Equal(t, []string{
+		"ACTOR#https://remote1.example/users/alice",
+		"ACTOR#https://remote2.example/users/alice",
+	}, storedPKs)
+	require.NotContains(t, storedPKs, "ACTOR#alice")
+}
+
 func TestService_Round20_ExtractUsername_ParseSeverity_AndOutcome(t *testing.T) {
 	svc := &Service{logger: zap.NewNop()}
 

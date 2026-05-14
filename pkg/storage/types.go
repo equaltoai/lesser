@@ -1252,30 +1252,37 @@ type ScheduledStatus struct {
 
 // Reputation represents reputation score for an actor
 type Reputation struct {
-	ActorID           string    `json:"actor_id"`
-	InstanceURL       string    `json:"instance_url"`
-	Score             float64   `json:"score"`
-	TotalScore        float64   `json:"total_score"`
-	TrustScore        float64   `json:"trust_score"`
-	ActivityScore     float64   `json:"activity_score"`
-	ModerationScore   float64   `json:"moderation_score"`
-	CommunityScore    float64   `json:"community_score"`
-	Timestamp         time.Time `json:"timestamp"`
-	CalculatedAt      time.Time `json:"calculated_at"`
-	Evidence          []string  `json:"evidence,omitempty"`
-	Category          string    `json:"category"`
-	Version           int       `json:"version"`
-	TotalPosts        int       `json:"total_posts"`
-	TotalFollowers    int       `json:"total_followers"`
-	AccountAge        int       `json:"account_age"`
-	VouchCount        int       `json:"vouch_count"`
-	TrustingActors    []string  `json:"trusting_actors,omitempty"`
-	AverageTrustScore float64   `json:"average_trust_score"`
-	ReportsReceived   int       `json:"reports_received"`
-	ReportsUpheld     int       `json:"reports_upheld"`
-	FalseReports      int       `json:"false_reports"`
-	Signature         string    `json:"signature,omitempty"`
-	PublicKey         string    `json:"public_key,omitempty"`
+	ActorID     string `json:"actor_id"`
+	InstanceURL string `json:"instance_url"`
+
+	// ForceCanonicalActorKey is a write-only storage hint for imported or
+	// otherwise remote reputation rows. It is intentionally omitted from JSON
+	// and persisted reputation payloads; it only affects PK construction so
+	// remote same-username actors cannot collapse into legacy ACTOR#<username>
+	// partitions.
+	ForceCanonicalActorKey bool      `json:"-"`
+	Score                  float64   `json:"score"`
+	TotalScore             float64   `json:"total_score"`
+	TrustScore             float64   `json:"trust_score"`
+	ActivityScore          float64   `json:"activity_score"`
+	ModerationScore        float64   `json:"moderation_score"`
+	CommunityScore         float64   `json:"community_score"`
+	Timestamp              time.Time `json:"timestamp"`
+	CalculatedAt           time.Time `json:"calculated_at"`
+	Evidence               []string  `json:"evidence,omitempty"`
+	Category               string    `json:"category"`
+	Version                int       `json:"version"`
+	TotalPosts             int       `json:"total_posts"`
+	TotalFollowers         int       `json:"total_followers"`
+	AccountAge             int       `json:"account_age"`
+	VouchCount             int       `json:"vouch_count"`
+	TrustingActors         []string  `json:"trusting_actors,omitempty"`
+	AverageTrustScore      float64   `json:"average_trust_score"`
+	ReportsReceived        int       `json:"reports_received"`
+	ReportsUpheld          int       `json:"reports_upheld"`
+	FalseReports           int       `json:"false_reports"`
+	Signature              string    `json:"signature,omitempty"`
+	PublicKey              string    `json:"public_key,omitempty"`
 }
 
 // Report represents a moderation report

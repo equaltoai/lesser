@@ -746,30 +746,58 @@ func (s *Service) countNoteHelpfulVotes(ctx context.Context, noteID string) int 
 	return count
 }
 
+type storeReputationOptions struct {
+	forceCanonicalActorKey bool
+}
+
+type storeReputationOption func(*storeReputationOptions)
+
+func withCanonicalActorKey() storeReputationOption {
+	return func(opts *storeReputationOptions) {
+		opts.forceCanonicalActorKey = true
+	}
+}
+
+func (s *Service) importedReputationStoreOptions(actorID string) []storeReputationOption {
+	localHost := actorIDHost(s.instanceURL)
+	actorHost := actorIDHost(actorID)
+	if localHost == "" || actorHost == "" || actorHost != localHost {
+		return []storeReputationOption{withCanonicalActorKey()}
+	}
+	return nil
+}
+
 // storeReputation stores reputation using the storage layer
-func (s *Service) storeReputation(ctx context.Context, rep *Reputation) error {
+func (s *Service) storeReputation(ctx context.Context, rep *Reputation, options ...storeReputationOption) error {
+	storeOpts := storeReputationOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&storeOpts)
+		}
+	}
 	// Convert reputation.Reputation to storage.Reputation
 	storedRep := &storage.Reputation{
-		ActorID:           rep.ActorID,
-		InstanceURL:       rep.InstanceURL,
-		TrustScore:        float64(rep.TrustScore),
-		ActivityScore:     float64(rep.ActivityScore),
-		ModerationScore:   float64(rep.ModerationScore),
-		CommunityScore:    float64(rep.CommunityScore),
-		TotalScore:        float64(rep.TotalScore),
-		CalculatedAt:      rep.CalculatedAt,
-		Version:           func() int { v, _ := strconv.Atoi(rep.Version); return v }(),
-		TotalPosts:        rep.TotalPosts,
-		TotalFollowers:    rep.TotalFollowers,
-		AccountAge:        rep.AccountAge,
-		VouchCount:        rep.VouchCount,
-		TrustingActors:    []string{}, // We don't store individual actors in this conversion
-		AverageTrustScore: rep.AverageTrustScore,
-		ReportsReceived:   rep.ReportsReceived,
-		ReportsUpheld:     rep.ReportsUpheld,
-		FalseReports:      rep.FalseReports,
-		Signature:         rep.Signature,
-		PublicKey:         rep.PublicKey,
+		ActorID:                rep.ActorID,
+		InstanceURL:            rep.InstanceURL,
+		TrustScore:             float64(rep.TrustScore),
+		ActivityScore:          float64(rep.ActivityScore),
+		ModerationScore:        float64(rep.ModerationScore),
+		CommunityScore:         float64(rep.CommunityScore),
+		TotalScore:             float64(rep.TotalScore),
+		CalculatedAt:           rep.CalculatedAt,
+		Version:                func() int { v, _ := strconv.Atoi(rep.Version); return v }(),
+		TotalPosts:             rep.TotalPosts,
+		TotalFollowers:         rep.TotalFollowers,
+		AccountAge:             rep.AccountAge,
+		VouchCount:             rep.VouchCount,
+		TrustingActors:         []string{}, // We don't store individual actors in this conversion
+		AverageTrustScore:      rep.AverageTrustScore,
+		ReportsReceived:        rep.ReportsReceived,
+		ReportsUpheld:          rep.ReportsUpheld,
+		FalseReports:           rep.FalseReports,
+		Signature:              rep.Signature,
+		PublicKey:              rep.PublicKey,
+		ForceCanonicalActorKey: storeOpts.forceCanonicalActorKey,
 	}
 
 	return s.userRepo.StoreReputation(ctx, rep.ActorID, storedRep)
@@ -852,7 +880,7 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 	if pr.Reputation != nil {
 		// Store imported reputation with special marker
 		pr.Reputation.InstanceURL = pr.Issuer // Mark as imported
-		if err := s.storeReputation(ctx, pr.Reputation); err != nil {
+		if err := s.storeReputation(ctx, pr.Reputation, s.importedReputationStoreOptions(pr.Actor)...); err != nil {
 			return &ImportResult{
 				Success: false,
 				Error:   "Failed to store reputation",

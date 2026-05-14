@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -110,6 +111,10 @@ func ReputationActorPartitionKeyForRecord(actorID string, reputation interface{}
 		return "", err
 	}
 
+	if reputationForcesCanonicalActorKey(reputation) {
+		return fmt.Sprintf(KeyPatternActor, canonicalActorID), nil
+	}
+
 	instanceURL := reputationInstanceURL(reputation)
 	if instanceURL != "" && reputationActorHostMatchesInstance(canonicalActorID, instanceURL) {
 		username := strings.TrimSpace(strings.TrimPrefix(extractUsernameFromActorID(strings.TrimRight(actorID, "/")), "@"))
@@ -149,6 +154,24 @@ func ReputationActorIDsMatch(left, right string) bool {
 	leftCanonical, leftErr := canonicalReputationActorID(left)
 	rightCanonical, rightErr := canonicalReputationActorID(right)
 	return leftErr == nil && rightErr == nil && leftCanonical == rightCanonical
+}
+
+func reputationForcesCanonicalActorKey(reputation interface{}) bool {
+	if reputation == nil {
+		return false
+	}
+	value := reflect.ValueOf(reputation)
+	for value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return false
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return false
+	}
+	field := value.FieldByName("ForceCanonicalActorKey")
+	return field.IsValid() && field.Kind() == reflect.Bool && field.Bool()
 }
 
 func reputationInstanceURL(reputation interface{}) string {
