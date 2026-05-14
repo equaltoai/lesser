@@ -5542,6 +5542,172 @@ components:
                 - assignments
                 - count
             type: object
+        SkillBundleDigestsResource:
+            additionalProperties: false
+            properties:
+                approval_digest:
+                    type: string
+                bundle_digest:
+                    type: string
+                content_digest:
+                    type: string
+                manifest_digest:
+                    type: string
+                publication_digest:
+                    type: string
+            required:
+                - bundle_digest
+                - publication_digest
+            type: object
+        SkillBundleFileResource:
+            additionalProperties: false
+            properties:
+                content:
+                    type: string
+                content_included:
+                    type: boolean
+                content_type:
+                    type: string
+                digest:
+                    type: string
+                encoding:
+                    type: string
+                install_path:
+                    type: string
+                path:
+                    type: string
+                role:
+                    type: string
+                size_bytes:
+                    type: integer
+            required:
+                - content_included
+                - digest
+                - install_path
+                - path
+            type: object
+        SkillBundleResource:
+            additionalProperties: false
+            properties:
+                approval_authority_id:
+                    type: string
+                approval_authority_type:
+                    type: string
+                approval_id:
+                    type: string
+                approval_ref:
+                    type: string
+                approval_signature:
+                    type: string
+                approved_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                approved_by:
+                    type: string
+                bundle_id:
+                    type: string
+                default_exposure:
+                    type: string
+                digests:
+                    $ref: '#/components/schemas/SkillBundleDigestsResource'
+                files:
+                    items:
+                        $ref: '#/components/schemas/SkillBundleFileResource'
+                    type: array
+                install_hints:
+                    $ref: '#/components/schemas/SkillInstallHintsResource'
+                principal_approval_id:
+                    type: string
+                principal_id:
+                    type: string
+                provenance:
+                    items:
+                        $ref: '#/components/schemas/SkillProvenanceRef'
+                    type: array
+                published:
+                    type: boolean
+                revision_id:
+                    type: string
+                revision_number:
+                    type: integer
+                schema_version:
+                    type: string
+                skill_id:
+                    type: string
+                source:
+                    type: string
+            required:
+                - bundle_id
+                - default_exposure
+                - digests
+                - install_hints
+                - published
+                - revision_id
+                - revision_number
+                - schema_version
+                - skill_id
+                - source
+            type: object
+        SkillBundleResponse:
+            additionalProperties: false
+            properties:
+                bundle:
+                    $ref: '#/components/schemas/SkillBundleResource'
+            required:
+                - bundle
+            type: object
+        SkillCatalogEntryResource:
+            additionalProperties: false
+            properties:
+                bundle:
+                    $ref: '#/components/schemas/SkillBundleResource'
+                revision:
+                    $ref: '#/components/schemas/SkillRevisionResource'
+                skill:
+                    $ref: '#/components/schemas/SkillResource'
+            required:
+                - bundle
+                - revision
+                - skill
+            type: object
+        SkillCatalogResponse:
+            additionalProperties: false
+            properties:
+                count:
+                    type: integer
+                entries:
+                    items:
+                        $ref: '#/components/schemas/SkillCatalogEntryResource'
+                    type: array
+                next_cursor:
+                    type: string
+            required:
+                - count
+                - entries
+            type: object
+        SkillInstallHintsResource:
+            additionalProperties: false
+            properties:
+                directory_name:
+                    type: string
+                entrypoint:
+                    type: string
+                layout:
+                    type: string
+                required_files:
+                    items:
+                        type: string
+                    type: array
+                runtime_targets:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - directory_name
+                - entrypoint
+                - layout
+            type: object
         SkillListResponse:
             additionalProperties: false
             properties:
@@ -16358,6 +16524,86 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleGetSkillRevisionLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle:
+        get:
+            operationId: get_api_v1_skills_by_skillId_revisions_by_revisionNumber_bundle
+            tags:
+                - skills
+            parameters:
+                - name: revisionNumber
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: skillId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: include_content
+                  in: query
+                  description: When true, include inline file content that is present in the approved canonical revision manifest. Lesser never writes files into the caller workspace.
+                  schema:
+                    type: boolean
+                    default: false
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SkillBundleResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetSkillBundleLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/skills/catalog:
+        get:
+            operationId: get_api_v1_skills_catalog
+            tags:
+                - skills
+            parameters:
+                - name: exposure
+                  in: query
+                  description: 'Optional approved catalog exposure filter: public, instance, or private. Visibility remains fail-closed for the caller.'
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  description: Maximum catalog entries to return. Defaults to 25 and is capped at 100.
+                  schema:
+                    type: integer
+                    default: 25
+                    minimum: 1
+                    maximum: 100
+                - name: cursor
+                  in: query
+                  description: Opaque pagination cursor returned by a previous catalog response.
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SkillCatalogResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListSkillCatalogLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

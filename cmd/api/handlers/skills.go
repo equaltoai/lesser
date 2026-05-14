@@ -19,6 +19,8 @@ type skillHandlerService interface {
 	GetSkill(context.Context, skillservice.Viewer, string) (*storagemodels.Skill, error)
 	ListRevisions(context.Context, skillservice.Viewer, string, int, string) ([]*storagemodels.SkillRevision, string, error)
 	GetRevision(context.Context, skillservice.Viewer, string, int) (*storagemodels.SkillRevision, error)
+	ListCatalog(context.Context, skillservice.Viewer, skillservice.CatalogFilter) ([]skillservice.CatalogEntry, string, error)
+	GetBundle(context.Context, skillservice.Viewer, string, int, bool) (*skillservice.CatalogEntry, error)
 	ListProposals(context.Context, string, string, int, string) ([]*storagemodels.SkillProposal, string, error)
 	GetProposal(context.Context, string) (*storagemodels.SkillProposal, error)
 	ListAssignmentsForSkill(context.Context, string, int, string) ([]*storagemodels.SkillAssignment, string, error)
@@ -92,6 +94,44 @@ func (h *Handler) HandleGetSkillRevisionLift(ctx *apptheory.Context) (*apptheory
 		return h.respondSkillServiceError(ctx, err)
 	}
 	return okJSON(apimodels.SkillRevisionResponse{Revision: toAPISkillRevision(revision)})
+}
+
+// HandleListSkillCatalogLift handles GET /api/v1/skills/catalog.
+func (h *Handler) HandleListSkillCatalogLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims := h.optionalAuthenticatedClaimsLift(ctx)
+	items, cursor, err := h.getSkillService().ListCatalog(ctx.Context(), h.skillViewer(ctx.Context(), claims), skillservice.CatalogFilter{
+		Exposure: queryValue(ctx, "exposure"),
+		Limit:    parseSkillLimit(queryValue(ctx, "limit")),
+		Cursor:   queryValue(ctx, "cursor"),
+	})
+	if err != nil {
+		return h.respondSkillServiceError(ctx, err)
+	}
+	out := make([]apimodels.SkillCatalogEntryResource, 0, len(items))
+	for _, item := range items {
+		out = append(out, toAPISkillCatalogEntry(item))
+	}
+	return okJSON(apimodels.SkillCatalogResponse{Entries: out, Count: len(out), NextCursor: cursor})
+}
+
+// HandleGetSkillBundleLift handles GET /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle.
+func (h *Handler) HandleGetSkillBundleLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	revisionNumber, err := parseSkillRevisionNumber(ctx.Param("revisionNumber"))
+	if err != nil {
+		return common.RespondBadRequest(ctx, "revision_number is invalid")
+	}
+	claims := h.optionalAuthenticatedClaimsLift(ctx)
+	entry, err := h.getSkillService().GetBundle(
+		ctx.Context(),
+		h.skillViewer(ctx.Context(), claims),
+		ctx.Param("skillId"),
+		revisionNumber,
+		parseSkillBool(queryValue(ctx, "include_content")),
+	)
+	if err != nil {
+		return h.respondSkillServiceError(ctx, err)
+	}
+	return okJSON(apimodels.SkillBundleResponse{Bundle: toAPISkillBundle(entry)})
 }
 
 // HandleResolveEffectiveSkillsLift handles GET /api/v1/skills/resolve.
@@ -410,6 +450,15 @@ func parseSkillLimit(value string) int {
 	return limit
 }
 
+func parseSkillBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", boolTrue, "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func parseSkillRevisionNumber(value string) (int, error) {
 	n, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || n <= 0 {
@@ -545,6 +594,82 @@ func toAPISkillAssignment(assignment *storagemodels.SkillAssignment) apimodels.S
 	}
 }
 
+func toAPISkillCatalogEntry(entry skillservice.CatalogEntry) apimodels.SkillCatalogEntryResource {
+	return apimodels.SkillCatalogEntryResource{
+		Skill:    toAPISkill(entry.Skill),
+		Revision: toAPISkillRevision(entry.Revision),
+		Bundle:   toAPISkillBundle(&entry),
+	}
+}
+
+func toAPISkillBundle(entry *skillservice.CatalogEntry) apimodels.SkillBundleResource {
+	if entry == nil || entry.Revision == nil {
+		return apimodels.SkillBundleResource{}
+	}
+	revision := entry.Revision
+	bundle := entry.Bundle
+	return apimodels.SkillBundleResource{
+		SchemaVersion:   bundle.SchemaVersion,
+		BundleID:        bundle.BundleID,
+		Source:          "canonical_skill_revision",
+		Published:       revision.Status == storagemodels.SkillRevisionStatusApproved,
+		SkillID:         revision.SkillID,
+		RevisionID:      revision.ID,
+		RevisionNumber:  revision.RevisionNumber,
+		DefaultExposure: revision.DefaultExposure,
+		Digests: apimodels.SkillBundleDigestsResource{
+			ManifestDigest:    bundle.ManifestDigest,
+			BundleDigest:      bundle.BundleDigest,
+			PublicationDigest: bundle.PublicationDigest,
+			ContentDigest:     bundle.ContentDigest,
+			ApprovalDigest:    bundle.ApprovalDigest,
+		},
+		Files:                 toAPISkillBundleFiles(bundle.Files),
+		InstallHints:          toAPISkillInstallHints(bundle.InstallHints),
+		Provenance:            toAPISkillProvenance(bundle.Provenance),
+		ApprovalID:            revision.ApprovalID,
+		ApprovalAuthorityType: revision.ApprovalAuthorityType,
+		ApprovalAuthorityID:   revision.ApprovalAuthorityID,
+		ApprovalSignature:     revision.ApprovalSignature,
+		ApprovalRef:           revision.ApprovalRef,
+		ApprovedBy:            revision.ApprovedBy,
+		ApprovedAt:            revision.ApprovedAt,
+		PrincipalID:           revision.PrincipalID,
+		PrincipalApprovalID:   revision.PrincipalApprovalID,
+	}
+}
+
+func toAPISkillBundleFiles(values []skillservice.SkillBundleFile) []apimodels.SkillBundleFileResource {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]apimodels.SkillBundleFileResource, 0, len(values))
+	for _, value := range values {
+		out = append(out, apimodels.SkillBundleFileResource{
+			Path:            value.Path,
+			Digest:          value.Digest,
+			ContentType:     value.ContentType,
+			Role:            value.Role,
+			SizeBytes:       value.SizeBytes,
+			InstallPath:     value.InstallPath,
+			Content:         value.Content,
+			Encoding:        value.Encoding,
+			ContentIncluded: value.ContentIncluded,
+		})
+	}
+	return out
+}
+
+func toAPISkillInstallHints(value skillservice.SkillInstallHints) apimodels.SkillInstallHintsResource {
+	return apimodels.SkillInstallHintsResource{
+		Layout:         value.Layout,
+		RuntimeTargets: append([]string(nil), value.RuntimeTargets...),
+		DirectoryName:  value.DirectoryName,
+		EntryPoint:     value.EntryPoint,
+		RequiredFiles:  append([]string(nil), value.RequiredFiles...),
+	}
+}
+
 func toAPISkillProvenance(values []storagemodels.SkillProvenanceRef) []apimodels.SkillProvenanceRef {
 	if len(values) == 0 {
 		return nil
@@ -591,6 +716,12 @@ func (nilSkillService) ListRevisions(context.Context, skillservice.Viewer, strin
 	return nil, "", skillservice.ErrRepositoryUnavailable
 }
 func (nilSkillService) GetRevision(context.Context, skillservice.Viewer, string, int) (*storagemodels.SkillRevision, error) {
+	return nil, skillservice.ErrRepositoryUnavailable
+}
+func (nilSkillService) ListCatalog(context.Context, skillservice.Viewer, skillservice.CatalogFilter) ([]skillservice.CatalogEntry, string, error) {
+	return nil, "", skillservice.ErrRepositoryUnavailable
+}
+func (nilSkillService) GetBundle(context.Context, skillservice.Viewer, string, int, bool) (*skillservice.CatalogEntry, error) {
 	return nil, skillservice.ErrRepositoryUnavailable
 }
 func (nilSkillService) ListProposals(context.Context, string, string, int, string) ([]*storagemodels.SkillProposal, string, error) {

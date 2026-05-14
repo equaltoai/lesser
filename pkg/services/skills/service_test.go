@@ -197,6 +197,19 @@ func (f *fakeSkillRepo) ListSkillRevisions(_ context.Context, skillID string, _ 
 	return out, "", nil
 }
 
+func (f *fakeSkillRepo) ListSkillRevisionsByStatus(_ context.Context, status string, _ int, _ string) ([]*models.SkillRevision, string, error) {
+	if f.listRevisionsErr != nil {
+		return nil, "", f.listRevisionsErr
+	}
+	out := []*models.SkillRevision{}
+	for _, revision := range f.revisions {
+		if status == "" || revision.Status == status {
+			out = append(out, revision)
+		}
+	}
+	return out, "", nil
+}
+
 func (f *fakeSkillRepo) GetSkillRevisionByDigest(_ context.Context, manifestDigest string) (*models.SkillRevision, error) {
 	for _, revision := range f.revisions {
 		if revision.ManifestDigest == manifestDigest {
@@ -654,6 +667,249 @@ func TestServiceListSkillsAppliesExposure(t *testing.T) {
 	items, _, err = svc.ListSkills(ctx, Viewer{Username: "ops", Authenticated: true, Admin: true}, ListFilter{Status: models.SkillStatusActive})
 	require.NoError(t, err)
 	require.Len(t, items, 3)
+}
+
+func TestServiceListCatalogPublishesApprovedVisibleBundles(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"capabilities":["social.post"],
+		"runtime_targets":["codex"],
+		"install_hints":{"layout":"skill-directory-v1","directory_name":"skill-a","entrypoint":"SKILL.md"},
+		"files":[{"path":"SKILL.md","role":"entrypoint","content_type":"text/markdown","content":"# Skill A\n"}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+		ID: "skill-a", Slug: "skill-a", Name: "Skill A", Status: models.SkillStatusActive,
+		DefaultExposure: models.SkillExposurePublic, CurrentRevisionID: "skill-a-r1", CurrentRevisionNumber: 1,
+	}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		ContentDigest:   "sha256:content",
+		DefaultExposure: models.SkillExposurePublic,
+		Provenance: []models.SkillProvenanceRef{{
+			SourceType: models.SkillSourceTypeProposal,
+			Digest:     manifestDigest,
+			Ref:        "proposal-1",
+		}},
+	})
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "private", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePrivate}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "private",
+		RevisionNumber:  1,
+		DefaultExposure: models.SkillExposurePrivate,
+	})
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "draft", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic}))
+	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{SkillID: "draft", RevisionNumber: 1, Status: models.SkillRevisionStatusDraft, DefaultExposure: models.SkillExposurePublic}))
+
+	catalog, _, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{})
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	require.Equal(t, "skill-a", catalog[0].Skill.ID)
+	require.Equal(t, SkillBundleSchemaVersion, catalog[0].Bundle.SchemaVersion)
+	require.Equal(t, "skill:skill-a:revision:00000001", catalog[0].Bundle.BundleID)
+	require.NotEmpty(t, catalog[0].Bundle.BundleDigest)
+	require.NotEmpty(t, catalog[0].Bundle.PublicationDigest)
+	require.Equal(t, []string{"codex"}, catalog[0].Bundle.InstallHints.RuntimeTargets)
+	require.Equal(t, "SKILL.md", catalog[0].Bundle.InstallHints.EntryPoint)
+	require.Len(t, catalog[0].Bundle.Files, 1)
+	require.Equal(t, "skill-a/SKILL.md", catalog[0].Bundle.Files[0].InstallPath)
+	require.False(t, catalog[0].Bundle.Files[0].ContentIncluded)
+
+	catalog, _, err = svc.ListCatalog(ctx, Viewer{Username: "ops", Authenticated: true, Admin: true}, CatalogFilter{Exposure: models.SkillExposurePrivate})
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	require.Equal(t, "private", catalog[0].Skill.ID)
+}
+
+func TestServiceGetBundleIncludesContentAndRejectsUnpublished(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"runtime_targets":["codex","generic"],
+		"files":[{"path":"SKILL.md","role":"entrypoint","content":"# Skill A\n"}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Slug: "skill-a", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+	require.NoError(t, repo.CreateSkillRevision(ctx, &models.SkillRevision{SkillID: "skill-a", RevisionNumber: 2, Status: models.SkillRevisionStatusProposed, DefaultExposure: models.SkillExposurePublic}))
+
+	entry, err := svc.GetBundle(ctx, Viewer{}, "skill-a", 1, true)
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	require.Len(t, entry.Bundle.Files, 1)
+	require.True(t, entry.Bundle.Files[0].ContentIncluded)
+	require.Equal(t, "# Skill A\n", entry.Bundle.Files[0].Content)
+	require.Equal(t, "utf-8", entry.Bundle.Files[0].Encoding)
+	require.Equal(t, int64(len("# Skill A\n")), entry.Bundle.Files[0].SizeBytes)
+	require.NotEmpty(t, entry.Bundle.Files[0].Digest)
+
+	_, err = svc.GetBundle(ctx, Viewer{}, "skill-a", 2, true)
+	require.ErrorIs(t, err, ErrSkillRevisionNotFound)
+}
+
+func TestServiceGetBundleFailsClosedOnUnsafeFilePath(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{"files":[{"path":"../SKILL.md","content":"unsafe"}]}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+
+	_, err = svc.GetBundle(ctx, Viewer{}, "skill-a", 1, false)
+	require.ErrorIs(t, err, ErrInvalidState)
+}
+
+func TestServiceGetBundleFailsClosedOnInlineDigestMismatch(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"files":[{
+			"path":"SKILL.md",
+			"digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000",
+			"content":"# Skill A\n"
+		}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+
+	_, err = svc.GetBundle(ctx, Viewer{}, "skill-a", 1, true)
+	require.ErrorIs(t, err, ErrInvalidState)
+}
+
+func TestServiceGetBundleUsesResolvedInstallDirectory(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"install_hints":{"directory_name":"manifest-dir","entrypoint":"SKILL.md"},
+		"files":[{"path":"SKILL.md","content":"# Skill A\n"}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Slug: "skill-slug", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+
+	entry, err := svc.GetBundle(ctx, Viewer{}, "skill-a", 1, false)
+	require.NoError(t, err)
+	require.Equal(t, "manifest-dir", entry.Bundle.InstallHints.DirectoryName)
+	require.Len(t, entry.Bundle.Files, 1)
+	require.Equal(t, "manifest-dir/SKILL.md", entry.Bundle.Files[0].InstallPath)
+}
+
+func TestSkillBundleHelpersCoverContractEdges(t *testing.T) {
+	encoded := "IyBTa2lsbCBCCg=="
+	manifestJSON := `{
+		"runtime_targets":["generic","codex","codex"],
+		"install_hints":{"runtime_targets":["codex"],"required_files":["SKILL.md","../blocked"]},
+		"files":[
+			{"path":"docs/README.md","role":"support","digest":"sha256:readme"},
+			{"path":"SKILL.md","role":"skill","content":"` + encoded + `","encoding":"base64"}
+		]
+	}`
+	skill := &models.Skill{ID: "skill-a", Slug: "skill-a"}
+	revision := &models.SkillRevision{
+		ID:              "skill-a-r1",
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		Status:          models.SkillRevisionStatusApproved,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  "sha256:manifest",
+		BundleDigest:    "sha256:stored-bundle",
+		ContentDigest:   "sha256:content",
+		ApprovalDigest:  "sha256:approval",
+		DefaultExposure: models.SkillExposurePublic,
+	}
+
+	entry, err := buildCatalogEntry(skill, revision, true)
+	require.NoError(t, err)
+	require.Equal(t, "sha256:stored-bundle", entry.Bundle.BundleDigest)
+	require.Equal(t, "skill:skill-a:revision:00000001", entry.Bundle.BundleID)
+	require.Equal(t, []string{"codex"}, entry.Bundle.InstallHints.RuntimeTargets)
+	require.Equal(t, []string{"SKILL.md"}, entry.Bundle.InstallHints.RequiredFiles)
+	require.Len(t, entry.Bundle.Files, 2)
+	require.Equal(t, "docs/README.md", entry.Bundle.Files[0].Path)
+	require.Equal(t, "SKILL.md", entry.Bundle.Files[1].Path)
+	require.Equal(t, encoded, entry.Bundle.Files[1].Content)
+	require.Equal(t, skillBundleBase64, entry.Bundle.Files[1].Encoding)
+	require.True(t, entry.Bundle.Files[1].ContentIncluded)
+
+	files := revisionFilesFromManifest(manifestJSON)
+	require.Len(t, files, 2)
+	require.Equal(t, "SKILL.md", files[1].Path)
+	require.NotEmpty(t, files[1].Digest)
+
+	_, err = buildCatalogEntry(nil, revision, false)
+	require.ErrorIs(t, err, ErrInvalidInput)
+	_, err = buildCatalogEntry(skill, &models.SkillRevision{Status: models.SkillRevisionStatusDraft}, false)
+	require.ErrorIs(t, err, ErrSkillRevisionNotFound)
+	_, err = parseSkillBundleManifest(`{"files":[]}{}`)
+	require.Error(t, err)
+	_, err = buildSkillBundle(skill, &models.SkillRevision{ManifestJSON: `{"files":[{"path":"SKILL.md"}]}`}, false)
+	require.Error(t, err)
+	_, _, _, _, err = manifestFileContent(skillManifestBundleFile{InlineBase64: "not-base64"})
+	require.Error(t, err)
+	var ok bool
+	_, _, _, ok, err = manifestFileContent(skillManifestBundleFile{InlineText: "plain"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, skillBundleID(nil))
+	require.Equal(t, []string{"safe/file.md"}, safeBundlePaths([]string{"safe/file.md", "../blocked", "/also-blocked"}))
+	require.Equal(t, "skill/SKILL.md", skillInstallPath("", "SKILL.md"))
+	require.ErrorIs(t, validateCatalogFilter(CatalogFilter{Exposure: "world"}), ErrInvalidInput)
+	require.NotEmpty(t, effectiveBundleDigest(&models.SkillRevision{SkillID: "skill-a", ID: "skill-a-r2", RevisionNumber: 2}, entry.Bundle.Files, entry.Bundle.InstallHints))
+	require.Len(t, sortedBundleFiles([]SkillBundleFile{{Path: "z"}, {Path: "a"}}), 2)
+
+	revisionWithStoredFiles := *revision
+	revisionWithStoredFiles.BundleDigest = ""
+	revisionWithStoredFiles.Files = []models.SkillRevisionFile{{
+		Path:        "SKILL.md",
+		Digest:      sha256Digest([]byte("# Skill B\n")),
+		ContentType: "text/markdown",
+		Role:        "entrypoint",
+		SizeBytes:   99,
+	}}
+	bundle, err := buildSkillBundle(skill, &revisionWithStoredFiles, false)
+	require.NoError(t, err)
+	require.NotEqual(t, "sha256:stored-bundle", bundle.BundleDigest)
+	require.Len(t, bundle.Files, 2)
+	require.False(t, bundle.Files[0].ContentIncluded)
+
+	repo := newFakeSkillRepo()
+	repo.listRevisionsErr = errors.New("list failed")
+	_, _, err = NewService(repo).ListCatalog(context.Background(), Viewer{}, CatalogFilter{})
+	require.Error(t, err)
 }
 
 func TestServiceInspectAndAdminReadPaths(t *testing.T) {

@@ -383,10 +383,12 @@ func configureRoutes(app *apptheory.App) {
 
 	// Canonical skill authority (Lesser-exclusive additive API)
 	app.Get("/api/v1/skills", apiHandler.HandleListSkillsLift, optionalAuth)
+	app.Get("/api/v1/skills/catalog", apiHandler.HandleListSkillCatalogLift, optionalAuth)
 	app.Get("/api/v1/skills/resolve", apiHandler.HandleResolveEffectiveSkillsLift, requireRead)
 	app.Get("/api/v1/skills/{skillId}", apiHandler.HandleGetSkillLift, optionalAuth)
 	app.Get("/api/v1/skills/{skillId}/revisions", apiHandler.HandleListSkillRevisionsLift, optionalAuth)
 	app.Get("/api/v1/skills/{skillId}/revisions/{revisionNumber}", apiHandler.HandleGetSkillRevisionLift, optionalAuth)
+	app.Get("/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle", apiHandler.HandleGetSkillBundleLift, optionalAuth)
 
 	// Souls
 	app.Get("/api/v1/souls/bound/me", apiHandler.HandleGetBoundSoulMeLift, requireReadOrWrite)

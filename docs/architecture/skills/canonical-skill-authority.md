@@ -1,6 +1,8 @@
 # Canonical skill authority foundation
 
-Status: Project 21 M3 canonical authority (#698/#699/#700/#701/#702).
+Status: Project 21 M3 canonical authority (#698/#699/#700/#701/#702), with M4.1
+catalog/bundle publication defined in
+[`catalog-bundle-publication.md`](catalog-bundle-publication.md).
 
 ## Purpose
 
@@ -8,10 +10,10 @@ M3 establishes **Lesser as the canonical skill authority**. Repo-backed `SKILL.m
 files and lesser-host mint conversations may be used as source material or
 provenance, but neither is the system of record. The canonical authority lives in
 Lesser's single DynamoDB table and exposes approval, exposure, effective-resolution,
-and proposal-promotion APIs from that state.
+proposal-promotion, approved catalog, and bundle-publication APIs from that state.
 
-This milestone intentionally stops before M4 publication/catalog/bundle behavior
-and before lesser-body skills MCP tool work.
+M4.1 adds the approved catalog and bundle publication contract; lesser-body MCP
+tool implementation and local install-state verification remain downstream work.
 
 ## Entity model
 
@@ -112,7 +114,7 @@ sparse prefixes on existing `gsi1`/`gsi2`:
 |---|---|---|---|
 | `Skill` | `gsi1` | `SKILL#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}` | later lifecycle/catalog listing |
 | `Skill` | `gsi2` | `SKILL#EXPOSURE#{exposure}` / `NAME#{slug}#SKILL#{skillID}` | later exposure-scoped catalog listing |
-| `SkillRevision` | `gsi1` | `SKILL_REVISION#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}#REVISION#{n}` | later approval/revision queues |
+| `SkillRevision` | `gsi1` | `SKILL_REVISION#STATUS#{status}` / `UPDATED#{time}#SKILL#{skillID}#REVISION#{n}` | approval/revision queues and approved catalog publication |
 | `SkillRevision` | `gsi2` | `SKILL_REVISION_DIGEST#{digest}` / `SKILL#{skillID}#REVISION#{n}` | manifest digest de-duplication |
 | `SkillProposal` | `gsi1` | `SKILL#{skillID}#PROPOSAL` / `STATUS#{status}#CREATED#{time}#PROPOSAL#{proposalID}` | proposals for a skill |
 | `SkillProposal` | `gsi2` | `SKILL_PROPOSAL#STATUS#{status}` / `CREATED#{time}#SKILL#{skillID}#PROPOSAL#{proposalID}` | later review queues |

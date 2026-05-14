@@ -69,7 +69,7 @@ exemptions:
             - /api/v1/souls/bound/me/mint-conversations
             - /api/v1/souls/bound/me/mint-conversations/{conversationId}
     - id: canonical_skill_authority
-      reason: Canonical skill authority approval, exposure, assignment, and effective-resolution APIs are REST-only for Project 21 M3.
+      reason: Canonical skill authority approval, exposure, assignment, effective-resolution, catalog, and bundle-publication APIs are REST-only for Project 21 M3/M4.
       match:
         prefixes:
             - /api/v1/skills
@@ -1211,6 +1211,10 @@ routes:
       policy: rest_only
       exemptedBy: canonical_skill_authority
     - method: GET
+      path: /api/v1/skills/catalog
+      policy: rest_only
+      exemptedBy: canonical_skill_authority
+    - method: GET
       path: /api/v1/skills/resolve
       policy: rest_only
       exemptedBy: canonical_skill_authority
@@ -1224,6 +1228,10 @@ routes:
       exemptedBy: canonical_skill_authority
     - method: GET
       path: /api/v1/skills/{skillId}/revisions/{revisionNumber}
+      policy: rest_only
+      exemptedBy: canonical_skill_authority
+    - method: GET
+      path: /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle
       policy: rest_only
       exemptedBy: canonical_skill_authority
     - method: GET

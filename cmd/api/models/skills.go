@@ -131,6 +131,69 @@ type SkillAssignmentResource struct {
 	Version             int                  `json:"version"`
 }
 
+// SkillBundleFileResource represents one file in a published approved skill bundle.
+type SkillBundleFileResource struct {
+	Path            string `json:"path"`
+	Digest          string `json:"digest"`
+	ContentType     string `json:"content_type,omitempty"`
+	Role            string `json:"role,omitempty"`
+	SizeBytes       int64  `json:"size_bytes,omitempty"`
+	InstallPath     string `json:"install_path"`
+	Content         string `json:"content,omitempty"`
+	Encoding        string `json:"encoding,omitempty"`
+	ContentIncluded bool   `json:"content_included"`
+}
+
+// SkillInstallHintsResource gives clients advisory placement hints without mutating their workspace.
+type SkillInstallHintsResource struct {
+	Layout         string   `json:"layout"`
+	RuntimeTargets []string `json:"runtime_targets,omitempty"`
+	DirectoryName  string   `json:"directory_name"`
+	EntryPoint     string   `json:"entrypoint"`
+	RequiredFiles  []string `json:"required_files,omitempty"`
+}
+
+// SkillBundleDigestsResource groups stable digests that downstream clients verify.
+type SkillBundleDigestsResource struct {
+	ManifestDigest    string `json:"manifest_digest,omitempty"`
+	BundleDigest      string `json:"bundle_digest"`
+	PublicationDigest string `json:"publication_digest"`
+	ContentDigest     string `json:"content_digest,omitempty"`
+	ApprovalDigest    string `json:"approval_digest,omitempty"`
+}
+
+// SkillBundleResource represents the approved revision bundle publication contract.
+type SkillBundleResource struct {
+	SchemaVersion         string                     `json:"schema_version"`
+	BundleID              string                     `json:"bundle_id"`
+	Source                string                     `json:"source"`
+	Published             bool                       `json:"published"`
+	SkillID               string                     `json:"skill_id"`
+	RevisionID            string                     `json:"revision_id"`
+	RevisionNumber        int                        `json:"revision_number"`
+	DefaultExposure       string                     `json:"default_exposure"`
+	Digests               SkillBundleDigestsResource `json:"digests"`
+	Files                 []SkillBundleFileResource  `json:"files,omitempty"`
+	InstallHints          SkillInstallHintsResource  `json:"install_hints"`
+	Provenance            []SkillProvenanceRef       `json:"provenance,omitempty"`
+	ApprovalID            string                     `json:"approval_id,omitempty"`
+	ApprovalAuthorityType string                     `json:"approval_authority_type,omitempty"`
+	ApprovalAuthorityID   string                     `json:"approval_authority_id,omitempty"`
+	ApprovalSignature     string                     `json:"approval_signature,omitempty"`
+	ApprovalRef           string                     `json:"approval_ref,omitempty"`
+	ApprovedBy            string                     `json:"approved_by,omitempty"`
+	ApprovedAt            *time.Time                 `json:"approved_at,omitempty"`
+	PrincipalID           string                     `json:"principal_id,omitempty"`
+	PrincipalApprovalID   string                     `json:"principal_approval_id,omitempty"`
+}
+
+// SkillCatalogEntryResource represents one approved catalog entry.
+type SkillCatalogEntryResource struct {
+	Skill    SkillResource         `json:"skill"`
+	Revision SkillRevisionResource `json:"revision"`
+	Bundle   SkillBundleResource   `json:"bundle"`
+}
+
 // SkillListResponse represents GET /api/v1/skills.
 type SkillListResponse struct {
 	Skills     []SkillResource `json:"skills"`
@@ -153,6 +216,18 @@ type SkillRevisionsResponse struct {
 // SkillRevisionResponse represents one skill revision response.
 type SkillRevisionResponse struct {
 	Revision SkillRevisionResource `json:"revision"`
+}
+
+// SkillCatalogResponse represents GET /api/v1/skills/catalog.
+type SkillCatalogResponse struct {
+	Entries    []SkillCatalogEntryResource `json:"entries"`
+	Count      int                         `json:"count"`
+	NextCursor string                      `json:"next_cursor,omitempty"`
+}
+
+// SkillBundleResponse represents GET /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle.
+type SkillBundleResponse struct {
+	Bundle SkillBundleResource `json:"bundle"`
 }
 
 // SkillProposalsResponse represents admin proposal listings.
