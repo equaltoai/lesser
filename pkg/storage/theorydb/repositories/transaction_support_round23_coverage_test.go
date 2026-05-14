@@ -191,6 +191,7 @@ func TestTransactionalRepository_CreateStatusWithChecksTransactional_Succeeds_Ro
 	q := new(dynamormMocks.MockQuery)
 	q.On("Create").Return(nil).Maybe()
 	q.On("Update", mock.Anything).Return(nil).Maybe()
+	q.On("First", mock.Anything).Return(nil).Maybe()
 
 	db := &transactionRunnerDB{query: q}
 	repo := NewTransactionalRepository(db, "main", zap.NewNop(), cost.New())
@@ -205,6 +206,7 @@ func TestTransactionalRepository_TransferOwnershipTransactional_Succeeds_Round23
 	q := new(dynamormMocks.MockQuery)
 	q.On("Create").Return(nil).Maybe()
 	q.On("Update", mock.Anything).Return(nil).Maybe()
+	q.On("First", mock.Anything).Return(nil).Maybe()
 
 	db := &transactionRunnerDB{query: q}
 	repo := NewTransactionalRepository(db, "main", zap.NewNop(), cost.New())
@@ -250,6 +252,8 @@ func TestTransactionContext_DeleteByKey_And_UpdateWithExpression_Succeed_Round23
 
 	q := new(dynamormMocks.MockQuery)
 	q.On("Create").Return(nil).Maybe()
+	q.On("Update", mock.Anything).Return(nil).Maybe()
+	q.On("Delete").Return(nil).Maybe()
 
 	db := &transactionRunnerDB{query: q}
 	tx := &core.Tx{}

@@ -52,8 +52,10 @@ func (r *testBookmarkRepository) overrideHooks() {
 	r.findTimeBookmarkFn = func(_ context.Context, username, objectID string) (*models.Bookmark, error) {
 		pk := buildBookmarkPK(username)
 		for _, bookmark := range r.store {
-			if bookmark.PK == pk && bookmark.RecordType == models.BookmarkRecordTypeTime &&
-				bookmark.ObjectID == objectID {
+			if bookmark.PK != pk || bookmark.ObjectID != objectID {
+				continue
+			}
+			if bookmark.RecordType == models.BookmarkRecordTypeTime || isTimeBookmarkSK(bookmark.SK) || isReadableTimeBookmark(*bookmark) {
 				return r.clone(bookmark), nil
 			}
 		}
@@ -110,7 +112,7 @@ func (r *testBookmarkRepository) mockQueryTimeBookmarks(_ context.Context, usern
 	pk := buildBookmarkPK(username)
 	all := make([]models.Bookmark, 0)
 	for _, bookmark := range r.store {
-		if bookmark.PK == pk && bookmark.RecordType == models.BookmarkRecordTypeTime && !bookmark.Locked {
+		if bookmark.PK == pk && isReadableTimeBookmark(*bookmark) {
 			all = append(all, *r.clone(bookmark))
 		}
 	}
@@ -279,6 +281,38 @@ func TestBookmarkRepositoryGetUserBookmarksSkipsLocked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bookmarks, 1)
 	require.Equal(t, first.ObjectID, bookmarks[0].ObjectID)
+}
+
+func TestBookmarkRepositoryLegacyTimestampBookmarksRemainVisible(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestBookmarkRepository()
+	createdAt := time.Date(2026, time.May, 14, 16, 45, 0, 0, time.UTC)
+	legacy := &models.Bookmark{
+		PK:        buildBookmarkPK("frank"),
+		SK:        createdAt.Format(time.RFC3339Nano),
+		Username:  "frank",
+		ObjectID:  "status-legacy",
+		CreatedAt: createdAt,
+	}
+	repo.store[repo.makeKey(legacy.PK, legacy.SK)] = legacy
+
+	got, err := repo.GetBookmark(ctx, "frank", "status-legacy")
+	require.NoError(t, err)
+	require.Equal(t, legacy.SK, got.SK)
+
+	bookmarked, err := repo.IsBookmarked(ctx, "frank", "status-legacy")
+	require.NoError(t, err)
+	require.True(t, bookmarked)
+
+	statuses, err := repo.CheckBookmarksForStatuses(ctx, "frank", []string{"status-legacy"})
+	require.NoError(t, err)
+	require.True(t, statuses["status-legacy"])
+
+	bookmarks, nextCursor, err := repo.GetUserBookmarks(ctx, "frank", 10, "")
+	require.NoError(t, err)
+	require.Empty(t, nextCursor)
+	require.Len(t, bookmarks, 1)
+	require.Equal(t, "status-legacy", bookmarks[0].ObjectID)
 }
 
 type mockTransactionBuilder struct {

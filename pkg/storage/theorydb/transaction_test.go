@@ -89,6 +89,48 @@ func TestTransaction_ExecuteWithError(t *testing.T) {
 	mockDB.AssertExpectations(t)
 }
 
+func TestTransaction_ExecuteLegacyTxRunsWriteOperations(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	user := &TestUser{
+		StandardModel: StandardModel{
+			PK: "user#123",
+			SK: "user#123",
+		},
+		Name: "John Doe",
+	}
+
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+		Run(func(args mock.Arguments) {
+			txFunc := args.Get(0).(func(*core.Tx) error)
+			mockTx := &core.Tx{}
+			mockTx.SetDB(mockDB)
+			_ = txFunc(mockTx)
+		}).
+		Return(nil).
+		Once()
+	mockDB.On("Model", user).Return(mockQuery).Times(3)
+	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("Update", []string{"Name"}).Return(nil).Once()
+	mockQuery.On("Delete").Return(nil).Once()
+
+	tx := NewTransaction(mockDB)
+	err := tx.Execute(context.Background(), func(tx *Transaction) error {
+		if err := tx.Put(user); err != nil {
+			return err
+		}
+		if err := tx.Update(user); err != nil {
+			return err
+		}
+		return tx.Delete(user)
+	})
+
+	assert.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 func TestTransaction_M10_ExecuteUsesTableTheoryTransactionBuilder(t *testing.T) {
 	mockDB := new(mocks.MockExtendedDB)
 	builder := new(mocks.MockTransactionBuilder)
@@ -698,7 +740,8 @@ func TestTransactionManager_M10_AdditionalTransactionCoverage(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Create").Return(nil).Once()
 	mockQuery.On("Update", []string{"Name"}).Return(nil).Once()
-	mockQuery.On("Delete").Return(nil).Once()
+	mockQuery.On("Delete").Return(nil).Twice()
+	mockQuery.On("First", mock.Anything).Return(nil).Once()
 	tx := &core.Tx{}
 	tx.SetDB(mockDB)
 

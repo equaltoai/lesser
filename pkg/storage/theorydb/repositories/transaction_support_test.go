@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/theory-cloud/tabletheory/pkg/core"
+	tableErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	githubMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -24,6 +25,7 @@ func newNoopQuery() *githubMocks.MockQuery {
 	query := new(githubMocks.MockQuery)
 	query.On("Create").Return(nil).Maybe()
 	query.On("Update", mock.Anything).Return(nil).Maybe()
+	query.On("Update").Return(nil).Maybe()
 	query.On("Delete").Return(nil).Maybe()
 	query.On("CreateOrUpdate").Return(nil).Maybe()
 	query.On("UpdateBuilder").Return(new(githubMocks.MockUpdateBuilder)).Maybe()
@@ -186,7 +188,20 @@ func newTransactionContextWithMocks() *TransactionContext {
 }
 
 func TestConditionalCreate(t *testing.T) {
-	txCtx := newTransactionContextWithMocks()
+	mockDB := new(repoTesting.MockDB)
+	mockQuery := new(githubMocks.MockQuery)
+	mockQuery.On("First", mock.Anything).Return(tableErrors.ErrItemNotFound).Once()
+	mockQuery.On("Create").Return(nil).Once()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+
+	tx := &core.Tx{}
+	tx.SetDB(mockDB)
+	txCtx := &TransactionContext{
+		tx:            tx,
+		operationsCnt: 0,
+		startTime:     time.Now(),
+		logger:        zap.NewNop(),
+	}
 
 	item := map[string]any{"key": "value"}
 	key := map[string]any{"PK": "test"}
