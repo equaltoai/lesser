@@ -70,6 +70,8 @@ const (
 	defaultSkillEntrypoint   = "SKILL.md"
 	defaultSkillDirectory    = "skill"
 	skillBundleBase64        = "base64"
+	defaultCatalogListLimit  = 25
+	maxCatalogListLimit      = 100
 )
 
 // CatalogFilter constrains approved skill catalog listing.
@@ -312,30 +314,78 @@ func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter Catalog
 	if err := validateCatalogFilter(filter); err != nil {
 		return nil, "", err
 	}
-	revisions, cursor, err := s.repo.ListSkillRevisionsByStatus(ctx, models.SkillRevisionStatusApproved, filter.Limit, filter.Cursor)
-	if err != nil {
-		return nil, "", err
-	}
+
+	limit := sanitizeCatalogListLimit(filter.Limit)
+	cursor := strings.TrimSpace(filter.Cursor)
 	exposure := strings.ToLower(strings.TrimSpace(filter.Exposure))
-	out := make([]CatalogEntry, 0, len(revisions))
-	for _, revision := range revisions {
-		if revision == nil || revision.Status != models.SkillRevisionStatusApproved {
-			continue
-		}
-		if exposure != "" && revision.DefaultExposure != exposure {
-			continue
-		}
-		skill, err := s.repo.GetSkill(ctx, revision.SkillID)
-		if err != nil || !CanInspectSkill(viewer, skill) || !CanInspectRevision(viewer, revision) {
-			continue
-		}
-		entry, err := buildCatalogEntry(skill, revision, false)
+	out := make([]CatalogEntry, 0, limit)
+	nextCursor := ""
+
+	for len(out) < limit {
+		revisions, rawNextCursor, err := s.repo.ListSkillRevisionsByStatus(ctx, models.SkillRevisionStatusApproved, limit, cursor)
 		if err != nil {
-			continue
+			return nil, "", err
 		}
-		out = append(out, entry)
+		if len(revisions) == 0 {
+			return out, "", nil
+		}
+
+		rawNextCursor = strings.TrimSpace(rawNextCursor)
+		for index, revision := range revisions {
+			entry, ok := s.catalogEntryForRevision(ctx, viewer, exposure, revision)
+			if !ok {
+				continue
+			}
+			out = append(out, entry)
+			if visibleCursor := catalogCursorForRevision(revision); visibleCursor != "" {
+				nextCursor = visibleCursor
+			}
+			if len(out) >= limit {
+				return out, catalogCursorAfterVisibleLimit(index, len(revisions), rawNextCursor, nextCursor), nil
+			}
+		}
+
+		nextRawCursor, ok := advanceCatalogRawCursor(cursor, rawNextCursor)
+		if !ok {
+			return out, "", nil
+		}
+		cursor = nextRawCursor
 	}
-	return out, cursor, nil
+
+	return out, nextCursor, nil
+}
+
+func (s *Service) catalogEntryForRevision(ctx context.Context, viewer Viewer, exposure string, revision *models.SkillRevision) (CatalogEntry, bool) {
+	if revision == nil || revision.Status != models.SkillRevisionStatusApproved {
+		return CatalogEntry{}, false
+	}
+	if exposure != "" && revision.DefaultExposure != exposure {
+		return CatalogEntry{}, false
+	}
+	skill, err := s.repo.GetSkill(ctx, revision.SkillID)
+	if err != nil || !CanInspectSkill(viewer, skill) || !CanInspectRevision(viewer, revision) {
+		return CatalogEntry{}, false
+	}
+	entry, err := buildCatalogEntry(skill, revision, false)
+	if err != nil {
+		return CatalogEntry{}, false
+	}
+	return entry, true
+}
+
+func catalogCursorAfterVisibleLimit(index int, pageLen int, rawNextCursor string, visibleCursor string) string {
+	if index == pageLen-1 && strings.TrimSpace(rawNextCursor) == "" {
+		return ""
+	}
+	return visibleCursor
+}
+
+func advanceCatalogRawCursor(current string, next string) (string, bool) {
+	next = strings.TrimSpace(next)
+	if next == "" || next == strings.TrimSpace(current) {
+		return "", false
+	}
+	return next, true
 }
 
 // GetBundle returns the publication bundle for one approved canonical skill revision.
@@ -1628,6 +1678,34 @@ func validateCatalogFilter(filter CatalogFilter) error {
 		return errors.Join(ErrInvalidInput, errors.New("unsupported exposure"))
 	}
 	return nil
+}
+
+func sanitizeCatalogListLimit(limit int) int {
+	switch {
+	case limit <= 0:
+		return defaultCatalogListLimit
+	case limit > maxCatalogListLimit:
+		return maxCatalogListLimit
+	default:
+		return limit
+	}
+}
+
+func catalogCursorForRevision(revision *models.SkillRevision) string {
+	if revision == nil {
+		return ""
+	}
+	if cursor := strings.TrimSpace(revision.GSI1SK); cursor != "" {
+		return cursor
+	}
+
+	clone := *revision
+	if err := clone.UpdateKeys(); err == nil {
+		if cursor := strings.TrimSpace(clone.GSI1SK); cursor != "" {
+			return cursor
+		}
+	}
+	return strings.TrimSpace(revision.GetSK())
 }
 
 func validateListFilter(filter ListFilter) error {
