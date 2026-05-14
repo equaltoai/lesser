@@ -30,6 +30,10 @@ type actorRepository interface {
 	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
 }
 
+type cachedRemoteActorRepository interface {
+	GetCachedRemoteActor(ctx context.Context, identifier string) (*activitypub.Actor, error)
+}
+
 type statusRepository interface {
 	CountStatusesByAuthor(ctx context.Context, username string) (int, error)
 	GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error)
@@ -233,6 +237,12 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 		// No reputation history, calculate new
 		return s.calculateAndStore(ctx, actorID)
 	}
+	if !sameCanonicalActorID(storedRep.ActorID, actorID) {
+		s.logger.Warn("stored reputation actor did not match requested actor; recalculating",
+			zap.String("requested_actor", actorID),
+			zap.String("stored_actor", storedRep.ActorID))
+		return s.calculateAndStore(ctx, actorID)
+	}
 
 	// Convert storage.Reputation to reputation.Reputation
 	rep := &Reputation{
@@ -355,6 +365,10 @@ func (s *Service) extractUsername(actorID string) string {
 
 // getActorData retrieves actor data from storage
 func (s *Service) getActorData(ctx context.Context, actorID, username string) (*activitypub.Actor, error) {
+	if s.isRemoteActorID(actorID) {
+		return s.getRemoteActorData(ctx, actorID)
+	}
+
 	actor, err := s.actorRepo.GetActorByUsername(ctx, username)
 	if err != nil {
 		s.logger.Error("Failed to get actor",
@@ -362,6 +376,30 @@ func (s *Service) getActorData(ctx context.Context, actorID, username string) (*
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+	return actor, nil
+}
+
+func (s *Service) isRemoteActorID(actorID string) bool {
+	localHost := actorIDHost(s.instanceURL)
+	actorHost := actorIDHost(actorID)
+	return localHost != "" && actorHost != "" && actorHost != localHost
+}
+
+func (s *Service) getRemoteActorData(ctx context.Context, actorID string) (*activitypub.Actor, error) {
+	remoteRepo, ok := s.actorRepo.(cachedRemoteActorRepository)
+	if !ok || remoteRepo == nil {
+		return nil, fmt.Errorf("actor not found: %s", actorID)
+	}
+	actor, err := remoteRepo.GetCachedRemoteActor(ctx, actorID)
+	if err != nil {
+		s.logger.Error("Failed to get cached remote actor",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return nil, fmt.Errorf("actor not found: %w", err)
+	}
+	if actor == nil || !sameCanonicalActorID(actor.ID, actorID) {
+		return nil, fmt.Errorf("actor not found: %s", actorID)
 	}
 	return actor, nil
 }
@@ -708,30 +746,58 @@ func (s *Service) countNoteHelpfulVotes(ctx context.Context, noteID string) int 
 	return count
 }
 
+type storeReputationOptions struct {
+	forceCanonicalActorKey bool
+}
+
+type storeReputationOption func(*storeReputationOptions)
+
+func withCanonicalActorKey() storeReputationOption {
+	return func(opts *storeReputationOptions) {
+		opts.forceCanonicalActorKey = true
+	}
+}
+
+func (s *Service) importedReputationStoreOptions(actorID string) []storeReputationOption {
+	localHost := actorIDHost(s.instanceURL)
+	actorHost := actorIDHost(actorID)
+	if localHost == "" || actorHost == "" || actorHost != localHost {
+		return []storeReputationOption{withCanonicalActorKey()}
+	}
+	return nil
+}
+
 // storeReputation stores reputation using the storage layer
-func (s *Service) storeReputation(ctx context.Context, rep *Reputation) error {
+func (s *Service) storeReputation(ctx context.Context, rep *Reputation, options ...storeReputationOption) error {
+	storeOpts := storeReputationOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&storeOpts)
+		}
+	}
 	// Convert reputation.Reputation to storage.Reputation
 	storedRep := &storage.Reputation{
-		ActorID:           rep.ActorID,
-		InstanceURL:       rep.InstanceURL,
-		TrustScore:        float64(rep.TrustScore),
-		ActivityScore:     float64(rep.ActivityScore),
-		ModerationScore:   float64(rep.ModerationScore),
-		CommunityScore:    float64(rep.CommunityScore),
-		TotalScore:        float64(rep.TotalScore),
-		CalculatedAt:      rep.CalculatedAt,
-		Version:           func() int { v, _ := strconv.Atoi(rep.Version); return v }(),
-		TotalPosts:        rep.TotalPosts,
-		TotalFollowers:    rep.TotalFollowers,
-		AccountAge:        rep.AccountAge,
-		VouchCount:        rep.VouchCount,
-		TrustingActors:    []string{}, // We don't store individual actors in this conversion
-		AverageTrustScore: rep.AverageTrustScore,
-		ReportsReceived:   rep.ReportsReceived,
-		ReportsUpheld:     rep.ReportsUpheld,
-		FalseReports:      rep.FalseReports,
-		Signature:         rep.Signature,
-		PublicKey:         rep.PublicKey,
+		ActorID:                rep.ActorID,
+		InstanceURL:            rep.InstanceURL,
+		TrustScore:             float64(rep.TrustScore),
+		ActivityScore:          float64(rep.ActivityScore),
+		ModerationScore:        float64(rep.ModerationScore),
+		CommunityScore:         float64(rep.CommunityScore),
+		TotalScore:             float64(rep.TotalScore),
+		CalculatedAt:           rep.CalculatedAt,
+		Version:                func() int { v, _ := strconv.Atoi(rep.Version); return v }(),
+		TotalPosts:             rep.TotalPosts,
+		TotalFollowers:         rep.TotalFollowers,
+		AccountAge:             rep.AccountAge,
+		VouchCount:             rep.VouchCount,
+		TrustingActors:         []string{}, // We don't store individual actors in this conversion
+		AverageTrustScore:      rep.AverageTrustScore,
+		ReportsReceived:        rep.ReportsReceived,
+		ReportsUpheld:          rep.ReportsUpheld,
+		FalseReports:           rep.FalseReports,
+		Signature:              rep.Signature,
+		PublicKey:              rep.PublicKey,
+		ForceCanonicalActorKey: storeOpts.forceCanonicalActorKey,
 	}
 
 	return s.userRepo.StoreReputation(ctx, rep.ActorID, storedRep)
@@ -803,6 +869,13 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 		}, nil
 	}
 
+	if pr.Reputation != nil && !sameCanonicalActorID(pr.Actor, pr.Reputation.ActorID) {
+		return &ImportResult{
+			Success: false,
+			Error:   "Reputation actor does not match document actor",
+		}, nil
+	}
+
 	// Get current reputation
 	currentRep, _ := s.GetReputation(ctx, pr.Actor)
 	previousScore := 0
@@ -814,7 +887,7 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 	if pr.Reputation != nil {
 		// Store imported reputation with special marker
 		pr.Reputation.InstanceURL = pr.Issuer // Mark as imported
-		if err := s.storeReputation(ctx, pr.Reputation); err != nil {
+		if err := s.storeReputation(ctx, pr.Reputation, s.importedReputationStoreOptions(pr.Reputation.ActorID)...); err != nil {
 			return &ImportResult{
 				Success: false,
 				Error:   "Failed to store reputation",

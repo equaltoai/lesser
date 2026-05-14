@@ -14,6 +14,10 @@ import (
 	"go.uber.org/zap"
 )
 
+func matchAliceReputationPK(pk string) bool {
+	return pk == "ACTOR#https://example.com/users/alice" || pk == "ACTOR#alice"
+}
+
 func TestStoreReputation(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
@@ -89,7 +93,7 @@ func TestGetReputation(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "PK", "=", "ACTOR#alice").Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", "ACTOR#https://example.com/users/alice").Return(mockQuery).Maybe()
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Maybe()
 	mockQuery.On("Limit", 1).Return(mockQuery).Maybe()
@@ -110,6 +114,56 @@ func TestGetReputation(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestGetReputationDoesNotReturnLegacyMismatchedActor(t *testing.T) {
+	logger := zap.NewNop()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	repo := NewUserRepository(mockDB, "test-table", logger)
+	ctx := context.Background()
+
+	calculatedAt := time.Now().UTC()
+	localReputationData := fmt.Sprintf(`{
+		"actor_id": "https://example.com/users/alice",
+		"instance_url": "https://example.com",
+		"total_score": 825,
+		"calculated_at": "%s"
+	}`, calculatedAt.Format(time.RFC3339))
+	localRep := models.Reputation{
+		PK:             "ACTOR#alice",
+		SK:             "REP#" + calculatedAt.Format(time.RFC3339),
+		ReputationData: localReputationData,
+		TotalScore:     825,
+		CalculatedAt:   calculatedAt.Format(time.RFC3339),
+	}
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", mock.MatchedBy(func(pk string) bool {
+		return pk == "ACTOR#https://evil.example/users/alice" || pk == "ACTOR#alice"
+	})).Return(mockQuery).Maybe()
+	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Maybe()
+	mockQuery.On("Limit", 1).Return(mockQuery).Maybe()
+	call := 0
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Reputation")).Run(func(args mock.Arguments) {
+		reps := args.Get(0).(*[]models.Reputation)
+		if call == 0 {
+			*reps = []models.Reputation{}
+		} else {
+			*reps = []models.Reputation{localRep}
+		}
+		call++
+	}).Return(nil)
+
+	reputation, err := repo.GetReputation(ctx, "https://evil.example/users/alice")
+
+	assert.ErrorIs(t, err, storage.ErrNotFound)
+	assert.Nil(t, reputation)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 func TestGetReputationHistory(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
@@ -121,7 +175,7 @@ func TestGetReputationHistory(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "PK", "=", "ACTOR#alice").Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", mock.MatchedBy(matchAliceReputationPK)).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Maybe()
 	mockQuery.On("Limit", 10).Return(mockQuery).Maybe()
@@ -141,6 +195,50 @@ func TestGetReputationHistory(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestGetReputationHistoryReturnsCanonicalRows(t *testing.T) {
+	logger := zap.NewNop()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	repo := NewUserRepository(mockDB, "test-table", logger)
+	ctx := context.Background()
+
+	calculatedAt := time.Now().UTC()
+	reputationData := fmt.Sprintf(`{
+		"actor_id": "https://remote.example/users/alice",
+		"instance_url": "https://example.com",
+		"total_score": 700,
+		"calculated_at": "%s"
+	}`, calculatedAt.Format(time.RFC3339))
+	mockRep := models.Reputation{
+		PK:             "ACTOR#https://remote.example/users/alice",
+		SK:             "REP#" + calculatedAt.Format(time.RFC3339),
+		ReputationData: reputationData,
+		TotalScore:     700,
+		CalculatedAt:   calculatedAt.Format(time.RFC3339),
+	}
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", "ACTOR#https://remote.example/users/alice").Return(mockQuery).Once()
+	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 1).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Reputation")).Run(func(args mock.Arguments) {
+		reps := args.Get(0).(*[]models.Reputation)
+		*reps = []models.Reputation{mockRep}
+	}).Return(nil).Once()
+
+	history, err := repo.GetReputationHistory(ctx, "https://remote.example/users/alice", 1)
+
+	assert.NoError(t, err)
+	assert.Len(t, history, 1)
+	assert.Equal(t, "https://remote.example/users/alice", history[0].ActorID)
+	assert.Equal(t, 700.0, history[0].TotalScore)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 func TestGetUserTrustScore(t *testing.T) {
 	logger := zap.NewNop()
 	mockDB := new(mocks.MockDB)
@@ -151,7 +249,7 @@ func TestGetUserTrustScore(t *testing.T) {
 
 	// Test data
 	calculatedAt := time.Now()
-	reputationData := `{"total_score": 825, "calculated_at": "` + calculatedAt.Format(time.RFC3339) + `"}`
+	reputationData := `{"actor_id":"https://example.com/users/alice","total_score": 825, "calculated_at": "` + calculatedAt.Format(time.RFC3339) + `"}`
 
 	mockRep := models.Reputation{
 		ReputationData: reputationData,
@@ -161,7 +259,7 @@ func TestGetUserTrustScore(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "PK", "=", "ACTOR#alice").Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", "ACTOR#https://example.com/users/alice").Return(mockQuery).Maybe()
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Maybe()
 	mockQuery.On("Limit", 1).Return(mockQuery).Maybe()
@@ -191,14 +289,14 @@ func TestGetUserTrustScoreNoReputation(t *testing.T) {
 	// Set up expectations - no reputation found
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "PK", "=", "ACTOR#alice").Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", mock.MatchedBy(matchAliceReputationPK)).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "REP#").Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Maybe()
 	mockQuery.On("Limit", 1).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Reputation")).Run(func(args mock.Arguments) {
 		reps := args.Get(0).(*[]models.Reputation)
 		*reps = []models.Reputation{} // Empty
-	}).Return(nil).Once()
+	}).Return(nil)
 
 	// Test
 	score, err := repo.GetUserTrustScore(ctx, "https://example.com/users/alice")

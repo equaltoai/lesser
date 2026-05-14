@@ -934,99 +934,127 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "reputation", actorID)
 	}
 
-	username := extractUsernameFromActorID(actorID)
-	if err := common.ValidateEntityID(username, "user"); err != nil {
+	pkCandidates, err := models.ReputationActorPartitionKeyCandidates(actorID)
+	if err != nil || len(pkCandidates) == 0 {
 		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "reputation", actorID)
 	}
 
-	// Build query for latest reputation
-	pk := fmt.Sprintf("ACTOR#%s", username)
-	skPrefix := "REP#"
+	var lastErr error
+	for _, pk := range pkCandidates {
+		reputation, found, err := r.getLatestReputationByPK(ctx, actorID, pk)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if found {
+			return reputation, nil
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "reputation", actorID)
+}
 
-	// Query for latest reputation (most recent first)
+func (r *UserRepository) getLatestReputationByPK(ctx context.Context, actorID, pk string) (*storage.Reputation, bool, error) {
 	var reputations []models.Reputation
 	err := r.GetDB().WithContext(ctx).
 		Model(&models.Reputation{}).
 		Where("PK", "=", pk).
-		Filter("SK", "BEGINS_WITH", skPrefix).
-		OrderBy("SK", "DESC"). // Descending order to get latest first
+		Filter("SK", "BEGINS_WITH", "REP#").
+		OrderBy("SK", "DESC").
 		Limit(1).
 		All(&reputations)
-
 	if err != nil {
 		r.logger.Error("failed to query reputation", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "reputation", "query")
+		return nil, false, ErrorHandler.HandleQueryError(err, "reputation", "query")
 	}
-
-	// No reputation found
 	if err := common.ValidateSliceNotEmpty("reputations", reputations); err != nil {
-		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "reputation", actorID)
+		return nil, false, nil
 	}
-
 	// Convert to storage.Reputation
 	repInterface, err := reputations[0].ToStorageReputation()
 	if err != nil {
 		r.logger.Error("failed to unmarshal reputation", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "reputation", "unmarshal")
+		return nil, false, ErrorHandler.HandleQueryError(err, "reputation", "unmarshal")
 	}
 
 	// Convert interface back to storage.Reputation
 	var reputation storage.Reputation
 	repJSON, _ := json.Marshal(repInterface)
 	if err := json.Unmarshal(repJSON, &reputation); err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "reputation", "convert")
+		return nil, false, ErrorHandler.HandleQueryError(err, "reputation", "convert")
+	}
+	if !models.ReputationActorIDsMatch(reputation.ActorID, actorID) {
+		return nil, false, nil
 	}
 
-	return &reputation, nil
+	return &reputation, true, nil
 }
 
 // GetReputationHistory retrieves reputation history for an actor
 func (r *UserRepository) GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error) {
-	// Extract username from actorID
-	username := extractUsernameFromActorID(actorID)
-	if err := common.ValidateEntityID(username, "user"); err != nil {
+	pkCandidates, err := models.ReputationActorPartitionKeyCandidates(actorID)
+	if err != nil || len(pkCandidates) == 0 {
 		return []*storage.Reputation{}, nil // Return empty slice when invalid actorID
 	}
 
-	// Build query
-	pk := fmt.Sprintf("ACTOR#%s", username)
 	skPrefix := "REP#"
 
-	// Query for reputation history
-	var reputations []models.Reputation
-	query := r.GetDB().WithContext(ctx).
-		Model(&models.Reputation{}).
-		Where("PK", "=", pk).
-		Filter("SK", "BEGINS_WITH", skPrefix).
-		OrderBy("SK", "DESC") // Descending order (most recent first)
+	history := make([]*storage.Reputation, 0)
+	seen := make(map[string]struct{})
+	for _, pk := range pkCandidates {
+		remaining := limit - len(history)
+		if limit <= 0 {
+			remaining = 0
+		} else if remaining <= 0 {
+			break
+		}
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+		var reputations []models.Reputation
+		query := r.GetDB().WithContext(ctx).
+			Model(&models.Reputation{}).
+			Where("PK", "=", pk).
+			Filter("SK", "BEGINS_WITH", skPrefix).
+			OrderBy("SK", "DESC") // Descending order (most recent first)
 
-	err := query.All(&reputations)
-	if err != nil {
-		r.logger.Error("failed to query reputation history", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "reputation", "history")
-	}
+		if remaining > 0 {
+			query = query.Limit(remaining)
+		}
 
-	// Convert to storage.Reputation slice
-	history := make([]*storage.Reputation, 0, len(reputations))
-	for _, rep := range reputations {
-		repInterface, err := rep.ToStorageReputation()
+		err := query.All(&reputations)
 		if err != nil {
-			r.logger.Warn("Failed to unmarshal reputation data", zap.Error(err))
-			continue
+			r.logger.Error("failed to query reputation history", zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, "reputation", "history")
 		}
 
-		// Convert interface back to storage.Reputation
-		var reputation storage.Reputation
-		repJSON, _ := json.Marshal(repInterface)
-		if err := json.Unmarshal(repJSON, &reputation); err != nil {
-			r.logger.Warn("Failed to convert reputation", zap.Error(err))
-			continue
+		for _, rep := range reputations {
+			identity := rep.PK + "|" + rep.SK
+			if _, ok := seen[identity]; ok {
+				continue
+			}
+			seen[identity] = struct{}{}
+
+			repInterface, err := rep.ToStorageReputation()
+			if err != nil {
+				r.logger.Warn("Failed to unmarshal reputation data", zap.Error(err))
+				continue
+			}
+
+			var reputation storage.Reputation
+			repJSON, _ := json.Marshal(repInterface)
+			if err := json.Unmarshal(repJSON, &reputation); err != nil {
+				r.logger.Warn("Failed to convert reputation", zap.Error(err))
+				continue
+			}
+			if !models.ReputationActorIDsMatch(reputation.ActorID, actorID) {
+				continue
+			}
+			history = append(history, &reputation)
+			if limit > 0 && len(history) >= limit {
+				break
+			}
 		}
-		history = append(history, &reputation)
 	}
 
 	return history, nil

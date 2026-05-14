@@ -180,9 +180,11 @@ func TestReputation(t *testing.T) {
 		calculatedAt := time.Unix(1700000000, 0).UTC().Format(time.RFC3339)
 		input := struct {
 			CalculatedAt string `json:"calculatedAt"`
+			Instance     string `json:"instance"`
 			TotalScore   int    `json:"totalScore"`
 		}{
 			CalculatedAt: calculatedAt,
+			Instance:     "https://example.com",
 			TotalScore:   42,
 		}
 

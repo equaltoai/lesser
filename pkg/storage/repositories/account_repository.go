@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -575,6 +576,11 @@ func (r *AccountRepository) normalizeUsername(username string) string {
 
 	if strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "http://") {
 		urlWithoutScheme := strings.TrimSuffix(trimmed, "/")
+		parsed, _ := url.Parse(urlWithoutScheme)
+		remoteDomain := ""
+		if parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !r.isLocalDomain(parsed.Hostname()) {
+			remoteDomain = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+		}
 		if idx := strings.Index(urlWithoutScheme, "/users/"); idx != -1 && idx+7 < len(urlWithoutScheme) {
 			trimmed = urlWithoutScheme[idx+7:]
 		} else if idx := strings.LastIndex(urlWithoutScheme, "/@"); idx != -1 && idx+2 < len(urlWithoutScheme) {
@@ -586,6 +592,9 @@ func (r *AccountRepository) normalizeUsername(username string) string {
 			}
 		}
 		trimmed = strings.TrimPrefix(trimmed, "@")
+		if remoteDomain != "" && !strings.Contains(trimmed, "@") {
+			trimmed = fmt.Sprintf("%s@%s", trimmed, remoteDomain)
+		}
 	}
 
 	if at := strings.LastIndex(trimmed, "@"); at != -1 {

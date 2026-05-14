@@ -165,16 +165,35 @@ func (r *round20UserRepo) StoreReputation(ctx context.Context, actorID string, r
 type round20ActorRepo struct {
 	actorByUsername map[string]*activitypub.Actor
 	errByUsername   map[string]error
+	cachedRemote    map[string]*activitypub.Actor
+	errRemote       map[string]error
+	usernameCalls   int
+	remoteCalls     int
 }
 
 func (r *round20ActorRepo) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
 	_ = ctx
+	r.usernameCalls++
 	if r.errByUsername != nil {
 		if err, ok := r.errByUsername[username]; ok {
 			return nil, err
 		}
 	}
 	if actor, ok := r.actorByUsername[username]; ok {
+		return actor, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func (r *round20ActorRepo) GetCachedRemoteActor(ctx context.Context, identifier string) (*activitypub.Actor, error) {
+	_ = ctx
+	r.remoteCalls++
+	if r.errRemote != nil {
+		if err, ok := r.errRemote[identifier]; ok {
+			return nil, err
+		}
+	}
+	if actor, ok := r.cachedRemote[identifier]; ok {
 		return actor, nil
 	}
 	return nil, fmt.Errorf("not found")
@@ -442,6 +461,108 @@ func (m *round20VouchManager) RevokeVouch(ctx context.Context, vouchID, actorID 
 	return m.revokeErr
 }
 
+func TestImportReputationForcesCanonicalActorPartitionForRemoteSameNameActors(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	var storedPKs []string
+	userRepo := &round20UserRepo{
+		storeFn: func(_ context.Context, actorID string, reputation *storage.Reputation) error {
+			reputationModel := &models.Reputation{}
+			require.NoError(t, reputationModel.UpdateKeys(actorID, reputation))
+			storedPKs = append(storedPKs, reputationModel.PK)
+			return nil
+		},
+	}
+
+	svc := &Service{
+		userRepo:     userRepo,
+		verifier:     &round20Verifier{verifyResult: &VerificationResult{Valid: true}},
+		vouchManager: &round20VouchManager{},
+		logger:       zap.NewNop(),
+		instanceURL:  "https://local.example",
+	}
+
+	for _, doc := range []PortableReputation{
+		{
+			Actor:  "https://remote1.example/users/alice",
+			Issuer: "https://remote1.example",
+			Reputation: &Reputation{
+				ActorID:      "https://remote1.example/users/alice",
+				InstanceURL:  "https://remote1.example",
+				TotalScore:   100,
+				CalculatedAt: now,
+				Version:      "1",
+			},
+		},
+		{
+			Actor:  "https://remote2.example/users/alice",
+			Issuer: "https://remote2.example",
+			Reputation: &Reputation{
+				ActorID:      "https://remote2.example/users/alice",
+				InstanceURL:  "https://remote2.example",
+				TotalScore:   200,
+				CalculatedAt: now.Add(time.Second),
+				Version:      "1",
+			},
+		},
+	} {
+		docBytes, err := json.Marshal(doc)
+		require.NoError(t, err)
+
+		result, err := svc.ImportReputation(ctx, string(docBytes))
+		require.NoError(t, err)
+		require.True(t, result.Success)
+	}
+
+	require.Equal(t, []string{
+		"ACTOR#https://remote1.example/users/alice",
+		"ACTOR#https://remote2.example/users/alice",
+	}, storedPKs)
+	require.NotContains(t, storedPKs, "ACTOR#alice")
+}
+
+func TestImportReputationRejectsMismatchedOuterAndInnerActors(t *testing.T) {
+	ctx := context.Background()
+	storeCalled := false
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			return nil, nil
+		},
+		storeFn: func(_ context.Context, _ string, _ *storage.Reputation) error {
+			storeCalled = true
+			return nil
+		},
+	}
+	svc := &Service{
+		userRepo:     userRepo,
+		verifier:     &round20Verifier{verifyResult: &VerificationResult{Valid: true}},
+		vouchManager: &round20VouchManager{},
+		logger:       zap.NewNop(),
+		instanceURL:  "https://local.example",
+	}
+
+	doc := PortableReputation{
+		Actor:  "https://local.example/users/bob",
+		Issuer: "https://remote1.example",
+		Reputation: &Reputation{
+			ActorID:      "https://remote1.example/users/alice",
+			InstanceURL:  "https://remote1.example",
+			TotalScore:   100,
+			CalculatedAt: time.Now().UTC(),
+			Version:      "1",
+		},
+	}
+	docBytes, err := json.Marshal(doc)
+	require.NoError(t, err)
+
+	result, err := svc.ImportReputation(ctx, string(docBytes))
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Equal(t, "Reputation actor does not match document actor", result.Error)
+	require.False(t, storeCalled, "mismatched imported reputation must not be stored")
+}
+
 func TestService_Round20_ExtractUsername_ParseSeverity_AndOutcome(t *testing.T) {
 	svc := &Service{logger: zap.NewNop()}
 
@@ -659,6 +780,55 @@ func TestService_Round20_GetReputation_CalculateAndStore_ExportImport(t *testing
 		require.NoError(t, err)
 		require.False(t, vr.Valid)
 	})
+}
+
+func TestService_GetReputation_RemoteActorDoesNotUseLocalUsername(t *testing.T) {
+	ctx := context.Background()
+	remoteActorID := "https://evil.example/users/alice"
+	localActorID := "https://example.com/users/alice"
+	actorRepo := &round20ActorRepo{
+		actorByUsername: map[string]*activitypub.Actor{
+			"alice": {BaseObject: activitypub.BaseObject{ID: localActorID}},
+		},
+	}
+
+	svc := &Service{
+		userRepo:    &round20UserRepo{},
+		actorRepo:   actorRepo,
+		calculator:  &round20Calculator{rep: &Reputation{ActorID: remoteActorID, InstanceURL: "https://example.com", CalculatedAt: time.Now()}},
+		signer:      &round20Signer{},
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	rep, err := svc.GetReputation(ctx, remoteActorID)
+	require.Error(t, err)
+	require.Nil(t, rep)
+	require.Contains(t, err.Error(), "actor not found")
+	require.Equal(t, 0, actorRepo.usernameCalls, "remote actor reputation must not fall back to local username lookup")
+	require.Equal(t, 1, actorRepo.remoteCalls)
+}
+
+func TestService_getActorData_UsesCachedRemoteActorForRemoteIDs(t *testing.T) {
+	ctx := context.Background()
+	remoteActorID := "https://remote.example/users/alice"
+	actorRepo := &round20ActorRepo{
+		cachedRemote: map[string]*activitypub.Actor{
+			remoteActorID: {BaseObject: activitypub.BaseObject{ID: remoteActorID}},
+		},
+	}
+	svc := &Service{
+		actorRepo:   actorRepo,
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	actor, err := svc.getActorData(ctx, remoteActorID, "alice")
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, remoteActorID, actor.ID)
+	require.Equal(t, 0, actorRepo.usernameCalls)
+	require.Equal(t, 1, actorRepo.remoteCalls)
 }
 
 func TestService_Round20_CacheExpiry_And_ErrorPaths(t *testing.T) {
