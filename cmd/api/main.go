@@ -512,7 +512,7 @@ func extractRequestInfo(ctx *apptheory.Context) requestInfo {
 		info.method = method
 	}
 	if path := strings.TrimSpace(ctx.Request.Path); path != "" {
-		info.path = path
+		info.path = sanitizeLogPath(path)
 	}
 	info.userAgent = headerValue(ctx, "User-Agent")
 	info.clientIP = headerValue(ctx, "X-Forwarded-For")
@@ -702,7 +702,7 @@ func createEMFMetricsMiddleware() apptheory.Middleware {
 
 			// Extract endpoint information
 			method := ctx.Request.Method
-			path := ctx.Request.Path
+			path := sanitizeLogPath(ctx.Request.Path)
 			endpoint := method + " " + path
 			dimensions := map[string]string{
 				observability.DimensionEndpoint: path,
@@ -919,7 +919,7 @@ func createTracingMiddleware() apptheory.Middleware {
 
 			// Extract request info
 			method := ctx.Request.Method
-			url := ctx.Request.Path
+			url := sanitizeLogPath(ctx.Request.Path)
 			userAgent := headerValue(ctx, "User-Agent")
 			clientIP := headerValue(ctx, "X-Forwarded-For")
 

@@ -65,7 +65,7 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 			StageName:          jsii.String(string(apiStage)),
 			AccessLogging:      logGroup,
 			DetailedMetrics:    jsii.Bool(true),
-			AccessLogFormat:    awsapigateway.AccessLogFormat_Custom(jsii.String(`{"requestId":"$context.requestId","extendedRequestId":"$context.extendedRequestId","requestTime":"$context.requestTime","ip":"$context.identity.sourceIp","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","path":"$context.path","status":"$context.status","responseLength":"$context.responseLength","integrationStatus":"$context.integration.status","integrationLatency":"$context.integration.latency","integrationError":"$context.integrationErrorMessage","errorMessage":"$context.error.messageString","errorResponseType":"$context.error.responseType"}`)),
+			AccessLogFormat:    awsapigateway.AccessLogFormat_Custom(jsii.String(`{"requestId":"$context.requestId","extendedRequestId":"$context.extendedRequestId","requestTime":"$context.requestTime","ip":"$context.identity.sourceIp","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","path":"$context.resourcePath","status":"$context.status","responseLength":"$context.responseLength","integrationStatus":"$context.integration.status","integrationLatency":"$context.integration.latency","integrationError":"$context.integrationErrorMessage","errorMessage":"$context.error.messageString","errorResponseType":"$context.error.responseType"}`)),
 			AccessLogRetention: awslogs.RetentionDays_ONE_WEEK,
 		},
 	}
@@ -303,6 +303,11 @@ func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFun
 	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/list", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
 	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/direct", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
 	addLambdaIntegrationWithPreflight(api, "/api/v1/streaming/oauth/device", &[]*string{jsii.String("GET")}, sseFn, sseOptions, preflight)
+
+	// Lesser-exclusive private route gets an explicit API Gateway resource so access logs use
+	// a templated resourcePath instead of a raw private conversation ID. Lift still handles
+	// the endpoint in the API Lambda.
+	addLambdaIntegrationWithPreflight(api, "/api/v1/souls/bound/me/mint-conversations/{conversationId}", &[]*string{jsii.String("GET")}, apiFn, nil, preflight)
 
 	// Mastodon API routes (Lift handles internal routing).
 	addLambdaIntegrationWithPreflight(api, "/api/v1/{proxy+}", &[]*string{jsii.String("ANY")}, apiFn, nil, preflight)

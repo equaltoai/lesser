@@ -46,9 +46,10 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 			ctx.Set("logger", contextLogger)
 
 			// Log request start
+			logPath := sanitizeLogPath(ctx.Request.Path)
 			contextLogger.Info("request_start",
 				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logPath),
 				zap.String("user_agent", headerValue(ctx, "User-Agent")),
 				zap.String("remote_addr", headerValue(ctx, "X-Forwarded-For")),
 			)
@@ -75,7 +76,7 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 
 			contextLogger.Log(logLevel, "request_complete",
 				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.Path),
+				zap.String("path", logPath),
 				zap.Int("status", statusCode),
 				zap.Duration("duration", duration),
 				zap.Bool("success", err == nil && statusCode < 400),
