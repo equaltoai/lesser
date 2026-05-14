@@ -979,14 +979,13 @@ func revisionFilesFromManifest(manifestJSON string) []models.SkillRevisionFile {
 		if cleanPath == "" {
 			continue
 		}
-		digest := strings.ToLower(strings.TrimSpace(file.Digest))
 		_, _, decoded, hasContent, err := manifestFileContent(file)
 		if err != nil {
 			continue
 		}
-		if digest == "" && hasContent {
-			sum := sha256.Sum256(decoded)
-			digest = "sha256:" + hex.EncodeToString(sum[:])
+		digest, err := verifiedBundleFileDigest(file.Digest, decoded, hasContent)
+		if err != nil {
+			continue
 		}
 		size := file.SizeBytes
 		if size <= 0 && hasContent {
@@ -1254,11 +1253,12 @@ func buildSkillBundle(skill *models.Skill, revision *models.SkillRevision, inclu
 	if err != nil {
 		return SkillBundle{}, err
 	}
-	files, err := bundleFiles(skill, revision, manifest, includeContent)
+	installDirectory := resolvedInstallDirectory(skill, manifest)
+	files, err := bundleFiles(revision, manifest, includeContent, installDirectory)
 	if err != nil {
 		return SkillBundle{}, err
 	}
-	hints := buildInstallHints(skill, manifest, files)
+	hints := buildInstallHints(manifest, files, installDirectory)
 	bundle := SkillBundle{
 		SchemaVersion:  SkillBundleSchemaVersion,
 		BundleID:       skillBundleID(revision),
@@ -1292,7 +1292,7 @@ func parseSkillBundleManifest(raw string) (skillBundleManifest, error) {
 	return manifest, nil
 }
 
-func bundleFiles(skill *models.Skill, revision *models.SkillRevision, manifest skillBundleManifest, includeContent bool) ([]SkillBundleFile, error) {
+func bundleFiles(revision *models.SkillRevision, manifest skillBundleManifest, includeContent bool, installDirectory string) ([]SkillBundleFile, error) {
 	manifestByPath := map[string]skillManifestBundleFile{}
 	for _, file := range manifest.Files {
 		cleanPath := safeBundlePath(file.Path)
@@ -1311,7 +1311,7 @@ func bundleFiles(skill *models.Skill, revision *models.SkillRevision, manifest s
 			return nil, fmt.Errorf("skill bundle file path is unsafe")
 		}
 		manifestFile := manifestByPath[cleanPath]
-		bundleFile, err := materializeBundleFile(skill, file, manifestFile, includeContent)
+		bundleFile, err := materializeBundleFile(file, manifestFile, includeContent, installDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -1322,7 +1322,7 @@ func bundleFiles(skill *models.Skill, revision *models.SkillRevision, manifest s
 		if _, ok := seen[file.Path]; ok {
 			continue
 		}
-		bundleFile, err := materializeBundleFile(skill, models.SkillRevisionFile{}, file, includeContent)
+		bundleFile, err := materializeBundleFile(models.SkillRevisionFile{}, file, includeContent, installDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -1331,7 +1331,7 @@ func bundleFiles(skill *models.Skill, revision *models.SkillRevision, manifest s
 	return files, nil
 }
 
-func materializeBundleFile(skill *models.Skill, file models.SkillRevisionFile, manifestFile skillManifestBundleFile, includeContent bool) (SkillBundleFile, error) {
+func materializeBundleFile(file models.SkillRevisionFile, manifestFile skillManifestBundleFile, includeContent bool, installDirectory string) (SkillBundleFile, error) {
 	cleanPath := safeBundlePath(defaultTrimmed(file.Path, manifestFile.Path))
 	if cleanPath == "" {
 		return SkillBundleFile{}, fmt.Errorf("skill bundle file path is unsafe")
@@ -1340,10 +1340,9 @@ func materializeBundleFile(skill *models.Skill, file models.SkillRevisionFile, m
 	if err != nil {
 		return SkillBundleFile{}, err
 	}
-	digest := strings.ToLower(strings.TrimSpace(defaultTrimmed(file.Digest, manifestFile.Digest)))
-	if digest == "" && hasContent {
-		sum := sha256.Sum256(decodedBytes)
-		digest = "sha256:" + hex.EncodeToString(sum[:])
+	digest, err := verifiedBundleFileDigest(defaultTrimmed(file.Digest, manifestFile.Digest), decodedBytes, hasContent)
+	if err != nil {
+		return SkillBundleFile{}, err
 	}
 	if digest == "" {
 		return SkillBundleFile{}, fmt.Errorf("skill bundle file digest is required")
@@ -1361,7 +1360,7 @@ func materializeBundleFile(skill *models.Skill, file models.SkillRevisionFile, m
 		ContentType: defaultTrimmed(file.ContentType, manifestFile.ContentType),
 		Role:        defaultTrimmed(file.Role, manifestFile.Role),
 		SizeBytes:   size,
-		InstallPath: skillInstallPath(skill, cleanPath),
+		InstallPath: skillInstallPath(installDirectory, cleanPath),
 	}
 	if out.ContentType == "" {
 		out.ContentType = "text/markdown"
@@ -1375,6 +1374,26 @@ func materializeBundleFile(skill *models.Skill, file models.SkillRevisionFile, m
 		out.ContentIncluded = true
 	}
 	return out, nil
+}
+
+func verifiedBundleFileDigest(provided string, decodedBytes []byte, hasContent bool) (string, error) {
+	digest := strings.ToLower(strings.TrimSpace(provided))
+	if !hasContent {
+		return digest, nil
+	}
+	computed := sha256Digest(decodedBytes)
+	if digest == "" {
+		return computed, nil
+	}
+	if digest != computed {
+		return "", fmt.Errorf("skill bundle file digest does not match inline content")
+	}
+	return digest, nil
+}
+
+func sha256Digest(content []byte) string {
+	sum := sha256.Sum256(content)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func manifestFileContent(file skillManifestBundleFile) (content string, encoding string, decoded []byte, ok bool, err error) {
@@ -1407,11 +1426,11 @@ func manifestFileContent(file skillManifestBundleFile) (content string, encoding
 	return content, encoding, []byte(content), true, nil
 }
 
-func buildInstallHints(skill *models.Skill, manifest skillBundleManifest, files []SkillBundleFile) SkillInstallHints {
+func buildInstallHints(manifest skillBundleManifest, files []SkillBundleFile, installDirectory string) SkillInstallHints {
 	hints := SkillInstallHints{
 		Layout:         strings.TrimSpace(manifest.InstallHints.Layout),
 		RuntimeTargets: normalizedBundleStrings(manifest.InstallHints.RuntimeTargets),
-		DirectoryName:  safeBundlePath(manifest.InstallHints.DirectoryName),
+		DirectoryName:  safeBundlePath(installDirectory),
 		EntryPoint:     safeBundlePath(manifest.InstallHints.EntryPoint),
 		RequiredFiles:  safeBundlePaths(manifest.InstallHints.RequiredFiles),
 	}
@@ -1428,9 +1447,6 @@ func buildInstallHints(skill *models.Skill, manifest skillBundleManifest, files 
 		hints.RuntimeTargets = []string{defaultRuntimeTarget}
 	}
 	if hints.DirectoryName == "" {
-		hints.DirectoryName = safeBundlePath(defaultTrimmed(skill.Slug, skill.ID))
-	}
-	if hints.DirectoryName == "" {
 		hints.DirectoryName = defaultSkillDirectory
 	}
 	if hints.EntryPoint == "" {
@@ -1444,6 +1460,18 @@ func buildInstallHints(skill *models.Skill, manifest skillBundleManifest, files 
 	}
 	sort.Strings(hints.RequiredFiles)
 	return hints
+}
+
+func resolvedInstallDirectory(skill *models.Skill, manifest skillBundleManifest) string {
+	if directory := safeBundlePath(manifest.InstallHints.DirectoryName); directory != "" {
+		return directory
+	}
+	if skill != nil {
+		if directory := safeBundlePath(defaultTrimmed(skill.Slug, skill.ID)); directory != "" {
+			return directory
+		}
+	}
+	return defaultSkillDirectory
 }
 
 func entryPointFromFiles(files []SkillBundleFile) string {
@@ -1520,13 +1548,10 @@ func safeBundlePath(value string) string {
 	return clean
 }
 
-func skillInstallPath(skill *models.Skill, filePath string) string {
-	dir := defaultSkillDirectory
-	if skill != nil {
-		dir = safeBundlePath(defaultTrimmed(skill.Slug, skill.ID))
-		if dir == "" {
-			dir = defaultSkillDirectory
-		}
+func skillInstallPath(directoryName, filePath string) string {
+	dir := safeBundlePath(directoryName)
+	if dir == "" {
+		dir = defaultSkillDirectory
 	}
 	return path.Join(dir, filePath)
 }

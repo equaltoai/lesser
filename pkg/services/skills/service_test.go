@@ -778,6 +778,56 @@ func TestServiceGetBundleFailsClosedOnUnsafeFilePath(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidState)
 }
 
+func TestServiceGetBundleFailsClosedOnInlineDigestMismatch(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"files":[{
+			"path":"SKILL.md",
+			"digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000",
+			"content":"# Skill A\n"
+		}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+
+	_, err = svc.GetBundle(ctx, Viewer{}, "skill-a", 1, true)
+	require.ErrorIs(t, err, ErrInvalidState)
+}
+
+func TestServiceGetBundleUsesResolvedInstallDirectory(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+	manifestJSON, manifestDigest, err := canonicalizeSkillManifest(`{
+		"install_hints":{"directory_name":"manifest-dir","entrypoint":"SKILL.md"},
+		"files":[{"path":"SKILL.md","content":"# Skill A\n"}]
+	}`)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateSkill(ctx, &models.Skill{ID: "skill-a", Slug: "skill-slug", Status: models.SkillStatusActive, DefaultExposure: models.SkillExposurePublic, CurrentRevisionNumber: 1}))
+	seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestJSON:    manifestJSON,
+		ManifestDigest:  manifestDigest,
+		DefaultExposure: models.SkillExposurePublic,
+	})
+
+	entry, err := svc.GetBundle(ctx, Viewer{}, "skill-a", 1, false)
+	require.NoError(t, err)
+	require.Equal(t, "manifest-dir", entry.Bundle.InstallHints.DirectoryName)
+	require.Len(t, entry.Bundle.Files, 1)
+	require.Equal(t, "manifest-dir/SKILL.md", entry.Bundle.Files[0].InstallPath)
+}
+
 func TestSkillBundleHelpersCoverContractEdges(t *testing.T) {
 	encoded := "IyBTa2lsbCBCCg=="
 	manifestJSON := `{
@@ -836,7 +886,7 @@ func TestSkillBundleHelpersCoverContractEdges(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, skillBundleID(nil))
 	require.Equal(t, []string{"safe/file.md"}, safeBundlePaths([]string{"safe/file.md", "../blocked", "/also-blocked"}))
-	require.Equal(t, "skill/SKILL.md", skillInstallPath(nil, "SKILL.md"))
+	require.Equal(t, "skill/SKILL.md", skillInstallPath("", "SKILL.md"))
 	require.ErrorIs(t, validateCatalogFilter(CatalogFilter{Exposure: "world"}), ErrInvalidInput)
 	require.NotEmpty(t, effectiveBundleDigest(&models.SkillRevision{SkillID: "skill-a", ID: "skill-a-r2", RevisionNumber: 2}, entry.Bundle.Files, entry.Bundle.InstallHints))
 	require.Len(t, sortedBundleFiles([]SkillBundleFile{{Path: "z"}, {Path: "a"}}), 2)
@@ -845,7 +895,7 @@ func TestSkillBundleHelpersCoverContractEdges(t *testing.T) {
 	revisionWithStoredFiles.BundleDigest = ""
 	revisionWithStoredFiles.Files = []models.SkillRevisionFile{{
 		Path:        "SKILL.md",
-		Digest:      "sha256:stored-file",
+		Digest:      sha256Digest([]byte("# Skill B\n")),
 		ContentType: "text/markdown",
 		Role:        "entrypoint",
 		SizeBytes:   99,

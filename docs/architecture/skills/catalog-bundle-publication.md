@@ -48,7 +48,7 @@ Each bundle includes:
   `digests.publication_digest`, `digests.content_digest`, and
   `digests.approval_digest` when available;
 - `files[]` with path, file digest, content type, role, size, and advisory
-  install path;
+  install path derived from the resolved `install_hints.directory_name`;
 - `install_hints` with layout, runtime targets, directory name, entrypoint, and
   required files;
 - proposal/source/provenance references copied from the approved revision;
@@ -89,12 +89,17 @@ manifest fields:
 
 If file content is present and the caller passes `include_content=true`, the
 bundle response includes that content with `encoding` and
-`content_included=true`. If file content is absent, Lesser still publishes the
-metadata/digest contract and downstream clients report local state as
-`unknown_local_state` or equivalent until a later content source exists.
+`content_included=true`. When inline content is present, Lesser computes
+`sha256(decoded_bytes)` and fails closed unless any supplied `files[].digest`
+matches that digest. If the digest is omitted, Lesser derives it from the inline
+content. If file content is absent, Lesser still publishes the metadata/digest
+contract and downstream clients report local state as `unknown_local_state` or
+equivalent until a later content source exists.
 
 Unsafe file paths (absolute paths or `..` traversal) are never published as
-install hints.
+install hints. `files[].install_path` is derived from the resolved
+`install_hints.directory_name`, so Body receives one placement contract even
+when the approved manifest supplies a custom directory name.
 
 ## Cross-repo handoff for M4.2/M4.3
 
