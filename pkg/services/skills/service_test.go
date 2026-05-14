@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -197,7 +198,7 @@ func (f *fakeSkillRepo) ListSkillRevisions(_ context.Context, skillID string, _ 
 	return out, "", nil
 }
 
-func (f *fakeSkillRepo) ListSkillRevisionsByStatus(_ context.Context, status string, _ int, _ string) ([]*models.SkillRevision, string, error) {
+func (f *fakeSkillRepo) ListSkillRevisionsByStatus(_ context.Context, status string, limit int, cursor string) ([]*models.SkillRevision, string, error) {
 	if f.listRevisionsErr != nil {
 		return nil, "", f.listRevisionsErr
 	}
@@ -207,7 +208,39 @@ func (f *fakeSkillRepo) ListSkillRevisionsByStatus(_ context.Context, status str
 			out = append(out, revision)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return fakeSkillRevisionCursor(out[i]) < fakeSkillRevisionCursor(out[j])
+	})
+
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		filtered := out[:0]
+		for _, revision := range out {
+			if fakeSkillRevisionCursor(revision) > cursor {
+				filtered = append(filtered, revision)
+			}
+		}
+		out = filtered
+	}
+
+	if limit <= 0 {
+		return out, "", nil
+	}
+	if len(out) > limit {
+		nextCursor := fakeSkillRevisionCursor(out[limit-1])
+		return out[:limit], nextCursor, nil
+	}
 	return out, "", nil
+}
+
+func fakeSkillRevisionCursor(revision *models.SkillRevision) string {
+	if revision == nil {
+		return ""
+	}
+	if revision.GSI1SK != "" {
+		return revision.GSI1SK
+	}
+	return revision.GetSK()
 }
 
 func (f *fakeSkillRepo) GetSkillRevisionByDigest(_ context.Context, manifestDigest string) (*models.SkillRevision, error) {
@@ -724,6 +757,52 @@ func TestServiceListCatalogPublishesApprovedVisibleBundles(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, catalog, 1)
 	require.Equal(t, "private", catalog[0].Skill.ID)
+}
+
+func TestServiceListCatalogCursorDoesNotRevealHiddenRevisions(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+
+	seedCatalogSkill := func(skillID, exposure string, updatedAt time.Time) {
+		t.Helper()
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       exposure,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+			UpdatedAt:             updatedAt,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:         skillID,
+			RevisionNumber:  1,
+			DefaultExposure: exposure,
+			UpdatedAt:       updatedAt,
+		})
+	}
+
+	base := time.Date(2026, 5, 14, 12, 0, 0, 0, time.UTC)
+	seedCatalogSkill("private-a", models.SkillExposurePrivate, base)
+	seedCatalogSkill("private-b", models.SkillExposurePrivate, base.Add(time.Minute))
+	seedCatalogSkill("public-a", models.SkillExposurePublic, base.Add(2*time.Minute))
+	seedCatalogSkill("public-b", models.SkillExposurePublic, base.Add(3*time.Minute))
+
+	catalog, cursor, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	require.Equal(t, "public-a", catalog[0].Skill.ID)
+	require.NotEmpty(t, cursor)
+	require.Contains(t, cursor, "SKILL#public-a")
+	require.NotContains(t, cursor, "private")
+
+	catalog, cursor, err = svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 1, Cursor: cursor})
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	require.Equal(t, "public-b", catalog[0].Skill.ID)
+	require.Empty(t, cursor)
 }
 
 func TestServiceGetBundleIncludesContentAndRejectsUnpublished(t *testing.T) {
