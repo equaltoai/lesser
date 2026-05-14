@@ -522,6 +522,47 @@ func TestImportReputationForcesCanonicalActorPartitionForRemoteSameNameActors(t 
 	require.NotContains(t, storedPKs, "ACTOR#alice")
 }
 
+func TestImportReputationRejectsMismatchedOuterAndInnerActors(t *testing.T) {
+	ctx := context.Background()
+	storeCalled := false
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			return nil, nil
+		},
+		storeFn: func(_ context.Context, _ string, _ *storage.Reputation) error {
+			storeCalled = true
+			return nil
+		},
+	}
+	svc := &Service{
+		userRepo:     userRepo,
+		verifier:     &round20Verifier{verifyResult: &VerificationResult{Valid: true}},
+		vouchManager: &round20VouchManager{},
+		logger:       zap.NewNop(),
+		instanceURL:  "https://local.example",
+	}
+
+	doc := PortableReputation{
+		Actor:  "https://local.example/users/bob",
+		Issuer: "https://remote1.example",
+		Reputation: &Reputation{
+			ActorID:      "https://remote1.example/users/alice",
+			InstanceURL:  "https://remote1.example",
+			TotalScore:   100,
+			CalculatedAt: time.Now().UTC(),
+			Version:      "1",
+		},
+	}
+	docBytes, err := json.Marshal(doc)
+	require.NoError(t, err)
+
+	result, err := svc.ImportReputation(ctx, string(docBytes))
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Equal(t, "Reputation actor does not match document actor", result.Error)
+	require.False(t, storeCalled, "mismatched imported reputation must not be stored")
+}
+
 func TestService_Round20_ExtractUsername_ParseSeverity_AndOutcome(t *testing.T) {
 	svc := &Service{logger: zap.NewNop()}
 

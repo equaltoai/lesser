@@ -869,6 +869,13 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 		}, nil
 	}
 
+	if pr.Reputation != nil && !sameCanonicalActorID(pr.Actor, pr.Reputation.ActorID) {
+		return &ImportResult{
+			Success: false,
+			Error:   "Reputation actor does not match document actor",
+		}, nil
+	}
+
 	// Get current reputation
 	currentRep, _ := s.GetReputation(ctx, pr.Actor)
 	previousScore := 0
@@ -880,7 +887,7 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 	if pr.Reputation != nil {
 		// Store imported reputation with special marker
 		pr.Reputation.InstanceURL = pr.Issuer // Mark as imported
-		if err := s.storeReputation(ctx, pr.Reputation, s.importedReputationStoreOptions(pr.Actor)...); err != nil {
+		if err := s.storeReputation(ctx, pr.Reputation, s.importedReputationStoreOptions(pr.Reputation.ActorID)...); err != nil {
 			return &ImportResult{
 				Success: false,
 				Error:   "Failed to store reputation",
