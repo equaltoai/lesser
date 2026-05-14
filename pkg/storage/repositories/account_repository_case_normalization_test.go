@@ -20,6 +20,7 @@ func TestAccountRepository_CanonicalUsername_LowercasesNormalizedHandles(t *test
 	require.Equal(t, "arch", repo.canonicalUsername("acct:@Arch@example.com"))
 	require.Equal(t, "arch", repo.canonicalUsername("https://example.com/users/Arch"))
 	require.Equal(t, "arch@remote.example", repo.canonicalUsername("@Arch@Remote.Example"))
+	require.Equal(t, "arch@remote.example", repo.canonicalUsername("https://Remote.Example/users/Arch"))
 }
 
 func TestAccountRepository_GetUser_FallsBackToLegacyMixedCaseKeys(t *testing.T) {

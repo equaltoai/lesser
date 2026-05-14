@@ -165,16 +165,35 @@ func (r *round20UserRepo) StoreReputation(ctx context.Context, actorID string, r
 type round20ActorRepo struct {
 	actorByUsername map[string]*activitypub.Actor
 	errByUsername   map[string]error
+	cachedRemote    map[string]*activitypub.Actor
+	errRemote       map[string]error
+	usernameCalls   int
+	remoteCalls     int
 }
 
 func (r *round20ActorRepo) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
 	_ = ctx
+	r.usernameCalls++
 	if r.errByUsername != nil {
 		if err, ok := r.errByUsername[username]; ok {
 			return nil, err
 		}
 	}
 	if actor, ok := r.actorByUsername[username]; ok {
+		return actor, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func (r *round20ActorRepo) GetCachedRemoteActor(ctx context.Context, identifier string) (*activitypub.Actor, error) {
+	_ = ctx
+	r.remoteCalls++
+	if r.errRemote != nil {
+		if err, ok := r.errRemote[identifier]; ok {
+			return nil, err
+		}
+	}
+	if actor, ok := r.cachedRemote[identifier]; ok {
 		return actor, nil
 	}
 	return nil, fmt.Errorf("not found")
@@ -659,6 +678,55 @@ func TestService_Round20_GetReputation_CalculateAndStore_ExportImport(t *testing
 		require.NoError(t, err)
 		require.False(t, vr.Valid)
 	})
+}
+
+func TestService_GetReputation_RemoteActorDoesNotUseLocalUsername(t *testing.T) {
+	ctx := context.Background()
+	remoteActorID := "https://evil.example/users/alice"
+	localActorID := "https://example.com/users/alice"
+	actorRepo := &round20ActorRepo{
+		actorByUsername: map[string]*activitypub.Actor{
+			"alice": {BaseObject: activitypub.BaseObject{ID: localActorID}},
+		},
+	}
+
+	svc := &Service{
+		userRepo:    &round20UserRepo{},
+		actorRepo:   actorRepo,
+		calculator:  &round20Calculator{rep: &Reputation{ActorID: remoteActorID, InstanceURL: "https://example.com", CalculatedAt: time.Now()}},
+		signer:      &round20Signer{},
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	rep, err := svc.GetReputation(ctx, remoteActorID)
+	require.Error(t, err)
+	require.Nil(t, rep)
+	require.Contains(t, err.Error(), "actor not found")
+	require.Equal(t, 0, actorRepo.usernameCalls, "remote actor reputation must not fall back to local username lookup")
+	require.Equal(t, 1, actorRepo.remoteCalls)
+}
+
+func TestService_getActorData_UsesCachedRemoteActorForRemoteIDs(t *testing.T) {
+	ctx := context.Background()
+	remoteActorID := "https://remote.example/users/alice"
+	actorRepo := &round20ActorRepo{
+		cachedRemote: map[string]*activitypub.Actor{
+			remoteActorID: {BaseObject: activitypub.BaseObject{ID: remoteActorID}},
+		},
+	}
+	svc := &Service{
+		actorRepo:   actorRepo,
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	actor, err := svc.getActorData(ctx, remoteActorID, "alice")
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, remoteActorID, actor.ID)
+	require.Equal(t, 0, actorRepo.usernameCalls)
+	require.Equal(t, 1, actorRepo.remoteCalls)
 }
 
 func TestService_Round20_CacheExpiry_And_ErrorPaths(t *testing.T) {

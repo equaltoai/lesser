@@ -41,6 +41,7 @@ func TestAccountRepository_CoreCoverageSweep(t *testing.T) {
 	require.Equal(t, "alice", repo.canonicalUsername("acct:@alice@example.com"))
 	require.Equal(t, "alice", repo.canonicalUsername("https://example.com/users/alice"))
 	require.Equal(t, "alice@remote.example", repo.canonicalUsername("@alice@remote.example"))
+	require.Equal(t, "alice@remote.example", repo.canonicalUsername("https://remote.example/users/alice"))
 	require.True(t, repo.isLocalDomain("example.com"))
 	require.Equal(t, "https://example.com", repo.actorBaseURL())
 	require.Equal(t, "https://example.com", extractBaseURL("https://example.com/@alice", "/@alice"))

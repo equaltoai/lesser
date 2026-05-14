@@ -11,7 +11,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 )
 
-const remoteStatusIDPrefix = "remote_"
+const (
+	remoteStatusIDPrefix = "remote_"
+	schemeHTTP           = "http"
+	schemeHTTPS          = "https"
+)
 
 // CanonicalStatusID normalizes local and remote status identifiers into one
 // storage-safe contract. Local status URLs collapse to their path identifier,
@@ -102,7 +106,7 @@ func isHTTPStatusURL(raw string) bool {
 	if err != nil || parsed == nil {
 		return false
 	}
-	return (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+	return (parsed.Scheme == schemeHTTP || parsed.Scheme == schemeHTTPS) && parsed.Host != ""
 }
 
 func statusAppearsRemote(status *Status, localDomain string) bool {
@@ -248,9 +252,9 @@ func normalizeStatusIdentifierURL(raw string) (string, *url.URL, bool) {
 
 	port := parsed.Port()
 	switch {
-	case parsed.Scheme == "https" && port == "443":
+	case parsed.Scheme == schemeHTTPS && port == "443":
 		port = ""
-	case parsed.Scheme == "http" && port == "80":
+	case parsed.Scheme == schemeHTTP && port == "80":
 		port = ""
 	}
 

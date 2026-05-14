@@ -81,3 +81,25 @@ func TestFallbackNotificationActorRemoteUser(t *testing.T) {
 		t.Fatalf("expected remote actor endpoints to be empty, got inbox=%q outbox=%q", actor.Inbox, actor.Outbox)
 	}
 }
+
+func TestNotificationActorLocalLookupPreservesRemoteDomainBoundary(t *testing.T) {
+	resolver := &Resolver{
+		Config: &config.Config{Domain: "dev.lesser.host"},
+	}
+
+	cases := map[string]string{
+		"admin":                                     "admin",
+		"@admin@dev.lesser.host":                    "admin",
+		"https://dev.lesser.host/users/admin":       "admin",
+		"https://remote.example/users/admin":        "",
+		"@admin@remote.example":                     "",
+		"admin@remote.example":                      "",
+		"https://remote.example/users/nested/admin": "",
+	}
+
+	for input, expected := range cases {
+		if actual := resolver.localUsernameForLookup(input); actual != expected {
+			t.Fatalf("localUsernameForLookup(%q) = %q, want %q", input, actual, expected)
+		}
+	}
+}

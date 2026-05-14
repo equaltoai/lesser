@@ -30,6 +30,10 @@ type actorRepository interface {
 	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
 }
 
+type cachedRemoteActorRepository interface {
+	GetCachedRemoteActor(ctx context.Context, identifier string) (*activitypub.Actor, error)
+}
+
 type statusRepository interface {
 	CountStatusesByAuthor(ctx context.Context, username string) (int, error)
 	GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error)
@@ -233,6 +237,12 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 		// No reputation history, calculate new
 		return s.calculateAndStore(ctx, actorID)
 	}
+	if !sameCanonicalActorID(storedRep.ActorID, actorID) {
+		s.logger.Warn("stored reputation actor did not match requested actor; recalculating",
+			zap.String("requested_actor", actorID),
+			zap.String("stored_actor", storedRep.ActorID))
+		return s.calculateAndStore(ctx, actorID)
+	}
 
 	// Convert storage.Reputation to reputation.Reputation
 	rep := &Reputation{
@@ -355,6 +365,10 @@ func (s *Service) extractUsername(actorID string) string {
 
 // getActorData retrieves actor data from storage
 func (s *Service) getActorData(ctx context.Context, actorID, username string) (*activitypub.Actor, error) {
+	if s.isRemoteActorID(actorID) {
+		return s.getRemoteActorData(ctx, actorID)
+	}
+
 	actor, err := s.actorRepo.GetActorByUsername(ctx, username)
 	if err != nil {
 		s.logger.Error("Failed to get actor",
@@ -362,6 +376,30 @@ func (s *Service) getActorData(ctx context.Context, actorID, username string) (*
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+	return actor, nil
+}
+
+func (s *Service) isRemoteActorID(actorID string) bool {
+	localHost := actorIDHost(s.instanceURL)
+	actorHost := actorIDHost(actorID)
+	return localHost != "" && actorHost != "" && actorHost != localHost
+}
+
+func (s *Service) getRemoteActorData(ctx context.Context, actorID string) (*activitypub.Actor, error) {
+	remoteRepo, ok := s.actorRepo.(cachedRemoteActorRepository)
+	if !ok || remoteRepo == nil {
+		return nil, fmt.Errorf("actor not found: %s", actorID)
+	}
+	actor, err := remoteRepo.GetCachedRemoteActor(ctx, actorID)
+	if err != nil {
+		s.logger.Error("Failed to get cached remote actor",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return nil, fmt.Errorf("actor not found: %w", err)
+	}
+	if actor == nil || !sameCanonicalActorID(actor.ID, actorID) {
+		return nil, fmt.Errorf("actor not found: %s", actorID)
 	}
 	return actor, nil
 }

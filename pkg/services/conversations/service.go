@@ -1558,7 +1558,12 @@ func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCom
 	return status, messageID, nil
 }
 
-func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessageCommand, requestRateLimitConsumed *bool) (*MessageResult, bool, error) {
+func (s *Service) executeSendMessageAttempt(
+	ctx context.Context,
+	cmd *SendMessageCommand,
+	totalRateLimitConsumed *bool,
+	requestRateLimitConsumed *bool,
+) (*MessageResult, bool, error) {
 	conversation, recipientID, err := s.loadConversationAndRecipientForSendMessage(ctx, cmd)
 	if err != nil {
 		return nil, false, err
@@ -1576,6 +1581,15 @@ func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessag
 	sender, recipient, err := s.getSendMessageAccountsForSend(ctx, sendCmd, conversation, cmd.SenderID, recipientID)
 	if err != nil {
 		return nil, false, err
+	}
+
+	if totalRateLimitConsumed == nil || !*totalRateLimitConsumed {
+		if err := s.enforceDirectMessageTotalRateLimit(ctx, sendCmd, recipientID); err != nil {
+			return nil, false, err
+		}
+		if totalRateLimitConsumed != nil {
+			*totalRateLimitConsumed = true
+		}
 	}
 
 	recipientRequestState := models.DmRequestState("")
@@ -1639,9 +1653,10 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 	}
 
 	var retryErr error
+	totalRateLimitConsumed := false
 	requestRateLimitConsumed := false
 	for attempt := 0; attempt < directMessageSendRetryLimit; attempt++ {
-		result, retry, err := s.executeSendMessageAttempt(ctx, cmd, &requestRateLimitConsumed)
+		result, retry, err := s.executeSendMessageAttempt(ctx, cmd, &totalRateLimitConsumed, &requestRateLimitConsumed)
 		if err != nil {
 			if retry {
 				retryErr = err

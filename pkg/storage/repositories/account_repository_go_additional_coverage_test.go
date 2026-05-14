@@ -118,6 +118,7 @@ func TestAccountRepository_UserAndDomainBranchCoverage(t *testing.T) {
 	require.Equal(t, "alice", repo.canonicalUsername("acct:alice"))
 	require.Equal(t, "alice", repo.canonicalUsername("https://example.com/@alice"))
 	require.Equal(t, "alice", repo.canonicalUsername("https://example.com/profile/alice"))
+	require.Equal(t, "alice@remote.example", repo.canonicalUsername("https://remote.example/@alice"))
 	require.False(t, repo.isLocalDomain(""))
 	require.False(t, repo.isLocalDomain("remote.example"))
 }

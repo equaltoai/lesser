@@ -395,23 +395,21 @@ func (r *Resolver) loadNotificationActor(ctx context.Context, notif *models.Noti
 		return nil
 	}
 
-	lookupCandidates := []string{actorID}
-
-	if username := extractUsernameFromActorIdentifier(actorID); username != "" && !strings.EqualFold(username, actorID) {
-		lookupCandidates = append(lookupCandidates, username)
+	if resolution, err := r.resolveStoredActorLookup(ctx, actorID); err == nil && resolution != nil {
+		return r.materializeActorResolution(ctx, resolution)
 	}
 
-	if strings.Contains(actorID, "@") {
-		if parts := strings.Split(actorID, "@"); len(parts) == 2 && parts[0] != "" {
-			lookupCandidates = append(lookupCandidates, parts[0])
-		}
+	localUsername := r.localUsernameForLookup(actorID)
+	if localUsername == "" && !strings.Contains(actorID, "://") && !strings.Contains(strings.TrimPrefix(actorID, "@"), "@") {
+		localUsername = strings.TrimPrefix(actorID, "@")
+	}
+	if localUsername == "" {
+		return nil
 	}
 
-	for _, candidate := range lookupCandidates {
-		account, err := accountsService.GetAccount(ctx, candidate)
-		if err == nil && account != nil {
-			return r.convertAccountToActor(account)
-		}
+	account, err := accountsService.GetAccount(ctx, localUsername)
+	if err == nil && account != nil {
+		return r.convertAccountToActor(account)
 	}
 
 	return nil
