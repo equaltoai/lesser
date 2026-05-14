@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -404,7 +405,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 			logger.Debug("crawler classification",
 				zap.String("request_id", strings.TrimSpace(ctx.RequestID)),
 				zap.String("method", strings.TrimSpace(ctx.Request.Method)),
-				zap.String("path", strings.TrimSpace(ctx.Request.Path)),
+				zap.String("path", logging.SanitizeLogPath(ctx.Request.Path)),
 				zap.String("route_class", routeClass),
 				zap.String("category", category.String()),
 				zap.String("reason", reason),

@@ -1,4 +1,4 @@
-package main
+package logging
 
 import (
 	"crypto/sha256"
@@ -8,11 +8,11 @@ import (
 
 const privateConversationLogHashPrefix = "sha256:"
 
-// sanitizeLogPath normalizes private route path segments before generic
+// SanitizeLogPath normalizes private route path segments before generic
 // request/access logs and derived metrics persist them. It intentionally keeps
 // the route class visible while replacing the private conversation identifier
 // with a stable short hash for correlation.
-func sanitizeLogPath(raw string) string {
+func SanitizeLogPath(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	path, _ := splitLogPathSuffix(trimmed)
 	if path == "" {

@@ -15,6 +15,8 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type stubLimiter struct {
@@ -147,6 +149,37 @@ func TestMiddleware_Observe_SetsContext(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Equal(t, 200, resp.Status)
 	require.Equal(t, 1, called)
+}
+
+func TestMiddleware_Observe_SanitizesPrivateMintConversationPathInClassificationLogs(t *testing.T) {
+	core, observed := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	rawConversationID := "conv-crawler-private"
+	rawCursor := "raw-crawler-cursor"
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: "GET",
+		Path:   "/api/v1/souls/bound/me/mint-conversations/" + rawConversationID + "?cursor=" + rawCursor,
+		Headers: map[string][]string{
+			"user-agent": {"GPTBot/1.0"},
+			"accept":     {"application/activity+json"},
+		},
+	}}
+
+	resp, err := Middleware(protectionModeObserve, logger)(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(200, "ok"), nil
+	})(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 200, resp.Status)
+
+	entries := observed.FilterMessage("crawler classification").All()
+	require.Len(t, entries, 1)
+	path, ok := entries[0].ContextMap()["path"].(string)
+	require.True(t, ok)
+	require.Contains(t, path, "/api/v1/souls/bound/me/mint-conversations/conversation-sha256:")
+	require.NotContains(t, path, rawConversationID)
+	require.NotContains(t, path, rawCursor)
 }
 
 func TestMiddleware_NilContext(t *testing.T) {

@@ -29,6 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -512,7 +513,7 @@ func extractRequestInfo(ctx *apptheory.Context) requestInfo {
 		info.method = method
 	}
 	if path := strings.TrimSpace(ctx.Request.Path); path != "" {
-		info.path = sanitizeLogPath(path)
+		info.path = logging.SanitizeLogPath(path)
 	}
 	info.userAgent = headerValue(ctx, "User-Agent")
 	info.clientIP = headerValue(ctx, "X-Forwarded-For")
@@ -702,7 +703,7 @@ func createEMFMetricsMiddleware() apptheory.Middleware {
 
 			// Extract endpoint information
 			method := ctx.Request.Method
-			path := sanitizeLogPath(ctx.Request.Path)
+			path := logging.SanitizeLogPath(ctx.Request.Path)
 			endpoint := method + " " + path
 			dimensions := map[string]string{
 				observability.DimensionEndpoint: path,
@@ -919,7 +920,7 @@ func createTracingMiddleware() apptheory.Middleware {
 
 			// Extract request info
 			method := ctx.Request.Method
-			url := sanitizeLogPath(ctx.Request.Path)
+			url := logging.SanitizeLogPath(ctx.Request.Path)
 			userAgent := headerValue(ctx, "User-Agent")
 			clientIP := headerValue(ctx, "X-Forwarded-For")
 

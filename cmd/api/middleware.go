@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -46,7 +47,7 @@ func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
 			ctx.Set("logger", contextLogger)
 
 			// Log request start
-			logPath := sanitizeLogPath(ctx.Request.Path)
+			logPath := logging.SanitizeLogPath(ctx.Request.Path)
 			contextLogger.Info("request_start",
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", logPath),
@@ -223,7 +224,7 @@ func handleLockedReadRequest(ctx *apptheory.Context, repos core.RepositoryStorag
 		logger.Warn("failed to get instance lock state; defaulting to locked",
 			zap.Error(err),
 			zap.String("method", method),
-			zap.String("path", path))
+			zap.String("path", logging.SanitizeLogPath(path)))
 	}
 	if !locked {
 		return next(ctx)
@@ -238,7 +239,7 @@ func handleLockedWriteRequest(ctx *apptheory.Context, repos core.RepositoryStora
 		logger.Warn("failed to get instance lock state; defaulting to locked",
 			zap.Error(err),
 			zap.String("method", method),
-			zap.String("path", path))
+			zap.String("path", logging.SanitizeLogPath(path)))
 		return common.RespondForbidden(ctx, "instance is locked")
 	}
 	if !locked {
