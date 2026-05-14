@@ -2,8 +2,10 @@ package theorydb
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/theory-cloud/tabletheory/pkg/core"
+	errors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 // MockTx is a mock implementation of the core.Tx interface for testing
@@ -51,10 +53,12 @@ func (m *MockTx) Update(item any) error {
 
 // UpdateWithExpression adds an Update operation with expression to the transaction
 func (m *MockTx) UpdateWithExpression(item any, _ string, _ ...any) error {
-	if m.Builder == nil && len(inferTransactionUpdateFields(item)) == 0 {
-		return nil
+	if m.Builder != nil || len(inferTransactionUpdateFields(item)) > 0 {
+		return m.Update(item)
 	}
-	return m.Update(item)
+	return runTxOperation(func() error {
+		return m.Tx.Model(item).Update()
+	})
 }
 
 // DeleteByKey adds a Delete operation by key to the transaction
@@ -62,9 +66,6 @@ func (m *MockTx) DeleteByKey(tableName string, key map[string]any) error {
 	item, err := newTransactionKeyItem(tableName, key)
 	if err != nil {
 		return err
-	}
-	if m.Builder == nil {
-		return nil
 	}
 	return m.Delete(item)
 }
@@ -86,7 +87,24 @@ func (m *MockTx) ConditionCheck(tableName string, key map[string]any, condition 
 		m.Builder.ConditionCheck(item, conditions...)
 		return nil
 	}
-	return nil
+	return m.conditionCheckWithLegacyTx(item, condition)
+}
+
+func (m *MockTx) conditionCheckWithLegacyTx(item any, condition string) error {
+	normalized := strings.ToLower(strings.TrimSpace(condition))
+	return runTxOperation(func() error {
+		err := m.Tx.Model(item).First(item)
+		if strings.Contains(normalized, "attribute_not_exists") {
+			if err == nil {
+				return fmt.Errorf("transaction condition check failed")
+			}
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		return err
+	})
 }
 
 func runTxOperation(fn func() error) (err error) {
