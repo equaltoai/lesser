@@ -16,7 +16,7 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 | --- | --- | --- | --- |
 | Phase 0 dependency/security baseline | #968 / #976 | Merged | AppTheory `v1.6.0`, TableTheory `v1.8.3`, FaceTheory `v3.1.2` guidance, auth UI dependency remediation, CDK asset-root canonicalization. |
 | Phase 1a TableTheory Lambda client semantics | #969 / #977 | Merged | `NewLambdaOptimizedClient` now uses TableTheory Lambda-optimized timeout behavior with tests proving context/deadline handling. |
-| Phase 1b AppTheory invocation-context threading | #970 / #978 | Merged | Import-processor DB initialization now receives the AppTheory event context instead of an unrelated background context. |
+| Phase 1b AppTheory invocation-context threading | #970 / #978 | Merged | Import-processor SQS handling now scopes TableTheory repository access to the AppTheory event context deadline via `WithLambdaTimeout`; the cold-start client remains initialized once and is rebound per invocation. |
 | Phase 2a strict route proof | #971 / #979 | Merged | WebFinger route registration uses AppTheory strict registration with route-parity tests. |
 | Phase 2b strict route expansion | #972 / #980 | Merged | Objects/status object route registration uses AppTheory strict registration with route-parity tests. |
 | Phase 3a CDK parity proof | #973 / #981 | Merged | Test-only proof compares a representative Lambda synthesized natively and through AppTheoryFunction. |
@@ -63,8 +63,8 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 - `pkg/storage/theorydb.NewLambdaOptimizedClient(ctx, region)` now uses TableTheory Lambda-optimized behavior and applies
   the supplied context's timeout semantics, with tests covering deadline and local-endpoint behavior.
 - AppTheory `Context` and `EventContext` expose `.Context() context.Context`, and `EventContext` carries
-  `RemainingMS`. The import-processor now threads the event context into TableTheory client creation; other Lambda
-  families should continue to move one bounded slice at a time.
+  `RemainingMS`. The import-processor now scopes per-invocation TableTheory repository work to the event context
+  deadline via `WithLambdaTimeout`; other Lambda families should continue to move one bounded slice at a time.
 - lesser already uses several AppTheory CDK constructs: Dynamo tables, Rest API router, queues, queue consumers,
   EventBridge handlers, media CDN, Lambda roles, KMS keys, stream mappings. Lambda functions themselves are still
   created directly with AWS CDK `awslambda.NewFunction` where they have triggers or unproven downstream construct-path
