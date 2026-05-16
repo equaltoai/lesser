@@ -21,7 +21,7 @@
     "@astrojs/svelte": "^8.0.1",
     "@graphql-typed-document-node/core": "^3.2.0",
     "acorn": "^8.16.0",
-    "astro": "6.1.9",
+    "astro": "6.3.3",
     "focus-trap": "^8.0.0",
     "graphql": "^16.13.1",
     "graphql-ws": "^6.0.7",
@@ -37,7 +37,7 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "shiki": "^4.0.2",
-    "svelte": "^5.53.12",
+    "svelte": "^5.55.7",
     "tabbable": "^6.4.0",
     "unified": "^11.0.5",
     "viem": "^2.47.4",
@@ -53,7 +53,7 @@
   "pnpm": {
     "overrides": {
       "mdast-util-to-hast": "13.2.1",
-      "devalue": "5.6.4",
+      "devalue": "5.8.1",
       "defu": "6.1.5",
       "h3": "1.15.9",
       "diff": "5.2.2",

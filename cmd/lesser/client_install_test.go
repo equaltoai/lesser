@@ -15,6 +15,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testFaceTheoryDependency = "https://github.com/theory-cloud/FaceTheory/releases/download/" +
+	"v3.1.2/theory-cloud-facetheory-3.1.2.tgz"
+
+func testFaceTheoryPackageJSON(name string) string {
+	return `{"name":"` + name + `","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"` +
+		testFaceTheoryDependency + `"}}`
+}
+
 func TestParseClientInstallArgs_RequiresFlags(t *testing.T) {
 	_, err := parseClientInstallArgs(nil)
 	require.Error(t, err)
@@ -107,7 +115,7 @@ func TestRunClientInstall_RecordsInstallInReceiptAndPublishesManifest(t *testing
 		"{",
 		`  "name": "@equaltoai/demo-client",`,
 		`  "version": "1.2.3",`,
-		`  "dependencies": {"@theory-cloud/facetheory": "^0.1.0"}`,
+		`  "dependencies": {"@theory-cloud/facetheory": "` + testFaceTheoryDependency + `"}`,
 		"}",
 		"",
 	}, "\n"), 0o644))
@@ -393,7 +401,7 @@ func TestPrepareClientInstallArtifacts_RunsInstallAndBuild(t *testing.T) {
 		"{",
 		`  "name": "@equaltoai/demo-client",`,
 		`  "version": "1.2.3",`,
-		`  "dependencies": {"@theory-cloud/facetheory": "^0.1.0"}`,
+		`  "dependencies": {"@theory-cloud/facetheory": "` + testFaceTheoryDependency + `"}`,
 		"}",
 		"",
 	}, "\n"), 0o644))
@@ -484,7 +492,7 @@ func TestClientInstallValidationHelpers(t *testing.T) {
 	t.Run("package validation accepts dev dependency and rejects missing package", func(t *testing.T) {
 		require.Error(t, validateFaceTheoryPackage(nil))
 		require.NoError(t, validateFaceTheoryPackage(&nodePackageJSON{
-			DevDependencies: map[string]string{"@theory-cloud/facetheory": "^0.1.0"},
+			DevDependencies: map[string]string{"@theory-cloud/facetheory": testFaceTheoryDependency},
 		}))
 		require.Error(t, validateFaceTheoryPackage(&nodePackageJSON{}))
 		require.True(t, hasNodeDependency(map[string]string{"x": "1"}, "x"))
@@ -554,7 +562,7 @@ func TestPrepareClientInstallArtifacts_PropagatesErrors(t *testing.T) {
 		appRoot := t.TempDir()
 		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
 		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
-		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), `{"name":"demo-client","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"^0.1.0"}}`, 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), testFaceTheoryPackageJSON("demo-client"), 0o644))
 		runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
 
 		_, _, _, err := prepareClientInstallArtifacts(clientInstallArgs{
@@ -568,7 +576,7 @@ func TestPrepareClientInstallArtifacts_PropagatesErrors(t *testing.T) {
 		appRoot := t.TempDir()
 		configPath := filepath.Join(appRoot, clientInstallConfigFileName)
 		require.NoError(t, osWriteFile(configPath, `{"schema_version":1,"server":{"dir":"dist/server","entry":"handler.mjs"},"assets":{"dir":"dist/client"}}`, 0o644))
-		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), `{"name":"demo-client","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"^0.1.0"}}`, 0o644))
+		require.NoError(t, osWriteFile(filepath.Join(appRoot, "package.json"), testFaceTheoryPackageJSON("demo-client"), 0o644))
 		require.NoError(t, os.MkdirAll(filepath.Join(appRoot, "node_modules"), 0o755))
 		runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
 
@@ -1001,7 +1009,7 @@ func writeClientInstallFixture(t *testing.T) (string, string, string) {
 		"{",
 		`  "name": "@equaltoai/demo-client",`,
 		`  "version": "1.2.3",`,
-		`  "dependencies": {"@theory-cloud/facetheory": "^0.1.0"}`,
+		`  "dependencies": {"@theory-cloud/facetheory": "` + testFaceTheoryDependency + `"}`,
 		"}",
 		"",
 	}, "\n"), 0o644))

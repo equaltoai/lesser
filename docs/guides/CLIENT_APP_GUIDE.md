@@ -69,7 +69,16 @@ Example:
 Contract requirements:
 
 - `schema_version` must currently be `1`.
-- `package.json` must include `@theory-cloud/facetheory`.
+- `package.json` must include `@theory-cloud/facetheory`; the current pinned release asset is:
+
+  ```json
+  {
+    "dependencies": {
+      "@theory-cloud/facetheory": "https://github.com/theory-cloud/FaceTheory/releases/download/v3.1.2/theory-cloud-facetheory-3.1.2.tgz"
+    }
+  }
+  ```
+
 - `server.dir` must contain the built SSR bundle.
 - `server.entry` must point at a file inside `server.dir`.
 - `server.export` defaults to `handler` when omitted.
