@@ -1,0 +1,71 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+)
+
+func TestObjectsStrictRouteInventoryParity_Round13(t *testing.T) {
+	artifactBytes, err := os.ReadFile("testdata/route_inventory.json")
+	require.NoError(t, err)
+
+	var artifact []objectsRouteInventoryEntry
+	require.NoError(t, json.Unmarshal(artifactBytes, &artifact))
+	require.Equal(t, []objectsRouteInventoryEntry{
+		{Method: http.MethodGet, Path: "/objects/:id"},
+		{Method: http.MethodGet, Path: "/users/:username/statuses/:id"},
+	}, artifact)
+	require.Equal(t, artifact, objectsRouteInventory())
+
+	var params []map[string]string
+	app := apptheory.New()
+	require.NoError(t, registerObjectsRoutes(app, func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		params = append(params, map[string]string{
+			"id":       ctx.Param("id"),
+			"username": ctx.Param("username"),
+		})
+		return &apptheory.Response{Status: http.StatusNoContent}, nil
+	}))
+
+	resp := app.Serve(context.Background(), apptheory.Request{
+		Method: http.MethodGet,
+		Path:   "/objects/note-1",
+	})
+	require.Equal(t, http.StatusNoContent, resp.Status)
+	require.Equal(t, map[string]string{"id": "note-1", "username": ""}, params[0])
+
+	resp = app.Serve(context.Background(), apptheory.Request{
+		Method: http.MethodGet,
+		Path:   "/users/alice/statuses/note-2",
+	})
+	require.Equal(t, http.StatusNoContent, resp.Status)
+	require.Equal(t, map[string]string{"id": "note-2", "username": "alice"}, params[1])
+
+	resp = app.Serve(context.Background(), apptheory.Request{
+		Method: http.MethodPost,
+		Path:   "/objects/note-1",
+	})
+	require.Equal(t, http.StatusMethodNotAllowed, resp.Status)
+	require.Len(t, params, 2)
+
+	resp = app.Serve(context.Background(), apptheory.Request{
+		Method: http.MethodGet,
+		Path:   "/users/alice/statuses",
+	})
+	require.Equal(t, http.StatusNotFound, resp.Status)
+	require.Len(t, params, 2)
+}
+
+func TestRegisterObjectsRoutesStrictFailure_Round13(t *testing.T) {
+	err := registerObjectsRoutes(nil, func(*apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{Status: http.StatusNoContent}, nil
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "register objects route GET /objects/:id")
+}
