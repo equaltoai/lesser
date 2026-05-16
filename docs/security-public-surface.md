@@ -15,6 +15,7 @@ Related:
 - Gaps inventory: `docs/security-gaps.md`
 - Remediation plan: `docs/security-remediation-roadmap.md`
 - MCP auth contract: `docs/specs/mcp-actor-url-auth-contract.md`
+- Hosted bound souls + x402 boundary contract: `docs/contracts/hosted-bound-souls-x402-boundary.md`
 
 Legend:
 - **Public:** no auth required (but may still enforce content visibility)
