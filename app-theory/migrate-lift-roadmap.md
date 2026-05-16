@@ -58,31 +58,31 @@ and tests cleanly with Lift/DynamORM absent.
 These are the pinned destination frameworks for this repo. Keep these versions pinned until an intentional upgrade.
 
 ### AppTheory (pinned)
-- Go module: `github.com/theory-cloud/apptheory@v0.5.0-rc.5`
+- Go module: `github.com/theory-cloud/apptheory@v1.6.0`
 - Go runtime import: `github.com/theory-cloud/apptheory/runtime`
 - Docs entrypoints:
   - `docs/getting-started.md`
   - `docs/migration/from-lift.md`
 - Copy/paste:
-  - `go get github.com/theory-cloud/apptheory@v0.5.0-rc.5`
+  - `go get github.com/theory-cloud/apptheory@v1.6.0`
 - Pinned docs:
-  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0-rc.5/docs/getting-started.md`
-  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0-rc.5/docs/migration/from-lift.md`
+  - `https://github.com/theory-cloud/AppTheory/blob/v1.6.0/docs/getting-started.md`
+  - `https://github.com/theory-cloud/AppTheory/blob/v1.6.0/docs/migration/from-lift.md`
 
 ### TableTheory (pinned)
-- Go module: `github.com/theory-cloud/tabletheory@v1.3.0`
+- Go module: `github.com/theory-cloud/tabletheory@v1.8.3`
 - Docs entrypoints:
   - `docs/getting-started.md`
   - `docs/api-reference.md`
   - `docs/migration-guide.md`
   - `docs/struct-definition-guide.md` (tag rules)
 - Copy/paste:
-  - `go get github.com/theory-cloud/tabletheory@v1.3.0`
+  - `go get github.com/theory-cloud/tabletheory@v1.8.3`
 - Pinned docs:
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/getting-started.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/api-reference.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/migration-guide.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/struct-definition-guide.md`
+  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/getting-started.md`
+  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/api-reference.md`
+  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/migration-guide.md`
+  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/struct-definition-guide.md`
 
 ## Repo inventory (historical snapshot, 2026-01-31)
 
@@ -229,12 +229,12 @@ Status (as of 2026-02-02): `rg -n "github.com/aws/aws-sdk-go-v2/service/dynamodb
    - Remove `github.com/pay-theory/lift` from `go.mod`.
    - Remove `github.com/pay-theory/dynamorm` from `go.mod`.
    - Ensure pinned destination deps exist:
-     - `github.com/theory-cloud/apptheory v0.5.0-rc.5`
-     - `github.com/theory-cloud/tabletheory v1.3.0`
+     - `github.com/theory-cloud/apptheory v1.6.0`
+     - `github.com/theory-cloud/tabletheory v1.8.3`
    - Run: `go mod tidy`
 2. In the CDK module:
    - Remove `github.com/pay-theory/lift` from `infra/cdk/go.mod`.
-   - Add `github.com/theory-cloud/apptheory v0.5.0-rc.5` to `infra/cdk/go.mod` (for `cdk-go/apptheorycdk`).
+   - Add `github.com/theory-cloud/apptheory v1.6.0` to `infra/cdk/go.mod` (for `cdk-go/apptheorycdk`).
    - Run:
      - `cd infra/cdk && go mod tidy`
      - `cd ../..`

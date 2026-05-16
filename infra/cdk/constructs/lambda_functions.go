@@ -78,6 +78,9 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	if lambdaAssetRoot == "" {
 		lambdaAssetRoot = filepath.Clean(filepath.Join("..", ".."))
 	}
+	if absLambdaAssetRoot, err := filepath.Abs(lambdaAssetRoot); err == nil {
+		lambdaAssetRoot = absLambdaAssetRoot
+	}
 
 	domainValue := strings.TrimSpace(props.Domain)
 	if domainValue == "" {
