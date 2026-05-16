@@ -57,6 +57,8 @@ Lesser’s agent-attribution work. Lesser consumes those specs; it does not publ
 
 For the current Lesser-owned ActivityPub attribution extension work, see `docs/specs/fep-agent-attribution.md`.
 
+For hosted-bound-soul + x402 boundary constraints, see `docs/contracts/hosted-bound-souls-x402-boundary.md`.
+
 ## `bodyEnabled` and `soulEnabled`
 
 The current deployment-time integration flag is **`bodyEnabled`**.

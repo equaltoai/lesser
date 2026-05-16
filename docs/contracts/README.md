@@ -25,6 +25,10 @@ running environment.
 
 ❌ INCORRECT: copy/paste ad-hoc response examples from production logs into client code.
 
+## Soul / MCP / Hosted-Boundary Contracts
+
+- Hosted bound souls + x402 boundary contract: `docs/contracts/hosted-bound-souls-x402-boundary.md`
+
 ## Deploy And Release Contracts
 
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
