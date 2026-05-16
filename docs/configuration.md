@@ -18,6 +18,24 @@ Lesser runtime configuration is managed through:
 
 If a bootstrap mnemonic is generated on first deploy, `--out <path>` is required to persist it locally.
 
+## Framework-managed runtime behavior
+
+These behaviors come from lesser's pinned Theory Cloud framework usage. Operators normally do not configure them
+directly, but they are relevant during release validation and rollback planning.
+
+- **TableTheory Lambda timeout safety**: Lambda-optimized DynamoDB clients use TableTheory's Lambda timeout handling when
+  a request/event context has a deadline. The framework keeps a safety buffer before the Lambda hard timeout so storage
+  operations can fail predictably instead of being cut off by the runtime. There is no operator-facing env var to disable
+  this; validate timeout-sensitive changes with the full CI gate before rollout.
+- **AppTheory strict route registration**: selected HTTP surfaces register already-existing routes with strict AppTheory
+  helpers. Strict registration is a startup/test-time drift guard only; it does not introduce new route paths or response
+  shapes.
+- **AppTheory CDK functions**: selected triggerless inventory Lambdas are synthesized through AppTheory CDK constructs
+  while preserving their historical CloudFormation logical IDs. Triggered/scheduled Lambdas remain on native CDK
+  constructs where downstream event-source or permission parity has not yet been proven.
+- **No schema toggle**: the framework baseline does not change DynamoDB PK/SK patterns, GSI usage, TableTheory model tags,
+  or optimistic-concurrency versioning.
+
 ## Deploy-time integration flags
 
 Some integration inputs are consumed by `./lesser up` and CDK synthesis rather than by the normal runtime config path.

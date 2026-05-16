@@ -69,7 +69,7 @@ Example:
 Contract requirements:
 
 - `schema_version` must currently be `1`.
-- `package.json` must include `@theory-cloud/facetheory`; the current pinned release asset is:
+- `package.json` must include `@theory-cloud/facetheory`; the current recommended release pin is:
 
   ```json
   {
@@ -79,6 +79,9 @@ Contract requirements:
   }
   ```
 
+- `lesser client install` validates that the dependency is present; it does not require this exact URL so local workspace
+  development remains possible. For operator releases, use the pinned release asset (or an explicitly reviewed newer
+  FaceTheory release) so the client artifact has clear provenance.
 - `server.dir` must contain the built SSR bundle.
 - `server.entry` must point at a file inside `server.dir`.
 - `server.export` defaults to `handler` when omitted.

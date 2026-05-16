@@ -18,6 +18,37 @@ Current state:
   `~/.lesser/<app>/<base-domain>/deploy/lambda-assets/`.
 - The published contract for that release path lives in `docs/contracts/release-driven-deploy-contract.md`.
 
+## Theory Cloud framework baseline
+
+The current deployable baseline consumes the latest released Theory Cloud framework line that was evaluated on
+2026-05-16:
+
+- AppTheory `v1.6.0` in the Go runtime and CDK app.
+- TableTheory `v1.8.3` in the Go runtime.
+- FaceTheory `v3.1.2` as the recommended client-app dependency in `docs/guides/CLIENT_APP_GUIDE.md`.
+
+Deploy implications:
+
+- There is no new `lesser up` flag for these framework updates and the published release asset shape is unchanged.
+- Lambda-optimized TableTheory clients now keep TableTheory's Lambda timeout safety buffer when a request/event context
+  has a deadline. This is runtime hardening only; it does not change DynamoDB PK/SK/GSI schema.
+- AppTheory strict route registration has been adopted only where route parity was proven (`webfinger` and `objects`).
+  It is a fail-fast guard against route drift, not a URL or response-shape change.
+- AppTheory CDK `AppTheoryFunction` is adopted only for triggerless inventory Lambdas where synth parity was proven and
+  pre-existing Lambda logical IDs are preserved. Stream/SQS/scheduled Lambdas and the client SSR host remain on native CDK
+  constructs until their downstream permissions/event-source behavior can be proven separately.
+
+Release and rollback considerations:
+
+- Run the normal hard gate before publishing or deploying a framework-update release:
+  `go build -o lesser ./cmd/lesser`, `./lesser build lambdas`, and `./lesser verify ci`.
+- For CDK-adjacent releases, review a representative `cdk synth`/CloudFormation diff before stage rollout. Do not set
+  timeouts on CDK commands.
+- Deploy through the normal `dev` → optional `staging` → `live` path with soak evidence at each stage. Framework-only
+  work does not make stage soak optional.
+- Roll back by deploying the previous release/commit through `./lesser up`. No schema migration is part of this framework
+  baseline, and prior Lambda versions must remain available as rollback targets.
+
 ## Prerequisites
 
 - A public Route53 hosted zone that exactly matches your `base-domain` (for example: `example.com`)
