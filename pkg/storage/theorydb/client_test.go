@@ -2,6 +2,7 @@ package theorydb
 
 import (
 	"context"
+	stdErrors "errors"
 	"os"
 	"reflect"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
 	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
@@ -158,6 +160,61 @@ func TestGetLambdaClientNilContextReturnsBufferedClient(t *testing.T) {
 	assert.True(t, lambdaDeadlineOf(t, db).IsZero())
 }
 
+func TestNewLambdaOptimizedClient_RegistersDefaultTypeConverters(t *testing.T) {
+	db, err := NewLambdaOptimizedClient(nil, "us-east-1")
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	assertDefaultTypeConvertersRegistered(t, db)
+}
+
+func TestNewLambdaOptimizedClient_TimeoutSurvivesOperationBoundary(t *testing.T) {
+	deadline := time.Now().Add(30 * time.Second).Round(0)
+	lambdaCtx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	db, err := NewLambdaOptimizedClient(lambdaCtx, "us-east-1")
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	operationCtx := context.WithValue(context.Background(), testContextKey{}, "repository-operation")
+	query := db.WithContext(operationCtx).Model(&lambdaTimeoutProbeModel{
+		PK: "PROBE#1",
+		SK: "META",
+	})
+
+	assert.Equal(t, defaultTimeoutBuffer, queryExecutorLambdaTimeoutBufferOf(t, query))
+	assert.Equal(t, deadline, queryExecutorLambdaDeadlineOf(t, query))
+}
+
+func TestWithLambdaOptimizedEnvironmentAppliesLocalEndpoint(t *testing.T) {
+	errSentinel := stdErrors.New("stop after env inspection")
+	t.Setenv("AWS_REGION", "original-region")
+	t.Setenv("AWS_ENDPOINT_URL_DYNAMODB", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+
+	_, err := withLambdaOptimizedEnvironment(
+		lambdaOptimizedClientOptions{
+			Region:   "us-west-2",
+			Endpoint: "http://localhost:8000",
+		},
+		func() (*tabletheory.LambdaDB, error) {
+			assert.Equal(t, "us-west-2", os.Getenv("AWS_REGION"))
+			assert.Equal(t, "http://localhost:8000", os.Getenv("AWS_ENDPOINT_URL_DYNAMODB"))
+			assert.Equal(t, "fakeMyKeyId", os.Getenv("AWS_ACCESS_KEY_ID"))
+			assert.Equal(t, "fakeSecretAccessKey", os.Getenv("AWS_SECRET_ACCESS_KEY"))
+			return nil, errSentinel
+		},
+	)
+
+	require.ErrorIs(t, err, errSentinel)
+	assert.Equal(t, "original-region", os.Getenv("AWS_REGION"))
+	assert.Empty(t, os.Getenv("AWS_ENDPOINT_URL_DYNAMODB"))
+	assert.Equal(t, "fakeMyKeyId", os.Getenv("AWS_ACCESS_KEY_ID"))
+	assert.Equal(t, "fakeSecretAccessKey", os.Getenv("AWS_SECRET_ACCESS_KEY"))
+}
+
 func lambdaTimeoutBufferOf(t *testing.T, db core.DB) time.Duration {
 	t.Helper()
 
@@ -195,6 +252,68 @@ func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
 	return field
 }
 
+func assertDefaultTypeConvertersRegistered(t *testing.T, db core.DB) {
+	t.Helper()
+
+	field := tableTheoryDBField(t, db, "converter")
+	converter := reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+
+	hasCustomConverter, ok := converter.(interface{ HasCustomConverter(reflect.Type) bool })
+	require.True(t, ok, "expected TableTheory converter to expose HasCustomConverter")
+
+	for _, typ := range []reflect.Type{
+		mapStringAnyType,
+		sliceAnyType,
+		activityPubNoteType,
+		activityPubContextValueType,
+		agentsCapabilitiesType,
+	} {
+		assert.True(t, hasCustomConverter.HasCustomConverter(typ), "expected custom converter for %s", typ)
+	}
+}
+
+func queryExecutorLambdaTimeoutBufferOf(t *testing.T, query core.Query) time.Duration {
+	t.Helper()
+
+	field := queryExecutorDBField(t, query, "lambdaTimeoutBuffer")
+	return time.Duration(field.Int())
+}
+
+func queryExecutorLambdaDeadlineOf(t *testing.T, query core.Query) time.Time {
+	t.Helper()
+
+	field := queryExecutorDBField(t, query, "lambdaDeadline")
+	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface().(time.Time)
+}
+
+func queryExecutorDBField(t *testing.T, query core.Query, name string) reflect.Value {
+	t.Helper()
+
+	value := reflect.ValueOf(query)
+	require.Equal(t, reflect.Ptr, value.Kind())
+	elem := value.Elem()
+
+	executorField := elem.FieldByName("executor")
+	require.True(t, executorField.IsValid(), "expected TableTheory query to expose executor")
+
+	executorValue := reflect.NewAt(executorField.Type(), unsafe.Pointer(executorField.UnsafeAddr())).Elem()
+	require.False(t, executorValue.IsNil(), "expected TableTheory query executor")
+
+	executor := reflect.ValueOf(executorValue.Interface())
+	require.Equal(t, reflect.Ptr, executor.Kind())
+	executorElem := executor.Elem()
+
+	dbField := executorElem.FieldByName("db")
+	require.True(t, dbField.IsValid(), "expected TableTheory query executor DB")
+	require.Equal(t, reflect.Ptr, dbField.Kind())
+	require.False(t, dbField.IsNil())
+
+	dbValue := reflect.NewAt(dbField.Type(), unsafe.Pointer(dbField.UnsafeAddr())).Elem()
+	field := dbValue.Elem().FieldByName(name)
+	require.True(t, field.IsValid(), "expected query executor DB to expose %s", name)
+	return field
+}
+
 type recordingRegistrarDB struct {
 	fakeDB
 	registered []reflect.Type
@@ -204,3 +323,12 @@ func (db *recordingRegistrarDB) RegisterTypeConverter(typ reflect.Type, _ pkgtyp
 	db.registered = append(db.registered, typ)
 	return nil
 }
+
+type testContextKey struct{}
+
+type lambdaTimeoutProbeModel struct {
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+}
+
+func (*lambdaTimeoutProbeModel) TableName() string { return "lambda_timeout_probe" }

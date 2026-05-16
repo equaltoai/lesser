@@ -2,22 +2,10 @@ package theorydb
 
 import (
 	"context"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/theory-cloud/tabletheory"
 	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/session"
 )
-
-var newDynamormClient = func(cfg session.Config) (core.DB, error) {
-	db, err := tabletheory.New(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
 
 // BaseModel provides common fields for all DynamORM models
 type BaseModel struct {
@@ -75,34 +63,17 @@ func (r *BaseRepository) GetDB() core.DB {
 
 // NewLambdaOptimizedClient creates a new DynamORM client optimized for Lambda functions
 // This should be used in the init() function of Lambda handlers to ensure connection reuse
-func NewLambdaOptimizedClient(_ context.Context, region string) (core.DB, error) {
-	trimmed := strings.TrimSpace(region)
-	if trimmed == "" {
-		if envRegion := strings.TrimSpace(os.Getenv("AWS_REGION")); envRegion != "" {
-			trimmed = envRegion
-		} else if envDefault := strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION")); envDefault != "" {
-			trimmed = envDefault
-		} else {
-			trimmed = "us-east-1"
-		}
-	}
-
-	config := session.Config{
-		Region: trimmed,
-	}
-
-	// Use the standard client creation method with the latest DynamORM version
-	client, err := newDynamormClient(config)
+func NewLambdaOptimizedClient(ctx context.Context, region string) (core.DB, error) {
+	lambdaClient, err := newConfiguredLambdaOptimizedClient(lambdaOptimizedClientOptionsFor(region))
 	if err != nil {
 		return nil, err
 	}
 
-	if err := registerDefaultTypeConverters(client); err != nil {
-		return nil, err
+	if ctx != nil {
+		return lambdaClient.WithLambdaTimeout(ctx), nil
 	}
 
-	// Return the client as a core.DB interface
-	return client, nil
+	return lambdaClient, nil
 }
 
 // PreRegisterModels pre-registers models with the DynamORM client to reduce cold start time
