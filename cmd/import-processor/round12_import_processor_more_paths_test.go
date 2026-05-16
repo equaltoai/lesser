@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,6 +18,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -391,6 +394,76 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 	})
 }
 
+func TestImportProcessor_WithInvocationTableContext_Round12(t *testing.T) {
+	baseDB := &lambdaTimeoutRecorderDB{}
+	p := &ImportProcessor{
+		db:               baseDB,
+		importRepo:       &importRepoRecorder{},
+		costTrackingRepo: &costTrackingRepoRecorder{},
+		cfg:              &config.Config{DynamoTableName: "table"},
+		logger:           zap.NewNop(),
+	}
+
+	require.Same(t, p, p.withInvocationTableContext(context.Background()))
+
+	deadline := time.Now().Add(time.Minute).Round(0)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	runner := p.withInvocationTableContext(ctx)
+	require.NotSame(t, p, runner)
+	require.Equal(t, 1, baseDB.lambdaTimeoutCalls)
+	require.NotNil(t, runner.importRepo)
+	require.NotNil(t, runner.costTrackingRepo)
+	require.NotNil(t, runner.repos)
+
+	timedDB, ok := runner.db.(*lambdaTimeoutRecorderDB)
+	require.True(t, ok)
+	require.Equal(t, deadline, timedDB.lambdaDeadline)
+}
+
+func TestImportProcessor_HandleSQSMessageAppliesEventContextDeadline_Round12(t *testing.T) {
+	setAWSEnvForS3Test(t, "https://example.com")
+
+	baseDB := &lambdaTimeoutRecorderDB{}
+	repo := &importRepoRecorder{}
+	costRepo := &costTrackingRepoRecorder{}
+	p := &ImportProcessor{
+		db:               baseDB,
+		importRepo:       repo,
+		costTrackingRepo: costRepo,
+		s3Client: &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+			return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("Account address\nalice@example.com\n")))}, nil
+		}},
+		cfg:        &config.Config{},
+		logger:     zap.NewNop(),
+		bucketName: "bucket",
+		baseURL:    "https://example.com",
+		repos: importStorageStub{
+			object: objectCreatorFunc(func(_ context.Context, _ any) error { return nil }),
+		},
+	}
+
+	deadline := time.Now().Add(time.Minute).Round(0)
+	runCtx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	msg := events.SQSMessage{
+		MessageId:      "1",
+		EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:import-queue",
+		Body:           `{"import_id":"imp-1","username":"alice","type":"followers","mode":"merge","s3_key":"followers.csv","timestamp":123}`,
+	}
+
+	app := apptheory.New()
+	app.SQS("import-queue", p.HandleSQSMessage)
+	resp := app.ServeSQS(runCtx, events.SQSEvent{Records: []events.SQSMessage{msg}})
+
+	require.Empty(t, resp.BatchItemFailures)
+	require.Equal(t, 1, baseDB.lambdaTimeoutCalls)
+	require.Contains(t, repo.statusCalls, "processing")
+	require.Contains(t, repo.statusCalls, "completed")
+}
+
 type s3ClientStub struct {
 	getObjectFn func(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 }
@@ -400,6 +473,27 @@ func (s *s3ClientStub) GetObject(_ context.Context, input *s3.GetObjectInput, _ 
 		return s.getObjectFn(input)
 	}
 	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(nil))}, nil
+}
+
+type lambdaTimeoutRecorderDB struct {
+	lambdaTimeoutCalls int
+	lambdaDeadline     time.Time
+}
+
+func (db *lambdaTimeoutRecorderDB) Model(any) tablecore.Query { return nil }
+func (db *lambdaTimeoutRecorderDB) Transaction(fn func(tx *tablecore.Tx) error) error {
+	return fn(&tablecore.Tx{})
+}
+func (db *lambdaTimeoutRecorderDB) Migrate() error           { return nil }
+func (db *lambdaTimeoutRecorderDB) AutoMigrate(...any) error { return nil }
+func (db *lambdaTimeoutRecorderDB) Close() error             { return nil }
+func (db *lambdaTimeoutRecorderDB) WithContext(context.Context) tablecore.DB {
+	return db
+}
+func (db *lambdaTimeoutRecorderDB) WithLambdaTimeout(ctx context.Context) tablecore.DB {
+	db.lambdaTimeoutCalls++
+	deadline, _ := ctx.Deadline()
+	return &lambdaTimeoutRecorderDB{lambdaDeadline: deadline}
 }
 
 func TestImportTransaction_RollbackFailure_Round12(t *testing.T) {

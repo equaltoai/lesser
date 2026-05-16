@@ -289,3 +289,25 @@ func WithTimeoutBuffer(db core.DB, buffer time.Duration) core.DB {
 		Buffer: buffer,
 	})
 }
+
+type lambdaTimeoutApplier interface {
+	WithLambdaTimeout(context.Context) core.DB
+}
+
+// WithLambdaTimeout returns a DB scoped to the supplied Lambda invocation
+// deadline when the client supports TableTheory Lambda timeout handling.
+func WithLambdaTimeout(ctx context.Context, db core.DB) core.DB {
+	if db == nil || ctx == nil {
+		return db
+	}
+
+	if lambdaDB, ok := db.(*tabletheory.LambdaDB); ok {
+		return lambdaDB.WithLambdaTimeout(ctx)
+	}
+
+	if timeoutDB, ok := db.(lambdaTimeoutApplier); ok {
+		return timeoutDB.WithLambdaTimeout(ctx)
+	}
+
+	return db
+}

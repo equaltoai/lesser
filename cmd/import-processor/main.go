@@ -233,7 +233,7 @@ func init() {
 	// AWS config no longer needed - DynamORM handles configuration internally
 
 	// Initialize DynamORM with Lambda optimizations
-	db, err := theorydb.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err := theorydb.NewLambdaOptimizedClient(context.TODO(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
@@ -307,6 +307,8 @@ func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message 
 		}
 	}
 
+	runner := p.withInvocationTableContext(runCtx)
+
 	// Try parsing as services.ImportJobMessage first (new format)
 	var importMsg services.ImportJobMessage
 	if err := common.ParseRequestBody([]byte(message.Body), &importMsg); err == nil {
@@ -318,16 +320,16 @@ func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message 
 			Mode:     importMsg.Mode,
 			S3Key:    importMsg.S3Key,
 		}
-		if err := p.processImportJob(runCtx, importEvent); err != nil {
-			p.logger.Error("failed to process import job",
+		if err := runner.processImportJob(runCtx, importEvent); err != nil {
+			runner.logger.Error("failed to process import job",
 				zap.String("import_id", importEvent.ImportID),
 				zap.String("username", importEvent.Username),
 				zap.String("request_id", requestID),
 				zap.Error(err),
 			)
 			// Update job status as failed
-			if updateErr := p.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
-				p.logger.Error("failed to update import status to failed",
+			if updateErr := runner.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
+				runner.logger.Error("failed to update import status to failed",
 					zap.String("import_id", importEvent.ImportID),
 					zap.Error(updateErr),
 				)
@@ -339,7 +341,7 @@ func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message 
 	// Fallback to legacy format
 	var importEvent ImportProcessorEvent
 	if err := common.ParseRequestBody([]byte(message.Body), &importEvent); err != nil {
-		p.logger.Error("failed to unmarshal event",
+		runner.logger.Error("failed to unmarshal event",
 			zap.String("message_id", message.MessageId),
 			zap.String("request_id", requestID),
 			zap.Error(err),
@@ -347,16 +349,16 @@ func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message 
 		return nil
 	}
 
-	if err := p.processImportJob(runCtx, importEvent); err != nil {
-		p.logger.Error("failed to process import job",
+	if err := runner.processImportJob(runCtx, importEvent); err != nil {
+		runner.logger.Error("failed to process import job",
 			zap.String("import_id", importEvent.ImportID),
 			zap.String("username", importEvent.Username),
 			zap.String("request_id", requestID),
 			zap.Error(err),
 		)
 		// Update job status as failed
-		if updateErr := p.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
-			p.logger.Error("failed to update import status to failed",
+		if updateErr := runner.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
+			runner.logger.Error("failed to update import status to failed",
 				zap.String("import_id", importEvent.ImportID),
 				zap.Error(updateErr),
 			)
@@ -364,6 +366,45 @@ func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message 
 	}
 
 	return nil
+}
+
+func (p *ImportProcessor) withInvocationTableContext(ctx context.Context) *ImportProcessor {
+	if p == nil || p.db == nil || ctx == nil {
+		return p
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		return p
+	}
+
+	invocationDB := theorydb.WithLambdaTimeout(ctx, p.db)
+	if invocationDB == nil || invocationDB == p.db {
+		return p
+	}
+
+	runner := *p
+	runner.db = invocationDB
+
+	tableName := ""
+	if p.cfg != nil {
+		tableName = strings.TrimSpace(p.cfg.DynamoTableName)
+	}
+	if tableName == "" {
+		return &runner
+	}
+
+	runner.importRepo = repositories.NewImportRepository(invocationDB, tableName, p.logger)
+	runner.costTrackingRepo = repositories.NewTrackingRepository(invocationDB, tableName, p.logger, nil)
+
+	repos, err := factory.NewRepositoryFactory(invocationDB, tableName, p.logger)
+	if err != nil {
+		if p.logger != nil {
+			p.logger.Warn("failed to create invocation-scoped repository factory", zap.Error(err))
+		}
+		return &runner
+	}
+	runner.repos = importStorageAdapter{storage: repos}
+
+	return &runner
 }
 
 func (p *ImportProcessor) initializeAWSClients(ctx context.Context) error {
