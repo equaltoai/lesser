@@ -1,0 +1,10 @@
+[
+  {
+    "method": "GET",
+    "path": "/objects/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/users/:username/statuses/:id"
+  }
+]

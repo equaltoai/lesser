@@ -135,6 +135,18 @@ type relationshipChecker interface {
 	IsFollowing(ctx context.Context, followerUsername, targetActorID string) (bool, error)
 }
 
+type objectsRouteInventoryEntry struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
+func objectsRouteInventory() []objectsRouteInventoryEntry {
+	return []objectsRouteInventoryEntry{
+		{Method: http.MethodGet, Path: "/objects/:id"},
+		{Method: http.MethodGet, Path: "/users/:username/statuses/:id"},
+	}
+}
+
 // NewHandler creates a new objects handler using standardized services
 func NewHandler() *Handler {
 	// Initialize object repository
@@ -156,6 +168,25 @@ func NewHandler() *Handler {
 		instanceRepo:           repos.Instance(),
 		relationshipRepo:       repos.Relationship(),
 	}
+}
+
+// RegisterRoutes registers all ActivityPub object routes.
+func (h *Handler) RegisterRoutes(app *apptheory.App) error {
+	return registerObjectsRoutes(app, h.HandleGetObject)
+}
+
+func registerObjectsRoutes(app *apptheory.App, handleGetObject apptheory.Handler) error {
+	for _, route := range objectsRouteInventory() {
+		switch route.Method {
+		case http.MethodGet:
+			if _, err := app.GetStrict(route.Path, handleGetObject); err != nil {
+				return fmt.Errorf("register objects route %s %s: %w", route.Method, route.Path, err)
+			}
+		default:
+			return fmt.Errorf("unsupported objects route method %q for %s", route.Method, route.Path)
+		}
+	}
+	return nil
 }
 
 // HandleGetObject handles GET requests for ActivityPub objects
@@ -959,8 +990,9 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 	})
 
 	// ActivityPub federation endpoints.
-	app.Get("/objects/:id", handler.HandleGetObject)
-	app.Get("/users/:username/statuses/:id", handler.HandleGetObject)
+	if err := handler.RegisterRoutes(app); err != nil {
+		lambdaLogger.Fatal("failed to register objects routes", zap.Error(err))
+	}
 
 	return app
 }
