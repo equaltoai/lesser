@@ -66,10 +66,34 @@ func parseWebFingerResource(resource string) (username, domain string, err error
 	return username, domain, nil
 }
 
-// RegisterRoutes registers all webfinger routes
-func (wh *WebFingerHandler) RegisterRoutes(app *apptheory.App) {
-	// WebFinger endpoint (inventory-owned).
-	_ = app.Get("/.well-known/webfinger", wh.handleWebFinger)
+type webfingerRouteInventoryEntry struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
+func webfingerRouteInventory() []webfingerRouteInventoryEntry {
+	return []webfingerRouteInventoryEntry{
+		{Method: http.MethodGet, Path: "/.well-known/webfinger"},
+	}
+}
+
+// RegisterRoutes registers all webfinger routes.
+func (wh *WebFingerHandler) RegisterRoutes(app *apptheory.App) error {
+	return registerWebFingerRoutes(app, wh.handleWebFinger)
+}
+
+func registerWebFingerRoutes(app *apptheory.App, handler apptheory.Handler) error {
+	for _, route := range webfingerRouteInventory() {
+		switch route.Method {
+		case http.MethodGet:
+			if _, err := app.GetStrict(route.Path, handler); err != nil {
+				return fmt.Errorf("register webfinger route %s %s: %w", route.Method, route.Path, err)
+			}
+		default:
+			return fmt.Errorf("unsupported webfinger route method %q for %s", route.Method, route.Path)
+		}
+	}
+	return nil
 }
 
 // handleWebFinger handles webfinger requests using DynamORM
@@ -426,8 +450,10 @@ func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.Ap
 		}
 	})
 
-	// Register webfinger routes
-	handler.RegisterRoutes(app)
+	// Register webfinger routes.
+	if err := handler.RegisterRoutes(app); err != nil {
+		lambdaLogger.Fatal("failed to register webfinger routes", zap.Error(err))
+	}
 
 	return app
 }

@@ -1,0 +1,6 @@
+[
+  {
+    "method": "GET",
+    "path": "/.well-known/webfinger"
+  }
+]
