@@ -1,6 +1,6 @@
 # Theory Cloud Framework Leverage Roadmap
 
-Status: proposed for Arch review (written 2026-05-16)
+Status: Phase 0 PR packaged; Arch scope review constraints incorporated (written 2026-05-16)
 Branch with baseline bump: `chore/framework-deps-2026-05-16`
 
 ## Reported need
@@ -103,8 +103,27 @@ local adoption proceeds.
 
 ### Verification step
 
-Next concrete verification is Arch review of this scope, followed by Milestone 1 PR review for the already-completed
-baseline bump branch. No further implementation should start until Arch approves the scope or requests revisions.
+Arch completed Tier 1 scope review on 2026-05-16 and found the Phase 0 -> Phase 1 -> Phase 2 -> Phase 3
+sequence structurally sound, with the constraints below. Phase 0 PR review remains separate from scope approval; no
+further implementation starts until Arch approves the current milestone and the next milestone sequence.
+
+### Arch-required roadmap constraints
+
+Arch's Tier 1 scope review approved the overall sequencing only with these constraints incorporated:
+
+- **Split Phase 1 into separate PRs/milestones.** First prove `NewLambdaOptimizedClient` semantics and Lambda
+  timeout-buffer application with tests. Later PRs thread invocation contexts by bounded Lambda family; do not convert
+  every call site in one PR.
+- **Prove timeout behavior at the operation boundary.** Repository methods already call `db.WithContext(ctx)`, so tests
+  must show whether the configured TableTheory Lambda timeout buffer survives repository operations or whether lesser
+  needs a small helper/wrapper that applies `WithLambdaTimeout(ctx)` where available.
+- **Start Phase 2 on a low-risk route surface.** Do not begin strict-route adoption with all of `cmd/api/routes.go`;
+  first prove AppTheory route dialect/canonicalization and route parity on a small surface.
+- **Add a route inventory/parity artifact for Phase 2 validation.** OpenAPI/GraphQL checks alone are not enough because
+  some ActivityPub and special endpoints are outside the Mastodon OpenAPI surface.
+- **Keep CDK parity proof and adoption separate.** Phase 3a proves `AppTheoryFunction` / related construct parity; Phase
+  3b adoption starts only after explicit Arch review of the synth/template diff. If parity requires workaround, stop and
+  route `coordinate-framework-feedback` instead of migrating broadly.
 
 ## Scoped Need: Consume current Theory Cloud frameworks idiomatically
 
@@ -223,17 +242,19 @@ security-maintenance updates.
 - **Framework consumption**: idiomatic use of TableTheory `LambdaDB` timeout APIs.
 - **Acceptance**: `NewLambdaOptimizedClient(ctx, region)` no longer ignores context and no longer creates a standard DB
   when Lambda-optimized behavior is requested; tests cover nil context, context with deadline, env region fallback, local
-  endpoint behavior, converter registration, and timeout buffer application.
+  endpoint behavior, converter registration, and timeout buffer application. Tests must prove timeout behavior at the
+  repository/operation boundary, not just construction time.
 - **Validation**: `go test ./pkg/storage/theorydb`, `go test ./pkg/storage/...`, `go test ./...`, `go vet ./...`,
   `gofmt -l .`, `./lesser verify ci`.
 - **Conventional Commit subject**: `fix(storage): make lambda table clients timeout aware`.
 
 ### 3. Thread AppTheory request/event contexts into DB initialization call sites
 
-- **Paths**: bounded Lambda entrypoints that currently call `NewLambdaOptimizedClient(context.Background(), ...)` or
-  equivalent inside request/event handling; likely `cmd/graphql`, `cmd/graphql-ws`, `cmd/sse`, `cmd/streaming`,
-  `cmd/search-indexer`, `cmd/federation-*`, `cmd/cms-scheduler`, `cmd/trend-aggregator`, `cmd/actor`, `cmd/objects`,
-  `cmd/collections`, `cmd/webfinger`, `cmd/enhanced-federation-processor`, `cmd/import-processor`.
+- **Paths**: bounded Lambda-family slices that currently call `NewLambdaOptimizedClient(context.Background(), ...)` or
+  equivalent inside request/event handling. Candidate slices include HTTP/discovery surfaces (`cmd/graphql`,
+  `cmd/graphql-ws`, `cmd/sse`, `cmd/streaming`, `cmd/actor`, `cmd/objects`, `cmd/collections`, `cmd/webfinger`) and
+  async/federation processors (`cmd/search-indexer`, `cmd/federation-*`, `cmd/cms-scheduler`,
+  `cmd/trend-aggregator`, `cmd/enhanced-federation-processor`, `cmd/import-processor`).
 - **Surface**: cmd, storage.
 - **Classification**: operational-reliability, framework-consumption.
 - **Federation-trust impact**: none if behavior is limited to context/deadline propagation. If federation-delivery or
@@ -241,8 +262,9 @@ security-maintenance updates.
 - **Contract impact**: none.
 - **Schema impact**: none.
 - **Framework consumption**: idiomatic AppTheory `Context.Context()` / `EventContext.Context()` use.
-- **Acceptance**: selected call sites pass the real AppTheory context where available, tests cover deadline propagation
-  and no `context.Background()` remains in the targeted runtime path.
+- **Acceptance**: each PR targets one bounded Lambda family, passes the real AppTheory context where available, tests cover
+  deadline propagation, and no `context.Background()` remains in that targeted runtime path. Broad all-call-site conversion
+  is explicitly out of scope for a single PR.
 - **Validation**: targeted `go test ./cmd/<lambda>`, `go test ./pkg/storage/theorydb`, `go test ./...`, `go vet ./...`,
   `gofmt -l .`, `./lesser verify ci`.
 - **Conventional Commit subject**: `fix(runtime): thread app contexts into table clients`.
@@ -264,19 +286,21 @@ security-maintenance updates.
   `gofmt -l .`.
 - **Conventional Commit subject**: `test(routes): enforce strict app route registration`.
 
-### 5. Expand strict route registration to Mastodon/API and streaming surfaces
+### 5. Expand strict route registration by bounded surface
 
-- **Paths**: `cmd/api/routes.go`, `cmd/api/main.go`, `cmd/graphql/main.go`, `cmd/sse/main.go`, relevant route tests.
-- **Surface**: REST, GraphQL endpoint Lambda routing, SSE/streaming.
+- **Paths**: bounded route registration surfaces selected after the low-risk proof. `cmd/api/routes.go` is not the first
+  target and should itself be split if route inventory shows meaningful sub-surfaces; tests, generated/static contract
+  artifacts, and a route inventory/parity artifact are required.
+- **Surface**: bounded REST, GraphQL endpoint Lambda routing, SSE/streaming, or ActivityPub endpoint slices.
 - **Classification**: contract-stability, framework-consumption, operational-reliability.
 - **Federation-trust impact**: none.
 - **Contract impact**: backward-compatible only; no route path/method/error shape changes.
 - **Schema impact**: none.
 - **Framework consumption**: idiomatic AppTheory strict helpers.
-- **Acceptance**: strict registration covers high-traffic HTTP surfaces and OpenAPI/GraphQL static verification remains
-  clean.
-- **Validation**: `go test ./cmd/api ./cmd/api/handlers ./cmd/graphql ./cmd/sse`, `./lesser verify openapi`,
-  `./lesser verify graphql-coverage`, `./lesser verify ci`, `go vet ./...`, `gofmt -l .`.
+- **Acceptance**: each PR targets one bounded route surface and migrates with no route inventory, OpenAPI, or GraphQL
+  contract drift unless explicitly coordinated.
+- **Validation**: targeted route tests, route inventory/parity artifact, `./lesser verify openapi` or full
+  `./lesser verify ci`, `go test ./...`, `go vet ./...`, `gofmt -l .`.
 - **Conventional Commit subject**: `fix(api): fail fast on route registration drift`.
 
 ### 6. Prototype AppTheoryFunction CDK parity for one representative Lambda
@@ -377,32 +401,58 @@ FaceTheory client-install guidance, planning/release docs.
   static build output valid.
 - Current evidence: full `./lesser verify ci`, Go tests, CDK tests, auth-ui install/audit/build all passed on the branch.
 
-### Phase 1: TableTheory Lambda timeout/context hardening
+### Phase 1a: TableTheory Lambda client semantics
 
-- Items: 2, then bounded slices of 3.
+- Items: 2 only.
 - Dependencies: Phase 0 merged or at least based on the same pins.
-- Risks: creating per-request clients could hurt cold/warm performance if implemented incorrectly; timeout buffers must
-  be applied once; local DynamoDB/dev endpoint behavior must remain intact.
-- Mitigation: keep singleton/client reuse semantics where possible, use TableTheory's LambdaDB APIs, add targeted tests,
-  and do not alter model tags or item shapes.
+- Risks: applying timeout buffers at the wrong lifecycle point could double-apply deadlines, break local DynamoDB/dev
+  endpoint behavior, or create unnecessary per-request clients.
+- Mitigation: prove `NewLambdaOptimizedClient` semantics with targeted tests, keep existing client reuse where possible,
+  use TableTheory's LambdaDB APIs, and prove timeout behavior at the repository/operation boundary.
 
-### Phase 2: AppTheory strict route registration
+### Phase 1b+: AppTheory invocation-context threading by Lambda family
 
-- Items: 4, then 5.
-- Dependencies: Phase 0; Arch approval of Phase 1 completion.
+- Items: bounded slices of 3.
+- Dependencies: Phase 1a completed and Arch-approved.
+- Risks: converting all entrypoints at once would mix unrelated Lambda behavior changes and make deadline/cancellation
+  regressions hard to localize.
+- Mitigation: one Lambda family per PR, with targeted tests and no schema/model/tag changes. If federation-delivery,
+  inbox, outbox, or moderation behavior changes beyond context propagation, run `protect-federation-trust` before landing.
+
+### Phase 2a: AppTheory strict route registration proof
+
+- Items: 4 only.
+- Dependencies: Arch approval of Phase 1 completion or explicit approval to run independently.
 - Risks: route pattern dialect differences (`:username` vs `{username}`) could silently change routing if migrated
   carelessly; API contract drift would strand clients.
-- Mitigation: start with one low-risk surface, test exact route parity, run OpenAPI/GraphQL/static contract checks, and
-  keep path strings unchanged unless AppTheory rejects them and contract review approves a mapping.
+- Mitigation: start with one low-risk surface, test exact route parity, and produce a route inventory/parity artifact in
+  addition to OpenAPI/GraphQL/static contract checks. `cmd/api/routes.go` is not the proof target.
 
-### Phase 3: AppTheory CDK function construct parity
+### Phase 2b+: Strict route expansion by bounded surface
 
-- Items: 6, then 7 only if 6 proves parity.
-- Dependencies: Phase 0; Arch approval of Phase 2 completion.
+- Items: bounded slices of 5.
+- Dependencies: Phase 2a completed and Arch-approved.
+- Risks: broader API/streaming/federation route surfaces include endpoints that are not fully represented in Mastodon
+  OpenAPI, so generated contracts alone are insufficient evidence.
+- Mitigation: migrate one bounded route surface per PR, keep path strings unchanged unless contract review approves a
+  mapping, include route inventory/parity artifacts, and run appropriate static contract verification.
+
+### Phase 3a: AppTheory CDK function construct parity proof
+
+- Items: 6 only.
+- Dependencies: Phase 0; Arch approval of Phase 2 completion or explicit approval to run independently.
 - Risks: synthesized CloudFormation resource replacement, Lambda alias/version rollback semantics, DLQ/schedule wiring,
   IAM permission drift, log-retention drift, asset-root drift.
-- Mitigation: treat item 6 as a parity proof first. If AppTheory construct support is not exact enough, stop and send a
-  framework-feedback signal rather than local workaround.
+- Mitigation: compare synthesized template semantics for one representative existing Lambda. If AppTheory construct support
+  is not exact enough, stop and send a framework-feedback signal rather than local workaround.
+
+### Phase 3b: AppTheory CDK function construct adoption
+
+- Items: 7 only if Phase 3a proves parity and Arch explicitly approves the synth/template diff.
+- Dependencies: Phase 3a completed and Arch-approved.
+- Risks: broad construct migration can change deployment artifacts even when Lambda code is untouched.
+- Mitigation: adopt only where the Phase 3a parity criteria hold; leave non-parity functions on native CDK with a
+  documented reason and/or framework-feedback signal.
 
 ### Phase 4: Release/docs closeout
 
@@ -464,12 +514,12 @@ Deployments are not part of this roadmap implementation PR loop. After merge to 
 
 Not applicable. Aron directly authorized the initiative and Arch-requested follow-up work on 2026-05-16.
 
-## Open questions for Arch
+## Arch scope-review answers
 
-1. Should Phase 1 prioritize all `NewLambdaOptimizedClient(context.Background(), ...)` call sites in one PR, or should it
-   slice by Lambda family to reduce review risk?
-2. Is strict route registration worthwhile on `cmd/api/routes.go` in one PR, or should it remain limited to smaller
-   ActivityPub/GraphQL/SSE surfaces until route dialect parity is proven?
-3. For CDK, should lesser target `AppTheoryFunction` adoption only for new Lambdas first, or is template-parity proof
-   strong enough to migrate existing functions once one representative Lambda passes?
-4. Should any of these phases be split into separate GitHub Project milestones beyond the four phases above?
+1. Slice Phase 1. Start with helper semantics/tests, then move through Lambda-family slices.
+2. Do not put all of `cmd/api/routes.go` in the first strict-route PR. Prove dialect/canonicalization and route parity
+   on a small surface first.
+3. Use template-parity proof before migrating existing functions. New-Lambdas-only is safe but less useful; representative
+   existing-Lambda parity is the better proof, with adoption gated on separate review.
+4. Split milestones/PRs beyond the original four phases: Phase 1a vs Phase 1b+ slices, Phase 2a vs Phase 2b+ slices,
+   and Phase 3a vs Phase 3b.
