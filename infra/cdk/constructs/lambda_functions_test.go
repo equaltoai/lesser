@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
@@ -123,12 +124,39 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 
 	// Synthesis triggers asset binding and metadata attachment.
 	app.Synth(nil)
+	template := loadTemplate(t, filepath.Join(outdir, "TestStack.template.json"))
+	logicalIDsByName := collectLambdaLogicalIDsByFunctionName(t, template)
+	if got := len(preAppTheoryLambdaLogicalIDs); got != preAppTheoryLambdaLogicalIDCount {
+		t.Fatalf("legacy logical ID map size changed: got %d want %d", got, preAppTheoryLambdaLogicalIDCount)
+	}
+	legacyLogicalIDsSeen := 0
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		fn := functions.Must(spec.Name)
 		wantName := naming.ResourceName(spec.Name, environment)
 		if got := resolveConfiguredFunctionName(t, fn); got != wantName {
 			t.Fatalf("unexpected function name for %s: %s", spec.Name, got)
+		}
+
+		construct := stack.Node().FindChild(jsii.String(spec.Name + "Function"))
+		if construct == nil {
+			t.Fatalf("function construct not found for %s", spec.Name)
+		}
+		if usesAppTheoryFunction(spec) {
+			if _, ok := construct.(apptheorycdk.AppTheoryFunction); !ok {
+				t.Fatalf("expected AppTheoryFunction construct for %s, got %T", spec.Name, construct)
+			}
+		} else if _, ok := construct.(awslambda.Function); !ok {
+			t.Fatalf("triggered lambda %s should remain native CDK until downstream logical ID parity is proven, got %T", spec.Name, construct)
+		}
+
+		if wantLogicalID, ok := preAppTheoryLambdaLogicalIDs[spec.Name]; ok {
+			legacyLogicalIDsSeen++
+			if got := logicalIDsByName[wantName]; got != wantLogicalID {
+				t.Fatalf("lambda logical ID changed for %s: got %s want %s", spec.Name, got, wantLogicalID)
+			}
+		} else if got := logicalIDsByName[wantName]; got == "" {
+			t.Fatalf("lambda logical ID missing for %s", spec.Name)
 		}
 
 		logGroupName := resolveLogGroupName(t, stack, spec.Name)
@@ -153,6 +181,35 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 	if apiFn.Architecture() != awslambda.Architecture_ARM_64() {
 		t.Fatalf("unexpected architecture: %v", apiFn.Architecture())
 	}
+	if legacyLogicalIDsSeen != preAppTheoryLambdaLogicalIDCount {
+		t.Fatalf("legacy logical ID map has stale entries: saw %d of %d", legacyLogicalIDsSeen, preAppTheoryLambdaLogicalIDCount)
+	}
+}
+
+func collectLambdaLogicalIDsByFunctionName(t *testing.T, tpl map[string]any) map[string]string {
+	t.Helper()
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("template resources missing or wrong type")
+	}
+	result := make(map[string]string)
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok || res["Type"] != "AWS::Lambda::Function" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		functionName, ok := props["FunctionName"].(string)
+		if !ok || functionName == "" {
+			continue
+		}
+		result[functionName] = logicalID
+	}
+	return result
 }
 
 func resolveConfiguredFunctionName(t *testing.T, fn awslambda.Function) string {
