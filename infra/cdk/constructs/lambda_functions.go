@@ -46,6 +46,58 @@ type LambdaFunctions struct {
 	Functions map[string]awslambda.Function
 }
 
+// preAppTheoryLambdaLogicalIDs records the CloudFormation logical IDs generated
+// by the native CDK Lambda construct before the AppTheoryFunction adoption.
+//
+// AppTheoryFunction wraps the underlying AWS::Lambda::Function under a nested
+// "Function" child. That is idiomatic for new constructs, but migrating existing
+// lesser Lambdas without preserving these logical IDs would ask CloudFormation to
+// replace every function even though physical FunctionName values are unchanged.
+// Keep this map for the pre-existing inventory Lambdas only; new inventory
+// Lambdas should use AppTheoryFunction's natural logical IDs.
+const preAppTheoryLambdaLogicalIDCount = 38
+
+var preAppTheoryLambdaLogicalIDs = map[string]string{
+	"activity-processor":            "activityprocessorFunction363D35B9",
+	"actor":                         "actorFunction4F1B5B35",
+	"ai-processor":                  "aiprocessorFunction80F9FEE9",
+	"api":                           "apiFunction73599D16",
+	"cms-scheduler":                 "cmsschedulerFunction7389FCD5",
+	"collections":                   "collectionsFunctionB3956451",
+	"cost-aggregator":               "costaggregatorFunction6A1DA294",
+	"dlq-processor":                 "dlqprocessorFunction1B32771C",
+	"enhanced-federation-processor": "enhancedfederationprocessorFunction1B66F94B",
+	"export-generator":              "exportgeneratorFunctionF1137BBF",
+	"federation-aggregator":         "federationaggregatorFunction2454A6CE",
+	"federation-delivery":           "federationdeliveryFunction0574D778",
+	"federation-timeseries":         "federationtimeseriesFunction5655FEB8",
+	"federation-tracker":            "federationtrackerFunction998CD9D6",
+	"graphql":                       "graphqlFunction067C62D4",
+	"graphql-ws":                    "graphqlwsFunction2605C748",
+	"import-processor":              "importprocessorFunction03DACDBF",
+	"inbox":                         "inboxFunction22ED6D87",
+	"media-processor":               "mediaprocessorFunction55166D54",
+	"metrics-aggregator":            "metricsaggregatorFunction61E5EE49",
+	"metrics-processor":             "metricsprocessorFunction985F65E4",
+	"ml-training-processor":         "mltrainingprocessorFunction1F30198A",
+	"moderation-processor":          "moderationprocessorFunction33714409",
+	"note-processor":                "noteprocessorFunction71938A48",
+	"notification-processor":        "notificationprocessorFunctionC222A047",
+	"objects":                       "objectsFunction46AD58EB",
+	"outbox":                        "outboxFunction51296F97",
+	"push-delivery":                 "pushdeliveryFunctionB7BE0F3C",
+	"report-trust-updater":          "reporttrustupdaterFunctionA287D274",
+	"search-indexer":                "searchindexerFunction2D70A8F2",
+	"severance-processor":           "severanceprocessorFunction879E1935",
+	"sse":                           "sseFunction277E5041",
+	"status-indexer":                "statusindexerFunction70FCBEBE",
+	"stream-router":                 "streamrouterFunction3BCEAE5E",
+	"streaming":                     "streamingFunction6A4849EF",
+	"trend-aggregator":              "trendaggregatorFunction8820FAD6",
+	"webfinger":                     "webfingerFunctionB71806D6",
+	"websocket-cost-aggregator":     "websocketcostaggregatorFunction0068CAA1",
+}
+
 // Must returns the named function or panics if missing.
 func (l *LambdaFunctions) Must(name string) awslambda.Function {
 	if fn, ok := l.Functions[name]; ok {
@@ -248,7 +300,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			validateScheduleCapable(spec)
 		}
 
-		fn := awslambda.NewFunction(stack, jsii.String(spec.Name+"Function"), &fnProps)
+		fn := newInventoryLambdaFunction(stack, spec, &fnProps)
 		functions.Functions[spec.Name] = fn
 
 		if len(spec.ScheduleTriggers) == 0 {
@@ -289,6 +341,57 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	}
 
 	return functions
+}
+
+func newInventoryLambdaFunction(stack awscdk.Stack, spec inventory.LambdaSpec, fnProps *awslambda.FunctionProps) awslambda.Function {
+	if !usesAppTheoryFunction(spec) {
+		return awslambda.NewFunction(stack, jsii.String(spec.Name+"Function"), fnProps)
+	}
+
+	appTheoryFn := apptheorycdk.NewAppTheoryFunction(stack, jsii.String(spec.Name+"Function"), appTheoryFunctionProps(fnProps))
+	fn := appTheoryFn.Fn()
+	preservePreAppTheoryLambdaLogicalID(fn, spec.Name)
+	return fn
+}
+
+func usesAppTheoryFunction(spec inventory.LambdaSpec) bool {
+	// Phase 3b adopts AppTheoryFunction only for Lambdas whose downstream
+	// resources do not derive logical IDs from the Lambda construct path.
+	// Stream/SQS mappings and schedule permissions need a separate parity proof
+	// before their functions migrate, because AppTheoryFunction's nested child
+	// path changes those dependent resource logical IDs even when the Lambda
+	// resource itself is preserved.
+	return len(spec.SQSTriggers) == 0 && len(spec.StreamTriggers) == 0 && len(spec.ScheduleTriggers) == 0
+}
+
+func appTheoryFunctionProps(props *awslambda.FunctionProps) *apptheorycdk.AppTheoryFunctionProps {
+	return &apptheorycdk.AppTheoryFunctionProps{
+		Runtime:      props.Runtime,
+		Architecture: props.Architecture,
+		MemorySize:   props.MemorySize,
+		Timeout:      props.Timeout,
+		Environment:  props.Environment,
+		Tracing:      props.Tracing,
+		FunctionName: props.FunctionName,
+		Code:         props.Code,
+		Handler:      props.Handler,
+		LogGroup:     props.LogGroup,
+		Role:         props.Role,
+	}
+}
+
+func preservePreAppTheoryLambdaLogicalID(fn awslambda.Function, lambdaName string) {
+	logicalID, ok := preAppTheoryLambdaLogicalIDs[lambdaName]
+	if !ok {
+		return
+	}
+
+	child := fn.Node().DefaultChild()
+	cfn, ok := child.(awslambda.CfnFunction)
+	if !ok {
+		panic(fmt.Sprintf("lambda %s default child is %T, want awslambda.CfnFunction", lambdaName, child))
+	}
+	cfn.OverrideLogicalId(jsii.String(logicalID))
 }
 
 func copyEnv(src map[string]*string) map[string]*string {

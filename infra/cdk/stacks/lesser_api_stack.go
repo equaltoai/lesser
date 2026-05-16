@@ -286,6 +286,9 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	clientPolicy := localconstructs.NewClientSSRResponseHeadersPolicy(s.Stack)
 	rewriteFn := newClientFrontendRewriteFunction(s.Stack)
 
+	// Keep the SSR host on native CDK until it has its own AppTheoryFunction parity proof.
+	// Phase 3b adoption is limited to inventory Lambdas created by CreateLambdaFunctions;
+	// this helper has Function URL + CloudFront-origin behavior outside that proof surface.
 	clientSSRFn := awslambda.NewFunction(s.Stack, jsii.String("ClientSSRHostFunction"), &awslambda.FunctionProps{
 		Runtime:      awslambda.Runtime_NODEJS_22_X(),
 		Handler:      jsii.String("index.handler"),
