@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,10 +32,114 @@ var (
 	getAppConfig               = config.Get
 	newDynamormStandardClient  = func(cfg session.Config) (core.DB, error) { return tabletheory.New(cfg) }
 	newDynamormLambdaOptimized = tabletheory.NewLambdaOptimized
+
+	lambdaClientEnvMu                 sync.Mutex
+	newDynamormLambdaOptimizedWithEnv = func(opts lambdaOptimizedClientOptions) (*tabletheory.LambdaDB, error) {
+		lambdaClientEnvMu.Lock()
+		defer lambdaClientEnvMu.Unlock()
+
+		return withLambdaOptimizedEnvironment(opts, newDynamormLambdaOptimized)
+	}
 )
 
 type typeConverterRegistrar interface {
 	RegisterTypeConverter(reflect.Type, tabletypes.CustomConverter) error
+}
+
+type lambdaOptimizedClientOptions struct {
+	Region   string
+	Endpoint string
+}
+
+func lambdaOptimizedClientOptionsFor(region string) lambdaOptimizedClientOptions {
+	opts := lambdaOptimizedClientOptions{
+		Region: selectLambdaOptimizedRegion(region),
+	}
+
+	if cfg := getAppConfig(); cfg != nil {
+		opts.Endpoint = strings.TrimSpace(cfg.DynamoDBEndpoint)
+	}
+
+	return opts
+}
+
+func selectLambdaOptimizedRegion(region string) string {
+	if trimmed := strings.TrimSpace(region); trimmed != "" {
+		return trimmed
+	}
+	if envRegion := strings.TrimSpace(os.Getenv("AWS_REGION")); envRegion != "" {
+		return envRegion
+	}
+	if envDefault := strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION")); envDefault != "" {
+		return envDefault
+	}
+	return "us-east-1"
+}
+
+func withLambdaOptimizedEnvironment(
+	opts lambdaOptimizedClientOptions,
+	factory func() (*tabletheory.LambdaDB, error),
+) (*tabletheory.LambdaDB, error) {
+	if factory == nil {
+		return nil, fmt.Errorf("lambda-optimized DynamORM factory is nil")
+	}
+
+	// TableTheory's Lambda helper intentionally reads AWS runtime settings from
+	// the environment. Keep lesser's explicit-region and local-endpoint behavior
+	// by bridging them through the AWS SDK environment variables only while the
+	// Lambda-optimized client is constructed.
+	restoreRegion := setTemporaryEnv("AWS_REGION", opts.Region)
+	defer restoreRegion()
+
+	restoreEndpoint := func() {}
+	if opts.Endpoint != "" {
+		ensureLocalDynamoDBCredentials()
+		restoreEndpoint = setTemporaryEnv("AWS_ENDPOINT_URL_DYNAMODB", opts.Endpoint)
+	}
+	defer restoreEndpoint()
+
+	return factory()
+}
+
+func setTemporaryEnv(key, value string) func() {
+	previous, existed := os.LookupEnv(key)
+	_ = os.Setenv(key, value)
+
+	return func() {
+		if existed {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	}
+}
+
+func ensureLocalDynamoDBCredentials() {
+	if strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID")) == "" {
+		_ = os.Setenv("AWS_ACCESS_KEY_ID", "fakeMyKeyId")
+	}
+	if strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY")) == "" {
+		_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "fakeSecretAccessKey")
+	}
+}
+
+func newConfiguredLambdaOptimizedClient(opts lambdaOptimizedClientOptions) (*tabletheory.LambdaDB, error) {
+	lambdaClient, err := newDynamormLambdaOptimizedWithEnv(opts)
+	if err != nil {
+		return nil, err
+	}
+	if lambdaClient == nil {
+		return nil, fmt.Errorf("initialize Lambda-optimized DynamORM: nil client")
+	}
+
+	lambdaClient = lambdaClient.WithLambdaTimeoutConfig(tabletheory.LambdaTimeoutConfig{
+		Buffer: defaultTimeoutBuffer,
+	})
+	if err := registerDefaultTypeConverters(lambdaClient); err != nil {
+		return nil, err
+	}
+
+	return lambdaClient, nil
 }
 
 func registerDefaultTypeConverters(db core.DB) error {
@@ -119,25 +224,10 @@ func getLambdaOptimizedClient() (*tabletheory.LambdaDB, error) {
 
 		// Create Lambda-optimized client
 		var err error
-		lambdaDB, err = newDynamormLambdaOptimized()
+		lambdaDB, err = newConfiguredLambdaOptimizedClient(lambdaOptimizedClientOptionsFor(""))
 		if err != nil {
 			clientErr = err
 			zap.L().Error("failed to initialize DynamORM", zap.Error(err))
-			return
-		}
-		if lambdaDB == nil {
-			clientErr = fmt.Errorf("initialize Lambda-optimized DynamORM: nil client")
-			zap.L().Error("failed to initialize DynamORM", zap.Error(clientErr))
-			return
-		}
-
-		// Store the standard client interface for compatibility
-		lambdaDB = lambdaDB.WithLambdaTimeoutConfig(tabletheory.LambdaTimeoutConfig{
-			Buffer: defaultTimeoutBuffer,
-		})
-		if err := registerDefaultTypeConverters(lambdaDB); err != nil {
-			clientErr = err
-			zap.L().Error("failed to register type converters", zap.Error(err))
 			return
 		}
 		client = lambdaDB

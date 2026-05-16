@@ -4,9 +4,12 @@ import (
 	"context"
 	stdErrors "errors"
 	"testing"
+	"time"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
 )
@@ -40,13 +43,25 @@ func TestBaseModel_Hooks(t *testing.T) {
 }
 
 func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
-	orig := newDynamormClient
-	t.Cleanup(func() { newDynamormClient = orig })
+	origGetConfig := getAppConfig
+	origLambdaClient := newDynamormLambdaOptimizedWithEnv
+	origStandardClient := newDynamormStandardClient
+	t.Cleanup(func() {
+		getAppConfig = origGetConfig
+		newDynamormLambdaOptimizedWithEnv = origLambdaClient
+		newDynamormStandardClient = origStandardClient
+	})
 
-	var gotCfg session.Config
-	newDynamormClient = func(cfg session.Config) (core.DB, error) {
-		gotCfg = cfg
-		return fakeDB{}, nil
+	getAppConfig = func() *config.Config { return &config.Config{} }
+	newDynamormStandardClient = func(cfg session.Config) (core.DB, error) {
+		t.Fatalf("NewLambdaOptimizedClient must not create a standard TableTheory DB: %#v", cfg)
+		return nil, nil
+	}
+
+	var gotOpts lambdaOptimizedClientOptions
+	newDynamormLambdaOptimizedWithEnv = func(opts lambdaOptimizedClientOptions) (*tabletheory.LambdaDB, error) {
+		gotOpts = opts
+		return tabletheory.NewLambdaOptimized()
 	}
 
 	t.Run("explicit region wins", func(t *testing.T) {
@@ -55,7 +70,7 @@ func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
 
 		_, err := NewLambdaOptimizedClient(context.Background(), " us-west-2 ")
 		require.NoError(t, err)
-		assert.Equal(t, "us-west-2", gotCfg.Region)
+		assert.Equal(t, "us-west-2", gotOpts.Region)
 	})
 
 	t.Run("AWS_REGION fallback", func(t *testing.T) {
@@ -64,7 +79,7 @@ func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
 
 		_, err := NewLambdaOptimizedClient(context.Background(), "")
 		require.NoError(t, err)
-		assert.Equal(t, "eu-central-1", gotCfg.Region)
+		assert.Equal(t, "eu-central-1", gotOpts.Region)
 	})
 
 	t.Run("AWS_DEFAULT_REGION fallback", func(t *testing.T) {
@@ -73,7 +88,7 @@ func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
 
 		_, err := NewLambdaOptimizedClient(context.Background(), "")
 		require.NoError(t, err)
-		assert.Equal(t, "ap-southeast-1", gotCfg.Region)
+		assert.Equal(t, "ap-southeast-1", gotOpts.Region)
 	})
 
 	t.Run("default when env empty", func(t *testing.T) {
@@ -82,12 +97,12 @@ func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
 
 		_, err := NewLambdaOptimizedClient(context.Background(), "")
 		require.NoError(t, err)
-		assert.Equal(t, "us-east-1", gotCfg.Region)
+		assert.Equal(t, "us-east-1", gotOpts.Region)
 	})
 
 	t.Run("propagates init errors", func(t *testing.T) {
-		newDynamormClient = func(cfg session.Config) (core.DB, error) {
-			gotCfg = cfg
+		newDynamormLambdaOptimizedWithEnv = func(opts lambdaOptimizedClientOptions) (*tabletheory.LambdaDB, error) {
+			gotOpts = opts
 			return nil, stdErrors.New("boom")
 		}
 
@@ -96,6 +111,56 @@ func TestNewLambdaOptimizedClient_RegionSelection(t *testing.T) {
 
 		_, err := NewLambdaOptimizedClient(context.Background(), "")
 		require.Error(t, err)
+		assert.Equal(t, "us-east-1", gotOpts.Region)
+	})
+}
+
+func TestNewLambdaOptimizedClient_LocalEndpointBehavior(t *testing.T) {
+	origGetConfig := getAppConfig
+	origLambdaClient := newDynamormLambdaOptimizedWithEnv
+	t.Cleanup(func() {
+		getAppConfig = origGetConfig
+		newDynamormLambdaOptimizedWithEnv = origLambdaClient
+	})
+
+	getAppConfig = func() *config.Config {
+		return &config.Config{DynamoDBEndpoint: " http://localhost:8000 "}
+	}
+
+	var gotOpts lambdaOptimizedClientOptions
+	newDynamormLambdaOptimizedWithEnv = func(opts lambdaOptimizedClientOptions) (*tabletheory.LambdaDB, error) {
+		gotOpts = opts
+		return tabletheory.NewLambdaOptimized()
+	}
+
+	db, err := NewLambdaOptimizedClient(nil, "us-west-2")
+	require.NoError(t, err)
+	require.IsType(t, &tabletheory.LambdaDB{}, db)
+	assert.Equal(t, "us-west-2", gotOpts.Region)
+	assert.Equal(t, "http://localhost:8000", gotOpts.Endpoint)
+}
+
+func TestNewLambdaOptimizedClient_ContextHandling(t *testing.T) {
+	t.Run("nil context returns buffered lambda client without deadline", func(t *testing.T) {
+		db, err := NewLambdaOptimizedClient(nil, "us-east-1")
+		require.NoError(t, err)
+		require.IsType(t, &tabletheory.LambdaDB{}, db)
+
+		assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+		assert.True(t, lambdaDeadlineOf(t, db).IsZero())
+	})
+
+	t.Run("deadline context applies lambda timeout", func(t *testing.T) {
+		deadline := time.Now().Add(30 * time.Second).Round(0)
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+
+		db, err := NewLambdaOptimizedClient(ctx, "us-east-1")
+		require.NoError(t, err)
+		require.IsType(t, &tabletheory.LambdaDB{}, db)
+
+		assert.Equal(t, defaultTimeoutBuffer, lambdaTimeoutBufferOf(t, db))
+		assert.Equal(t, deadline, lambdaDeadlineOf(t, db))
 	})
 }
 
