@@ -59,6 +59,8 @@ TARGETS=(
   "darwin arm64"
 )
 
+bash "${ROOT_DIR}/scripts/verify_auth_ui_csp.sh"
+
 echo "Building auth UI release bundle"
 cd "${ROOT_DIR}/auth-ui"
 corepack pnpm install --frozen-lockfile
