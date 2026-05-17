@@ -342,8 +342,8 @@ The release-driven deploy contract is enforced by:
   - `docs/contracts/examples/lesser-deploy-assembly.example.json`
 - release asset verification in `lesser verify artifact-deploy --release-dir ...`
 - CI and release publication running `bash scripts/verify_artifact_deploy.sh`
-- release publication running `bash scripts/verify_auth_ui_csp.sh` after the final auth UI build, before
-  `lesser-auth-ui.tar.gz` is packaged
+- CI and release publication running `bash scripts/verify_auth_ui_csp.sh` as a fail-fast freshness check before release
+  assets are built
 - targeted stack and CLI tests that prove release-mode deploys avoid repo-local rebuilds and repo-local `cdk synth`
 
 The certification goal is straightforward:

@@ -52,6 +52,7 @@ bash scripts/reproduce_ci_verify.sh
 This is equivalent to:
 
 ```bash
+bash scripts/verify_auth_ui_csp.sh
 bash scripts/install_ci_tools.sh
 go build -o lesser ./cmd/lesser
 ./lesser build lambdas
@@ -62,6 +63,8 @@ bash scripts/verify_artifact_deploy.sh
 Notes:
 
 - `./lesser verify ci` is stricter than `./lesser verify` (adds lint, security scans, supply chain verification, strict OpenAPI, and coverage gates).
+- `scripts/verify_auth_ui_csp.sh` is a fail-fast CI/release freshness gate. It verifies the CloudFront auth UI CSP hash
+  definitions are at least as new as auth UI source/config changes without rebuilding or comparing generated `dist`.
 - Artifact-driven deploy certification is a separate CI/release step because it exercises focused `cmd/lesser` and nested `infra/cdk/stacks` regressions that protect `--release-dir` stage-stack behavior.
 - By default, the `./lesser` CLI caps Go/lint parallelism on high-core machines to avoid host OOMs (sets `GOMAXPROCS` and `GOFLAGS=-p` up to 4). Override with `LESSER_JOBS` (or your own `GOMAXPROCS` / `GOFLAGS`).
 - CI runs coverage in short mode and skips HTML generation to keep runtime down (`./lesser test coverage --scope overall --short --verbose=false --exclude-generated=false --html=false`).
