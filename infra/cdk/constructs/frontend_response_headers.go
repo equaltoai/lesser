@@ -145,11 +145,11 @@ func buildFrontendStaticCSP(domainName *string) string {
 func authUIInlineScriptHashes() []string {
 	return []string{
 		// Astro/Svelte island runtime snippets generated into auth-ui/dist/*.html.
-		// Refresh after auth-ui dependency bumps with:
+		// Verified for every release after the auth UI build with:
 		//   pnpm --dir auth-ui install --frozen-lockfile && pnpm --dir auth-ui build
+		//   bash scripts/verify_auth_ui_csp.sh
 		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
-		"'sha256-BrDhGE1lwa85arfXcrBxSo+n37uVSX5CAROXnIM6Q+g='",
-		"'sha256-QJZDUlo/qa5AJCrG6vHyWcatjwCeWidEHQfJc601lzw='",
+		"'sha256-SaCkFfPruIdTXT8/97JArQmGxiJAL2o4bBDvSgJ5y3Q='",
 		"'sha256-eIXWvAmxkr251LJZkjniEK5LcPF3NkapbJepohwYRIc='",
 		"'sha256-IV0HjYu959C/EiJIL2l/9Ty8PA4757JXhA/g112YXVE='",
 	}
@@ -157,11 +157,6 @@ func authUIInlineScriptHashes() []string {
 
 func authUIInlineStyleHashes() []string {
 	return []string{
-		"'sha256-Eq62DWSZ57jJZCUv6mhFsTpy7vjhvM2oZhAX+bvTTN4='",
-		"'sha256-Np+0wo4qGeEiSfIZluf224zV9nNLY+nOGde1KcwOB8g='",
-		"'sha256-1mD1INqKidrIyg8naC+GEWKaF7uCtCKeBQqXOxf8LM8='",
-		"'sha256-iegu0Wb3dMBfhqOyzQ8kCD9W04jq6I7g1SiDlmvSiSg='",
-		"'sha256-qkbV7mmkk3RRKy6Ha/Sdwvz6VwoEghyumJdMY397/D0='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
 	}
 }

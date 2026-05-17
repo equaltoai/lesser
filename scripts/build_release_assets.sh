@@ -65,6 +65,8 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm build
 cd "${ROOT_DIR}"
 
+bash "${ROOT_DIR}/scripts/verify_auth_ui_csp.sh"
+
 echo "Building canonical Lambda zip artifacts"
 go run ./cmd/lesser build lambdas --rebuild
 

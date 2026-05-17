@@ -1,6 +1,12 @@
 package stacks
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -16,8 +22,7 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 	}
 	requireContainsAll(t, csp, []string{
 		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
-		"'sha256-BrDhGE1lwa85arfXcrBxSo+n37uVSX5CAROXnIM6Q+g='",
-		"'sha256-QJZDUlo/qa5AJCrG6vHyWcatjwCeWidEHQfJc601lzw='",
+		"'sha256-SaCkFfPruIdTXT8/97JArQmGxiJAL2o4bBDvSgJ5y3Q='",
 		"'sha256-eIXWvAmxkr251LJZkjniEK5LcPF3NkapbJepohwYRIc='",
 		"'sha256-IV0HjYu959C/EiJIL2l/9Ty8PA4757JXhA/g112YXVE='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
@@ -76,6 +81,25 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 			t.Fatalf("behavior %q must not attach ResponseHeadersPolicyId (API-owned route)", pathPattern)
 		}
 	}
+}
+
+func TestFrontendStaticCSPMatchesBuiltAuthUIDist(t *testing.T) {
+	repoRoot := findRepoRootForAuthUITest(t)
+	distDir := filepath.Join(repoRoot, "auth-ui", "dist")
+	if _, err := os.Stat(filepath.Join(distDir, "index.html")); err != nil {
+		if os.Getenv("LESSER_REQUIRE_AUTH_UI_CSP_DIST") == "1" {
+			t.Fatalf("auth-ui/dist is required for release CSP verification; run `corepack pnpm --dir auth-ui -s build`: %v", err)
+		}
+		t.Skipf("auth-ui/dist is not built: %v", err)
+	}
+
+	distHashes := collectAuthUIInlineHashes(t, distDir)
+	resources := synthClientFrontendResources(t)
+	_, authPolicy, _, _ := findFrontendResponseHeadersPolicies(t, resources)
+	csp := extractResponseHeadersPolicyCSP(t, authPolicy)
+
+	assertCSPHashSet(t, csp, "script-src", distHashes.scripts)
+	assertCSPHashSet(t, csp, "style-src", distHashes.styles)
 }
 
 func findFrontendResponseHeadersPolicies(t *testing.T, resources map[string]any) (string, map[string]any, string, map[string]any) {
@@ -257,4 +281,126 @@ func requireContainsAll(t *testing.T, haystack string, needles []string) {
 			t.Fatalf("expected CSP to contain %q", needle)
 		}
 	}
+}
+
+type authUIInlineHashes struct {
+	scripts map[string]struct{}
+	styles  map[string]struct{}
+}
+
+func findRepoRootForAuthUITest(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	for dir := wd; ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, "auth-ui", "package.json")); err == nil {
+			return dir
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			t.Fatalf("could not find repo root containing auth-ui/package.json from %s", wd)
+		}
+	}
+}
+
+func collectAuthUIInlineHashes(t *testing.T, distDir string) authUIInlineHashes {
+	t.Helper()
+	result := authUIInlineHashes{
+		scripts: map[string]struct{}{},
+		styles:  map[string]struct{}{},
+	}
+	scriptRe := regexp.MustCompile(`(?is)<script([^>]*)>(.*?)</script>`)
+	styleRe := regexp.MustCompile(`(?is)<style([^>]*)>(.*?)</style>`)
+
+	err := filepath.WalkDir(distDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".html" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		html := string(data)
+		for _, match := range scriptRe.FindAllStringSubmatch(html, -1) {
+			if len(match) < 3 || strings.Contains(strings.ToLower(match[1]), "src=") {
+				continue
+			}
+			result.scripts[cspSHA256Source(match[2])] = struct{}{}
+		}
+		for _, match := range styleRe.FindAllStringSubmatch(html, -1) {
+			if len(match) < 3 {
+				continue
+			}
+			result.styles[cspSHA256Source(match[2])] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk auth-ui dist: %v", err)
+	}
+	if len(result.scripts) == 0 {
+		t.Fatalf("auth-ui dist has no inline scripts to verify")
+	}
+	return result
+}
+
+func cspSHA256Source(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
+
+func assertCSPHashSet(t *testing.T, csp string, directive string, want map[string]struct{}) {
+	t.Helper()
+	got := map[string]struct{}{}
+	for _, source := range cspDirectiveSources(csp, directive) {
+		if strings.HasPrefix(source, "'sha256-") {
+			got[source] = struct{}{}
+		}
+	}
+	if !sameStringSet(got, want) {
+		t.Fatalf("%s CSP hashes do not match built auth-ui/dist\nmissing from CSP: %v\nstale in CSP: %v",
+			directive,
+			setDifference(want, got),
+			setDifference(got, want),
+		)
+	}
+}
+
+func cspDirectiveSources(csp string, directive string) []string {
+	for _, part := range strings.Split(csp, ";") {
+		fields := strings.Fields(strings.TrimSpace(part))
+		if len(fields) == 0 || fields[0] != directive {
+			continue
+		}
+		return fields[1:]
+	}
+	return nil
+}
+
+func sameStringSet(left map[string]struct{}, right map[string]struct{}) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key := range left {
+		if _, ok := right[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func setDifference(left map[string]struct{}, right map[string]struct{}) []string {
+	var diff []string
+	for key := range left {
+		if _, ok := right[key]; !ok {
+			diff = append(diff, key)
+		}
+	}
+	sort.Strings(diff)
+	return diff
 }

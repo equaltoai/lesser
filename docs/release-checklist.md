@@ -10,6 +10,8 @@ This checklist is for maintainers preparing a release/deployable build.
 ## Verify gates (local or CI)
 
 - [ ] Build lambdas: `./lesser build lambdas`
+- [ ] Build auth UI and verify CloudFront CSP hashes:
+      `corepack pnpm --dir auth-ui -s build && bash scripts/verify_auth_ui_csp.sh`
 - [ ] Run the CI gate: `./lesser verify ci`
   - Generates a module inventory snapshot in `report/module_inventory.txt`
 - [ ] Run artifact-driven deploy certification: `bash scripts/verify_artifact_deploy.sh [dist/release]`
@@ -22,6 +24,8 @@ This checklist is for maintainers preparing a release/deployable build.
   - FaceTheory `v3.1.2` for client-app guidance
 - [ ] Confirm auth UI dependency remediation remains intact (`cd auth-ui && corepack pnpm audit --prod` when touching
       `auth-ui/package.json` or `auth-ui/pnpm-lock.yaml`)
+- [ ] Confirm the auth UI CSP hash gate passed after the final release auth UI build. The release asset builder runs
+      `bash scripts/verify_auth_ui_csp.sh` before packaging `lesser-auth-ui.tar.gz`.
 - [ ] Confirm any framework-release notes say what did **not** change: no DynamoDB schema migration, no Mastodon REST /
       GraphQL / ActivityPub response-shape change, no federation signing/verification behavior change, and no release
       artifact shape change unless the release intentionally includes one.
