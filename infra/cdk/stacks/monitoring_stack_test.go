@@ -24,6 +24,7 @@ func TestMonitoringStackSynthCreatesInventoryLambdaAlarms(t *testing.T) {
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		physical := lambdaPhysicalName(appName, environment, spec.Name)
 		requireAlarm(t, alarms, fmt.Sprintf("%s-error-rate", physical))
+		requireAlarm(t, alarms, fmt.Sprintf("%s-errors", physical))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-duration", physical))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-throttles", physical))
 		if isStreamLambda(spec) {
@@ -80,6 +81,7 @@ func TestMonitoringStackSynthCreatesQueueAndTableAlarms(t *testing.T) {
 		primary := queuePhysicalName(appName, environment, q.Logical)
 		dlq := queuePhysicalName(appName, environment, q.DLQLogical)
 		requireAlarm(t, alarms, fmt.Sprintf("%s-age", primary))
+		requireAlarm(t, alarms, fmt.Sprintf("%s-depth", primary))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-depth", dlq))
 	}
 

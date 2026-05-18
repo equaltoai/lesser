@@ -84,6 +84,26 @@ var stageLookupParameterNames = map[string]struct{}{
 
 var cloudFormationLogicalIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
+var stageReleaseParameters = []struct {
+	Name        string
+	Description string
+	WithDefault bool
+	Default     string
+}{
+	{Name: "AppSlug", Description: "app slug / stack prefix for this installation"},
+	{Name: "BaseDomain", Description: "base domain for this installation"},
+	{Name: "HostedZoneId", Description: "route53 hosted zone id for the base domain"},
+	{Name: "ReleaseAssetBucketName", Description: "shared release asset bucket used for deploy assembly uploads"},
+	{Name: "LesserHostUrl", Description: "managed Lesser host base URL", WithDefault: true},
+	{Name: "LesserHostAttestationsUrl", Description: "managed Lesser host attestations URL", WithDefault: true},
+	{Name: "LesserHostInstanceKeyArn", Description: "managed Lesser host instance key secret ARN", WithDefault: true},
+	{Name: "TranslationEnabled", Description: "per-install translation toggle", WithDefault: true},
+	{Name: "TipEnabled", Description: "per-install tips toggle", WithDefault: true},
+	{Name: "TipChainId", Description: "per-install tip chain id", WithDefault: true},
+	{Name: "TipContractAddress", Description: "per-install tip contract address", WithDefault: true},
+	{Name: "ApiCorsAllowedOrigins", Description: "per-install API browser CORS origins", WithDefault: true},
+}
+
 // DeployAssemblyDescriptor describes the published deploy assembly archive and
 // the outer executor contract.
 type DeployAssemblyDescriptor struct {
@@ -415,20 +435,52 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 
 	stripCDKBootstrapValidation(template)
 	deleteStageLookupParameters(template)
-	addStringParameter(template, "AppSlug", "app slug / stack prefix for this installation", false, "")
-	addStringParameter(template, "BaseDomain", "base domain for this installation", false, "")
-	addStringParameter(template, "HostedZoneId", "route53 hosted zone id for the base domain", false, "")
-	addStringParameter(template, "ReleaseAssetBucketName", "shared release asset bucket used for deploy assembly uploads", false, "")
-	addStringParameter(template, "LesserHostUrl", "managed Lesser host base URL", true, "")
-	addStringParameter(template, "LesserHostAttestationsUrl", "managed Lesser host attestations URL", true, "")
-	addStringParameter(template, "LesserHostInstanceKeyArn", "managed Lesser host instance key secret ARN", true, "")
-	addStringParameter(template, "TranslationEnabled", "per-install translation toggle", true, "")
-	addStringParameter(template, "TipEnabled", "per-install tips toggle", true, "")
-	addStringParameter(template, "TipChainId", "per-install tip chain id", true, "")
-	addStringParameter(template, "TipContractAddress", "per-install tip contract address", true, "")
-	addStringParameter(template, "ApiCorsAllowedOrigins", "per-install API browser CORS origins", true, "")
+	addStageReleaseParameters(template)
 
-	replacements := orderedPlaceholderReplacements(map[string]string{
+	replacements := stageTemplateReplacements(stage)
+
+	transformed, err := transformTemplateValues(template, func(path []string) bool {
+		return len(path) == 3 && path[0] == "Parameters" && path[2] == "Default" && generatedParameterName(path[1])
+	}, replacements)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	replaceStageLookupRefs(transformed, stage)
+	injectNestedStackReleaseParameters(transformed)
+	if err := normalizeTemplateDependsOn(transformed); err != nil {
+		return nil, nil, err
+	}
+
+	templateBytes, err := marshalTemplateJSON(transformed)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	assets, err := collectDeployAssets(stackName, assetsManifest, func(sourcePath string, data []byte) ([]byte, error) {
+		if !isNestedTemplateAsset(sourcePath) {
+			return data, nil
+		}
+		transformedData, err := transformNestedStageTemplateAsset(data, stage, replacements)
+		if err != nil {
+			return nil, fmt.Errorf("transform nested deploy template %s: %w", filepath.Base(sourcePath), err)
+		}
+		return transformedData, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return templateBytes, assets, nil
+}
+
+func addStageReleaseParameters(template map[string]any) {
+	for _, param := range stageReleaseParameters {
+		addStringParameter(template, param.Name, param.Description, param.WithDefault, param.Default)
+	}
+}
+
+func stageTemplateReplacements(stage naming.Stage) []placeholderReplacement {
+	return orderedPlaceholderReplacements(map[string]string{
 		stagePlaceholderDomain(stage):        stageDomainSub(stage),
 		"*." + stagePlaceholderDomain(stage): "*." + stageDomainSub(stage),
 		placeholderBaseDomain:                "${BaseDomain}",
@@ -446,29 +498,55 @@ func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []dep
 		placeholderAPICORSAllowedOrigins:     "${ApiCorsAllowedOrigins}",
 		assetBucketPlaceholder():             "${ReleaseAssetBucketName}",
 	})
+}
+
+func transformNestedStageTemplateAsset(data []byte, stage naming.Stage, replacements []placeholderReplacement) ([]byte, error) {
+	var template map[string]any
+	if err := json.Unmarshal(data, &template); err != nil {
+		return nil, fmt.Errorf("parse nested template: %w", err)
+	}
+
+	stripCDKBootstrapValidation(template)
+	deleteStageLookupParameters(template)
+	addStageReleaseParameters(template)
 
 	transformed, err := transformTemplateValues(template, func(path []string) bool {
 		return len(path) == 3 && path[0] == "Parameters" && path[2] == "Default" && generatedParameterName(path[1])
 	}, replacements)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
 	replaceStageLookupRefs(transformed, stage)
 	if err := normalizeTemplateDependsOn(transformed); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	return marshalTemplateJSON(transformed)
+}
 
-	templateBytes, err := marshalTemplateJSON(transformed)
-	if err != nil {
-		return nil, nil, err
+func injectNestedStackReleaseParameters(template map[string]any) {
+	resources, ok := template["Resources"].(map[string]any)
+	if !ok {
+		return
 	}
-
-	assets, err := collectDeployAssets(stackName, assetsManifest)
-	if err != nil {
-		return nil, nil, err
+	for _, raw := range resources {
+		resource, ok := raw.(map[string]any)
+		if !ok || resource["Type"] != "AWS::CloudFormation::Stack" {
+			continue
+		}
+		props, ok := resource["Properties"].(map[string]any)
+		if !ok {
+			props = map[string]any{}
+			resource["Properties"] = props
+		}
+		params, ok := props["Parameters"].(map[string]any)
+		if !ok {
+			params = map[string]any{}
+			props["Parameters"] = params
+		}
+		for _, param := range stageReleaseParameters {
+			params[param.Name] = map[string]any{"Ref": param.Name}
+		}
 	}
-	return templateBytes, assets, nil
 }
 
 func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]string) (map[string]any, cdkAssetsManifest, string, error) {
@@ -557,7 +635,7 @@ func absolutizeAssetPaths(synthDir string, manifest cdkAssetsManifest) cdkAssets
 	return manifest
 }
 
-func collectDeployAssets(stackName string, manifest cdkAssetsManifest) ([]deployAsset, error) {
+func collectDeployAssets(stackName string, manifest cdkAssetsManifest, transform func(sourcePath string, data []byte) ([]byte, error)) ([]deployAsset, error) {
 	assets := make([]deployAsset, 0, len(manifest.Files))
 	for _, fileAsset := range manifest.Files {
 		if strings.HasSuffix(fileAsset.Source.Path, stackName+".template.json") {
@@ -572,6 +650,12 @@ func collectDeployAssets(stackName string, manifest cdkAssetsManifest) ([]deploy
 		if err != nil {
 			return nil, err
 		}
+		if transform != nil {
+			data, err = transform(fileAsset.Source.Path, data)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		assets = append(assets, deployAsset{
 			ObjectKey:   objectKey,
@@ -584,6 +668,10 @@ func collectDeployAssets(stackName string, manifest cdkAssetsManifest) ([]deploy
 		return assets[i].ObjectKey < assets[j].ObjectKey
 	})
 	return assets, nil
+}
+
+func isNestedTemplateAsset(sourcePath string) bool {
+	return strings.HasSuffix(filepath.ToSlash(sourcePath), ".nested.template.json")
 }
 
 func firstObjectKey(destinations map[string]struct {

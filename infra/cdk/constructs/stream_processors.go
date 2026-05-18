@@ -12,13 +12,17 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type StreamProcessorsProps struct {
-	Table     awsdynamodb.Table
-	Queues    map[string]QueuePair
-	Functions *LambdaFunctions
+	AppName       string
+	Environment   string
+	RemovalPolicy awscdk.RemovalPolicy
+	Table         awsdynamodb.Table
+	Queues        map[string]QueuePair
+	Functions     *LambdaFunctions
 }
 
 func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsProps) {
@@ -35,18 +39,20 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 			validateStreamCapable(spec)
 			for idx, trig := range spec.StreamTriggers {
 				table := resolveStreamTable(spec, trig, props.Table)
-				eventSourceID := fmt.Sprintf("%sStreamMapping%d", sanitizeStreamMappingID(spec.Name), idx)
 				table.GrantStreamRead(handler)
+				poisonQueue := createStreamPoisonQueue(scope, props, handler, spec, trig, idx)
 
 				startPos := awslambda.StartingPosition_LATEST
 				if trig.StartingPosition == inventory.StreamStartTrimHorizon {
 					startPos = awslambda.StartingPosition_TRIM_HORIZON
 				}
 
-				eventSourceProps := &apptheorycdk.AppTheoryDynamoDBStreamMappingProps{
-					Consumer:         handler,
-					Table:            table,
+				// AppTheoryDynamoDBStreamMapping currently has no OnFailure destination prop.
+				// Keep the inventory-driven shape but use the AWS CDK DynamoEventSource so
+				// poison records are captured instead of being retried until stream expiry.
+				eventSourceProps := &awslambdaeventsources.DynamoEventSourceProps{
 					StartingPosition: startPos,
+					OnFailure:        awslambdaeventsources.NewSqsDlq(poisonQueue),
 				}
 
 				if trig.BatchSize > 0 {
@@ -71,7 +77,7 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 					eventSourceProps.ReportBatchItemFailures = jsii.Bool(true)
 				}
 
-				_ = apptheorycdk.NewAppTheoryDynamoDBStreamMapping(scope, jsii.String(eventSourceID), eventSourceProps)
+				handler.AddEventSource(awslambdaeventsources.NewDynamoEventSource(table, eventSourceProps))
 			}
 		}
 
@@ -88,6 +94,35 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 			}
 		}
 	}
+}
+
+func createStreamPoisonQueue(scope constructs.Construct, props *StreamProcessorsProps, handler awslambda.Function, spec inventory.LambdaSpec, trig inventory.StreamTrigger, idx int) awssqs.IQueue {
+	if strings.TrimSpace(trig.PoisonRecordQueue) == "" {
+		panic(fmt.Sprintf("lambda %s stream trigger %d requires a poison record queue", spec.Name, idx))
+	}
+
+	queueName := naming.ResourceNameWithApp(props.AppName, trig.PoisonRecordQueue, props.Environment)
+	removalPolicy := props.RemovalPolicy
+	if removalPolicy == "" {
+		removalPolicy = awscdk.RemovalPolicy_DESTROY
+	}
+
+	queue := apptheorycdk.NewAppTheoryQueue(scope, jsii.String(fmt.Sprintf("%sStreamPoisonQueue%d", sanitizeStreamMappingID(spec.Name), idx)), &apptheorycdk.AppTheoryQueueProps{
+		QueueName:         jsii.String(queueName),
+		EnableDlq:         jsii.Bool(false),
+		RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)),
+		RemovalPolicy:     removalPolicy,
+		VisibilityTimeout: awscdk.Duration_Minutes(jsii.Number(2)),
+	})
+	poisonQueue := queue.Queue()
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
+	awscdk.Tags_Of(poisonQueue).Add(jsii.String("app"), jsii.String(appName), nil)
+	awscdk.Tags_Of(poisonQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(props.Environment))), nil)
+	poisonQueue.GrantSendMessages(handler)
+	return poisonQueue
 }
 
 func validateStreamCapable(spec inventory.LambdaSpec) {

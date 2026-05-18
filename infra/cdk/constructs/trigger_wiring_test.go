@@ -21,9 +21,14 @@ import (
 )
 
 type eventSourceMapping struct {
-	FunctionName  string
-	SourceLogical string
-	SourceAttr    string
+	FunctionName               string
+	SourceLogical              string
+	SourceAttr                 string
+	DestinationLogical         string
+	MaximumRetryAttempts       float64
+	MaximumRecordAgeInSeconds  float64
+	BisectBatchOnFunctionError bool
+	ReportsBatchItemFailures   bool
 }
 
 type queueDetails struct {
@@ -96,9 +101,12 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 	ApplyQueueEnvironmentVariables(functions, queues)
 
 	CreateStreamProcessors(stack, &StreamProcessorsProps{
-		Table:     mainTable,
-		Queues:    queues,
-		Functions: functions,
+		AppName:       naming.DefaultAppName,
+		Environment:   environment,
+		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
+		Table:         mainTable,
+		Queues:        queues,
+		Functions:     functions,
 	})
 
 	app.Synth(nil)
@@ -118,6 +126,29 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 		if len(spec.StreamTriggers) > 0 {
 			if countMappingsBySourceAttr(mappings, fnName, "StreamArn") != len(spec.StreamTriggers) {
 				t.Fatalf("stream trigger mapping mismatch for %s", spec.Name)
+			}
+			for _, trig := range spec.StreamTriggers {
+				poisonName := naming.ResourceName(trig.PoisonRecordQueue, environment)
+				poisonQueue, ok := queuesMeta[poisonName]
+				if !ok {
+					t.Fatalf("stream poison queue %s not created for %s", poisonName, spec.Name)
+				}
+				mapping := requireStreamMapping(t, mappings, fnName)
+				if mapping.MaximumRetryAttempts != float64(trig.MaxRetryAttempts) {
+					t.Fatalf("%s retry attempts = %v, want %d", spec.Name, mapping.MaximumRetryAttempts, trig.MaxRetryAttempts)
+				}
+				if mapping.MaximumRecordAgeInSeconds != float64(trig.MaxRecordAgeSeconds) {
+					t.Fatalf("%s max record age = %v, want %d", spec.Name, mapping.MaximumRecordAgeInSeconds, trig.MaxRecordAgeSeconds)
+				}
+				if mapping.DestinationLogical != poisonQueue.LogicalID {
+					t.Fatalf("%s poison destination = %s, want %s", spec.Name, mapping.DestinationLogical, poisonQueue.LogicalID)
+				}
+				if mapping.BisectBatchOnFunctionError != trig.EnableBisectOnError {
+					t.Fatalf("%s bisect setting = %v, want %v", spec.Name, mapping.BisectBatchOnFunctionError, trig.EnableBisectOnError)
+				}
+				if mapping.ReportsBatchItemFailures != trig.ReportBatchItemFailures {
+					t.Fatalf("%s partial failure setting = %v, want %v", spec.Name, mapping.ReportsBatchItemFailures, trig.ReportBatchItemFailures)
+				}
 			}
 		}
 
@@ -280,9 +311,12 @@ func TestMissingQueuePanics(t *testing.T) {
 		}
 	}()
 	CreateStreamProcessors(stack, &StreamProcessorsProps{
-		Table:     mainTable,
-		Queues:    map[string]QueuePair{},
-		Functions: functions,
+		AppName:       naming.DefaultAppName,
+		Environment:   environment,
+		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
+		Table:         mainTable,
+		Queues:        map[string]QueuePair{},
+		Functions:     functions,
 	})
 }
 
@@ -387,12 +421,73 @@ func collectEventSourceMappings(t *testing.T, tpl map[string]any) []eventSourceM
 			continue
 		}
 		mappings = append(mappings, eventSourceMapping{
-			FunctionName:  fnName,
-			SourceLogical: srcLogical,
-			SourceAttr:    srcAttr,
+			FunctionName:               fnName,
+			SourceLogical:              srcLogical,
+			SourceAttr:                 srcAttr,
+			DestinationLogical:         extractEventSourceMappingDestinationLogical(props),
+			MaximumRetryAttempts:       numericProperty(props, "MaximumRetryAttempts"),
+			MaximumRecordAgeInSeconds:  numericProperty(props, "MaximumRecordAgeInSeconds"),
+			BisectBatchOnFunctionError: boolProperty(props, "BisectBatchOnFunctionError"),
+			ReportsBatchItemFailures:   containsStringAny(props["FunctionResponseTypes"], "ReportBatchItemFailures"),
 		})
 	}
 	return mappings
+}
+
+func requireStreamMapping(t *testing.T, mappings []eventSourceMapping, fnName string) eventSourceMapping {
+	t.Helper()
+	var found []eventSourceMapping
+	for _, m := range mappings {
+		if m.FunctionName == fnName && m.SourceAttr == "StreamArn" {
+			found = append(found, m)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected exactly one stream mapping for %s, got %d", fnName, len(found))
+	}
+	return found[0]
+}
+
+func extractEventSourceMappingDestinationLogical(props map[string]any) string {
+	cfg, ok := props["DestinationConfig"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	onFailure, ok := cfg["OnFailure"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	logical, _ := extractLogicalAndAttr(onFailure["Destination"])
+	return logical
+}
+
+func numericProperty(props map[string]any, key string) float64 {
+	switch v := props[key].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	default:
+		return 0
+	}
+}
+
+func boolProperty(props map[string]any, key string) bool {
+	v, _ := props[key].(bool)
+	return v
+}
+
+func containsStringAny(v any, needle string) bool {
+	items, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if s, ok := item.(string); ok && s == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func collectQueuesByName(t *testing.T, tpl map[string]any) map[string]queueDetails {

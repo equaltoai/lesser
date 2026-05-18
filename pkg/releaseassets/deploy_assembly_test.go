@@ -67,7 +67,7 @@ func TestCollectDeployAssets_FileAndZip(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(root, "demo.template.json"), []byte("{}"), 0o644))
 
-	assets, err := collectDeployAssets("demo", manifest)
+	assets, err := collectDeployAssets("demo", manifest, nil)
 	require.NoError(t, err)
 	require.Len(t, assets, 2)
 	require.Equal(t, "assets/dir.zip", assets[0].ObjectKey)
@@ -95,7 +95,7 @@ func TestCollectDeployAssets_ErrorsWhenObjectKeyMissing(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(root, "asset.txt"), []byte("content"), 0o644))
 
-	_, err := collectDeployAssets("demo", manifest)
+	_, err := collectDeployAssets("demo", manifest, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing destination object key")
 }
@@ -240,6 +240,95 @@ func TestTemplateTransformHelpers(t *testing.T) {
 	require.Equal(t, map[string]any{
 		"Fn::Sub": "{{resolve:ssm:/${AppSlug}/shared/iam/lambda-encryption-role-arn}}",
 	}, props["Lookup"])
+}
+
+func TestTransformNestedStageTemplateAssetAddsReleaseParameters(t *testing.T) {
+	nested := map[string]any{
+		"Resources": map[string]any{
+			"Alarm": map[string]any{
+				"Type": "AWS::CloudWatch::Alarm",
+				"Properties": map[string]any{
+					"AlarmName":  placeholderAppSlug + "-dev-metrics-processor-critical-errors",
+					"MetricName": "Errors",
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(nested)
+	require.NoError(t, err)
+
+	out, err := transformNestedStageTemplateAsset(data, naming.StageDev, stageTemplateReplacements(naming.StageDev))
+	require.NoError(t, err)
+
+	var transformed map[string]any
+	require.NoError(t, json.Unmarshal(out, &transformed))
+	parameters := transformed["Parameters"].(map[string]any)
+	require.Contains(t, parameters, "AppSlug")
+
+	props := transformed["Resources"].(map[string]any)["Alarm"].(map[string]any)["Properties"].(map[string]any)
+	require.Equal(t, map[string]any{"Fn::Sub": "${AppSlug}-dev-metrics-processor-critical-errors"}, props["AlarmName"])
+}
+
+func TestTransformNestedStageTemplateAssetErrors(t *testing.T) {
+	_, err := transformNestedStageTemplateAsset([]byte("{"), naming.StageDev, stageTemplateReplacements(naming.StageDev))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse nested template")
+
+	nested := map[string]any{
+		"Resources": map[string]any{
+			"BadDependsOn": map[string]any{
+				"Type":      "Custom::Example",
+				"DependsOn": map[string]any{"Fn::GetAtt": []any{"Other", "Arn"}},
+			},
+		},
+	}
+	data, err := json.Marshal(nested)
+	require.NoError(t, err)
+
+	_, err = transformNestedStageTemplateAsset(data, naming.StageDev, stageTemplateReplacements(naming.StageDev))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported intrinsic")
+}
+
+func TestInjectNestedStackReleaseParameters(t *testing.T) {
+	template := map[string]any{
+		"Resources": map[string]any{
+			"Nested": map[string]any{
+				"Type":       "AWS::CloudFormation::Stack",
+				"Properties": map[string]any{"TemplateURL": "https://example.invalid/nested.json"},
+			},
+			"Bucket": map[string]any{"Type": "AWS::S3::Bucket"},
+		},
+	}
+
+	injectNestedStackReleaseParameters(template)
+
+	nestedProps := template["Resources"].(map[string]any)["Nested"].(map[string]any)["Properties"].(map[string]any)
+	params := nestedProps["Parameters"].(map[string]any)
+	require.Equal(t, map[string]any{"Ref": "AppSlug"}, params["AppSlug"])
+	require.Equal(t, map[string]any{"Ref": "ReleaseAssetBucketName"}, params["ReleaseAssetBucketName"])
+}
+
+func TestInjectNestedStackReleaseParametersHandlesMissingSections(t *testing.T) {
+	noResources := map[string]any{"Description": "empty"}
+	injectNestedStackReleaseParameters(noResources)
+	require.Equal(t, map[string]any{"Description": "empty"}, noResources)
+
+	template := map[string]any{
+		"Resources": map[string]any{
+			"Nested": map[string]any{
+				"Type": "AWS::CloudFormation::Stack",
+			},
+			"Malformed": "not-a-resource-map",
+		},
+	}
+
+	injectNestedStackReleaseParameters(template)
+
+	nested := template["Resources"].(map[string]any)["Nested"].(map[string]any)
+	props := nested["Properties"].(map[string]any)
+	params := props["Parameters"].(map[string]any)
+	require.Equal(t, map[string]any{"Ref": "BaseDomain"}, params["BaseDomain"])
 }
 
 func TestNormalizeTemplateDependsOn(t *testing.T) {

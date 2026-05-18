@@ -252,6 +252,9 @@ func formatStreamTrigger(t inventory.StreamTrigger) string {
 	if t.MaxRecordAgeSeconds > 0 {
 		entries = append(entries, fmt.Sprintf("maxAge=%ds", t.MaxRecordAgeSeconds))
 	}
+	if t.PoisonRecordQueue != "" {
+		entries = append(entries, fmt.Sprintf("poisonQueue=%s", t.PoisonRecordQueue))
+	}
 	if t.EnableBisectOnError {
 		entries = append(entries, "bisect=true")
 	}
