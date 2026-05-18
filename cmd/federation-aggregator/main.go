@@ -373,25 +373,20 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to marshal aggregation event")
 	}
 
-	queueURL, err := p.federationAggregatorQueueURL()
-	if err != nil {
-		return err
-	}
-
-	sqsInput := &sqs.SendMessageInput{
-		QueueUrl:    &queueURL,
-		MessageBody: aws.String(string(eventPayload)),
-		MessageAttributes: map[string]sqstypes.MessageAttributeValue{
-			"AggregationType": {
-				DataType:    aws.String("String"),
-				StringValue: aws.String(event.Type),
-			},
-		},
-		DelaySeconds: 0, // Process immediately
-	}
-
 	var sqsErr error
-	if p.sqsClient != nil {
+	if queueURL, queueErr := p.federationAggregatorQueueURL(); queueErr == nil && p.sqsClient != nil {
+		sqsInput := &sqs.SendMessageInput{
+			QueueUrl:    &queueURL,
+			MessageBody: aws.String(string(eventPayload)),
+			MessageAttributes: map[string]sqstypes.MessageAttributeValue{
+				"AggregationType": {
+					DataType:    aws.String("String"),
+					StringValue: aws.String(event.Type),
+				},
+			},
+			DelaySeconds: 0, // Process immediately
+		}
+
 		var sqsResult *sqs.SendMessageOutput
 		sqsResult, sqsErr = p.sqsClient.SendMessage(ctx, sqsInput)
 		if sqsErr == nil {
@@ -400,6 +395,10 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 				zap.String("type", event.Type))
 			return nil
 		}
+	} else if queueErr != nil {
+		sqsErr = queueErr
+	} else {
+		sqsErr = pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "SQS client not configured")
 	}
 
 	// If SQS fails, fallback to direct Lambda invocation
@@ -444,26 +443,10 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 }
 
 func (p *FederationAggregatorProcessor) federationAggregatorQueueURL() (string, error) {
-	if p == nil || p.lambdaCtx == nil || p.lambdaCtx.Config == nil {
-		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Lambda config not available")
+	if queueURL := strings.TrimSpace(os.Getenv("FEDERATION_AGGREGATOR_QUEUE_URL")); queueURL != "" {
+		return queueURL, nil
 	}
-
-	cfg := p.lambdaCtx.Config
-	region := strings.TrimSpace(cfg.Region)
-	accountID := strings.TrimSpace(cfg.AWSAccountID)
-	if region == "" {
-		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "AWS region not configured")
-	}
-	if accountID == "" {
-		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "AWS account ID not configured")
-	}
-
-	queueName := naming.ResourceNameWithApp(
-		os.Getenv("APP_NAME"),
-		"federation-aggregator-queue",
-		firstNonEmpty(cfg.Stage, cfg.Environment, os.Getenv("STAGE"), os.Getenv("ENVIRONMENT")),
-	)
-	return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", region, accountID, queueName), nil
+	return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "federation aggregator queue URL not configured")
 }
 
 func (p *FederationAggregatorProcessor) federationAggregatorFunctionName() string {

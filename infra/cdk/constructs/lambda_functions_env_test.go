@@ -118,6 +118,20 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 			}
 		}
 	}
+
+	federationAggregatorName := naming.ResourceName("federation-aggregator", environment)
+	federationAggregatorEnv, ok := envByName[federationAggregatorName]
+	if !ok {
+		t.Fatalf("environment not found for %s", federationAggregatorName)
+	}
+	for _, key := range []string{"APP_NAME", "STAGE", "DYNAMODB_TABLE", "FEDERATION_AGGREGATOR_QUEUE_URL"} {
+		if val := federationAggregatorEnv[key]; val == "" {
+			t.Fatalf("federation aggregator env var %s missing", key)
+		}
+	}
+	if _, present := federationAggregatorEnv["AWS_ACCOUNT_ID"]; present {
+		t.Fatalf("federation aggregator should not depend on AWS_ACCOUNT_ID in the synthesized env")
+	}
 }
 
 func collectLambdaEnvironments(t *testing.T, tpl map[string]any) map[string]map[string]string {

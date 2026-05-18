@@ -438,4 +438,10 @@ func ApplyQueueEnvironmentVariables(functions *LambdaFunctions, queues map[strin
 		fn.AddEnvironment(jsii.String("FEDERATION_DELIVERY_QUEUE_URL"), queueURL(queues, "federation-delivery-queue"), nil)
 		fn.AddEnvironment(jsii.String("PUSH_NOTIFICATION_QUEUE_URL"), queueURL(queues, "push-delivery-queue"), nil)
 	}
+
+	functions.Must("federation-aggregator").AddEnvironment(
+		jsii.String("FEDERATION_AGGREGATOR_QUEUE_URL"),
+		queueURL(queues, "federation-aggregator-queue"),
+		nil,
+	)
 }
