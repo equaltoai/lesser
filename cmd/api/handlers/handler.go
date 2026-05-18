@@ -203,7 +203,10 @@ func (h *Handler) authenticatedClaimsLift(ctx *apptheory.Context) (*auth.Claims,
 		return nil, apperrors.Unauthorized("authentication required")
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "OAuth service unavailable")
+	}
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, err

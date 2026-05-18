@@ -121,7 +121,7 @@ func TestOAuthDeviceConsentLiftRound12(t *testing.T) {
 
 	h, _, _ := round11NewHandler(t, cfgDevice, state)
 
-	oauthSvc := createOAuthService(cfgDevice.JWTSecret, cfgDevice, h.repos, h.logger)
+	oauthSvc := mustCreateOAuthService(t, cfgDevice.JWTSecret, cfgDevice, h.repos, h.logger)
 	accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client-1", "", []string{auth.ScopeRead, auth.ScopeWrite})
 	require.NoError(t, err)
 

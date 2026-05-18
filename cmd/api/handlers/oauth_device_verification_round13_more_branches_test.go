@@ -107,7 +107,7 @@ func TestOAuthDeviceConsentLiftRound13_InvalidAction(t *testing.T) {
 
 	h, _, _ := round11NewHandler(t, cfg, state)
 
-	oauthSvc := createOAuthService(cfg.JWTSecret, cfg, h.repos, h.logger)
+	oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, h.repos, h.logger)
 	accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client-1", "", []string{auth.ScopeRead})
 	require.NoError(t, err)
 
@@ -145,7 +145,7 @@ func TestOAuthDeviceConsentLiftRound13_UpdateErrorReturns500(t *testing.T) {
 
 	h, _, _ := round11NewHandler(t, cfg, state)
 
-	oauthSvc := createOAuthService(cfg.JWTSecret, cfg, h.repos, h.logger)
+	oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, h.repos, h.logger)
 	accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client-1", "", []string{auth.ScopeRead})
 	require.NoError(t, err)
 

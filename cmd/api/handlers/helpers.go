@@ -1126,23 +1126,31 @@ func (h *Handler) agentIdentitySemantics(ctx context.Context, agentUser *storage
 	return workflow.DeriveDroneIdentitySemantics(agentUser.Username, workflowState, soulBound, soulAgentID)
 }
 
-// createOAuthService creates an OAuth service with proper audit logger setup
-func createOAuthService(jwtSecret string, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) *auth.OAuthService {
+var resolveOAuthJWTSecretFn = func(cfg *config.Config) (string, error) {
+	return cfg.ResolveJWTSecret()
+}
+
+// createOAuthService creates an OAuth service with proper audit logger setup.
+// Auth paths fail closed when lazy JWT secret resolution fails or resolves empty.
+func createOAuthService(jwtSecret string, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) (*auth.OAuthService, error) {
 	secret := strings.TrimSpace(jwtSecret)
 	if secret == "" && cfg != nil {
-		resolved, err := cfg.ResolveJWTSecret()
+		resolved, err := resolveOAuthJWTSecretFn(cfg)
 		if err != nil {
 			if logger != nil {
 				logger.Error("failed to resolve JWT secret", zap.Error(err))
 			}
-		} else {
-			secret = resolved
+			return nil, fmt.Errorf("resolve JWT secret: %w", err)
 		}
+		secret = strings.TrimSpace(resolved)
+	}
+	if secret == "" {
+		return nil, errors.New("JWT secret is required")
 	}
 
 	// Create audit logger with default configuration
 	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
-	return auth.NewOAuthService(secret, cfg, repos, auditLogger)
+	return auth.NewOAuthService(secret, cfg, repos, auditLogger), nil
 }
 
 // parsePaginationParams extracts common pagination parameters from a Lift context

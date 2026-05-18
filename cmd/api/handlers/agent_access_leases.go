@@ -621,20 +621,7 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 	}
 	accessTTL := remaining
 
-	if h.cfg == nil || (strings.TrimSpace(h.cfg.JWTSecret) == "" && strings.TrimSpace(h.cfg.JWTSecretARN) == "") {
-		return common.RespondInternalServerError(ctx)
-	}
-	oauthSvc := createOAuthService("", h.cfg, h.repos, h.logger)
-	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
-		ctx.Context(),
-		lease.Username,
-		agentAccessLeaseClientID,
-		"",
-		lease.Scopes,
-		accessTTL,
-		"",
-		"",
-	)
+	accessToken, err := h.mintAgentAccessLeaseToken(ctx, lease, accessTTL)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
@@ -665,6 +652,30 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 			CreatedAt:   now.Unix(),
 		},
 	})
+}
+
+func (h *Handler) mintAgentAccessLeaseToken(ctx *apptheory.Context, lease *storageModels.AgentAccessLease, accessTTL time.Duration) (string, error) {
+	if h.cfg == nil || lease == nil || (strings.TrimSpace(h.cfg.JWTSecret) == "" && strings.TrimSpace(h.cfg.JWTSecretARN) == "") {
+		return "", errors.New("agent access lease token configuration unavailable")
+	}
+	oauthSvc, err := createOAuthService("", h.cfg, h.repos, h.logger)
+	if err != nil {
+		return "", err
+	}
+	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+		ctx.Context(),
+		lease.Username,
+		agentAccessLeaseClientID,
+		"",
+		lease.Scopes,
+		accessTTL,
+		"",
+		"",
+	)
+	if err != nil {
+		return "", err
+	}
+	return accessToken, nil
 }
 
 func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, action string) (*apptheory.Response, error) {
