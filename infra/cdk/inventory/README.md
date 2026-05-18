@@ -10,7 +10,7 @@ This package defines the machine-readable Lambda inventory used by specs 02–07
   - `Role` — `basic` or `encryption` IAM class.
   - `HTTPRoutes` — list of `{Method, Path}` owned by the Lambda.
   - `SQSTriggers` — `{queue, deadLetterQueue, batchSize, maxBatchingWindowSeconds, enablePartialFailure}`.
-  - `StreamTriggers` — `{sourceTable|streamArn, batchSize, maxBatchingWindowSeconds, parallelizationFactor, startingPosition, maxRetryAttempts, maxRecordAgeSeconds, enableBisectOnError, reportBatchItemFailures}`.
+  - `StreamTriggers` — `{sourceTable|streamArn, poisonRecordQueue, batchSize, maxBatchingWindowSeconds, parallelizationFactor, startingPosition, maxRetryAttempts, maxRecordAgeSeconds, enableBisectOnError, reportBatchItemFailures}`.
   - `ScheduleTriggers` — `{expression (cron|rate), input}`.
   - `Overrides` — per-Lambda overrides for memory/timeout/log retention.
   - `RequiredEnvVars` — non-baseline env var slots that must be provided by configuration or secrets.
