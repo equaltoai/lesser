@@ -279,20 +279,27 @@ func (p *FederationAggregatorProcessor) handleEventBridgeEvent(ctx context.Conte
 
 	// Parse the aggregation configuration from the event
 	var aggEvent AggregationEvent
-	if err := json.Unmarshal(event.Detail, &aggEvent); err != nil {
-		// Default to hourly aggregation for scheduled events
-		now := event.Time
-		if now.IsZero() {
-			now = time.Now()
-		}
-		aggEvent = AggregationEvent{
-			Type:      "hourly",
-			StartTime: now.Add(-1 * time.Hour).Truncate(time.Hour),
-			EndTime:   now.Truncate(time.Hour),
-		}
+	if err := json.Unmarshal(event.Detail, &aggEvent); err != nil || aggregationEventNeedsDefault(aggEvent) {
+		aggEvent = defaultScheduledAggregationEvent(event)
 	}
 
 	return p.handleAggregationEvent(ctx, aggEvent)
+}
+
+func aggregationEventNeedsDefault(event AggregationEvent) bool {
+	return strings.TrimSpace(event.Type) == "" || event.StartTime.IsZero() || event.EndTime.IsZero()
+}
+
+func defaultScheduledAggregationEvent(event events.EventBridgeEvent) AggregationEvent {
+	now := event.Time
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return AggregationEvent{
+		Type:      "hourly",
+		StartTime: now.Add(-1 * time.Hour).Truncate(time.Hour),
+		EndTime:   now.Truncate(time.Hour),
+	}
 }
 
 // handleAggregationEvent processes federation aggregation events

@@ -27,6 +27,7 @@ type fakeFederationActivityRepo struct {
 	recentCalls int
 	listCalls   int
 	infoCalls   int
+	recentSince time.Time
 
 	recent []*models.FederationActivity
 	list   []*models.FederationActivity
@@ -37,8 +38,9 @@ type fakeFederationActivityRepo struct {
 	infoErr   error
 }
 
-func (f *fakeFederationActivityRepo) GetRecentActivities(context.Context, time.Time, int) ([]*models.FederationActivity, error) {
+func (f *fakeFederationActivityRepo) GetRecentActivities(_ context.Context, since time.Time, _ int) ([]*models.FederationActivity, error) {
 	f.recentCalls++
+	f.recentSince = since
 	if f.recentErr != nil {
 		return nil, f.recentErr
 	}
@@ -278,10 +280,11 @@ func TestHandleEventBridgeEvent_DefaultsHourly_Round12(t *testing.T) {
 	db.On("Model", mock.Anything).Return(query)
 	query.On("Create").Return(nil)
 
+	repo := &fakeFederationActivityRepo{}
 	p := &FederationAggregatorProcessor{
 		db:                           db,
 		logger:                       zap.NewNop(),
-		federationActivityRepository: &fakeFederationActivityRepo{},
+		federationActivityRepository: repo,
 		lambdaCtx: &common.LambdaContext{
 			Config:      &config.Config{Region: "us-east-1", AWSAccountID: "123"},
 			Logger:      zap.NewNop(),
@@ -294,6 +297,28 @@ func TestHandleEventBridgeEvent_DefaultsHourly_Round12(t *testing.T) {
 		Detail: []byte("{not-json"),
 	}
 	require.NoError(t, p.handleEventBridgeEvent(context.Background(), event))
+	require.Equal(t, time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC), repo.recentSince)
+}
+
+func TestHandleEventBridgeEvent_DefaultsEmptyScheduledDetail_Round12(t *testing.T) {
+	repo := &fakeFederationActivityRepo{}
+	p := &FederationAggregatorProcessor{
+		logger:                       zap.NewNop(),
+		federationActivityRepository: repo,
+		lambdaCtx: &common.LambdaContext{
+			Config:      &config.Config{Region: "us-east-1", AWSAccountID: "123"},
+			Logger:      zap.NewNop(),
+			AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
+		},
+	}
+
+	event := events.EventBridgeEvent{
+		Time:   time.Date(2024, 1, 1, 12, 34, 0, 0, time.UTC),
+		Detail: []byte("{}"),
+	}
+	require.NoError(t, p.handleEventBridgeEvent(context.Background(), event))
+	require.Equal(t, 1, repo.recentCalls)
+	require.Equal(t, time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC), repo.recentSince)
 }
 
 func TestHandleAggregationEvent_FullPath_Round12(t *testing.T) {
