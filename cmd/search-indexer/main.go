@@ -167,6 +167,50 @@ type IndexableContent struct {
 	CreatedAt time.Time
 }
 
+type searchIndexRecord struct {
+	PK          string   `theorydb:"pk"`
+	SK          string   `theorydb:"sk"`
+	Type        string   `json:"type"`
+	ContentID   string   `json:"content_id"`
+	ContentType string   `json:"content_type"`
+	Text        string   `json:"text"`
+	TextLower   string   `json:"text_lower"`
+	ActorID     string   `json:"actor_id"`
+	Tags        []string `json:"tags"`
+	Language    string   `json:"language"`
+	WordCount   int      `json:"word_count"`
+	CreatedAt   string   `json:"created_at"`
+	IndexedAt   string   `json:"indexed_at"`
+	TTL         int64    `theorydb:"ttl"`
+}
+
+func (searchIndexRecord) TableName() string { return models.MainTableName }
+
+type searchActorIndex struct {
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
+	Type      string `json:"type"`
+	ContentID string `json:"content_id"`
+	Text      string `json:"text"`
+	CreatedAt string `json:"created_at"`
+	TTL       int64  `theorydb:"ttl"`
+}
+
+func (searchActorIndex) TableName() string { return models.MainTableName }
+
+type searchTagIndex struct {
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
+	Type      string `json:"type"`
+	Tag       string `json:"tag"`
+	ContentID string `json:"content_id"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+	TTL       int64  `theorydb:"ttl"`
+}
+
+func (searchTagIndex) TableName() string { return models.MainTableName }
+
 func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventRecord) (*IndexableContent, error) {
 	var item struct {
 		PK          string   `theorydb:"pk"`
@@ -243,22 +287,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 
 func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
 	// Create search index record with full-text search capabilities
-	searchRecord := struct {
-		PK          string   `theorydb:"pk"`
-		SK          string   `theorydb:"sk"`
-		Type        string   `json:"type"`
-		ContentID   string   `json:"content_id"`
-		ContentType string   `json:"content_type"`
-		Text        string   `json:"text"`
-		TextLower   string   `json:"text_lower"` // For case-insensitive search
-		ActorID     string   `json:"actor_id"`
-		Tags        []string `json:"tags"`
-		Language    string   `json:"language"`
-		WordCount   int      `json:"word_count"`
-		CreatedAt   string   `json:"created_at"`
-		IndexedAt   string   `json:"indexed_at"`
-		TTL         int64    `theorydb:"ttl"`
-	}{
+	searchRecord := searchIndexRecord{
 		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
 		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format(common.DateFormat), content.ID),
 		Type:        "SearchIndex",
@@ -294,15 +323,7 @@ func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *Indexab
 func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *IndexableContent) error {
 	// Create actor-specific index for searching user's content
 	if content.ActorID != "" {
-		actorIndex := struct {
-			PK        string `theorydb:"pk"`
-			SK        string `theorydb:"sk"`
-			Type      string `json:"type"`
-			ContentID string `json:"content_id"`
-			Text      string `json:"text"`
-			CreatedAt string `json:"created_at"`
-			TTL       int64  `theorydb:"ttl"`
-		}{
+		actorIndex := searchActorIndex{
 			PK:        fmt.Sprintf("SEARCH#ACTOR#%s", content.ActorID),
 			SK:        fmt.Sprintf("CONTENT#%s", content.ID),
 			Type:      "ActorSearchIndex",
@@ -320,16 +341,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 	// Create tag-based indexes
 	for _, tag := range content.Tags {
 		if tag != "" {
-			tagIndex := struct {
-				PK        string `theorydb:"pk"`
-				SK        string `theorydb:"sk"`
-				Type      string `json:"type"`
-				Tag       string `json:"tag"`
-				ContentID string `json:"content_id"`
-				ActorID   string `json:"actor_id"`
-				CreatedAt string `json:"created_at"`
-				TTL       int64  `theorydb:"ttl"`
-			}{
+			tagIndex := searchTagIndex{
 				PK:        fmt.Sprintf("SEARCH#TAG#%s", strings.ToLower(tag)),
 				SK:        fmt.Sprintf("CONTENT#%s", content.ID),
 				Type:      "TagSearchIndex",
