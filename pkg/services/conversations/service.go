@@ -1850,11 +1850,13 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 
 	// Populate per-viewer unread state if available.
 	if state, err := s.conversationRepo.GetUserConversationState(ctx, query.ViewerID, query.ConversationID); err == nil && state != nil {
-		if state.DeletedAt != nil && !state.DeletedAt.IsZero() {
+		if (state.DeletedAt != nil && !state.DeletedAt.IsZero()) ||
+			state.Folder == models.UserConversationFolderHidden {
 			return nil, ErrConversationNotFound
 		}
 
 		conversation.Unread = state.Unread
+		conversation.ViewerState = userConversationStateFromContract(conversation, query.ViewerID, "", state)
 	}
 
 	// Get conversation messages (these are statuses with this conversation ID).

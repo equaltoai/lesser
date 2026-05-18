@@ -566,6 +566,7 @@ func configureRoutes(app *apptheory.App) {
 
 	// Conversation endpoints (Direct Messages) - always enabled for 100% Mastodon API compatibility
 	app.Get("/api/v1/conversations", apiHandler.HandleGetConversationsLift, requireRead)
+	app.Get("/api/v1/conversations/{id}", apiHandler.HandleGetConversationLift, requireRead)
 	app.Delete("/api/v1/conversations/{id}", apiHandler.HandleDeleteConversationLift, requireWrite)
 	app.Post("/api/v1/conversations/{id}/read", apiHandler.HandleMarkConversationReadLift, requireWrite)
 

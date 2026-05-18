@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
@@ -39,6 +41,40 @@ func (h *Handler) convertConversationToAPIWithPrefetch(ctx context.Context, conv
 	}
 
 	return apiConversation, nil
+}
+
+func (h *Handler) convertConversationWithMessagesToAPI(ctx context.Context, result *conversations.ConversationWithMessages, viewerUsername string) (apimodels.ConversationDetail, error) {
+	if result == nil || result.Conversation == nil {
+		return apimodels.ConversationDetail{Messages: []apimodels.Status{}}, nil
+	}
+
+	prefetch := h.loadConversationAPIPrefetch(ctx, []*storageModels.Conversation{result.Conversation}, viewerUsername)
+	apiConversation, err := h.convertConversationToAPIWithPrefetch(ctx, result.Conversation, viewerUsername, prefetch)
+	if err != nil {
+		return apimodels.ConversationDetail{}, err
+	}
+
+	detail := apimodels.ConversationDetail{
+		Conversation: apiConversation,
+		Messages:     []apimodels.Status{},
+	}
+	if result.Messages == nil {
+		return detail, nil
+	}
+
+	statusCtx := conversationAPIStatusContext(h, prefetch)
+	for _, message := range result.Messages.Items {
+		if message == nil {
+			continue
+		}
+		apiStatus, err := h.convertStorageStatusToAPIWithContext(statusCtx, message, viewerUsername)
+		if err != nil || apiStatus == nil {
+			continue
+		}
+		detail.Messages = append(detail.Messages, *apiStatus)
+	}
+
+	return detail, nil
 }
 
 // HandleGetConversationsLift retrieves all conversations for the authenticated user
@@ -95,6 +131,51 @@ func (h *Handler) HandleGetConversationsLift(ctx *apptheory.Context) (*apptheory
 	return resp, nil
 }
 
+// HandleGetConversationLift retrieves one conversation and recent viewer-visible messages.
+func (h *Handler) HandleGetConversationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	conversationID := ctx.Param("id")
+	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
+		return common.RespondBadRequest(ctx, "missing conversation id")
+	}
+
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	limit := h.parseConversationLimit(ctx)
+	maxID := queryValue(ctx, "max_id")
+
+	result, err := h.registry.Conversations().GetConversation(ctx.Context(), &conversations.GetConversationQuery{
+		ConversationID: conversationID,
+		ViewerID:       username,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: maxID,
+		},
+	})
+	if err != nil {
+		return h.respondConversationReadError(ctx, "failed to get conversation", err)
+	}
+
+	response, err := h.convertConversationWithMessagesToAPI(ctx.Context(), result, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
+	}
+	if result != nil && result.Messages != nil && result.Messages.HasMore && result.Messages.NextCursor != "" {
+		h.setConversationMessagesPaginationHeader(resp, "/api/v1/conversations/"+url.PathEscape(conversationID), result.Messages.NextCursor, limit)
+	}
+	return resp, nil
+}
+
 // parseConversationLimit parses the limit query parameter
 func (h *Handler) parseConversationLimit(ctx *apptheory.Context) int {
 	limitStr := queryValue(ctx, "limit")
@@ -116,6 +197,30 @@ func (h *Handler) setConversationPaginationHeader(resp *apptheory.Response, curs
 		nextURL += fmt.Sprintf("&limit=%d", limit)
 	}
 	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+}
+
+func (h *Handler) setConversationMessagesPaginationHeader(resp *apptheory.Response, path string, cursor string, limit int) {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
+		return
+	}
+
+	nextURL := fmt.Sprintf("%s%s?max_id=%s", h.cfg.BaseURL(), path, url.QueryEscape(cursor))
+	if limit != 20 {
+		nextURL += fmt.Sprintf("&limit=%d", limit)
+	}
+	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+}
+
+func (h *Handler) respondConversationReadError(ctx *apptheory.Context, message string, err error) (*apptheory.Response, error) {
+	if errors.Is(err, conversations.ErrConversationNotFound) ||
+		errors.Is(err, conversations.ErrNotConversationParticipant) ||
+		strings.Contains(strings.ToLower(err.Error()), "not found") ||
+		strings.Contains(strings.ToLower(err.Error()), "not a participant") ||
+		strings.Contains(strings.ToLower(err.Error()), "access denied") {
+		return common.RespondNotFound(ctx, "conversation")
+	}
+	h.logger.Error(message, zap.Error(err))
+	return common.RespondInternalServerError(ctx)
 }
 
 // HandleDeleteConversationLift removes a conversation from the user's list

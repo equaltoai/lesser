@@ -248,6 +248,7 @@ func (s *AIServiceStub) QueueForAnalysis(ctx context.Context, cmd *ai.QueueAnaly
 
 type ConversationsServiceStub struct {
 	DeleteConversationFunc   func(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
+	GetConversationFunc      func(ctx context.Context, query *conversations.GetConversationQuery) (*conversations.ConversationWithMessages, error)
 	ListConversationsFunc    func(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
 	MarkConversationReadFunc func(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
 	SendDirectMessageFunc    func(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
@@ -260,6 +261,13 @@ func (s *ConversationsServiceStub) DeleteConversation(ctx context.Context, cmd *
 		return s.DeleteConversationFunc(ctx, cmd)
 	}
 	return nil, missingStub("ConversationsService.DeleteConversation")
+}
+
+func (s *ConversationsServiceStub) GetConversation(ctx context.Context, query *conversations.GetConversationQuery) (*conversations.ConversationWithMessages, error) {
+	if s != nil && s.GetConversationFunc != nil {
+		return s.GetConversationFunc(ctx, query)
+	}
+	return nil, missingStub("ConversationsService.GetConversation")
 }
 
 func (s *ConversationsServiceStub) ListConversations(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error) {

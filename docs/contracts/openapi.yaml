@@ -2120,6 +2120,31 @@ components:
             items:
                 $ref: '#/components/schemas/Conversation'
             type: array
+        ConversationDetail:
+            additionalProperties: false
+            properties:
+                accounts:
+                    items:
+                        $ref: '#/components/schemas/Account'
+                    type: array
+                id:
+                    type: string
+                last_status:
+                    anyOf:
+                        - $ref: '#/components/schemas/Status'
+                        - type: "null"
+                messages:
+                    items:
+                        $ref: '#/components/schemas/Status'
+                    type: array
+                unread:
+                    type: boolean
+            required:
+                - accounts
+                - id
+                - messages
+                - unread
+            type: object
         CreateAgentAccessLeaseRequest:
             additionalProperties: false
             properties:
@@ -13817,6 +13842,48 @@ paths:
             x-oauth-scopes:
                 - read
     /api/v1/conversations/{id}:
+        get:
+            operationId: get_api_v1_conversations_by_id
+            tags:
+                - conversations
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - $ref: '#/components/parameters/Limit'
+                - $ref: '#/components/parameters/MaxID'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ConversationDetail'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links for recent messages.
+                            schema:
+                                type: string
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetConversationLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
         delete:
             operationId: delete_api_v1_conversations_by_id
             tags:
@@ -21149,4 +21216,3 @@ paths:
             x-lesser-lambda: objects
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:objects
-

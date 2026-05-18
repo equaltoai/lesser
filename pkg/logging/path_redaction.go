@@ -24,6 +24,9 @@ func SanitizeLogPath(raw string) string {
 	if sanitized, ok := sanitizeLesserSelfScopeMintConversationListPath(path); ok {
 		return sanitized
 	}
+	if sanitized, ok := sanitizeAPIConversationPath(path); ok {
+		return sanitized
+	}
 	return trimmed
 }
 
@@ -66,6 +69,35 @@ func sanitizeLesserSelfScopeMintConversationListPath(path string) (string, bool)
 	}
 
 	return joinLogPathSegments(segments, leadingSlash), true
+}
+
+func sanitizeAPIConversationPath(path string) (string, bool) {
+	segments, leadingSlash := splitLogPathSegments(path)
+	if len(segments) < 3 ||
+		segments[0] != "api" ||
+		segments[1] != "v1" ||
+		segments[2] != "conversations" {
+		return "", false
+	}
+
+	switch len(segments) {
+	case 3:
+		return joinLogPathSegments(segments, leadingSlash), true
+	case 4:
+		if strings.TrimSpace(segments[3]) == "" {
+			return "", false
+		}
+		segments[3] = "conversation-" + shortLogHash(segments[3])
+		return joinLogPathSegments(segments, leadingSlash), true
+	case 5:
+		if strings.TrimSpace(segments[3]) == "" || segments[4] != "read" {
+			return "", false
+		}
+		segments[3] = "conversation-" + shortLogHash(segments[3])
+		return joinLogPathSegments(segments, leadingSlash), true
+	default:
+		return "", false
+	}
 }
 
 func splitLogPathSegments(path string) ([]string, bool) {

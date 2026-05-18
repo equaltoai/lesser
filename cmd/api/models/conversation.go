@@ -8,3 +8,10 @@ type Conversation struct {
 	Accounts   []Account `json:"accounts"`
 	LastStatus *Status   `json:"last_status,omitempty"`
 }
+
+// ConversationDetail represents a direct message conversation expanded with
+// the viewer-visible recent messages in that conversation.
+type ConversationDetail struct {
+	Conversation
+	Messages []Status `json:"messages"`
+}

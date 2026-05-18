@@ -71,3 +71,27 @@ func TestExtractRequestInfoSanitizesPrivateMintConversationPath(t *testing.T) {
 	require.NotContains(t, info.path, "raw-cursor")
 	require.Equal(t, info.method+" "+info.path, info.endpoint)
 }
+
+func TestExtractRequestInfoSanitizesConversationIDPath(t *testing.T) {
+	rawConversationID := "conv-agent-readable"
+	ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/conversations/"+rawConversationID+"?max_id=raw-cursor")
+
+	info := extractRequestInfo(ctx)
+	require.Equal(t, http.MethodGet, info.method)
+	require.Contains(t, info.path, "/api/v1/conversations/conversation-sha256:")
+	require.NotContains(t, info.path, rawConversationID)
+	require.NotContains(t, info.path, "raw-cursor")
+	require.Equal(t, info.method+" "+info.path, info.endpoint)
+}
+
+func TestExtractRequestInfoSanitizesConversationReadPath(t *testing.T) {
+	rawConversationID := "conv-read-path"
+	ctx := newTestAppTheoryContext(http.MethodPost, "/api/v1/conversations/"+rawConversationID+"/read")
+
+	info := extractRequestInfo(ctx)
+	require.Equal(t, http.MethodPost, info.method)
+	require.Contains(t, info.path, "/api/v1/conversations/conversation-sha256:")
+	require.Contains(t, info.path, "/read")
+	require.NotContains(t, info.path, rawConversationID)
+	require.Equal(t, info.method+" "+info.path, info.endpoint)
+}
