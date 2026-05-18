@@ -10,7 +10,7 @@ available.
 
 ## Scope
 
-This runbook covers the incident-control sequence for these failing sources, in containment order:
+This runbook covers the incident-control sequence for these failing sources, in containment order. Use `docs/operations/processor-storm-recovery-runbook.md` for M4 recovery decision records, dry-run snapshot tooling, and per-surface backfill/reconciliation planning:
 
 1. `metrics-processor` DynamoDB stream mapping
 2. `ai-processor` DynamoDB stream mapping
@@ -130,6 +130,8 @@ For each processor:
 
 ### 5. Backfill or reconcile derived data
 
+Use `docs/operations/processor-storm-recovery-runbook.md` before live recovery. It preserves the M4 boundary: prepare decisions, dry-run evidence, and state-matrix fields first; execute no live backfill/reconciliation until creator/Ops explicitly authorizes the recovery window.
+
 For every derived feature paused during containment, record one recovery decision:
 
 - **Backfilled** from source-of-truth records.
@@ -144,6 +146,8 @@ Minimum projections to evaluate during this storm class:
 - severance state;
 - DLQ processing outcomes;
 - federation aggregation rollups.
+
+For each decision, record the recovery mode, source of truth, dry-run evidence, execution owner, residual stale/missing-history rationale, verifier, and timestamp. Empty queues or green processors are not sufficient proof that recovery completed.
 
 ### 6. Repeat for the second instance
 
