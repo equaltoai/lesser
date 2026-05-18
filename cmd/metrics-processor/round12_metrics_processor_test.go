@@ -16,6 +16,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -389,12 +391,10 @@ func TestHandler_HandleDynamoDBRecord_FailureSendsToDLQ(t *testing.T) {
 
 func TestInitializeMetricsProcessor_AndMain(t *testing.T) {
 	originalMustInitializeLambdaFn := mustInitializeLambdaFn
-	originalInitializeWithDefaultsFn := initializeWithDefaultsFn
 	originalLambdaStartFn := lambdaStartFn
 	originalRunningUnitTestsFn := runningUnitTestsFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = originalMustInitializeLambdaFn
-		initializeWithDefaultsFn = originalInitializeWithDefaultsFn
 		lambdaStartFn = originalLambdaStartFn
 		runningUnitTestsFn = originalRunningUnitTestsFn
 	})
@@ -410,7 +410,6 @@ func TestInitializeMetricsProcessor_AndMain(t *testing.T) {
 			Repos:  repoStorage,
 		}
 	}
-	initializeWithDefaultsFn = func(_ *common.LambdaContext) error { return errors.New("defaults failed") }
 	runningUnitTestsFn = func() bool { return false }
 
 	initializeMetricsProcessorOnStart()
@@ -465,4 +464,63 @@ func TestInitializeMetricsProcessor_AndMain(t *testing.T) {
 
 	_, ok = any(repos).(core.RepositoryStorage)
 	require.True(t, ok)
+}
+
+func TestInitializeMetricsProcessor_FailsClosedOnStorageError(t *testing.T) {
+	originalMustInitializeLambdaFn := mustInitializeLambdaFn
+	originalNewLambdaOptimizedClientFn := newLambdaOptimizedClientFn
+	originalNewRepositoryFactoryFn := newRepositoryFactoryFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = originalMustInitializeLambdaFn
+		newLambdaOptimizedClientFn = originalNewLambdaOptimizedClientFn
+		newRepositoryFactoryFn = originalNewRepositoryFactoryFn
+	})
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
+		return &common.LambdaContext{
+			Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+			Logger: zap.NewNop(),
+		}
+	}
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+		return nil, errors.New("storage unavailable")
+	}
+
+	err := initializeMetricsProcessor()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage client initialization failed")
+}
+
+func TestInitializeMetricsStorage_CreatesReposAndStoresClient(t *testing.T) {
+	originalNewLambdaOptimizedClientFn := newLambdaOptimizedClientFn
+	originalNewRepositoryFactoryFn := newRepositoryFactoryFn
+	t.Cleanup(func() {
+		newLambdaOptimizedClientFn = originalNewLambdaOptimizedClientFn
+		newRepositoryFactoryFn = originalNewRepositoryFactoryFn
+	})
+
+	db := dynamormmocks.NewMockExtendedDB()
+	expectedRepos := mocks.NewMockRepositoryStorage()
+	var gotRegion, gotTable string
+	newLambdaOptimizedClientFn = func(_ context.Context, region string) (dynamormCore.DB, error) {
+		gotRegion = region
+		return db, nil
+	}
+	newRepositoryFactoryFn = func(gotDB dynamormCore.DB, tableName string, _ *zap.Logger) (core.RepositoryStorage, error) {
+		require.Same(t, db, gotDB)
+		gotTable = tableName
+		return expectedRepos, nil
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	}
+	gotRepos, err := initializeMetricsStorage(ctx)
+	require.NoError(t, err)
+	require.Same(t, expectedRepos, gotRepos)
+	require.Same(t, db, ctx.DynamoDB)
+	require.Same(t, expectedRepos, ctx.Repos)
+	require.Equal(t, "us-east-1", gotRegion)
+	require.Equal(t, "test-table", gotTable)
 }

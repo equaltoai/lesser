@@ -21,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/dlq"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 type dlqProcessor interface {
@@ -184,20 +185,29 @@ func (h *DLQProcessorHandler) handleAnalytics(ctx context.Context) error {
 
 // Global variables for standardized Lambda initialization.
 var (
-	lambdaCtx     *common.LambdaContext
-	cfg           *config.Config
-	logger        *zap.Logger
-	repos         interface{} //nolint:unused // dependency injection pattern - available for processor extensions
-	handler       *DLQProcessorHandler
-	lambdaStartFn = lambda.Start
+	lambdaCtx                  *common.LambdaContext
+	cfg                        *config.Config
+	logger                     *zap.Logger
+	repos                      interface{} //nolint:unused // dependency injection pattern - available for processor extensions
+	handler                    *DLQProcessorHandler
+	runningUnitTestsFn         = common.RunningUnitTests
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	lambdaStartFn              = lambda.Start
 )
 
 func init() {
-	if common.RunningUnitTests() {
+	if runningUnitTestsFn() {
 		return
 	}
 
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	if err := initializeDLQProcessor(); err != nil {
+		logger.Fatal("failed to initialize dlq processor", zap.Error(err))
+	}
+}
+
+func initializeDLQProcessor() error {
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "dlq-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -206,15 +216,48 @@ func init() {
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos
 
-	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	db, err := initializeDLQStorage(lambdaCtx)
+	if err != nil {
+		return err
 	}
-
-	db := lambdaCtx.DynamoDB.(core.DB)
 	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
 	handler = NewDLQProcessorHandler(processor, logger)
 
 	logger.Info("DLQ processor initialized successfully")
+	return nil
+}
+
+func initializeDLQStorage(lambdaCtx *common.LambdaContext) (core.DB, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("dlq-processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("dlq-processor config is nil")
+	}
+	if lambdaCtx.DynamoDB != nil {
+		db, ok := lambdaCtx.DynamoDB.(core.DB)
+		if !ok || db == nil {
+			return nil, fmt.Errorf("dlq-processor invalid dynamodb client")
+		}
+		return db, nil
+	}
+
+	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
+	if tableName == "" {
+		return nil, fmt.Errorf("dlq-processor dynamodb table name is required")
+	}
+
+	region := strings.TrimSpace(lambdaCtx.Config.Region)
+	if region == "" {
+		return nil, fmt.Errorf("dlq-processor AWS region is required")
+	}
+
+	db, err := newLambdaOptimizedClientFn(context.Background(), region)
+	if err != nil {
+		return nil, fmt.Errorf("dlq-processor storage client initialization failed: %w", err)
+	}
+	lambdaCtx.DynamoDB = db
+	return db, nil
 }
 
 func main() {

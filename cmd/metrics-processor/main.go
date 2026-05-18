@@ -17,11 +17,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -768,13 +771,66 @@ var (
 )
 
 var (
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	lambdaStartFn            = lambda.Start
-	newUUIDFn                = func() string { return uuid.New().String() }
-	validateUUIDFn           = common.ValidateUUID
-	runningUnitTestsFn       = common.RunningUnitTests
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+	lambdaStartFn      = lambda.Start
+	newUUIDFn          = func() string { return uuid.New().String() }
+	validateUUIDFn     = common.ValidateUUID
+	runningUnitTestsFn = common.RunningUnitTests
 )
+
+func initializeMetricsStorage(lambdaCtx *common.LambdaContext) (core.RepositoryStorage, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("metrics-processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("metrics-processor config is nil")
+	}
+
+	if lambdaCtx.Repos != nil {
+		repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+		if !ok || repos == nil {
+			return nil, fmt.Errorf("metrics-processor invalid repository storage")
+		}
+		return repos, nil
+	}
+
+	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
+	if tableName == "" {
+		return nil, fmt.Errorf("metrics-processor dynamodb table name is required")
+	}
+
+	region := strings.TrimSpace(lambdaCtx.Config.Region)
+	if region == "" {
+		return nil, fmt.Errorf("metrics-processor AWS region is required")
+	}
+
+	var db dynamormCore.DB
+	if lambdaCtx.DynamoDB != nil {
+		var ok bool
+		db, ok = lambdaCtx.DynamoDB.(dynamormCore.DB)
+		if !ok || db == nil {
+			return nil, fmt.Errorf("metrics-processor invalid dynamodb client")
+		}
+	} else {
+		var err error
+		db, err = newLambdaOptimizedClientFn(context.Background(), region)
+		if err != nil {
+			return nil, fmt.Errorf("metrics-processor storage client initialization failed: %w", err)
+		}
+		lambdaCtx.DynamoDB = db
+	}
+
+	repos, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("metrics-processor repository initialization failed: %w", err)
+	}
+	lambdaCtx.Repos = repos
+	return repos, nil
+}
 
 func initializeMetricsProcessor() error {
 	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
@@ -789,16 +845,10 @@ func initializeMetricsProcessor() error {
 		logger = zap.NewNop()
 	}
 
-	var ok bool
-	repos, ok = lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok || repos == nil {
-		return fmt.Errorf("metrics-processor invalid repository storage")
-	}
-
-	// Initialize with processor-specific defaults
-	err := initializeWithDefaultsFn(lambdaCtx)
+	var err error
+	repos, err = initializeMetricsStorage(lambdaCtx)
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		return err
 	}
 
 	// Function-specific initialization only

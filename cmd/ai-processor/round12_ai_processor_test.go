@@ -12,9 +12,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -474,8 +477,12 @@ func TestAIProcessor_HandleDynamoDBRecord_PanicRecovery_Round12(t *testing.T) {
 func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	origStart := lambdaStartFn
 	origUnmarshal := unmarshalItemFn
+	origAnalyzerFn := newContentAnalyzerFn
+	origSaverFn := newAnalysisSaverFn
 	t.Cleanup(func() { lambdaStartFn = origStart })
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
+	t.Cleanup(func() { newContentAnalyzerFn = origAnalyzerFn })
+	t.Cleanup(func() { newAnalysisSaverFn = origSaverFn })
 
 	analysis := &ai.AIAnalysis{
 		ID:               "analysis-1",
@@ -545,11 +552,15 @@ func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	require.Equal(t, 1, analyzer.calls)
 	require.Equal(t, 1, saver.calls)
 
-	p := NewSimplifiedAIProcessor(&common.LambdaContext{
+	newContentAnalyzerFn = func(*common.LambdaContext) (contentAnalyzer, error) { return analyzer, nil }
+	newAnalysisSaverFn = func(storageCore.RepositoryStorage, core.DB, *zap.Logger) analysisSaver { return saver }
+	p, err := NewSimplifiedAIProcessor(&common.LambdaContext{
 		DynamoDB: new(mocks.MockDB),
 		Config:   &config.Config{DynamoTableName: "test-table"},
 		Logger:   zap.NewNop(),
+		Repos:    testingmocks.NewMockRepositoryStorage(),
 	})
+	require.NoError(t, err)
 	require.NotNil(t, p)
 }
 
@@ -559,4 +570,70 @@ func TestHandleAIProcessorStreamRecord_MissingProcessor_Round12(t *testing.T) {
 
 	processor = nil
 	require.Error(t, handleAIProcessorStreamRecord(nil, events.DynamoDBEventRecord{EventID: "1", EventName: "INSERT"}))
+}
+
+func TestInitializeAIProcessor_FailsClosedOnStorageError(t *testing.T) {
+	origMust := mustInitializeLambdaFn
+	origNewClient := newLambdaOptimizedClientFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMust
+		newLambdaOptimizedClientFn = origNewClient
+	})
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
+		return &common.LambdaContext{
+			Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+			Logger: zap.NewNop(),
+		}
+	}
+	newLambdaOptimizedClientFn = func(context.Context, string) (core.DB, error) {
+		return nil, errors.New("storage unavailable")
+	}
+
+	err := initializeAIProcessor()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage client initialization failed")
+}
+
+func TestInitializeAIStorage_CreatesReposAndStoresClient(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	origNewFactory := newRepositoryFactoryFn
+	t.Cleanup(func() {
+		newLambdaOptimizedClientFn = origNewClient
+		newRepositoryFactoryFn = origNewFactory
+	})
+
+	db := new(mocks.MockDB)
+	expectedRepos := testingmocks.NewMockRepositoryStorage()
+	var gotRegion, gotTable string
+	newLambdaOptimizedClientFn = func(_ context.Context, region string) (core.DB, error) {
+		gotRegion = region
+		return db, nil
+	}
+	newRepositoryFactoryFn = func(gotDB core.DB, tableName string, _ *zap.Logger) (storageCore.RepositoryStorage, error) {
+		require.Same(t, db, gotDB)
+		gotTable = tableName
+		return expectedRepos, nil
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "ai-table"},
+		Logger: zap.NewNop(),
+	}
+	gotRepos, err := initializeAIStorage(ctx)
+	require.NoError(t, err)
+	require.Same(t, expectedRepos, gotRepos)
+	require.Same(t, db, ctx.DynamoDB)
+	require.Same(t, expectedRepos, ctx.Repos)
+	require.Equal(t, "us-east-1", gotRegion)
+	require.Equal(t, "ai-table", gotTable)
+}
+
+func TestNewSimplifiedAIProcessor_FailsClosedWithoutStorage(t *testing.T) {
+	_, err := NewSimplifiedAIProcessor(&common.LambdaContext{
+		Config: &config.Config{DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "dynamodb client is not initialized")
 }

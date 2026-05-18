@@ -101,6 +101,7 @@ type DomainStat struct {
 
 // NewFederationAggregatorProcessor creates a new federation aggregator processor
 func NewFederationAggregatorProcessor(db dynamormCore.DB, tableName string, lambdaCtx *common.LambdaContext) *FederationAggregatorProcessor {
+	federationAggregationTableName = tableName
 	federationActivityRepository := repositories.NewFederationActivityRepository(db, tableName, lambdaCtx.Logger, nil)
 
 	return &FederationAggregatorProcessor{
@@ -183,12 +184,12 @@ func (p *FederationAggregatorProcessor) processSQSMessage(ctx context.Context, r
 }
 
 var (
-	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
-	logger    *zap.Logger
-	repos     core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
-	processor *FederationAggregatorProcessor
-	db        dynamormCore.DB
+	lambdaCtx                      *common.LambdaContext
+	cfg                            *config.Config
+	repos                          core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
+	processor                      *FederationAggregatorProcessor
+	db                             dynamormCore.DB
+	federationAggregationTableName string
 )
 
 func init() {
@@ -202,7 +203,6 @@ func init() {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newProcessorFn             = NewFederationAggregatorProcessor
 	lambdaStartFn              = lambda.Start
@@ -217,16 +217,10 @@ func initializeFederationAggregator() error {
 
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
-	logger = lambdaCtx.Logger
 	if lambdaCtx.Repos != nil {
 		if repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage); ok {
 			repos = repoStorage
 		}
-	}
-
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Initialize DynamORM with Lambda optimizations
@@ -237,6 +231,7 @@ func initializeFederationAggregator() error {
 	}
 
 	processor = newProcessorFn(db, cfg.DynamoTableName, lambdaCtx)
+	federationAggregationTableName = cfg.DynamoTableName
 	return nil
 }
 
@@ -378,9 +373,10 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to marshal aggregation event")
 	}
 
-	// Option 1: Use SQS for async processing (preferred for resilience)
-	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/federation-aggregator-queue",
-		p.lambdaCtx.Config.Region, p.lambdaCtx.Config.AWSAccountID)
+	queueURL, err := p.federationAggregatorQueueURL()
+	if err != nil {
+		return err
+	}
 
 	sqsInput := &sqs.SendMessageInput{
 		QueueUrl:    &queueURL,
@@ -411,7 +407,7 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 		zap.Error(sqsErr))
 
 	// Option 2: Direct Lambda invocation (fallback)
-	functionName := "federation-aggregator" // This Lambda function name
+	functionName := p.federationAggregatorFunctionName()
 
 	lambdaInput := &awslambda.InvokeInput{
 		FunctionName:   aws.String(functionName),
@@ -447,11 +443,58 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 	return nil
 }
 
+func (p *FederationAggregatorProcessor) federationAggregatorQueueURL() (string, error) {
+	if p == nil || p.lambdaCtx == nil || p.lambdaCtx.Config == nil {
+		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Lambda config not available")
+	}
+
+	cfg := p.lambdaCtx.Config
+	region := strings.TrimSpace(cfg.Region)
+	accountID := strings.TrimSpace(cfg.AWSAccountID)
+	if region == "" {
+		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "AWS region not configured")
+	}
+	if accountID == "" {
+		return "", pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "AWS account ID not configured")
+	}
+
+	queueName := naming.ResourceNameWithApp(
+		os.Getenv("APP_NAME"),
+		"federation-aggregator-queue",
+		firstNonEmpty(cfg.Stage, cfg.Environment, os.Getenv("STAGE"), os.Getenv("ENVIRONMENT")),
+	)
+	return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", region, accountID, queueName), nil
+}
+
+func (p *FederationAggregatorProcessor) federationAggregatorFunctionName() string {
+	if p == nil || p.lambdaCtx == nil || p.lambdaCtx.Config == nil {
+		return naming.ResourceNameWithApp(os.Getenv("APP_NAME"), "federation-aggregator", os.Getenv("STAGE"))
+	}
+	cfg := p.lambdaCtx.Config
+	return naming.ResourceNameWithApp(
+		os.Getenv("APP_NAME"),
+		"federation-aggregator",
+		firstNonEmpty(cfg.Stage, cfg.Environment, os.Getenv("STAGE"), os.Getenv("ENVIRONMENT")),
+	)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 // Helper functions - removed as we use aws.String, aws.Int32 instead
 
 // TableName returns the DynamoDB table name for FederationAggregation
 func (FederationAggregation) TableName() string {
-	return "lesser-main"
+	if tableName := strings.TrimSpace(federationAggregationTableName); tableName != "" {
+		return tableName
+	}
+	return config.GetMainTableName()
 }
 
 // BeforeCreate hook for FederationAggregation

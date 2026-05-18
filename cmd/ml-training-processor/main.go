@@ -22,6 +22,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
@@ -73,14 +74,14 @@ type moderationMLRepository interface {
 }
 
 var (
-	runningUnitTestsFn       = common.RunningUnitTests
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	newMLTrainingProcessorFn = NewMLTrainingProcessor
-	lambdaStartFn            = lambda.Start
-	newBedrockClientFn       = func(cfg aws.Config) bedrockJobGetter { return bedrock.NewFromConfig(cfg) }
-	newS3ClientFn            = func(cfg aws.Config) s3ObjectGetter { return s3.NewFromConfig(cfg) }
-	newModerationMLRepoFn    = func(db core.DB, tableName string, logger *zap.Logger) moderationMLRepository {
+	runningUnitTestsFn         = common.RunningUnitTests
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newMLTrainingProcessorFn   = NewMLTrainingProcessor
+	lambdaStartFn              = lambda.Start
+	newBedrockClientFn         = func(cfg aws.Config) bedrockJobGetter { return bedrock.NewFromConfig(cfg) }
+	newS3ClientFn              = func(cfg aws.Config) s3ObjectGetter { return s3.NewFromConfig(cfg) }
+	newModerationMLRepoFn      = func(db core.DB, tableName string, logger *zap.Logger) moderationMLRepository {
 		return repositories.NewModerationMLRepository(db, tableName, logger)
 	}
 	writeStreamingEventFn = func(ctx context.Context, db core.DB, event *models.StreamingEvent) error {
@@ -109,9 +110,8 @@ func initializeMLTraining() error {
 		LambdaType:  common.LambdaTypeProcessor,
 	})
 
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
+	if err := initializeMLTrainingStorage(lambdaCtx); err != nil {
+		return err
 	}
 
 	// Initialize processor
@@ -124,14 +124,62 @@ func initializeMLTraining() error {
 	return nil
 }
 
+func initializeMLTrainingStorage(lambdaCtx *common.LambdaContext) error {
+	if lambdaCtx == nil {
+		return fmt.Errorf("ml-training-processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return fmt.Errorf("ml-training-processor config is nil")
+	}
+	if lambdaCtx.DynamoDB != nil {
+		db, ok := lambdaCtx.DynamoDB.(core.DB)
+		if !ok || db == nil {
+			return fmt.Errorf("ml-training-processor invalid dynamodb client")
+		}
+		return nil
+	}
+
+	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
+	if tableName == "" {
+		return fmt.Errorf("ml-training-processor dynamodb table name is required")
+	}
+
+	region := strings.TrimSpace(lambdaCtx.Config.Region)
+	if region == "" {
+		return fmt.Errorf("ml-training-processor AWS region is required")
+	}
+
+	db, err := newLambdaOptimizedClientFn(context.Background(), region)
+	if err != nil {
+		return fmt.Errorf("ml-training-processor storage client initialization failed: %w", err)
+	}
+	lambdaCtx.DynamoDB = db
+	return nil
+}
+
 // NewMLTrainingProcessor creates a new ML training processor
 func NewMLTrainingProcessor() (*MLTrainingProcessor, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("ml-training-processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("ml-training-processor config is nil")
+	}
+	if lambdaCtx.AWSServices == nil {
+		return nil, fmt.Errorf("ml-training-processor AWS services are not initialized")
+	}
 	// Get config from the initialized lambda context
 	globalCfg := lambdaCtx.AWSServices.Config
 
 	// Use the standardized database connection
-	db := lambdaCtx.DynamoDB.(core.DB)
+	db, ok := lambdaCtx.DynamoDB.(core.DB)
+	if !ok || db == nil {
+		return nil, fmt.Errorf("ml-training-processor dynamodb client is not initialized")
+	}
 	tableName := lambdaCtx.Config.DynamoTableName
+	if strings.TrimSpace(tableName) == "" {
+		return nil, fmt.Errorf("ml-training-processor dynamodb table name is required")
+	}
 
 	// Initialize Bedrock client
 	bedrockClient := newBedrockClientFn(globalCfg)

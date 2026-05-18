@@ -22,6 +22,8 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory/pkg/core"
@@ -291,21 +293,42 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 }
 
 var (
-	lambdaCtx       *common.LambdaContext
-	cfg             *config.Config //nolint:unused // Reserved for dependency injection pattern
-	logger          *zap.Logger
-	repos           storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
-	processor       *AIProcessor
-	unmarshalItemFn = stream.UnmarshalItem
-	lambdaStartFn   = lambda.Start
+	lambdaCtx                  *common.LambdaContext
+	cfg                        *config.Config //nolint:unused // Reserved for dependency injection pattern
+	logger                     *zap.Logger
+	repos                      storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
+	processor                  *AIProcessor
+	unmarshalItemFn            = stream.UnmarshalItem
+	runningUnitTestsFn         = common.RunningUnitTests
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db core.DB, tableName string, logger *zap.Logger) (storageCore.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+	newContentAnalyzerFn = func(lambdaCtx *common.LambdaContext) (contentAnalyzer, error) {
+		if lambdaCtx == nil || lambdaCtx.AWSServices == nil {
+			return nil, fmt.Errorf("AI processor AWS services are not initialized")
+		}
+		return ai.NewAIService(lambdaCtx.AWSServices.Config, ai.DefaultAIConfig()), nil
+	}
+	newAnalysisSaverFn = func(repos storageCore.RepositoryStorage, _ core.DB, logger *zap.Logger) analysisSaver {
+		return aiService.NewService(repos, nil, logger)
+	}
+	lambdaStartFn = lambda.Start
 )
 
 func init() {
-	if common.RunningUnitTests() {
+	if runningUnitTestsFn() {
 		return
 	}
+	if err := initializeAIProcessor(); err != nil {
+		logger.Fatal("failed to initialize AI processor", zap.Error(err))
+	}
+}
+
+func initializeAIProcessor() error {
 	// Standardized Lambda initialization for processor functions
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "ai-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -313,28 +336,108 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
 
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	var err error
+	repos, err = initializeAIStorage(lambdaCtx)
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		return err
 	}
 
 	// Initialize processor with simplified configuration
-	processor = NewSimplifiedAIProcessor(lambdaCtx)
+	processor, err = NewSimplifiedAIProcessor(lambdaCtx)
+	return err
+}
+
+func initializeAIStorage(lambdaCtx *common.LambdaContext) (storageCore.RepositoryStorage, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("AI processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("AI processor config is nil")
+	}
+
+	if lambdaCtx.Repos != nil {
+		repos, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage)
+		if !ok || repos == nil {
+			return nil, fmt.Errorf("AI processor invalid repository storage")
+		}
+		return repos, nil
+	}
+
+	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
+	if tableName == "" {
+		return nil, fmt.Errorf("AI processor dynamodb table name is required")
+	}
+
+	region := strings.TrimSpace(lambdaCtx.Config.Region)
+	if region == "" {
+		return nil, fmt.Errorf("AI processor AWS region is required")
+	}
+
+	var db core.DB
+	if lambdaCtx.DynamoDB != nil {
+		var ok bool
+		db, ok = lambdaCtx.DynamoDB.(core.DB)
+		if !ok || db == nil {
+			return nil, fmt.Errorf("AI processor invalid dynamodb client")
+		}
+	} else {
+		var err error
+		db, err = newLambdaOptimizedClientFn(context.Background(), region)
+		if err != nil {
+			return nil, fmt.Errorf("AI processor storage client initialization failed: %w", err)
+		}
+		lambdaCtx.DynamoDB = db
+	}
+
+	repos, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("AI processor repository initialization failed: %w", err)
+	}
+	lambdaCtx.Repos = repos
+	return repos, nil
 }
 
 // NewSimplifiedAIProcessor creates a new AI processor instance with simplified Lambda context
-func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
+func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) (*AIProcessor, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("AI processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("AI processor config is nil")
+	}
+
+	db, ok := lambdaCtx.DynamoDB.(core.DB)
+	if !ok || db == nil {
+		return nil, fmt.Errorf("AI processor dynamodb client is not initialized")
+	}
+
+	repoStorage, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	if !ok || repoStorage == nil {
+		return nil, fmt.Errorf("AI processor repository storage is not initialized")
+	}
+
+	analyzer, err := newContentAnalyzerFn(lambdaCtx)
+	if err != nil {
+		return nil, err
+	}
+	if analyzer == nil {
+		return nil, fmt.Errorf("AI processor content analyzer is not initialized")
+	}
+
+	saver := newAnalysisSaverFn(repoStorage, db, lambdaCtx.Logger)
+	if saver == nil {
+		return nil, fmt.Errorf("AI processor analysis saver is not initialized")
+	}
+
 	// Initialize simplified processor with essential components
 	return &AIProcessor{
-		db:        lambdaCtx.DynamoDB.(core.DB),
-		tableName: lambdaCtx.Config.DynamoTableName,
-		logger:    lambdaCtx.Logger,
-	}
+		db:         db,
+		tableName:  lambdaCtx.Config.DynamoTableName,
+		aiAnalyzer: analyzer,
+		aiService:  saver,
+		logger:     lambdaCtx.Logger,
+	}, nil
 }
 
 func main() {

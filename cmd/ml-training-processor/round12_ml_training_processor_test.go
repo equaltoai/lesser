@@ -617,14 +617,12 @@ func TestNewMLTrainingProcessor_AndMain_Round12(t *testing.T) {
 func TestInitializeMLTraining_Branches_Round12(t *testing.T) {
 	originalRunning := runningUnitTestsFn
 	originalMustInit := mustInitializeLambdaFn
-	originalInitDefaults := initializeWithDefaultsFn
 	originalNewProc := newMLTrainingProcessorFn
 	originalLambdaCtx := lambdaCtx
 	originalProcessor := processor
 	t.Cleanup(func() {
 		runningUnitTestsFn = originalRunning
 		mustInitializeLambdaFn = originalMustInit
-		initializeWithDefaultsFn = originalInitDefaults
 		newMLTrainingProcessorFn = originalNewProc
 		lambdaCtx = originalLambdaCtx
 		processor = originalProcessor
@@ -640,7 +638,6 @@ func TestInitializeMLTraining_Branches_Round12(t *testing.T) {
 	}
 
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeLambda }
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults failed") }
 	newMLTrainingProcessorFn = func() (*MLTrainingProcessor, error) {
 		return &MLTrainingProcessor{logger: zaptest.NewLogger(t)}, nil
 	}
@@ -656,7 +653,6 @@ func TestInitializeMLTraining_Branches_Round12(t *testing.T) {
 	initializeMLTrainingOnStart()
 
 	runningUnitTestsFn = func() bool { return false }
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
 	newMLTrainingProcessorFn = func() (*MLTrainingProcessor, error) {
 		return &MLTrainingProcessor{logger: zaptest.NewLogger(t)}, nil
 	}
@@ -951,4 +947,56 @@ func TestMetricsExtractionHelpers_Branches_Round12(t *testing.T) {
 		_, err := p.marshalToRawMetrics(&types.TrainingMetrics{TrainingLoss: &nan})
 		require.Error(t, err)
 	})
+}
+
+func TestInitializeMLTrainingStorage_FailsClosed(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	t.Cleanup(func() { newLambdaOptimizedClientFn = origNewClient })
+
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+		return nil, errors.New("storage unavailable")
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	}
+	err := initializeMLTrainingStorage(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage client initialization failed")
+}
+
+func TestInitializeMLTrainingStorage_CreatesClient(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	t.Cleanup(func() { newLambdaOptimizedClientFn = origNewClient })
+
+	db := &fakeDB{}
+	var gotRegion string
+	newLambdaOptimizedClientFn = func(_ context.Context, region string) (dynamormCore.DB, error) {
+		gotRegion = region
+		return db, nil
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "ml-table"},
+		Logger: zap.NewNop(),
+	}
+	err := initializeMLTrainingStorage(ctx)
+	require.NoError(t, err)
+	require.Same(t, db, ctx.DynamoDB)
+	require.Equal(t, "us-east-1", gotRegion)
+}
+
+func TestNewMLTrainingProcessor_FailsClosedWithoutStorage(t *testing.T) {
+	origLambdaCtx := lambdaCtx
+	t.Cleanup(func() { lambdaCtx = origLambdaCtx })
+
+	lambdaCtx = &common.LambdaContext{
+		Config:      &config.Config{DynamoTableName: "test-table"},
+		Logger:      zap.NewNop(),
+		AWSServices: &awsinit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
+	}
+	_, err := NewMLTrainingProcessor()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "dynamodb client is not initialized")
 }

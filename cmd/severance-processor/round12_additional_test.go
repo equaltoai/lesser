@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -53,11 +55,9 @@ func (f *fakeRegistry) GetStorage() storageCore.RepositoryStorage { return f.sto
 
 func TestInitializeSeveranceProcessor_SetsGlobalsAndAdapter(t *testing.T) {
 	originalMustInitialize := mustInitializeLambdaFn
-	originalInitializeDefaults := initializeWithDefaultsFn
 	originalNewRegistry := newRegistryFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = originalMustInitialize
-		initializeWithDefaultsFn = originalInitializeDefaults
 		newRegistryFn = originalNewRegistry
 	})
 
@@ -73,7 +73,6 @@ func TestInitializeSeveranceProcessor_SetsGlobalsAndAdapter(t *testing.T) {
 	}
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeLambdaCtx }
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults") }
 	newRegistryFn = services.NewRegistry
 
 	require.NoError(t, initializeSeveranceProcessor())
@@ -89,11 +88,9 @@ func TestInitializeSeveranceProcessor_SetsGlobalsAndAdapter(t *testing.T) {
 
 func TestInitializeSeveranceProcessor_RegistryError(t *testing.T) {
 	originalMustInitialize := mustInitializeLambdaFn
-	originalInitializeDefaults := initializeWithDefaultsFn
 	originalNewRegistry := newRegistryFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = originalMustInitialize
-		initializeWithDefaultsFn = originalInitializeDefaults
 		newRegistryFn = originalNewRegistry
 	})
 
@@ -105,7 +102,6 @@ func TestInitializeSeveranceProcessor_RegistryError(t *testing.T) {
 	}
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeLambdaCtx }
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
 	newRegistryFn = func(...services.RegistryOption) (*services.Registry, error) {
 		return nil, errors.New("boom")
 	}
@@ -438,4 +434,55 @@ func TestMain_UsesLambdaStartFn(t *testing.T) {
 
 	main()
 	require.True(t, called)
+}
+
+func TestInitializeSeveranceStorage_FailsClosed(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	t.Cleanup(func() { newLambdaOptimizedClientFn = origNewClient })
+
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+		return nil, errors.New("storage unavailable")
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	}
+	_, err := initializeSeveranceStorage(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage client initialization failed")
+}
+
+func TestInitializeSeveranceStorage_CreatesReposAndStoresClient(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	origNewFactory := newRepositoryFactoryFn
+	t.Cleanup(func() {
+		newLambdaOptimizedClientFn = origNewClient
+		newRepositoryFactoryFn = origNewFactory
+	})
+
+	db := dynamormmocks.NewMockExtendedDB()
+	expectedRepos := testingmocks.NewMockRepositoryStorage()
+	var gotRegion, gotTable string
+	newLambdaOptimizedClientFn = func(_ context.Context, region string) (dynamormCore.DB, error) {
+		gotRegion = region
+		return db, nil
+	}
+	newRepositoryFactoryFn = func(gotDB dynamormCore.DB, tableName string, _ *zap.Logger) (storageCore.RepositoryStorage, error) {
+		require.Same(t, db, gotDB)
+		gotTable = tableName
+		return expectedRepos, nil
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "severance-table"},
+		Logger: zap.NewNop(),
+	}
+	gotRepos, err := initializeSeveranceStorage(ctx)
+	require.NoError(t, err)
+	require.Same(t, expectedRepos, gotRepos)
+	require.Same(t, db, ctx.DynamoDB)
+	require.Same(t, expectedRepos, ctx.Repos)
+	require.Equal(t, "us-east-1", gotRegion)
+	require.Equal(t, "severance-table", gotTable)
 }
