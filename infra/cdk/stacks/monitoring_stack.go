@@ -310,6 +310,15 @@ func (s *MonitoringStack) addLambdaMetrics(environment string, spec inventory.La
 		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
+	awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sErrorsAlarm", sanitizeConstructID(spec.Name))), &awscloudwatch.AlarmProps{
+		AlarmName:          jsii.String(fmt.Sprintf("%s-errors", functionName)),
+		Metric:             errorsMetric,
+		Threshold:          jsii.Number(1),
+		EvaluationPeriods:  jsii.Number(1),
+		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
+
 	awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sDurationAlarm", sanitizeConstructID(spec.Name))), &awscloudwatch.AlarmProps{
 		AlarmName:          jsii.String(fmt.Sprintf("%s-duration", functionName)),
 		Metric:             durationMetric,
@@ -412,6 +421,15 @@ func (s *MonitoringStack) addQueueMetrics(environment string, spec queueSpec) {
 		Metric:             ageOfOldest,
 		Threshold:          jsii.Number(sqsAgeThresholdSecondsFor(environment)),
 		EvaluationPeriods:  jsii.Number(2),
+		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
+
+	awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sDepthAlarm", sanitizeConstructID(spec.Logical))), &awscloudwatch.AlarmProps{
+		AlarmName:          jsii.String(fmt.Sprintf("%s-depth", primaryName)),
+		Metric:             visibleMessages,
+		Threshold:          jsii.Number(sqsDepthThresholdFor(environment)),
+		EvaluationPeriods:  jsii.Number(1),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
 		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))

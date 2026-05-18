@@ -132,6 +132,9 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	// Create stream processors
 	apiStack.createStreamProcessors()
 
+	// Create minimum critical operational alarms in the normal stage stack path
+	apiStack.createCriticalAlarms()
+
 	// Setup security
 	apiStack.setupSecurity()
 
