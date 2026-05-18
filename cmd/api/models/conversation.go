@@ -12,6 +12,9 @@ type Conversation struct {
 // ConversationDetail represents a direct message conversation expanded with
 // the viewer-visible recent messages in that conversation.
 type ConversationDetail struct {
-	Conversation
-	Messages []Status `json:"messages"`
+	ID         string    `json:"id"`
+	Unread     bool      `json:"unread"`
+	Accounts   []Account `json:"accounts"`
+	LastStatus *Status   `json:"last_status,omitempty"`
+	Messages   []Status  `json:"messages"`
 }

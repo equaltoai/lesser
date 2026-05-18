@@ -55,8 +55,11 @@ func (h *Handler) convertConversationWithMessagesToAPI(ctx context.Context, resu
 	}
 
 	detail := apimodels.ConversationDetail{
-		Conversation: apiConversation,
-		Messages:     []apimodels.Status{},
+		ID:         apiConversation.ID,
+		Unread:     apiConversation.Unread,
+		Accounts:   apiConversation.Accounts,
+		LastStatus: apiConversation.LastStatus,
+		Messages:   []apimodels.Status{},
 	}
 	if result.Messages == nil {
 		return detail, nil
@@ -176,6 +179,51 @@ func (h *Handler) HandleGetConversationLift(ctx *apptheory.Context) (*apptheory.
 	return resp, nil
 }
 
+// HandleLookupConversationByCounterpartLift retrieves one 1:1 conversation by exact counterpart.
+func (h *Handler) HandleLookupConversationByCounterpartLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	counterpart := queryValue(ctx, "counterpart")
+	if err := common.ValidateRequiredParam("counterpart", counterpart); err != nil {
+		return common.RespondBadRequest(ctx, "missing counterpart")
+	}
+
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	limit := h.parseConversationLimit(ctx)
+	maxID := queryValue(ctx, "max_id")
+
+	result, err := h.registry.Conversations().LookupConversationByCounterpart(ctx.Context(), &conversations.LookupConversationByCounterpartQuery{
+		ViewerID:    username,
+		Counterpart: counterpart,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: maxID,
+		},
+	})
+	if err != nil {
+		return h.respondConversationReadError(ctx, "failed to lookup conversation by counterpart", err)
+	}
+
+	response, err := h.convertConversationWithMessagesToAPI(ctx.Context(), result, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
+	}
+	if result != nil && result.Messages != nil && result.Messages.HasMore && result.Messages.NextCursor != "" {
+		h.setConversationLookupPaginationHeader(resp, counterpart, result.Messages.NextCursor, limit)
+	}
+	return resp, nil
+}
+
 // parseConversationLimit parses the limit query parameter
 func (h *Handler) parseConversationLimit(ctx *apptheory.Context) int {
 	limitStr := queryValue(ctx, "limit")
@@ -211,9 +259,25 @@ func (h *Handler) setConversationMessagesPaginationHeader(resp *apptheory.Respon
 	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 }
 
+func (h *Handler) setConversationLookupPaginationHeader(resp *apptheory.Response, counterpart, cursor string, limit int) {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
+		return
+	}
+
+	values := url.Values{}
+	values.Set("counterpart", counterpart)
+	values.Set("max_id", cursor)
+	if limit != 20 {
+		values.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	nextURL := fmt.Sprintf("%s/api/v1/conversations/lookup?%s", h.cfg.BaseURL(), values.Encode())
+	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+}
+
 func (h *Handler) respondConversationReadError(ctx *apptheory.Context, message string, err error) (*apptheory.Response, error) {
 	if errors.Is(err, conversations.ErrConversationNotFound) ||
 		errors.Is(err, conversations.ErrNotConversationParticipant) ||
+		errors.Is(err, conversations.ErrConversationMustBeOneToOne) ||
 		strings.Contains(strings.ToLower(err.Error()), "not found") ||
 		strings.Contains(strings.ToLower(err.Error()), "not a participant") ||
 		strings.Contains(strings.ToLower(err.Error()), "access denied") {

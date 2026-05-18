@@ -119,3 +119,102 @@ func TestHandleGetConversationLift_DeniesUnavailableConversation(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleLookupConversationByCounterpartLift_ReturnsExpandedConversation(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		actorsByUser: map[string]storagemodels.Actor{
+			"ops": {
+				Username: "ops",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/ops", Type: "Person"},
+					PreferredUsername: "ops",
+					Name:              "Ops",
+				},
+			},
+		},
+	})
+
+	handler.registry = &RegistryStub{
+		ConversationsSvc: &ConversationsServiceStub{
+			LookupConversationByCounterpartFunc: func(_ context.Context, query *conversations.LookupConversationByCounterpartQuery) (*conversations.ConversationWithMessages, error) {
+				require.Equal(t, "alice", query.ViewerID)
+				require.Equal(t, "ops", query.Counterpart)
+				require.Equal(t, 2, query.Pagination.Limit)
+				return &conversations.ConversationWithMessages{
+					Conversation: &storagemodels.Conversation{
+						ID:           "conv-ops",
+						Participants: []string{"alice", "ops"},
+					},
+					Messages: &interfaces.PaginatedResult[*storagemodels.Status]{
+						Items: []*storagemodels.Status{
+							{
+								StatusID:       "status-ops",
+								AuthorID:       "https://example.com/users/ops",
+								AuthorUsername: "ops",
+								Content:        "ack",
+								Visibility:     conversations.VisibilityDirect,
+								ConversationID: "conv-ops",
+								PublishedAt:    now,
+								CreatedAt:      now,
+								UpdatedAt:      now,
+							},
+						},
+						HasMore:    true,
+						NextCursor: "cursor-ops",
+					},
+				}, nil
+			},
+		},
+	}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/conversations/lookup", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, map[string]string{"counterpart": "ops", "limit": "2"}, nil)
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(handler.HandleLookupConversationByCounterpartLift(ctx))
+	require.Contains(t, resp.Headers["link"][0], "/api/v1/conversations/lookup?")
+	require.Contains(t, resp.Headers["link"][0], "counterpart=ops")
+	require.Contains(t, resp.Headers["link"][0], "max_id=cursor-ops")
+
+	var body apimodels.ConversationDetail
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "conv-ops", body.ID)
+	require.Len(t, body.Messages, 1)
+	require.Equal(t, "status-ops", body.Messages[0].ID)
+}
+
+func TestHandleLookupConversationByCounterpartLift_RequiresCounterpart(t *testing.T) {
+	cfg := round10TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg)
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/conversations/lookup", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	requireStatus(t, http.StatusBadRequest)(handler.HandleLookupConversationByCounterpartLift(ctx))
+}
+
+func TestHandleLookupConversationByCounterpartLift_NotFound(t *testing.T) {
+	cfg := round10TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg)
+	handler.registry = &RegistryStub{
+		ConversationsSvc: &ConversationsServiceStub{
+			LookupConversationByCounterpartFunc: func(context.Context, *conversations.LookupConversationByCounterpartQuery) (*conversations.ConversationWithMessages, error) {
+				return nil, conversations.ErrConversationNotFound
+			},
+		},
+	}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/conversations/lookup", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, map[string]string{"counterpart": "missing"}, nil)
+	require.NoError(t, err)
+
+	requireStatus(t, http.StatusNotFound)(handler.HandleLookupConversationByCounterpartLift(ctx))
+}

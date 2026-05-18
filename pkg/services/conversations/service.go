@@ -225,6 +225,14 @@ type GetConversationQuery struct {
 	Pagination     interfaces.PaginationOptions `json:"pagination"`
 }
 
+// LookupConversationByCounterpartQuery contains parameters for resolving a 1:1 DM
+// conversation by the exact viewer/counterpart participant pair.
+type LookupConversationByCounterpartQuery struct {
+	ViewerID    string                       `json:"viewer_id" validate:"required"`
+	Counterpart string                       `json:"counterpart" validate:"required"`
+	Pagination  interfaces.PaginationOptions `json:"pagination"`
+}
+
 // SendMessageCommand contains all data needed to send a message to an existing 1:1 conversation.
 type SendMessageCommand struct {
 	SenderID       string   `json:"sender_id" validate:"required"`
@@ -1887,6 +1895,154 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 		Messages:     filteredMessagesResult,
 		Events:       []*streaming.Event{}, // No events for read operations
 	}, nil
+}
+
+// LookupConversationByCounterpart resolves a visible 1:1 DM conversation for the
+// authenticated viewer and one exact counterpart identifier.
+func (s *Service) LookupConversationByCounterpart(ctx context.Context, query *LookupConversationByCounterpartQuery) (*ConversationWithMessages, error) {
+	if query == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	viewerID := strings.TrimSpace(query.ViewerID)
+	counterpart := normalizeConversationCounterpartLookupInput(query.Counterpart)
+	if viewerID == "" || counterpart == "" {
+		return nil, errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
+	}
+
+	participants, participantRefs, err := s.lookupParticipantsForCounterpart(ctx, viewerID, counterpart)
+	if err != nil {
+		return nil, err
+	}
+
+	conversation, err := s.lookupDirectMessageConversationForSend(ctx, participants, participantRefs)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, errors.Join(ErrLookupExistingConversation, err)
+	}
+	if conversation == nil || strings.TrimSpace(conversation.ID) == "" {
+		return nil, ErrConversationNotFound
+	}
+	if !conversationIsOneToOne(conversation) {
+		return nil, ErrConversationMustBeOneToOne
+	}
+
+	return s.GetConversation(ctx, &GetConversationQuery{
+		ConversationID: conversation.ID,
+		ViewerID:       viewerID,
+		Pagination:     query.Pagination,
+	})
+}
+
+func normalizeConversationCounterpartLookupInput(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	trimmed = strings.TrimPrefix(trimmed, "acct:")
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	return strings.TrimSpace(trimmed)
+}
+
+func (s *Service) lookupParticipantsForCounterpart(ctx context.Context, viewerID, counterpart string) ([]string, []models.ConversationParticipantRef, error) {
+	localDomain := normalizeDirectMessageMentionDomain(s.domainName)
+	username, domain := directMessageMentionHandleParts(counterpart)
+	normalizedDomain := normalizeDirectMessageMentionDomain(domain)
+
+	if strings.Contains(counterpart, "://") && normalizedDomain != "" && normalizedDomain != localDomain {
+		ref := models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+			ParticipantType: models.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   strings.TrimRight(strings.TrimSpace(counterpart), "/"),
+			Acct:            formatConversationLookupAcct(username, normalizedDomain),
+			Domain:          normalizedDomain,
+		})
+		return buildConversationLookupParticipants(viewerID, ref)
+	}
+
+	if normalizedDomain != "" && normalizedDomain != localDomain {
+		ref, err := s.resolveRemoteCounterpartForLookup(ctx, counterpart, username, normalizedDomain)
+		if err != nil {
+			return nil, nil, err
+		}
+		return buildConversationLookupParticipants(viewerID, *ref)
+	}
+
+	counterpartID := models.CanonicalConversationParticipantID(username)
+	if counterpartID == "" ||
+		models.CanonicalConversationParticipantID(viewerID) == counterpartID {
+		return nil, nil, ErrConversationNotFound
+	}
+
+	ref := models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeLocalUser,
+		ParticipantID:   counterpartID,
+	})
+	return buildConversationLookupParticipants(viewerID, ref)
+}
+
+func (s *Service) resolveRemoteCounterpartForLookup(ctx context.Context, counterpart, username, domain string) (*models.ConversationParticipantRef, error) {
+	resolver, ok := s.federation.(remoteActorResolver)
+	if !ok || resolver == nil {
+		return nil, ErrConversationNotFound
+	}
+
+	actor, err := resolver.ResolveActor(ctx, counterpart)
+	if err != nil || actor == nil || strings.TrimSpace(actor.ID) == "" {
+		return nil, ErrConversationNotFound
+	}
+
+	identity := federationActorIdentityForDirectMessage(actor, s.domainName)
+	if username == "" {
+		username = identity.username
+	}
+	if domain == "" {
+		domain = identity.domain
+	}
+	now := time.Now().UTC()
+	ref := models.NormalizeConversationParticipantRef(models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   actor.ID,
+		Acct:            formatConversationLookupAcct(username, domain),
+		Domain:          domain,
+		ResolvedAt:      &now,
+	})
+	if ref.ParticipantID == "" {
+		return nil, ErrConversationNotFound
+	}
+	return &ref, nil
+}
+
+func buildConversationLookupParticipants(viewerID string, counterpartRef models.ConversationParticipantRef) ([]string, []models.ConversationParticipantRef, error) {
+	viewerRef := models.ConversationParticipantRef{
+		ParticipantType: models.ConversationParticipantTypeLocalUser,
+		ParticipantID:   viewerID,
+	}
+	refs := models.NormalizeConversationParticipantRefs([]models.ConversationParticipantRef{viewerRef, counterpartRef})
+	if len(refs) != 2 {
+		return nil, nil, ErrConversationNotFound
+	}
+	return models.ConversationParticipantIDsFromRefs(refs), refs, nil
+}
+
+func formatConversationLookupAcct(username, domain string) string {
+	username = strings.TrimSpace(strings.TrimPrefix(username, "@"))
+	domain = normalizeDirectMessageMentionDomain(domain)
+	if username == "" {
+		return ""
+	}
+	if domain == "" || strings.Contains(username, "@") {
+		return strings.ToLower(username)
+	}
+	return strings.ToLower(username + "@" + domain)
+}
+
+func conversationIsOneToOne(conversation *models.Conversation) bool {
+	if conversation == nil {
+		return false
+	}
+	if refs := models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs); len(refs) > 0 {
+		return len(refs) == 2
+	}
+	return len(models.CanonicalConversationParticipants(conversation.Participants)) == 2
 }
 
 // Private helper methods

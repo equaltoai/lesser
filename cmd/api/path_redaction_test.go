@@ -95,3 +95,13 @@ func TestExtractRequestInfoSanitizesConversationReadPath(t *testing.T) {
 	require.NotContains(t, info.path, rawConversationID)
 	require.Equal(t, info.method+" "+info.path, info.endpoint)
 }
+
+func TestExtractRequestInfoSanitizesConversationLookupQuery(t *testing.T) {
+	ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/conversations/lookup?counterpart=ops%40example.com&max_id=raw-cursor")
+
+	info := extractRequestInfo(ctx)
+	require.Equal(t, http.MethodGet, info.method)
+	require.Equal(t, "/api/v1/conversations/lookup", info.path)
+	require.NotContains(t, info.endpoint, "ops")
+	require.NotContains(t, info.endpoint, "raw-cursor")
+}

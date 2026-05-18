@@ -247,11 +247,12 @@ func (s *AIServiceStub) QueueForAnalysis(ctx context.Context, cmd *ai.QueueAnaly
 }
 
 type ConversationsServiceStub struct {
-	DeleteConversationFunc   func(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
-	GetConversationFunc      func(ctx context.Context, query *conversations.GetConversationQuery) (*conversations.ConversationWithMessages, error)
-	ListConversationsFunc    func(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
-	MarkConversationReadFunc func(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
-	SendDirectMessageFunc    func(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
+	DeleteConversationFunc              func(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
+	GetConversationFunc                 func(ctx context.Context, query *conversations.GetConversationQuery) (*conversations.ConversationWithMessages, error)
+	ListConversationsFunc               func(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
+	LookupConversationByCounterpartFunc func(ctx context.Context, query *conversations.LookupConversationByCounterpartQuery) (*conversations.ConversationWithMessages, error)
+	MarkConversationReadFunc            func(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
+	SendDirectMessageFunc               func(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
 }
 
 var _ ConversationsService = (*ConversationsServiceStub)(nil)
@@ -275,6 +276,13 @@ func (s *ConversationsServiceStub) ListConversations(ctx context.Context, query 
 		return s.ListConversationsFunc(ctx, query)
 	}
 	return nil, missingStub("ConversationsService.ListConversations")
+}
+
+func (s *ConversationsServiceStub) LookupConversationByCounterpart(ctx context.Context, query *conversations.LookupConversationByCounterpartQuery) (*conversations.ConversationWithMessages, error) {
+	if s != nil && s.LookupConversationByCounterpartFunc != nil {
+		return s.LookupConversationByCounterpartFunc(ctx, query)
+	}
+	return nil, missingStub("ConversationsService.LookupConversationByCounterpart")
 }
 
 func (s *ConversationsServiceStub) MarkConversationRead(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error) {
