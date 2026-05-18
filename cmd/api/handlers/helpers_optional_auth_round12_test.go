@@ -42,7 +42,7 @@ func TestHandler_authenticateUserOptional(t *testing.T) {
 	})
 
 	t.Run("valid token returns username", func(t *testing.T) {
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, nil, h.logger)
 		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead})
 		require.NoError(t, err)
 
@@ -57,7 +57,7 @@ func TestHandler_authenticateUserOptional(t *testing.T) {
 	})
 
 	t.Run("valid token without required scope returns insufficient scope", func(t *testing.T) {
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, nil, h.logger)
 		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead})
 		require.NoError(t, err)
 
@@ -72,7 +72,7 @@ func TestHandler_authenticateUserOptional(t *testing.T) {
 	})
 
 	t.Run("valid token with required scope returns username", func(t *testing.T) {
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, nil, h.logger)
 		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead, auth.ScopeWrite})
 		require.NoError(t, err)
 
@@ -147,7 +147,7 @@ func TestHandler_authenticateWithClaims(t *testing.T) {
 	})
 
 	t.Run("valid token returns claims", func(t *testing.T) {
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, nil, h.logger)
 		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead, auth.ScopeWrite})
 		require.NoError(t, err)
 
@@ -163,7 +163,7 @@ func TestHandler_authenticateWithClaims(t *testing.T) {
 	})
 
 	t.Run("valid token without required scope returns insufficient scope", func(t *testing.T) {
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, nil, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, nil, h.logger)
 		accessToken, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client", "1.2.3.4", []string{auth.ScopeRead})
 		require.NoError(t, err)
 

@@ -203,6 +203,8 @@ func TestInitializeGraphQL_Branches_Round12(t *testing.T) {
 	originalExtract := extractStandardizedServicesFn
 	originalManual := initializeManualServicesFn
 	originalSpecific := initializeGraphQLSpecificServicesFn
+	originalNewClient := newLambdaOptimizedClientFn
+	originalNewFactory := newRepositoryFactoryFn
 	originalLambdaCtx := lambdaCtx
 	originalInitTime := initTime
 
@@ -213,6 +215,8 @@ func TestInitializeGraphQL_Branches_Round12(t *testing.T) {
 		extractStandardizedServicesFn = originalExtract
 		initializeManualServicesFn = originalManual
 		initializeGraphQLSpecificServicesFn = originalSpecific
+		newLambdaOptimizedClientFn = originalNewClient
+		newRepositoryFactoryFn = originalNewFactory
 		lambdaCtx = originalLambdaCtx
 		initTime = originalInitTime
 	})
@@ -227,13 +231,19 @@ func TestInitializeGraphQL_Branches_Round12(t *testing.T) {
 		require.Equal(t, 30*time.Second, cfg.RequestTimeout)
 		return &common.LambdaContext{
 			Logger: zap.NewNop(),
-			Config: &config.Config{},
+			Config: &config.Config{DynamoTableName: "tbl", Region: "us-east-1"},
 		}
 	}
 
 	t.Run("defaults_success_uses_standardized_extraction", func(t *testing.T) {
 		var extracted, manual, specific int
 		initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
+		newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+			return &tabletheory.LambdaDB{}, nil
+		}
+		newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (storagecore.RepositoryStorage, error) {
+			return &testingmocks.MockRepositoryStorage{}, nil
+		}
 		extractStandardizedServicesFn = func() { extracted++ }
 		initializeManualServicesFn = func() { manual++ }
 		initializeGraphQLSpecificServicesFn = func() { specific++ }
@@ -250,6 +260,9 @@ func TestInitializeGraphQL_Branches_Round12(t *testing.T) {
 	t.Run("defaults_error_falls_back_to_manual_init", func(t *testing.T) {
 		var extracted, manual, specific int
 		initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("boom") }
+		newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+			return nil, errors.New("boom")
+		}
 		extractStandardizedServicesFn = func() { extracted++ }
 		initializeManualServicesFn = func() { manual++ }
 		initializeGraphQLSpecificServicesFn = func() { specific++ }
@@ -264,6 +277,12 @@ func TestInitializeGraphQL_Branches_Round12(t *testing.T) {
 	t.Run("on_start_respects_running_unit_tests_flag", func(t *testing.T) {
 		mustInitCalls = 0
 		initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
+		newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) {
+			return &tabletheory.LambdaDB{}, nil
+		}
+		newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (storagecore.RepositoryStorage, error) {
+			return &testingmocks.MockRepositoryStorage{}, nil
+		}
 		extractStandardizedServicesFn = func() {}
 		initializeManualServicesFn = func() {}
 		initializeGraphQLSpecificServicesFn = func() {}

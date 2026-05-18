@@ -334,25 +334,19 @@ func loadConfig() *Config {
 		ReputationTableName:     getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 		AWSAccountID:            getEnvOrDefault("AWS_ACCOUNT_ID", ""),
 
-		JWTSecret:            mustGetJWTSecret(),
-		JWTSecretARN:         getEnvOrDefault("JWT_SECRET_ARN", ""),
-		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
-		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
-		VAPIDPublicKey:       getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
-		VAPIDSecretARN:       getEnvOrDefault("VAPID_SECRET_ARN", ""),
-		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
-		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
-		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
-		InstanceAPIKey: getOptionalSecretFromEnvOrARN(
-			"INSTANCE_API_KEY",
-			"INSTANCE_API_KEY_ARN",
-		),
-		InstanceAPIKeyARN: strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY_ARN", "")),
-		LesserHostURL:     strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
-		LesserHostInstanceKey: getOptionalSecretFromEnvOrARN(
-			"LESSER_HOST_INSTANCE_KEY",
-			"LESSER_HOST_INSTANCE_KEY_ARN",
-		),
+		JWTSecret:                 strings.TrimSpace(getEnvOrDefault("JWT_SECRET", "")),
+		JWTSecretARN:              strings.TrimSpace(getEnvOrDefault("JWT_SECRET_ARN", "")),
+		KMSKeyID:                  getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
+		ReputationPrivateKey:      getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
+		VAPIDPublicKey:            getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
+		VAPIDSecretARN:            getEnvOrDefault("VAPID_SECRET_ARN", ""),
+		VAPIDSubject:              getEnvOrDefault("VAPID_SUBJECT", ""),
+		AdminUsername:             getEnvOrDefault("ADMIN_USERNAME", ""),
+		SystemActorPublicKey:      getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
+		InstanceAPIKey:            strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY", "")),
+		InstanceAPIKeyARN:         strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY_ARN", "")),
+		LesserHostURL:             strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
+		LesserHostInstanceKey:     strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY", "")),
 		LesserHostInstanceKeyARN:  strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY_ARN", "")),
 		LesserHostAttestationsURL: strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_ATTESTATIONS_URL", "")), "/"),
 
@@ -612,6 +606,26 @@ func (c *Config) ResolveInstanceAPIKey() (string, error) {
 	return resolveOptionalSecretValue(c.InstanceAPIKey, c.InstanceAPIKeyARN)
 }
 
+// ResolveJWTSecret returns the configured JWT signing secret, resolving the
+// optional Secrets Manager ARN lazily only for auth paths that need it.
+func (c *Config) ResolveJWTSecret() (string, error) {
+	if c == nil {
+		return "", nil
+	}
+	if secret := strings.TrimSpace(c.JWTSecret); secret != "" {
+		return secret, nil
+	}
+	arn := strings.TrimSpace(c.JWTSecretARN)
+	if arn == "" {
+		arn = "lesser/jwt-secret"
+	}
+	if isRunningTests() {
+		// Avoid reaching out to AWS Secrets Manager during unit tests.
+		return "dummy", nil
+	}
+	return resolveRequiredSecretValue(arn)
+}
+
 // ResolveLesserHostInstanceKey returns the configured lesser.host instance key,
 // resolving the optional Secrets Manager ARN lazily when needed.
 func (c *Config) ResolveLesserHostInstanceKey() (string, error) {
@@ -644,6 +658,7 @@ type optionalSecretLoader struct {
 
 var optionalSecretLoaders sync.Map
 
+//nolint:unused // retained for legacy callers and package-level secret-resolution tests
 func mustGetJWTSecret() string {
 	// Check for plain text secret (not recommended for production)
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
@@ -661,16 +676,12 @@ func mustGetJWTSecret() string {
 		arn = "lesser/jwt-secret"
 	}
 
-	// Load secret from AWS Secrets Manager (once)
-	jwtSecretLoader.once.Do(func() {
-		jwtSecretLoader.value, jwtSecretLoader.err = fetchSecretValue(arn)
-	})
-
-	if jwtSecretLoader.err != nil {
-		panic(fmt.Sprintf("Failed to resolve JWT secret from %s: %v", arn, jwtSecretLoader.err))
+	value, err := resolveRequiredSecretValue(arn)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resolve JWT secret from %s: %v", arn, err))
 	}
 
-	return jwtSecretLoader.value
+	return value
 }
 
 func fetchSecretValue(arn string) (string, error) {
@@ -703,6 +714,7 @@ func fetchSecretValue(arn string) (string, error) {
 	return val, nil
 }
 
+//nolint:unused // retained for legacy callers and package-level secret-resolution tests
 func getOptionalSecretFromEnvOrARN(valueKey, arnKey string) string {
 	val, err := resolveOptionalSecretValue(os.Getenv(valueKey), os.Getenv(arnKey))
 	if err != nil {
@@ -743,6 +755,20 @@ func resolveOptionalSecretValue(value string, arn string) (string, error) {
 	loader.value = fetchedValue
 	loader.ready = true
 	return loader.value, nil
+}
+
+func resolveRequiredSecretValue(arn string) (string, error) {
+	arn = strings.TrimSpace(arn)
+	if arn == "" {
+		return "", errors.New("secret ARN is required")
+	}
+	jwtSecretLoader.once.Do(func() {
+		jwtSecretLoader.value, jwtSecretLoader.err = fetchSecretValue(arn)
+	})
+	if jwtSecretLoader.err != nil {
+		return "", jwtSecretLoader.err
+	}
+	return jwtSecretLoader.value, nil
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {

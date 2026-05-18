@@ -57,7 +57,11 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 	// Parse the token to get app credentials
 	// The token should be in the format "client_id:client_secret" base64 encoded
 	// or a valid OAuth access token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
+		return common.RespondInternalServerError(ctx)
+	}
 
 	// First try to validate as an access token
 	claims := auth.ClaimsFromAppTheoryContext(ctx)

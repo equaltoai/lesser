@@ -442,10 +442,17 @@ func (r *mutationResolver) ExchangeAgentAccessLeaseToken(ctx context.Context, us
 		return nil, apperrors.Unauthorized("lease expired")
 	}
 	accessTTL := remaining
-	if r.Config == nil || r.Config.JWTSecret == "" {
-		return nil, apperrors.Internal("jwt secret not configured")
+	if r.Config == nil {
+		return nil, apperrors.Internal("jwt config not configured")
 	}
-	oauthSvc := auth.NewOAuthService(r.Config.JWTSecret, r.Config, r.Storage, nil)
+	jwtSecret, err := r.Config.ResolveJWTSecret()
+	if err == nil && strings.TrimSpace(jwtSecret) == "" {
+		err = errors.New("JWT secret is empty")
+	}
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "jwt secret not configured")
+	}
+	oauthSvc := auth.NewOAuthService(jwtSecret, r.Config, r.Storage, nil)
 	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, lease.Username, graphAgentAccessLeaseClientID, "", lease.Scopes, accessTTL, "", "")
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint lease access token")

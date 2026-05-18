@@ -74,7 +74,7 @@ func TestOAuthRevokeLift_Round22(t *testing.T) {
 		state := &round10QueryState{}
 		h, repos, _ := round11NewHandler(t, cfg, state)
 
-		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, repos, h.logger)
+		oauthSvc := mustCreateOAuthService(t, cfg.JWTSecret, cfg, repos, h.logger)
 		access, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client-1", "192.0.2.10", []string{auth.ScopeRead})
 		require.NoError(t, err)
 

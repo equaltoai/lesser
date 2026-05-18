@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/moderation/advanced"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
@@ -49,7 +50,6 @@ var (
 	lambdaStart              = lambda.Start
 	mustInitializeLambda     = common.MustInitializeLambda
 	newLambdaOptimizedClient = theorydb.NewLambdaOptimizedClient
-	initializeWithDefaults   = (*common.LambdaContext).InitializeWithDefaults
 	lambdaCtx                *common.LambdaContext
 	db                       core.DB
 	consensusEngine          *moderation.ConsensusEngine
@@ -423,8 +423,8 @@ func parseCategoryFromString(s string) moderation.Category {
 }
 
 var (
-	cfg    *config.Config //nolint:unused // Reserved for dependency injection pattern
-	logger *zap.Logger
+	cfg    *config.Config                //nolint:unused // Reserved for dependency injection pattern
+	logger *zap.Logger                   //nolint:unused // Reserved for dependency injection pattern and legacy tests
 	repos  storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
 )
 
@@ -445,21 +445,16 @@ func initialize() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
-
-	// Initialize with processor-specific defaults
-	err := initializeWithDefaults(lambdaCtx)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "moderation-processor",
+		RequireRepositories: true,
+		NewDB:               newLambdaOptimizedClient,
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
-
-	// Initialize DynamORM with Lambda optimizations
-	db, err = newLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
+	db = deps.DB
+	repos = deps.Repos
 
 	// Initialize repositories
 	moderationRepo = repositories.NewModerationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)

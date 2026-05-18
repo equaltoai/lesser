@@ -29,6 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -51,7 +52,6 @@ var (
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	lambdaStartFn              = lambda.Start
 	newHandlerFn               = NewHandler
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
@@ -129,45 +129,16 @@ func initializeActor() {
 		logger = zap.NewNop()
 	}
 
-	// Initialize with default options for API Lambda type (best-effort; some lambdas still do manual wiring).
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
-	}
-
-	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok || storage == nil {
-		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization")
-		initializeManualStorage()
-		storage, ok = lambdaCtx.Repos.(core.RepositoryStorage)
-	}
-	if !ok || storage == nil {
-		logger.Fatal("lambda context repository is not core.RepositoryStorage")
-	}
-	repos = storage
-}
-
-func initializeManualStorage() {
-	if lambdaCtx == nil {
-		logger.Fatal("manual storage initialization requires lambda context")
-	}
-
-	tableName := strings.TrimSpace(cfg.DynamoTableName)
-	if tableName == "" {
-		logger.Fatal("DYNAMODB_TABLE environment variable is required for actor lambda")
-	}
-
-	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "actor",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryFactoryFn,
+	})
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
-
-	storage, err := newRepositoryFactoryFn(db, tableName, logger)
-	if err != nil {
-		logger.Fatal("failed to initialize repository factory", zap.Error(err))
-	}
-
-	lambdaCtx.DynamoDB = db
-	lambdaCtx.Repos = storage
+	repos = deps.Repos
 }
 
 // HandleActorProfile handles ActivityPub actor profile requests

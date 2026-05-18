@@ -122,12 +122,65 @@ func run(opts options) error {
 		problems = append(problems, err.Error())
 	}
 
+	if err := checkNoDefaultInitStorageContinuation(); err != nil {
+		problems = append(problems, err.Error())
+	}
+
 	if len(problems) > 0 {
 		return errors.New("audit gates failed:\n- " + strings.Join(problems, "\n- "))
 	}
 
 	fmt.Println("✓ audit gates passed")
 	return nil
+}
+
+func checkNoDefaultInitStorageContinuation() error {
+	matches, err := findDefaultInitStorageContinuationMatches("cmd")
+	if err != nil {
+		return err
+	}
+	if len(matches) > 0 {
+		return fmt.Errorf("production lambdas must use pkg/lambdastorage instead of continuing after common.InitializeWithDefaults failures:\n  %s", strings.Join(matches, "\n  "))
+	}
+	return nil
+}
+
+func findDefaultInitStorageContinuationMatches(root string) ([]string, error) {
+	forbidden := []string{
+		"failed to initialize with defaults",
+		"InitializeWithDefaults(",
+		"initializeWithDefaults",
+	}
+	var matches []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if strings.HasPrefix(path, ".git") || strings.Contains(path, string(filepath.Separator)+"testdata"+string(filepath.Separator)) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		content, readErr := os.ReadFile(path) // #nosec G304 -- repo-local audit gate
+		if readErr != nil {
+			return readErr
+		}
+		for _, needle := range forbidden {
+			if bytes.Contains(content, []byte(needle)) {
+				matches = append(matches, fmt.Sprintf("%s contains %q", path, needle))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan lambda default-init usage: %w", err)
+	}
+	sort.Strings(matches)
+	return matches, nil
 }
 
 func dumpDynamoDBBaseline() error {

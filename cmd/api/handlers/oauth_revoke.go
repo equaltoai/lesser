@@ -109,7 +109,11 @@ func (h *Handler) parseOAuthRevokeRequest(ctx *apptheory.Context) (*oauthRevokeR
 }
 
 func (h *Handler) revokeAccessTokenBestEffort(ctx context.Context, token string) {
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Warn("failed to initialize OAuth service for access token revocation", zap.Error(err))
+		return
+	}
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil || claims == nil {
 		return
@@ -176,7 +180,12 @@ func (h *Handler) validateOAuthRevokeRefreshClient(ctx context.Context, stored *
 		return nil, nil
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Error("failed to initialize OAuth service for refresh token revocation", zap.Error(err))
+		resp, _ := oauthRevokeError(http.StatusInternalServerError, "server_error", "OAuth service unavailable")
+		return nil, resp
+	}
 	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, stored.ClientID, clientSecret); err != nil {
 		resp, _ := oauthRevokeError(http.StatusBadRequest, "invalid_client", "invalid client credentials")
 		return nil, resp

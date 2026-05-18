@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -47,9 +48,13 @@ func (a *authenticationService) AuthenticateUser(_ context.Context, token string
 	var oauthSvc *auth.OAuthService
 	switch r := a.repos.(type) {
 	case core.RepositoryStorage:
+		jwtSecret, err := a.jwtSigningSecret()
+		if err != nil {
+			return nil, NewInternalError("JWT secret configuration is required", err)
+		}
 		// Create a minimal audit logger for OAuth service
 		auditLogger := auth.NewAuditLogger(r, a.logger, auth.DefaultAuditConfig())
-		oauthSvc = auth.NewOAuthService(a.jwtSecret, a.config, r, auditLogger)
+		oauthSvc = auth.NewOAuthService(jwtSecret, a.config, r, auditLogger)
 	default:
 		// For legacy storage, we can't use the OAuth service directly
 		// Would need to implement a different validation approach
@@ -69,6 +74,27 @@ func (a *authenticationService) AuthenticateUser(_ context.Context, token string
 		ActorID:  actorID,
 		Claims:   claims,
 	}, nil
+}
+
+func (a *authenticationService) jwtSigningSecret() (string, error) {
+	if a == nil {
+		return "", fmt.Errorf("authentication service is nil")
+	}
+	if secret := strings.TrimSpace(a.jwtSecret); secret != "" {
+		return secret, nil
+	}
+	if a.config == nil {
+		return "", fmt.Errorf("config is nil")
+	}
+	secret, err := a.config.ResolveJWTSecret()
+	if err != nil {
+		return "", fmt.Errorf("resolve JWT secret: %w", err)
+	}
+	if strings.TrimSpace(secret) == "" {
+		return "", fmt.Errorf("JWT secret is empty")
+	}
+	a.jwtSecret = secret
+	return secret, nil
 }
 
 // ValidateScope checks if the user has the required scope

@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/dlq"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -228,36 +229,14 @@ func initializeDLQProcessor() error {
 }
 
 func initializeDLQStorage(lambdaCtx *common.LambdaContext) (core.DB, error) {
-	if lambdaCtx == nil {
-		return nil, fmt.Errorf("dlq-processor lambda context is nil")
-	}
-	if lambdaCtx.Config == nil {
-		return nil, fmt.Errorf("dlq-processor config is nil")
-	}
-	if lambdaCtx.DynamoDB != nil {
-		db, ok := lambdaCtx.DynamoDB.(core.DB)
-		if !ok || db == nil {
-			return nil, fmt.Errorf("dlq-processor invalid dynamodb client")
-		}
-		return db, nil
-	}
-
-	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
-	if tableName == "" {
-		return nil, fmt.Errorf("dlq-processor dynamodb table name is required")
-	}
-
-	region := strings.TrimSpace(lambdaCtx.Config.Region)
-	if region == "" {
-		return nil, fmt.Errorf("dlq-processor AWS region is required")
-	}
-
-	db, err := newLambdaOptimizedClientFn(context.Background(), region)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "dlq-processor",
+		NewDB:       newLambdaOptimizedClientFn,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("dlq-processor storage client initialization failed: %w", err)
+		return nil, err
 	}
-	lambdaCtx.DynamoDB = db
-	return db, nil
+	return deps.DB, nil
 }
 
 func main() {

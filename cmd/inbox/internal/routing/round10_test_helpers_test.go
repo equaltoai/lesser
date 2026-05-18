@@ -94,6 +94,9 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 	logger := zap.NewNop()
 
 	cfg := config.Get()
+	if strings.TrimSpace(cfg.JWTSecret) == "" {
+		cfg.JWTSecret = "dummy"
+	}
 	cfg.DynamoTableName = "test-table"
 	if cfg.Domain == "" {
 		cfg.Domain = "localhost"

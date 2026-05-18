@@ -36,6 +36,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -132,13 +133,12 @@ var (
 )
 
 var (
-	runningUnitTestsFn       = common.RunningUnitTests
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	loadAWSConfigFn          = awsconfig.LoadDefaultConfig
-	newSQSClientFn           = sqs.NewFromConfig
-	newDeliveryServiceFn     = federation.NewDeliveryService
-	lambdaStartFn            = lambda.Start
+	runningUnitTestsFn     = common.RunningUnitTests
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
+	newSQSClientFn         = sqs.NewFromConfig
+	newDeliveryServiceFn   = federation.NewDeliveryService
+	lambdaStartFn          = lambda.Start
 
 	getSigningActorFn = func(ctx context.Context, storage core.RepositoryStorage, signingActorID string) (*activitypub.Actor, error) {
 		return storage.Account().GetActor(ctx, signingActorID)
@@ -189,13 +189,14 @@ func initializeFederationDelivery() error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-
-	// Initialize with processor-specific defaults
-	err := initializeWithDefaultsFn(lambdaCtx)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "federation-delivery",
+		RequireRepositories: true,
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
+	repos = deps.Repos
 
 	// Function-specific initialization only
 	// Initialize AWS SQS client config

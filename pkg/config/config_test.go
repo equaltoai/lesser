@@ -71,6 +71,26 @@ func TestConfig_InstanceAPIKey_ArnCapturedWhenValueMissing(t *testing.T) {
 	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
 }
 
+func TestConfig_GetDoesNotResolveSecretARNs(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("JWT_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt")
+	t.Setenv("INSTANCE_API_KEY", "")
+	t.Setenv("INSTANCE_API_KEY_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key")
+	t.Setenv("LESSER_HOST_INSTANCE_KEY", "")
+	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host-key")
+
+	ResetForTests()
+	cfg := Get()
+
+	assert.Equal(t, "", cfg.JWTSecret)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt", cfg.JWTSecretARN)
+	assert.Equal(t, "", cfg.InstanceAPIKey)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
+	assert.Equal(t, "", cfg.LesserHostInstanceKey)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host-key", cfg.LesserHostInstanceKeyARN)
+}
+
 func TestConfig_OAuthClientSecretRotationGracePeriod_DefaultsTo24Hours(t *testing.T) {
 	SetupTestEnvironment(t)
 	t.Setenv("OAUTH_CLIENT_SECRET_ROTATION_GRACE_PERIOD", "")

@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -125,36 +126,11 @@ func initializeMLTraining() error {
 }
 
 func initializeMLTrainingStorage(lambdaCtx *common.LambdaContext) error {
-	if lambdaCtx == nil {
-		return fmt.Errorf("ml-training-processor lambda context is nil")
-	}
-	if lambdaCtx.Config == nil {
-		return fmt.Errorf("ml-training-processor config is nil")
-	}
-	if lambdaCtx.DynamoDB != nil {
-		db, ok := lambdaCtx.DynamoDB.(core.DB)
-		if !ok || db == nil {
-			return fmt.Errorf("ml-training-processor invalid dynamodb client")
-		}
-		return nil
-	}
-
-	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
-	if tableName == "" {
-		return fmt.Errorf("ml-training-processor dynamodb table name is required")
-	}
-
-	region := strings.TrimSpace(lambdaCtx.Config.Region)
-	if region == "" {
-		return fmt.Errorf("ml-training-processor AWS region is required")
-	}
-
-	db, err := newLambdaOptimizedClientFn(context.Background(), region)
-	if err != nil {
-		return fmt.Errorf("ml-training-processor storage client initialization failed: %w", err)
-	}
-	lambdaCtx.DynamoDB = db
-	return nil
+	_, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "ml-training-processor",
+		NewDB:       newLambdaOptimizedClientFn,
+	})
+	return err
 }
 
 // NewMLTrainingProcessor creates a new ML training processor

@@ -753,8 +753,8 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		return nil, err
 	}
 
-	if r.Config.JWTSecret == "" {
-		return nil, apperrors.Internal("jwt secret not configured")
+	if r.Config == nil {
+		return nil, apperrors.Internal("jwt config not configured")
 	}
 	bundle, err := auth.IssueAgentRuntimeTokens(ctx, r.Config, r.Storage, auth.AgentRuntimeTokenIssueParams{
 		Username:           agentUsername,

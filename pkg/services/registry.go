@@ -71,7 +71,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/federation/remotenotes"
@@ -265,24 +264,6 @@ func (r *Registry) validate() error {
 
 	if r.config == nil {
 		cfg := pkgconfig.Get()
-		jwtSecret := strings.TrimSpace(cfg.JWTSecret)
-		if jwtSecret == "" && common.RunningUnitTests() {
-			jwtSecret = strings.Repeat("x", 32)
-		}
-
-		if jwtSecret == "" {
-			r.logger.Fatal("JWT secret configuration is required")
-			panic("JWT secret configuration is required")
-		}
-
-		if err := validateJWTSecret(jwtSecret); err != nil {
-			if common.RunningUnitTests() {
-				jwtSecret = strings.Repeat("x", 32)
-			} else {
-				r.logger.Fatal("invalid JWT secret", zap.Error(err))
-				panic(fmt.Sprintf("invalid JWT secret: %v", err))
-			}
-		}
 
 		baseURL := cfg.BaseURL()
 		if strings.TrimSpace(baseURL) == "" {
@@ -291,9 +272,13 @@ func (r *Registry) validate() error {
 
 		r.config = &ServiceConfig{
 			BaseURL:   baseURL,
-			JWTSecret: jwtSecret,
+			JWTSecret: strings.TrimSpace(cfg.JWTSecret),
 			Config:    cfg,
 		}
+	}
+
+	if r.config != nil {
+		r.config.JWTSecret = strings.TrimSpace(r.config.JWTSecret)
 	}
 
 	return nil
@@ -2738,6 +2723,8 @@ func (r *Registry) getJobQueue() JobQueueServiceInterface {
 }
 
 // validateJWTSecret validates that the JWT secret meets security requirements
+//
+//nolint:unused // retained for legacy registry validation coverage; auth paths validate after lazy resolution
 func validateJWTSecret(secret string) error {
 	// Check minimum length (32 characters for 256-bit security)
 	if len(secret) < 32 {
@@ -2773,6 +2760,8 @@ func validateJWTSecret(secret string) error {
 }
 
 // isLowEntropy checks if a string has low entropy (e.g., all same character, sequential)
+//
+//nolint:unused
 func isLowEntropy(s string) bool {
 	if len(s) == 0 {
 		return true

@@ -332,7 +332,13 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 	return nil
 }
 
-// InitializeWithDefaults initializes Lambda with default options for the Lambda type
+// InitializeWithDefaults initializes Lambda with default options for the Lambda type.
+//
+// Deprecated: production Lambda startup that depends on DynamoDB or repository
+// storage must use the product-level storage bootstrap in pkg/lambdastorage so
+// storage failures are explicit and typed. This helper remains for legacy
+// non-storage bootstrap tests and should not be reintroduced as a production
+// storage contract.
 func (lambdaCtx *LambdaContext) InitializeWithDefaults() error {
 	options := DefaultLambdaInitOptions(lambdaCtx.LambdaType)
 

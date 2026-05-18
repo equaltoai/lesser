@@ -111,9 +111,16 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 		return nil, resp, err
 	}
 
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
+		resp, respErr := h.oauthErrorLift(ctx, "server_error", "OAuth service unavailable", req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
+
 	flow := &authorizeFlow{
 		request:  req,
-		oauthSvc: createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger),
+		oauthSvc: oauthSvc,
 	}
 
 	if err := flow.oauthSvc.ValidateRedirectURI(ctx.Context(), req.clientID, req.redirectURI); err != nil {
@@ -683,7 +690,14 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Initialize OAuth service
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
+		return apptheory.JSON(http.StatusInternalServerError, apimodels.OAuthErrorResponse{
+			Error:            "server_error",
+			ErrorDescription: "OAuth service unavailable",
+		})
+	}
 
 	switch req.grantType {
 	case oauthGrantTypeAuthorizationCode:

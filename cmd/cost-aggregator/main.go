@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -121,7 +122,6 @@ func init() {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newCostTrackingRepoFn      = func(db dynamormCore.DB, tableName string, logger *zap.Logger) costTrackingStore {
 		return repositories.NewTrackingRepository(db, tableName, logger, nil)
@@ -140,21 +140,18 @@ func initializeCostAggregator() {
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
-	}
-
 	// Function-specific initialization only
 	tableName := cfg.DynamoTableName
 
-	// Initialize storage independently to avoid import cycles
-	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "cost-aggregator",
+		NewDB:       newLambdaOptimizedClientFn,
+	})
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
 
-	costTrackingRepository := newCostTrackingRepoFn(db, tableName, logger)
+	costTrackingRepository := newCostTrackingRepoFn(deps.DB, tableName, logger)
 
 	var snsClient snsPublisher
 	var cloudWatchClient cloudWatchPutter
@@ -176,7 +173,7 @@ func initializeCostAggregator() {
 	}
 
 	processor = &CostAggregator{
-		db:                     db,
+		db:                     deps.DB,
 		tableName:              tableName,
 		logger:                 logger,
 		costTrackingRepository: costTrackingRepository,

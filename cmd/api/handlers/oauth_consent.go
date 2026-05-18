@@ -189,7 +189,14 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 	}
 
 	// Generate authorization code
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	if err != nil {
+		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Failed to initialize OAuth service",
+		})
+	}
 	code, err := oauthSvc.GenerateAuthorizationCode()
 	if err != nil {
 		h.logger.Error("failed to generate authorization code", zap.Error(err))

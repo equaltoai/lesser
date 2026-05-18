@@ -29,6 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
@@ -111,9 +112,12 @@ func init() {
 	// Use standardized Lambda initialization
 	lambdaCtx = common.MustInitializeLambda(lambdaConfig)
 
-	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "api",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClient,
+		NewRepositoryStorage: newRepositoryFactory,
+	}); err != nil {
 		// Fallback to manual initialization for services requiring it
 		initializeManualServices()
 	} else {
@@ -272,6 +276,14 @@ func initializeManualServices() {
 
 // initializeAPISpecificServices initializes API-specific services
 func initializeAPISpecificServices() {
+	if authService == nil {
+		var err error
+		authService, err = newAuthService(cfg, repos)
+		if err != nil {
+			logger.Fatal("failed to initialize auth service", zap.Error(err))
+		}
+	}
+
 	// Validate VAPID keys in production environment
 	if err := apiHandlers.ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger); err != nil {
 		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
@@ -352,15 +364,28 @@ func main() {
 }
 
 func newAPIOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
-	if cfg == nil || cfg.JWTSecret == "" {
+	if cfg == nil {
 		if serviceLogger != nil {
 			serviceLogger.Warn("JWT secret is not configured; API auth principal hook disabled")
 		}
 		return nil
 	}
+	if common.RunningUnitTests() && strings.TrimSpace(cfg.JWTSecret) == "" && strings.TrimSpace(cfg.JWTSecretARN) == "" {
+		if serviceLogger != nil {
+			serviceLogger.Warn("JWT secret is not configured; API auth principal hook disabled")
+		}
+		return nil
+	}
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil || jwtSecret == "" {
+		if serviceLogger != nil {
+			serviceLogger.Warn("JWT secret is not configured; API auth principal hook disabled", zap.Error(err))
+		}
+		return nil
+	}
 
 	auditLogger := auth.NewAuditLogger(repos, serviceLogger, auth.DefaultAuditConfig())
-	return auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
+	return auth.NewOAuthService(jwtSecret, cfg, repos, auditLogger)
 }
 
 const (

@@ -27,6 +27,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	storageInterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -129,10 +130,20 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
 
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamormGetClientFn(context.Background())
-	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	var db core.DB
+	if lambdaCtx.DynamoDB != nil {
+		if storageDB, ok := lambdaCtx.DynamoDB.(core.DB); ok && storageDB != nil {
+			db = storageDB
+		}
+	}
+	if db == nil {
+		var err error
+		// Legacy unit-test fallback: production startup populates LambdaContext via
+		// pkg/lambdastorage before constructing the processor.
+		db, err = dynamormGetClientFn(context.Background())
+		if err != nil {
+			logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		}
 	}
 
 	// Initialize repositories
@@ -1380,15 +1391,18 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
-
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "note-processor",
+		RequireRepositories: true,
+		AllowEmptyRegion:    true,
+		NewDB: func(ctx context.Context, _ string) (core.DB, error) {
+			return dynamormGetClientFn(ctx)
+		},
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	repos = deps.Repos
 
 	// Initialize processor
 	processor = NewNoteProcessor(lambdaCtx)

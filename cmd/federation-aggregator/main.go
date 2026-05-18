@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -223,12 +224,14 @@ func initializeFederationAggregator() error {
 		}
 	}
 
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "federation-aggregator",
+		NewDB:       newLambdaOptimizedClientFn,
+	})
 	if err != nil {
 		return err
 	}
+	db = deps.DB
 
 	processor = newProcessorFn(db, cfg.DynamoTableName, lambdaCtx)
 	federationAggregationTableName = cfg.DynamoTableName
