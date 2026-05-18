@@ -20,6 +20,7 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	ttmodel "github.com/theory-cloud/tabletheory/pkg/model"
 	"go.uber.org/zap"
 )
 
@@ -69,6 +70,24 @@ func newMockDB(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.MockQuery) {
 	q.On("First", mock.Anything).Return(errors.New("not found"))
 
 	return db, q
+}
+
+func requireStatusModelBindsToMainTable(t *testing.T, modelValue any) {
+	t.Helper()
+
+	registry := ttmodel.NewRegistry()
+	require.NoError(t, registry.Register(modelValue))
+	metadata, err := registry.GetMetadata(modelValue)
+	require.NoError(t, err)
+	require.Equal(t, models.MainTableName, metadata.TableName)
+	require.NotEqual(t, "s", metadata.TableName)
+}
+
+func TestStatusIndexerSideIndexModels_BindToMainTable_Round12(t *testing.T) {
+	requireStatusModelBindsToMainTable(t, &statusWordIndex{})
+	requireStatusModelBindsToMainTable(t, &statusTagIndex{})
+	requireStatusModelBindsToMainTable(t, &statusAuthorIndex{})
+	requireStatusModelBindsToMainTable(t, &statusTrendingHashtag{})
 }
 
 func TestNewStatusIndexer_Round12(t *testing.T) {

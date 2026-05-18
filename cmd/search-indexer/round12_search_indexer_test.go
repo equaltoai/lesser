@@ -18,6 +18,7 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	ttmodel "github.com/theory-cloud/tabletheory/pkg/model"
 	"go.uber.org/zap"
 )
 
@@ -62,6 +63,23 @@ func setField(out any, name string, value any) {
 	case reflect.Slice:
 		f.Set(reflect.ValueOf(value))
 	}
+}
+
+func requireSearchModelBindsToMainTable(t *testing.T, modelValue any) {
+	t.Helper()
+
+	registry := ttmodel.NewRegistry()
+	require.NoError(t, registry.Register(modelValue))
+	metadata, err := registry.GetMetadata(modelValue)
+	require.NoError(t, err)
+	require.Equal(t, models.MainTableName, metadata.TableName)
+	require.NotEqual(t, "s", metadata.TableName)
+}
+
+func TestSearchIndexerWriteModels_BindToMainTable_Round12(t *testing.T) {
+	requireSearchModelBindsToMainTable(t, &searchIndexRecord{})
+	requireSearchModelBindsToMainTable(t, &searchActorIndex{})
+	requireSearchModelBindsToMainTable(t, &searchTagIndex{})
 }
 
 func TestInitializeSearchIndexer_Round12(t *testing.T) {
