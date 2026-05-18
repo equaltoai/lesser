@@ -269,6 +269,27 @@ func TestTransformNestedStageTemplateAssetAddsReleaseParameters(t *testing.T) {
 	require.Equal(t, map[string]any{"Fn::Sub": "${AppSlug}-dev-metrics-processor-critical-errors"}, props["AlarmName"])
 }
 
+func TestTransformNestedStageTemplateAssetErrors(t *testing.T) {
+	_, err := transformNestedStageTemplateAsset([]byte("{"), naming.StageDev, stageTemplateReplacements(naming.StageDev))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse nested template")
+
+	nested := map[string]any{
+		"Resources": map[string]any{
+			"BadDependsOn": map[string]any{
+				"Type":      "Custom::Example",
+				"DependsOn": map[string]any{"Fn::GetAtt": []any{"Other", "Arn"}},
+			},
+		},
+	}
+	data, err := json.Marshal(nested)
+	require.NoError(t, err)
+
+	_, err = transformNestedStageTemplateAsset(data, naming.StageDev, stageTemplateReplacements(naming.StageDev))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported intrinsic")
+}
+
 func TestInjectNestedStackReleaseParameters(t *testing.T) {
 	template := map[string]any{
 		"Resources": map[string]any{
@@ -286,6 +307,28 @@ func TestInjectNestedStackReleaseParameters(t *testing.T) {
 	params := nestedProps["Parameters"].(map[string]any)
 	require.Equal(t, map[string]any{"Ref": "AppSlug"}, params["AppSlug"])
 	require.Equal(t, map[string]any{"Ref": "ReleaseAssetBucketName"}, params["ReleaseAssetBucketName"])
+}
+
+func TestInjectNestedStackReleaseParametersHandlesMissingSections(t *testing.T) {
+	noResources := map[string]any{"Description": "empty"}
+	injectNestedStackReleaseParameters(noResources)
+	require.Equal(t, map[string]any{"Description": "empty"}, noResources)
+
+	template := map[string]any{
+		"Resources": map[string]any{
+			"Nested": map[string]any{
+				"Type": "AWS::CloudFormation::Stack",
+			},
+			"Malformed": "not-a-resource-map",
+		},
+	}
+
+	injectNestedStackReleaseParameters(template)
+
+	nested := template["Resources"].(map[string]any)["Nested"].(map[string]any)
+	props := nested["Properties"].(map[string]any)
+	params := props["Parameters"].(map[string]any)
+	require.Equal(t, map[string]any{"Ref": "BaseDomain"}, params["BaseDomain"])
 }
 
 func TestNormalizeTemplateDependsOn(t *testing.T) {
