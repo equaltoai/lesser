@@ -1,7 +1,7 @@
 # Theory Cloud Framework Leverage Roadmap
 
-Status: Phase 4 docs closeout in progress; Phases 0 through 3b are merged to `main` (updated 2026-05-16)
-Current closeout branch: `codex/issue-975-framework-docs`
+Status: Phase 4 docs closeout in progress; Phases 0 through 3b are merged to `main`; framework pins refreshed on 2026-05-18
+Current maintenance focus: 2026-05-18 AppTheory / FaceTheory pin refresh.
 
 ## Reported need
 
@@ -14,7 +14,7 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 
 | Phase | Issue / PR | Status | Landed outcome |
 | --- | --- | --- | --- |
-| Phase 0 dependency/security baseline | #968 / #976 | Merged | AppTheory `v1.6.0`, TableTheory `v1.8.3`, FaceTheory `v3.1.2` guidance, auth UI dependency remediation, CDK asset-root canonicalization. |
+| Phase 0 dependency/security baseline + 2026-05-18 pin refresh | #968 / #976 + maintenance refresh | Merged / in progress | Initial AppTheory `v1.6.0` and FaceTheory `v3.1.2` guidance refreshed to AppTheory `v1.7.0`, TableTheory remains `v1.8.3`, FaceTheory guidance refreshed to `v3.2.2`; auth UI dependency remediation and CDK asset-root canonicalization remain intact. |
 | Phase 1a TableTheory Lambda client semantics | #969 / #977 | Merged | `NewLambdaOptimizedClient` now uses TableTheory Lambda-optimized timeout behavior with tests proving context/deadline handling. |
 | Phase 1b AppTheory invocation-context threading | #970 / #978 | Merged | Import-processor SQS handling now scopes TableTheory repository access to the AppTheory event context deadline via `WithLambdaTimeout`; the cold-start client remains initialized once and is rebound per invocation. |
 | Phase 2a strict route proof | #971 / #979 | Merged | WebFinger route registration uses AppTheory strict registration with route-parity tests. |
@@ -37,24 +37,24 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 
 ### Upstream framework facts verified
 
-- AppTheory latest stable release/tag: `v1.6.0`.
+- AppTheory latest stable release/tag: `v1.7.0`.
   - Relevant capabilities: AppSync Lambda resolver support, strict route registration helpers, multi-language CDK/jsii
     constructs including `AppTheoryFunction`, `AppTheoryFunctionAlarms`, `AppTheoryQueueProcessor`,
     `AppTheorySsrSite`, `AppTheoryPathRoutedFrontend`, and existing Rest API / queue / table constructs.
 - TableTheory latest stable release/tag: `v1.8.3`.
   - Relevant capabilities: Lambda timeout configuration and hardening, encrypted batch retry fixes, audit/security guard
     hardening, pointer `omitempty` preservation.
-- FaceTheory latest stable release: `v3.1.2`.
+- FaceTheory latest stable release: `v3.2.2`.
   - Relevant capabilities: dependency pin alignment and Svelte vulnerable peer range exclusions.
-- There is no newer stable framework release beyond the pins already applied on
-  `chore/framework-deps-2026-05-16`.
+- There is no newer stable framework release beyond the pins applied by the 2026-05-18 AppTheory / FaceTheory
+  refresh.
 
 ### What is definitely true in lesser today
 
-- `main` pins:
-  - root `go.mod`: AppTheory `v1.6.0`, TableTheory `v1.8.3`;
-  - `infra/cdk/go.mod`: AppTheory `v1.6.0`, AWS CDK Go `v2.254.0`, jsii runtime `v1.129.0`;
-  - FaceTheory client-install tests/docs: `v3.1.2` GitHub release asset;
+- post-refresh pins:
+  - root `go.mod`: AppTheory `v1.7.0`, TableTheory `v1.8.3`;
+  - `infra/cdk/go.mod`: AppTheory `v1.7.0`, AWS CDK Go `v2.254.0`, jsii runtime `v1.129.0`;
+  - FaceTheory client-install tests/docs: `v3.2.2` GitHub release asset;
   - auth UI: Astro `6.3.3`, Svelte `5.55.7`, devalue override `5.8.1`.
 - The baseline already fixed one CDK/jsii surfaced issue by canonicalizing `LambdaAssetRoot` to an absolute path
   before `Code_FromAsset`.
@@ -105,11 +105,11 @@ local adoption proceeds.
    - Verification: introduce a local registration wrapper and targeted route-registration test for one surface before
      expanding.
 3. **AppTheory CDK `AppTheoryFunction` / alarms may reduce custom Lambda construct drift.**
-   - Evidence: v1.6.0 publishes Go jsii bindings for `AppTheoryFunction` and `AppTheoryFunctionAlarms`; lesser still
+   - Evidence: v1.7.0 publishes Go jsii bindings for `AppTheoryFunction` and `AppTheoryFunctionAlarms`; lesser still
      creates functions directly with native AWS CDK.
    - Verification: synth a representative function behind tests and compare generated CloudFormation for function name,
      architecture, runtime, timeout, memory, role, env, asset path, DLQ, and permissions before broader migration.
-4. **FaceTheory v3.1.2 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
+4. **FaceTheory v3.2.2 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
    - Evidence: `lesser client install` validates that a FaceTheory dependency exists; enforcing an exact dependency URL
      would break local workspace/client development.
    - Verification: docs/tests are enough in lesser; any client-app enforcement belongs in client repos or a non-blocking
@@ -197,7 +197,7 @@ Dependency-maintenance, operational-reliability, framework-consumption, docs. Po
 - Strict AppTheory route registration is adopted for selected surfaces without OpenAPI/GraphQL/federation route drift.
 - CDK function construct adoption either lands with template-parity proof or produces a framework-feedback signal instead
   of a local workaround.
-- FaceTheory v3.1.2 guidance remains backward-compatible for client app authors.
+- FaceTheory v3.2.2 guidance remains backward-compatible for client app authors.
 
 ### Specialist routing
 

@@ -16,7 +16,7 @@ import (
 )
 
 const testFaceTheoryDependency = "https://github.com/theory-cloud/FaceTheory/releases/download/" +
-	"v3.1.2/theory-cloud-facetheory-3.1.2.tgz"
+	"v3.2.2/theory-cloud-facetheory-3.2.2.tgz"
 
 func testFaceTheoryPackageJSON(name string) string {
 	return `{"name":"` + name + `","version":"1.2.3","dependencies":{"@theory-cloud/facetheory":"` +
