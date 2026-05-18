@@ -1037,9 +1037,12 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 func (s *LesserApiStack) createStreamProcessors() {
 	// Inventory-driven wiring for streams and SQS (requires queues/table/functions)
 	localconstructs.CreateStreamProcessors(s.Stack, &localconstructs.StreamProcessorsProps{
-		Table:     s.MainTable,
-		Queues:    s.Queues,
-		Functions: s.Functions,
+		AppName:       s.AppName,
+		Environment:   s.Environment,
+		RemovalPolicy: getRemovalPolicy(naming.IsLiveEnvironment(s.Environment)),
+		Table:         s.MainTable,
+		Queues:        s.Queues,
+		Functions:     s.Functions,
 	})
 }
 

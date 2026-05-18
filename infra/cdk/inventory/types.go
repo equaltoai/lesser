@@ -55,6 +55,7 @@ const (
 type StreamTrigger struct {
 	SourceTable              string                 `json:"sourceTable,omitempty" yaml:"sourceTable,omitempty"`
 	StreamArn                string                 `json:"streamArn,omitempty" yaml:"streamArn,omitempty"`
+	PoisonRecordQueue        string                 `json:"poisonRecordQueue,omitempty" yaml:"poisonRecordQueue,omitempty"`
 	BatchSize                int                    `json:"batchSize,omitempty" yaml:"batchSize,omitempty"`
 	MaxBatchingWindowSeconds int                    `json:"maxBatchingWindowSeconds,omitempty" yaml:"maxBatchingWindowSeconds,omitempty"`
 	ParallelizationFactor    int                    `json:"parallelizationFactor,omitempty" yaml:"parallelizationFactor,omitempty"`

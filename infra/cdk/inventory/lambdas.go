@@ -27,11 +27,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table", // replaced by stack DDB table at deploy time
+					PoisonRecordQueue:        "activity-processor-stream-poison-queue",
 					StartingPosition:         StreamStartTrimHorizon,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
 					ParallelizationFactor:    5,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -56,11 +58,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "ai-processor-stream-poison-queue",
 					StartingPosition:         StreamStartTrimHorizon,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
 					ParallelizationFactor:    2,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -117,10 +121,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "cost-aggregator-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                10,
 					MaxBatchingWindowSeconds: 2,
 					ParallelizationFactor:    1,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -185,9 +192,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "federation-timeseries-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -199,9 +209,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "federation-tracker-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -249,9 +262,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "metrics-aggregator-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -263,9 +279,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "metrics-processor-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -277,11 +296,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "ml-training-processor-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                5,
 					MaxBatchingWindowSeconds: 1,
 					ParallelizationFactor:    1,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -298,11 +319,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "moderation-processor-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                10,
 					MaxBatchingWindowSeconds: 5,
 					ParallelizationFactor:    2,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -315,9 +338,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "note-processor-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -364,9 +390,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "report-trust-updater-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -378,11 +407,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "search-indexer-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                100,
 					MaxBatchingWindowSeconds: 30,
 					ParallelizationFactor:    5,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -395,11 +426,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "severance-processor-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                10,
 					MaxBatchingWindowSeconds: 5,
 					ParallelizationFactor:    2,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
@@ -416,9 +449,12 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "status-indexer-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                25,
 					MaxBatchingWindowSeconds: 5,
+					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					ReportBatchItemFailures:  true,
 				},
 			},
@@ -430,11 +466,13 @@ var LambdaInventory = Inventory{
 			StreamTriggers: []StreamTrigger{
 				{
 					SourceTable:              "main-table",
+					PoisonRecordQueue:        "stream-router-stream-poison-queue",
 					StartingPosition:         StreamStartLatest,
 					BatchSize:                50,
 					MaxBatchingWindowSeconds: 2,
 					ParallelizationFactor:    5,
 					MaxRetryAttempts:         3,
+					MaxRecordAgeSeconds:      3600,
 					EnableBisectOnError:      true,
 					ReportBatchItemFailures:  true,
 				},
