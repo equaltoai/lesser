@@ -7,6 +7,7 @@ This directory contains the operator runbooks and workflows for deployed environ
 ## Start here
 
 - Runbook: `docs/operations/runbook.md`
+- Processor storm containment: `docs/operations/processor-storm-runbook.md`
 - CloudWatch workflow: `docs/operations/cloudwatch-debugging.md`
 - Release notes: `docs/operations/release-notes.md`
 

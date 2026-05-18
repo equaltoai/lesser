@@ -88,6 +88,13 @@ Triage:
 - If you see false positives impacting legitimate traffic, switch to `CRAWLER_PROTECTION_MODE=observe` or add the
   affected client IP/CIDR to `CRAWLER_PROTECTION_BYPASS_CIDRS`, then redeploy.
 
+### Processor failure storm
+
+If stream, queue, or scheduled processors are failing repeatedly and amplifying backlog or cost, use the dedicated
+two-instance matrix and containment workflow in `docs/operations/processor-storm-runbook.md`. The containment order
+starts with `metrics-processor`; do not re-enable it before finite retry, max record age, and a poison-record
+destination are deployed.
+
 ### Federation delivery stuck
 
 - Tail `federation-delivery` logs.
