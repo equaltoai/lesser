@@ -524,3 +524,58 @@ func TestInitializeMetricsStorage_CreatesReposAndStoresClient(t *testing.T) {
 	require.Equal(t, "us-east-1", gotRegion)
 	require.Equal(t, "test-table", gotTable)
 }
+
+func TestInitializeMetricsStorage_ValidationErrors(t *testing.T) {
+	originalNewRepositoryFactoryFn := newRepositoryFactoryFn
+	t.Cleanup(func() {
+		newRepositoryFactoryFn = originalNewRepositoryFactoryFn
+	})
+
+	_, err := initializeMetricsStorage(nil)
+	require.ErrorContains(t, err, "lambda context is nil")
+
+	_, err = initializeMetricsStorage(&common.LambdaContext{})
+	require.ErrorContains(t, err, "config is nil")
+
+	_, err = initializeMetricsStorage(&common.LambdaContext{
+		Config: &config.Config{},
+		Repos:  struct{}{},
+	})
+	require.ErrorContains(t, err, "invalid repository storage")
+
+	_, err = initializeMetricsStorage(&common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1"},
+	})
+	require.ErrorContains(t, err, "dynamodb table name is required")
+
+	_, err = initializeMetricsStorage(&common.LambdaContext{
+		Config: &config.Config{DynamoTableName: "test-table"},
+	})
+	require.ErrorContains(t, err, "AWS region is required")
+
+	_, err = initializeMetricsStorage(&common.LambdaContext{
+		Config:   &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		DynamoDB: struct{}{},
+	})
+	require.ErrorContains(t, err, "invalid dynamodb client")
+
+	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (core.RepositoryStorage, error) {
+		return nil, errors.New("factory failed")
+	}
+	_, err = initializeMetricsStorage(&common.LambdaContext{
+		Config:   &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		DynamoDB: dynamormmocks.NewMockExtendedDB(),
+	})
+	require.ErrorContains(t, err, "repository initialization failed")
+}
+
+func TestHandleMetricsProcessorStreamRecordRequiresHandler(t *testing.T) {
+	originalHandler := handler
+	t.Cleanup(func() {
+		handler = originalHandler
+	})
+
+	handler = nil
+	err := handleMetricsProcessorStreamRecord(nil, events.DynamoDBEventRecord{})
+	require.ErrorContains(t, err, "handler not initialized")
+}
