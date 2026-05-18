@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -47,7 +48,6 @@ type FederationTracker struct {
 
 var (
 	mustInitializeLambdaFn      = common.MustInitializeLambda
-	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn  = theorydb.NewLambdaOptimizedClient
 	newFederationActivityRepoFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) federationActivityStore {
 		return repositories.NewFederationActivityRepository(db, tableName, logger, nil)
@@ -76,18 +76,17 @@ func initializeFederationTracker() {
 		repos = storage
 	}
 
-	// Initialize with processor-specific defaults
-	err := initializeWithDefaultsFn(lambdaCtx)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "federation-tracker",
+		NewDB:       newLambdaOptimizedClientFn,
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
 
 	// Function-specific initialization only
 	// Initialize DynamORM with Lambda optimizations
-	db, err = newLambdaOptimizedClientFn(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
+	db = deps.DB
 
 	// Initialize repository
 	federationActivityRepository = newFederationActivityRepoFn(db, cfg.DynamoTableName, logger)

@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -349,53 +350,16 @@ func initializeAIProcessor() error {
 }
 
 func initializeAIStorage(lambdaCtx *common.LambdaContext) (storageCore.RepositoryStorage, error) {
-	if lambdaCtx == nil {
-		return nil, fmt.Errorf("AI processor lambda context is nil")
-	}
-	if lambdaCtx.Config == nil {
-		return nil, fmt.Errorf("AI processor config is nil")
-	}
-
-	if lambdaCtx.Repos != nil {
-		repos, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage)
-		if !ok || repos == nil {
-			return nil, fmt.Errorf("AI processor invalid repository storage")
-		}
-		return repos, nil
-	}
-
-	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
-	if tableName == "" {
-		return nil, fmt.Errorf("AI processor dynamodb table name is required")
-	}
-
-	region := strings.TrimSpace(lambdaCtx.Config.Region)
-	if region == "" {
-		return nil, fmt.Errorf("AI processor AWS region is required")
-	}
-
-	var db core.DB
-	if lambdaCtx.DynamoDB != nil {
-		var ok bool
-		db, ok = lambdaCtx.DynamoDB.(core.DB)
-		if !ok || db == nil {
-			return nil, fmt.Errorf("AI processor invalid dynamodb client")
-		}
-	} else {
-		var err error
-		db, err = newLambdaOptimizedClientFn(context.Background(), region)
-		if err != nil {
-			return nil, fmt.Errorf("AI processor storage client initialization failed: %w", err)
-		}
-		lambdaCtx.DynamoDB = db
-	}
-
-	repos, err := newRepositoryFactoryFn(db, tableName, logger)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "AI processor",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryFactoryFn,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("AI processor repository initialization failed: %w", err)
+		return nil, err
 	}
-	lambdaCtx.Repos = repos
-	return repos, nil
+	return deps.Repos, nil
 }
 
 // NewSimplifiedAIProcessor creates a new AI processor instance with simplified Lambda context

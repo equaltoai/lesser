@@ -1101,12 +1101,16 @@ func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, e
 	// Extract config with reflection or direct import for now
 	// This will be improved when config interface is standardized
 	cfg := op.lambdaCtx.Config
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil || strings.TrimSpace(jwtSecret) == "" {
+		return nil, invalidToken()
+	}
 
 	token, err := jwt.ParseWithClaims(tokenString, &auth.Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, unexpectedJWTSigningMethod()
 		}
-		return []byte(cfg.JWTSecret), nil
+		return []byte(jwtSecret), nil
 	})
 	if err != nil {
 		return nil, jwtTokenParsingFailed(err)

@@ -117,7 +117,11 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 
 	idleExpiry, absoluteExpiry := AgentRuntimeRefreshExpiries(now, params.RefreshIdleTTL, params.RefreshAbsoluteTTL)
 
-	oauthSvc := NewOAuthService(cfg.JWTSecret, cfg, repos, nil)
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil {
+		return nil, err
+	}
+	oauthSvc := NewOAuthService(jwtSecret, cfg, repos, nil)
 	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
 		ctx,
 		params.Username,

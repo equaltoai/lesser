@@ -32,6 +32,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -103,7 +104,6 @@ var (
 	runningUnitTestsFn = common.RunningUnitTests
 
 	mustInitializeLambdaFn    = common.MustInitializeLambda
-	initializeWithDefaultsFn  = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	ensureRepositoryFactoryFn = ensureRepositoryFactory
 	resolveDynamoClientFn     = resolveDynamoClient
 	newUserRepositoryFn       = repositories.NewUserRepository
@@ -181,10 +181,18 @@ func initializeStreaming() error {
 		logger = zap.NewNop()
 	}
 
-	// Initialize with API-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "streaming",
+		RequireRepositories: true,
+		NewDB:               newLambdaOptimizedClientFn,
+		NewRepositoryStorage: func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+			return newRepositoryFactoryFn(db, tableName, logger)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
+	repos = deps.Repos
 
 	if err := ensureRepositoryFactoryFn(); err != nil {
 		return err
@@ -386,20 +394,25 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 		// we'll extract the token and validate directly
 		// Create minimal audit logger for OAuth service
 		// Use storageFactory from the handler
-		auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
-		authService := auth.NewOAuthService(sh.cfg.JWTSecret, sh.cfg, sh.storageFactory, auditLogger)
-		claims, err := authService.ValidateAccessToken(token)
-		if err != nil {
-			sh.logger.Warn("invalid token", zap.Error(err))
-			// Don't reject connection, allow anonymous access for public streams
+		jwtSecret, secretErr := sh.cfg.ResolveJWTSecret()
+		if secretErr != nil || strings.TrimSpace(jwtSecret) == "" {
+			sh.logger.Warn("failed to resolve JWT secret for streaming authentication", zap.Error(secretErr))
 		} else {
-			userID = claims.Subject
-			username = claims.Username
-			authSuccess = true
-			sh.logger.Info("user authenticated",
-				zap.String("userID", userID),
-				zap.String("username", username),
-				zap.Strings("scopes", claims.Scopes))
+			auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
+			authService := auth.NewOAuthService(jwtSecret, sh.cfg, sh.storageFactory, auditLogger)
+			claims, err := authService.ValidateAccessToken(token)
+			if err != nil {
+				sh.logger.Warn("invalid token", zap.Error(err))
+				// Don't reject connection, allow anonymous access for public streams
+			} else {
+				userID = claims.Subject
+				username = claims.Username
+				authSuccess = true
+				sh.logger.Info("user authenticated",
+					zap.String("userID", userID),
+					zap.String("username", username),
+					zap.Strings("scopes", claims.Scopes))
+			}
 		}
 	} else {
 		sh.logger.Info("anonymous connection allowed")

@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -783,53 +784,16 @@ var (
 )
 
 func initializeMetricsStorage(lambdaCtx *common.LambdaContext) (core.RepositoryStorage, error) {
-	if lambdaCtx == nil {
-		return nil, fmt.Errorf("metrics-processor lambda context is nil")
-	}
-	if lambdaCtx.Config == nil {
-		return nil, fmt.Errorf("metrics-processor config is nil")
-	}
-
-	if lambdaCtx.Repos != nil {
-		repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-		if !ok || repos == nil {
-			return nil, fmt.Errorf("metrics-processor invalid repository storage")
-		}
-		return repos, nil
-	}
-
-	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
-	if tableName == "" {
-		return nil, fmt.Errorf("metrics-processor dynamodb table name is required")
-	}
-
-	region := strings.TrimSpace(lambdaCtx.Config.Region)
-	if region == "" {
-		return nil, fmt.Errorf("metrics-processor AWS region is required")
-	}
-
-	var db dynamormCore.DB
-	if lambdaCtx.DynamoDB != nil {
-		var ok bool
-		db, ok = lambdaCtx.DynamoDB.(dynamormCore.DB)
-		if !ok || db == nil {
-			return nil, fmt.Errorf("metrics-processor invalid dynamodb client")
-		}
-	} else {
-		var err error
-		db, err = newLambdaOptimizedClientFn(context.Background(), region)
-		if err != nil {
-			return nil, fmt.Errorf("metrics-processor storage client initialization failed: %w", err)
-		}
-		lambdaCtx.DynamoDB = db
-	}
-
-	repos, err := newRepositoryFactoryFn(db, tableName, logger)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "metrics-processor",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryFactoryFn,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("metrics-processor repository initialization failed: %w", err)
+		return nil, err
 	}
-	lambdaCtx.Repos = repos
-	return repos, nil
+	return deps.Repos, nil
 }
 
 func initializeMetricsProcessor() error {

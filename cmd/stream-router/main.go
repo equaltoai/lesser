@@ -21,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -242,19 +243,11 @@ func init() {
 		LambdaType:  common.LambdaTypeProcessor, // Background processing
 	})
 
-	// Automatic dependency injection handled by handler initialization
-
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
-		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
-	}
-
-	// Ensure we have a Dynamo client even if the default bootstrap path failed
-	if lambdaCtx.DynamoDB == nil {
-		if manualErr := initializeManualServices(); manualErr != nil {
-			lambdaCtx.Logger.Fatal("failed to initialize manual services", zap.Error(manualErr))
-		}
+	if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName: "stream-router",
+		NewDB:       newLambdaOptimizedClient,
+	}); err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
 
 	// Stream router-specific initialization

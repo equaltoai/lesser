@@ -42,6 +42,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -82,9 +83,8 @@ var (
 )
 
 var (
-	runningUnitTestsFn       = common.RunningUnitTests
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	runningUnitTestsFn     = common.RunningUnitTests
+	mustInitializeLambdaFn = common.MustInitializeLambda
 
 	extractStandardizedServicesFn       = extractStandardizedServices
 	initializeManualServicesFn          = initializeManualServices
@@ -132,8 +132,12 @@ func initializeGraphQL() {
 		RequestTimeout: 30 * time.Second,
 	})
 
-	// Initialize with default options for API Lambda type
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
+	if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "graphql",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryFactoryFn,
+	}); err != nil {
 		// Fallback to manual initialization for services requiring it
 		initializeManualServicesFn()
 	} else {
@@ -275,7 +279,7 @@ func initializeGraphQLSpecificServices() {
 	// Create service registry with all dependencies
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.BaseURL(),
-		JWTSecret: cfg.JWTSecret,
+		JWTSecret: resolveJWTSecretForGraphQL(logger),
 		Config:    cfg,
 	}
 
@@ -977,7 +981,7 @@ func createAuthMiddlewareWithServices(authService *auth.AuthService, oauthServic
 }
 
 func newGraphQLAuthService(serviceLogger *zap.Logger) *auth.AuthService {
-	if cfg == nil || cfg.JWTSecret == "" || repos == nil {
+	if cfg == nil || repos == nil {
 		return nil
 	}
 
@@ -992,15 +996,39 @@ func newGraphQLAuthService(serviceLogger *zap.Logger) *auth.AuthService {
 }
 
 func newGraphQLOAuthService(serviceLogger *zap.Logger) *auth.OAuthService {
-	if cfg == nil || cfg.JWTSecret == "" {
+	if cfg == nil {
 		if serviceLogger != nil {
 			serviceLogger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware")
 		}
 		return nil
 	}
+	if common.RunningUnitTests() && strings.TrimSpace(cfg.JWTSecret) == "" && strings.TrimSpace(cfg.JWTSecretARN) == "" {
+		return nil
+	}
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil || jwtSecret == "" {
+		if serviceLogger != nil {
+			serviceLogger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware", zap.Error(err))
+		}
+		return nil
+	}
 
 	auditLogger := auth.NewAuditLogger(repos, serviceLogger, auth.DefaultAuditConfig())
-	return auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
+	return auth.NewOAuthService(jwtSecret, cfg, repos, auditLogger)
+}
+
+func resolveJWTSecretForGraphQL(serviceLogger *zap.Logger) string {
+	if cfg == nil {
+		return ""
+	}
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil {
+		if serviceLogger != nil {
+			serviceLogger.Warn("failed to resolve GraphQL JWT secret", zap.Error(err))
+		}
+		return ""
+	}
+	return jwtSecret
 }
 
 func main() {

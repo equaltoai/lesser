@@ -621,10 +621,10 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 	}
 	accessTTL := remaining
 
-	if h.cfg == nil || h.cfg.JWTSecret == "" {
+	if h.cfg == nil || (strings.TrimSpace(h.cfg.JWTSecret) == "" && strings.TrimSpace(h.cfg.JWTSecretARN) == "") {
 		return common.RespondInternalServerError(ctx)
 	}
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	oauthSvc := createOAuthService("", h.cfg, h.repos, h.logger)
 	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
 		ctx.Context(),
 		lease.Username,

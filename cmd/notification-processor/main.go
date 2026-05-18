@@ -27,6 +27,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -156,10 +157,20 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
 
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamormGetClientFn(context.Background())
-	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	var db core.DB
+	if lambdaCtx.DynamoDB != nil {
+		if storageDB, ok := lambdaCtx.DynamoDB.(core.DB); ok && storageDB != nil {
+			db = storageDB
+		}
+	}
+	if db == nil {
+		var err error
+		// Legacy unit-test fallback: production startup populates LambdaContext via
+		// pkg/lambdastorage before constructing the processor.
+		db, err = dynamormGetClientFn(context.Background())
+		if err != nil {
+			lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		}
 	}
 	// Initialize repositories
 	notificationRepo := repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger, nil)
@@ -813,7 +824,6 @@ func init() {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = (*common.LambdaContext).InitializeWithDefaults
 	newNotificationProcessorFn = NewNotificationProcessor
 	dynamormGetClientFn        = theorydb.GetClient
 	streamerNewClientFn        = streamer.NewClient
@@ -835,11 +845,19 @@ func initializeNotificationProcessor() error {
 		},
 	})
 
-	// Automatic dependency injection handled by processor initialization
-
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
+	if lambdaCtx.Config != nil {
+		if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+			ServiceName:         "notification-processor",
+			RequireRepositories: true,
+			AllowEmptyRegion:    true,
+			NewDB: func(ctx context.Context, _ string) (core.DB, error) {
+				return dynamormGetClientFn(ctx)
+			},
+		}); err != nil {
+			return fmt.Errorf("failed to initialize storage: %w", err)
+		}
+	} else if !common.RunningUnitTests() {
+		return fmt.Errorf("failed to initialize storage: config is nil")
 	}
 
 	processor = newNotificationProcessorFn(lambdaCtx)

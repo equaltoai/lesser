@@ -1128,9 +1128,21 @@ func (h *Handler) agentIdentitySemantics(ctx context.Context, agentUser *storage
 
 // createOAuthService creates an OAuth service with proper audit logger setup
 func createOAuthService(jwtSecret string, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) *auth.OAuthService {
+	secret := strings.TrimSpace(jwtSecret)
+	if secret == "" && cfg != nil {
+		resolved, err := cfg.ResolveJWTSecret()
+		if err != nil {
+			if logger != nil {
+				logger.Error("failed to resolve JWT secret", zap.Error(err))
+			}
+		} else {
+			secret = resolved
+		}
+	}
+
 	// Create audit logger with default configuration
 	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
-	return auth.NewOAuthService(jwtSecret, cfg, repos, auditLogger)
+	return auth.NewOAuthService(secret, cfg, repos, auditLogger)
 }
 
 // parsePaginationParams extracts common pagination parameters from a Lift context

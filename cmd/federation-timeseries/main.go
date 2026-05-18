@@ -16,8 +16,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
@@ -274,16 +274,14 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
 	logger    *zap.Logger
 	processor *TimeseriesProcessor
 )
 
 var (
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	dynamormGetClientFn      = theorydb.GetClient
-	lambdaStartFn            = lambda.Start
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	dynamormGetClientFn    = theorydb.GetClient
+	lambdaStartFn          = lambda.Start
 )
 
 func initializeFederationTimeseries() {
@@ -294,25 +292,23 @@ func initializeFederationTimeseries() {
 	})
 
 	// Automatic dependency injection
-	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
-	}
-
-	// Function-specific initialization only
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamormGetClientFn(context.Background())
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:      "federation-timeseries",
+		AllowEmptyRegion: true,
+		NewDB: func(ctx context.Context, _ string) (dynamormCore.DB, error) {
+			return dynamormGetClientFn(ctx)
+		},
+	})
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewTimeseriesProcessor(db, cfg.DynamoTableName, logger)
+	processor = NewTimeseriesProcessor(deps.DB, deps.TableName, logger)
 }
 
 func init() {

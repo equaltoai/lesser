@@ -138,6 +138,58 @@ func TestConfigResolveInstanceAPIKey_ResolvesSecretARNOutsideTests(t *testing.T)
 	require.Equal(t, 1, callCount)
 }
 
+func TestConfigResolveJWTSecret_ResolvesSecretARNOutsideTests(t *testing.T) {
+	ResetForTests()
+
+	origLoad := loadDefaultAWSConfig
+	origNew := newSecretsManagerValueGetter
+	origArgs := os.Args
+	t.Cleanup(func() {
+		loadDefaultAWSConfig = origLoad
+		newSecretsManagerValueGetter = origNew
+		os.Args = origArgs
+		ResetForTests()
+	})
+
+	os.Args = []string{"app"}
+
+	loadDefaultAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{Region: "us-east-1"}, nil
+	}
+
+	callCount := 0
+	secretString := `{"secret":"jwt-from-secrets-manager"}`
+	newSecretsManagerValueGetter = func(_ aws.Config) secretsManagerValueGetter {
+		callCount++
+		return stubSecretsManagerGetter{
+			output: &secretsmanager.GetSecretValueOutput{SecretString: &secretString},
+		}
+	}
+
+	cfg := &Config{
+		JWTSecretARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt",
+	}
+
+	value, err := cfg.ResolveJWTSecret()
+	require.NoError(t, err)
+	require.Equal(t, "jwt-from-secrets-manager", value)
+
+	value, err = cfg.ResolveJWTSecret()
+	require.NoError(t, err)
+	require.Equal(t, "jwt-from-secrets-manager", value)
+	require.Equal(t, 1, callCount)
+}
+
+func TestConfigResolveJWTSecret_PlaintextPrecedence(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:    "  plaintext  ",
+		JWTSecretARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt",
+	}
+	value, err := cfg.ResolveJWTSecret()
+	require.NoError(t, err)
+	require.Equal(t, "plaintext", value)
+}
+
 func TestConfigResolveLesserHostInstanceKey_ReturnsFetchErrorsOutsideTests(t *testing.T) {
 	ResetForTests()
 

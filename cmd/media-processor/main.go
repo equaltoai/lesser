@@ -25,6 +25,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -316,6 +317,10 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
+
 	// Standardized Lambda initialization for processor functions
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "media-processor",
@@ -325,15 +330,15 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
 
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "media-processor",
+		RequireRepositories: true,
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	repos = deps.Repos
 
 	// Initialize processor with media-specific configuration
 	processor = NewMediaProcessor(lambdaCtx)

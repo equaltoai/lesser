@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
@@ -337,7 +338,6 @@ func init() {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryStorageFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (storageCore.RepositoryStorage, error) {
 		repos, err := factory.NewRepositoryFactory(db, tableName, logger)
@@ -360,19 +360,16 @@ func initializeCMSScheduler() {
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
-	}
-
-	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          "cms-scheduler",
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryStorageFn,
+	})
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
-
-	repos, err := newRepositoryStorageFn(db, cfg.DynamoTableName, logger)
-	if err != nil {
-		logger.Fatal("failed to initialize repositories", zap.Error(err))
-	}
+	repos := deps.Repos
 
 	serviceCfg := &services.ServiceConfig{
 		BaseURL:   fmt.Sprintf("https://%s", cfg.Domain),

@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -134,7 +135,7 @@ func runInitDeploy(ctx context.Context, args []string) error {
 	adminUsername := domain
 
 	// Initialize storage - use the deps Config
-	if err := common.ValidateRequiredParam("JWTSecret", lambdaCtx.Config.JWTSecret); err != nil {
+	if strings.TrimSpace(lambdaCtx.Config.JWTSecret) == "" && strings.TrimSpace(lambdaCtx.Config.JWTSecretARN) == "" {
 		jwtSecret, err := generateSecurePasswordFn(64)
 		if err != nil {
 			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to generate JWT secret")

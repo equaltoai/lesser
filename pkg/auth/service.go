@@ -57,7 +57,10 @@ type AuthService struct {
 
 // NewAuthService creates a comprehensive auth service
 func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, error) {
-	jwtSecret := cfg.JWTSecret
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil {
+		return nil, fmt.Errorf("resolve JWT secret: %w", err)
+	}
 	if jwtSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
 	}

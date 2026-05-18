@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -61,7 +62,6 @@ type streamEventLog interface {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = factory.NewRepositoryFactory
 	newAuthServiceFn           = func(cfg *config.Config, repos core.RepositoryStorage) (accessTokenValidator, error) {
@@ -104,36 +104,18 @@ func initializeSSE() {
 		logger = zap.NewNop()
 	}
 
-	// Best-effort standardized init (currently uses placeholders; SSE relies on manual wiring below).
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Debug("standardized initialization unavailable; using manual wiring", zap.Error(err))
-	}
-
-	// Manual repo + auth initialization (keeps this lambda standalone).
-	tableName := cfg.DynamoTableName
-	if err := common.ValidateRequiredParam("DYNAMODB_TABLE", tableName); err != nil {
-		logger.Fatal("DYNAMODB_TABLE environment variable is required", zap.Error(err))
-	}
-
-	var db dynamormCore.DB
-	if lambdaCtx.DynamoDB != nil {
-		if existing, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok && existing != nil {
-			db = existing
-		}
-	}
-	if db == nil {
-		manualDB, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
-		if err != nil {
-			logger.Fatal("failed to initialize DynamoDB client", zap.Error(err))
-		}
-		db = manualDB
-	}
-
-	var err error
-	repos, err = newRepositoryFactoryFn(db, tableName, logger)
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "sse",
+		RequireRepositories: true,
+		NewDB:               newLambdaOptimizedClientFn,
+		NewRepositoryStorage: func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+			return newRepositoryFactoryFn(db, tableName, logger)
+		},
+	})
 	if err != nil {
-		logger.Fatal("failed to create repository factory", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	repos = deps.Repos
 
 	authService, err = newAuthServiceFn(cfg, repos)
 	if err != nil {
@@ -143,7 +125,7 @@ func initializeSSE() {
 	if cfg.StreamEventsTable == "" {
 		logger.Fatal("STREAM_EVENTS_TABLE_NAME environment variable is required")
 	}
-	eventLog = newStreamEventLogFn(db, 30*time.Minute)
+	eventLog = newStreamEventLogFn(deps.DB, 30*time.Minute)
 }
 
 func runSSE() {

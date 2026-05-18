@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -80,16 +81,26 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
 
-	// Initialize storage independently to avoid import cycles
-	db, err := theorydb.GetClient(context.Background())
-	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
-	}
+	var (
+		db    core.DB
+		repos storageCore.RepositoryStorage
+	)
+	if storage, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage); ok && storage != nil {
+		repos = storage
+		db = storage.GetDB()
+	} else {
+		var err error
+		// Legacy unit-test fallback: production startup populates LambdaContext via
+		// pkg/lambdastorage before constructing the processor.
+		db, err = theorydb.GetClient(context.Background())
+		if err != nil {
+			logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		}
 
-	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
-	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
+		repos, err = factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
+		if err != nil {
+			logger.Fatal("Failed to create repository factory", zap.Error(err))
+		}
 	}
 
 	// Extract domain from baseURL
@@ -1428,15 +1439,18 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
-
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:         "activity-processor",
+		RequireRepositories: true,
+		AllowEmptyRegion:    true,
+		NewDB: func(ctx context.Context, _ string) (core.DB, error) {
+			return theorydb.GetClient(ctx)
+		},
+	})
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	repos = deps.Repos
 
 	// Initialize processor
 	processor = NewActivityProcessor(lambdaCtx)

@@ -20,6 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
+	"github.com/equaltoai/lesser/pkg/lambdastorage"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -1106,6 +1107,10 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 	}
 }
 
+// initializeManualServices is retained for legacy unit coverage of manual
+// bootstrap behavior; production startup now uses pkg/lambdastorage.
+//
+//nolint:unused
 func initializeManualServices() {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -1193,14 +1198,29 @@ func initializeOAuth() {
 		logger.Fatal("graphql-ws initialization missing required configuration")
 	}
 
+	jwtSecret := resolveJWTSecretForGraphQLWS()
 	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
-	oauth = auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
+	oauth = auth.NewOAuthService(jwtSecret, cfg, repos, auditLogger)
+}
+
+func resolveJWTSecretForGraphQLWS() string {
+	if cfg == nil {
+		return ""
+	}
+	jwtSecret, err := cfg.ResolveJWTSecret()
+	if err != nil {
+		logger.Fatal("failed to resolve graphql-ws JWT secret", zap.Error(err))
+	}
+	if jwtSecret == "" {
+		logger.Fatal("JWT secret is not configured for graphql-ws")
+	}
+	return jwtSecret
 }
 
 func initializeResolver() (*graph.Resolver, *executor.Executor) {
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.BaseURL(),
-		JWTSecret: cfg.JWTSecret,
+		JWTSecret: resolveJWTSecretForGraphQLWS(),
 		Config:    cfg,
 	}
 
@@ -1347,7 +1367,6 @@ func resolveStreamQueue() streaming.StreamQueueService {
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	initializeWithDefaultsFn   = func(lambdaCtx *common.LambdaContext) error { return lambdaCtx.InitializeWithDefaults() }
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
@@ -1370,20 +1389,23 @@ func initializeGraphQLWS() {
 
 	extractServices()
 
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		initializeManualServices()
-	} else {
-		extractServices()
+	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
+		ServiceName:          graphqlWSName,
+		RequireRepositories:  true,
+		NewDB:                newLambdaOptimizedClientFn,
+		NewRepositoryStorage: newRepositoryFactoryFn,
+	})
+	if err != nil {
+		logger.Fatal("failed to initialize storage", zap.Error(err))
 	}
+	repos = deps.Repos
+	extractServices()
 
-	if repos == nil {
-		initializeManualServices()
-		extractServices()
-	}
-
-	if cfg != nil && cfg.JWTSecret != "" && os.Getenv("JWT_SECRET") == "" {
-		if err := os.Setenv("JWT_SECRET", cfg.JWTSecret); err != nil {
-			logger.Warn("failed to propagate JWT secret to environment", zap.Error(err))
+	if cfg != nil && os.Getenv("JWT_SECRET") == "" {
+		if jwtSecret := resolveJWTSecretForGraphQLWS(); jwtSecret != "" {
+			if err := os.Setenv("JWT_SECRET", jwtSecret); err != nil {
+				logger.Warn("failed to propagate JWT secret to environment", zap.Error(err))
+			}
 		}
 	}
 
