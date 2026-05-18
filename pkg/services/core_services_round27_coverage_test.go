@@ -988,6 +988,39 @@ func TestAuthenticationService_round27_coverage(t *testing.T) {
 	})
 }
 
+func TestAuthenticationServiceJWTSigningSecret_round27_coverage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil_service_returns_error", func(t *testing.T) {
+		var svc *authenticationService
+		secret, err := svc.jwtSigningSecret()
+		require.ErrorContains(t, err, "authentication service is nil")
+		assert.Empty(t, secret)
+	})
+
+	t.Run("plaintext_secret_is_trimmed_and_returned", func(t *testing.T) {
+		svc := &authenticationService{jwtSecret: "  local-secret  "}
+		secret, err := svc.jwtSigningSecret()
+		require.NoError(t, err)
+		assert.Equal(t, "local-secret", secret)
+	})
+
+	t.Run("missing_config_returns_error", func(t *testing.T) {
+		svc := &authenticationService{}
+		secret, err := svc.jwtSigningSecret()
+		require.ErrorContains(t, err, "config is nil")
+		assert.Empty(t, secret)
+	})
+
+	t.Run("lazy_resolution_caches_secret", func(t *testing.T) {
+		svc := &authenticationService{config: &config.Config{JWTSecretARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt"}}
+		secret, err := svc.jwtSigningSecret()
+		require.NoError(t, err)
+		assert.Equal(t, "dummy", secret)
+		assert.Equal(t, "dummy", svc.jwtSecret)
+	})
+}
+
 func TestServiceFactory_round27_coverage(t *testing.T) {
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 	t.Setenv("AWS_REGION", "us-east-1")
