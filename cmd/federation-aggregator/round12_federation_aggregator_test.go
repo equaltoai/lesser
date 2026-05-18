@@ -93,12 +93,10 @@ func (f *fakeLambdaClient) Invoke(context.Context, *awslambda.InvokeInput, ...fu
 
 func TestInitializeFederationAggregator_Round12(t *testing.T) {
 	origMust := mustInitializeLambdaFn
-	origInit := initializeWithDefaultsFn
 	origNewClient := newLambdaOptimizedClientFn
 	origNewProcessor := newProcessorFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = origMust
-		initializeWithDefaultsFn = origInit
 		newLambdaOptimizedClientFn = origNewClient
 		newProcessorFn = origNewProcessor
 	})
@@ -112,7 +110,6 @@ func TestInitializeFederationAggregator_Round12(t *testing.T) {
 			},
 		}
 	}
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("boom") }
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return dynamormmocks.NewMockExtendedDB(), nil }
 	newProcessorFn = func(db dynamormCore.DB, tableName string, ctx *common.LambdaContext) *FederationAggregatorProcessor {
 		return &FederationAggregatorProcessor{
@@ -130,11 +127,9 @@ func TestInitializeFederationAggregator_Round12(t *testing.T) {
 
 func TestInitializeFederationAggregator_Error_Round12(t *testing.T) {
 	origMust := mustInitializeLambdaFn
-	origInit := initializeWithDefaultsFn
 	origNewClient := newLambdaOptimizedClientFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = origMust
-		initializeWithDefaultsFn = origInit
 		newLambdaOptimizedClientFn = origNewClient
 	})
 
@@ -145,7 +140,6 @@ func TestInitializeFederationAggregator_Error_Round12(t *testing.T) {
 			AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
 		}
 	}
-	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, errors.New("boom") }
 
 	require.Error(t, initializeFederationAggregator())
@@ -354,8 +348,12 @@ func TestIsDomainIncluded_AndTriggerNextLevelAggregation_Round12(t *testing.T) {
 }
 
 func TestHooksAndTableName_Round12(t *testing.T) {
+	originalTableName := federationAggregationTableName
+	t.Cleanup(func() { federationAggregationTableName = originalTableName })
+	federationAggregationTableName = "configured-table"
+
 	agg := &FederationAggregation{}
-	require.Equal(t, "lesser-main", agg.TableName())
+	require.Equal(t, "configured-table", agg.TableName())
 	require.NoError(t, agg.BeforeCreate())
 	before := agg.UpdatedAt
 	require.NoError(t, agg.BeforeUpdate())
@@ -462,4 +460,50 @@ func TestFederationAggregator_TriggerAggregation_Round12(t *testing.T) {
 
 	p.lambdaClient = &fakeLambdaClient{err: errors.New("boom")}
 	require.Error(t, p.triggerAggregation(context.Background(), AggregationEvent{Type: "daily", StartTime: time.Now().Add(-24 * time.Hour), EndTime: time.Now()}))
+}
+
+func TestFederationAggregator_UsesDeployedResourceNames_Round12(t *testing.T) {
+	t.Setenv("APP_NAME", "simulacrum")
+	p := &FederationAggregatorProcessor{
+		lambdaCtx: &common.LambdaContext{Config: &config.Config{
+			Region:       "us-west-2",
+			AWSAccountID: "123456789012",
+			Stage:        "live",
+		}},
+	}
+
+	queueURL, err := p.federationAggregatorQueueURL()
+	require.NoError(t, err)
+	require.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/simulacrum-live-federation-aggregator-queue", queueURL)
+	require.Equal(t, "simulacrum-live-federation-aggregator", p.federationAggregatorFunctionName())
+}
+
+func TestFederationAggregator_ResourceNameFallbacks_Round12(t *testing.T) {
+	t.Setenv("APP_NAME", "")
+	t.Setenv("STAGE", "")
+	t.Setenv("ENVIRONMENT", "")
+
+	var nilProcessor *FederationAggregatorProcessor
+	_, err := nilProcessor.federationAggregatorQueueURL()
+	require.Error(t, err)
+	require.Equal(t, "lesser-dev-federation-aggregator", nilProcessor.federationAggregatorFunctionName())
+
+	p := &FederationAggregatorProcessor{lambdaCtx: &common.LambdaContext{Config: &config.Config{
+		Region:       "us-east-2",
+		AWSAccountID: "111122223333",
+		Environment:  "production",
+	}}}
+	queueURL, err := p.federationAggregatorQueueURL()
+	require.NoError(t, err)
+	require.Equal(t, "https://sqs.us-east-2.amazonaws.com/111122223333/lesser-live-federation-aggregator-queue", queueURL)
+	require.Equal(t, "lesser-live-federation-aggregator", p.federationAggregatorFunctionName())
+
+	p.lambdaCtx.Config.Region = ""
+	_, err = p.federationAggregatorQueueURL()
+	require.Error(t, err)
+
+	p.lambdaCtx.Config.Region = "us-east-2"
+	p.lambdaCtx.Config.AWSAccountID = ""
+	_, err = p.federationAggregatorQueueURL()
+	require.Error(t, err)
 }

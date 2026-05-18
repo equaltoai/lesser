@@ -7,8 +7,12 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -245,4 +249,51 @@ func TestMain_WiresAppTheoryAndStartsLambda(t *testing.T) {
 
 	main()
 	require.Equal(t, 1, startCalls)
+}
+
+func TestInitializeDLQStorage_FailsClosed(t *testing.T) {
+	origNewClient := newLambdaOptimizedClientFn
+	t.Cleanup(func() { newLambdaOptimizedClientFn = origNewClient })
+
+	newLambdaOptimizedClientFn = func(context.Context, string) (core.DB, error) {
+		return nil, errors.New("storage unavailable")
+	}
+
+	ctx := &common.LambdaContext{
+		Config: &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	}
+	_, err := initializeDLQStorage(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage client initialization failed")
+}
+
+func TestInitializeDLQProcessor_SucceedsWithInjectedDB(t *testing.T) {
+	origMust := mustInitializeLambdaFn
+	origLogger := logger
+	origCtx := lambdaCtx
+	origCfg := cfg
+	origHandler := handler
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMust
+		logger = origLogger
+		lambdaCtx = origCtx
+		cfg = origCfg
+		handler = origHandler
+	})
+
+	db := new(dynamormmocks.MockDB)
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
+		return &common.LambdaContext{
+			Config:   &config.Config{Region: "us-east-1", DynamoTableName: "dlq-table"},
+			Logger:   zap.NewNop(),
+			DynamoDB: db,
+		}
+	}
+
+	err := initializeDLQProcessor()
+	require.NoError(t, err)
+	require.NotNil(t, handler)
+	require.Same(t, db, lambdaCtx.DynamoDB)
+	require.Equal(t, "dlq-table", cfg.DynamoTableName)
 }

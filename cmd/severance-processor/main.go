@@ -16,8 +16,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/services"
 	severanceService "github.com/equaltoai/lesser/pkg/services/severance"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -29,10 +32,13 @@ var (
 	registry  *services.Registry
 	processor *SeveranceProcessor
 
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = (*common.LambdaContext).InitializeWithDefaults
-	newRegistryFn            = services.NewRegistry
-	lambdaStartFn            = lambda.Start
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (storageCore.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+	newRegistryFn = services.NewRegistry
+	lambdaStartFn = lambda.Start
 )
 
 func init() {
@@ -55,13 +61,11 @@ func initializeSeveranceProcessor() error {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	}
 
-	// Initialize with processor-specific defaults
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	var err error
+	repos, err = initializeSeveranceStorage(lambdaCtx)
+	if err != nil {
+		return err
 	}
 
 	// Create service registry
@@ -84,6 +88,56 @@ func initializeSeveranceProcessor() error {
 	}
 
 	return nil
+}
+
+func initializeSeveranceStorage(lambdaCtx *common.LambdaContext) (storageCore.RepositoryStorage, error) {
+	if lambdaCtx == nil {
+		return nil, fmt.Errorf("severance-processor lambda context is nil")
+	}
+	if lambdaCtx.Config == nil {
+		return nil, fmt.Errorf("severance-processor config is nil")
+	}
+
+	if lambdaCtx.Repos != nil {
+		repos, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage)
+		if !ok || repos == nil {
+			return nil, fmt.Errorf("severance-processor invalid repository storage")
+		}
+		return repos, nil
+	}
+
+	tableName := strings.TrimSpace(lambdaCtx.Config.DynamoTableName)
+	if tableName == "" {
+		return nil, fmt.Errorf("severance-processor dynamodb table name is required")
+	}
+
+	region := strings.TrimSpace(lambdaCtx.Config.Region)
+	if region == "" {
+		return nil, fmt.Errorf("severance-processor AWS region is required")
+	}
+
+	var db dynamormCore.DB
+	if lambdaCtx.DynamoDB != nil {
+		var ok bool
+		db, ok = lambdaCtx.DynamoDB.(dynamormCore.DB)
+		if !ok || db == nil {
+			return nil, fmt.Errorf("severance-processor invalid dynamodb client")
+		}
+	} else {
+		var err error
+		db, err = newLambdaOptimizedClientFn(context.Background(), region)
+		if err != nil {
+			return nil, fmt.Errorf("severance-processor storage client initialization failed: %w", err)
+		}
+		lambdaCtx.DynamoDB = db
+	}
+
+	repos, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		return nil, fmt.Errorf("severance-processor repository initialization failed: %w", err)
+	}
+	lambdaCtx.Repos = repos
+	return repos, nil
 }
 
 // SeveranceProcessor handles severance detection from DynamoDB streams
