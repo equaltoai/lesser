@@ -17,7 +17,8 @@ patterns, moderation, etc.).
 - Auth (`docs/architecture/auth/`): OAuth, bootstrap/lock semantics, and authentication architecture.
 - AWS/infra notes (`docs/architecture/aws/`): CDK and AWS integration notes (implementation details).
 - Bookmarks (`docs/architecture/bookmarks/`): design comparisons and tradeoffs for bookmarks.
-- CMS (`docs/architecture/cms/`): the headless CMS plan and integration patterns.
+- CMS (`docs/architecture/cms/`): the headless CMS plan, integration patterns, and Blog/CMS contract fence
+  (`docs/architecture/cms/fediverse-first-blog-cms-contract.md`).
 - DynamoDB (`docs/architecture/dynamodb/`): single-table access patterns, GSIs, and index registry.
 - Moderation/ML (`docs/architecture/moderation/`): moderation pipeline and ML architecture.
 
