@@ -14,6 +14,14 @@ Lesser becomes the **universal ActivityPub backend** for:
 
 ---
 
+## Current contract fence
+
+The accepted Project 36 Blog/CMS launch contract is in
+`docs/architecture/cms/fediverse-first-blog-cms-contract.md`. When this older
+design note and the contract fence disagree about Article identity, renderer
+authority, agent-draft review policy, MVP non-goals, or launch review gates,
+the contract fence wins.
+
 ## Current State Analysis
 
 ### Existing Capabilities
