@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -223,6 +224,9 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 
 		updateActivity.Actor = owner
 		require.NoError(t, env.handler.verifyUpdateAuthorization(context.Background(), updateActivity, note))
+		require.NoError(t, env.handler.verifyUpdateAuthorization(context.Background(), updateActivity, &activitypub.Article{
+			Note: activitypub.Note{AttributedTo: owner},
+		}))
 
 		deleteActivity := &activitypub.Activity{Actor: other}
 		require.Error(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, map[string]any{}))
@@ -230,6 +234,9 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 
 		deleteActivity.Actor = owner
 		require.NoError(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, note))
+		require.NoError(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, &activitypub.Article{
+			Note: activitypub.Note{AttributedTo: owner},
+		}))
 	})
 
 	t.Run("extractDeleteTarget branches", func(t *testing.T) {
@@ -249,8 +256,45 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 		require.Equal(t, "https://example.com/objects/3", objectID)
 		require.Nil(t, original)
 
+		objectID, original, err = env.handler.extractDeleteTarget(&activitypub.Activity{Object: &activitypub.BaseObject{ID: "https://example.com/objects/4", Type: activitypub.TombstoneType}})
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com/objects/4", objectID)
+		require.Equal(t, activitypub.TombstoneType, original["type"])
+
+		objectID, original, err = env.handler.extractDeleteTarget(&activitypub.Activity{Object: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/objects/5"},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com/objects/5", objectID)
+		require.Equal(t, activitypub.NoteType, original["type"])
+
+		objectID, original, err = env.handler.extractDeleteTarget(&activitypub.Activity{Object: &activitypub.Article{
+			Note: activitypub.Note{BaseObject: activitypub.BaseObject{ID: "https://example.com/articles/6"}},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com/articles/6", objectID)
+		require.Equal(t, activitypub.ArticleType, original["type"])
+
 		_, _, err = env.handler.extractDeleteTarget(&activitypub.Activity{Object: 123})
 		require.Error(t, err)
+	})
+
+	t.Run("activityPubObjectFormerType branches", func(t *testing.T) {
+		require.Equal(t, activitypub.ArticleType, activityPubObjectFormerType(map[string]any{"type": activitypub.ArticleType}))
+		require.Equal(t, activitypub.ArticleType, activityPubObjectFormerType(&activitypub.Article{}))
+		require.Equal(t, activitypub.NoteType, activityPubObjectFormerType(&activitypub.Note{}))
+		require.Equal(t, activitypub.TombstoneType, activityPubObjectFormerType(&activitypub.BaseObject{Type: activitypub.TombstoneType}))
+		require.Equal(t, activitypub.ArticleType, activityPubObjectFormerType(&models.Object{Type: activitypub.ArticleType}))
+		require.Empty(t, activityPubObjectFormerType(123))
+
+		var nilArticle *activitypub.Article
+		var nilNote *activitypub.Note
+		var nilBase *activitypub.BaseObject
+		var nilModel *models.Object
+		require.Empty(t, activityPubObjectFormerType(nilArticle))
+		require.Empty(t, activityPubObjectFormerType(nilNote))
+		require.Empty(t, activityPubObjectFormerType(nilBase))
+		require.Empty(t, activityPubObjectFormerType(nilModel))
 	})
 
 	t.Run("extractCollectionType branches", func(t *testing.T) {

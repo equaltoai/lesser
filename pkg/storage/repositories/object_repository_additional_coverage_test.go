@@ -735,6 +735,39 @@ func TestObjectRepository_TombstoneObject_UsesMapBranch(t *testing.T) {
 	require.NoError(t, repo.TombstoneObject(ctx, "note-1", "alice"))
 }
 
+func TestObjectRepository_TombstoneObject_ArticleType(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2026, 5, 19, 13, 0, 0, 0, time.UTC)
+	articleID := "https://example.com/articles/tombstone-article"
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockQuery.On("First", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
+		obj := args.Get(0).(*models.Object)
+		*obj = *models.NewObject(articleID, activitypub.ArticleType, "https://example.com/users/alice")
+		obj.Name = "Tombstone Article"
+		obj.Summary = "Article tombstone summary"
+	}).Return(nil).Once()
+	setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+
+	require.NoError(t, repo.TombstoneObject(ctx, articleID, "https://example.com/users/alice"))
+
+	gotID, formerType := tombstoneSourceIdentity(&activitypub.Article{
+		Note: activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   articleID,
+				Type: activitypub.ArticleType,
+			},
+			AttributedTo: "https://example.com/users/alice",
+		},
+		Name: "Tombstone Article",
+	})
+	require.Equal(t, articleID, gotID)
+	require.Equal(t, activitypub.ArticleType, formerType)
+}
+
 func TestObjectRepository_CountQuotes_ErrorBranch(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 16, 17, 18, 19, 0, time.UTC)

@@ -555,55 +555,78 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 		return ErrorHandler.HandleGetError(err, EntityObject, objectID)
 	}
 
-	// Get the object ID from the result
-	var objID string
-	if objMap, ok := existingObj.(map[string]any); ok {
-		if id, ok := objMap["id"].(string); ok {
-			objID = id
-		}
-	} else if note, ok := existingObj.(*activitypub.Note); ok {
-		objID = note.ID
-	}
+	objID, formerType := tombstoneSourceIdentity(existingObj)
 
 	if err := common.ValidateRequiredParam("object ID", objID); err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityObject, "extract_id")
 	}
-
-	// Create a tombstone object
-	tombstone := models.NewObject(objectID, "Tombstone", deletedBy)
-	tombstone.Content = fmt.Sprintf("Object %s was deleted", objectID)
-	tombstone.Published = time.Now()
-	tombstone.Updated = time.Now()
-
-	// Set tombstone-specific fields
-	tombstone.AttributedTo = deletedBy
-
-	// Update GSI keys
-	tombstone.UpdateGSIKeys()
-
-	// Delete the original object and create tombstone in a transaction-like manner
-	// First delete the original
-	if err := r.DeleteObject(ctx, objectID); err != nil {
-		r.logger.Error("failed to delete original object for tombstoning",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return ErrorHandler.HandleDeleteError(err, EntityObject, objectID)
+	if formerType == "" {
+		formerType = "Object"
 	}
 
-	// Then create the tombstone using BaseRepository
-	if err := r.Create(ctx, tombstone); err != nil {
+	if err := r.DeleteObject(ctx, objID); err != nil {
+		r.logger.Error("failed to delete original object for tombstoning",
+			zap.String("object_id", objID),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityObject, objID)
+	}
+
+	tombstone := &models.Tombstone{
+		ID:         objID,
+		FormerType: formerType,
+		DeletedBy:  deletedBy,
+		Summary:    fmt.Sprintf("Object deleted by %s", deletedBy),
+		Deleted:    time.Now(),
+	}
+	if err := r.CreateTombstone(ctx, tombstone); err != nil {
 		r.logger.Error("failed to create tombstone",
-			zap.String("object_id", objectID),
+			zap.String("object_id", objID),
+			zap.String("former_type", formerType),
 			zap.String("deleted_by", deletedBy),
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityObject, "tombstone")
 	}
 
 	r.logger.Info("tombstoned object",
-		zap.String("object_id", objectID),
+		zap.String("object_id", objID),
+		zap.String("former_type", formerType),
 		zap.String("deleted_by", deletedBy))
 
 	return nil
+}
+
+func tombstoneSourceIdentity(existingObj any) (string, string) {
+	switch obj := existingObj.(type) {
+	case map[string]any:
+		id, _ := obj["id"].(string)
+		objectType, _ := obj["type"].(string)
+		return strings.TrimSpace(id), strings.TrimSpace(objectType)
+	case *activitypub.Article:
+		if obj == nil {
+			return "", ""
+		}
+		objectType := strings.TrimSpace(obj.Type)
+		if objectType == "" {
+			objectType = activitypub.ArticleType
+		}
+		return strings.TrimSpace(obj.ID), objectType
+	case *activitypub.Note:
+		if obj == nil {
+			return "", ""
+		}
+		objectType := strings.TrimSpace(obj.Type)
+		if objectType == "" {
+			objectType = activitypub.NoteType
+		}
+		return strings.TrimSpace(obj.ID), objectType
+	case *activitypub.BaseObject:
+		if obj == nil {
+			return "", ""
+		}
+		return strings.TrimSpace(obj.ID), strings.TrimSpace(obj.Type)
+	default:
+		return "", ""
+	}
 }
 
 // modelToActivityPubObject converts a model to the appropriate ActivityPub object

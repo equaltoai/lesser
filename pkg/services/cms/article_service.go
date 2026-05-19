@@ -311,11 +311,57 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 	if err := s.articleRepo.DeleteArticle(ctx, strings.TrimSpace(article.ID)); err != nil {
 		return err
 	}
+	if err := s.createArticleTombstone(ctx, article); err != nil {
+		return err
+	}
 
 	s.deleteCMSArticleIndexes(ctx, article)
 	s.updateCMSArticleCountsBestEffort(ctx, article, nil)
 
 	go s.federateArticleDeletion(context.Background(), article)
+
+	return nil
+}
+
+func (s *ArticleService) createArticleTombstone(ctx context.Context, article *models.Article) error {
+	objectID := strings.TrimSpace(article.ID)
+	if objectID == "" {
+		return errors.New("article id is required")
+	}
+
+	formerType := strings.TrimSpace(article.Type)
+	if formerType == "" {
+		formerType = activitypub.ArticleType
+	}
+
+	deletedBy := strings.TrimSpace(article.AttributedTo)
+	summary := "Article was deleted"
+	if deletedBy != "" {
+		summary = fmt.Sprintf("Object deleted by %s", deletedBy)
+	}
+
+	tombstone := &models.Tombstone{
+		ID:         objectID,
+		FormerType: formerType,
+		DeletedBy:  deletedBy,
+		Summary:    summary,
+		Deleted:    time.Now(),
+	}
+	if err := tombstone.BeforeCreate(); err != nil {
+		return fmt.Errorf("prepare article tombstone: %w", err)
+	}
+
+	db := s.articleRepo.GetDB()
+	if db == nil {
+		return errors.New("article repository db is required for tombstone")
+	}
+	if err := db.WithContext(ctx).Model(tombstone).Create(); err != nil {
+		s.logger.Error("failed to create article tombstone",
+			zap.String("article_id", objectID),
+			zap.String("former_type", formerType),
+			zap.Error(err))
+		return err
+	}
 
 	return nil
 }

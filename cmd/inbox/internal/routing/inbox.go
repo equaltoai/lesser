@@ -2414,9 +2414,20 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 	// Sanitize the object content to prevent XSS
 	common.SanitizeActivityPubObjectDefault(objMap)
 
-	// Store the object if it's a Note
-	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
+	// Store the object if it's a Note. Remote Article ingestion is explicitly
+	// unsupported for the Blog/CMS MVP; do not materialize it as a disguised
+	// status or silently route it through the Note path.
+	objType, _ := objMap["type"].(string)
+	switch strings.TrimSpace(objType) {
+	case activitypub.NoteType:
 		return ih.processRemoteCreateNote(ctx, activity, targetActor, objMap)
+	case activitypub.ArticleType:
+		ih.logUnsupportedRemoteArticle(ctx, activity, objMap, "create")
+	default:
+		log.Info("ignoring unsupported remote create object type",
+			zap.String("activity_id", activity.ID),
+			zap.String("actor", activity.Actor),
+			zap.String("object_type", objType))
 	}
 
 	return nil
@@ -2473,6 +2484,19 @@ func (ih *InboxHandler) processRemoteCreateNote(ctx context.Context, activity *a
 	}
 
 	return ih.finishRemoteCreateDeliverySideEffects(ctx, activity, targetActor, &note, status, directConversation, createDirectConversation, directInfo)
+}
+
+func (ih *InboxHandler) logUnsupportedRemoteArticle(ctx context.Context, activity *activitypub.Activity, objMap map[string]any, operation string) {
+	objectID := ""
+	if objMap != nil {
+		objectID, _ = objMap["id"].(string)
+	}
+
+	common.WithContext(ctx).Info("ignoring unsupported remote Article activity",
+		zap.String("operation", operation),
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", activity.Actor),
+		zap.String("object_id", objectID))
 }
 
 func (ih *InboxHandler) prepareDirectCreateState(
@@ -3331,16 +3355,18 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 	// Sanitize the object content to prevent XSS
 	common.SanitizeActivityPubObjectDefault(objMap)
 
-	// Store edit history before updating
-	if err := ih.storeEditHistory(ctx, objectID, existingObject, activity.Actor); err != nil {
-		log.Error("failed to store edit history",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Continue even if history storage fails
-	}
-
 	// Update the object if it's a Note
-	if objType, _ := objMap["type"].(string); objType == activitypub.NoteType {
+	objType, _ := objMap["type"].(string)
+	switch strings.TrimSpace(objType) {
+	case activitypub.NoteType:
+		// Store edit history before updating supported Note objects.
+		if err := ih.storeEditHistory(ctx, objectID, existingObject, activity.Actor); err != nil {
+			log.Error("failed to store edit history",
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			// Continue even if history storage fails
+		}
+
 		// Convert to Note object
 		objJSON, err := json.Marshal(objMap)
 		if err != nil {
@@ -3374,6 +3400,14 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 		log.Info("successfully updated remote note",
 			zap.String("object_id", objectID),
 			zap.String("updated_by", activity.Actor))
+	case activitypub.ArticleType:
+		ih.logUnsupportedRemoteArticle(ctx, activity, objMap, "update")
+	default:
+		log.Info("ignoring unsupported remote update object type",
+			zap.String("activity_id", activity.ID),
+			zap.String("actor", activity.Actor),
+			zap.String("object_id", objectID),
+			zap.String("object_type", objType))
 	}
 
 	return nil
@@ -3429,7 +3463,7 @@ func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activit
 	}
 
 	// Create tombstone (soft delete) instead of hard delete
-	if err := ih.createDeleteTombstone(ctx, objectID, activity, originalObject); err != nil {
+	if err := ih.createDeleteTombstone(ctx, objectID, activity, originalObject, existingObject); err != nil {
 		log.Error("failed to create tombstone",
 			zap.String("object_id", objectID),
 			zap.Error(err))
@@ -4594,6 +4628,8 @@ func (ih *InboxHandler) verifyUpdateAuthorization(_ context.Context, activity *a
 		if attr, ok := objMap["attributedTo"].(string); ok {
 			objectOwner = attr
 		}
+	} else if article, ok := existingObject.(*activitypub.Article); ok {
+		objectOwner = article.AttributedTo
 	} else if note, ok := existingObject.(*activitypub.Note); ok {
 		objectOwner = note.AttributedTo
 	}
@@ -4675,9 +4711,22 @@ func (ih *InboxHandler) extractDeleteTarget(activity *activitypub.Activity) (str
 			objectID = id
 			originalObject = obj
 		}
+	case *activitypub.Article:
+		objectID = obj.ID
+		originalObject = map[string]any{"id": obj.ID, "type": activitypub.ArticleType}
+	case *activitypub.Note:
+		objectID = obj.ID
+		objectType := obj.Type
+		if strings.TrimSpace(objectType) == "" {
+			objectType = activitypub.NoteType
+		}
+		originalObject = map[string]any{"id": obj.ID, "type": objectType}
 	case *activitypub.BaseObject:
 		// Object is typed
 		objectID = obj.ID
+		if strings.TrimSpace(obj.Type) != "" {
+			originalObject = map[string]any{"id": obj.ID, "type": obj.Type}
+		}
 	default:
 		return "", nil, unsupportedDeleteObjectError()
 	}
@@ -4694,6 +4743,8 @@ func (ih *InboxHandler) verifyDeleteAuthorization(_ context.Context, activity *a
 		if attr, ok := objMap["attributedTo"].(string); ok {
 			objectOwner = attr
 		}
+	} else if article, ok := existingObject.(*activitypub.Article); ok {
+		objectOwner = article.AttributedTo
 	} else if note, ok := existingObject.(*activitypub.Note); ok {
 		objectOwner = note.AttributedTo
 	}
@@ -4843,8 +4894,44 @@ func (ih *InboxHandler) cascadeDeleteNotifications(ctx context.Context, objectID
 	return nil
 }
 
+func activityPubObjectFormerType(existingObject any) string {
+	switch obj := existingObject.(type) {
+	case map[string]any:
+		objectType, _ := obj["type"].(string)
+		return strings.TrimSpace(objectType)
+	case *activitypub.Article:
+		if obj == nil {
+			return ""
+		}
+		if strings.TrimSpace(obj.Type) != "" {
+			return strings.TrimSpace(obj.Type)
+		}
+		return activitypub.ArticleType
+	case *activitypub.Note:
+		if obj == nil {
+			return ""
+		}
+		if strings.TrimSpace(obj.Type) != "" {
+			return strings.TrimSpace(obj.Type)
+		}
+		return activitypub.NoteType
+	case *activitypub.BaseObject:
+		if obj == nil {
+			return ""
+		}
+		return strings.TrimSpace(obj.Type)
+	case *models.Object:
+		if obj == nil {
+			return ""
+		}
+		return strings.TrimSpace(obj.Type)
+	default:
+		return ""
+	}
+}
+
 // createDeleteTombstone creates a tombstone for the deleted object
-func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID string, deleteActivity *activitypub.Activity, originalObject map[string]any) error {
+func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID string, deleteActivity *activitypub.Activity, originalObject map[string]any, existingObject any) error {
 	log := common.WithContext(ctx)
 
 	// Determine the original object type
@@ -4853,6 +4940,9 @@ func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID stri
 		if objType, ok := originalObject["type"].(string); ok {
 			formerType = objType
 		}
+	}
+	if common.ValidateRequiredParam("formerType", formerType) != nil {
+		formerType = activityPubObjectFormerType(existingObject)
 	}
 	if common.ValidateRequiredParam("formerType", formerType) != nil {
 		formerType = activitypub.NoteType // Default assumption
