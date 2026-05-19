@@ -613,12 +613,7 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 		return objectModelToActivityPubNote(objModel), nil
 
 	case activitypub.ArticleType:
-		note := objectModelToActivityPubNote(objModel)
-		note.Type = activitypub.ArticleType
-		return &activitypub.Article{
-			Note: *note,
-			Name: objModel.Name,
-		}, nil
+		return objectModelToActivityPubArticle(objModel), nil
 
 	default:
 		// Return as generic map for other types
@@ -651,9 +646,6 @@ func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
 			Updated:   &objModel.Updated,
 			To:        objModel.To,
 			CC:        objModel.CC,
-			BTo:       objModel.BTo,
-			BCC:       objModel.BCC,
-			Summary:   objModel.Summary,
 			Sensitive: objModel.Sensitive,
 		},
 		Content:      objModel.Content,
@@ -675,6 +667,17 @@ func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
 	}
 
 	return note
+}
+
+func objectModelToActivityPubArticle(objModel *models.Object) *activitypub.Article {
+	note := objectModelToActivityPubNote(objModel)
+	note.Type = activitypub.ArticleType
+	note.Summary = objModel.Summary
+
+	return &activitypub.Article{
+		Note: *note,
+		Name: objModel.Name,
+	}
 }
 
 // CreateUpdateHistory creates a new update history entry for an object

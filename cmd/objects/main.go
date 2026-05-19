@@ -1336,6 +1336,10 @@ func objectsActivityJSON(status int, value any) (*apptheory.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	body, err = objectsStripHiddenRecipientsJSON(body)
+	if err != nil {
+		return nil, err
+	}
 	return &apptheory.Response{
 		Status: status,
 		Headers: map[string][]string{
@@ -1343,4 +1347,29 @@ func objectsActivityJSON(status int, value any) (*apptheory.Response, error) {
 		},
 		Body: body,
 	}, nil
+}
+
+func objectsStripHiddenRecipientsJSON(body []byte) ([]byte, error) {
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	objectsStripHiddenRecipients(decoded)
+	return json.Marshal(decoded)
+}
+
+func objectsStripHiddenRecipients(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, "bto")
+		delete(typed, "bcc")
+		for _, nested := range typed {
+			objectsStripHiddenRecipients(nested)
+		}
+	case []any:
+		for _, nested := range typed {
+			objectsStripHiddenRecipients(nested)
+		}
+	}
 }

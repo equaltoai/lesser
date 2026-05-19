@@ -63,6 +63,34 @@ func TestModelToActivityPubObject_NoteType(t *testing.T) {
 			},
 		},
 		{
+			name: "note omits summary and hidden recipients from readback shape",
+			model: &models.Object{
+				ID:           "https://example.com/objects/hidden-note",
+				Type:         activitypub.NoteType,
+				Published:    baseTime,
+				Updated:      updatedTime,
+				To:           []string{activitypub.PublicAddress},
+				BTo:          []string{"https://remote.example/users/hidden"},
+				BCC:          []string{"https://remote.example/users/also-hidden"},
+				Summary:      "note summary should not be emitted by repository readback",
+				Content:      "Hidden addressing must stay private",
+				AttributedTo: "https://example.com/users/alice",
+			},
+			checkNote: func(t *testing.T, note *activitypub.Note) {
+				assert.Empty(t, note.BTo)
+				assert.Empty(t, note.BCC)
+				assert.Empty(t, note.Summary)
+
+				bodyBytes, err := json.Marshal(note)
+				require.NoError(t, err)
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(bodyBytes, &body))
+				assert.NotContains(t, body, "bto")
+				assert.NotContains(t, body, "bcc")
+				assert.NotContains(t, body, "summary")
+			},
+		},
+		{
 			name: "note with InReplyTo pointer set",
 			model: &models.Object{
 				ID:           "https://example.com/objects/reply-456",
@@ -224,6 +252,8 @@ func TestModelToActivityPubObject_ArticleType(t *testing.T) {
 		Updated:        updatedTime,
 		To:             []string{activitypub.PublicAddress},
 		CC:             []string{"https://example.com/users/alice/followers"},
+		BTo:            []string{"https://remote.example/users/hidden"},
+		BCC:            []string{"https://remote.example/users/also-hidden"},
 		Content:        "Article body content",
 		AttributedTo:   "https://example.com/users/alice",
 		AttachmentJSON: `[{"type":"Image","url":"https://example.com/cover.jpg","mediaType":"image/jpeg","name":"cover"}]`,
@@ -244,8 +274,18 @@ func TestModelToActivityPubObject_ArticleType(t *testing.T) {
 	require.Equal(t, updatedTime, *article.Updated)
 	require.Equal(t, []string{activitypub.PublicAddress}, article.To)
 	require.Equal(t, []string{"https://example.com/users/alice/followers"}, article.CC)
+	require.Empty(t, article.BTo)
+	require.Empty(t, article.BCC)
 	require.Len(t, article.Attachment, 1)
 	require.Len(t, article.Tag, 1)
+
+	bodyBytes, err := json.Marshal(article)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(bodyBytes, &body))
+	require.Equal(t, "Article summary", body["summary"])
+	require.NotContains(t, body, "bto")
+	require.NotContains(t, body, "bcc")
 }
 
 // ============================================================================

@@ -417,7 +417,13 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 	})
 
 	t.Run("activitypub json response", func(t *testing.T) {
-		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note", "to": []any{activitypub.PublicAddress}}}
+		objRepo := &fakeObjectRepo{obj: map[string]any{
+			"id":   "x",
+			"type": "Note",
+			"to":   []any{activitypub.PublicAddress},
+			"bto":  []any{"https://remote.example/users/hidden"},
+			"bcc":  []any{"https://remote.example/users/also-hidden"},
+		}}
 		h := &Handler{
 			instanceRepo:           instanceRepo,
 			objectRepo:             objRepo,
@@ -435,6 +441,11 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, 200, resp.Status)
 		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotContains(t, body, "bto")
+		require.NotContains(t, body, "bcc")
 	})
 
 	t.Run("canonical article route resolves article url and negotiates activitypub json", func(t *testing.T) {
@@ -448,6 +459,8 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 					Published: &now,
 					Updated:   &now,
 					To:        []string{activitypub.PublicAddress},
+					BTo:       []string{"https://remote.example/users/hidden"},
+					BCC:       []string{"https://remote.example/users/also-hidden"},
 				},
 				Content:      "<p>Article body</p>",
 				AttributedTo: "https://example.com/users/alice",
@@ -489,6 +502,8 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Equal(t, "A short summary", body["summary"])
 		require.Equal(t, "<p>Article body</p>", body["content"])
 		require.Equal(t, "https://example.com/users/alice", body["attributedTo"])
+		require.NotContains(t, body, "bto")
+		require.NotContains(t, body, "bcc")
 		require.NotEmpty(t, body["attachment"])
 		require.NotEmpty(t, body["tag"])
 	})
@@ -723,6 +738,15 @@ func TestExtractObjectData_Round12(t *testing.T) {
 	require.Equal(t, "article summary", data.summary)
 	require.Len(t, data.attachments, 1)
 	require.Len(t, data.tags, 1)
+
+	data = h.extractObjectData(&activitypub.Article{
+		Note: activitypub.Note{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/articles/untyped"},
+		},
+		Name: "Untyped Article",
+	})
+	require.Equal(t, activitypub.ArticleType, data.objectType)
+	require.Equal(t, "Untyped Article", data.name)
 }
 
 type extendedMockDB struct {
@@ -1295,6 +1319,8 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 		Request: apptheory.Request{Headers: map[string][]string{"accept": {}}},
 	}, "accept"))
 	require.Equal(t, []string{"x"}, objectsAppendRecipients(nil, []string{"", "x"}))
+	_, err := objectsStripHiddenRecipientsJSON([]byte("{broken"))
+	require.Error(t, err)
 
 	ctx := &apptheory.Context{
 		Request: apptheory.Request{
