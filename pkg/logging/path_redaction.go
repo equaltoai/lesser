@@ -6,7 +6,11 @@ import (
 	"strings"
 )
 
-const privateConversationLogHashPrefix = "sha256:"
+const (
+	privateConversationLogHashPrefix = "sha256:"
+	routeSegmentAPI                  = "api"
+	routeSegmentV1                   = "v1"
+)
 
 // SanitizeLogPath normalizes private route path segments before generic
 // request/access logs and derived metrics persist them. It intentionally keeps
@@ -24,6 +28,9 @@ func SanitizeLogPath(raw string) string {
 	if sanitized, ok := sanitizeLesserSelfScopeMintConversationListPath(path); ok {
 		return sanitized
 	}
+	if sanitized, ok := sanitizeAPIConversationPath(path); ok {
+		return sanitized
+	}
 	return trimmed
 }
 
@@ -39,8 +46,8 @@ func splitLogPathSuffix(raw string) (path string, suffix string) {
 func sanitizeLesserSelfScopeMintConversationPath(path string) (string, bool) {
 	segments, leadingSlash := splitLogPathSegments(path)
 	if len(segments) != 7 ||
-		segments[0] != "api" ||
-		segments[1] != "v1" ||
+		segments[0] != routeSegmentAPI ||
+		segments[1] != routeSegmentV1 ||
 		segments[2] != "souls" ||
 		segments[3] != "bound" ||
 		segments[4] != "me" ||
@@ -56,8 +63,8 @@ func sanitizeLesserSelfScopeMintConversationPath(path string) (string, bool) {
 func sanitizeLesserSelfScopeMintConversationListPath(path string) (string, bool) {
 	segments, leadingSlash := splitLogPathSegments(path)
 	if len(segments) != 6 ||
-		segments[0] != "api" ||
-		segments[1] != "v1" ||
+		segments[0] != routeSegmentAPI ||
+		segments[1] != routeSegmentV1 ||
 		segments[2] != "souls" ||
 		segments[3] != "bound" ||
 		segments[4] != "me" ||
@@ -66,6 +73,38 @@ func sanitizeLesserSelfScopeMintConversationListPath(path string) (string, bool)
 	}
 
 	return joinLogPathSegments(segments, leadingSlash), true
+}
+
+func sanitizeAPIConversationPath(path string) (string, bool) {
+	segments, leadingSlash := splitLogPathSegments(path)
+	if len(segments) < 3 ||
+		segments[0] != routeSegmentAPI ||
+		segments[1] != routeSegmentV1 ||
+		segments[2] != "conversations" {
+		return "", false
+	}
+
+	switch len(segments) {
+	case 3:
+		return joinLogPathSegments(segments, leadingSlash), true
+	case 4:
+		if strings.TrimSpace(segments[3]) == "" {
+			return "", false
+		}
+		if segments[3] == "lookup" {
+			return joinLogPathSegments(segments, leadingSlash), true
+		}
+		segments[3] = "conversation-" + shortLogHash(segments[3])
+		return joinLogPathSegments(segments, leadingSlash), true
+	case 5:
+		if strings.TrimSpace(segments[3]) == "" || segments[4] != "read" {
+			return "", false
+		}
+		segments[3] = "conversation-" + shortLogHash(segments[3])
+		return joinLogPathSegments(segments, leadingSlash), true
+	default:
+		return "", false
+	}
 }
 
 func splitLogPathSegments(path string) ([]string, bool) {

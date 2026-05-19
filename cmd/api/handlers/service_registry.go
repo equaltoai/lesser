@@ -70,7 +70,9 @@ type AIService interface {
 // ConversationsService defines the subset of conversation-related operations used by the Lift API
 type ConversationsService interface {
 	DeleteConversation(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
+	GetConversation(ctx context.Context, query *conversations.GetConversationQuery) (*conversations.ConversationWithMessages, error)
 	ListConversations(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
+	LookupConversationByCounterpart(ctx context.Context, query *conversations.LookupConversationByCounterpartQuery) (*conversations.ConversationWithMessages, error)
 	MarkConversationRead(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
 	SendDirectMessage(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
 }

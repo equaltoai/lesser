@@ -68,6 +68,11 @@ exemptions:
             - /api/v1/souls/bound/me
             - /api/v1/souls/bound/me/mint-conversations
             - /api/v1/souls/bound/me/mint-conversations/{conversationId}
+    - id: agent_usable_dm_lookup
+      reason: Exact counterpart DM lookup is a REST-only agent primitive for resolving a compact conversation reference without scanning; GraphQL clients can use Query.conversation/Query.conversationMessages once they have the conversation id.
+      match:
+        exact:
+            - /api/v1/conversations/lookup
     - id: canonical_skill_authority
       reason: Canonical skill authority approval, exposure, assignment, effective-resolution, catalog, and bundle-publication APIs are REST-only for Project 21 M3/M4.
       match:
@@ -776,6 +781,17 @@ routes:
       status: covered
       graphql:
         - Query.conversations
+    - method: GET
+      path: /api/v1/conversations/lookup
+      policy: rest_only
+      exemptedBy: agent_usable_dm_lookup
+    - method: GET
+      path: /api/v1/conversations/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.conversation
+        - Query.conversationMessages
     - method: DELETE
       path: /api/v1/conversations/{id}
       policy: graphql_required

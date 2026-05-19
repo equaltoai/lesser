@@ -1475,34 +1475,54 @@ func TestService_DeleteConversation_DeleteForMe(t *testing.T) {
 	conversationRepo.AssertExpectations(t)
 }
 
-func TestService_GetConversation_HidesDeletedConversation(t *testing.T) {
-	service, conversationRepo, noteRepo, _, _, _ := createTestService()
-
+func TestService_GetConversation_HidesDeletedOrHiddenConversation(t *testing.T) {
 	now := time.Now().UTC()
-	conversation := &models.Conversation{
-		ID:           "conv123",
-		Participants: []string{"sender123", "recipient456"},
-		CreatedAt:    now.Add(-time.Hour),
-		UpdatedAt:    now.Add(-time.Minute),
-	}
 	deletedAt := now.Add(-time.Second)
-	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
-	conversationRepo.
-		On("GetUserConversationState", mock.Anything, "sender123", "conv123").
-		Return(testConversationStateContract("sender123", "conv123", func(state *interfaces.UserConversationStateContract) {
-			state.DeletedAt = &deletedAt
-		}), nil)
 
-	_, err := service.GetConversation(context.Background(), &GetConversationQuery{
-		ConversationID: "conv123",
-		ViewerID:       "sender123",
-		Pagination:     interfaces.PaginationOptions{Limit: 10},
-	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrConversationNotFound)
+	tests := []struct {
+		name  string
+		apply func(*interfaces.UserConversationStateContract)
+	}{
+		{
+			name: "deleted",
+			apply: func(state *interfaces.UserConversationStateContract) {
+				state.DeletedAt = &deletedAt
+			},
+		},
+		{
+			name: "hidden folder",
+			apply: func(state *interfaces.UserConversationStateContract) {
+				state.Folder = models.UserConversationFolderHidden
+			},
+		},
+	}
 
-	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertNotCalled(t, "GetConversationThread")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, conversationRepo, noteRepo, _, _, _ := createTestService()
+			conversation := &models.Conversation{
+				ID:           "conv123",
+				Participants: []string{"sender123", "recipient456"},
+				CreatedAt:    now.Add(-time.Hour),
+				UpdatedAt:    now.Add(-time.Minute),
+			}
+			conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+			conversationRepo.
+				On("GetUserConversationState", mock.Anything, "sender123", "conv123").
+				Return(testConversationStateContract("sender123", "conv123", tt.apply), nil)
+
+			_, err := service.GetConversation(context.Background(), &GetConversationQuery{
+				ConversationID: "conv123",
+				ViewerID:       "sender123",
+				Pagination:     interfaces.PaginationOptions{Limit: 10},
+			})
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrConversationNotFound)
+
+			conversationRepo.AssertExpectations(t)
+			noteRepo.AssertNotCalled(t, "GetConversationThread")
+		})
+	}
 }
 
 func TestService_DeleteMessage_CreatesViewerTombstone(t *testing.T) {
