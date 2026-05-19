@@ -63,6 +63,34 @@ func TestModelToActivityPubObject_NoteType(t *testing.T) {
 			},
 		},
 		{
+			name: "note omits summary and hidden recipients from readback shape",
+			model: &models.Object{
+				ID:           "https://example.com/objects/hidden-note",
+				Type:         activitypub.NoteType,
+				Published:    baseTime,
+				Updated:      updatedTime,
+				To:           []string{activitypub.PublicAddress},
+				BTo:          []string{"https://remote.example/users/hidden"},
+				BCC:          []string{"https://remote.example/users/also-hidden"},
+				Summary:      "note summary should not be emitted by repository readback",
+				Content:      "Hidden addressing must stay private",
+				AttributedTo: "https://example.com/users/alice",
+			},
+			checkNote: func(t *testing.T, note *activitypub.Note) {
+				assert.Empty(t, note.BTo)
+				assert.Empty(t, note.BCC)
+				assert.Empty(t, note.Summary)
+
+				bodyBytes, err := json.Marshal(note)
+				require.NoError(t, err)
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(bodyBytes, &body))
+				assert.NotContains(t, body, "bto")
+				assert.NotContains(t, body, "bcc")
+				assert.NotContains(t, body, "summary")
+			},
+		},
+		{
 			name: "note with InReplyTo pointer set",
 			model: &models.Object{
 				ID:           "https://example.com/objects/reply-456",
@@ -210,6 +238,56 @@ func TestModelToActivityPubObject_NoteType(t *testing.T) {
 	}
 }
 
+func TestModelToActivityPubObject_ArticleType(t *testing.T) {
+	repo := NewObjectRepository(nil, "test-table", "example.com", zap.NewNop())
+
+	baseTime := time.Date(2024, 12, 27, 10, 0, 0, 0, time.UTC)
+	updatedTime := time.Date(2024, 12, 27, 12, 0, 0, 0, time.UTC)
+	result, err := repo.modelToActivityPubObject(&models.Object{
+		ID:             "https://example.com/articles/article-123",
+		Type:           activitypub.ArticleType,
+		Name:           "Article Title",
+		Summary:        "Article summary",
+		Published:      baseTime,
+		Updated:        updatedTime,
+		To:             []string{activitypub.PublicAddress},
+		CC:             []string{"https://example.com/users/alice/followers"},
+		BTo:            []string{"https://remote.example/users/hidden"},
+		BCC:            []string{"https://remote.example/users/also-hidden"},
+		Content:        "Article body content",
+		AttributedTo:   "https://example.com/users/alice",
+		AttachmentJSON: `[{"type":"Image","url":"https://example.com/cover.jpg","mediaType":"image/jpeg","name":"cover"}]`,
+		TagJSON:        `[{"type":"Hashtag","href":"https://example.com/tags/cms","name":"#cms"}]`,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	article, ok := result.(*activitypub.Article)
+	require.True(t, ok, "expected *activitypub.Article, got %T", result)
+	require.Equal(t, "https://example.com/articles/article-123", article.ID)
+	require.Equal(t, activitypub.ArticleType, article.Type)
+	require.Equal(t, "Article Title", article.Name)
+	require.Equal(t, "Article summary", article.Summary)
+	require.Equal(t, "Article body content", article.Content)
+	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
+	require.Equal(t, baseTime, *article.Published)
+	require.Equal(t, updatedTime, *article.Updated)
+	require.Equal(t, []string{activitypub.PublicAddress}, article.To)
+	require.Equal(t, []string{"https://example.com/users/alice/followers"}, article.CC)
+	require.Empty(t, article.BTo)
+	require.Empty(t, article.BCC)
+	require.Len(t, article.Attachment, 1)
+	require.Len(t, article.Tag, 1)
+
+	bodyBytes, err := json.Marshal(article)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(bodyBytes, &body))
+	require.Equal(t, "Article summary", body["summary"])
+	require.NotContains(t, body, "bto")
+	require.NotContains(t, body, "bcc")
+}
+
 // ============================================================================
 // 2) modelToActivityPubObject Tests - Default Conversion Branch
 // ============================================================================
@@ -226,30 +304,6 @@ func TestModelToActivityPubObject_DefaultBranch(t *testing.T) {
 		model    *models.Object
 		checkMap func(t *testing.T, result map[string]any)
 	}{
-		{
-			name: "Article type returns map with core fields",
-			model: &models.Object{
-				ID:           "https://example.com/objects/article-123",
-				Type:         "Article",
-				Published:    baseTime,
-				Updated:      updatedTime,
-				Content:      "Article body content",
-				AttributedTo: "https://example.com/users/alice",
-			},
-			checkMap: func(t *testing.T, result map[string]any) {
-				assert.Equal(t, "https://example.com/objects/article-123", result["id"])
-				assert.Equal(t, "Article", result["type"])
-				assert.Equal(t, "https://example.com/users/alice", result["attributedTo"])
-				assert.Equal(t, "Article body content", result["content"])
-				assert.Equal(t, baseTime, result["published"])
-				assert.Equal(t, updatedTime, result["updated"])
-				// To and CC should NOT be present when nil
-				_, hasTo := result["to"]
-				_, hasCC := result["cc"]
-				assert.False(t, hasTo, "to should not be present when nil")
-				assert.False(t, hasCC, "cc should not be present when nil")
-			},
-		},
 		{
 			name: "Tombstone type returns map",
 			model: &models.Object{

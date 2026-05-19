@@ -64,6 +64,58 @@ func TestArticleService_UpdateArticle_AllowsBlankSlugAndSetsUpdatedFields(t *tes
 	require.False(t, article.Updated.IsZero())
 }
 
+func TestArticleService_UpdateArticle_RejectsCanonicalPublishedSlugChange(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, q := newCMSMockDB(t)
+	q.On("Create").Return(nil).Maybe()
+	q.On("Delete").Return(nil).Maybe()
+
+	repo := &fakeArticleRepo{
+		db:       db,
+		articles: map[string]*models.Article{},
+	}
+	articleID := "https://example.com/articles/original-slug"
+	repo.articles[articleID] = &models.Article{
+		Object: models.Object{
+			ID:           articleID,
+			Type:         activitypub.ArticleType,
+			Published:    time.Now(),
+			AttributedTo: "https://example.com/users/alice",
+			Content:      "before",
+		},
+		Slug: "original-slug",
+	}
+
+	svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+	err := svc.UpdateArticle(ctx, &models.Article{
+		Object: models.Object{
+			ID:           articleID,
+			Type:         activitypub.ArticleType,
+			Published:    time.Now(),
+			AttributedTo: "https://example.com/users/alice",
+			Content:      "after",
+		},
+		Slug: "renamed-slug",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "immutable")
+
+	err = svc.UpdateArticle(ctx, &models.Article{
+		Object: models.Object{
+			ID:           articleID,
+			Type:         activitypub.ArticleType,
+			Published:    time.Now(),
+			AttributedTo: "https://example.com/users/alice",
+			Content:      "after",
+		},
+		Slug: "original-slug",
+	})
+	require.NoError(t, err)
+}
+
 func TestArticleService_DeleteArticle_ValidatesInput(t *testing.T) {
 	t.Parallel()
 

@@ -362,6 +362,7 @@ var LambdaInventory = Inventory{
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
 				{Method: "GET", Path: "/objects/{id}"},
+				{Method: "GET", Path: "/articles/{slug}"},
 				{Method: "GET", Path: "/users/{username}/statuses/{id}"},
 			},
 		},

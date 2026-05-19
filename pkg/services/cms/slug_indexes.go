@@ -32,6 +32,25 @@ func cmsTenantFromID(value string) string {
 	return cmsNormalizeTenant(cmsHostFromURL(value))
 }
 
+func cmsArticleSlugFromCanonicalID(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+
+	parsed, err := neturl.Parse(value)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return "", false
+	}
+
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "articles" || strings.TrimSpace(parts[1]) == "" {
+		return "", false
+	}
+
+	return strings.TrimSpace(parts[1]), true
+}
+
 func cmsEnsureSlugIndex(ctx context.Context, db core.DB, pk string, slug string, targetID string, itemType string) (bool, error) {
 	idx := &models.CMSSlugIndex{
 		PK:       pk,

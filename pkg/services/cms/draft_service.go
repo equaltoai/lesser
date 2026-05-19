@@ -8,9 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -34,10 +32,6 @@ type articleDraftPublisher interface {
 	GetArticleBySlug(ctx context.Context, slug string) (*models.Article, error)
 	CreateArticle(ctx context.Context, article *models.Article) error
 	UpdateArticle(ctx context.Context, article *models.Article) error
-}
-
-type tenantArticleDraftPublisher interface {
-	GetArticleByTenantSlug(ctx context.Context, tenant string, slug string) (*models.Article, error)
 }
 
 // DraftService handles business logic for drafts
@@ -216,7 +210,7 @@ func (s *DraftService) resolveArticleDraftTarget(domain string, draft *models.Dr
 	}
 
 	if objectID == "" {
-		objectID = common.GenerateObjectID(domain, "objects", uuid.NewString())
+		objectID = common.GenerateObjectID(domain, "articles", slug)
 	}
 
 	if !strings.HasPrefix(objectID, "https://"+domain+"/") && !strings.HasPrefix(objectID, "http://"+domain+"/") {
@@ -315,56 +309,12 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 	}
 
 	if err := s.articleService.CreateArticle(ctx, article); err != nil {
-		if apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
-			existing, getErr := s.resolveExistingArticleBySlug(ctx, domain, slug)
-			if getErr == nil && existing != nil {
-				if strings.TrimSpace(existing.AttributedTo) != common.GenerateActorID(domain, authorID) {
-					s.markDraftFailed(ctx, authorID, draft, draftID, err)
-					return nil, err
-				}
-
-				s.deleteDraftAfterPublish(ctx, draft, authorID, draftID, strings.TrimSpace(existing.ID))
-				return existing, nil
-			}
-		}
-
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
 	}
 
 	s.deleteDraftAfterPublish(ctx, draft, authorID, draftID, objectID)
 	return article, nil
-}
-
-func (s *DraftService) resolveExistingArticleBySlug(ctx context.Context, domain string, slug string) (*models.Article, error) {
-	slug = strings.TrimSpace(slug)
-	if slug == "" {
-		return nil, stdErrors.New("slug is required")
-	}
-
-	if s.articleService != nil {
-		var (
-			article *models.Article
-			err     error
-		)
-		if tenantGetter, ok := s.articleService.(tenantArticleDraftPublisher); ok {
-			article, err = tenantGetter.GetArticleByTenantSlug(ctx, domain, slug)
-		} else {
-			article, err = s.articleService.GetArticleBySlug(ctx, slug)
-		}
-		if err == nil {
-			return article, nil
-		}
-		if err != nil && !apperrors.HasCode(err, apperrors.CodeNotFound) {
-			return nil, err
-		}
-	}
-
-	legacyID := common.GenerateObjectID(domain, "articles", slug)
-	if strings.TrimSpace(legacyID) == "" {
-		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
-	}
-	return s.articleService.GetArticle(ctx, legacyID)
 }
 
 func (s *DraftService) deleteDraftAfterPublish(ctx context.Context, draft *models.Draft, authorID, draftID, objectID string) {

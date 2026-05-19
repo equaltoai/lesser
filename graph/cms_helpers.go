@@ -36,10 +36,6 @@ func cmsArticleID(domain, slug string) string {
 	return common.GenerateObjectID(domain, "articles", slug)
 }
 
-func cmsArticleObjectID(domain, objectID string) string {
-	return common.GenerateObjectID(domain, "objects", objectID)
-}
-
 func cmsCategoryID(domain, slug string) string {
 	return common.GenerateObjectID(domain, "categories", slug)
 }

@@ -266,7 +266,7 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
 	require.NotNil(t, article)
-	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "https://example.com/articles/hello-world", article.ID)
 	require.Equal(t, "hello-world", article.Slug)
 	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
 	require.Equal(t, activitypub.ArticleType, article.Type)
@@ -276,7 +276,7 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 	require.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
 }
 
-func TestDraftServicePublishDraftAlreadyExistsSameAuthor(t *testing.T) {
+func TestDraftServicePublishDraftAlreadyExistsSameAuthorMarksFailed(t *testing.T) {
 	t.Parallel()
 
 	repo := newMemDraftRepo()
@@ -314,13 +314,17 @@ func TestDraftServicePublishDraftAlreadyExistsSameAuthor(t *testing.T) {
 	require.NoError(t, repo.CreateDraft(context.Background(), draft))
 
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
-	require.NoError(t, err)
-	require.NotNil(t, article)
-	require.Equal(t, existing.ID, article.ID)
-
-	_, err = repo.GetDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.Error(t, err)
-	require.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
+	require.Nil(t, article)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeAlreadyExists))
+
+	after, getErr := repo.GetDraft(context.Background(), draft.AuthorID, draft.ID)
+	require.NoError(t, getErr)
+	require.Equal(t, "failed", after.Status)
+
+	stored, getExistingErr := articles.GetArticle(context.Background(), existing.ID)
+	require.NoError(t, getExistingErr)
+	require.Equal(t, "Existing", stored.Name)
 }
 
 func TestDraftServicePublishDraftAlreadyExistsDifferentAuthorMarksFailed(t *testing.T) {
@@ -396,6 +400,6 @@ func TestCMSSmokeDraftLifecycle(t *testing.T) {
 
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "https://example.com/articles/smoke-test", article.ID)
 	require.Equal(t, "smoke-test", article.Slug)
 }

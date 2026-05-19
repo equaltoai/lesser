@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -34,27 +33,6 @@ func (s *memArticleServiceGetErr) CreateArticle(ctx context.Context, article *mo
 }
 
 func (s *memArticleServiceGetErr) UpdateArticle(ctx context.Context, article *models.Article) error {
-	return s.base.UpdateArticle(ctx, article)
-}
-
-type memArticleServiceSlugErr struct {
-	base      *memArticleService
-	slugError error
-}
-
-func (s *memArticleServiceSlugErr) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
-	return s.base.GetArticle(ctx, articleID)
-}
-
-func (s *memArticleServiceSlugErr) GetArticleBySlug(ctx context.Context, slug string) (*models.Article, error) {
-	return nil, s.slugError
-}
-
-func (s *memArticleServiceSlugErr) CreateArticle(ctx context.Context, article *models.Article) error {
-	return s.base.CreateArticle(ctx, article)
-}
-
-func (s *memArticleServiceSlugErr) UpdateArticle(ctx context.Context, article *models.Article) error {
 	return s.base.UpdateArticle(ctx, article)
 }
 
@@ -142,44 +120,4 @@ func TestDraftServicePublishDraft_UpdatesExistingArticleAndDeletesDraft(t *testi
 	_, err = repo.GetDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
-}
-
-func TestDraftServiceResolveExistingArticleBySlug_LegacyFallback(t *testing.T) {
-	t.Parallel()
-
-	articles := newMemArticleService()
-	svc := &DraftService{
-		articleService: articles,
-	}
-
-	slug := "legacy-article"
-	legacyID := common.GenerateObjectID("example.com", "articles", slug)
-	articles.items[legacyID] = &models.Article{
-		Object: models.Object{
-			ID:           legacyID,
-			Type:         activitypub.ArticleType,
-			AttributedTo: "https://example.com/users/alice",
-		},
-		Slug: slug,
-	}
-
-	got, err := svc.resolveExistingArticleBySlug(context.Background(), "example.com", slug)
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	require.Equal(t, legacyID, got.ID)
-}
-
-func TestDraftServiceResolveExistingArticleBySlug_PropagatesUnexpectedGetBySlugError(t *testing.T) {
-	t.Parallel()
-
-	articles := &memArticleServiceSlugErr{
-		base:      newMemArticleService(),
-		slugError: errors.New("unexpected slug error"),
-	}
-	svc := &DraftService{
-		articleService: articles,
-	}
-
-	_, err := svc.resolveExistingArticleBySlug(context.Background(), "example.com", "slug")
-	require.Error(t, err)
 }

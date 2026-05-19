@@ -101,6 +101,7 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	article, err := mut.PublishDraft(ctx, draft.ID)
 	require.NoError(t, err)
 	require.NotNil(t, article)
+	require.Equal(t, "https://localhost/articles/updated-draft", article.ID)
 	require.NotEmpty(t, article.ID)
 }
 
@@ -559,6 +560,7 @@ func TestRound12CMS_SeriesMutationRejectsCrossTenantSeries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, article)
+	require.Equal(t, "https://tenant-b.example/articles/tenant-b-article", article.ID)
 
 	order := 1
 	_, err = mut.AddArticleToSeries(aliceCtx, tenantASeries.ID, article.ID, &order)
@@ -592,6 +594,7 @@ func TestRound12CMS_ArticleWritesRejectCrossTenantArticle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, tenantAArticle)
+	require.Equal(t, "https://tenant-a.example/articles/tenant-a-article", tenantAArticle.ID)
 
 	revision := &models.Revision{
 		ID:           "tenant-a-rev-1",
@@ -623,6 +626,43 @@ func TestRound12CMS_ArticleWritesRejectCrossTenantArticle(t *testing.T) {
 	storedArticle, err := storage.Article().GetArticle(context.Background(), tenantAArticle.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Tenant A Article", storedArticle.Name)
+}
+
+func TestRound12CMS_ArticleCreateCanonicalIDSlugCollisionsAreTenantScoped(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mut := resolver.Mutation()
+	aliceCtx := round12AuthContext("alice")
+
+	cfg := resolver.Registry.GetConfig()
+	require.NotNil(t, cfg)
+
+	slug := "shared-slug"
+	cfg.BaseURL = "https://tenant-a.example"
+	tenantAArticle, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &slug,
+		Title:   "Tenant A Article",
+		Content: "tenant a body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantAArticle)
+	require.Equal(t, "https://tenant-a.example/articles/shared-slug", tenantAArticle.ID)
+
+	_, err = mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &slug,
+		Title:   "Tenant A Duplicate",
+		Content: "duplicate",
+	})
+	require.Error(t, err)
+
+	cfg.BaseURL = "https://tenant-b.example"
+	tenantBArticle, err := mut.CreateArticle(aliceCtx, model.CreateArticleInput{
+		Slug:    &slug,
+		Title:   "Tenant B Article",
+		Content: "tenant b body",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tenantBArticle)
+	require.Equal(t, "https://tenant-b.example/articles/shared-slug", tenantBArticle.ID)
 }
 
 func TestRound12CMS_HelperBranches(t *testing.T) {

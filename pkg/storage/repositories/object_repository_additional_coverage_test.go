@@ -726,7 +726,7 @@ func TestObjectRepository_TombstoneObject_UsesMapBranch(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	mockQuery.On("First", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
 		obj := args.Get(0).(*models.Object)
-		*obj = *models.NewObject("note-1", "Article", "alice")
+		*obj = *models.NewObject("note-1", "Page", "alice")
 	}).Return(nil).Once()
 	setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 

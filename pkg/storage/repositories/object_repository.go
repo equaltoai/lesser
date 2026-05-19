@@ -610,37 +610,10 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (any, error) {
 	switch objModel.Type {
 	case activitypub.NoteType:
-		note := &activitypub.Note{
-			BaseObject: activitypub.BaseObject{
-				ID:        objModel.ID,
-				Type:      objModel.Type,
-				Published: &objModel.Published,
-				Updated:   &objModel.Updated,
-				To:        objModel.To,
-				CC:        objModel.CC,
-				Sensitive: objModel.Sensitive,
-			},
-			Content:      objModel.Content,
-			AttributedTo: objModel.AttributedTo,
-		}
+		return objectModelToActivityPubNote(objModel), nil
 
-		// Set InReplyTo if present
-		if objModel.InReplyTo != nil {
-			note.InReplyTo = *objModel.InReplyTo
-		}
-
-		// Parse complex fields from JSON
-		if objModel.AttachmentJSON != "" {
-			_ = json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
-		}
-		if objModel.TagJSON != "" {
-			_ = json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
-		}
-		if objModel.ContextJSON != "" {
-			_ = json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
-		}
-
-		return note, nil
+	case activitypub.ArticleType:
+		return objectModelToActivityPubArticle(objModel), nil
 
 	default:
 		// Return as generic map for other types
@@ -661,6 +634,49 @@ func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (an
 		}
 
 		return result, nil
+	}
+}
+
+func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:        objModel.ID,
+			Type:      objModel.Type,
+			Published: &objModel.Published,
+			Updated:   &objModel.Updated,
+			To:        objModel.To,
+			CC:        objModel.CC,
+			Sensitive: objModel.Sensitive,
+		},
+		Content:      objModel.Content,
+		AttributedTo: objModel.AttributedTo,
+	}
+
+	if objModel.InReplyTo != nil {
+		note.InReplyTo = *objModel.InReplyTo
+	}
+
+	if objModel.AttachmentJSON != "" {
+		_ = json.Unmarshal([]byte(objModel.AttachmentJSON), &note.Attachment)
+	}
+	if objModel.TagJSON != "" {
+		_ = json.Unmarshal([]byte(objModel.TagJSON), &note.Tag)
+	}
+	if objModel.ContextJSON != "" {
+		_ = json.Unmarshal([]byte(objModel.ContextJSON), &note.Context)
+	}
+
+	return note
+}
+
+func objectModelToActivityPubArticle(objModel *models.Object) *activitypub.Article {
+	note := objectModelToActivityPubNote(objModel)
+	note.Type = activitypub.ArticleType
+	note.Summary = objModel.Summary
+
+	return &activitypub.Article{
+		Note: *note,
+		Name: objModel.Name,
 	}
 }
 

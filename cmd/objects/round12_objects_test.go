@@ -417,7 +417,13 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 	})
 
 	t.Run("activitypub json response", func(t *testing.T) {
-		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "x", "type": "Note", "to": []any{activitypub.PublicAddress}}}
+		objRepo := &fakeObjectRepo{obj: map[string]any{
+			"id":   "x",
+			"type": "Note",
+			"to":   []any{activitypub.PublicAddress},
+			"bto":  []any{"https://remote.example/users/hidden"},
+			"bcc":  []any{"https://remote.example/users/also-hidden"},
+		}}
 		h := &Handler{
 			instanceRepo:           instanceRepo,
 			objectRepo:             objRepo,
@@ -435,6 +441,140 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, 200, resp.Status)
 		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotContains(t, body, "bto")
+		require.NotContains(t, body, "bcc")
+	})
+
+	t.Run("canonical article route resolves article url and negotiates activitypub json", func(t *testing.T) {
+		now := time.Date(2026, time.May, 19, 12, 0, 0, 0, time.UTC)
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://example.com/articles/hello-world",
+					Type:      activitypub.ArticleType,
+					Summary:   "A short summary",
+					Published: &now,
+					Updated:   &now,
+					To:        []string{activitypub.PublicAddress},
+					BTo:       []string{"https://remote.example/users/hidden"},
+					BCC:       []string{"https://remote.example/users/also-hidden"},
+				},
+				Content:      "<p>Article body</p>",
+				AttributedTo: "https://example.com/users/alice",
+				Attachment: []activitypub.Attachment{
+					{Type: "Image", MediaType: "image/png", URL: "https://example.com/media/cover.png", Name: "cover"},
+				},
+				Tag: []activitypub.Tag{
+					{Type: "Hashtag", Href: "https://example.com/tags/cms", Name: "#cms"},
+				},
+			},
+			Name: "Hello World",
+		}
+
+		objRepo := &fakeObjectRepo{obj: article}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/articles/hello-world",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"slug": "hello-world"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+		require.Equal(t, "https://example.com/articles/hello-world", objRepo.gotID)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://example.com/articles/hello-world", body["id"])
+		require.Equal(t, activitypub.ArticleType, body["type"])
+		require.Equal(t, "Hello World", body["name"])
+		require.Equal(t, "A short summary", body["summary"])
+		require.Equal(t, "<p>Article body</p>", body["content"])
+		require.Equal(t, "https://example.com/users/alice", body["attributedTo"])
+		require.NotContains(t, body, "bto")
+		require.NotContains(t, body, "bcc")
+		require.NotEmpty(t, body["attachment"])
+		require.NotEmpty(t, body["tag"])
+	})
+
+	t.Run("canonical article route returns html for public article", func(t *testing.T) {
+		now := time.Now().UTC()
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://example.com/articles/hello-world",
+					Type:      activitypub.ArticleType,
+					Summary:   "A summary",
+					Published: &now,
+					To:        []string{activitypub.PublicAddress},
+				},
+				AttributedTo: "https://example.com/users/alice",
+			},
+			Name: "Hello World",
+		}
+
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: article},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/articles/hello-world",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"slug": "hello-world"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, []string{"text/html; charset=utf-8"}, resp.Headers["content-type"])
+		require.Contains(t, string(resp.Body), "Hello World")
+		require.Contains(t, string(resp.Body), "A summary")
+	})
+
+	t.Run("canonical article route suppresses html for non-public article", func(t *testing.T) {
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://example.com/articles/private-article",
+					Type: activitypub.ArticleType,
+					To:   []string{"https://example.com/users/alice/followers"},
+				},
+				Content:      "followers only",
+				AttributedTo: "https://example.com/users/alice",
+			},
+			Name: "Private Article",
+		}
+
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: article},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/articles/private-article",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"slug": "private-article"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
 	t.Run("canonical status route resolves published status url", func(t *testing.T) {
@@ -570,6 +710,43 @@ func TestExtractObjectData_Round12(t *testing.T) {
 	require.True(t, data.sensitive)
 	require.Len(t, data.attachments, 1)
 	require.Len(t, data.tags, 1)
+
+	now = time.Now().UTC()
+	data = h.extractObjectData(&activitypub.Article{
+		Note: activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				Type:      activitypub.ArticleType,
+				ID:        "https://example.com/articles/1",
+				Summary:   "article summary",
+				Published: &now,
+				To:        []string{activitypub.PublicAddress},
+			},
+			Content:      "<p>article body</p>",
+			AttributedTo: "https://example.com/users/alice",
+			Attachment: []activitypub.Attachment{
+				{Type: "Image", URL: "https://example.com/cover.png"},
+			},
+			Tag: []activitypub.Tag{
+				{Type: "Hashtag", Name: "#cms", Href: "https://example.com/tags/cms"},
+			},
+		},
+		Name: "Article Title",
+	})
+	require.Equal(t, activitypub.ArticleType, data.objectType)
+	require.Equal(t, "Article Title", data.name)
+	require.Equal(t, "<p>article body</p>", data.content)
+	require.Equal(t, "article summary", data.summary)
+	require.Len(t, data.attachments, 1)
+	require.Len(t, data.tags, 1)
+
+	data = h.extractObjectData(&activitypub.Article{
+		Note: activitypub.Note{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/articles/untyped"},
+		},
+		Name: "Untyped Article",
+	})
+	require.Equal(t, activitypub.ArticleType, data.objectType)
+	require.Equal(t, "Untyped Article", data.name)
 }
 
 type extendedMockDB struct {
@@ -865,6 +1042,58 @@ func TestHandleGetObject_PrivateVisibilityGate_Round29(t *testing.T) {
 		require.Equal(t, 1, relationships.calls)
 	})
 
+	t.Run("accepted follower can fetch followers-only article route", func(t *testing.T) {
+		actorID := "https://remote.example/users/bob"
+		authFetch := &fakeAuthorizedFetch{
+			enabled: true,
+			actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: actorID},
+				PreferredUsername: "bob",
+			},
+		}
+		relationships := &fakeRelationshipChecker{
+			following: map[string]bool{actorID + "|" + authorID: true},
+		}
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://example.com/articles/private-article",
+					Type: activitypub.ArticleType,
+					To:   []string{followersCollection},
+				},
+				Content:      "followers only article",
+				AttributedTo: authorID,
+			},
+			Name: "Private Article",
+		}
+		objRepo := &fakeObjectRepo{obj: article}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: authFetch,
+			relationshipRepo:       relationships,
+		}
+
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/articles/private-article",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"slug": "private-article"},
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.Status)
+		require.Equal(t, "https://example.com/articles/private-article", objRepo.gotID)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+		require.Equal(t, 1, relationships.calls)
+	})
+
 	t.Run("explicitly addressed actor can fetch non-public object without follower lookup", func(t *testing.T) {
 		actorID := "https://remote.example/users/bob"
 		note := privateNote()
@@ -1078,7 +1307,20 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 	require.True(t, h.parseDateTime(time.Now()).After(time.Time{}))
 	require.True(t, h.parseDateTime("not-a-time").IsZero())
 	require.Equal(t, "", h.generateWarningHTML(false, "cw"))
+	require.Contains(t, h.generateWarningHTML(true, "cw"), "cw")
 	require.Equal(t, "", h.generateUpdatedHTML(time.Time{}))
+	require.Contains(t, h.generateUpdatedHTML(time.Date(2026, time.May, 19, 12, 0, 0, 0, time.UTC)), "Updated")
+	require.Equal(t, "@", h.extractUsernameFromURL(""))
+	objectID, lookupID := h.resolveObjectLookup(nil)
+	require.Empty(t, objectID)
+	require.Empty(t, lookupID)
+	require.Empty(t, objectsHeaderValue(nil, "accept"))
+	require.Empty(t, objectsHeaderValue(&apptheory.Context{
+		Request: apptheory.Request{Headers: map[string][]string{"accept": {}}},
+	}, "accept"))
+	require.Equal(t, []string{"x"}, objectsAppendRecipients(nil, []string{"", "x"}))
+	_, err := objectsStripHiddenRecipientsJSON([]byte("{broken"))
+	require.Error(t, err)
 
 	ctx := &apptheory.Context{
 		Request: apptheory.Request{
@@ -1098,6 +1340,14 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 	require.Equal(t, "https://example.com/objects/123?q=1", req.URL.String())
 	require.Equal(t, "example.com", req.Host)
 	require.Equal(t, "example.com", req.Header.Get("Host"))
+}
+
+func TestHandleTombstonedObject_NilRepoBranch_Round12(t *testing.T) {
+	h := &Handler{}
+	resp, handled, err := h.handleTombstonedObject(context.Background(), "lookup", "object", "req", false)
+	require.NoError(t, err)
+	require.Nil(t, resp)
+	require.False(t, handled)
 }
 
 func TestObjectsSecurityHeaders_Round12(t *testing.T) {

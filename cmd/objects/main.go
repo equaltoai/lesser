@@ -114,6 +114,7 @@ type objectsRouteInventoryEntry struct {
 func objectsRouteInventory() []objectsRouteInventoryEntry {
 	return []objectsRouteInventoryEntry{
 		{Method: http.MethodGet, Path: "/objects/:id"},
+		{Method: http.MethodGet, Path: "/articles/:slug"},
 		{Method: http.MethodGet, Path: "/users/:username/statuses/:id"},
 	}
 }
@@ -427,6 +428,12 @@ func (h *Handler) resolveObjectLookup(ctx *apptheory.Context) (string, string) {
 		return "", ""
 	}
 
+	slug := strings.TrimSpace(ctx.Param("slug"))
+	if slug != "" {
+		canonicalID := fmt.Sprintf("%s/articles/%s", cfg.BaseURL(), slug)
+		return canonicalID, canonicalID
+	}
+
 	objectID := strings.TrimSpace(ctx.Param("id"))
 	if objectID == "" {
 		return "", ""
@@ -476,6 +483,10 @@ func (h *Handler) extractObjectData(objInterface any) *objectData {
 		return h.extractNoteData(note)
 	}
 
+	if article, ok := objInterface.(*activitypub.Article); ok {
+		return h.extractArticleData(article)
+	}
+
 	// Handle generic object as map
 	if objMap, ok := objInterface.(map[string]any); ok {
 		return h.extractMapData(objMap)
@@ -509,6 +520,16 @@ func (h *Handler) extractNoteData(note *activitypub.Note) *objectData {
 		data.updated = *note.Updated
 	}
 
+	return data
+}
+
+func (h *Handler) extractArticleData(article *activitypub.Article) *objectData {
+	data := h.extractNoteData(&article.Note)
+	data.objectType = article.Type
+	if data.objectType == "" {
+		data.objectType = activitypub.ArticleType
+	}
+	data.name = article.Name
 	return data
 }
 
@@ -1315,6 +1336,10 @@ func objectsActivityJSON(status int, value any) (*apptheory.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	body, err = objectsStripHiddenRecipientsJSON(body)
+	if err != nil {
+		return nil, err
+	}
 	return &apptheory.Response{
 		Status: status,
 		Headers: map[string][]string{
@@ -1322,4 +1347,29 @@ func objectsActivityJSON(status int, value any) (*apptheory.Response, error) {
 		},
 		Body: body,
 	}, nil
+}
+
+func objectsStripHiddenRecipientsJSON(body []byte) ([]byte, error) {
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	objectsStripHiddenRecipients(decoded)
+	return json.Marshal(decoded)
+}
+
+func objectsStripHiddenRecipients(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, "bto")
+		delete(typed, "bcc")
+		for _, nested := range typed {
+			objectsStripHiddenRecipients(nested)
+		}
+	case []any:
+		for _, nested := range typed {
+			objectsStripHiddenRecipients(nested)
+		}
+	}
 }
