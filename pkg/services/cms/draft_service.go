@@ -10,7 +10,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -216,7 +215,7 @@ func (s *DraftService) resolveArticleDraftTarget(domain string, draft *models.Dr
 	}
 
 	if objectID == "" {
-		objectID = common.GenerateObjectID(domain, "objects", uuid.NewString())
+		objectID = common.GenerateObjectID(domain, "articles", slug)
 	}
 
 	if !strings.HasPrefix(objectID, "https://"+domain+"/") && !strings.HasPrefix(objectID, "http://"+domain+"/") {

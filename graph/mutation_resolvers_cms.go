@@ -279,9 +279,10 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 
 	article := &models.Article{
 		Object: models.Object{
-			ID:           cmsArticleObjectID(domain, uuid.NewString()),
+			ID:           cmsArticleID(domain, slug),
 			Type:         "Article",
 			Name:         input.Title,
+			Summary:      derefString(input.Excerpt),
 			Content:      input.Content,
 			AttributedTo: cmsLocalActorID(domain, username),
 			Published:    now,

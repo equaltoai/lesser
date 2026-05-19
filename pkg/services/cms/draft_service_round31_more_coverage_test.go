@@ -189,6 +189,17 @@ func TestDraftServiceResolveArticleDraftTarget_ValidatesSlugAndObjectID(t *testi
 	require.NoError(t, err)
 	require.Equal(t, validObjectID, objectID)
 	require.Equal(t, "hello", slug)
+
+	objectID, slug, err = svc.resolveArticleDraftTarget("example.com", &models.Draft{Title: "Hello World"})
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/articles/hello-world", objectID)
+	require.Equal(t, "hello-world", slug)
+
+	validLegacyObjectID := "https://example.com/objects/legacy"
+	objectID, slug, err = svc.resolveArticleDraftTarget("example.com", &models.Draft{Title: "Legacy", ObjectID: &validLegacyObjectID})
+	require.NoError(t, err)
+	require.Equal(t, validLegacyObjectID, objectID)
+	require.Equal(t, "legacy", slug)
 }
 
 func TestDraftServicePublishDraft_UpdateExistingArticlePermissionDeniedMarksFailed(t *testing.T) {

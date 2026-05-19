@@ -5,6 +5,10 @@
   },
   {
     "method": "GET",
+    "path": "/articles/:slug"
+  },
+  {
+    "method": "GET",
     "path": "/users/:username/statuses/:id"
   }
 ]

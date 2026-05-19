@@ -266,7 +266,7 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
 	require.NotNil(t, article)
-	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "https://example.com/articles/hello-world", article.ID)
 	require.Equal(t, "hello-world", article.Slug)
 	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
 	require.Equal(t, activitypub.ArticleType, article.Type)
@@ -396,6 +396,6 @@ func TestCMSSmokeDraftLifecycle(t *testing.T) {
 
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "https://example.com/articles/smoke-test", article.ID)
 	require.Equal(t, "smoke-test", article.Slug)
 }

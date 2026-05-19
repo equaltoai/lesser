@@ -69,6 +69,8 @@ func (h *Handler) HandlePinStatusLift(ctx *apptheory.Context) (*apptheory.Respon
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		attributedTo = obj.AttributedTo
+	case *activitypub.Article:
+		attributedTo = obj.AttributedTo
 	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok {
 			attributedTo = attr

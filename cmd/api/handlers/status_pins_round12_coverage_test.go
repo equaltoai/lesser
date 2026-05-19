@@ -21,7 +21,7 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
 	headers := map[string]string{"Authorization": "Bearer " + writeToken}
 
-	t.Run("pin/unpin fallback id extraction + map object ownership", func(t *testing.T) {
+	t.Run("pin/unpin fallback id extraction + article ownership", func(t *testing.T) {
 		objectID := cfg.BaseURL() + "/objects/s1"
 		state := &round10QueryState{
 			actorsByUser: map[string]storagemodels.Actor{
@@ -31,7 +31,7 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 				},
 			},
 			objectsByID: map[string]storagemodels.Object{
-				// Non-note type forces map[string]any path for attributedTo extraction.
+				// Article objects are returned as first-class ActivityPub Article values.
 				objectID: {ID: objectID, Type: "Article", Content: "hello", AttributedTo: cfg.ActorURL("alice")},
 			},
 		}

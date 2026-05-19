@@ -63,7 +63,7 @@ The inventory set is enforced by:
 | moderation-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; maxAge=3600s; poisonQueue=moderation-processor-stream-poison-queue; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; maxRetry=3; maxAge=3600s; poisonQueue=note-processor-stream-poison-queue; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | notification-processor | processor-sqs | SQS: queue=notification-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| objects | api-http | HTTP: GET /objects/{id}<br>HTTP: GET /users/{username}/statuses/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| objects | api-http | HTTP: GET /objects/{id}<br>HTTP: GET /articles/{slug}<br>HTTP: GET /users/{username}/statuses/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | outbox | api-http | HTTP: GET /users/{username}/outbox<br>HTTP: POST /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | push-delivery | processor-sqs | SQS: queue=push-delivery-queue; partialFailure=true | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
 | report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; maxRetry=3; maxAge=3600s; poisonQueue=report-trust-updater-stream-poison-queue; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |

@@ -20003,6 +20003,29 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /articles/{slug}:
+        get:
+            operationId: get_articles_by_slug
+            tags:
+                - articles
+            parameters:
+                - name: slug
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-lambda: objects
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:objects
     /auth/device:
         get:
             operationId: get_auth_device

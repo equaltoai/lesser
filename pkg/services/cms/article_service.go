@@ -233,6 +233,22 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 
 	slug := strings.TrimSpace(article.Slug)
 	article.Slug = slug
+	if existing != nil {
+		if canonicalSlug, ok := cmsArticleSlugFromCanonicalID(existing.ID); ok {
+			requestedSlug := slug
+			if requestedSlug == "" {
+				requestedSlug = strings.TrimSpace(existing.Slug)
+			}
+			if requestedSlug == "" {
+				requestedSlug = canonicalSlug
+			}
+			if requestedSlug != canonicalSlug {
+				return apperrors.ValidationFailed("slug", "published article slug is immutable")
+			}
+			article.Slug = requestedSlug
+			slug = requestedSlug
+		}
+	}
 
 	slugCreated := false
 	if slug != "" {

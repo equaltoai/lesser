@@ -114,6 +114,7 @@ type objectsRouteInventoryEntry struct {
 func objectsRouteInventory() []objectsRouteInventoryEntry {
 	return []objectsRouteInventoryEntry{
 		{Method: http.MethodGet, Path: "/objects/:id"},
+		{Method: http.MethodGet, Path: "/articles/:slug"},
 		{Method: http.MethodGet, Path: "/users/:username/statuses/:id"},
 	}
 }
@@ -427,6 +428,12 @@ func (h *Handler) resolveObjectLookup(ctx *apptheory.Context) (string, string) {
 		return "", ""
 	}
 
+	slug := strings.TrimSpace(ctx.Param("slug"))
+	if slug != "" {
+		canonicalID := fmt.Sprintf("%s/articles/%s", cfg.BaseURL(), slug)
+		return canonicalID, canonicalID
+	}
+
 	objectID := strings.TrimSpace(ctx.Param("id"))
 	if objectID == "" {
 		return "", ""
@@ -476,6 +483,10 @@ func (h *Handler) extractObjectData(objInterface any) *objectData {
 		return h.extractNoteData(note)
 	}
 
+	if article, ok := objInterface.(*activitypub.Article); ok {
+		return h.extractArticleData(article)
+	}
+
 	// Handle generic object as map
 	if objMap, ok := objInterface.(map[string]any); ok {
 		return h.extractMapData(objMap)
@@ -509,6 +520,16 @@ func (h *Handler) extractNoteData(note *activitypub.Note) *objectData {
 		data.updated = *note.Updated
 	}
 
+	return data
+}
+
+func (h *Handler) extractArticleData(article *activitypub.Article) *objectData {
+	data := h.extractNoteData(&article.Note)
+	data.objectType = article.Type
+	if data.objectType == "" {
+		data.objectType = activitypub.ArticleType
+	}
+	data.name = article.Name
 	return data
 }
 
