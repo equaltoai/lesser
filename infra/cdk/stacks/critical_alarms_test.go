@@ -50,6 +50,9 @@ func TestLesserApiStackSynthCreatesCriticalProcessorAlarms(t *testing.T) {
 			requireAlarm(t, alarms, fmt.Sprintf("%s-critical-depth", scheduleDLQ))
 		}
 	}
+
+	requireAlarm(t, alarms, fmt.Sprintf("%s-critical", naming.ResourceNameWithApp(appName, "cms-article-render-failure", environment)))
+	requireAlarm(t, alarms, fmt.Sprintf("%s-critical", naming.ResourceNameWithApp(appName, "cms-article-federation-failure", environment)))
 }
 
 func synthLesserApiStageTemplate(t *testing.T, appName string, environment string) map[string]any {

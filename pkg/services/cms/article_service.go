@@ -103,6 +103,7 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 	cmsNormalizeArticleAttribution(article, nil)
 
 	if err := validateArticleRenderable(article); err != nil {
+		logCMSArticleRenderFailure(s.logger, "create_article", article, err)
 		return err
 	}
 
@@ -301,6 +302,7 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	}
 
 	if err := validateArticleRenderable(article); err != nil {
+		logCMSArticleRenderFailure(s.logger, "update_article", article, err)
 		return err
 	}
 
@@ -534,12 +536,15 @@ func (s *ArticleService) federateArticleUpdate(ctx context.Context, article *mod
 }
 
 func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, article *models.Article, activityType string, label string) {
+	logCMSArticleFederationAttempt(s.logger, label, activityType, article)
+
 	apArticle, err := transformations.StorageArticleToActivityPub(article)
 	if err != nil {
 		s.logger.Error("failed to convert article to AP for federation",
 			zap.String("label", label),
-			zap.String("article_id", article.ID),
+			zap.String("article_id", cmsArticleID(article)),
 			zap.Error(err))
+		logCMSArticleFederationFailure(s.logger, label, cmsFederationFailureStageTransform, activityType, "", article, err)
 		return
 	}
 
@@ -550,6 +555,7 @@ func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, artic
 			zap.String("label", label),
 			zap.String("actor_id", article.AttributedTo),
 			zap.Error(err))
+		logCMSArticleFederationFailure(s.logger, label, cmsFederationFailureStageActor, activityType, "", article, err)
 		return
 	}
 
@@ -573,20 +579,25 @@ func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, artic
 			zap.String("label", label),
 			zap.String("activity_id", activityID),
 			zap.Error(err))
+		logCMSArticleFederationFailure(s.logger, label, cmsFederationFailureStageDelivery, activityType, activityID, article, err)
 	} else {
 		s.logger.Info("successfully federated article activity",
 			zap.String("label", label),
 			zap.String("article_id", article.ID),
 			zap.String("activity_id", activityID))
+		logCMSArticleFederationSuccess(s.logger, label, activityType, activityID, article)
 	}
 }
 func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *models.Article) {
+	logCMSArticleFederationAttempt(s.logger, "delete", activitypub.DeleteType, article)
+
 	username := extractUsernameFromActorID(article.AttributedTo)
 	apActor, err := s.actorRepo.GetActor(ctx, username)
 	if err != nil {
 		s.logger.Error("failed to get actor for article delete federation",
 			zap.String("actor_id", article.AttributedTo),
 			zap.Error(err))
+		logCMSArticleFederationFailure(s.logger, "delete", cmsFederationFailureStageActor, activitypub.DeleteType, "", article, err)
 		return
 	}
 
@@ -618,23 +629,30 @@ func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *m
 		s.logger.Error("failed to deliver article delete activity",
 			zap.String("activity_id", activityID),
 			zap.Error(err))
+		logCMSArticleFederationFailure(s.logger, "delete", cmsFederationFailureStageDelivery, activitypub.DeleteType, activityID, article, err)
 	} else {
 		s.logger.Info("successfully federated article delete",
 			zap.String("article_id", article.ID),
 			zap.String("activity_id", activityID))
+		logCMSArticleFederationSuccess(s.logger, "delete", activitypub.DeleteType, activityID, article)
 	}
 }
 
 func (s *ArticleService) deliverFederatedArticleActivity(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	var followerErr error
 	if articleActivityHasPublicAddressing(activity) {
 		if err := s.federation.DeliverToFollowers(ctx, activity, actor); err != nil {
+			followerErr = err
 			s.logger.Error("failed to deliver article activity to followers",
 				zap.String("activity_id", activity.ID),
 				zap.Error(err))
 		}
 	}
 
-	return s.federation.DeliverToRecipients(ctx, activity, actor)
+	if err := s.federation.DeliverToRecipients(ctx, activity, actor); err != nil {
+		return err
+	}
+	return followerErr
 }
 
 func articleActivityHasPublicAddressing(activity *activitypub.Activity) bool {

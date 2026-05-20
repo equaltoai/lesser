@@ -48,6 +48,7 @@ func NewCriticalAlarmsNestedStack(scope constructs.Construct, id string, props *
 
 	stack.addCriticalLambdaAlarms(alertTopic)
 	stack.addCriticalQueueAlarms(alertTopic)
+	stack.addCriticalCMSArticleAlarms(alertTopic)
 	return stack
 }
 
@@ -147,6 +148,47 @@ func (s *CriticalAlarmsNestedStack) addCriticalQueueAlarms(alertTopic awssns.ITo
 			scheduleDLQ := queuePhysicalName(s.AppName, s.Environment, fmt.Sprintf("%s-schedule-%d-dlq", spec.Name, idx))
 			addCriticalQueueDepthAlarm(s.NestedStack, alertTopic, scheduleDLQ, fmt.Sprintf("%sScheduleDLQ%d", spec.Name, idx), 0)
 		}
+	}
+}
+
+func (s *CriticalAlarmsNestedStack) addCriticalCMSArticleAlarms(alertTopic awssns.ITopic) {
+	stage := naming.StageForEnvironment(s.Environment)
+	dimensions := &map[string]*string{
+		"Stage":  jsii.String(string(stage)),
+		"Status": jsii.String("failure"),
+	}
+
+	for _, spec := range []struct {
+		ConstructID string
+		MetricName  string
+		Resource    string
+	}{
+		{
+			ConstructID: "CMSArticleRenderFailureAlarm",
+			MetricName:  "ArticleRenderFailure",
+			Resource:    "cms-article-render-failure",
+		},
+		{
+			ConstructID: "CMSArticleFederationFailureAlarm",
+			MetricName:  "ArticleFederationFailure",
+			Resource:    "cms-article-federation-failure",
+		},
+	} {
+		metric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+			Namespace:     jsii.String("Lesser/CMS"),
+			MetricName:    jsii.String(spec.MetricName),
+			DimensionsMap: dimensions,
+			Statistic:     jsii.String("Sum"),
+			Period:        awscdk.Duration_Minutes(jsii.Number(5)),
+		})
+		awscloudwatch.NewAlarm(s.NestedStack, jsii.String(spec.ConstructID), &awscloudwatch.AlarmProps{
+			AlarmName:          jsii.String(fmt.Sprintf("%s-critical", naming.ResourceNameWithApp(s.AppName, spec.Resource, string(stage)))),
+			Metric:             metric,
+			Threshold:          jsii.Number(1),
+			EvaluationPeriods:  jsii.Number(1),
+			ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+			TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+		}).AddAlarmAction(awscloudwatchactions.NewSnsAction(alertTopic))
 	}
 }
 

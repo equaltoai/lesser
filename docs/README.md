@@ -72,7 +72,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 - Release-driven deploy contract: `docs/contracts/release-driven-deploy-contract.md`
 - CLI auth (device flow): `docs/cli/auth.md`
 - Configure: `docs/configuration.md`
-- Operate: `docs/monitoring.md`, `docs/security.md`, `docs/backup-recovery.md`, `docs/operations/runbook.md`, `docs/operations/processor-storm-runbook.md`, `docs/operations/processor-storm-recovery-runbook.md`, `docs/operations/processor-storm-recovery-decisions.md`
+- Operate: `docs/monitoring.md`, `docs/security.md`, `docs/backup-recovery.md`, `docs/operations/runbook.md`, `docs/operations/cms-blog-launch-runbook.md`, `docs/operations/processor-storm-runbook.md`, `docs/operations/processor-storm-recovery-runbook.md`, `docs/operations/processor-storm-recovery-decisions.md`
 - Release notes: `docs/operations/release-notes.md`
 - Incident stewardship packets: `docs/operations/processor-storm-apptheory-stewardship-evidence.md`
 - Release checklist: `docs/release-checklist.md`

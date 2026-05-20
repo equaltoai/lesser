@@ -101,6 +101,15 @@ destination are deployed.
 - Check the federation delivery queue depth (queue URL from `state.json`).
 - Validate `/.well-known/webfinger` routing and that your stage domain resolves correctly.
 
+### CMS Blog launch or Article federation failure
+
+Use the focused launch runbook in `docs/operations/cms-blog-launch-runbook.md`.
+
+- Tail `api`, `graphql`, and `federation-delivery` logs.
+- Search for `cms_article_render_failure`, `cms_draft_render_failure`, and `cms_article_federation_outcome`.
+- Check `Lesser/CMS` metrics `ArticleRenderFailure` and `ArticleFederationFailure`.
+- Do not bypass the server-side renderer/sanitizer or federation signing path to clear a launch blocker.
+
 ## Recovery
 
 Start with `docs/backup-recovery.md` and use table/bucket names from `state.json` (or CDK outputs), not hard-coded examples.
