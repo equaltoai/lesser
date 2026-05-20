@@ -62,6 +62,13 @@ func TestRenderArticleContentDeterministicErrors(t *testing.T) {
 	require.True(t, errors.As(err, &limitErr))
 	require.Equal(t, MaxArticleSourceBytes, limitErr.Limit)
 	require.Equal(t, MaxArticleSourceBytes+1, limitErr.Actual)
+
+	_, err = RenderArticleContent(strings.Repeat("&", MaxArticleSourceBytes/2), FormatMarkdown)
+	require.ErrorIs(t, err, ErrArticleRenderedContentTooLarge)
+	require.True(t, errors.As(err, &limitErr))
+	require.Equal(t, "rendered_content", limitErr.Field)
+	require.Equal(t, MaxArticleRenderedHTMLBytes, limitErr.Limit)
+	require.Greater(t, limitErr.Actual, MaxArticleRenderedHTMLBytes)
 }
 
 func TestRenderArticleContentEmptyAndMalformed(t *testing.T) {
@@ -69,7 +76,35 @@ func TestRenderArticleContentEmptyAndMalformed(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rendered.HTML)
 
+	rendered, err = RenderArticleContent("", FormatHTML)
+	require.NoError(t, err)
+	require.Empty(t, rendered.HTML)
+
 	rendered, err = RenderArticleContent("<p><strong>open", FormatHTML)
 	require.NoError(t, err)
 	require.Equal(t, "<p><strong>open", rendered.HTML)
+}
+
+func TestValidateArticleSourceRejectsInvalidUTF8(t *testing.T) {
+	err := ValidateArticleSource(string([]byte{0xff}), FormatMarkdown)
+	require.EqualError(t, err, "article content must be valid UTF-8")
+}
+
+func TestLimitErrorMessagesAndUnwrap(t *testing.T) {
+	var nilLimit *LimitError
+	require.Equal(t, "article content limit error", nilLimit.Error())
+	require.NoError(t, nilLimit.Unwrap())
+
+	limitErr := &LimitError{Limit: 10, Actual: 11}
+	require.Equal(t, "article content: article content exceeds maximum source size (limit 10 bytes, got 11 bytes)", limitErr.Error())
+	require.NoError(t, limitErr.Unwrap())
+
+	limitErr = &LimitError{
+		Field:  " rendered content ",
+		Limit:  MaxArticleRenderedHTMLBytes,
+		Actual: MaxArticleRenderedHTMLBytes + 1,
+		Cause:  ErrArticleRenderedContentTooLarge,
+	}
+	require.Equal(t, "rendered content: rendered article content exceeds maximum output size (limit 524288 bytes, got 524289 bytes)", limitErr.Error())
+	require.ErrorIs(t, limitErr.Unwrap(), ErrArticleRenderedContentTooLarge)
 }
