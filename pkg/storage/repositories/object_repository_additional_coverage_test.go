@@ -768,18 +768,7 @@ func TestObjectRepository_TombstoneObject_ArticleType(t *testing.T) {
 	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
 	require.NotZero(t, capturedTombstone.TTL)
 
-	gotID, formerType := tombstoneSourceIdentity(&activitypub.Article{
-		Note: activitypub.Note{
-			BaseObject: activitypub.BaseObject{
-				ID:   articleID,
-				Type: activitypub.ArticleType,
-			},
-			AttributedTo: "https://example.com/users/alice",
-		},
-		Name: "Tombstone Article",
-	})
-	require.Equal(t, articleID, gotID)
-	require.Equal(t, activitypub.ArticleType, formerType)
+	require.Equal(t, articleID, capturedTombstone.ID)
 }
 
 func TestObjectRepository_CountQuotes_ErrorBranch(t *testing.T) {

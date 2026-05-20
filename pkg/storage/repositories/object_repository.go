@@ -607,40 +607,6 @@ func (r *ObjectRepository) getStoredObjectModel(ctx context.Context, objectID st
 	return &objModel, nil
 }
 
-func tombstoneSourceIdentity(existingObj any) (string, string) {
-	switch obj := existingObj.(type) {
-	case map[string]any:
-		id, _ := obj["id"].(string)
-		objectType, _ := obj["type"].(string)
-		return strings.TrimSpace(id), strings.TrimSpace(objectType)
-	case *activitypub.Article:
-		if obj == nil {
-			return "", ""
-		}
-		objectType := strings.TrimSpace(obj.Type)
-		if objectType == "" {
-			objectType = activitypub.ArticleType
-		}
-		return strings.TrimSpace(obj.ID), objectType
-	case *activitypub.Note:
-		if obj == nil {
-			return "", ""
-		}
-		objectType := strings.TrimSpace(obj.Type)
-		if objectType == "" {
-			objectType = activitypub.NoteType
-		}
-		return strings.TrimSpace(obj.ID), objectType
-	case *activitypub.BaseObject:
-		if obj == nil {
-			return "", ""
-		}
-		return strings.TrimSpace(obj.ID), strings.TrimSpace(obj.Type)
-	default:
-		return "", ""
-	}
-}
-
 // modelToActivityPubObject converts a model to the appropriate ActivityPub object
 func (r *ObjectRepository) modelToActivityPubObject(ctx context.Context, objModel *models.Object) (any, error) {
 	switch objModel.Type {
