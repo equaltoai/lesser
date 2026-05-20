@@ -98,6 +98,10 @@ type Article struct {
 	EditorNotes  *string `json:"editorNotes"`
 	ReviewStatus *string `json:"reviewStatus"`
 
+	GeneratedBy *activitypub.Actor `json:"generatedBy"`
+	ReviewedBy  *activitypub.Actor `json:"reviewedBy"`
+	PublishedBy *activitypub.Actor `json:"publishedBy"`
+
 	PublishedAt Time `json:"publishedAt"`
 	CreatedAt   Time `json:"createdAt"`
 	UpdatedAt   Time `json:"updatedAt"`
@@ -131,6 +135,9 @@ type Draft struct {
 	ScheduledAt *Time       `json:"scheduledAt"`
 	ObjectID    *string     `json:"objectId"`
 
+	GeneratedBy *activitypub.Actor `json:"generatedBy"`
+	ReviewedBy  *activitypub.Actor `json:"reviewedBy"`
+
 	AutosaveVersion int  `json:"autosaveVersion"`
 	LastSavedAt     Time `json:"lastSavedAt"`
 
@@ -161,6 +168,9 @@ type Revision struct {
 	ChangedBy     *activitypub.Actor `json:"changedBy"`
 	ChangeSummary *string            `json:"changeSummary"`
 	ChangeType    ChangeType         `json:"changeType"`
+	GeneratedBy   *activitypub.Actor `json:"generatedBy"`
+	ReviewedBy    *activitypub.Actor `json:"reviewedBy"`
+	PublishedBy   *activitypub.Actor `json:"publishedBy"`
 	CreatedAt     Time               `json:"createdAt"`
 }
 

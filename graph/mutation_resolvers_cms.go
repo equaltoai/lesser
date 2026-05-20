@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
@@ -58,6 +59,7 @@ func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDr
 		ContentFormat: cmsContentFormatToStorage(input.ContentFormat),
 		Status:        cmsDraftStatusToStorage(model.DraftStatusDraft),
 	}
+	r.cmsApplyDraftRequestAttribution(ctx, username, draft, false)
 
 	if err := draftSvc.CreateDraft(ctx, draft); err != nil {
 		return nil, err
@@ -98,6 +100,7 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 	if input.ContentFormat != nil {
 		draft.ContentFormat = cmsContentFormatToStorage(*input.ContentFormat)
 	}
+	r.cmsApplyDraftRequestAttribution(ctx, username, draft, true)
 
 	if err := draftSvc.UpdateDraft(ctx, username, draft); err != nil {
 		return nil, err
@@ -127,11 +130,35 @@ func (r *mutationResolver) AutosaveDraft(ctx context.Context, id string, content
 	}
 
 	draft.Content = content
+	r.cmsApplyDraftRequestAttribution(ctx, username, draft, true)
 	if err := draftSvc.Autosave(ctx, username, draft); err != nil {
 		return nil, err
 	}
 
 	return r.convertCMSDraft(ctx, draft), nil
+}
+
+func (r *mutationResolver) cmsApplyDraftRequestAttribution(ctx context.Context, username string, draft *models.Draft, reviewWrite bool) {
+	if draft == nil {
+		return
+	}
+
+	username = strings.TrimSpace(username)
+	actorID := cmsLocalActorID(r.getDomain(), username)
+	if actorID == "" {
+		return
+	}
+
+	if claims, ok := auth.GetClaims(ctx); ok && claims != nil && claims.IsAgent {
+		if strings.TrimSpace(draft.GeneratedBy) == "" {
+			draft.GeneratedBy = actorID
+		}
+		return
+	}
+
+	if reviewWrite && strings.TrimSpace(draft.GeneratedBy) != "" && !strings.EqualFold(strings.TrimSpace(draft.GeneratedBy), actorID) {
+		draft.ReviewedBy = actorID
+	}
 }
 
 func (r *mutationResolver) DeleteDraft(ctx context.Context, id string) (bool, error) {

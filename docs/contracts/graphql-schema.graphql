@@ -2374,6 +2374,10 @@ type Article {
   editorNotes: String
   reviewStatus: String
 
+  generatedBy: Actor
+  reviewedBy: Actor
+  publishedBy: Actor
+
   publishedAt: Time!
   createdAt: Time!
   updatedAt: Time!
@@ -2404,6 +2408,9 @@ type Draft {
   scheduledAt: Time
   objectId: ID
 
+  generatedBy: Actor
+  reviewedBy: Actor
+
   autosaveVersion: Int!
   lastSavedAt: Time!
 
@@ -2431,6 +2438,9 @@ type Revision {
   changedBy: Actor!
   changeSummary: String
   changeType: ChangeType!
+  generatedBy: Actor
+  reviewedBy: Actor
+  publishedBy: Actor
   createdAt: Time!
 }
 

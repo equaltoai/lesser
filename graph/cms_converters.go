@@ -60,6 +60,8 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		Status:          status,
 		ScheduledAt:     scheduledAt,
 		ObjectID:        objectID,
+		GeneratedBy:     r.resolveActorByID(ctx, draft.GeneratedBy),
+		ReviewedBy:      r.resolveActorByID(ctx, draft.ReviewedBy),
 		AutosaveVersion: draft.AutosaveVersion,
 		LastSavedAt:     model.Time(draft.LastSavedAt),
 		CreatedAt:       model.Time(draft.CreatedAt),
@@ -101,6 +103,9 @@ func (r *Resolver) convertCMSRevision(ctx context.Context, revision *models.Revi
 		ChangedBy:     changedBy,
 		ChangeSummary: changeSummary,
 		ChangeType:    changeType,
+		GeneratedBy:   r.resolveActorByID(ctx, revision.GeneratedBy),
+		ReviewedBy:    r.resolveActorByID(ctx, revision.ReviewedBy),
+		PublishedBy:   r.resolveActorByID(ctx, revision.PublishedBy),
 		CreatedAt:     model.Time(revision.CreatedAt),
 	}
 }
@@ -233,6 +238,10 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 
 		EditorNotes:  cmsOptionalString(strings.TrimSpace(article.EditorNotes)),
 		ReviewStatus: cmsOptionalString(strings.TrimSpace(article.ReviewStatus)),
+
+		GeneratedBy: r.resolveActorByID(ctx, article.GeneratedBy),
+		ReviewedBy:  r.resolveActorByID(ctx, article.ReviewedBy),
+		PublishedBy: r.resolveActorByID(ctx, article.PublishedBy),
 
 		PublishedAt: model.Time(article.Published),
 		CreatedAt:   model.Time(article.CreatedAt),
