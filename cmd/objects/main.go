@@ -252,6 +252,10 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		zap.String("request_id", requestID),
 	)
 
+	if tombstoneResp, handled, tombErr := h.handleTombstonedObject(runCtx, lookupID, objectID, requestID, wantsHTML); handled {
+		return tombstoneResp, tombErr
+	}
+
 	// Get the object from storage
 	objInterface, err := h.objectRepo.GetObject(runCtx, lookupID)
 	if err != nil {

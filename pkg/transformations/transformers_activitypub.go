@@ -279,6 +279,11 @@ func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.A
 
 	// Ensure type is correct
 	apArticle.Type = activitypub.ArticleType
+	// Hidden recipients are delivery metadata, not object readback or embedded
+	// federation payload data. Article delivery resolves recipients from the
+	// Activity addressing envelope; do not leak object-level bto/bcc fields.
+	apArticle.BTo = nil
+	apArticle.BCC = nil
 
 	return apArticle, nil
 }

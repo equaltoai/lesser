@@ -683,6 +683,132 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Equal(t, "https://example.com/users/alice/statuses/123", body["id"])
 		require.Equal(t, activitypub.NoteType, body["formerType"])
 	})
+
+	t.Run("canonical article route returns article tombstone when deleted", func(t *testing.T) {
+		deletedAt := time.Date(2026, time.May, 19, 14, 30, 0, 0, time.UTC)
+		articleID := "https://example.com/articles/deleted-article"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:         articleID,
+				FormerType: activitypub.ArticleType,
+				Deleted:    deletedAt,
+				DeletedBy:  "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/articles/deleted-article",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"slug": "deleted-article"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
+		require.Equal(t, articleID, objRepo.gotID)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Tombstone", body["type"])
+		require.Equal(t, articleID, body["id"])
+		require.Equal(t, activitypub.ArticleType, body["formerType"])
+		require.Equal(t, deletedAt.Format(time.RFC3339), body["deleted"])
+	})
+
+	t.Run("canonical article tombstone wins over stale object row", func(t *testing.T) {
+		deletedAt := time.Date(2026, time.May, 19, 14, 35, 0, 0, time.UTC)
+		articleID := "https://example.com/articles/stale-deleted-article"
+		objRepo := &fakeObjectRepo{
+			obj: &activitypub.Article{
+				Note: activitypub.Note{
+					BaseObject: activitypub.BaseObject{
+						ID:   articleID,
+						Type: activitypub.ArticleType,
+						To:   []string{activitypub.PublicAddress},
+					},
+					Content:      "<p>stale row</p>",
+					AttributedTo: "https://example.com/users/alice",
+				},
+				Name: "Stale Deleted Article",
+			},
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:         articleID,
+				FormerType: activitypub.ArticleType,
+				Deleted:    deletedAt,
+				DeletedBy:  "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/articles/stale-deleted-article",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"slug": "stale-deleted-article"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Tombstone", body["type"])
+		require.Equal(t, articleID, body["id"])
+		require.Equal(t, activitypub.ArticleType, body["formerType"])
+	})
+
+	t.Run("legacy object article route returns article tombstone when deleted", func(t *testing.T) {
+		deletedAt := time.Date(2026, time.May, 19, 14, 45, 0, 0, time.UTC)
+		legacyID := "https://example.com/objects/legacy-article-id"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:         legacyID,
+				FormerType: activitypub.ArticleType,
+				Deleted:    deletedAt,
+				DeletedBy:  "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/legacy-article-id",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "legacy-article-id"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+		require.Equal(t, legacyID, objRepo.gotID)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Tombstone", body["type"])
+		require.Equal(t, legacyID, body["id"])
+		require.Equal(t, activitypub.ArticleType, body["formerType"])
+	})
 }
 
 func TestExtractObjectData_Round12(t *testing.T) {
@@ -930,6 +1056,65 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		require.Equal(t, 200, lambdaResp.StatusCode)
 		require.Equal(t, "https://example.com/users/alice/statuses/123", fakeRepo.gotID)
 		require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
+	})
+
+	t.Run("build app serves canonical article federation probe", func(t *testing.T) {
+		now := time.Date(2026, time.May, 19, 15, 0, 0, 0, time.UTC)
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://example.com/articles/probe-article",
+					Type:      activitypub.ArticleType,
+					Summary:   "Probe summary",
+					Published: &now,
+					Updated:   &now,
+					To:        []string{activitypub.PublicAddress},
+				},
+				Content:      "<p>probe body</p>",
+				AttributedTo: "https://example.com/users/alice",
+			},
+			Name: "Probe Article",
+		}
+		fakeRepo := &fakeObjectRepo{obj: article}
+		app := buildApp(&Handler{
+			objectRepo:             fakeRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+		}, zap.NewNop())
+
+		event := events.APIGatewayV2HTTPRequest{
+			Version:  "2.0",
+			RouteKey: "GET /articles/probe-article",
+			RawPath:  "/articles/probe-article",
+			Headers:  map[string]string{"accept": "application/activity+json"},
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				RequestID: "req-article-probe",
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: "GET",
+					Path:   "/articles/probe-article",
+				},
+			},
+		}
+
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		resp, err := app.HandleLambda(context.Background(), raw)
+		require.NoError(t, err)
+		lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
+		require.True(t, ok)
+		require.Equal(t, http.StatusOK, lambdaResp.StatusCode)
+		require.Equal(t, "https://example.com/articles/probe-article", fakeRepo.gotID)
+		require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal([]byte(lambdaResp.Body), &body))
+		require.Equal(t, "https://example.com/articles/probe-article", body["id"])
+		require.Equal(t, activitypub.ArticleType, body["type"])
+		require.Equal(t, "Probe Article", body["name"])
+		require.Equal(t, "Probe summary", body["summary"])
+		require.Equal(t, "<p>probe body</p>", body["content"])
+		t.Logf("article federation probe url=%s type=%s content_type=%s", body["id"], body["type"], lambdaResp.Headers["content-type"])
 	})
 }
 

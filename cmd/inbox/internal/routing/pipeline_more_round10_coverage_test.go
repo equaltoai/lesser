@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -325,6 +326,36 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.NoError(t, env.handler.processRemoteCreateActivity(ctx, create, env.local))
 	})
 
+	t.Run("create remote article is explicit unsupported no-op", func(t *testing.T) {
+		objectRepo := inmemory.NewObjectRepository()
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		articleID := "https://remote.example/articles/protocol-article"
+		create := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.CreateType, ID: env.cfg.BaseURL() + "/activities/create-remote-article"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           articleID,
+				"type":         activitypub.ArticleType,
+				"name":         "Remote Article",
+				"summary":      "not ingested during M2",
+				"content":      "<p>remote long form</p>",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, handler.processRemoteCreateActivity(ctx, create, env.local))
+		_, err := objectRepo.GetObject(ctx, articleID)
+		require.ErrorIs(t, err, storage.ErrNotFound)
+		require.Empty(t, statusRepo.created)
+		require.Empty(t, statusRepo.updated)
+	})
+
 	t.Run("create note materializes canonical status", func(t *testing.T) {
 		statusRepo := &recordingStatusRepository{}
 		env.handler.statusRepository = statusRepo
@@ -413,6 +444,53 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			},
 		}
 		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))
+	})
+
+	t.Run("update remote article is explicit unsupported no-op", func(t *testing.T) {
+		objectRepo := inmemory.NewObjectRepository()
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		published := time.Date(2026, time.May, 19, 13, 30, 0, 0, time.UTC)
+		articleID := "https://remote.example/articles/update-protocol-article"
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        articleID,
+					Type:      activitypub.ArticleType,
+					Published: &published,
+					To:        []string{activitypub.PublicAddress},
+				},
+				AttributedTo: env.remoteActorID,
+				Content:      "<p>before</p>",
+			},
+			Name: "Remote Article",
+		}
+		require.NoError(t, objectRepo.CreateObject(ctx, article))
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-remote-article"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"id":           articleID,
+				"type":         activitypub.ArticleType,
+				"name":         "Remote Article Updated",
+				"content":      "<p>after</p>",
+				"attributedTo": env.remoteActorID,
+			},
+		}
+
+		require.NoError(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		got, err := objectRepo.GetObject(ctx, articleID)
+		require.NoError(t, err)
+		gotArticle, ok := got.(*activitypub.Article)
+		require.True(t, ok)
+		require.Equal(t, "Remote Article", gotArticle.Name)
+		require.Equal(t, "<p>before</p>", gotArticle.Content)
+		require.Empty(t, statusRepo.created)
+		require.Empty(t, statusRepo.updated)
 	})
 
 	t.Run("update note refreshes canonical status", func(t *testing.T) {
@@ -573,6 +651,46 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			Object:     &activitypub.BaseObject{ID: env.cfg.BaseURL() + "/objects/1"},
 		}
 		require.NoError(t, env.handler.processRemoteDeleteActivity(ctx, del, env.local))
+	})
+
+	t.Run("delete stored article creates article tombstone", func(t *testing.T) {
+		objectRepo := inmemory.NewObjectRepository()
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		published := time.Date(2026, time.May, 19, 14, 0, 0, 0, time.UTC)
+		articleID := "https://remote.example/articles/delete-protocol-article"
+		article := &activitypub.Article{
+			Note: activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        articleID,
+					Type:      activitypub.ArticleType,
+					Published: &published,
+					To:        []string{activitypub.PublicAddress},
+				},
+				AttributedTo: env.remoteActorID,
+				Content:      "<p>before delete</p>",
+			},
+			Name: "Remote Article",
+		}
+		require.NoError(t, objectRepo.CreateObject(ctx, article))
+
+		del := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.DeleteType, ID: env.cfg.BaseURL() + "/activities/delete-remote-article"},
+			Actor:      env.remoteActorID,
+			Object:     articleID,
+		}
+
+		require.NoError(t, handler.processRemoteDeleteActivity(ctx, del, env.local))
+		tombstoned, err := objectRepo.IsTombstoned(ctx, articleID)
+		require.NoError(t, err)
+		require.True(t, tombstoned)
+		tombstone, err := objectRepo.GetTombstone(ctx, articleID)
+		require.NoError(t, err)
+		require.Equal(t, activitypub.ArticleType, tombstone.FormerType)
+		require.Equal(t, env.remoteActorID, tombstone.DeletedBy)
 	})
 
 	t.Run("delete note tombstones canonical status", func(t *testing.T) {

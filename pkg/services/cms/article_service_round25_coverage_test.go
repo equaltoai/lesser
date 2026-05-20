@@ -2,7 +2,9 @@ package cms
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -93,16 +96,36 @@ type fakeFederation struct {
 	followerCalls  atomic.Int32
 	recipientCalls atomic.Int32
 	err            error
+
+	mu                  sync.Mutex
+	followerActivities  []*activitypub.Activity
+	recipientActivities []*activitypub.Activity
 }
 
-func (f *fakeFederation) DeliverToFollowers(_ context.Context, _ *activitypub.Activity, _ *activitypub.Actor) error {
+func (f *fakeFederation) DeliverToFollowers(_ context.Context, activity *activitypub.Activity, _ *activitypub.Actor) error {
 	f.followerCalls.Add(1)
+	f.mu.Lock()
+	f.followerActivities = append(f.followerActivities, activity)
+	f.mu.Unlock()
 	return f.err
 }
 
-func (f *fakeFederation) DeliverToRecipients(_ context.Context, _ *activitypub.Activity, _ *activitypub.Actor) error {
+func (f *fakeFederation) DeliverToRecipients(_ context.Context, activity *activitypub.Activity, _ *activitypub.Actor) error {
 	f.recipientCalls.Add(1)
+	f.mu.Lock()
+	f.recipientActivities = append(f.recipientActivities, activity)
+	f.mu.Unlock()
 	return f.err
+}
+
+func (f *fakeFederation) recipientActivity(t *testing.T, index int) *activitypub.Activity {
+	t.Helper()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	require.Less(t, index, len(f.recipientActivities))
+	return f.recipientActivities[index]
 }
 
 type fakeRevisionCreator struct {
@@ -284,6 +307,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 	t.Run("delete removes article and indexes", func(t *testing.T) {
 		db, q := newCMSMockDB(t)
 		repo.db = db
+		q.On("Create").Return(nil).Once()
 		q.On("Delete").Return(nil).Maybe()
 
 		repo.articles["a6"] = &models.Article{Object: models.Object{ID: "a6", Published: time.Now(), AttributedTo: "https://example.com/users/alice"}, Slug: "slug"}
@@ -357,4 +381,357 @@ func TestArticleService_Round25_federationHelpersAndUsernameExtraction(t *testin
 	assert.Equal(t, "alice", extractUsernameFromActorID("https://example.com/users/alice"))
 	assert.Equal(t, "", extractUsernameFromActorID(""))
 	assert.Equal(t, "alice", extractUsernameFromActorID("alice"))
+}
+
+func TestArticleService_M2OutboundArticleFederationPayloads(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, q := newCMSMockDB(t)
+	q.On("Create").Return(nil).Maybe()
+	q.On("Delete").Return(nil).Maybe()
+	q.On("First", mock.Anything).Return(nil).Maybe()
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice", Type: activitypub.PersonType},
+	}
+	fed := &fakeFederation{}
+	svc := NewArticleService(
+		&fakeArticleRepo{db: db, articles: map[string]*models.Article{}},
+		fakeActorRepo{actor: actor},
+		nil,
+		nil,
+		nil,
+		fed,
+		zap.NewNop(),
+	)
+
+	published := time.Date(2026, time.May, 19, 12, 0, 0, 0, time.UTC)
+	publicArticle := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/federation-probe",
+			Type:         activitypub.ArticleType,
+			Name:         "Federation Probe",
+			Summary:      "Protocol-level Article summary",
+			Content:      "<p>hello article federation</p>",
+			Published:    published,
+			Updated:      published,
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+			CC:           []string{"https://example.com/users/alice/followers"},
+			BTo:          []string{"https://remote.example/users/hidden"},
+			BCC:          []string{"https://remote.example/users/also-hidden"},
+		},
+		Slug: "federation-probe",
+	}
+
+	svc.federateArticleWriteActivity(ctx, publicArticle, activitypub.CreateType, "create")
+	require.Equal(t, int32(1), fed.followerCalls.Load())
+	require.Equal(t, int32(1), fed.recipientCalls.Load())
+	assertArticleWriteActivity(t, fed.recipientActivity(t, 0), activitypub.CreateType, publicArticle.ID)
+
+	updateFed := &fakeFederation{}
+	svc.federation = updateFed
+	updatedArticle := *publicArticle
+	updatedArticle.Content = "<p>updated body, same Article identity</p>"
+	svc.federateArticleWriteActivity(ctx, &updatedArticle, activitypub.UpdateType, "update")
+	require.Equal(t, int32(1), updateFed.followerCalls.Load())
+	require.Equal(t, int32(1), updateFed.recipientCalls.Load())
+	assertArticleWriteActivity(t, updateFed.recipientActivity(t, 0), activitypub.UpdateType, publicArticle.ID)
+
+	privateFed := &fakeFederation{}
+	svc.federation = privateFed
+	privateArticle := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/followers-only",
+			Type:         activitypub.ArticleType,
+			Name:         "Followers Only",
+			Content:      "<p>private article</p>",
+			Published:    published,
+			Updated:      published,
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{"https://example.com/users/alice/followers"},
+		},
+		Slug: "followers-only",
+	}
+
+	svc.federateArticleWriteActivity(ctx, privateArticle, activitypub.CreateType, "create")
+	require.Equal(t, int32(0), privateFed.followerCalls.Load())
+	require.Equal(t, int32(1), privateFed.recipientCalls.Load())
+	privateActivity := privateFed.recipientActivity(t, 0)
+	assertArticleWriteActivity(t, privateActivity, activitypub.CreateType, privateArticle.ID)
+	assert.NotContains(t, privateActivity.To, activitypub.PublicAddress)
+	assert.NotContains(t, privateActivity.CC, activitypub.PublicAddress)
+}
+
+func TestArticleService_M2ArticleDeleteFederationAndTombstone(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, q := newCMSMockDB(t)
+	q.On("Delete").Return(nil).Maybe()
+	q.On("First", mock.Anything).Return(nil).Maybe()
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice", Type: activitypub.PersonType},
+	}
+	fed := &fakeFederation{}
+	repo := &fakeArticleRepo{
+		db:       db,
+		articles: map[string]*models.Article{},
+	}
+	svc := NewArticleService(repo, fakeActorRepo{actor: actor}, nil, nil, nil, fed, zap.NewNop())
+
+	published := time.Date(2026, time.May, 19, 12, 30, 0, 0, time.UTC)
+	canonicalArticle := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/delete-me",
+			Type:         activitypub.ArticleType,
+			Name:         "Delete Me",
+			Content:      "<p>delete me</p>",
+			Published:    published,
+			Updated:      published,
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+			CC:           []string{"https://example.com/users/alice/followers"},
+		},
+		Slug: "delete-me",
+	}
+
+	svc.federateArticleDeletion(ctx, canonicalArticle)
+	require.Equal(t, int32(1), fed.followerCalls.Load())
+	require.Equal(t, int32(1), fed.recipientCalls.Load())
+	deleteActivity := fed.recipientActivity(t, 0)
+	require.Equal(t, activitypub.DeleteType, deleteActivity.Type)
+	require.Equal(t, canonicalArticle.ID, deleteActivity.Object)
+	require.Equal(t, canonicalArticle.To, deleteActivity.To)
+	require.Equal(t, canonicalArticle.CC, deleteActivity.CC)
+
+	legacyFed := &fakeFederation{}
+	svc.federation = legacyFed
+	legacyArticle := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/objects/legacy-article-id",
+			Type:         activitypub.ArticleType,
+			Name:         "Legacy Article",
+			Content:      "<p>legacy delete</p>",
+			Published:    published,
+			Updated:      published,
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+		},
+		Slug: "legacy-article",
+	}
+
+	svc.federateArticleDeletion(ctx, legacyArticle)
+	require.Equal(t, int32(1), legacyFed.followerCalls.Load())
+	require.Equal(t, int32(1), legacyFed.recipientCalls.Load())
+	require.Equal(t, legacyArticle.ID, legacyFed.recipientActivity(t, 0).Object)
+
+	tombstoneDB := new(dynamormMocks.MockDB)
+	tombstoneQuery := new(dynamormMocks.MockQuery)
+	tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Maybe()
+	var capturedTombstone *models.Tombstone
+	tombstoneDB.On("Model", mock.MatchedBy(func(model any) bool {
+		tombstone, ok := model.(*models.Tombstone)
+		if ok {
+			capturedTombstone = tombstone
+		}
+		return ok
+	})).Return(tombstoneQuery).Once()
+	tombstoneDB.On("Model", mock.Anything).Return(tombstoneQuery).Maybe()
+	tombstoneQuery.On("Create").Return(nil).Once()
+	tombstoneQuery.On("Delete").Return(nil).Maybe()
+
+	tombstoneRepo := &fakeArticleRepo{
+		db: tombstoneDB,
+		articles: map[string]*models.Article{
+			canonicalArticle.ID: canonicalArticle,
+		},
+	}
+	tombstoneSvc := NewArticleService(tombstoneRepo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+	require.NoError(t, tombstoneSvc.DeleteArticle(ctx, canonicalArticle))
+	require.NotNil(t, capturedTombstone)
+	require.Equal(t, canonicalArticle.ID, capturedTombstone.ID)
+	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
+	require.Equal(t, "https://example.com/users/alice", capturedTombstone.DeletedBy)
+	require.Equal(t, "Tombstone", capturedTombstone.Type)
+	require.Equal(t, "OBJECT#"+canonicalArticle.ID, capturedTombstone.PK)
+	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
+}
+
+func TestArticleService_DeleteArticle_UsesTransactionalTombstoneWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := new(dynamormMocks.MockExtendedDB)
+	q := new(dynamormMocks.MockQuery)
+	builder := new(dynamormMocks.MockTransactionBuilder)
+	db.TransactWriteBuilder = builder
+
+	db.On("WithContext", mock.Anything).Return(db).Maybe()
+	db.On("Model", mock.Anything).Return(q).Maybe()
+	q.On("Delete").Return(nil).Maybe()
+
+	var capturedTombstone *models.Tombstone
+	builder.On("Create", mock.MatchedBy(func(model any) bool {
+		tombstone, ok := model.(*models.Tombstone)
+		if ok {
+			capturedTombstone = tombstone
+		}
+		return ok
+	}), mock.Anything).Return(builder).Once()
+
+	var capturedDelete *models.Article
+	builder.On("Delete", mock.MatchedBy(func(model any) bool {
+		article, ok := model.(*models.Article)
+		if ok {
+			capturedDelete = article
+		}
+		return ok
+	}), mock.Anything).Return(builder).Once()
+	builder.On("Execute").Return(nil).Once()
+	db.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
+
+	article := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/tx-delete",
+			Type:         activitypub.ArticleType,
+			Name:         "Transactional Delete",
+			Published:    time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC),
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+		},
+		Slug: "tx-delete",
+	}
+	repo := &fakeArticleRepo{
+		db: db,
+		articles: map[string]*models.Article{
+			article.ID: article,
+		},
+	}
+	svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+	require.NoError(t, svc.DeleteArticle(ctx, article))
+	require.NotNil(t, capturedTombstone)
+	require.Equal(t, article.ID, capturedTombstone.ID)
+	require.Equal(t, "OBJECT#"+article.ID, capturedTombstone.PK)
+	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
+	require.Equal(t, "Tombstone", capturedTombstone.Type)
+	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
+	require.NotZero(t, capturedTombstone.TTL)
+	require.NotNil(t, capturedDelete)
+	require.Equal(t, "object#"+article.ID, capturedDelete.PK)
+	require.Equal(t, "object#"+article.ID, capturedDelete.SK)
+	require.Empty(t, repo.deletedIDs)
+
+	builder.AssertExpectations(t)
+	db.AssertExpectations(t)
+}
+
+func TestArticleService_DeleteArticle_TombstoneErrorBranches(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	article := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/tombstone-errors",
+			Published:    time.Date(2026, time.May, 20, 1, 0, 0, 0, time.UTC),
+			AttributedTo: "https://example.com/users/alice",
+		},
+		Slug: "tombstone-errors",
+	}
+
+	t.Run("requires db for tombstone persistence", func(t *testing.T) {
+		repo := &fakeArticleRepo{
+			articles: map[string]*models.Article{
+				article.ID: article,
+			},
+		}
+		svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.DeleteArticle(ctx, article)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "article repository db is required")
+		require.Empty(t, repo.deletedIDs)
+	})
+
+	t.Run("returns transaction failure", func(t *testing.T) {
+		db := new(dynamormMocks.MockExtendedDB)
+		db.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("tx failed")).Once()
+
+		repo := &fakeArticleRepo{
+			db: db,
+			articles: map[string]*models.Article{
+				article.ID: article,
+			},
+		}
+		svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.DeleteArticle(ctx, article)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "tx failed")
+		require.Empty(t, repo.deletedIDs)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("build defaults missing former type and actor", func(t *testing.T) {
+		db, _ := newCMSMockDB(t)
+		svc := NewArticleService(&fakeArticleRepo{db: db}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		tombstone, err := svc.buildArticleTombstone(&models.Article{
+			Object: models.Object{ID: "https://example.com/articles/default-type"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, activitypub.ArticleType, tombstone.FormerType)
+		require.Empty(t, tombstone.DeletedBy)
+		require.Equal(t, "Article was deleted", tombstone.Summary)
+		require.Equal(t, "Tombstone", tombstone.Type)
+		require.Equal(t, "OBJECT#https://example.com/articles/default-type", tombstone.PK)
+		require.Equal(t, "TOMBSTONE", tombstone.SK)
+		require.NotZero(t, tombstone.TTL)
+	})
+
+	t.Run("persist requires tombstone", func(t *testing.T) {
+		db, _ := newCMSMockDB(t)
+		svc := NewArticleService(&fakeArticleRepo{db: db}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.persistArticleTombstone(ctx, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "article tombstone is required")
+	})
+}
+
+func assertArticleWriteActivity(t *testing.T, activity *activitypub.Activity, activityType string, articleID string) {
+	t.Helper()
+
+	require.NotNil(t, activity)
+	require.Equal(t, activityType, activity.Type)
+	require.Equal(t, "https://example.com/users/alice", activity.Actor)
+	require.NotEmpty(t, activity.ID)
+	require.NotNil(t, activity.Published)
+	require.Empty(t, activity.BTo)
+	require.Empty(t, activity.BCC)
+
+	article, ok := activity.Object.(*activitypub.Article)
+	require.True(t, ok, "expected *activitypub.Article, got %T", activity.Object)
+	require.Equal(t, activitypub.ArticleType, article.Type)
+	require.Equal(t, articleID, article.ID)
+	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
+	require.NotEmpty(t, article.Name)
+	require.Empty(t, article.BTo)
+	require.Empty(t, article.BCC)
+
+	raw, err := json.Marshal(activity)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(raw, &body))
+	require.NotContains(t, body, "bto")
+	require.NotContains(t, body, "bcc")
+	obj, ok := body["object"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, activitypub.ArticleType, obj["type"])
+	require.Equal(t, articleID, obj["id"])
+	require.NotContains(t, obj, "bto")
+	require.NotContains(t, obj, "bcc")
 }

@@ -92,6 +92,37 @@ Compatibility rules:
 3. If a browser-facing `/articles/<slug>` alias is introduced for a legacy Article, it is non-authoritative unless the stored object ID is also `/articles/<slug>`.
 4. A future migration must not create duplicate ActivityPub objects for the same published content. Legacy migration/alias behavior is deferred to M7.
 
+## M2 federation hardening decisions
+
+M2 fixes the protocol behavior for Article federation without starting renderer,
+sanitizer, UI, RSS, comments, newsletter, or remote-long-form-ingest work.
+
+- Outbound Article `Create` and `Update` activities embed an ActivityPub
+  `Article` object. The embedded object ID is the stored Article ID:
+  canonical `https://<domain>/articles/<slug>` for new Articles and legacy
+  `https://<domain>/objects/<uuid>` for existing Articles. `Update` preserves
+  the same Article ID.
+- Article delivery uses the same public/private policy as Note delivery:
+  public-addressed Article activities fan out to followers and explicit
+  recipients; non-public Article activities use recipient delivery without
+  public follower fanout. Object-level hidden recipients (`bto`/`bcc`) are not
+  serialized in embedded Article federation payloads or readback responses.
+- Article `Delete` activities reference the Article object ID directly. Deleting
+  a canonical Article creates an enhanced Tombstone with `formerType: "Article"`
+  so `GET /articles/<slug>` returns an ActivityPub Tombstone with HTTP 410.
+  Legacy Article IDs under `/objects/<uuid>` keep the same delete/tombstone
+  behavior and are not rewritten.
+- Inbound remote `Article` `Create` and `Update` activities are explicitly
+  unsupported in the MVP. After normal inbox authentication/signature handling,
+  lesser logs the unsupported Article operation and performs a no-op: it does
+  not materialize the remote Article as a disguised status, does not add it to
+  timelines, and does not create notifications. Inbound `Delete` for a locally
+  stored Article can tombstone that object with `formerType: "Article"`; unknown
+  remote Article deletes remain idempotent no-ops.
+- Release validation should include a focused fetch probe against a canonical
+  Article URL with `Accept: application/activity+json` and confirm the response
+  is an ActivityPub `Article` at the canonical URL, with no `bto`/`bcc` fields.
+
 ## Renderer authority contract
 
 ### Source and output model
