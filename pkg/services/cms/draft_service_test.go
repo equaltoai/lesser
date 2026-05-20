@@ -240,6 +240,48 @@ func TestDraftServiceRejectsOversizedArticleDrafts(t *testing.T) {
 	require.ErrorIs(t, err, cmsrender.ErrArticleContentTooLarge)
 }
 
+func TestRenderDraftPreviewRequiresArticleDraft(t *testing.T) {
+	t.Parallel()
+
+	rendered, err := RenderDraftPreview(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "draft is required")
+	require.Empty(t, rendered.HTML)
+
+	rendered, err = RenderDraftPreview(&models.Draft{
+		ID:          "draft-note",
+		AuthorID:    "alice",
+		ContentType: activitypub.NoteType,
+		Content:     "note body",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "only article drafts can be previewed")
+	require.Empty(t, rendered.HTML)
+}
+
+func TestDraftServiceAutosaveRejectsOversizedRenderedArticle(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemDraftRepo()
+	svc := &DraftService{
+		draftRepo: repo,
+		domain:    "example.com",
+		logger:    zap.NewNop(),
+	}
+
+	err := svc.Autosave(context.Background(), "alice", &models.Draft{
+		ID:            "draft-render-big",
+		AuthorID:      "alice",
+		ContentType:   activitypub.ArticleType,
+		Title:         "Rendered Big",
+		Slug:          "rendered-big",
+		Content:       strings.Repeat("&", cmsrender.MaxArticleSourceBytes/2),
+		ContentFormat: "markdown",
+		Status:        "draft",
+	})
+	require.ErrorIs(t, err, cmsrender.ErrArticleRenderedContentTooLarge)
+}
+
 func TestDraftServiceScheduleAndCancelDraft(t *testing.T) {
 	t.Parallel()
 
