@@ -100,6 +100,7 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		article.CreatedAt = time.Now()
 	}
 	article.UpdatedAt = time.Now()
+	cmsNormalizeArticleAttribution(article, nil)
 
 	if err := validateArticleRenderable(article); err != nil {
 		return err
@@ -252,6 +253,7 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	}
 
 	existing, _ := s.articleRepo.GetArticle(ctx, strings.TrimSpace(article.ID))
+	cmsNormalizeArticleAttribution(article, existing)
 
 	slug := strings.TrimSpace(article.Slug)
 	article.Slug = slug

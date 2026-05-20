@@ -25,6 +25,9 @@ type Revision struct {
 	ChangeSummary string `theorydb:"attr:changeSummary" json:"change_summary,omitempty"` // Optional commit message
 	ChangedBy     string `theorydb:"attr:changedBy" json:"changed_by"`
 	ChangeType    string `theorydb:"attr:changeType" json:"change_type"` // create, update, restore
+	GeneratedBy   string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
+	ReviewedBy    string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	PublishedBy   string `theorydb:"attr:publishedBy,omitempty" json:"published_by,omitempty"`
 
 	// Timestamps
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`

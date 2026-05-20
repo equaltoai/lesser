@@ -36,6 +36,9 @@ type articleRevisionMetadata struct {
 	Name          string                `json:"name,omitempty"`
 	Summary       string                `json:"summary,omitempty"`
 	AttributedTo  string                `json:"attributedTo,omitempty"`
+	GeneratedBy   string                `json:"generatedBy,omitempty"`
+	ReviewedBy    string                `json:"reviewedBy,omitempty"`
+	PublishedBy   string                `json:"publishedBy,omitempty"`
 	Subtitle      string                `json:"subtitle,omitempty"`
 	Excerpt       string                `json:"excerpt,omitempty"`
 	ContentFormat string                `json:"contentFormat,omitempty"`
@@ -171,6 +174,9 @@ func (s *RevisionService) createRevision(ctx context.Context, article *models.Ar
 		MetadataJSON: metadata,
 		ChangedBy:    changedBy,
 		ChangeType:   revisionChangeTypeUpdate,
+		GeneratedBy:  strings.TrimSpace(article.GeneratedBy),
+		ReviewedBy:   strings.TrimSpace(article.ReviewedBy),
+		PublishedBy:  strings.TrimSpace(article.PublishedBy),
 		CreatedAt:    time.Now(),
 	}
 	if normalized := strings.ToLower(strings.TrimSpace(changeType)); normalized != "" {
@@ -231,6 +237,9 @@ func (s *RevisionService) buildRevisionMetadata(article *models.Article) (string
 		Name:               article.Name,
 		Summary:            article.Summary,
 		AttributedTo:       article.AttributedTo,
+		GeneratedBy:        article.GeneratedBy,
+		ReviewedBy:         article.ReviewedBy,
+		PublishedBy:        article.PublishedBy,
 		Subtitle:           article.Subtitle,
 		Excerpt:            article.Excerpt,
 		ContentFormat:      article.ContentFormat,
@@ -377,6 +386,9 @@ func (s *RevisionService) applyRevisionMetadataJSON(article *models.Article, met
 	if strings.TrimSpace(metadata.AttributedTo) != "" {
 		article.AttributedTo = metadata.AttributedTo
 	}
+	article.GeneratedBy = metadata.GeneratedBy
+	article.ReviewedBy = metadata.ReviewedBy
+	article.PublishedBy = metadata.PublishedBy
 	article.Subtitle = metadata.Subtitle
 	article.Excerpt = metadata.Excerpt
 	article.ContentFormat = metadata.ContentFormat

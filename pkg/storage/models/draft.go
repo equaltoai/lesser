@@ -41,6 +41,10 @@ type Draft struct {
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 
+	// Authoring attribution
+	GeneratedBy string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
+	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+
 	// Autosave tracking
 	AutosaveVersion int       `theorydb:"attr:autosaveVersion" json:"autosave_version"`
 	LastSavedAt     time.Time `theorydb:"attr:lastSavedAt" json:"last_saved_at"`

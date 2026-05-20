@@ -60,6 +60,7 @@ func (s *DraftService) CreateDraft(ctx context.Context, draft *models.Draft) err
 	if err := validateArticleDraftRenderable(draft); err != nil {
 		return err
 	}
+	cmsNormalizeDraftAttribution(draft)
 
 	s.logger.Info("creating draft", zap.String("title", draft.Title))
 
@@ -114,6 +115,7 @@ func (s *DraftService) UpdateDraft(ctx context.Context, authorID string, draft *
 	if err := validateArticleDraftRenderable(draft); err != nil {
 		return err
 	}
+	cmsNormalizeDraftAttribution(draft)
 	now := time.Now()
 	draft.UpdatedAt = now
 	draft.LastSavedAt = now
@@ -128,6 +130,7 @@ func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *mod
 	if err := validateArticleDraftRenderable(draft); err != nil {
 		return err
 	}
+	cmsNormalizeDraftAttribution(draft)
 	s.logger.Debug("autosaving draft", zap.String("id", draft.ID))
 	now := time.Now()
 	draft.LastSavedAt = now
@@ -319,6 +322,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 		return nil, err
 	}
 
+	article = cmsCloneArticleForDraftMutation(article)
 	if title := strings.TrimSpace(draft.Title); title != "" {
 		article.Name = title
 	}
@@ -329,6 +333,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 	if format := strings.TrimSpace(draft.ContentFormat); format != "" {
 		article.ContentFormat = format
 	}
+	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, true)
 	article.UpdatedAt = now
 	article.Updated = now
 
@@ -339,6 +344,36 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 
 	s.deleteDraftAfterPublish(ctx, draft, authorID, draftID, objectID)
 	return article, nil
+}
+
+func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
+	if article == nil {
+		return nil
+	}
+	cp := *article
+	cp.To = append([]string{}, article.To...)
+	cp.CC = append([]string{}, article.CC...)
+	cp.BTo = append([]string{}, article.BTo...)
+	cp.BCC = append([]string{}, article.BCC...)
+	cp.CategoryIDs = append([]string{}, article.CategoryIDs...)
+	cp.TableOfContents = append([]models.TOCEntry{}, article.TableOfContents...)
+	if article.InReplyTo != nil {
+		v := *article.InReplyTo
+		cp.InReplyTo = &v
+	}
+	if article.SeriesID != nil {
+		v := *article.SeriesID
+		cp.SeriesID = &v
+	}
+	if article.SeriesOrder != nil {
+		v := *article.SeriesOrder
+		cp.SeriesOrder = &v
+	}
+	if article.FeaturedImage != nil {
+		v := *article.FeaturedImage
+		cp.FeaturedImage = &v
+	}
+	return &cp
 }
 
 func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time) (*models.Article, error) {
@@ -358,6 +393,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
+	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, false)
 
 	if err := s.articleService.CreateArticle(ctx, article); err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)

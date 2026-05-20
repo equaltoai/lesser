@@ -188,6 +188,25 @@ Before an MCP-generated draft can be published, the draft/revision metadata must
 
 The metadata may reuse lesser's existing `AgentPostAttribution` vocabulary where it fits, but M4 owns the storage/API shape needed for CMS drafts and revisions. M0 does not add new fields.
 
+### M4 implemented attribution fields
+
+M4 stores and exposes the minimum attribution fields needed for MCP-first draft review without changing the ActivityPub Article object shape:
+
+- `Draft.generatedBy` / storage `generatedBy`: the agent actor or delegated local actor that generated or materially transformed the draft. Agent-authenticated draft create, update, and autosave paths populate this when it is absent.
+- `Draft.reviewedBy` / storage `reviewedBy`: the human actor that reviewed or edited a generated draft through the authenticated CMS workflow.
+- `Article.generatedBy`, `Article.reviewedBy`, and `Article.publishedBy` / storage `generatedBy`, `reviewedBy`, and `publishedBy`: attribution copied from the draft at publish time plus the publisher actor that performed publication or post-publish update.
+- `Revision.generatedBy`, `Revision.reviewedBy`, and `Revision.publishedBy` / storage `generatedBy`, `reviewedBy`, and `publishedBy`: the attribution snapshot recorded with each Article revision, alongside existing `changedBy`, `changeType`, `changeSummary`, and metadata JSON.
+
+`Article.attributedTo` remains the publisher/owner ActivityPub actor and is the only author identity serialized into the federated Article in M4. Generator and reviewer attribution are additive GraphQL/storage metadata for audit and UI review surfaces; M4 does not introduce a new ActivityPub extension, JSON-LD context, Mastodon REST field, or OpenAPI change. Future federation-visible agent attribution still requires the blocking protocol review gate above.
+
+### M4 schedule and rollback availability
+
+Schedule/cancel and restore are backend MVP capabilities, not rich editor UI work:
+
+- `scheduleDraft` and `cancelScheduledDraft` are available only when the CMS long-form, draft-system, and scheduled-publishing gates are enabled. Any UI exposure must remain hidden unless those gates are enabled and the authenticated author owns the draft.
+- `restoreRevision` is available only when the CMS long-form, revision-history, and author-permission gates pass. UI controls must stay hidden unless revision history is enabled and the user can mutate the Article.
+- “Rollback” in M4 means restoring local Article state from a recorded revision. It is not a federated recall mechanism: ActivityPub activities already delivered to remote peers cannot be recalled, and any post-restore federation follows the normal Article update path.
+
 ### Review gate
 
 An agent-generated draft cannot auto-publish in the MVP. Publication requires an explicit reviewer/publisher action through lesser's authenticated CMS workflow.

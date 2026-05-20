@@ -37,6 +37,11 @@ type Article struct {
 	EditorNotes  string `theorydb:"attr:editorNotes" json:"editor_notes,omitempty"`
 	ReviewStatus string `theorydb:"attr:reviewStatus" json:"review_status,omitempty"`
 
+	// Authoring attribution
+	GeneratedBy string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
+	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	PublishedBy string `theorydb:"attr:publishedBy,omitempty" json:"published_by,omitempty"`
+
 	// Timestamps
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
