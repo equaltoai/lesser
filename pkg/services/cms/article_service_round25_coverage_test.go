@@ -629,6 +629,79 @@ func TestArticleService_DeleteArticle_UsesTransactionalTombstoneWhenAvailable(t 
 	db.AssertExpectations(t)
 }
 
+func TestArticleService_DeleteArticle_TombstoneErrorBranches(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	article := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/tombstone-errors",
+			Published:    time.Date(2026, time.May, 20, 1, 0, 0, 0, time.UTC),
+			AttributedTo: "https://example.com/users/alice",
+		},
+		Slug: "tombstone-errors",
+	}
+
+	t.Run("requires db for tombstone persistence", func(t *testing.T) {
+		repo := &fakeArticleRepo{
+			articles: map[string]*models.Article{
+				article.ID: article,
+			},
+		}
+		svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.DeleteArticle(ctx, article)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "article repository db is required")
+		require.Empty(t, repo.deletedIDs)
+	})
+
+	t.Run("returns transaction failure", func(t *testing.T) {
+		db := new(dynamormMocks.MockExtendedDB)
+		db.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("tx failed")).Once()
+
+		repo := &fakeArticleRepo{
+			db: db,
+			articles: map[string]*models.Article{
+				article.ID: article,
+			},
+		}
+		svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.DeleteArticle(ctx, article)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "tx failed")
+		require.Empty(t, repo.deletedIDs)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("build defaults missing former type and actor", func(t *testing.T) {
+		db, _ := newCMSMockDB(t)
+		svc := NewArticleService(&fakeArticleRepo{db: db}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		tombstone, err := svc.buildArticleTombstone(&models.Article{
+			Object: models.Object{ID: "https://example.com/articles/default-type"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, activitypub.ArticleType, tombstone.FormerType)
+		require.Empty(t, tombstone.DeletedBy)
+		require.Equal(t, "Article was deleted", tombstone.Summary)
+		require.Equal(t, "Tombstone", tombstone.Type)
+		require.Equal(t, "OBJECT#https://example.com/articles/default-type", tombstone.PK)
+		require.Equal(t, "TOMBSTONE", tombstone.SK)
+		require.NotZero(t, tombstone.TTL)
+	})
+
+	t.Run("persist requires tombstone", func(t *testing.T) {
+		db, _ := newCMSMockDB(t)
+		svc := NewArticleService(&fakeArticleRepo{db: db}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+		err := svc.persistArticleTombstone(ctx, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "article tombstone is required")
+	})
+}
+
 func assertArticleWriteActivity(t *testing.T, activity *activitypub.Activity, activityType string, articleID string) {
 	t.Helper()
 
