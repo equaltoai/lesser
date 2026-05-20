@@ -33,6 +33,10 @@ type articleServiceRepository interface {
 	DeleteArticle(ctx context.Context, articleID string) error
 }
 
+type transactWriteDB interface {
+	TransactWrite(ctx context.Context, fn func(dynamormcore.TransactionBuilder) error) error
+}
+
 type actorRepository interface {
 	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
 }
@@ -308,10 +312,7 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 		return errors.New("article id is required")
 	}
 
-	if err := s.articleRepo.DeleteArticle(ctx, strings.TrimSpace(article.ID)); err != nil {
-		return err
-	}
-	if err := s.createArticleTombstone(ctx, article); err != nil {
+	if err := s.deleteArticleAndCreateTombstone(ctx, article); err != nil {
 		return err
 	}
 
@@ -323,10 +324,49 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 	return nil
 }
 
-func (s *ArticleService) createArticleTombstone(ctx context.Context, article *models.Article) error {
+func (s *ArticleService) deleteArticleAndCreateTombstone(ctx context.Context, article *models.Article) error {
+	tombstone, err := s.buildArticleTombstone(article)
+	if err != nil {
+		return err
+	}
+
+	db := s.articleRepo.GetDB()
+	if db == nil {
+		return errors.New("article repository db is required for tombstone")
+	}
+
+	if txDB, ok := db.(transactWriteDB); ok {
+		deleteModel := *article
+		if err := deleteModel.UpdateKeys(); err != nil {
+			return fmt.Errorf("prepare article delete keys: %w", err)
+		}
+
+		if err := txDB.TransactWrite(ctx, func(tx dynamormcore.TransactionBuilder) error {
+			tx.Create(tombstone).Delete(&deleteModel)
+			return nil
+		}); err != nil {
+			s.logger.Error("failed to transactionally delete article with tombstone",
+				zap.String("article_id", tombstone.ID),
+				zap.String("former_type", tombstone.FormerType),
+				zap.Error(err))
+			return err
+		}
+		return nil
+	}
+
+	// Production TableTheory DBs expose TransactWrite above. This fallback keeps
+	// minimal core.DB test doubles functional while preserving the previous write
+	// order for implementations that cannot express a multi-item transaction.
+	if err := s.articleRepo.DeleteArticle(ctx, tombstone.ID); err != nil {
+		return err
+	}
+	return s.persistArticleTombstone(ctx, tombstone)
+}
+
+func (s *ArticleService) buildArticleTombstone(article *models.Article) (*models.Tombstone, error) {
 	objectID := strings.TrimSpace(article.ID)
 	if objectID == "" {
-		return errors.New("article id is required")
+		return nil, errors.New("article id is required")
 	}
 
 	formerType := strings.TrimSpace(article.Type)
@@ -348,7 +388,15 @@ func (s *ArticleService) createArticleTombstone(ctx context.Context, article *mo
 		Deleted:    time.Now(),
 	}
 	if err := tombstone.BeforeCreate(); err != nil {
-		return fmt.Errorf("prepare article tombstone: %w", err)
+		return nil, fmt.Errorf("prepare article tombstone: %w", err)
+	}
+
+	return tombstone, nil
+}
+
+func (s *ArticleService) persistArticleTombstone(ctx context.Context, tombstone *models.Tombstone) error {
+	if tombstone == nil {
+		return errors.New("article tombstone is required")
 	}
 
 	db := s.articleRepo.GetDB()
@@ -357,8 +405,8 @@ func (s *ArticleService) createArticleTombstone(ctx context.Context, article *mo
 	}
 	if err := db.WithContext(ctx).Model(tombstone).Create(); err != nil {
 		s.logger.Error("failed to create article tombstone",
-			zap.String("article_id", objectID),
-			zap.String("former_type", formerType),
+			zap.String("article_id", tombstone.ID),
+			zap.String("former_type", tombstone.FormerType),
 			zap.Error(err))
 		return err
 	}

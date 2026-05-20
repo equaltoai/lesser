@@ -742,6 +742,14 @@ func TestObjectRepository_TombstoneObject_ArticleType(t *testing.T) {
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
+	var capturedTombstone *models.Tombstone
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		tombstone, ok := model.(*models.Tombstone)
+		if ok {
+			capturedTombstone = tombstone
+		}
+		return ok
+	})).Return(mockQuery).Once()
 	mockQuery.On("First", mock.AnythingOfType("*models.Object")).Run(func(args mock.Arguments) {
 		obj := args.Get(0).(*models.Object)
 		*obj = *models.NewObject(articleID, activitypub.ArticleType, "https://example.com/users/alice")
@@ -753,6 +761,12 @@ func TestObjectRepository_TombstoneObject_ArticleType(t *testing.T) {
 	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 
 	require.NoError(t, repo.TombstoneObject(ctx, articleID, "https://example.com/users/alice"))
+	require.NotNil(t, capturedTombstone)
+	require.Equal(t, "OBJECT#"+articleID, capturedTombstone.PK)
+	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
+	require.Equal(t, "Tombstone", capturedTombstone.Type)
+	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
+	require.NotZero(t, capturedTombstone.TTL)
 
 	gotID, formerType := tombstoneSourceIdentity(&activitypub.Article{
 		Note: activitypub.Note{

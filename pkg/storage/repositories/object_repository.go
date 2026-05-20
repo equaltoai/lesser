@@ -2346,6 +2346,13 @@ func (r *ObjectRepository) parseMentionsFromJSONString(tags string) []string {
 
 // CreateTombstone creates a tombstone for a deleted object
 func (r *ObjectRepository) CreateTombstone(ctx context.Context, tombstone *models.Tombstone) error {
+	if tombstone == nil {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityObject, "tombstone")
+	}
+	if err := tombstone.BeforeCreate(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityObject, "tombstone")
+	}
+
 	if err := r.db.WithContext(ctx).Model(tombstone).Create(); err != nil {
 		r.logger.Error("failed to create tombstone",
 			zap.String("object_id", tombstone.ID),

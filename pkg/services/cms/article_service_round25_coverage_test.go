@@ -560,6 +560,75 @@ func TestArticleService_M2ArticleDeleteFederationAndTombstone(t *testing.T) {
 	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
 }
 
+func TestArticleService_DeleteArticle_UsesTransactionalTombstoneWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := new(dynamormMocks.MockExtendedDB)
+	q := new(dynamormMocks.MockQuery)
+	builder := new(dynamormMocks.MockTransactionBuilder)
+	db.TransactWriteBuilder = builder
+
+	db.On("WithContext", mock.Anything).Return(db).Maybe()
+	db.On("Model", mock.Anything).Return(q).Maybe()
+	q.On("Delete").Return(nil).Maybe()
+
+	var capturedTombstone *models.Tombstone
+	builder.On("Create", mock.MatchedBy(func(model any) bool {
+		tombstone, ok := model.(*models.Tombstone)
+		if ok {
+			capturedTombstone = tombstone
+		}
+		return ok
+	}), mock.Anything).Return(builder).Once()
+
+	var capturedDelete *models.Article
+	builder.On("Delete", mock.MatchedBy(func(model any) bool {
+		article, ok := model.(*models.Article)
+		if ok {
+			capturedDelete = article
+		}
+		return ok
+	}), mock.Anything).Return(builder).Once()
+	builder.On("Execute").Return(nil).Once()
+	db.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
+
+	article := &models.Article{
+		Object: models.Object{
+			ID:           "https://example.com/articles/tx-delete",
+			Type:         activitypub.ArticleType,
+			Name:         "Transactional Delete",
+			Published:    time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC),
+			AttributedTo: "https://example.com/users/alice",
+			To:           []string{activitypub.PublicAddress},
+		},
+		Slug: "tx-delete",
+	}
+	repo := &fakeArticleRepo{
+		db: db,
+		articles: map[string]*models.Article{
+			article.ID: article,
+		},
+	}
+	svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+	require.NoError(t, svc.DeleteArticle(ctx, article))
+	require.NotNil(t, capturedTombstone)
+	require.Equal(t, article.ID, capturedTombstone.ID)
+	require.Equal(t, "OBJECT#"+article.ID, capturedTombstone.PK)
+	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
+	require.Equal(t, "Tombstone", capturedTombstone.Type)
+	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
+	require.NotZero(t, capturedTombstone.TTL)
+	require.NotNil(t, capturedDelete)
+	require.Equal(t, "object#"+article.ID, capturedDelete.PK)
+	require.Equal(t, "object#"+article.ID, capturedDelete.SK)
+	require.Empty(t, repo.deletedIDs)
+
+	builder.AssertExpectations(t)
+	db.AssertExpectations(t)
+}
+
 func assertArticleWriteActivity(t *testing.T, activity *activitypub.Activity, activityType string, articleID string) {
 	t.Helper()
 
