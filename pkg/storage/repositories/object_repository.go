@@ -734,10 +734,21 @@ func (r *ObjectRepository) getArticleModelForObject(ctx context.Context, objMode
 	if r == nil || r.db == nil || objModel == nil {
 		return nil, goerrors.New("article object lookup unavailable")
 	}
+	pk := strings.TrimSpace(objModel.PK)
+	if pk == "" && strings.TrimSpace(objModel.ID) != "" {
+		pk = fmt.Sprintf("object#%s", objModel.ID)
+	}
+	sk := strings.TrimSpace(objModel.SK)
+	if sk == "" {
+		sk = pk
+	}
+	if pk == "" || sk == "" {
+		return nil, goerrors.New("article object keys unavailable")
+	}
 	var article models.Article
 	if err := r.db.WithContext(ctx).Model(&models.Article{}).
-		Where("PK", "=", objModel.PK).
-		Where("SK", "=", objModel.SK).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
 		First(&article); err != nil {
 		return nil, err
 	}
