@@ -145,6 +145,25 @@ Canonical output policy:
 3. Table of contents, word count, reading time, link normalization, media embedding, and unsafe-content handling belong to the same server-side rendering boundary.
 4. Renderer output must be deterministic for the same source, metadata, and media inputs so preview/review/public/federated views can be compared.
 
+### Draft preview API contract
+
+M4.5 exposes the canonical Article preview renderer to body and other authenticated GraphQL consumers through:
+
+```graphql
+draftPreview(id: ID!): DraftPreview!
+```
+
+The resolver uses the same draft ownership/authentication rules as `draft(id:)`: CMS long-form and the draft system must be enabled, the caller must be authenticated, and the draft is loaded for the caller's own author ID. It then renders the draft through `DraftService.PreviewDraft` / `RenderDraftPreview`, which delegates to lesser's canonical Article publication renderer/sanitizer. Consumers must not re-render Markdown/HTML locally or use raw draft content as a public preview.
+
+`DraftPreview` is intentionally small and stable for MCP consumers:
+
+- `renderedHtml`: sanitized server-rendered Article HTML, present only when rendering succeeds;
+- `sourceFormat`: the normalized or stored source format used for rendering;
+- `sourceBytes` and `renderedBytes`: byte counts body can use for `preview_chars` and `max_output_bytes` controls;
+- `errors`: deterministic user-facing renderer errors for unsupported format, invalid UTF-8, source-size, and rendered-size failures.
+
+Authorization/storage lookup failures remain GraphQL errors, matching `draft(id:)`; content rendering failures return a `DraftPreview` with `success: false`, no `renderedHtml`, and a populated `errors` list so body can present review-safe feedback without exposing raw draft source.
+
 ### Unsafe content behavior
 
 Unsafe input must never be forwarded to ActivityPub peers or public HTML pages unsanitized.

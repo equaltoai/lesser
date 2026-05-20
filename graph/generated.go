@@ -1165,6 +1165,16 @@ type ComplexityRoot struct {
 		Node   func(childComplexity int) int
 	}
 
+	DraftPreview struct {
+		DraftID       func(childComplexity int) int
+		Errors        func(childComplexity int) int
+		RenderedBytes func(childComplexity int) int
+		RenderedHTML  func(childComplexity int) int
+		SourceBytes   func(childComplexity int) int
+		SourceFormat  func(childComplexity int) int
+		Success       func(childComplexity int) int
+	}
+
 	Driver struct {
 		Cost           func(childComplexity int) int
 		Domain         func(childComplexity int) int
@@ -2463,6 +2473,7 @@ type ComplexityRoot struct {
 		CustomEmojis              func(childComplexity int) int
 		DomainBlocks              func(childComplexity int, first *int, after *model.Cursor) int
 		Draft                     func(childComplexity int, id string) int
+		DraftPreview              func(childComplexity int, id string) int
 		DroneWorkflow             func(childComplexity int, username string) int
 		Endorsements              func(childComplexity int) int
 		ExplainObject             func(childComplexity int, id string) int
@@ -3604,6 +3615,7 @@ type QueryResolver interface {
 	SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error)
 	AffectedRelationships(ctx context.Context, severedRelationshipID string) (*model.AffectedRelationshipConnection, error)
 	Draft(ctx context.Context, id string) (*model.Draft, error)
+	DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error)
 	MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
 	Revision(ctx context.Context, objectID string, version int) (*model.Revision, error)
@@ -8871,6 +8883,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftEdge.Node(childComplexity), true
+
+	case "DraftPreview.draftId":
+		if e.complexity.DraftPreview.DraftID == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.DraftID(childComplexity), true
+
+	case "DraftPreview.errors":
+		if e.complexity.DraftPreview.Errors == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.Errors(childComplexity), true
+
+	case "DraftPreview.renderedBytes":
+		if e.complexity.DraftPreview.RenderedBytes == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.RenderedBytes(childComplexity), true
+
+	case "DraftPreview.renderedHtml":
+		if e.complexity.DraftPreview.RenderedHTML == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.RenderedHTML(childComplexity), true
+
+	case "DraftPreview.sourceBytes":
+		if e.complexity.DraftPreview.SourceBytes == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.SourceBytes(childComplexity), true
+
+	case "DraftPreview.sourceFormat":
+		if e.complexity.DraftPreview.SourceFormat == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.SourceFormat(childComplexity), true
+
+	case "DraftPreview.success":
+		if e.complexity.DraftPreview.Success == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.Success(childComplexity), true
 
 	case "Driver.cost":
 		if e.complexity.Driver.Cost == nil {
@@ -16478,6 +16539,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Draft(childComplexity, args["id"].(string)), true
+
+	case "Query.draftPreview":
+		if e.complexity.Query.DraftPreview == nil {
+			break
+		}
+
+		args, err := ec.field_Query_draftPreview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.DraftPreview(childComplexity, args["id"].(string)), true
 
 	case "Query.droneWorkflow":
 		if e.complexity.Query.DroneWorkflow == nil {
@@ -24099,6 +24172,17 @@ func (ec *executionContext) field_Query_domainBlocks_args(ctx context.Context, r
 		return nil, err
 	}
 	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_draftPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
 	return args, nil
 }
 
@@ -60295,6 +60379,311 @@ func (ec *executionContext) fieldContext_DraftEdge_cursor(_ context.Context, fie
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_draftId(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_draftId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DraftID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_draftId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_success(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_success(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Success, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_success(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_renderedHtml(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_renderedHtml(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RenderedHTML, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_renderedHtml(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_sourceFormat(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_sourceFormat(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SourceFormat, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_sourceFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_sourceBytes(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_sourceBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SourceBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_sourceBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_renderedBytes(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_renderedBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RenderedBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_renderedBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_errors(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_errors(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Errors, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_errors(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -112407,6 +112796,77 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_draftPreview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_draftPreview(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().DraftPreview(rctx, fc.Args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.DraftPreview)
+	fc.Result = res
+	return ec.marshalNDraftPreview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftPreview(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_draftPreview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "draftId":
+				return ec.fieldContext_DraftPreview_draftId(ctx, field)
+			case "success":
+				return ec.fieldContext_DraftPreview_success(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_DraftPreview_renderedHtml(ctx, field)
+			case "sourceFormat":
+				return ec.fieldContext_DraftPreview_sourceFormat(ctx, field)
+			case "sourceBytes":
+				return ec.fieldContext_DraftPreview_sourceBytes(ctx, field)
+			case "renderedBytes":
+				return ec.fieldContext_DraftPreview_renderedBytes(ctx, field)
+			case "errors":
+				return ec.fieldContext_DraftPreview_errors(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type DraftPreview", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_draftPreview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_myDrafts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_myDrafts(ctx, field)
 	if err != nil {
@@ -155543,6 +156003,72 @@ func (ec *executionContext) _DraftEdge(ctx context.Context, sel ast.SelectionSet
 	return out
 }
 
+var draftPreviewImplementors = []string{"DraftPreview"}
+
+func (ec *executionContext) _DraftPreview(ctx context.Context, sel ast.SelectionSet, obj *model.DraftPreview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, draftPreviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DraftPreview")
+		case "draftId":
+			out.Values[i] = ec._DraftPreview_draftId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "success":
+			out.Values[i] = ec._DraftPreview_success(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "renderedHtml":
+			out.Values[i] = ec._DraftPreview_renderedHtml(ctx, field, obj)
+		case "sourceFormat":
+			out.Values[i] = ec._DraftPreview_sourceFormat(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sourceBytes":
+			out.Values[i] = ec._DraftPreview_sourceBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "renderedBytes":
+			out.Values[i] = ec._DraftPreview_renderedBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "errors":
+			out.Values[i] = ec._DraftPreview_errors(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var driverImplementors = []string{"Driver"}
 
 func (ec *executionContext) _Driver(ctx context.Context, sel ast.SelectionSet, obj *cost.Driver) graphql.Marshaler {
@@ -166847,6 +167373,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "draftPreview":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_draftPreview(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "myDrafts":
 			field := field
 
@@ -177128,6 +177676,20 @@ func (ec *executionContext) marshalNDraftEdge2ᚖgithubᚗcomᚋequaltoaiᚋless
 		return graphql.Null
 	}
 	return ec._DraftEdge(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNDraftPreview2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftPreview(ctx context.Context, sel ast.SelectionSet, v model.DraftPreview) graphql.Marshaler {
+	return ec._DraftPreview(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNDraftPreview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftPreview(ctx context.Context, sel ast.SelectionSet, v *model.DraftPreview) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DraftPreview(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNDraftStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftStatus(ctx context.Context, v any) (model.DraftStatus, error) {

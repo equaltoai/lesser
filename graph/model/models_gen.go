@@ -1157,6 +1157,16 @@ type DomainBlockPage struct {
 	TotalCount int      `json:"totalCount"`
 }
 
+type DraftPreview struct {
+	DraftID       string   `json:"draftId"`
+	Success       bool     `json:"success"`
+	RenderedHTML  *string  `json:"renderedHtml,omitempty"`
+	SourceFormat  string   `json:"sourceFormat"`
+	SourceBytes   int      `json:"sourceBytes"`
+	RenderedBytes int      `json:"renderedBytes"`
+	Errors        []string `json:"errors"`
+}
+
 type DroneWorkflowMutationPayload struct {
 	Agent    *Agent                `json:"agent"`
 	Workflow *AgentWorkflowSurface `json:"workflow"`
