@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -66,6 +67,44 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		LastSavedAt:     model.Time(draft.LastSavedAt),
 		CreatedAt:       model.Time(draft.CreatedAt),
 		UpdatedAt:       model.Time(draft.UpdatedAt),
+	}
+}
+
+func (r *Resolver) convertCMSDraftPreview(draft *models.Draft, rendered cmsrender.RenderedArticleContent, renderErr error) *model.DraftPreview {
+	if draft == nil {
+		return nil
+	}
+
+	sourceFormat := strings.TrimSpace(draft.ContentFormat)
+	sourceBytes := len(draft.Content)
+	renderedBytes := 0
+	var renderedHTML *string
+	errorsList := []string{}
+
+	if renderErr == nil {
+		if strings.TrimSpace(rendered.SourceFormat) != "" {
+			sourceFormat = rendered.SourceFormat
+		}
+		sourceBytes = rendered.SourceBytes
+		renderedBytes = rendered.RenderedBytes
+		html := rendered.HTML
+		renderedHTML = &html
+	} else {
+		errorsList = append(errorsList, renderErr.Error())
+	}
+
+	if sourceFormat == "" {
+		sourceFormat = cmsrender.FormatMarkdown
+	}
+
+	return &model.DraftPreview{
+		DraftID:       draft.ID,
+		Success:       renderErr == nil,
+		RenderedHTML:  renderedHTML,
+		SourceFormat:  sourceFormat,
+		SourceBytes:   sourceBytes,
+		RenderedBytes: renderedBytes,
+		Errors:        errorsList,
 	}
 }
 

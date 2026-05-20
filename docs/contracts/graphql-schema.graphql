@@ -2429,6 +2429,16 @@ type DraftConnection {
   totalCount: Int!
 }
 
+type DraftPreview {
+  draftId: ID!
+  success: Boolean!
+  renderedHtml: String
+  sourceFormat: String!
+  sourceBytes: Int!
+  renderedBytes: Int!
+  errors: [String!]!
+}
+
 type Revision {
   id: ID!
   objectId: ID!
@@ -2527,6 +2537,7 @@ type PublicationMember {
 extend type Query {
   # Draft operations
   draft(id: ID!): Draft
+  draftPreview(id: ID!): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
 
   # Revision history

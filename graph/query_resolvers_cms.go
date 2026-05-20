@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/services/cms"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
@@ -295,6 +296,30 @@ func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, err
 	}
 
 	return r.convertCMSDraft(ctx, draft), nil
+}
+
+func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	drafts := r.Registry.Drafts()
+	if drafts == nil {
+		return nil, errors.New("draft service is not available")
+	}
+
+	draft, err := drafts.GetDraft(ctx, username, strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+
+	rendered, renderErr := cms.RenderDraftPreview(draft)
+	return r.convertCMSDraftPreview(draft, rendered, renderErr), nil
 }
 
 func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error) {
