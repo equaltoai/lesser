@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -175,6 +177,67 @@ func cloneArticle(a *models.Article) *models.Article {
 		cp.FeaturedImage = &v
 	}
 	return &cp
+}
+
+func TestDraftServicePreviewUsesPublicationRenderer(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemDraftRepo()
+	articles := newMemArticleService()
+	svc := &DraftService{
+		draftRepo:      repo,
+		articleService: articles,
+		domain:         "example.com",
+		scheduling:     true,
+		logger:         zap.NewNop(),
+	}
+
+	draft := &models.Draft{
+		ID:            "draft-preview",
+		AuthorID:      "alice",
+		ContentType:   activitypub.ArticleType,
+		Title:         "Preview",
+		Slug:          "preview",
+		Content:       "# Preview\n\nBody<script>alert(1)</script>\n\n![alt](https://example.com/media/cover.png)",
+		ContentFormat: "markdown",
+		Status:        "draft",
+	}
+	require.NoError(t, svc.CreateDraft(context.Background(), draft))
+
+	preview, err := svc.PreviewDraft(context.Background(), "alice", "draft-preview")
+	require.NoError(t, err)
+	require.Contains(t, preview.HTML, `<h1 id="preview">Preview</h1>`)
+	require.Contains(t, preview.HTML, "<p>Body</p>")
+	require.NotContains(t, preview.HTML, "<script")
+
+	article, err := svc.PublishDraft(context.Background(), "alice", "draft-preview")
+	require.NoError(t, err)
+	apArticle, err := transformations.StorageArticleToActivityPub(article)
+	require.NoError(t, err)
+	require.Equal(t, preview.HTML, apArticle.Content)
+}
+
+func TestDraftServiceRejectsOversizedArticleDrafts(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemDraftRepo()
+	svc := &DraftService{
+		draftRepo: repo,
+		domain:    "example.com",
+		logger:    zap.NewNop(),
+	}
+
+	err := svc.CreateDraft(context.Background(), &models.Draft{
+		ID:            "draft-big",
+		AuthorID:      "alice",
+		ContentType:   activitypub.ArticleType,
+		Title:         "Big",
+		Slug:          "big",
+		Content:       strings.Repeat("a", cmsrender.MaxArticleSourceBytes+1),
+		ContentFormat: "markdown",
+		Status:        "draft",
+	})
+	require.ErrorIs(t, err, cmsrender.ErrArticleContentTooLarge)
 }
 
 func TestDraftServiceScheduleAndCancelDraft(t *testing.T) {

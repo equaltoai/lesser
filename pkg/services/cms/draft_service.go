@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -56,6 +57,10 @@ func NewDraftService(draftRepo draftRepository, articleService *ArticleService, 
 
 // CreateDraft creates a new draft
 func (s *DraftService) CreateDraft(ctx context.Context, draft *models.Draft) error {
+	if err := validateArticleDraftRenderable(draft); err != nil {
+		return err
+	}
+
 	s.logger.Info("creating draft", zap.String("title", draft.Title))
 
 	if draft.CreatedAt.IsZero() {
@@ -86,9 +91,27 @@ func validateDraftWriteAuthor(authorID string, draft *models.Draft) error {
 	return nil
 }
 
+func validateArticleDraftRenderable(draft *models.Draft) error {
+	if draft == nil {
+		return stdErrors.New("draft is required")
+	}
+	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
+		return nil
+	}
+	rendered, err := cmsrender.RenderArticleContent(draft.Content, draft.ContentFormat)
+	if err != nil {
+		return err
+	}
+	draft.ContentFormat = rendered.SourceFormat
+	return nil
+}
+
 // UpdateDraft updates an existing draft
 func (s *DraftService) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
 	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
+		return err
+	}
+	if err := validateArticleDraftRenderable(draft); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -102,6 +125,9 @@ func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *mod
 	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
 		return err
 	}
+	if err := validateArticleDraftRenderable(draft); err != nil {
+		return err
+	}
 	s.logger.Debug("autosaving draft", zap.String("id", draft.ID))
 	now := time.Now()
 	draft.LastSavedAt = now
@@ -113,6 +139,31 @@ func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *mod
 // GetDraft retrieves a draft
 func (s *DraftService) GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error) {
 	return s.draftRepo.GetDraft(ctx, authorID, draftID)
+}
+
+// PreviewDraft renders a draft through the same Article publication renderer used for ActivityPub and public HTML.
+func (s *DraftService) PreviewDraft(ctx context.Context, authorID, draftID string) (cmsrender.RenderedArticleContent, error) {
+	draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
+	if err != nil {
+		return cmsrender.RenderedArticleContent{}, err
+	}
+	return RenderDraftPreview(draft)
+}
+
+// RenderDraftPreview renders draft source through the canonical Article renderer.
+func RenderDraftPreview(draft *models.Draft) (cmsrender.RenderedArticleContent, error) {
+	if draft == nil {
+		return cmsrender.RenderedArticleContent{}, stdErrors.New("draft is required")
+	}
+	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
+		return cmsrender.RenderedArticleContent{}, stdErrors.New("only article drafts can be previewed")
+	}
+	rendered, err := cmsrender.RenderArticleContent(draft.Content, draft.ContentFormat)
+	if err != nil {
+		return cmsrender.RenderedArticleContent{}, err
+	}
+	draft.ContentFormat = rendered.SourceFormat
+	return rendered, nil
 }
 
 // DeleteDraft deletes a draft
