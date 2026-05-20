@@ -259,6 +259,34 @@ func TestRenderDraftPreviewRequiresArticleDraft(t *testing.T) {
 	require.Empty(t, rendered.HTML)
 }
 
+func TestDraftServicePreviewPropagatesRepositoryAndRendererErrors(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemDraftRepo()
+	svc := &DraftService{
+		draftRepo: repo,
+		domain:    "example.com",
+		logger:    zap.NewNop(),
+	}
+
+	preview, err := svc.PreviewDraft(context.Background(), "alice", "missing")
+	require.Error(t, err)
+	require.Empty(t, preview.HTML)
+
+	require.NoError(t, repo.CreateDraft(context.Background(), &models.Draft{
+		ID:            "draft-unsupported",
+		AuthorID:      "alice",
+		ContentType:   activitypub.ArticleType,
+		Content:       "body",
+		ContentFormat: "asciidoc",
+		Status:        "draft",
+	}))
+
+	preview, err = svc.PreviewDraft(context.Background(), "alice", "draft-unsupported")
+	require.ErrorIs(t, err, cmsrender.ErrUnsupportedContentFormat)
+	require.Empty(t, preview.HTML)
+}
+
 func TestDraftServiceAutosaveRejectsOversizedRenderedArticle(t *testing.T) {
 	t.Parallel()
 

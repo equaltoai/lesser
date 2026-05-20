@@ -288,6 +288,78 @@ func TestModelToActivityPubObject_ArticleType(t *testing.T) {
 	require.NotContains(t, body, "bcc")
 }
 
+func TestModelToActivityPubObject_ArticleUsesStoredArticleFormat(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2026, time.May, 20, 3, 10, 0, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Article")).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "object#https://example.com/articles/stored-html").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "object#https://example.com/articles/stored-html").Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Article")).Run(func(args mock.Arguments) {
+		article := args.Get(0).(*models.Article)
+		*article = models.Article{
+			Object: models.Object{
+				ID:           "https://example.com/articles/stored-html",
+				Type:         activitypub.ArticleType,
+				Name:         "Stored HTML",
+				Summary:      "stored article summary",
+				Content:      `<p onclick="evil()">Stored <strong>HTML</strong><script>alert(1)</script></p>`,
+				Published:    baseTime,
+				Updated:      baseTime.Add(time.Hour),
+				AttributedTo: "https://example.com/users/alice",
+				To:           []string{activitypub.PublicAddress},
+			},
+			ContentFormat: "html",
+			Slug:          "stored-html",
+		}
+	}).Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	result, err := repo.modelToActivityPubObject(ctx, &models.Object{
+		ID:           "https://example.com/articles/stored-html",
+		Type:         activitypub.ArticleType,
+		Name:         "Fallback Object",
+		Content:      "**fallback markdown**",
+		AttributedTo: "https://example.com/users/alice",
+	})
+	require.NoError(t, err)
+
+	article, ok := result.(*activitypub.Article)
+	require.True(t, ok, "expected *activitypub.Article, got %T", result)
+	require.Equal(t, "Stored HTML", article.Name)
+	require.Equal(t, "stored article summary", article.Summary)
+	require.Contains(t, article.Content, `<p>Stored <strong>HTML</strong></p>`)
+	require.NotContains(t, article.Content, "onclick")
+	require.NotContains(t, article.Content, "<script")
+	require.Equal(t, []string{activitypub.PublicAddress}, article.To)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestGetArticleModelForObjectRejectsUnavailableLookup(t *testing.T) {
+	ctx := context.Background()
+
+	var nilRepo *ObjectRepository
+	article, err := nilRepo.getArticleModelForObject(ctx, &models.Object{ID: "https://example.com/articles/1"})
+	require.Error(t, err)
+	require.Nil(t, article)
+
+	repo := NewObjectRepository(nil, "test-table", "example.com", zap.NewNop())
+	article, err = repo.getArticleModelForObject(ctx, &models.Object{ID: "https://example.com/articles/1"})
+	require.Error(t, err)
+	require.Nil(t, article)
+
+	mockDB := new(mocks.MockDB)
+	repo = NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	article, err = repo.getArticleModelForObject(ctx, &models.Object{})
+	require.Error(t, err)
+	require.Nil(t, article)
+}
+
 // ============================================================================
 // 2) modelToActivityPubObject Tests - Default Conversion Branch
 // ============================================================================

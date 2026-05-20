@@ -3,10 +3,12 @@ package cms
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
@@ -23,6 +25,70 @@ func TestArticleService_GetArticle_ValidatesID(t *testing.T) {
 
 	_, err := svc.GetArticle(ctx, "")
 	require.Error(t, err)
+}
+
+func TestArticleService_M3ArticleRenderValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := &fakeArticleRepo{articles: map[string]*models.Article{}}
+	svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+	require.Error(t, validateArticleRenderable(nil))
+
+	for _, tc := range []struct {
+		name          string
+		content       string
+		contentFormat string
+		wantErr       error
+	}{
+		{
+			name:          "unsupported format",
+			content:       "body",
+			contentFormat: "asciidoc",
+			wantErr:       cmsrender.ErrUnsupportedContentFormat,
+		},
+		{
+			name:          "invalid utf8",
+			content:       string([]byte{0xff}),
+			contentFormat: "markdown",
+			wantErr:       nil,
+		},
+		{
+			name:          "rendered html too large",
+			content:       strings.Repeat("&", cmsrender.MaxArticleSourceBytes/2),
+			contentFormat: "markdown",
+			wantErr:       cmsrender.ErrArticleRenderedContentTooLarge,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.CreateArticle(ctx, &models.Article{
+				Object: models.Object{
+					ID:      "https://example.com/articles/" + strings.ReplaceAll(tc.name, " ", "-"),
+					Name:    tc.name,
+					Content: tc.content,
+				},
+				Slug:          strings.ReplaceAll(tc.name, " ", "-"),
+				ContentFormat: tc.contentFormat,
+			})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.EqualError(t, err, "article content must be valid UTF-8")
+			}
+		})
+	}
+
+	err := svc.UpdateArticle(ctx, &models.Article{
+		Object: models.Object{
+			ID:      "https://example.com/articles/update-rendered-too-large",
+			Name:    "Update Rendered Too Large",
+			Content: strings.Repeat("&", cmsrender.MaxArticleSourceBytes/2),
+		},
+		ContentFormat: "markdown",
+	})
+	require.ErrorIs(t, err, cmsrender.ErrArticleRenderedContentTooLarge)
+	require.Empty(t, repo.articles)
 }
 
 func TestArticleService_UpdateArticle_AllowsBlankSlugAndSetsUpdatedFields(t *testing.T) {
