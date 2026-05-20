@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -99,6 +100,10 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		article.CreatedAt = time.Now()
 	}
 	article.UpdatedAt = time.Now()
+
+	if err := validateArticleRenderable(article); err != nil {
+		return err
+	}
 
 	enrichArticleContent(article)
 
@@ -215,6 +220,19 @@ func articleBelongsToTenant(article *models.Article, tenant string) bool {
 	return strings.EqualFold(cmsTenantFromID(article.ID), tenant)
 }
 
+func validateArticleRenderable(article *models.Article) error {
+	if article == nil {
+		return errors.New("article is required")
+	}
+
+	rendered, err := cmsrender.RenderArticleContent(article.Content, article.ContentFormat)
+	if err != nil {
+		return err
+	}
+	article.ContentFormat = rendered.SourceFormat
+	return nil
+}
+
 // GetArticle retrieves an article by ID.
 func (s *ArticleService) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
 	articleID = strings.TrimSpace(articleID)
@@ -278,6 +296,10 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	}
 	if article.Updated.IsZero() {
 		article.Updated = article.UpdatedAt
+	}
+
+	if err := validateArticleRenderable(article); err != nil {
+		return err
 	}
 
 	enrichArticleContent(article)

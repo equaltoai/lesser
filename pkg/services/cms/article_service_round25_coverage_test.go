@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -162,6 +164,16 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 		require.Error(t, svc.CreateArticle(ctx, nil))
 		require.Error(t, svc.CreateArticle(ctx, &models.Article{Object: models.Object{ID: "a1"}}))
 		require.Error(t, svc.CreateArticle(ctx, &models.Article{Object: models.Object{ID: ""}, Slug: "slug"}))
+		err := svc.CreateArticle(ctx, &models.Article{
+			Object: models.Object{
+				ID:      "https://example.com/articles/too-large",
+				Name:    "Too Large",
+				Content: strings.Repeat("a", cmsrender.MaxArticleSourceBytes+1),
+			},
+			Slug:          "too-large",
+			ContentFormat: "markdown",
+		})
+		require.ErrorIs(t, err, cmsrender.ErrArticleContentTooLarge)
 	})
 
 	t.Run("create blocks legacy slug collision", func(t *testing.T) {
