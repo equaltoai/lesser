@@ -227,7 +227,7 @@ func TestModelToActivityPubObject_NoteType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := repo.modelToActivityPubObject(tt.model)
+			result, err := repo.modelToActivityPubObject(context.Background(), tt.model)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
@@ -243,7 +243,7 @@ func TestModelToActivityPubObject_ArticleType(t *testing.T) {
 
 	baseTime := time.Date(2024, 12, 27, 10, 0, 0, 0, time.UTC)
 	updatedTime := time.Date(2024, 12, 27, 12, 0, 0, 0, time.UTC)
-	result, err := repo.modelToActivityPubObject(&models.Object{
+	result, err := repo.modelToActivityPubObject(context.Background(), &models.Object{
 		ID:             "https://example.com/articles/article-123",
 		Type:           activitypub.ArticleType,
 		Name:           "Article Title",
@@ -268,7 +268,7 @@ func TestModelToActivityPubObject_ArticleType(t *testing.T) {
 	require.Equal(t, activitypub.ArticleType, article.Type)
 	require.Equal(t, "Article Title", article.Name)
 	require.Equal(t, "Article summary", article.Summary)
-	require.Equal(t, "Article body content", article.Content)
+	require.Equal(t, "<p>Article body content</p>\n", article.Content)
 	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
 	require.Equal(t, baseTime, *article.Published)
 	require.Equal(t, updatedTime, *article.Updated)
@@ -378,7 +378,7 @@ func TestModelToActivityPubObject_DefaultBranch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := repo.modelToActivityPubObject(tt.model)
+			result, err := repo.modelToActivityPubObject(context.Background(), tt.model)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 

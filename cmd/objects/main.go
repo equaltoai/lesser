@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
@@ -736,7 +738,15 @@ const objectHTMLTemplate = `<!DOCTYPE html>
         {{end}}
         
         <div class="object-content">
-            {{if .Content}}
+            {{if .ContentHTML}}
+            {{if and .IsArticle .Name}}
+            <h1>{{.Name}}</h1>
+            {{if .Summary}}
+            <p class="summary">{{.Summary}}</p>
+            {{end}}
+            {{end}}
+            {{.ContentHTML}}
+            {{else if .Content}}
             {{.Content}}
             {{else if and .IsArticle .Name}}
             <h1>{{.Name}}</h1>
@@ -781,6 +791,7 @@ type objectHTMLTemplateData struct {
 	Title              string
 	ObjectType         string
 	Content            string
+	ContentHTML        template.HTML
 	IsArticle          bool
 	Name               string
 	Sensitive          bool
@@ -795,11 +806,12 @@ type objectHTMLTemplateData struct {
 
 // generateHTML creates the actual HTML content
 func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, _ string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
+	isArticle := objectType == activitypub.ArticleType
 	data := objectHTMLTemplateData{
 		Title:              objectType,
 		ObjectType:         objectType,
 		Content:            content,
-		IsArticle:          objectType == "Article",
+		IsArticle:          isArticle,
 		Name:               name,
 		Sensitive:          sensitive,
 		Summary:            summary,
@@ -808,6 +820,11 @@ func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo,
 		Published:          published.Format("January 2, 2006 at 3:04 PM"),
 		AttributedTo:       attributedTo,
 		AttributedUsername: h.extractUsernameFromURL(attributedTo),
+	}
+	if isArticle && strings.TrimSpace(content) != "" {
+		// #nosec G203 -- Article content is sanitized by the canonical CMS renderer before template inclusion.
+		data.ContentHTML = template.HTML(cmsrender.SanitizeArticleHTML(content))
+		data.Content = ""
 	}
 	if !updated.IsZero() {
 		data.Updated = updated.Format("January 2, 2006 at 3:04 PM")

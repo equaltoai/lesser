@@ -519,6 +519,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 					Published: &now,
 					To:        []string{activitypub.PublicAddress},
 				},
+				Content:      `<h2>Rendered</h2><script>alert(1)</script><p onclick="evil()">safe body</p>`,
 				AttributedTo: "https://example.com/users/alice",
 			},
 			Name: "Hello World",
@@ -543,6 +544,10 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Equal(t, []string{"text/html; charset=utf-8"}, resp.Headers["content-type"])
 		require.Contains(t, string(resp.Body), "Hello World")
 		require.Contains(t, string(resp.Body), "A summary")
+		require.Contains(t, string(resp.Body), "<h2>Rendered</h2>")
+		require.Contains(t, string(resp.Body), "<p>safe body</p>")
+		require.NotContains(t, string(resp.Body), "<script")
+		require.NotContains(t, string(resp.Body), "onclick")
 	})
 
 	t.Run("canonical article route suppresses html for non-public article", func(t *testing.T) {
