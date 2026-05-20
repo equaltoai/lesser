@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -266,8 +267,16 @@ func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.A
 		return nil, common.ValidationError{Field: "article", Message: "article cannot be nil"}
 	}
 
+	rendered, err := cmsrender.RenderArticleContent(article.Content, article.ContentFormat)
+	if err != nil {
+		return nil, err
+	}
+
+	object := article.Object
+	object.Content = rendered.HTML
+
 	// Convert the embedded Object first
-	note, err := StorageObjectToActivityPub(&article.Object)
+	note, err := StorageObjectToActivityPub(&object)
 	if err != nil {
 		return nil, err
 	}

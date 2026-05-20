@@ -3,6 +3,7 @@ package cms
 import (
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -33,8 +34,14 @@ Hello world.
 		{ID: "title", Level: 1, Text: "Title"},
 		{ID: "section-one", Level: 2, Text: "Section One"},
 		{ID: "sub", Level: 3, Text: "Sub"},
-		{ID: "section-one-2", Level: 2, Text: "Section One"},
+		{ID: "section-one-1", Level: 2, Text: "Section One"},
 	}, article.TableOfContents)
+
+	rendered, err := cmsrender.RenderArticleContent(article.Content, article.ContentFormat)
+	require.NoError(t, err)
+	for _, entry := range article.TableOfContents {
+		require.Contains(t, rendered.HTML, `id="`+entry.ID+`"`)
+	}
 }
 
 func TestCMSExtractTOCFromMarkdown_NormalizesHeadingText(t *testing.T) {
@@ -42,7 +49,17 @@ func TestCMSExtractTOCFromMarkdown_NormalizesHeadingText(t *testing.T) {
 	entries := cmsExtractTOC(content, "markdown")
 
 	require.Equal(t, []models.TOCEntry{
-		{ID: "bold-link", Level: 2, Text: "Bold Link"},
+		{ID: "bold-linkhttpsexamplecom", Level: 2, Text: "Bold Link"},
+	}, entries)
+}
+
+func TestCMSExtractTOCFallsBackToMarkdownParserWhenRendererRejectsFormat(t *testing.T) {
+	content := "## Section One\n\n## Section One\n\n```md\n## Not A Heading\n```\n"
+	entries := cmsExtractTOC(content, "asciidoc")
+
+	require.Equal(t, []models.TOCEntry{
+		{ID: "section-one", Level: 2, Text: "Section One"},
+		{ID: "section-one-1", Level: 2, Text: "Section One"},
 	}, entries)
 }
 
@@ -62,6 +79,6 @@ func TestEnrichArticleContent_HTML(t *testing.T) {
 		{ID: "title", Level: 1, Text: "Title"},
 		{ID: "sec", Level: 2, Text: "Section"},
 		{ID: "section", Level: 2, Text: "Section"},
-		{ID: "section-2", Level: 2, Text: "Section"},
+		{ID: "section-1", Level: 2, Text: "Section"},
 	}, article.TableOfContents)
 }

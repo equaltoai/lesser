@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -266,7 +267,7 @@ func (r *ObjectRepository) GetObject(ctx context.Context, id string) (any, error
 	}
 
 	// Convert back to appropriate ActivityPub type
-	return r.modelToActivityPubObject(&objModel)
+	return r.modelToActivityPubObject(ctx, &objModel)
 }
 
 // UpdateObject updates an existing object
@@ -511,7 +512,7 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 	// Convert to ActivityPub objects
 	result := make([]any, 0, len(objects))
 	for _, objModel := range objects {
-		apObj, err := r.modelToActivityPubObject(&objModel)
+		apObj, err := r.modelToActivityPubObject(ctx, &objModel)
 		if err != nil {
 			r.logger.Warn("failed to convert object",
 				zap.String("object_id", objModel.ID),
@@ -550,12 +551,13 @@ func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID stri
 // TombstoneObject marks an object as deleted by creating a tombstone
 func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
 	// First verify the object exists
-	existingObj, err := r.GetObject(ctx, objectID)
+	existingObj, err := r.getStoredObjectModel(ctx, objectID)
 	if err != nil {
 		return ErrorHandler.HandleGetError(err, EntityObject, objectID)
 	}
 
-	objID, formerType := tombstoneSourceIdentity(existingObj)
+	objID := strings.TrimSpace(existingObj.ID)
+	formerType := strings.TrimSpace(existingObj.Type)
 
 	if err := common.ValidateRequiredParam("object ID", objID); err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityObject, "extract_id")
@@ -595,48 +597,24 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 	return nil
 }
 
-func tombstoneSourceIdentity(existingObj any) (string, string) {
-	switch obj := existingObj.(type) {
-	case map[string]any:
-		id, _ := obj["id"].(string)
-		objectType, _ := obj["type"].(string)
-		return strings.TrimSpace(id), strings.TrimSpace(objectType)
-	case *activitypub.Article:
-		if obj == nil {
-			return "", ""
-		}
-		objectType := strings.TrimSpace(obj.Type)
-		if objectType == "" {
-			objectType = activitypub.ArticleType
-		}
-		return strings.TrimSpace(obj.ID), objectType
-	case *activitypub.Note:
-		if obj == nil {
-			return "", ""
-		}
-		objectType := strings.TrimSpace(obj.Type)
-		if objectType == "" {
-			objectType = activitypub.NoteType
-		}
-		return strings.TrimSpace(obj.ID), objectType
-	case *activitypub.BaseObject:
-		if obj == nil {
-			return "", ""
-		}
-		return strings.TrimSpace(obj.ID), strings.TrimSpace(obj.Type)
-	default:
-		return "", ""
+func (r *ObjectRepository) getStoredObjectModel(ctx context.Context, objectID string) (*models.Object, error) {
+	var objModel models.Object
+	pk := fmt.Sprintf("object#%s", objectID)
+	sk := pk
+	if err := r.Get(ctx, pk, sk, &objModel); err != nil {
+		return nil, err
 	}
+	return &objModel, nil
 }
 
 // modelToActivityPubObject converts a model to the appropriate ActivityPub object
-func (r *ObjectRepository) modelToActivityPubObject(objModel *models.Object) (any, error) {
+func (r *ObjectRepository) modelToActivityPubObject(ctx context.Context, objModel *models.Object) (any, error) {
 	switch objModel.Type {
 	case activitypub.NoteType:
 		return objectModelToActivityPubNote(objModel), nil
 
 	case activitypub.ArticleType:
-		return objectModelToActivityPubArticle(objModel), nil
+		return r.objectModelToActivityPubArticle(ctx, objModel)
 
 	default:
 		// Return as generic map for other types
@@ -692,15 +670,55 @@ func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
 	return note
 }
 
-func objectModelToActivityPubArticle(objModel *models.Object) *activitypub.Article {
-	note := objectModelToActivityPubNote(objModel)
+func (r *ObjectRepository) objectModelToActivityPubArticle(ctx context.Context, objModel *models.Object) (*activitypub.Article, error) {
+	format := ""
+	if article, err := r.getArticleModelForObject(ctx, objModel); err == nil && article != nil {
+		format = article.ContentFormat
+		articleObject := article.Object
+		objModel = &articleObject
+	}
+
+	rendered, err := cmsrender.RenderArticleContent(objModel.Content, format)
+	if err != nil {
+		return nil, err
+	}
+
+	renderedObject := *objModel
+	renderedObject.Content = rendered.HTML
+
+	note := objectModelToActivityPubNote(&renderedObject)
 	note.Type = activitypub.ArticleType
-	note.Summary = objModel.Summary
+	note.Summary = renderedObject.Summary
 
 	return &activitypub.Article{
 		Note: *note,
-		Name: objModel.Name,
+		Name: renderedObject.Name,
+	}, nil
+}
+
+func (r *ObjectRepository) getArticleModelForObject(ctx context.Context, objModel *models.Object) (*models.Article, error) {
+	if r == nil || r.db == nil || objModel == nil {
+		return nil, goerrors.New("article object lookup unavailable")
 	}
+	pk := strings.TrimSpace(objModel.PK)
+	if pk == "" && strings.TrimSpace(objModel.ID) != "" {
+		pk = fmt.Sprintf("object#%s", objModel.ID)
+	}
+	sk := strings.TrimSpace(objModel.SK)
+	if sk == "" {
+		sk = pk
+	}
+	if pk == "" || sk == "" {
+		return nil, goerrors.New("article object keys unavailable")
+	}
+	var article models.Article
+	if err := r.db.WithContext(ctx).Model(&models.Article{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&article); err != nil {
+		return nil, err
+	}
+	return &article, nil
 }
 
 // CreateUpdateHistory creates a new update history entry for an object
@@ -1211,7 +1229,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 	// Convert to ActivityPub objects
 	result := make([]any, 0, len(objects))
 	for _, objModel := range objects {
-		apObj, err := r.modelToActivityPubObject(&objModel)
+		apObj, err := r.modelToActivityPubObject(ctx, &objModel)
 		if err != nil {
 			r.logger.Warn("failed to convert reply object",
 				zap.String("object_id", objModel.ID),

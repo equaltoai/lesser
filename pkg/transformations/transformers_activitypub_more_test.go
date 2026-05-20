@@ -90,15 +90,19 @@ func TestStorageArticleToActivityPub(t *testing.T) {
 		Object: storagemodels.Object{
 			ID:      "https://example.com/articles/1",
 			Type:    activitypub.ArticleType,
-			Content: "body",
+			Content: "# Title\n\nBody<script>alert(1)</script>",
 			Name:    "Title",
 		},
+		ContentFormat: "markdown",
 	}
 
 	apArticle, err := StorageArticleToActivityPub(article)
 	require.NoError(t, err)
 	require.Equal(t, activitypub.ArticleType, apArticle.Type)
 	require.Equal(t, "Title", apArticle.Name)
+	require.Contains(t, apArticle.Content, `<h1 id="title">Title</h1>`)
+	require.Contains(t, apArticle.Content, "<p>Body</p>")
+	require.NotContains(t, apArticle.Content, "<script")
 }
 
 func TestActivityPubObjectToMastodon_VisibilityAndReply(t *testing.T) {

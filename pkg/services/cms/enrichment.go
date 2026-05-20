@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"golang.org/x/net/html"
@@ -126,6 +127,10 @@ func cmsExtractTOC(content string, format string) []models.TOCEntry {
 		return []models.TOCEntry{}
 	}
 
+	if rendered, err := cmsrender.RenderArticleContent(content, format); err == nil {
+		return cmsExtractTOCFromHTML(rendered.HTML)
+	}
+
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "html":
 		return cmsExtractTOCFromHTML(content)
@@ -217,8 +222,7 @@ func cmsUniqueHeadingID(base string, used map[string]int) string {
 		return base
 	}
 
-	count++
-	used[base] = count
+	used[base] = count + 1
 	return base + "-" + strconv.Itoa(count)
 }
 

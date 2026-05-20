@@ -1062,6 +1062,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				*d = state.objectList[0]
 				return
 			}
+		case *storagemodels.Article:
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "object#") {
+				id := strings.TrimPrefix(pk, "object#")
+				if obj, ok := state.objectsByID[id]; ok {
+					*d = storagemodels.Article{
+						Object:        obj,
+						ContentFormat: "markdown",
+					}
+					return
+				}
+			}
 		case *storagemodels.AgentKeyChallenge:
 			pk, _ := state.whereString("PK")
 			id := strings.TrimPrefix(pk, "AGENT_KEY_CHALLENGE#")

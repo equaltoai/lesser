@@ -134,6 +134,9 @@ MVP source policy:
 - `MARKDOWN` is the normal authoring source format for new Blog/CMS Articles.
 - `HTML` input is permitted only as input to the server sanitizer pipeline, not as trusted already-safe output.
 - `contentFormat` records the submitted source format; public output is always the server-rendered/sanitized representation.
+- Article source content is capped at **256 KiB** before rendering. The rendered/sanitized HTML body is capped at
+  **512 KiB**. Exceeding either limit returns a deterministic validation error; lesser must never silently truncate
+  Article source or rendered output.
 
 Canonical output policy:
 
@@ -230,7 +233,7 @@ DevOps review blocks implementation before landing changes that affect:
 - CloudFront/API Gateway routing for `/articles/{slug}`;
 - cache policy, redirect status, canonical-link, or content-negotiation behavior;
 - legacy `/objects/<uuid>` migration, alias generation, or backfill;
-- operational limits for Article body size, rendered output size, media embedding, or scheduler throughput;
+- operational storage/backfill strategy for historical Article bodies, media embedding, or scheduler throughput;
 - observability dashboards/alarms for Article render/federation failures.
 
 Security review is required for the M3 sanitizer boundary before public HTML or ActivityPub Article output can be considered launch-ready.
