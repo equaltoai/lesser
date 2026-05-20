@@ -58,6 +58,7 @@ func NewDraftService(draftRepo draftRepository, articleService *ArticleService, 
 // CreateDraft creates a new draft
 func (s *DraftService) CreateDraft(ctx context.Context, draft *models.Draft) error {
 	if err := validateArticleDraftRenderable(draft); err != nil {
+		logCMSDraftRenderFailure(s.logger, "create_draft", draft, err)
 		return err
 	}
 	cmsNormalizeDraftAttribution(draft)
@@ -113,6 +114,7 @@ func (s *DraftService) UpdateDraft(ctx context.Context, authorID string, draft *
 		return err
 	}
 	if err := validateArticleDraftRenderable(draft); err != nil {
+		logCMSDraftRenderFailure(s.logger, "update_draft", draft, err)
 		return err
 	}
 	cmsNormalizeDraftAttribution(draft)
@@ -128,6 +130,7 @@ func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *mod
 		return err
 	}
 	if err := validateArticleDraftRenderable(draft); err != nil {
+		logCMSDraftRenderFailure(s.logger, "autosave_draft", draft, err)
 		return err
 	}
 	cmsNormalizeDraftAttribution(draft)
@@ -150,7 +153,12 @@ func (s *DraftService) PreviewDraft(ctx context.Context, authorID, draftID strin
 	if err != nil {
 		return cmsrender.RenderedArticleContent{}, err
 	}
-	return RenderDraftPreview(draft)
+	rendered, err := RenderDraftPreview(draft)
+	if err != nil {
+		logCMSDraftRenderFailure(s.logger, "preview_draft", draft, err)
+		return cmsrender.RenderedArticleContent{}, err
+	}
+	return rendered, nil
 }
 
 // RenderDraftPreview renders draft source through the canonical Article renderer.

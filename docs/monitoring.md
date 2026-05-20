@@ -59,7 +59,21 @@ AWS_PROFILE=<profile> aws logs filter-log-events \
 
 - 4xx/5xx spikes correlated with deploys or client releases
 
+### CMS Blog/Article launch signals
+
+- CloudWatch Logs messages:
+  - `cms_article_render_failure`
+  - `cms_draft_render_failure`
+  - `cms_article_federation_outcome`
+- CloudWatch EMF namespace `Lesser/CMS`:
+  - `ArticleRenderFailure` (`Stage`, `Status=failure`)
+  - `ArticleFederationFailure` (`Stage`, `Status=failure`)
+- Both failure metrics are wired into the per-stage critical alarm stack. During launch soak, treat one live failure
+  as actionable and inspect structured fields such as `Operation`, `article_id`/`draft_id`, `failure_stage`,
+  `activity_type`, `error_kind`, and `source_bytes`.
+
 ## Deep dive
 
 - Runbook: `docs/operations/runbook.md`
+- CMS Blog launch runbook: `docs/operations/cms-blog-launch-runbook.md`
 - CloudWatch workflow: `docs/operations/cloudwatch-debugging.md`

@@ -237,6 +237,61 @@ Revision rules:
 3. The publish revision records who approved and who published.
 4. Later Article updates continue to preserve attribution/review history.
 
+## M7 operational limits, migration, and observability
+
+M7 closes the launch-readiness gap for storage limits, legacy Article migration planning, renderer/federation
+observability, and the first Theory Cloud Blog launch runbook.
+
+### Body storage decision
+
+The MVP stores Article/Draft source bodies in DynamoDB and does **not** introduce S3 body offload. The renderer
+contract's limits are the launch guardrail:
+
+- source body limit: **256 KiB** before rendering;
+- rendered/sanitized HTML limit: **512 KiB** after rendering;
+- no silent truncation;
+- deterministic user-facing failures for unsupported formats, invalid UTF-8, source overflow, and rendered-output overflow.
+
+S3 body storage is deferred until real launch usage shows posts exceeding the 256 KiB source limit or DynamoDB item-size
+pressure from Article body plus metadata/media fields.
+
+### Legacy Article dry-run plan
+
+Legacy Articles whose stored ID is `https://<domain>/objects/<uuid>` keep that ID as their canonical ActivityPub object
+identity for the MVP. M7 adds a pure dry-run planner, `cms.PlanLegacyArticleMigration`, that:
+
+1. identifies legacy Article rows under `/objects/<uuid>` with a non-empty slug;
+2. proposes a non-authoritative `https://<domain>/articles/<slug>` browser alias;
+3. keeps `proposedCanonicalID` equal to the stored legacy ID, avoiding duplicate ActivityPub objects;
+4. reports conflicts when multiple legacy Articles propose the same tenant+slug alias or when a canonical
+   `/articles/<slug>` Article already occupies it.
+
+No alias/backfill apply path ships in M7. Any future apply-capable migration remains gated by DevOps review and must not
+rewrite remote-visible Article identity without Protocol Counsel review.
+
+### Renderer and federation observability
+
+Renderer failures emit structured, EMF-compatible logs without raw Article/Draft content:
+
+- `cms_article_render_failure`
+- `cms_draft_render_failure`
+- metric: `Lesser/CMS ArticleRenderFailure`
+
+Article federation emits attempt/outcome logs:
+
+- `cms_article_federation_attempt`
+- `cms_article_federation_outcome`
+- metric: `Lesser/CMS ArticleFederationFailure`
+
+The critical alarm stack includes alarms for `ArticleRenderFailure` and `ArticleFederationFailure` with
+`Stage=<dev|staging|live>, Status=failure` dimensions. This keeps Blog/CMS launch failures visible in normal operator
+paths instead of requiring bespoke log spelunking.
+
+### Launch runbook
+
+The operator launch checklist lives at `docs/operations/cms-blog-launch-runbook.md`. It covers publish probe,
+federation fetch, UI smoke, observability checks, rollback, and known residuals.
+
 ## MVP non-goals
 
 The MVP does not include:
@@ -282,7 +337,8 @@ Security review is required for the M3 sanitizer boundary before public HTML or 
 - **M2 federation hardening** ([#1035](https://github.com/equaltoai/lesser/issues/1035)): Article Create/Update/Delete payloads, Tombstone behavior, inbound remote Articles, and peer fetch probes need explicit tests before live federation.
 - **M3 renderer/sanitizer** ([#1040](https://github.com/equaltoai/lesser/issues/1040)): sanitizer strictness may remove author-intended markup; unsafe HTML handling and media/embed policy must be tested before public launch.
 - **M4 authoring/attribution** ([#1045](https://github.com/equaltoai/lesser/issues/1045)): current models do not yet carry all generated-draft attribution/review metadata required above.
-- **M7 operational/migration** ([#1050](https://github.com/equaltoai/lesser/issues/1050)): legacy `/objects/<uuid>` migration/aliases, body-size strategy, renderer observability, and launch runbook remain launch-readiness risks.
+- **Post-M7 alias application**: legacy `/objects/<uuid>` dry-run planning is explicit, but no apply-capable alias
+  migration ships in the launch path. Applying aliases/backfills remains a later DevOps/Protocol Counsel-gated change.
 
 ## Release-note text for the eventual implementation release
 
