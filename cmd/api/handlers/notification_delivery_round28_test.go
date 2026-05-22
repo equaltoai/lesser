@@ -540,10 +540,10 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 			},
 		},
 		soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
-			"agent-bob.simulacrum@lessersoul.ai": {
-				PK:        storagemodels.SoulBodyBindingUsernamePartitionKey("agent-bob.simulacrum@lessersoul.ai"),
+			"agent-bob": {
+				PK:        storagemodels.SoulBodyBindingUsernamePartitionKey("agent-bob"),
 				SK:        storagemodels.SKSoulBodyBindingUsername,
-				Username:  "agent-bob.simulacrum@lessersoul.ai",
+				Username:  "agent-bob",
 				AgentID:   "0xagentbob",
 				UpdatedAt: createdAt.Add(-1 * time.Hour),
 			},
@@ -573,11 +573,12 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 		},
 	}
 
+	toSoulAgentID := "0xagentbob"
 	body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
 		Type:       "communication:inbound",
 		Channel:    "email",
 		From:       apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
-		To:         &apiModels.NotificationDeliveryTo{Address: "agent-bob.simulacrum@lessersoul.ai"},
+		To:         &apiModels.NotificationDeliveryTo{Address: "agent-bob.simulacrum@lessersoul.ai", SoulAgentID: &toSoulAgentID},
 		Subject:    "project 37 canary",
 		Body:       "redacted canary body",
 		ReceivedAt: createdAt.Format(time.RFC3339),
@@ -601,6 +602,104 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 	to, ok := seen.Data["to"].(map[string]interface{})
 	require.True(t, ok)
 	require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", to["address"])
+	require.NotContains(t, state.soulBodyBindingUsernames, "agent-bob.simulacrum@lessersoul.ai")
+}
+
+func TestNotificationDelivery_Project37RejectsCompoundAddressWithoutAuthoritativeRecipient(t *testing.T) {
+	cfg := round11TestConfig()
+	cfg.AdminUsername = "admin"
+	cfg.InstanceAPIKey = "instance-key"
+
+	createdAt := time.Date(2026, time.May, 22, 18, 45, 0, 0, time.UTC)
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"agent-bob": {
+				PK:        "USER#agent-bob",
+				SK:        storagemodels.SKMetadata,
+				Username:  "agent-bob",
+				Role:      "user",
+				Approved:  true,
+				IsAgent:   true,
+				CreatedAt: createdAt.Add(-24 * time.Hour),
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+			"agent-bob.simulacrum": {
+				PK:        "USER#agent-bob.simulacrum",
+				SK:        storagemodels.SKMetadata,
+				Username:  "agent-bob.simulacrum",
+				Role:      "user",
+				Approved:  true,
+				IsAgent:   true,
+				CreatedAt: createdAt.Add(-24 * time.Hour),
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"agent-bob": {
+				Username: "agent-bob",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("agent-bob"), Type: activitypub.PersonType},
+					PreferredUsername: "agent-bob",
+				},
+			},
+			"agent-bob.simulacrum": {
+				Username: "agent-bob.simulacrum",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("agent-bob.simulacrum"), Type: activitypub.PersonType},
+					PreferredUsername: "agent-bob.simulacrum",
+				},
+			},
+		},
+		soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
+			"agent-bob": {
+				PK:        storagemodels.SoulBodyBindingUsernamePartitionKey("agent-bob"),
+				SK:        storagemodels.SKSoulBodyBindingUsername,
+				Username:  "agent-bob",
+				AgentID:   "0xagentbob",
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+		soulBodyBindingsByAgentID: map[string]storagemodels.InstanceSoulBodyBinding{
+			"0xagentbob": {
+				PK:               "INSTANCE#CONFIG",
+				SK:               storagemodels.SoulBodyBindingSortKey("0xagentbob"),
+				AgentID:          "0xagentbob",
+				Username:         "agent-bob",
+				PrincipalAddress: "0x1111111111111111111111111111111111111111",
+				BoundAt:          createdAt.Add(-24 * time.Hour),
+				UpdatedAt:        createdAt.Add(-1 * time.Hour),
+			},
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+
+	createCalls := 0
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			CreateNotificationFunc: func(_ context.Context, _ *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+				createCalls++
+				return &notifications.NotificationResult{}, nil
+			},
+		},
+	}
+
+	body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+		Type:       "communication:inbound",
+		Channel:    "email",
+		From:       apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
+		To:         &apiModels.NotificationDeliveryTo{Address: "agent-bob.simulacrum@lessersoul.ai"},
+		Subject:    "project 37 canary",
+		Body:       "redacted canary body",
+		ReceivedAt: createdAt.Format(time.RFC3339),
+		MessageID:  "project37-m35-missing-authority",
+	})
+	require.NoError(t, err)
+
+	headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+	requireStatus(t, http.StatusUnprocessableEntity)(h.HandleDeliverNotificationLift(ctx))
+	require.Zero(t, createCalls)
 }
 
 func TestNotificationDelivery_Round28_RejectsUnresolvedExplicitRecipientAndKeepsAdminFallbackForInstanceMessages(t *testing.T) {

@@ -55,6 +55,7 @@ type commNotificationDelivery struct {
 	ToIdentifier    string
 	ToAddress       string
 	ToNumber        string
+	ToSoulAgentID   string
 
 	Subject      string
 	Body         string
@@ -95,7 +96,7 @@ func normalizeCommNotificationDeliveryRequest(req *apiModels.NotificationDeliver
 		return nil, err
 	}
 
-	toIdentifier, toAddress, toNumber, err := normalizeCommNotificationRecipient(channel, req.To)
+	toIdentifier, toAddress, toNumber, toSoulAgentID, err := normalizeCommNotificationRecipient(channel, req.To)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +142,7 @@ func normalizeCommNotificationDeliveryRequest(req *apiModels.NotificationDeliver
 		ToIdentifier:     toIdentifier,
 		ToAddress:        toAddress,
 		ToNumber:         toNumber,
+		ToSoulAgentID:    toSoulAgentID,
 		Subject:          subject,
 		Body:             body,
 		BodyMimeType:     bodyMimeType,
@@ -212,30 +214,38 @@ func normalizeCommNotificationSender(channel string, from apiModels.Notification
 	return identifier, fromAddress, fromNumber, common.EscapeHTML(displayName), soulAgentID, nil
 }
 
-func normalizeCommNotificationRecipient(channel string, to *apiModels.NotificationDeliveryTo) (string, string, string, error) {
+func normalizeCommNotificationRecipient(channel string, to *apiModels.NotificationDeliveryTo) (string, string, string, string, error) {
 	if to == nil {
 		if channel == commNotificationChannelEmail {
-			return "", "", "", apperrors.ValidationFailed("to.address", "email recipient is required")
+			return "", "", "", "", apperrors.ValidationFailed("to.address", "email recipient is required")
 		}
-		return "", "", "", nil
+		return "", "", "", "", nil
 	}
 
 	address, err := normalizeCommNotificationOptionalAddress("to.address", to.Address, commNotificationMaxToAddressLen)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 
 	number, err := normalizeCommNotificationOptionalAddress("to.number", to.Number, commNotificationMaxPhoneNumberLen)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
+	}
+
+	soulAgentID := ""
+	if to.SoulAgentID != nil {
+		soulAgentID, err = common.ValidateAndSanitizeString("to.soulAgentId", *to.SoulAgentID, 0, commNotificationMaxSoulAgentIDLen)
+		if err != nil {
+			return "", "", "", "", apperrors.ValidationFailed("to.soulAgentId", err.Error())
+		}
 	}
 
 	identifier, field, identityErr := normalizeCommNotificationIdentity(channel, "to", address, number)
 	if identityErr != nil {
-		return "", "", "", apperrors.ValidationFailed(field, identityErr.Error())
+		return "", "", "", "", apperrors.ValidationFailed(field, identityErr.Error())
 	}
 
-	return identifier, address, number, nil
+	return identifier, address, number, soulAgentID, nil
 }
 
 func normalizeCommNotificationContent(channel, rawSubject, rawBody string) (string, string, error) {

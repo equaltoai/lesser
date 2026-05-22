@@ -28,6 +28,7 @@ func TestCommNotificationDeliveryContract_AcceptsFixture(t *testing.T) {
 	require.Equal(t, "", normalized.FromSoulAgentID)
 	require.Equal(t, "Alice", normalized.FromDisplayName)
 	require.Equal(t, "agent-bob@lessersoul.ai", normalized.ToAddress)
+	require.Equal(t, "", normalized.ToSoulAgentID)
 	require.Equal(t, "Re: Project collaboration", normalized.Subject)
 	require.Equal(t, "Hello Bob,\n\nAre you available to collaborate on the project?", normalized.Body)
 	require.Equal(t, time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC), normalized.ReceivedAt)
@@ -84,11 +85,12 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		require.Equal(t, "Alice &lt;Admin&gt;", displayName)
 		require.Equal(t, soulAgentID, normalizedSoulAgentID)
 
-		toIdentifier, toAddress, toNumber, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, nil)
+		toIdentifier, toAddress, toNumber, toSoulAgentID, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, nil)
 		require.NoError(t, err)
 		require.Empty(t, toIdentifier)
 		require.Empty(t, toAddress)
 		require.Empty(t, toNumber)
+		require.Empty(t, toSoulAgentID)
 
 		replyTo := "  parent-1  "
 		inReplyTo, err := normalizeCommNotificationInReplyTo(&replyTo)
@@ -160,7 +162,7 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		_, err = normalizeCommNotificationChannel("pager")
 		require.Error(t, err)
 
-		_, _, _, err = normalizeCommNotificationRecipient(commNotificationChannelEmail, nil)
+		_, _, _, _, err = normalizeCommNotificationRecipient(commNotificationChannelEmail, nil)
 		require.Error(t, err)
 
 		fromIdentifier, fromAddress, fromNumber, _, _, err := normalizeCommNotificationSender(commNotificationChannelSMS, apiModels.NotificationDeliveryFrom{
@@ -171,13 +173,16 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		require.Empty(t, fromAddress)
 		require.Equal(t, "+15551230000", fromNumber)
 
-		toIdentifier, toAddress, toNumber, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, &apiModels.NotificationDeliveryTo{
-			Number: "+15557654321",
+		recipientSoulAgentID := "0xrecipient"
+		toIdentifier, toAddress, toNumber, toSoulAgentID, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, &apiModels.NotificationDeliveryTo{
+			Number:      "+15557654321",
+			SoulAgentID: &recipientSoulAgentID,
 		})
 		require.NoError(t, err)
 		require.Equal(t, "+15557654321", toIdentifier)
 		require.Empty(t, toAddress)
 		require.Equal(t, "+15557654321", toNumber)
+		require.Equal(t, "0xrecipient", toSoulAgentID)
 
 		var attachments []apiModels.NotificationDeliveryAttachment
 		for i := 0; i < commNotificationMaxAttachments+1; i++ {

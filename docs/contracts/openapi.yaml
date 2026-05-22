@@ -3944,6 +3944,10 @@ components:
                     type: string
                 number:
                     type: string
+                soulAgentId:
+                    anyOf:
+                        - type: string
+                        - type: "null"
             required:
                 - address
             type: object

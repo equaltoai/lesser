@@ -31,6 +31,10 @@ type NotificationDeliveryFrom struct {
 type NotificationDeliveryTo struct {
 	Address string `json:"address"`
 	Number  string `json:"number,omitempty"`
+	// SoulAgentID is the authoritative recipient soul identity. lesser-host should
+	// send it for instance-scoped lessersoul.ai addresses so Lesser does not derive
+	// the local body by parsing the public email local-part.
+	SoulAgentID *string `json:"soulAgentId,omitempty"`
 }
 
 // NotificationDeliveryAttachment carries metadata-only attachment information for inbound communication notifications.
