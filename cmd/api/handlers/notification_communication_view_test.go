@@ -87,4 +87,16 @@ func TestCommunicationNotificationView_HelperCoverage(t *testing.T) {
 
 		require.Nil(t, communicationAttachmentFromData(map[string]interface{}{}))
 	})
+
+	t.Run("project37 treats compound email actor placeholders as external", func(t *testing.T) {
+		actor := communicationEmailActorPlaceholder("pilot.simulacrum@lessersoul.ai", "Pilot")
+		require.NotNil(t, actor)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.ID)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.URL)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.PreferredUsername)
+		require.Equal(t, "Pilot", actor.Name)
+
+		require.Nil(t, communicationEmailActorPlaceholder("pilot.simulacrum", "Pilot"))
+		require.Nil(t, communicationEmailActorPlaceholder("https://lessersoul.ai/users/pilot", "Pilot"))
+	})
 }

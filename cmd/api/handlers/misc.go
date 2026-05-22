@@ -1213,6 +1213,17 @@ func (h *Handler) externalNotificationActor(view *notificationView) *activitypub
 		fallbackID = soulAgentID
 	}
 
+	if isCommunicationNotificationType(view.Type) || strings.EqualFold(view.ActorType, notificationActorTypeExternal) {
+		if actor := communicationEmailActorPlaceholder(fallbackID, displayName); actor != nil {
+			return actor
+		}
+		if fallbackID != address {
+			if actor := communicationEmailActorPlaceholder(address, displayName); actor != nil {
+				return actor
+			}
+		}
+	}
+
 	actor := h.fallbackNotificationActor(fallbackID)
 	if actor == nil && soulAgentID != "" {
 		actor = h.fallbackNotificationActor(soulAgentID)

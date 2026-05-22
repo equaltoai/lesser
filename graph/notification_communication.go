@@ -5,8 +5,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 func communicationNotificationFromData(
@@ -42,6 +44,57 @@ func communicationNotificationFromData(
 func isCommunicationNotificationType(notifType string) bool {
 	typ := strings.ToLower(strings.TrimSpace(notifType))
 	return strings.HasPrefix(typ, "communication:")
+}
+
+func communicationNotificationActor(actorID string, data map[string]interface{}) *activitypub.Actor {
+	from, _ := data["from"].(map[string]interface{})
+	displayName := extractCommunicationString(from, "displayName", "display_name")
+	for _, candidate := range []string{
+		extractCommunicationString(from, "address"),
+		actorID,
+		extractCommunicationString(from, "soulAgentId", "soul_agent_id"),
+	} {
+		if actor := communicationEmailActorPlaceholder(candidate, displayName); actor != nil {
+			return actor
+		}
+	}
+	return nil
+}
+
+func communicationEmailActorPlaceholder(address string, displayName string) *activitypub.Actor {
+	address = strings.TrimSpace(address)
+	if !validCommunicationEmailActorAddress(address) || strings.Contains(address, "://") || strings.Count(address, "@") != 1 {
+		return nil
+	}
+
+	parts := strings.Split(address, "@")
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return nil
+	}
+
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = address
+	}
+
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   address,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: address,
+		Name:              name,
+		URL:               address,
+	}
+}
+
+func validCommunicationEmailActorAddress(address string) bool {
+	if address == "" || len(address) > 320 {
+		return false
+	}
+	return strings.IndexFunc(address, func(r rune) bool {
+		return unicode.IsControl(r) || r == '<' || r == '>' || r == '"' || r == '\''
+	}) == -1
 }
 
 func communicationReceivedAtFromData(createdAt time.Time, data map[string]interface{}) time.Time {

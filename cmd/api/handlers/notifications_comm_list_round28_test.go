@@ -51,7 +51,7 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 									"soulAgentId": "0xabc",
 								},
 								"to": map[string]interface{}{
-									"address": "agent-bob@lessersoul.ai",
+									"address": "agent-bob.simulacrum@lessersoul.ai",
 								},
 								"attachments": []interface{}{
 									map[string]interface{}{
@@ -93,6 +93,7 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 	require.Equal(t, commNotificationTypeInbound, out[0].Type)
 	require.Equal(t, "notif-comm-1", out[0].ID)
 	require.Equal(t, "alice", out[0].Account.Username)
+	require.NotEqual(t, cfg.BaseURL()+"/users/agent-bob.simulacrum", out[0].Account.ID)
 	require.False(t, out[0].Read)
 	require.NotNil(t, out[0].Communication)
 	require.Equal(t, "email", out[0].Communication.Channel)
@@ -100,7 +101,7 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 	require.Equal(t, "Alice", out[0].Communication.From.DisplayName)
 	require.Equal(t, "0xabc", out[0].Communication.From.SoulAgentID)
 	require.NotNil(t, out[0].Communication.To)
-	require.Equal(t, "agent-bob@lessersoul.ai", out[0].Communication.To.Address)
+	require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", out[0].Communication.To.Address)
 	require.Len(t, out[0].Communication.Attachments, 1)
 	require.Equal(t, "att-1", out[0].Communication.Attachments[0].ID)
 	require.Equal(t, "proposal.pdf", out[0].Communication.Attachments[0].Filename)

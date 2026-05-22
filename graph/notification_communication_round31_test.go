@@ -85,6 +85,9 @@ func TestRound31NotificationsQueryIncludesCommunicationPayload(t *testing.T) {
 				"address":      "bob@example.com",
 				"display_name": "Bob",
 			},
+			"to": map[string]interface{}{
+				"address": "agent-bob.simulacrum@lessersoul.ai",
+			},
 			"attachments": []interface{}{
 				map[string]interface{}{
 					"id":          "att-2",
@@ -107,10 +110,15 @@ func TestRound31NotificationsQueryIncludesCommunicationPayload(t *testing.T) {
 	require.Equal(t, "email", communication.Channel)
 	require.Equal(t, "bob@example.com", communication.From.Address)
 	require.Equal(t, "Bob", *communication.From.DisplayName)
+	require.NotNil(t, communication.To)
+	require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", communication.To.Address)
 	require.Equal(t, "Ping", *communication.Subject)
 	require.Equal(t, "Hello", *communication.Body)
 	require.Equal(t, "msg-2", communication.MessageID)
 	require.Equal(t, "msg-2", communication.ThreadID)
 	require.Len(t, communication.Attachments, 1)
 	require.Equal(t, "att-2", communication.Attachments[0].ID)
+	require.NotNil(t, conn.Edges[0].Node.Account)
+	require.Equal(t, "bob@example.com", conn.Edges[0].Node.Account.PreferredUsername)
+	require.NotEqual(t, "agent-bob.simulacrum", conn.Edges[0].Node.Account.PreferredUsername)
 }

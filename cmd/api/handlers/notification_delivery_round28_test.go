@@ -505,6 +505,84 @@ func TestNotificationDelivery_Round28_LogsCreateNotificationFailureCause(t *test
 	require.Contains(t, entries[0].ContextMap()["error"], "recipient user not found")
 }
 
+func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T) {
+	cfg := round11TestConfig()
+	cfg.AdminUsername = "admin"
+	cfg.InstanceAPIKey = "instance-key"
+
+	createdAt := time.Date(2026, time.May, 22, 18, 30, 0, 0, time.UTC)
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"agent-bob.simulacrum": {
+				PK:        "USER#agent-bob.simulacrum",
+				SK:        storagemodels.SKMetadata,
+				Username:  "agent-bob.simulacrum",
+				Role:      "user",
+				Approved:  true,
+				Version:   1,
+				IsAgent:   true,
+				CreatedAt: createdAt.Add(-24 * time.Hour),
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"agent-bob.simulacrum": {
+				Username: "agent-bob.simulacrum",
+				Actor: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID:   cfg.ActorURL("agent-bob.simulacrum"),
+						Type: activitypub.PersonType,
+					},
+					PreferredUsername: "agent-bob.simulacrum",
+				},
+				CreatedAt: createdAt.Add(-24 * time.Hour),
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+
+	var seen *notifications.CreateNotificationCommand
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+				seen = cmd
+				return &notifications.NotificationResult{}, nil
+			},
+		},
+	}
+
+	body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+		Type:       "communication:inbound",
+		Channel:    "email",
+		From:       apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
+		To:         &apiModels.NotificationDeliveryTo{Address: "agent-bob.simulacrum@lessersoul.ai"},
+		Subject:    "project 37 canary",
+		Body:       "redacted canary body",
+		ReceivedAt: createdAt.Format(time.RFC3339),
+		MessageID:  "project37-m35-primary",
+	})
+	require.NoError(t, err)
+
+	headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+	requireStatus(t, http.StatusNoContent)(h.HandleDeliverNotificationLift(ctx))
+
+	require.NotNil(t, seen)
+	require.Equal(t, "agent-bob.simulacrum", seen.UserID)
+	require.NotEqual(t, "agent-bob", seen.UserID)
+	require.Equal(t, "alice@example.com", seen.ActorID)
+
+	expectedID, idErr := commNotificationID("agent-bob.simulacrum", "project37-m35-primary")
+	require.NoError(t, idErr)
+	require.Equal(t, expectedID, seen.ID)
+
+	to, ok := seen.Data["to"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", to["address"])
+}
+
 func TestNotificationDelivery_Round28_RejectsUnresolvedExplicitRecipientAndKeepsAdminFallbackForInstanceMessages(t *testing.T) {
 	t.Run("explicit recipient resolution failure is rejected", func(t *testing.T) {
 		cfg := round11TestConfig()
