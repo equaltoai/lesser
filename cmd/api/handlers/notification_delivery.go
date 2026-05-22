@@ -204,6 +204,10 @@ func (h *Handler) notificationDeliveryAddressedRecipient(ctx context.Context, de
 		return ""
 	}
 
+	if username := h.notificationDeliveryBoundAgentIdentifier(ctx, delivery.ToSoulAgentID); username != "" {
+		return username
+	}
+
 	if username := h.notificationDeliveryBoundContactIdentifier(ctx, delivery.ToAddress); username != "" {
 		return username
 	}
@@ -273,7 +277,33 @@ func (h *Handler) notificationDeliveryBoundUsername(ctx context.Context, usernam
 	return strings.TrimSpace(binding.Username)
 }
 
+func (h *Handler) notificationDeliveryBoundAgentIdentifier(ctx context.Context, agentID string) string {
+	if h == nil || h.repos == nil || h.repos.Instance() == nil {
+		return ""
+	}
+
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return ""
+	}
+
+	binding, err := h.repos.Instance().GetSoulBodyBinding(ctx, agentID)
+	if err != nil || binding == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(binding.Username)
+}
+
 func (h *Handler) notificationDeliveryBoundContactIdentifier(ctx context.Context, identifier string) string {
+	// Project 37 instance-scoped email addresses are opaque contact identifiers:
+	// <agent-local-id>.<instance-slug>@lessersoul.ai is not a Lesser username.
+	// Host must carry to.soulAgentId for these deliveries so Lesser can resolve
+	// through InstanceSoulBodyBinding authority instead of local-part parsing.
+	if notificationDeliveryRequiresAuthoritativeRecipient(identifier) {
+		return ""
+	}
+
 	username := h.notificationDeliveryUsernameForContactIdentifier(ctx, identifier)
 	if username == "" {
 		return ""
@@ -284,6 +314,25 @@ func (h *Handler) notificationDeliveryBoundContactIdentifier(ctx context.Context
 	}
 
 	return username
+}
+
+func notificationDeliveryRequiresAuthoritativeRecipient(identifier string) bool {
+	identifier = strings.ToLower(strings.TrimSpace(identifier))
+	parts := strings.Split(identifier, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	localPart := strings.TrimSpace(parts[0])
+	domain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+	if localPart == "" || domain == "" {
+		return false
+	}
+	if domain != "lessersoul.ai" && !strings.HasSuffix(domain, ".lessersoul.ai") {
+		return false
+	}
+
+	return strings.Contains(localPart, ".")
 }
 
 func (h *Handler) notificationDeliveryUsernameForContactIdentifier(ctx context.Context, identifier string) string {

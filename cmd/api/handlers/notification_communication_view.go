@@ -7,6 +7,7 @@ import (
 	"time"
 
 	apiModels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 func communicationNotificationFromData(notifType string, createdAt time.Time, data map[string]interface{}) *apiModels.CommunicationNotification {
@@ -103,6 +104,36 @@ func communicationToFromData(data map[string]interface{}) *apiModels.Communicati
 	}
 
 	return &apiModels.CommunicationTo{Address: address}
+}
+
+func communicationEmailActorPlaceholder(address string, displayName string) *activitypub.Actor {
+	address = strings.TrimSpace(address)
+	if !validNotificationFallbackActorID(address) ||
+		!notificationActorIDLooksEmailLike(address) ||
+		strings.Count(address, "@") != 1 ||
+		strings.Contains(address, "://") {
+		return nil
+	}
+
+	parts := strings.Split(address, "@")
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return nil
+	}
+
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = address
+	}
+
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   address,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: address,
+		Name:              name,
+		URL:               address,
+	}
 }
 
 func communicationAttachmentsFromData(data map[string]interface{}) []apiModels.CommunicationAttachment {

@@ -359,7 +359,13 @@ func (r *Resolver) convertNotificationToGraphQL(ctx context.Context, notif *mode
 		return nil
 	}
 
-	account := r.loadNotificationActor(ctx, notif)
+	var account *activitypub.Actor
+	if isCommunicationNotificationType(notif.Type) {
+		account = communicationNotificationActor(notif.ActorID, notif.Data)
+	}
+	if account == nil {
+		account = r.loadNotificationActor(ctx, notif)
+	}
 	if account == nil {
 		account = r.fallbackNotificationActor(notif)
 	}

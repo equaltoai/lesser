@@ -87,4 +87,44 @@ func TestCommunicationNotificationView_HelperCoverage(t *testing.T) {
 
 		require.Nil(t, communicationAttachmentFromData(map[string]interface{}{}))
 	})
+
+	t.Run("project37 treats compound email actor placeholders as external", func(t *testing.T) {
+		actor := communicationEmailActorPlaceholder("pilot.simulacrum@lessersoul.ai", "Pilot")
+		require.NotNil(t, actor)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.ID)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.URL)
+		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.PreferredUsername)
+		require.Equal(t, "Pilot", actor.Name)
+
+		actor = communicationEmailActorPlaceholder("relay.simulacrum@lessersoul.ai", "")
+		require.NotNil(t, actor)
+		require.Equal(t, "relay.simulacrum@lessersoul.ai", actor.Name)
+
+		handler := &Handler{}
+		actor = handler.externalNotificationActor(&notificationView{
+			Type:    "communication:inbound",
+			ActorID: "agent-bob.simulacrum@lessersoul.ai",
+		})
+		require.NotNil(t, actor)
+		require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", actor.ID)
+		require.Equal(t, "agent-bob.simulacrum@lessersoul.ai", actor.PreferredUsername)
+
+		actor = handler.externalNotificationActor(&notificationView{
+			ActorID:   "bad<id",
+			ActorType: notificationActorTypeExternal,
+			Data: map[string]interface{}{
+				"from": map[string]interface{}{
+					"display_name":  "Soul Agent",
+					"soul_agent_id": "soulagent",
+				},
+			},
+		})
+		require.NotNil(t, actor)
+		require.Equal(t, "soulagent", actor.ID)
+		require.Equal(t, "soulagent", actor.PreferredUsername)
+		require.Equal(t, "Soul Agent", actor.Name)
+
+		require.Nil(t, communicationEmailActorPlaceholder("pilot.simulacrum", "Pilot"))
+		require.Nil(t, communicationEmailActorPlaceholder("https://lessersoul.ai/users/pilot", "Pilot"))
+	})
 }
