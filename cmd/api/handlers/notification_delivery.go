@@ -274,6 +274,14 @@ func (h *Handler) notificationDeliveryBoundUsername(ctx context.Context, usernam
 }
 
 func (h *Handler) notificationDeliveryBoundContactIdentifier(ctx context.Context, identifier string) string {
+	// Project 37 instance-scoped email addresses are opaque contact identifiers:
+	// <agent-local-id>.<instance-slug>@lessersoul.ai is not a Lesser username.
+	// Prefer an exact binding/index row for the delivered contact identifier before
+	// falling back to WebFinger-style local actor resolution.
+	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, identifier); bindingUsername != "" {
+		return bindingUsername
+	}
+
 	username := h.notificationDeliveryUsernameForContactIdentifier(ctx, identifier)
 	if username == "" {
 		return ""

@@ -513,10 +513,10 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 	createdAt := time.Date(2026, time.May, 22, 18, 30, 0, 0, time.UTC)
 	state := &round10QueryState{
 		usersByUsername: map[string]storagemodels.User{
-			"agent-bob.simulacrum": {
-				PK:        "USER#agent-bob.simulacrum",
+			"agent-bob": {
+				PK:        "USER#agent-bob",
 				SK:        storagemodels.SKMetadata,
-				Username:  "agent-bob.simulacrum",
+				Username:  "agent-bob",
 				Role:      "user",
 				Approved:  true,
 				Version:   1,
@@ -526,17 +526,37 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 			},
 		},
 		actorsByUser: map[string]storagemodels.Actor{
-			"agent-bob.simulacrum": {
-				Username: "agent-bob.simulacrum",
+			"agent-bob": {
+				Username: "agent-bob",
 				Actor: &activitypub.Actor{
 					BaseObject: activitypub.BaseObject{
-						ID:   cfg.ActorURL("agent-bob.simulacrum"),
+						ID:   cfg.ActorURL("agent-bob"),
 						Type: activitypub.PersonType,
 					},
-					PreferredUsername: "agent-bob.simulacrum",
+					PreferredUsername: "agent-bob",
 				},
 				CreatedAt: createdAt.Add(-24 * time.Hour),
 				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+		soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
+			"agent-bob.simulacrum@lessersoul.ai": {
+				PK:        storagemodels.SoulBodyBindingUsernamePartitionKey("agent-bob.simulacrum@lessersoul.ai"),
+				SK:        storagemodels.SKSoulBodyBindingUsername,
+				Username:  "agent-bob.simulacrum@lessersoul.ai",
+				AgentID:   "0xagentbob",
+				UpdatedAt: createdAt.Add(-1 * time.Hour),
+			},
+		},
+		soulBodyBindingsByAgentID: map[string]storagemodels.InstanceSoulBodyBinding{
+			"0xagentbob": {
+				PK:               "INSTANCE#CONFIG",
+				SK:               storagemodels.SoulBodyBindingSortKey("0xagentbob"),
+				AgentID:          "0xagentbob",
+				Username:         "agent-bob",
+				PrincipalAddress: "0x1111111111111111111111111111111111111111",
+				BoundAt:          createdAt.Add(-24 * time.Hour),
+				UpdatedAt:        createdAt.Add(-1 * time.Hour),
 			},
 		},
 	}
@@ -570,11 +590,11 @@ func TestNotificationDelivery_Project37InstanceScopedAddressCanary(t *testing.T)
 	requireStatus(t, http.StatusNoContent)(h.HandleDeliverNotificationLift(ctx))
 
 	require.NotNil(t, seen)
-	require.Equal(t, "agent-bob.simulacrum", seen.UserID)
-	require.NotEqual(t, "agent-bob", seen.UserID)
+	require.Equal(t, "agent-bob", seen.UserID)
+	require.NotEqual(t, "agent-bob.simulacrum", seen.UserID)
 	require.Equal(t, "alice@example.com", seen.ActorID)
 
-	expectedID, idErr := commNotificationID("agent-bob.simulacrum", "project37-m35-primary")
+	expectedID, idErr := commNotificationID("agent-bob", "project37-m35-primary")
 	require.NoError(t, idErr)
 	require.Equal(t, expectedID, seen.ID)
 
