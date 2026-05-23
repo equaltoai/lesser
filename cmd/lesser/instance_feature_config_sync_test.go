@@ -89,6 +89,16 @@ func TestEnvFeatureConfigSeedAvailable_TrueWhenAnyEnvSet(t *testing.T) {
 	assert.True(t, envFeatureConfigSeedAvailable())
 }
 
+func TestEnvFeatureConfigSeedAvailable_TrueWhenAllowAgentsSet(t *testing.T) {
+	t.Setenv("ALLOW_AGENTS", "true")
+	assert.True(t, envFeatureConfigSeedAvailable())
+}
+
+func TestEnvFeatureConfigSeedAvailable_TrueWhenAllowAgentRegistrationSet(t *testing.T) {
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
+	assert.True(t, envFeatureConfigSeedAvailable())
+}
+
 func TestEnvBoolPtr(t *testing.T) {
 	t.Setenv("TEST_BOOL", "")
 	assert.Nil(t, envBoolPtr("TEST_BOOL"))
