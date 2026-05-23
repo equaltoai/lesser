@@ -904,3 +904,85 @@ func TestEnsureAndApplyManagedProvisioningConfig_ReturnsErrorWhenSetAIFails(t *t
 		AIEnabled:          &aiEnabled,
 	}))
 }
+
+func TestEnsureAndApplyManagedProvisioningConfig_AppliesAgentConfig(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+
+	allowAgents := true
+	allowRegistration := true
+
+	args := upArgs{
+		AllowAgents:            &allowAgents,
+		AllowAgentRegistration: &allowRegistration,
+	}
+
+	require.NoError(t, ensureAndApplyManagedProvisioningConfig(ctx, instanceRepo, args))
+
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowAgents)
+	assert.True(t, cfg.AllowAgentRegistration)
+}
+
+func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsWhenConfigNotConfigured(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	t.Setenv("ALLOW_AGENTS", "true")
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
+
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowAgents)
+	assert.True(t, cfg.AllowAgentRegistration)
+}
+
+func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenEnvUnset(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
+}
+
+func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenAlreadyConfigured(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AgentInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = "AGENT_CONFIG"
+		out.AllowAgents = true
+	}).Return(nil).Once()
+
+	t.Setenv("ALLOW_AGENTS", "false")
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
+
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowAgents) // seeded value persisted, not overwritten by env
+}
