@@ -1735,6 +1735,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				Name:         "Test App",
 				RedirectURIs: []string{"https://example.com/callback"},
 				Scopes:       []string{"read", "write"},
+				Confidential: true,
 				CreatedAt:    time.Now().Add(-24 * time.Hour),
 			}
 		case *storagemodels.InstanceDomainBlock:

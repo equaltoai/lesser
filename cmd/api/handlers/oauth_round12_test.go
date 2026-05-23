@@ -283,6 +283,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
 					ClientClass:   auth.ClientClassAgent,
 					AgentUsername: "agent1",
+						Confidential:  true,
 					CreatedAt:     time.Now().Add(-24 * time.Hour),
 				},
 			},
@@ -424,6 +425,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
 					ClientClass:   auth.ClientClassAgent,
 					AgentUsername: "agent1",
+						Confidential:  true,
 					CreatedAt:     time.Now().Add(-24 * time.Hour),
 				},
 			},
@@ -895,7 +897,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 	t.Run("authorization_code invalid_grant mismatched client", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-2&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-2&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -957,7 +959,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=pkce&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&code_verifier=wrong"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=pkce&client_id=client-1&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&code_verifier=wrong"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -971,7 +973,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1410,7 +1412,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1541,7 +1543,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=missing&client_id=client-1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=missing&client_id=client-1&client_secret=secret"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1555,7 +1557,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-2&client_id=client-2"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-2&client_id=client-2&client_secret=secret"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1571,7 +1573,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			disableAuditRepo: true,
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1&client_secret=secret"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1586,7 +1588,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			deleteErrorOnce: errors.New("delete failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-4&client_id=client-1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-4&client_id=client-1&client_secret=secret"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -1609,7 +1611,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-resource&client_id=client-1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-resource&client_id=client-1&client_secret=secret"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))

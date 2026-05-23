@@ -77,7 +77,7 @@ func TestFallbackNotificationActor(t *testing.T) {
 		actor := (&Handler{}).fallbackNotificationActor("carol")
 		require.NotNil(t, actor)
 		require.Equal(t, "carol", actor.ID)
-		require.Equal(t, "carol", actor.URL)
+		require.Empty(t, actor.URL)
 		require.Equal(t, "carol", actor.PreferredUsername)
 		require.Equal(t, "carol", actor.Name)
 	})
