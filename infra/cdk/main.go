@@ -120,6 +120,8 @@ func main() {
 			"bodyEnabled",
 			"soulEnabled",
 			"translationEnabled",
+			"allowAgents",
+			"allowAgentRegistration",
 			"tipEnabled",
 			"tipChainId",
 			"tipContractAddress",

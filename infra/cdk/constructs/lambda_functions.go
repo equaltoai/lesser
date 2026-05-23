@@ -212,6 +212,12 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	if v := getConfigString("translationEnabled"); v != "" {
 		commonEnv["TRANSLATION_ENABLED"] = jsii.String(v)
 	}
+	if v := getConfigString("allowAgents"); v != "" {
+		commonEnv["ALLOW_AGENTS"] = jsii.String(v)
+	}
+	if v := getConfigString("allowAgentRegistration"); v != "" {
+		commonEnv["ALLOW_AGENT_REGISTRATION"] = jsii.String(v)
+	}
 	if v := getConfigString("agentAccessTokenDuration"); v != "" {
 		commonEnv["AGENT_ACCESS_TOKEN_DURATION"] = jsii.String(v)
 	}

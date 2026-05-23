@@ -69,6 +69,8 @@ func envFeatureConfigSeedAvailable() bool {
 		"LESSER_HOST_ATTESTATIONS_URL",
 		"LESSER_HOST_INSTANCE_KEY_ARN",
 		"TRANSLATION_ENABLED",
+		"ALLOW_AGENTS",
+		"ALLOW_AGENT_REGISTRATION",
 		"TIP_ENABLED",
 		"TIP_CHAIN_ID",
 		"TIP_CONTRACT_ADDRESS",
@@ -96,6 +98,9 @@ func ensureAndApplyManagedProvisioningConfig(ctx context.Context, instanceRepo *
 		return err
 	}
 	if _, err := instanceRepo.EnsureAIInstanceConfig(ctx); err != nil {
+		return err
+	}
+	if _, err := instanceRepo.EnsureAgentInstanceConfig(ctx); err != nil {
 		return err
 	}
 
@@ -133,6 +138,21 @@ func ensureAndApplyManagedProvisioningConfig(ctx context.Context, instanceRepo *
 		return err
 	}
 
+	if args.AllowAgents != nil || args.AllowAgentRegistration != nil {
+		cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+		if err == nil && cfg != nil {
+			if args.AllowAgents != nil {
+				cfg.AllowAgents = *args.AllowAgents
+			}
+			if args.AllowAgentRegistration != nil {
+				cfg.AllowAgentRegistration = *args.AllowAgentRegistration
+			}
+			if err := instanceRepo.SetAgentInstanceConfig(ctx, cfg); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -150,8 +170,35 @@ func seedManagedConfigFromEnvOnce(ctx context.Context, instanceRepo *repositorie
 	if err := seedTipsManagedDefaultsFromEnvOnce(ctx, instanceRepo, stageName, tableName); err != nil {
 		return err
 	}
+	if err := seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, stageName, tableName); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func seedAgentManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
+	agentsEnabled := envBoolPtr("ALLOW_AGENTS")
+	registrationEnabled := envBoolPtr("ALLOW_AGENT_REGISTRATION")
+	if agentsEnabled == nil && registrationEnabled == nil {
+		return nil
+	}
+
+	if _, err := instanceRepo.EnsureAgentInstanceConfig(ctx); err != nil {
+		return err
+	}
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if agentsEnabled != nil {
+		cfg.AllowAgents = *agentsEnabled
+	}
+	if registrationEnabled != nil {
+		cfg.AllowAgentRegistration = *registrationEnabled
+	}
+	fmt.Fprintf(os.Stderr, "WARNING: seeding AGENT_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
+	return instanceRepo.SetAgentInstanceConfig(ctx, cfg)
 }
 
 func seedTrustManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {

@@ -110,6 +110,8 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		"lesserHostAttestationsUrl": strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
 		"bodyEnabled":               strings.TrimSpace(os.Getenv("BODY_ENABLED")),
 		"translationEnabled":        strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")),
+		"allowAgents":               strings.TrimSpace(os.Getenv("ALLOW_AGENTS")),
+		"allowAgentRegistration":    strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")),
 		"tipEnabled":                strings.TrimSpace(os.Getenv("TIP_ENABLED")),
 		"tipChainId":                strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
 		"tipContractAddress":        strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
