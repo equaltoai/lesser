@@ -1236,14 +1236,23 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return nil, auth.ErrInvalidGrant
 	}
-	// PKCE verification: when either the authorization code carries a challenge
-	// or the token request supplies a verifier, verify the proof. The authorize
-	// endpoint enforces PKCE for all public clients; this exchange check is
-	// defense-in-depth and handles pre-existing authorization codes.
-	if authCode.CodeChallenge != "" || codeVerifier != "" {
+	// PKCE verification: when the authorization code carries a challenge,
+	// verify the proof against the supplied verifier. The authorize endpoint
+	// now enforces PKCE for all public clients; this exchange check is
+	// defense-in-depth and handles pre-existing authorization codes that
+	// may have been issued before PKCE enforcement (no stored challenge).
+	if authCode.CodeChallenge != "" {
+		if codeVerifier == "" {
+			return nil, auth.ErrInvalidGrant
+		}
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
 			return nil, err
 		}
+	} else if codeVerifier != "" {
+		// Legacy authorization code without a PKCE challenge stored; the
+		// exchange supplies a verifier but the code was not issued for PKCE.
+		// Reject as a grant-level mismatch (invalid_grant).
+		return nil, auth.ErrInvalidGrant
 	}
 	return authCode, nil
 }
