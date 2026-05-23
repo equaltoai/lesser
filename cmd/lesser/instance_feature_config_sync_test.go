@@ -1077,3 +1077,34 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_AppliesEnvOverrideWhenAlreadyConfig
 	require.NoError(t, err)
 	assert.False(t, cfg.AllowAgents) // env override applied even when row exists
 }
+
+func TestEnsureAndApplyManagedProvisioningConfig_ReturnsErrorWhenSetAgentFails(t *testing.T) {
+	ctx := context.Background()
+
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	translationEnabled := true
+	tipEnabled := true
+	aiEnabled := true
+	allowAgents := true
+
+	// SetTrust, SetTranslation, SetTips, SetAI succeed; SetAgent (5th) fails.
+	q.On("Update", mock.Anything).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(errors.New("set agent config failed")).Once()
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	err := ensureAndApplyManagedProvisioningConfig(ctx, instanceRepo, upArgs{
+		LesserHostURL:      "https://trust.example",
+		TranslationEnabled: &translationEnabled,
+		TipEnabled:         &tipEnabled,
+		AIEnabled:          &aiEnabled,
+		AllowAgents:        &allowAgents,
+	})
+	require.Error(t, err)
+}
