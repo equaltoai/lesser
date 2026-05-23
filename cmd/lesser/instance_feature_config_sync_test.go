@@ -57,6 +57,12 @@ func setupMockFirstForFeatureConfigs(q *dynamormmocks.MockQuery) {
 		out.Managed = nil
 		out.Override = nil
 	}).Return(nil).Maybe()
+
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AgentInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = "AGENT_CONFIG"
+	}).Return(nil).Maybe()
 }
 
 func TestEnvFeatureConfigSeedAvailable_FalseWhenNoEnvSet(t *testing.T) {
