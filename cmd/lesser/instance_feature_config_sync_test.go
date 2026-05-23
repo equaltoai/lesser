@@ -963,19 +963,24 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenEnvUnset(t *testing.T) {
 	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
 }
 
-func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenAlreadyConfigured(t *testing.T) {
+func TestSeedAgentManagedDefaultsFromEnvOnce_AppliesEnvOverrideWhenAlreadyConfigured(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
 	q := new(dynamormmocks.MockQuery)
 
 	setupMockInstanceRepoDB(db, q)
 
+	// Row already exists with AllowAgents=true.
 	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*models.AgentInstanceConfig)
 		out.PK = "INSTANCE#CONFIG"
 		out.SK = "AGENT_CONFIG"
 		out.AllowAgents = true
 	}).Return(nil).Once()
+
+	// SetAgentInstanceConfig will call First again (EnsureAgentInstanceConfig) then Update.
+	// setupMockFirstForFeatureConfigs provides .Maybe() for any unmatched First calls.
+	// Update is mocked in setupMockInstanceRepoDB via .Maybe().
 
 	t.Setenv("ALLOW_AGENTS", "false")
 
@@ -984,5 +989,5 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenAlreadyConfigured(t *testin
 
 	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
 	require.NoError(t, err)
-	assert.True(t, cfg.AllowAgents) // seeded value persisted, not overwritten by env
+	assert.False(t, cfg.AllowAgents) // env override applied even when row exists
 }

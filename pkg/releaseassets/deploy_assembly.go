@@ -51,6 +51,8 @@ const (
 	placeholderLesserHostAttestationsURL  = "https://lesser-host-attestations.example.invalid"
 	placeholderLesserHostInstanceKeyARN   = "LESSER_HOST_INSTANCE_KEY_ARN_PLACEHOLDER"
 	placeholderTranslationEnabled         = "TRANSLATION_ENABLED_PLACEHOLDER"
+	placeholderAllowAgents                = "ALLOW_AGENTS_PLACEHOLDER"
+	placeholderAllowAgentRegistration     = "ALLOW_AGENT_REGISTRATION_PLACEHOLDER"
 	placeholderTipEnabled                 = "TIP_ENABLED_PLACEHOLDER"
 	placeholderTipChainID                 = "TIP_CHAIN_ID_PLACEHOLDER"
 	placeholderTipContractAddress         = "TIP_CONTRACT_ADDRESS_PLACEHOLDER"
@@ -68,6 +70,8 @@ var stageContextPlaceholders = map[string]string{
 	"lesserHostAttestationsUrl": placeholderLesserHostAttestationsURL,
 	"lesserHostInstanceKeyArn":  placeholderLesserHostInstanceKeyARN,
 	"translationEnabled":        placeholderTranslationEnabled,
+	"allowAgents":               placeholderAllowAgents,
+	"allowAgentRegistration":    placeholderAllowAgentRegistration,
 	"tipEnabled":                placeholderTipEnabled,
 	"tipChainId":                placeholderTipChainID,
 	"tipContractAddress":        placeholderTipContractAddress,
@@ -98,6 +102,8 @@ var stageReleaseParameters = []struct {
 	{Name: "LesserHostAttestationsUrl", Description: "managed Lesser host attestations URL", WithDefault: true},
 	{Name: "LesserHostInstanceKeyArn", Description: "managed Lesser host instance key secret ARN", WithDefault: true},
 	{Name: "TranslationEnabled", Description: "per-install translation toggle", WithDefault: true},
+	{Name: "AllowAgents", Description: "per-install agent enablement toggle", WithDefault: true},
+	{Name: "AllowAgentRegistration", Description: "per-install agent registration toggle", WithDefault: true},
 	{Name: "TipEnabled", Description: "per-install tips toggle", WithDefault: true},
 	{Name: "TipChainId", Description: "per-install tip chain id", WithDefault: true},
 	{Name: "TipContractAddress", Description: "per-install tip contract address", WithDefault: true},
@@ -492,6 +498,8 @@ func stageTemplateReplacements(stage naming.Stage) []placeholderReplacement {
 		placeholderLesserHostAttestationsURL: "${LesserHostAttestationsUrl}",
 		placeholderLesserHostInstanceKeyARN:  "${LesserHostInstanceKeyArn}",
 		placeholderTranslationEnabled:        "${TranslationEnabled}",
+		placeholderAllowAgents:               "${AllowAgents}",
+		placeholderAllowAgentRegistration:    "${AllowAgentRegistration}",
 		placeholderTipEnabled:                "${TipEnabled}",
 		placeholderTipChainID:                "${TipChainId}",
 		placeholderTipContractAddress:        "${TipContractAddress}",
@@ -1036,6 +1044,8 @@ func resolveDependsOnPlaceholders(value string) string {
 		"${LesserHostAttestationsUrl}": placeholderLesserHostAttestationsURL,
 		"${LesserHostInstanceKeyArn}":  placeholderLesserHostInstanceKeyARN,
 		"${TranslationEnabled}":        placeholderTranslationEnabled,
+		"${AllowAgents}":               placeholderAllowAgents,
+		"${AllowAgentRegistration}":    placeholderAllowAgentRegistration,
 		"${TipEnabled}":                placeholderTipEnabled,
 		"${TipChainId}":                placeholderTipChainID,
 		"${TipContractAddress}":        placeholderTipContractAddress,

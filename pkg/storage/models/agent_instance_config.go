@@ -62,8 +62,8 @@ func NewAgentInstanceConfig() *AgentInstanceConfig {
 	return &AgentInstanceConfig{
 		PK:                             instanceConfigPK,
 		SK:                             "AGENT_CONFIG",
-		AllowAgents:                    false,
-		AllowAgentRegistration:         false,
+		AllowAgents:                    true,
+		AllowAgentRegistration:         true,
 		DefaultQuarantineDays:          7,
 		MaxAgentsPerOwner:              3,
 		AllowRemoteAgents:              true,

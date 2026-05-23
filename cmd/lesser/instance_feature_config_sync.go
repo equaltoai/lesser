@@ -178,16 +178,6 @@ func seedManagedConfigFromEnvOnce(ctx context.Context, instanceRepo *repositorie
 }
 
 func seedAgentManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
-	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
-	if err != nil {
-		return err
-	}
-	// GetAgentInstanceConfig returns a synthetic default when no row exists.
-	// Only seed when both fields are at their unconfigured default (false).
-	if cfg.AllowAgents || cfg.AllowAgentRegistration {
-		return nil
-	}
-
 	agentsEnabled := envBoolPtr("ALLOW_AGENTS")
 	registrationEnabled := envBoolPtr("ALLOW_AGENT_REGISTRATION")
 	if agentsEnabled == nil && registrationEnabled == nil {
@@ -195,6 +185,10 @@ func seedAgentManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repo
 	}
 
 	if _, err := instanceRepo.EnsureAgentInstanceConfig(ctx); err != nil {
+		return err
+	}
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	if err != nil {
 		return err
 	}
 	if agentsEnabled != nil {
