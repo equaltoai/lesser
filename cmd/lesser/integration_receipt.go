@@ -14,33 +14,10 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 	out.LesserHostInstanceKeyARN = strings.TrimSpace(firstNonEmpty(args.LesserHostInstanceKeyARN, os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")))
 	out.BodyEnabled = resolveOptionalBoolEnv("BODY_ENABLED", true)
 
-	if args.TranslationEnabled != nil {
-		out.TranslationEnabled = args.TranslationEnabled
-	} else if raw := strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")); raw != "" {
-		enabled := raw == flagTrue || raw == "1" || raw == flagYes
-		out.TranslationEnabled = &enabled
-	}
-
-	if args.AllowAgents != nil {
-		out.AllowAgents = args.AllowAgents
-	} else if raw := strings.TrimSpace(os.Getenv("ALLOW_AGENTS")); raw != "" {
-		enabled := raw == flagTrue || raw == "1" || raw == flagYes
-		out.AllowAgents = &enabled
-	}
-
-	if args.AllowAgentRegistration != nil {
-		out.AllowAgentRegistration = args.AllowAgentRegistration
-	} else if raw := strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")); raw != "" {
-		enabled := raw == flagTrue || raw == "1" || raw == flagYes
-		out.AllowAgentRegistration = &enabled
-	}
-
-	if args.TipEnabled != nil {
-		out.TipEnabled = args.TipEnabled
-	} else if raw := strings.TrimSpace(os.Getenv("TIP_ENABLED")); raw != "" {
-		enabled := raw == flagTrue || raw == "1" || raw == flagYes
-		out.TipEnabled = &enabled
-	}
+	out.TranslationEnabled = resolveOptionalBoolFromArgsOrEnv(args.TranslationEnabled, "TRANSLATION_ENABLED")
+	out.AllowAgents = resolveOptionalBoolFromArgsOrEnv(args.AllowAgents, "ALLOW_AGENTS")
+	out.AllowAgentRegistration = resolveOptionalBoolFromArgsOrEnv(args.AllowAgentRegistration, "ALLOW_AGENT_REGISTRATION")
+	out.TipEnabled = resolveOptionalBoolFromArgsOrEnv(args.TipEnabled, "TIP_ENABLED")
 
 	if args.TipChainID != nil {
 		out.TipChainID = args.TipChainID
@@ -78,6 +55,20 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		return nil
 	}
 	return out
+}
+
+// resolveOptionalBoolFromArgsOrEnv resolves a *bool from an explicit arg value,
+// falling back to the named environment variable. Returns nil when neither is set.
+func resolveOptionalBoolFromArgsOrEnv(arg *bool, envKey string) *bool {
+	if arg != nil {
+		return arg
+	}
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return nil
+	}
+	enabled := raw == flagTrue || raw == "1" || raw == flagYes
+	return &enabled
 }
 
 func resolveOptionalBoolEnv(key string, defaultValue bool) *bool {
