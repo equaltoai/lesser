@@ -1108,3 +1108,19 @@ func TestEnsureAndApplyManagedProvisioningConfig_ReturnsErrorWhenSetAgentFails(t
 	})
 	require.Error(t, err)
 }
+
+func TestSeedAgentManagedDefaultsFromEnvOnce_ReturnsErrorWhenEnsureFails(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	// Override First for AgentInstanceConfig to return a non-NotFound error.
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(errors.New("ensure failed")).Once()
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	t.Setenv("ALLOW_AGENTS", "true")
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.Error(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
+}
