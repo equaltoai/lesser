@@ -32,6 +32,7 @@
 - Favor short, present-tense subject lines (`lint green`, `gocognit remediation pass 3`) that describe the primary change; lowercase is preferred unless naming proper nouns.
 - PRs should summarize impact, call out executed commands (`./lesser test`, `./lesser lint`), link issues, and include visuals or logs for user-facing work.
 - Re-run the full check suite before re-requesting review and confirm automation is green before merging.
+- When the routed Lesser MCP GitHub tools are available, use the repo-local `github-provenance` skill before GitHub reads or writes so branches, commits, PRs, reviews, comments, and check runs preserve steward provenance where the tool surface supports it.
 
 ## Security & Configuration Notes
 
