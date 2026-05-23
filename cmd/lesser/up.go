@@ -36,6 +36,8 @@ type upArgs struct {
 	LesserHostInstanceKeyARN  string
 	APICORSAllowedOrigins     string
 	TranslationEnabled        *bool
+	AllowAgents               *bool
+	AllowAgentRegistration    *bool
 
 	TipEnabled         *bool
 	TipChainID         *int
@@ -528,6 +530,12 @@ func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	if e.args.TranslationEnabled != nil {
 		contexts["translationEnabled"] = strconv.FormatBool(*e.args.TranslationEnabled)
 	}
+	if e.args.AllowAgents != nil {
+		contexts["allowAgents"] = strconv.FormatBool(*e.args.AllowAgents)
+	}
+	if e.args.AllowAgentRegistration != nil {
+		contexts["allowAgentRegistration"] = strconv.FormatBool(*e.args.AllowAgentRegistration)
+	}
 	if e.args.TipEnabled != nil {
 		contexts["tipEnabled"] = strconv.FormatBool(*e.args.TipEnabled)
 	}
@@ -761,6 +769,12 @@ func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput)
 	}
 	if args.TranslationEnabled == nil {
 		args.TranslationEnabled = in.TranslationEnabled
+	}
+	if args.AllowAgents == nil {
+		args.AllowAgents = in.AllowAgents
+	}
+	if args.AllowAgentRegistration == nil {
+		args.AllowAgentRegistration = in.AllowAgentRegistration
 	}
 	if args.TipEnabled == nil {
 		args.TipEnabled = in.TipEnabled

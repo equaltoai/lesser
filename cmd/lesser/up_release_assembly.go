@@ -120,6 +120,8 @@ func (e *upEnv) releaseStageTemplateParameters(releaseAssetBucket string) map[st
 		),
 		"LesserHostInstanceKeyArn": strings.TrimSpace(e.args.LesserHostInstanceKeyARN),
 		"TranslationEnabled":       optionalBoolString(e.args.TranslationEnabled),
+		"AllowAgents":              optionalBoolString(e.args.AllowAgents),
+		"AllowAgentRegistration":   optionalBoolString(e.args.AllowAgentRegistration),
 		"TipEnabled":               optionalBoolString(e.args.TipEnabled),
 		"TipChainId":               optionalIntString(e.args.TipChainID),
 		"TipContractAddress":       strings.TrimSpace(e.args.TipContractAddress),

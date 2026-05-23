@@ -25,6 +25,8 @@ type managedProvisioningInput struct {
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
 	APICORSAllowedOrigins     string `json:"api_cors_allowed_origins,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
+	AllowAgents               *bool  `json:"allow_agents,omitempty"`
+	AllowAgentRegistration    *bool  `json:"allow_agent_registration,omitempty"`
 
 	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
 	TipChainID         *int   `json:"tip_chain_id,omitempty"`

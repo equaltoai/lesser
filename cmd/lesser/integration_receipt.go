@@ -21,6 +21,20 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		out.TranslationEnabled = &enabled
 	}
 
+	if args.AllowAgents != nil {
+		out.AllowAgents = args.AllowAgents
+	} else if raw := strings.TrimSpace(os.Getenv("ALLOW_AGENTS")); raw != "" {
+		enabled := raw == flagTrue || raw == "1" || raw == flagYes
+		out.AllowAgents = &enabled
+	}
+
+	if args.AllowAgentRegistration != nil {
+		out.AllowAgentRegistration = args.AllowAgentRegistration
+	} else if raw := strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")); raw != "" {
+		enabled := raw == flagTrue || raw == "1" || raw == flagYes
+		out.AllowAgentRegistration = &enabled
+	}
+
 	if args.TipEnabled != nil {
 		out.TipEnabled = args.TipEnabled
 	} else if raw := strings.TrimSpace(os.Getenv("TIP_ENABLED")); raw != "" {
@@ -50,6 +64,8 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		out.LesserHostInstanceKeyARN == "" &&
 		out.BodyEnabled == nil &&
 		out.TranslationEnabled == nil &&
+		out.AllowAgents == nil &&
+		out.AllowAgentRegistration == nil &&
 		out.TipEnabled == nil &&
 		out.TipChainID == nil &&
 		strings.TrimSpace(out.TipContractAddress) == "" &&
