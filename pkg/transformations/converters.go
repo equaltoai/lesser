@@ -59,11 +59,15 @@ func ActorToAccountBase(actor *activitypub.Actor, baseURL string) models.Account
 	if profileURL == "" {
 		switch {
 		case identity.IsRemote:
-			profileURL = strings.TrimSpace(actor.ID)
+			if looksLikeURL(strings.TrimSpace(actor.ID)) {
+				profileURL = strings.TrimSpace(actor.ID)
+			}
 		case strings.TrimSpace(baseURL) != "" && identity.Username != "":
 			profileURL = strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/@" + identity.Username
 		default:
-			profileURL = strings.TrimSpace(actor.ID)
+			if looksLikeURL(strings.TrimSpace(actor.ID)) {
+				profileURL = strings.TrimSpace(actor.ID)
+			}
 		}
 	}
 
@@ -152,6 +156,13 @@ func ObjectToStatusBase(obj map[string]interface{}, actor *activitypub.Actor, ba
 }
 
 // Helper functions for transformations
+
+// looksLikeURL reports whether raw is a parseable URL with an http or https scheme.
+// Only http/https URLs are safe to use as profile links in Mastodon-compatible responses.
+func looksLikeURL(raw string) bool {
+	_, ok := common.SafeHTTPURL(raw)
+	return ok
+}
 
 func getAvatarURL(icon interface{}, baseURL string) string {
 	if icon == nil {
