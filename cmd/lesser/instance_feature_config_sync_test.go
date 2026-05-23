@@ -941,6 +941,44 @@ func TestEnsureAndApplyManagedProvisioningConfig_AppliesAgentConfig(t *testing.T
 	assert.True(t, cfg.AllowAgentRegistration)
 }
 
+func TestEnsureAndApplyManagedProvisioningConfig_AppliesAgentConfig_AllowAgentsOnly(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+
+	allowAgents := true
+	args := upArgs{AllowAgents: &allowAgents}
+
+	require.NoError(t, ensureAndApplyManagedProvisioningConfig(ctx, instanceRepo, args))
+
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowAgents)
+}
+
+func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsAllowAgentsOnly(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockInstanceRepoDB(db, q)
+	setupMockFirstForFeatureConfigs(q)
+
+	t.Setenv("ALLOW_AGENTS", "true")
+
+	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
+
+	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowAgents)
+}
+
 func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsWhenConfigNotConfigured(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
