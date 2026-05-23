@@ -1135,7 +1135,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", nil, err
 	}
 
-	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, client, code, clientID, redirectURI, codeVerifier)
+	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -1225,7 +1225,7 @@ func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc
 	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
 }
 
-func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
+func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
 	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
 		return nil, auth.ErrInvalidGrant
@@ -1236,30 +1236,40 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return nil, auth.ErrInvalidGrant
 	}
-	if oauthClientRequiresPKCE(client) {
-		if strings.TrimSpace(authCode.CodeChallenge) == "" {
+	// PKCE verification: when the authorization code carries a challenge,
+	// verify the proof against the supplied verifier. The authorize endpoint
+	// now enforces PKCE for all public clients; this exchange check is
+	// defense-in-depth and handles pre-existing authorization codes that
+	// may have been issued before PKCE enforcement (no stored challenge).
+	if authCode.CodeChallenge != "" {
+		if codeVerifier == "" {
 			return nil, auth.ErrInvalidGrant
 		}
-		if strings.TrimSpace(codeVerifier) == "" {
-			return nil, auth.ErrInvalidRequest
-		}
-	}
-	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
 			return nil, err
 		}
+	} else if codeVerifier != "" {
+		// Legacy authorization code without a PKCE challenge stored; the
+		// exchange supplies a verifier but the code was not issued for PKCE.
+		// Reject as a grant-level mismatch (invalid_grant).
+		return nil, auth.ErrInvalidGrant
 	}
 	return authCode, nil
 }
 
 func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
-	return client != nil &&
-		!client.Confidential &&
-		strings.EqualFold(strings.TrimSpace(client.RegistrationSource), oauthRegistrationSourceDynamic)
+	// All public (non-confidential) clients must use PKCE, regardless of
+	// registration source. The previous implementation only required PKCE
+	// for dynamically-registered clients, which left manually-registered
+	// public clients without proof-of-possession protection.
+	return client != nil && !client.Confidential
 }
 
 func oauthAuthorizeRequiresResource(client *storage.OAuthClient) bool {
-	return oauthClientRequiresPKCE(client)
+	// Only dynamic clients require explicit MCP resource binding.
+	return client != nil &&
+		!client.Confidential &&
+		strings.EqualFold(strings.TrimSpace(client.RegistrationSource), oauthRegistrationSourceDynamic)
 }
 
 func requireOAuthPKCE(codeChallenge, codeChallengeMethod string) error {

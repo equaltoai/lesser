@@ -45,8 +45,8 @@ func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
 		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
 	} else {
+		// Non-URL identifiers (email addresses, opaque ids) must not be used as URLs.
 		actor.ID = actorID
-		actor.URL = actorID
 	}
 
 	actor.PreferredUsername = username

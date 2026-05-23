@@ -113,7 +113,7 @@ func TestOAuthRevokeLift_Round22(t *testing.T) {
 			deleteErrorOnce: errors.New("delete failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-1&token_type_hint=refresh_token&client_id=client-1"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=rt-1&token_type_hint=refresh_token&client_id=client-1&client_secret=secret"))
 		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
 	})
 

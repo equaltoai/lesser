@@ -42,11 +42,6 @@ func TestLoadAndValidateAuthorizationCodeRequiresStoredPKCE(t *testing.T) {
 	_, err := handler.loadAndValidateAuthorizationCodeForExchange(
 		context.Background(),
 		oauthSvc,
-		&storage.OAuthClient{
-			ClientID:           "client-public",
-			RedirectURIs:       []string{"https://example.com/callback"},
-			RegistrationSource: oauthRegistrationSourceDynamic,
-		},
 		"legacy-code",
 		"client-public",
 		"https://example.com/callback",
@@ -241,16 +236,16 @@ func TestLoadAndValidateAuthorizationCodeForExchange(t *testing.T) {
 	}
 	require.NoError(t, repos.account.CreateAuthorizationCode(ctx, code))
 
-	got, err := handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, nil, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+	got, err := handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
 	require.NoError(t, err)
 	require.Equal(t, code.Code, got.Code)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, nil, code.Code, "other-client", code.RedirectURI, "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, "other-client", code.RedirectURI, "")
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, nil, code.Code, code.ClientID, "https://example.com/other", "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, "https://example.com/other", "")
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, nil, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier")
 	require.Error(t, err)
 }

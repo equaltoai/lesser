@@ -517,3 +517,18 @@ func TestNilInputs_ReturnZeroValues(t *testing.T) {
 	status = NotesToStatusAny(nil, "https://base")
 	require.Empty(t, status.ID)
 }
+
+func TestLooksLikeURL_RejectsDangerousSchemes(t *testing.T) {
+	// Safe http/https URLs pass
+	require.True(t, looksLikeURL("https://example.com/users/alice"))
+	require.True(t, looksLikeURL("http://example.com/@alice"))
+	// Empty and non-URL strings fail
+	require.False(t, looksLikeURL(""))
+	require.False(t, looksLikeURL("alice@example.com"))
+	require.False(t, looksLikeURL("not-a-url"))
+	// Dangerous URL schemes fail
+	require.False(t, looksLikeURL("javascript:void(0)"))
+	require.False(t, looksLikeURL("JAVASCRIPT:alert(1)"))
+	require.False(t, looksLikeURL("data:text/html,<script>"))
+	require.False(t, looksLikeURL("vbscript:msgbox(1)"))
+}

@@ -478,8 +478,8 @@ func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activi
 		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, username)
 		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, username)
 	} else {
+		// Non-URL identifiers (email addresses, opaque ids) must not be used as URLs.
 		actor.ID = rawID
-		actor.URL = rawID
 	}
 
 	if actor.PreferredUsername == "" {
