@@ -366,5 +366,5 @@ func TestObjectRepository_CoverageSweep(t *testing.T) {
 
 	_, err = repo.GetObjectHistory(ctx, note.ID)
 	require.NoError(t, err)
-	require.NoError(t, repo.ReplaceObjectWithTombstone(ctx, note.ID, activitypub.NoteType, "alice"))
+	require.NoError(t, repo.ReplaceObjectWithTombstone(ctx, note.ID, activitypub.NoteType, "alice", note.AttributedTo))
 }

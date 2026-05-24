@@ -171,8 +171,8 @@ func (m *MockObjectRepository) CleanupExpiredTombstones(ctx context.Context, bat
 }
 
 // ReplaceObjectWithTombstone mocks the ReplaceObjectWithTombstone method
-func (m *MockObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy string) error {
-	args := m.Called(ctx, objectID, formerType, deletedBy)
+func (m *MockObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy, attributedTo string) error {
+	args := m.Called(ctx, objectID, formerType, deletedBy, attributedTo)
 	return args.Error(0)
 }
 

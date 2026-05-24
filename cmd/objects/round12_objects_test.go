@@ -1560,3 +1560,222 @@ func TestObjectsSecurityHeaders_Round12(t *testing.T) {
 	require.NotEmpty(t, resp.Headers["content-security-policy"])
 	require.Contains(t, resp.Headers["content-security-policy"][0], "script-src 'none'")
 }
+
+// TestTombstoneVisibility_Round38 verifies that tombstone responses for objects
+// with a non-empty AttributedTo field are not returned to unauthorized viewers
+// when authorized fetch is enabled. CSR-030 regression coverage.
+func TestTombstoneVisibility_Round38(t *testing.T) {
+	origCfg := cfg
+	origLogger := logger
+	t.Cleanup(func() {
+		cfg = origCfg
+		logger = origLogger
+	})
+
+	cfg = &config.Config{Domain: "example.com"}
+	logger = zap.NewNop()
+
+	instanceRepo := &fakeInstanceRepo{
+		state: &storageModels.InstanceState{Locked: false},
+	}
+
+	deletedAt := time.Date(2026, time.May, 22, 10, 0, 0, 0, time.UTC)
+
+	t.Run("tombstone with attributedTo hidden when verified actor missing with authorized fetch", func(t *testing.T) {
+		// When authorized fetch is enabled and verification returns "missing signature",
+		// the handler returns 401 before reaching the tombstone path.
+		// This is the normal enforcement: unverified requestors cannot see any
+		// ActivityPub objects (including tombstones) at all.
+		objID := "https://example.com/users/alice/statuses/private-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled:   true,
+				verifyErr: errors.New("missing signature"),
+			},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/private-deleted",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice", "id": "private-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// Authorized fetch is enabled, no valid signature → 401 rather than
+		// leaking the tombstone through the authorized-fetch gate.
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
+	t.Run("tombstone with attributedTo shown when authorized fetch disabled", func(t *testing.T) {
+		objID := "https://example.com/users/alice/statuses/private-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice/statuses/private-deleted",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"username": "alice", "id": "private-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// Authorized fetch is not enabled → even attributed tombstones are public.
+		require.Equal(t, http.StatusGone, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Tombstone", body["type"])
+	})
+
+	t.Run("tombstone without attributedTo visible regardless of auth state", func(t *testing.T) {
+		// Legacy tombstone with empty AttributedTo: backward compatible.
+		// These tombstones were created before the AttributedTo field existed,
+		// so the handler cannot determine the original author. When authorized
+		// fetch is disabled they remain publicly visible.
+		objID := "https://example.com/objects/legacy-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "", // legacy tombstone without attributedTo
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/legacy-deleted",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "legacy-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+	})
+
+	t.Run("tombstone with attributedTo shown when verified actor matches author", func(t *testing.T) {
+		objID := "https://example.com/users/alice/statuses/private-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled: true,
+				actor: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID: "https://example.com/users/alice",
+					},
+				},
+			},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/private-deleted",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice", "id": "private-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// Author with verified signed fetch → tombstone allowed.
+		require.Equal(t, http.StatusGone, resp.Status)
+	})
+
+	t.Run("tombstone with attributedTo hidden when verified actor does not match author", func(t *testing.T) {
+		objID := "https://example.com/users/alice/statuses/private-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+			},
+		}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled: true,
+				actor: &activitypub.Actor{
+					BaseObject: activitypub.BaseObject{
+						ID: "https://example.com/users/bob", // different actor
+					},
+				},
+			},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/private-deleted",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice", "id": "private-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// Verified actor does not match the attributed author → tombstone hidden.
+		require.Equal(t, http.StatusNotFound, resp.Status)
+	})
+}

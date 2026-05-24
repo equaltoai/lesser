@@ -565,7 +565,12 @@ func (s *Service) replaceLocalNoteObjectProjectionWithTombstone(ctx context.Cont
 	if objectID == "" {
 		return nil
 	}
-	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID))
+
+	attributedTo := ""
+	if status != nil && status.Note != nil {
+		attributedTo = strings.TrimSpace(status.Note.AttributedTo)
+	}
+	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID), attributedTo)
 }
 
 func (s *Service) localActorID(username string) string {

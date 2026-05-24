@@ -542,7 +542,7 @@ func (r *ObjectRepository) CleanupExpiredTombstones(_ context.Context, batchSize
 }
 
 // ReplaceObjectWithTombstone atomically replaces an object with a tombstone
-func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectID, formerType, deletedBy string) error {
+func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectID, formerType, deletedBy, attributedTo string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -559,10 +559,11 @@ func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectI
 
 	// Create tombstone
 	tombstone := &models.Tombstone{
-		ID:         objectID,
-		FormerType: formerType,
-		DeletedBy:  deletedBy,
-		Deleted:    time.Now(),
+		ID:           objectID,
+		FormerType:   formerType,
+		DeletedBy:    deletedBy,
+		AttributedTo: attributedTo,
+		Deleted:      time.Now(),
 	}
 
 	r.tombstones[objectID] = tombstone
