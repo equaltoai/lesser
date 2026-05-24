@@ -1854,4 +1854,87 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusGone, resp.Status)
 	})
+
+	t.Run("public tombstone with HTML Accept returns text response", func(t *testing.T) {
+		// When the client requests text/html, authorized fetch is not
+		// enforced and the tombstone handler returns a plain-text 410
+		// rather than an ActivityPub JSON tombstone payload.
+		objID := "https://example.com/users/alice/statuses/public-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     true,
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice/statuses/public-deleted",
+				Headers: map[string][]string{
+					"accept": {"text/html, application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice", "id": "public-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+		// wantsHTML path returns a plain-text deletion message, not JSON.
+		require.Contains(t, string(resp.Body), "deleted")
+	})
+
+	t.Run("tombstoned object with missing metadata returns 410 when auth disabled", func(t *testing.T) {
+		// IsTombstoned=true but GetTombstone returns an error because
+		// the tombstone metadata row is missing. With authorized fetch
+		// disabled the error fallthrough returns 410 Gone (safe because
+		// auth is off — we are not leaking visibility metadata).
+		objID := "https://example.com/objects/broken-tombstone"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone:  nil, // nil → GetTombstone returns "not found"
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    objID,
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "broken-tombstone"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusGone, resp.Status)
+		require.Contains(t, string(resp.Body), "deleted")
+	})
+}
+
+// TestHandleTombstonedObjectVisible_NilRepoBranch_Round38 verifies the
+// nil-object-repo defensive guard in handleTombstonedObjectVisible returns
+// unhandled (handled=false) without panicking.
+func TestHandleTombstonedObjectVisible_NilRepoBranch_Round38(t *testing.T) {
+	h := &Handler{}
+	resp, handled, err := h.handleTombstonedObjectVisible(
+		context.Background(), "lookup", "object", "req", false, false, nil,
+	)
+	require.NoError(t, err)
+	require.Nil(t, resp)
+	require.False(t, handled)
 }
