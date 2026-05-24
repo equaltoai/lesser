@@ -17,6 +17,8 @@ Unless creator/Ops explicitly authorizes a dev/test or production recovery windo
 - do **not** re-enable or disable processors;
 - do **not** purge, redrive, replay, backfill, or reconcile live data;
 - do **not** read secret values; metadata-only Secrets Manager/KMS inspection is enough for prep;
+- do **not** dump environment variables (`env`, `printenv`, `compgen -v`, `declare -x`, or similar) into recovery artifacts — the snapshot script deliberately strips Lambda environment variables from its output;
+- do **not** serialise or log the full `Config` struct from Go tooling without calling `Redacted()` first;
 - do **not** file framework issues from recovery evidence alone.
 
 ## Recovery preconditions for execution
@@ -66,6 +68,12 @@ Preserve these fields in the broader incident state matrix for every instance:
 Use the read-only helper to collect the evidence needed to fill the matrix. The helper only calls AWS read APIs and
 writes local files under `tmp/` by default.
 
+**Security boundary**: The snapshot script deliberately strips Lambda environment variables from
+`functions.json` (via `jq 'map(del(.Environment))'`). It never reads or captures secret values
+from Secrets Manager, and its `secrets.json` output contains metadata only (name, ARN, KMS key,
+last-changed date). Do not add `env`, `printenv`, or similar shell-level env dumps to the
+script or to any recovery artifact.
+
 ```bash
 scripts/processor_storm_recovery_snapshot.sh \
   --app simulacrum \
@@ -77,8 +85,8 @@ scripts/processor_storm_recovery_snapshot.sh \
 
 Useful outputs:
 
-- `summary.md` — operator-readable matrix inputs;
-- `functions.json` — Lambda function metadata and `CodeSha256` values;
+- `summary.md` — operator-readable matrix inputs (no secret values);
+- `functions.json` — Lambda function metadata and `CodeSha256` values (environment variables stripped);
 - `event-source-mappings.jsonl` — mapping state, retry/max-age/poison settings, and source ARNs;
 - `eventbridge-rules.json` / `eventbridge-targets.jsonl` — scheduled source state;
 - `sqs-attributes.jsonl` — queue, DLQ, and poison depth / redrive metadata;

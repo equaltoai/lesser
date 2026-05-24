@@ -417,3 +417,116 @@ func TestProductionConfigValidator_SecurityAndFormatHelpers(t *testing.T) {
 		require.NotEmpty(t, result.Warnings)
 	})
 }
+
+func TestSafeEnvValue_RedactsKnownSecretVars(t *testing.T) {
+	// Set a real-looking secret value
+	t.Setenv("JWT_SECRET", "my-jwt-token-abc123")
+	t.Setenv("OAUTH_CLIENT_SECRET", "oauth-secret-xyz")
+	t.Setenv("ENCRYPTION_KEY", "my-encryption-key")
+	t.Setenv("INSTANCE_API_KEY", "instance-key-secret")
+	t.Setenv("PRIVACY_MASTER_KEY", "privacy-master-secret")
+
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("JWT_SECRET"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("OAUTH_CLIENT_SECRET"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("ENCRYPTION_KEY"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("INSTANCE_API_KEY"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("PRIVACY_MASTER_KEY"))
+
+	// Case-insensitive
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("jwt_secret"))
+}
+
+func TestSafeEnvValue_PreservesNonSecretVars(t *testing.T) {
+	t.Setenv("DOMAIN_NAME", "example.com")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("VAPID_PUBLIC_KEY", "BPubKeyExampleAbc123==")
+
+	assert.Equal(t, "example.com", safeEnvValue("DOMAIN_NAME"))
+	assert.Equal(t, "us-east-1", safeEnvValue("AWS_REGION"))
+	assert.Equal(t, "BPubKeyExampleAbc123==", safeEnvValue("VAPID_PUBLIC_KEY"))
+}
+
+func TestSafeEnvValue_UnknownVarReturnsValue(t *testing.T) {
+	t.Setenv("UNKNOWN_VAR", "some-value")
+	assert.Equal(t, "some-value", safeEnvValue("UNKNOWN_VAR"))
+}
+
+func TestIsSecretEnvVar_Coverage(t *testing.T) {
+	assert.True(t, isSecretEnvVar("JWT_SECRET"))
+	assert.True(t, isSecretEnvVar("OAUTH_CLIENT_SECRET"))
+	assert.True(t, isSecretEnvVar("INSTANCE_API_KEY"))
+	assert.True(t, isSecretEnvVar("LESSER_HOST_INSTANCE_KEY"))
+	assert.True(t, isSecretEnvVar("DYNAMODB_ENCRYPTION_KEY"))
+	assert.False(t, isSecretEnvVar("DOMAIN_NAME"))
+	assert.False(t, isSecretEnvVar("AWS_REGION"))
+	assert.False(t, isSecretEnvVar("LOG_LEVEL"))
+	assert.False(t, isSecretEnvVar("SYSTEM_ACTOR_PUBLIC_KEY"))
+	assert.False(t, isSecretEnvVar("VAPID_PUBLIC_KEY"))
+}
+
+// TestValidateEnvironmentVariables_NeverLeaksSecretValues ensures that
+// ValidationError.Value never contains raw secret material even when a
+// secret env var value happens to match a format check that would
+// normally include the value.
+func TestValidateEnvironmentVariables_NeverLeaksSecretValues(t *testing.T) {
+	v := &ProductionConfigValidator{
+		logger:  zap.NewNop(),
+		timeout: 1,
+	}
+
+	// Secret values that happen to look like bad formats
+	t.Setenv("PRIVATE_KEY_SECRET", "bad domain")
+	t.Setenv("DOMAIN_NAME", "bad domain")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("DYNAMODB_TABLE", "lesser-main")
+	t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789abcdef")
+	t.Setenv("JWT_SECRET_ARN", "")
+
+	result, err := v.ValidateProductionConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Check every error's Value field for raw secret material
+	for _, e := range result.Errors {
+		// The DOMAIN_NAME error is fine to show the actual (non-secret) value
+		// But PRIVATE_KEY_SECRET or JWT_SECRET errors must redact
+		if isSecretEnvVar(e.Field) {
+			assert.Equal(t, RedactedSecretSentinel, e.Value,
+				"secret env var %s must have redacted Value, got %q", e.Field, e.Value)
+		}
+	}
+
+	// The DOMAIN_NAME error should still show the actual value (non-secret)
+	foundDomainError := false
+	for _, e := range result.Errors {
+		if e.Field == "DOMAIN_NAME" {
+			foundDomainError = true
+			assert.Equal(t, "bad domain", e.Value, "non-secret field DOMAIN_NAME should preserve value")
+		}
+	}
+	assert.True(t, foundDomainError, "expected a DOMAIN_NAME validation error")
+}
+
+func TestValidationResult_JSONSerialization_NoSecretsInValues(t *testing.T) {
+	v := &ProductionConfigValidator{
+		logger:  zap.NewNop(),
+		timeout: 1,
+	}
+
+	t.Setenv("DOMAIN_NAME", "example.com")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("DYNAMODB_TABLE", "lesser-main")
+	t.Setenv("PRIVATE_KEY_SECRET", "secret-name")
+	t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789abcdef")
+	t.Setenv("JWT_SECRET_ARN", "")
+
+	result, err := v.ValidateProductionConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// A successful run produces no errors that contain secret values.
+	for _, e := range result.Errors {
+		assert.NotContains(t, e.Value, "abcdefghijklmnopqrstuvwxyz",
+			"error Value must not contain JWT secret material")
+	}
+}

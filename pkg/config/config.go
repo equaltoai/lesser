@@ -283,6 +283,34 @@ func Get() *Config {
 	return config
 }
 
+// RedactedSecretSentinel is the replacement text used for secret field values in
+// redacted config output. Recovery snapshots, validation reports, logs, and any
+// other artifact that includes config fields must use [REDACTED] in place of real
+// secret material.
+const RedactedSecretSentinel = "[REDACTED]"
+
+// Redacted returns a shallow copy of the config with every known secret field
+// replaced by RedactedSecretSentinel. The returned config is safe to serialize,
+// log, or embed in recovery artifacts without leaking Lambda environment secrets.
+//
+// Fields that are ARN pointers (not secret values themselves) are preserved
+// unchanged so operators can still verify secret-source configuration.
+func (c *Config) Redacted() *Config {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.JWTSecret = RedactedSecretSentinel
+	cp.ReputationPrivateKey = RedactedSecretSentinel
+	cp.PrivacyMasterKey = RedactedSecretSentinel
+	cp.InstanceAPIKey = RedactedSecretSentinel
+	cp.LesserHostInstanceKey = RedactedSecretSentinel
+	cp.CloudFrontPrivateKeyPath = RedactedSecretSentinel
+	cp.DynamoDBEncryptionKey = RedactedSecretSentinel
+	cp.ActorPrivateKeyEncryption = RedactedSecretSentinel
+	return &cp
+}
+
 // ResetForTests clears cached configuration so tests can vary environment variables
 // safely within a single package test run.
 //

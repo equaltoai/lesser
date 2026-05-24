@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Security boundary: this script is a READ-ONLY evidence collector. It does
+# not read secret values, does not capture Lambda environment variables
+# (stripped via jq), and only collects Secrets Manager / KMS metadata.
+# Do not add printenv, env, compgen, declare, or any other shell-level env
+# dump to this script. The output is written under tmp/ by default and is
+# not encrypted — treat it as sensitive operational metadata.
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/processor_storm_recovery_snapshot.sh --app <app> --stage <stage> --profile <aws-profile> [options]
@@ -91,7 +98,8 @@ metric_max() {
 
 aws_ro sts get-caller-identity --output json > "$out/caller.json"
 aws_ro cloudformation describe-stacks --stack-name "$prefix" --output json > "$out/stack.json" 2>/dev/null || true
-aws_ro lambda list-functions --query "Functions[?starts_with(FunctionName, \`${prefix}-\`)]" --output json > "$out/functions.json"
+aws_ro lambda list-functions --query "Functions[?starts_with(FunctionName, \`${prefix}-\`)]" --output json \
+  | jq 'map(del(.Environment))' > "$out/functions.json"
 
 jq -r '.[] | select(.FunctionName|test("(processor|aggregator|indexer|tracker|scheduler|delivery|router)$")) | .FunctionName' \
   "$out/functions.json" | sort > "$out/processor-functions.txt"
