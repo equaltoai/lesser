@@ -547,7 +547,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{}, nil
 	}
-	newAIServiceFn = func(aws.Config, *ai.AIConfig) embeddingGenerator { return nil }
+	newAIServiceFn = func(aws.Config, *ai.Config) embeddingGenerator { return nil }
 	newStatusIndexerFn = func(db dynamormCore.DB, tableName, domain string, _ embeddingGenerator, logger *zap.Logger) *StatusIndexer {
 		return &StatusIndexer{db: db, tableName: tableName, domain: domain, logger: logger, likeRepo: &fakeLikeCounter{}}
 	}
@@ -613,7 +613,7 @@ func TestStatusIndexer_Main_FallsBackToManualDynamoClient_Round12(t *testing.T) 
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{}, nil
 	}
-	newAIServiceFn = func(aws.Config, *ai.AIConfig) embeddingGenerator { return nil }
+	newAIServiceFn = func(aws.Config, *ai.Config) embeddingGenerator { return nil }
 	newLambdaClientFn = func(context.Context, string) (dynamormCore.DB, error) { return mockDB, nil }
 
 	var gotDB dynamormCore.DB

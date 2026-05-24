@@ -74,7 +74,7 @@ type AIService struct {
 	sqsClient   SQSClient
 	httpClient  HTTPClient
 	logger      *zap.Logger
-	config      *AIConfig
+	config      *Config
 }
 
 // RedactPIIFromAnalysis returns a response-safe copy of an AI analysis with raw
@@ -125,8 +125,8 @@ func RedactPIIFromAnalysis(analysis *AIAnalysis) *AIAnalysis {
 // to prevent cost amplification via unbounded media downloads.
 const defaultMaxImageDownloadBytes = 10 * 1024 * 1024 // 10 MiB
 
-// AIConfig contains configuration for AI service features and thresholds.
-type AIConfig struct {
+// Config contains configuration for AI service features and thresholds.
+type Config struct {
 	// Thresholds for auto-moderation
 	NSFWThreshold      float64
 	ToxicityThreshold  float64
@@ -154,7 +154,7 @@ type AIConfig struct {
 }
 
 // NewAIService creates a new AI service instance
-func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
+func NewAIService(cfg aws.Config, aiConfig *Config) *AIService {
 	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
@@ -169,7 +169,7 @@ func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
 }
 
 // NewAIServiceWithSQS creates a new AI service instance with custom SQS client
-func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient) *AIService {
+func NewAIServiceWithSQS(cfg aws.Config, aiConfig *Config, sqsClient SQSClient) *AIService {
 	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),

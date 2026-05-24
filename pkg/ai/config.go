@@ -49,9 +49,9 @@ var SignalWeights = map[string]float64{
 	"harassment":    0.25, // High weight for harassment
 }
 
-// DefaultAIConfig returns a sensible default configuration
-func DefaultAIConfig() *AIConfig {
-	return &AIConfig{
+// DefaultConfig returns a sensible default configuration
+func DefaultConfig() *Config {
+	return &Config{
 		NSFWThreshold:         0.8,
 		ToxicityThreshold:     0.7,
 		SpamThreshold:         0.75,
