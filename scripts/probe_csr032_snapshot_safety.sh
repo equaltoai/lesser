@@ -42,7 +42,7 @@ fi
 
 # Rule 5: lambda list-functions output must strip Environment via jq del
 # Every list-functions call must have del(.Environment) within the same pipe
-list_func_lines=$(grep -n 'list-functions' "$SNAPSHOT" | grep -v '^\s*#' || true)
+list_func_lines=$(grep -n 'list-functions' "$SNAPSHOT" | grep -v ':[[:space:]]*#' || true)
 if [[ -n "$list_func_lines" ]]; then
   while IFS= read -r line; do
     line_no=$(echo "$line" | cut -d: -f1)

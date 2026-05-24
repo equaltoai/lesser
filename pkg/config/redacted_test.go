@@ -18,6 +18,9 @@ func TestConfig_Redacted_ReplacesAllSecretFields(t *testing.T) {
 		CloudFrontPrivateKeyPath:  secretValue,
 		DynamoDBEncryptionKey:     secretValue,
 		ActorPrivateKeyEncryption: secretValue,
+		// Webhook URLs carry embedded tokens and must be redacted
+		AlertWebhookURL:       "https://example-webhook.test/alert/abc123-token-xyz",
+		BudgetAlertWebhookURL: "https://discord.com/api/webhooks/1234567890/abc-def_ghi-jkl_mno",
 		// Non-secret fields that should be preserved
 		Domain:       "example.com",
 		InstanceName: "Test Instance",
@@ -38,6 +41,8 @@ func TestConfig_Redacted_ReplacesAllSecretFields(t *testing.T) {
 	assert.Equal(t, RedactedSecretSentinel, redacted.CloudFrontPrivateKeyPath)
 	assert.Equal(t, RedactedSecretSentinel, redacted.DynamoDBEncryptionKey)
 	assert.Equal(t, RedactedSecretSentinel, redacted.ActorPrivateKeyEncryption)
+	assert.Equal(t, RedactedSecretSentinel, redacted.AlertWebhookURL)
+	assert.Equal(t, RedactedSecretSentinel, redacted.BudgetAlertWebhookURL)
 
 	// Non-secret fields must be preserved
 	assert.Equal(t, "example.com", redacted.Domain)
@@ -67,6 +72,8 @@ func TestConfig_Redacted_EmptyStringsPreserved(t *testing.T) {
 		CloudFrontPrivateKeyPath:  "",
 		DynamoDBEncryptionKey:     "",
 		ActorPrivateKeyEncryption: "",
+		AlertWebhookURL:           "",
+		BudgetAlertWebhookURL:     "",
 		Domain:                    "",
 	}
 

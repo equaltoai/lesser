@@ -34,6 +34,8 @@ var secretEnvVarNames = map[string]bool{
 	"CLOUDFRONT_PRIVATE_KEY_PATH":  true,
 	"DYNAMODB_ENCRYPTION_KEY":      true,
 	"ACTOR_PRIVATE_KEY_ENCRYPTION": true,
+	"ALERT_WEBHOOK_URL":            true,
+	"BUDGET_ALERT_WEBHOOK_URL":     true,
 	"VAPID_PUBLIC_KEY":             false, // public key OK to show
 	"SYSTEM_ACTOR_PUBLIC_KEY":      false, // public key OK to show
 }

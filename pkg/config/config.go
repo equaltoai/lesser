@@ -308,6 +308,8 @@ func (c *Config) Redacted() *Config {
 	cp.CloudFrontPrivateKeyPath = RedactedSecretSentinel
 	cp.DynamoDBEncryptionKey = RedactedSecretSentinel
 	cp.ActorPrivateKeyEncryption = RedactedSecretSentinel
+	cp.AlertWebhookURL = RedactedSecretSentinel
+	cp.BudgetAlertWebhookURL = RedactedSecretSentinel
 	return &cp
 }
 

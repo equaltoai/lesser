@@ -425,14 +425,20 @@ func TestSafeEnvValue_RedactsKnownSecretVars(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", "my-encryption-key")
 	t.Setenv("INSTANCE_API_KEY", "instance-key-secret")
 	t.Setenv("PRIVACY_MASTER_KEY", "privacy-master-secret")
+	t.Setenv("ALERT_WEBHOOK_URL", "https://example-webhook.test/alert/abc123-token-xyz")
+	t.Setenv("BUDGET_ALERT_WEBHOOK_URL", "https://discord.com/api/webhooks/1234567890/abc-def_ghi-jkl_mno")
 
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("JWT_SECRET"))
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("OAUTH_CLIENT_SECRET"))
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("ENCRYPTION_KEY"))
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("INSTANCE_API_KEY"))
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("PRIVACY_MASTER_KEY"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("ALERT_WEBHOOK_URL"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("BUDGET_ALERT_WEBHOOK_URL"))
 
 	// Case-insensitive
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("alert_webhook_url"))
+	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("budget_alert_webhook_url"))
 	assert.Equal(t, RedactedSecretSentinel, safeEnvValue("jwt_secret"))
 }
 
@@ -460,6 +466,8 @@ func TestIsSecretEnvVar_Coverage(t *testing.T) {
 	assert.False(t, isSecretEnvVar("DOMAIN_NAME"))
 	assert.False(t, isSecretEnvVar("AWS_REGION"))
 	assert.False(t, isSecretEnvVar("LOG_LEVEL"))
+	assert.True(t, isSecretEnvVar("ALERT_WEBHOOK_URL"))
+	assert.True(t, isSecretEnvVar("BUDGET_ALERT_WEBHOOK_URL"))
 	assert.False(t, isSecretEnvVar("SYSTEM_ACTOR_PUBLIC_KEY"))
 	assert.False(t, isSecretEnvVar("VAPID_PUBLIC_KEY"))
 }
