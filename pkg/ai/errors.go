@@ -38,6 +38,9 @@ var (
 	// ErrImageDownloadHTTP is returned when image download fails with HTTP error
 	ErrImageDownloadHTTP = errors.NetworkError("image download", stdErrors.New("image download failed"))
 
+	// ErrImageDownloadTooLarge is returned when the downloaded image exceeds the configured size limit
+	ErrImageDownloadTooLarge = stdErrors.New("downloaded image exceeds size limit for AI analysis")
+
 	// ErrInvalidEmbeddingResponse is returned when embedding response format is invalid
 	ErrInvalidEmbeddingResponse = errors.ParsingFailed("embedding response", stdErrors.New("embedding response parsing failed"))
 

@@ -639,6 +639,81 @@ func TestAIService_Round20_UploadImageToS3_Paths(t *testing.T) {
 	})
 }
 
+func TestAIService_Round20_UploadImageToS3_ContentLengthBound(t *testing.T) {
+	t.Run("content_length_exceeds_default_limit", func(t *testing.T) {
+		svc := &AIService{
+			config: &AIConfig{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 0, // use default 10 MiB
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/big/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: defaultMaxImageDownloadBytes + 1,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("img")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/big/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+	})
+
+	t.Run("content_length_exceeds_custom_limit", func(t *testing.T) {
+		svc := &AIService{
+			config: &AIConfig{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 1024, // 1 KiB
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/oversized/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: 2048,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("img")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/oversized/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+	})
+
+	t.Run("content_length_within_limit_succeeds", func(t *testing.T) {
+		svc := &AIService{
+			config: &AIConfig{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 1024,
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/small/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: 512,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("smallimg")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		key, err := svc.uploadImageToS3(context.Background(), "https://example.com/small/")
+		require.NoError(t, err)
+		require.NotEmpty(t, key)
+	})
+}
+
 func TestAIService_Round20_AnalyzeContent_ExerciseTopLevel(t *testing.T) {
 	aiModelID := "anthropic.claude-v2"
 	body, err := json.Marshal(map[string]any{"completion": `{"ai_generated_probability":0.1,"pattern_consistency":0.2,"style_deviation":0.3,"semantic_coherence":0.4,"suspicious_patterns":[]}`})

@@ -62,6 +62,18 @@ func TestConfigureRoutes_AuthOptions(t *testing.T) {
 	require.Equal(t, routeAuthState{authRequired: true}, routes["POST /api/v1/trust/previews"])
 	require.Equal(t, routeAuthState{}, routes["POST /api/v1/notifications/deliver"])
 	require.Equal(t, routeAuthState{}, routes["POST /api/v1/agents/{username}/access-leases/{leaseID}/token"])
+
+	// Rate-limited conversation lookup (CSR-031 regression): authenticated read
+	// access with rate limiting to prevent unbound remote actor fetches.
+	require.Equal(t, routeAuthState{
+		authRequired:   true,
+		requiredScopes: []string{"read"},
+	}, routes["GET /api/v1/conversations/lookup"])
+
+	// Rate-limited public skill catalog (CSR-039 regression): optional auth
+	// with rate limiting to prevent unbound catalog scans.
+	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills/catalog"])
+	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills"])
 }
 
 func configuredRouteAuthStates(t *testing.T, app *apptheory.App) map[string]routeAuthState {

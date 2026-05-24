@@ -382,8 +382,12 @@ func configureRoutes(app *apptheory.App) {
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift, requireAuth)
 
 	// Canonical skill authority (Lesser-exclusive additive API)
-	app.Get("/api/v1/skills", apiHandler.HandleListSkillsLift, optionalAuth)
-	app.Get("/api/v1/skills/catalog", apiHandler.HandleListSkillCatalogLift, optionalAuth)
+	app.Get("/api/v1/skills", ratelimit.ApplyRateLimit(
+		apiHandler.HandleListSkillsLift,
+		30, 5*time.Minute, logger), optionalAuth)
+	app.Get("/api/v1/skills/catalog", ratelimit.ApplyRateLimit(
+		apiHandler.HandleListSkillCatalogLift,
+		30, 5*time.Minute, logger), optionalAuth)
 	app.Get("/api/v1/skills/resolve", apiHandler.HandleResolveEffectiveSkillsLift, requireRead)
 	app.Get("/api/v1/skills/{skillId}", apiHandler.HandleGetSkillLift, optionalAuth)
 	app.Get("/api/v1/skills/{skillId}/revisions", apiHandler.HandleListSkillRevisionsLift, optionalAuth)
@@ -566,7 +570,9 @@ func configureRoutes(app *apptheory.App) {
 
 	// Conversation endpoints (Direct Messages) - always enabled for 100% Mastodon API compatibility
 	app.Get("/api/v1/conversations", apiHandler.HandleGetConversationsLift, requireRead)
-	app.Get("/api/v1/conversations/lookup", apiHandler.HandleLookupConversationByCounterpartLift, requireRead)
+	app.Get("/api/v1/conversations/lookup", ratelimit.ApplyRateLimit(
+		apiHandler.HandleLookupConversationByCounterpartLift,
+		30, 5*time.Minute, logger), requireRead)
 	app.Get("/api/v1/conversations/{id}", apiHandler.HandleGetConversationLift, requireRead)
 	app.Delete("/api/v1/conversations/{id}", apiHandler.HandleDeleteConversationLift, requireWrite)
 	app.Post("/api/v1/conversations/{id}/read", apiHandler.HandleMarkConversationReadLift, requireWrite)

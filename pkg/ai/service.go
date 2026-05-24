@@ -123,7 +123,12 @@ func RedactPIIFromAnalysis(analysis *AIAnalysis) *AIAnalysis {
 
 // AIConfig contains configuration for AI service features and thresholds
 //
+// defaultMaxImageDownloadBytes caps remote image downloads at 10 MiB
+// to prevent cost amplification via unbounded media downloads.
+//
 //nolint:revive // AI prefix clarifies this is AI-specific config
+const defaultMaxImageDownloadBytes = 10 * 1024 * 1024 // 10 MiB
+
 type AIConfig struct {
 	// Thresholds for auto-moderation
 	NSFWThreshold      float64
@@ -145,6 +150,10 @@ type AIConfig struct {
 
 	// SQS queue URL for AI processing
 	AIQueueURL string
+
+	// MaxImageDownloadBytes caps the size of remote images downloaded for AI analysis.
+	// When zero, defaultMaxImageDownloadBytes is used.
+	MaxImageDownloadBytes int64
 }
 
 // NewAIService creates a new AI service instance
@@ -1099,17 +1108,34 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 		return "", fmt.Errorf("%w: HTTP %d", ErrImageDownloadHTTP, resp.StatusCode)
 	}
 
+	// Enforce download size bound to prevent cost amplification.
+	maxBytes := s.config.MaxImageDownloadBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxImageDownloadBytes
+	}
+	if resp.ContentLength > maxBytes {
+		s.logger.Warn("refusing oversized image download",
+			zap.String("url", imageURL),
+			zap.Int64("content_length", resp.ContentLength),
+			zap.Int64("max_bytes", maxBytes))
+		return "", fmt.Errorf("%w: Content-Length %d exceeds limit %d", ErrImageDownloadTooLarge, resp.ContentLength, maxBytes)
+	}
+
 	// Generate unique S3 key for the image
 	imageID := generateID("ai-image")
 	contentType := resp.Header.Get("Content-Type")
 	fileExt := s.getFileExtensionFromContentType(contentType)
 	s3Key := fmt.Sprintf("ai-analysis/%s%s", imageID, fileExt)
 
+	// Wrap body with a size-limited reader as defense-in-depth against
+	// servers that omit or misrepresent Content-Length.
+	limitedBody := io.LimitReader(resp.Body, maxBytes)
+
 	// Upload to S3
 	_, err = s.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.config.S3Bucket),
 		Key:         aws.String(s3Key),
-		Body:        io.Reader(resp.Body),
+		Body:        io.Reader(limitedBody),
 		ContentType: aws.String(contentType),
 		// Set appropriate metadata
 		Metadata: map[string]string{
