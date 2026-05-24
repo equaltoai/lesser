@@ -70,8 +70,11 @@ func TestConfigureRoutes_AuthOptions(t *testing.T) {
 		requiredScopes: []string{"read"},
 	}, routes["GET /api/v1/conversations/lookup"])
 
-	// Rate-limited public skill catalog (CSR-039 regression): optional auth
-	// with rate limiting to prevent unbound catalog scans.
+	// Public skill catalog routes (CSR-039 route registration coverage): these
+	// routes are registered with optional auth and rate limiting at the route
+	// level. The scan-bound enforcement lives in pkg/services/skills.ListCatalog
+	// (maxCatalogScanRevisions cap). This assertion confirms correct route wiring
+	// and auth posture, not rate-limit functionality.
 	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills/catalog"])
 	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills"])
 }

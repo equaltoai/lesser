@@ -27,6 +27,10 @@ type fakeSkillRepo struct {
 	updateSkillErr            error
 	updateRevisionErr         error
 	createAssignmentErr       error
+
+	// listRevisionsByStatusCallCount tracks how many times ListSkillRevisionsByStatus
+	// was called. Used by regression tests to prove bounded scan behavior.
+	listRevisionsByStatusCallCount int
 }
 
 func newFakeSkillRepo() *fakeSkillRepo {
@@ -199,6 +203,7 @@ func (f *fakeSkillRepo) ListSkillRevisions(_ context.Context, skillID string, _ 
 }
 
 func (f *fakeSkillRepo) ListSkillRevisionsByStatus(_ context.Context, status string, limit int, cursor string) ([]*models.SkillRevision, string, error) {
+	f.listRevisionsByStatusCallCount++
 	if f.listRevisionsErr != nil {
 		return nil, "", f.listRevisionsErr
 	}
@@ -803,6 +808,138 @@ func TestServiceListCatalogCursorDoesNotRevealHiddenRevisions(t *testing.T) {
 	require.Len(t, catalog, 1)
 	require.Equal(t, "public-b", catalog[0].Skill.ID)
 	require.Empty(t, cursor)
+}
+
+// TestServiceListCatalogScansAreBounded proves that ListCatalog cannot make
+// unbounded ListSkillRevisionsByStatus calls when many approved revisions are
+// hidden from the public viewer (CSR-039 regression). The service must cap raw
+// revision inspection and return a cursor for continuation rather than scanning
+// indefinitely.
+func TestServiceListCatalogScansAreBounded(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+
+	// Seed many hidden (private) approved revisions that will appear before any
+	// public revisions in the repo's cursor-ordered listing.
+	const hiddenCount = 301
+	for i := 0; i < hiddenCount; i++ {
+		skillID := fmt.Sprintf("hidden-%03d", i)
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       models.SkillExposurePrivate,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:               skillID,
+			RevisionNumber:        1,
+			DefaultExposure:       models.SkillExposurePrivate,
+			ApprovalID:            "approval-" + skillID,
+			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovedBy:            "ops",
+			PrincipalID:           "principal-1",
+		})
+	}
+
+	// Add a few public revisions that would be visible — but they sort after
+	// "hidden-*" so they land beyond the scan cap.
+	const publicCount = 5
+	for i := 0; i < publicCount; i++ {
+		skillID := fmt.Sprintf("public-%03d", i)
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       models.SkillExposurePublic,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:               skillID,
+			RevisionNumber:        1,
+			DefaultExposure:       models.SkillExposurePublic,
+			ApprovalID:            "approval-" + skillID,
+			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovedBy:            "ops",
+			PrincipalID:           "principal-1",
+		})
+	}
+
+	// Reset call counter after seeding.
+	repo.listRevisionsByStatusCallCount = 0
+
+	// Public viewer, default limit (25 per page).
+	catalog, cursor, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 25})
+	require.NoError(t, err)
+
+	// The fake repo returns revisions in cursor-sorted order: "hidden-*" < "public-*",
+	// so all hidden revisions precede visible ones. With 25 per page and a cap of
+	// maxCatalogScanRevisions=300, the service must stop after at most 12 calls.
+	maxExpectedCalls := (maxCatalogScanRevisions + 24) / 25 // ceil(300/25)
+	require.LessOrEqual(t, repo.listRevisionsByStatusCallCount, maxExpectedCalls,
+		"ListCatalog made %d ListSkillRevisionsByStatus calls; expected at most %d (scan cap not enforced)",
+		repo.listRevisionsByStatusCallCount, maxExpectedCalls)
+
+	// Because all visible revisions are past the scan cap, the public viewer
+	// should see zero entries and receive a continuation cursor.
+	require.Empty(t, catalog, "expected no visible entries when all public revisions are beyond scan cap")
+	require.NotEmpty(t, cursor, "expected a continuation cursor when scan cap is hit with no visible entries")
+
+	t.Logf("hidden=%d public=%d calls=%d cap=%d maxCalls=%d cursor=%q",
+		hiddenCount, publicCount, repo.listRevisionsByStatusCallCount,
+		maxCatalogScanRevisions, maxExpectedCalls, cursor)
+}
+
+func TestServiceListCatalogScansAreBoundedWithLimit100(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+
+	// Seed enough hidden revisions to exceed the cap at limit 100.
+	for i := 0; i < 350; i++ {
+		skillID := fmt.Sprintf("hidden-%03d", i)
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       models.SkillExposurePrivate,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:               skillID,
+			RevisionNumber:        1,
+			DefaultExposure:       models.SkillExposurePrivate,
+			ApprovalID:            "approval-" + skillID,
+			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovedBy:            "ops",
+			PrincipalID:           "principal-1",
+		})
+	}
+
+	repo.listRevisionsByStatusCallCount = 0
+
+	catalog, cursor, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 100})
+	require.NoError(t, err)
+
+	// With limit 100 and cap 300, at most 3 calls.
+	maxExpectedCalls := (maxCatalogScanRevisions + 99) / 100 // ceil(300/100)
+	require.LessOrEqual(t, repo.listRevisionsByStatusCallCount, maxExpectedCalls,
+		"ListCatalog made %d calls at limit 100; expected at most %d",
+		repo.listRevisionsByStatusCallCount, maxExpectedCalls)
+	require.Empty(t, catalog)
+	require.NotEmpty(t, cursor)
+
+	t.Logf("limit=100 calls=%d maxCalls=%d", repo.listRevisionsByStatusCallCount, maxExpectedCalls)
 }
 
 func TestServiceGetBundleIncludesContentAndRejectsUnpublished(t *testing.T) {
