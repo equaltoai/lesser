@@ -244,9 +244,9 @@ func TestConvertNotificationToGraphQL_CommunicationActorUsesEmailPlaceholder(t *
 			"messageId": "msg-1",
 			"channel":   "email",
 			"from": map[string]interface{}{
-				"address":      "sender@evil.example",
-				"displayName":  "Evil Sender",
-				"soulAgentId":  "soul-1",
+				"address":     "sender@evil.example",
+				"displayName": "Evil Sender",
+				"soulAgentId": "soul-1",
 			},
 		},
 	}

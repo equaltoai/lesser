@@ -271,3 +271,54 @@ func TestService_CheckNoteRateLimit_CountsRecentNotes(t *testing.T) {
 	assert.True(t, allowed)
 	assert.Equal(t, 1, remaining)
 }
+
+// TestService_CheckRateLimit_DeniesWhenAtLimit verifies CSR-048:
+// when the author already has 5 notes in the last 24 hours and reputation
+// 500 grants a limit of 5, the next creation is denied.
+func TestService_CheckRateLimit_DeniesWhenAtLimit(t *testing.T) {
+	now := time.Now()
+	notes := make([]*storage.CommunityNote, 5)
+	for i := range notes {
+		notes[i] = &storage.CommunityNote{
+			ID:        "recent-" + strconv.Itoa(i),
+			CreatedAt: now.Add(-time.Duration(i) * time.Hour),
+		}
+	}
+	repo := &stubCommunityNoteRepo{notesByAuthor: notes}
+	svc := &Service{repo: repo, logger: zap.NewNop()}
+
+	allowed, remaining := svc.CheckRateLimit(context.Background(), "alice", 500.0)
+	assert.False(t, allowed)
+	assert.Equal(t, 0, remaining)
+}
+
+// TestService_CheckRateLimit_AllowsBelowLimit verifies CSR-048:
+// when the author has created fewer notes than the limit grants,
+// creation is allowed.
+func TestService_CheckRateLimit_AllowsBelowLimit(t *testing.T) {
+	now := time.Now()
+	notes := make([]*storage.CommunityNote, 4)
+	for i := range notes {
+		notes[i] = &storage.CommunityNote{
+			ID:        "recent-" + strconv.Itoa(i),
+			CreatedAt: now.Add(-time.Duration(i) * time.Hour),
+		}
+	}
+	repo := &stubCommunityNoteRepo{notesByAuthor: notes}
+	svc := &Service{repo: repo, logger: zap.NewNop()}
+
+	allowed, remaining := svc.CheckRateLimit(context.Background(), "alice", 500.0)
+	assert.True(t, allowed)
+	assert.Equal(t, 1, remaining)
+}
+
+// TestService_CheckRateLimit_DeniesOnLowReputation verifies CSR-048:
+// users with reputation below MinReputationToCreateNotes cannot create notes.
+func TestService_CheckRateLimit_DeniesOnLowReputation(t *testing.T) {
+	repo := &stubCommunityNoteRepo{}
+	svc := &Service{repo: repo, logger: zap.NewNop()}
+
+	allowed, remaining := svc.CheckRateLimit(context.Background(), "alice", MinReputationToCreateNotes-1)
+	assert.False(t, allowed)
+	assert.Equal(t, 0, remaining)
+}
