@@ -882,7 +882,14 @@ func (h *Handler) convertAppTheoryRequest(ctx *apptheory.Context) (*http.Request
 	// instance domain before using it for signature verification. This prevents
 	// forwarded-host spoofing where an attacker could inject a host header that
 	// matches their own signing key rather than the instance's expected host.
-	if err := common.ValidateRequestOriginDomain(ctx.Request.Headers, cfg.Domain); err != nil {
+	//
+	// When cfg is nil (unit tests without Lambda init), the domain is empty and
+	// ValidateRequestOriginDomain returns nil (no-op), preserving existing test behavior.
+	domain := ""
+	if cfg != nil {
+		domain = cfg.Domain
+	}
+	if err := common.ValidateRequestOriginDomain(ctx.Request.Headers, domain); err != nil {
 		return nil, fmt.Errorf("origin domain validation failed: %w", err)
 	}
 
