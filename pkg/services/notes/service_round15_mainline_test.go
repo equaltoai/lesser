@@ -1543,7 +1543,7 @@ func TestService_round15_local_note_object_projection_lifecycle(t *testing.T) {
 	accountRepo := &stubAccountRepo{domain: "example.com"}
 	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil).Once()
 	objectRepo.On("UpdateObjectWithHistory", mock.Anything, mock.Anything, "https://example.com/users/alice").Return(nil).Once()
-	objectRepo.On("ReplaceObjectWithTombstone", mock.Anything, mock.Anything, activitypub.NoteType, "https://example.com/users/alice", "https://example.com/users/alice").Return(nil).Once()
+	objectRepo.On("ReplaceObjectWithTombstone", mock.Anything, mock.Anything, activitypub.NoteType, "https://example.com/users/alice", "https://example.com/users/alice", true).Return(nil).Once()
 	service := NewService(
 		statusRepo,
 		accountRepo,
@@ -1604,7 +1604,7 @@ func TestService_round15_local_note_object_projection_lifecycle(t *testing.T) {
 		StatusID:  created.Note.StatusID,
 		DeleterID: "alice",
 	}))
-	objectRepo.AssertCalled(t, "ReplaceObjectWithTombstone", mock.Anything, objectID, activitypub.NoteType, "https://example.com/users/alice", "https://example.com/users/alice")
+	objectRepo.AssertCalled(t, "ReplaceObjectWithTombstone", mock.Anything, objectID, activitypub.NoteType, "https://example.com/users/alice", "https://example.com/users/alice", true)
 	objectRepo.AssertExpectations(t)
 }
 

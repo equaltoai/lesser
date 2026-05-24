@@ -2498,13 +2498,14 @@ func (r *ObjectRepository) GetObjectHistory(ctx context.Context, objectID string
 }
 
 // ReplaceObjectWithTombstone atomically replaces an object with a tombstone
-func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy, attributedTo string) error {
+func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy, attributedTo string, isPublic bool) error {
 	// Create tombstone
 	tombstone := &models.Tombstone{
 		ID:           objectID,
 		FormerType:   formerType,
 		DeletedBy:    deletedBy,
 		AttributedTo: strings.TrimSpace(attributedTo),
+		IsPublic:     isPublic,
 		Summary:      fmt.Sprintf("Object deleted by %s", deletedBy),
 		Deleted:      time.Now(),
 	}

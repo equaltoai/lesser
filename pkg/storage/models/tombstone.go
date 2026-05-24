@@ -28,6 +28,7 @@ type Tombstone struct {
 	Deleted      time.Time `theorydb:"attr:deleted" json:"deleted"`                   // When it was deleted
 	DeletedBy    string    `theorydb:"attr:deletedBy" json:"deletedBy"`               // Actor who deleted it
 	AttributedTo string    `theorydb:"attr:attributedTo,omitempty" json:"attributedTo,omitempty"` // Original object's author actor ID
+	IsPublic     bool      `theorydb:"attr:isPublic" json:"isPublic"`                          // Whether the original object was publicly addressed
 	Summary      string    `theorydb:"attr:summary" json:"summary,omitempty"`         // Optional deletion reason
 	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`               // When the tombstone was created
 

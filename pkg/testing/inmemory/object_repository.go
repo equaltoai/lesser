@@ -542,7 +542,7 @@ func (r *ObjectRepository) CleanupExpiredTombstones(_ context.Context, batchSize
 }
 
 // ReplaceObjectWithTombstone atomically replaces an object with a tombstone
-func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectID, formerType, deletedBy, attributedTo string) error {
+func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectID, formerType, deletedBy, attributedTo string, isPublic bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -563,6 +563,7 @@ func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectI
 		FormerType:   formerType,
 		DeletedBy:    deletedBy,
 		AttributedTo: attributedTo,
+		IsPublic:     isPublic,
 		Deleted:      time.Now(),
 	}
 
