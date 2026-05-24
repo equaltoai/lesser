@@ -12,13 +12,13 @@ func TestValidateActorID(t *testing.T) {
 	valid := []string{
 		"https://example.com/users/alice",
 		"http://remote.example/@bob",
-		"https://example.com/users/Alice",                      // mixed-case path (URL path is case-sensitive)
-		"https://EXAMPLE.com/users/alice",                       // uppercase host
-		"HTTPS://example.com/users/alice",                      // uppercase scheme
-		"https://social.example.co.uk/users/alice",              // multi-part TLD
-		"https://example.com:443/users/alice",                  // explicit default port
-		"https://192.168.1.1/users/alice",                      // IP address (though not recommended, valid URL)
-		"https://example.com/api/v1/actors/alice",              // non-standard path structure
+		"https://example.com/users/Alice",          // mixed-case path (URL path is case-sensitive)
+		"https://EXAMPLE.com/users/alice",          // uppercase host
+		"HTTPS://example.com/users/alice",          // uppercase scheme
+		"https://social.example.co.uk/users/alice", // multi-part TLD
+		"https://example.com:443/users/alice",      // explicit default port
+		"https://192.168.1.1/users/alice",          // IP address (though not recommended, valid URL)
+		"https://example.com/api/v1/actors/alice",  // non-standard path structure
 	}
 	for _, actorID := range valid {
 		t.Run("valid_"+actorID, func(t *testing.T) {
@@ -28,26 +28,26 @@ func TestValidateActorID(t *testing.T) {
 
 	invalid := []string{
 		"",
-		"acct:alice@example.com",                                  // non-HTTP scheme
-		"https://evil.example@real.example/users/alice",           // userinfo injection
+		"acct:alice@example.com", // non-HTTP scheme
+		"https://evil.example@real.example/users/alice",             // userinfo injection
 		"https://example.com/users/alice?next=https://evil.example", // query injection
-		"https://example.com/users/alice#main-key",                // fragment injection
-		"https://example.com/users/../admin",                      // path traversal (..)
-		"https://example.com/users/%2e%2e/admin",                  // URL-encoded path traversal
-		"https://example.com/users/alice\nHost: evil.example",     // newline injection
-		"https://example.com/" + strings.Repeat("a", 2001),        // excessively long path
+		"https://example.com/users/alice#main-key",                  // fragment injection
+		"https://example.com/users/../admin",                        // path traversal (..)
+		"https://example.com/users/%2e%2e/admin",                    // URL-encoded path traversal
+		"https://example.com/users/alice\nHost: evil.example",       // newline injection
+		"https://example.com/" + strings.Repeat("a", 2001),          // excessively long path
 		// CSR-046 targeted edge cases:
-		"https://example.com\x00/users/alice",                    // null byte in host
-		"https://example.com/users/\x00alice",                    // null byte in path
-		"https://example.com",                                    // bare host, no path
-		"https://example.com/",                                   // root path only
-		"https://example.com/users",                               // generic /users, no username
-		"https://example.com/@",                                   // generic /@, no username
-		"https://example.com/users/../alice",                      // path traversal mid-path
-		"https://example.com/./users/alice",                       // dot segment
-		"https://",                                                // no host
-		"not a url",                                               // not a URL at all
-		"ftp://example.com/users/alice",                           // non-HTTP scheme
+		"https://example.com\x00/users/alice", // null byte in host
+		"https://example.com/users/\x00alice", // null byte in path
+		"https://example.com",                 // bare host, no path
+		"https://example.com/",                // root path only
+		"https://example.com/users",           // generic /users, no username
+		"https://example.com/@",               // generic /@, no username
+		"https://example.com/users/../alice",  // path traversal mid-path
+		"https://example.com/./users/alice",   // dot segment
+		"https://",                            // no host
+		"not a url",                           // not a URL at all
+		"ftp://example.com/users/alice",       // non-HTTP scheme
 	}
 	for _, actorID := range invalid {
 		t.Run("invalid_"+actorID, func(t *testing.T) {

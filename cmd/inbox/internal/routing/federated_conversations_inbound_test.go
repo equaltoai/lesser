@@ -381,6 +381,92 @@ func TestInboxHandler_M14_ReplayedRemoteDirectDoesNotOverwriteConversationMetada
 	require.Empty(t, publisher.events)
 }
 
+// TestInboxHandler_M14_OlderUniqueDirectMessageIncrementsCountPreservesMetadata verifies
+// CSR-042: a new unique inbound direct message with an older publishedAt still increments
+// TotalMessageCount while preserving the conversation's LastStatusID / LastMessageTime /
+// UpdatedAt. Exact-replay idempotency (same activity / status) is already covered by the
+// status-level skip in prepareDirectCreateState and the separate replay test above.
+func TestInboxHandler_M14_OlderUniqueDirectMessageIncrementsCountPreservesMetadata(t *testing.T) {
+	env := newInboxTestEnv(t)
+	ctx := context.Background()
+	notifications := inmemory.NewNotificationRepository()
+	conversations := inmemory.NewConversationRepository()
+	statuses := inmemory.NewStatusRepository()
+	objects := inmemory.NewObjectRepository()
+	publisher := &inboundDirectCapturePublisher{}
+	env.handler.notificationRepository = notifications
+	env.handler.conversationRepository = conversations
+	env.handler.statusRepository = statuses
+	env.handler.objectRepository = objects
+	env.handler.publisher = publisher
+
+	newerPublished := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	conversationID := "conv-older-unique"
+	participantRefs := models.NormalizeConversationParticipantRefs([]models.ConversationParticipantRef{
+		{
+			ParticipantType: models.ConversationParticipantTypeLocalUser,
+			ParticipantID:   "alice",
+		},
+		{
+			ParticipantType: models.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   env.remoteActorID,
+			Acct:            "bob@remote.example",
+			Domain:          "remote.example",
+			ResolvedAt:      &newerPublished,
+		},
+	})
+	participants := models.ConversationParticipantIDsFromRefs(participantRefs)
+	existingConversation := &models.Conversation{
+		ID:                conversationID,
+		Participants:      participants,
+		ParticipantRefs:   participantRefs,
+		LastStatusID:      "newer-direct-status",
+		LastMessageTime:   newerPublished,
+		TotalMessageCount: 7,
+		CreatedAt:         newerPublished.Add(-24 * time.Hour),
+		UpdatedAt:         newerPublished,
+	}
+	require.NoError(t, conversations.CreateConversationWithParticipantStates(ctx, existingConversation, participants, nil))
+
+	// Send a unique message with an older publishedAt.
+	olderPublished := newerPublished.Add(-2 * time.Hour)
+	olderNoteID := "https://remote.example/users/bob/statuses/direct-older-unique"
+	olderNote := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        olderNoteID,
+			Type:      activitypub.NoteType,
+			Published: &olderPublished,
+			To:        []string{env.local.ID},
+		},
+		AttributedTo: env.remoteActorID,
+		Content:      "<p>older unique direct message @alice</p>",
+		Tag: []activitypub.Tag{{
+			Type: "Mention",
+			Href: env.local.ID,
+			Name: "@alice@localhost",
+		}},
+	}
+	olderActivity := remoteCreateActivityForNote(t, env.remoteActorID, olderNote, "https://remote.example/activities/direct-older-unique")
+
+	require.NoError(t, env.handler.processRemoteCreateActivity(ctx, olderActivity, env.local))
+
+	stored, err := conversations.GetConversation(ctx, conversationID)
+	require.NoError(t, err)
+
+	// CSR-042: TotalMessageCount must increment for a unique older message.
+	require.Equal(t, int64(8), stored.TotalMessageCount)
+
+	// Last-message metadata must be preserved when the incoming publishedAt is older.
+	require.Equal(t, "newer-direct-status", stored.LastStatusID)
+	require.Equal(t, newerPublished, stored.LastMessageTime)
+	require.Equal(t, newerPublished, stored.UpdatedAt)
+
+	// Participant integrity must be preserved.
+	require.ElementsMatch(t, participants, stored.Participants)
+	require.Equal(t, participantRefs, stored.ParticipantRefs)
+}
+
 func TestInboxHandler_FederatedConversation_HelperFallbackBranches(t *testing.T) {
 	env := newInboxTestEnv(t)
 	ctx := context.Background()

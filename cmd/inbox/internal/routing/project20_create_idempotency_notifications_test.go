@@ -613,10 +613,10 @@ func TestInboxHandler_CSR042_ConversationMetadataNotRegressedOnReplay(t *testing
 	// LastStatusID must not be overwritten by the older message
 	require.Equal(t, firstLastStatusID, conv.LastStatusID,
 		"LastStatusID should not regress from %s to an older status", firstLastStatusID)
-	// TotalMessageCount should not be incremented for the older message
-	// when the guard skips metadata update
-	require.Equal(t, firstMessageCount, conv.TotalMessageCount,
-		"TotalMessageCount should remain %d, got %d", firstMessageCount, conv.TotalMessageCount)
+	// TotalMessageCount MUST increment for the older unique message
+	// (CSR-042: count decoupled from last-message metadata).
+	require.Equal(t, firstMessageCount+1, conv.TotalMessageCount,
+		"TotalMessageCount should increment to %d, got %d", firstMessageCount+1, conv.TotalMessageCount)
 
 	// Verify the per-user state row for the older message was still created
 	states, err := conversations.ListUserConversationStatesByFolder(context.Background(), "alice",

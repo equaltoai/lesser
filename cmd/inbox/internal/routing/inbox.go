@@ -2833,10 +2833,15 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 		!conversation.LastMessageTime.IsZero() &&
 		!publishedAt.After(conversation.LastMessageTime)
 
+	// CSR-042: Always count unique messages, even when preserving
+	// last-message metadata for an older inbound status. The status-level
+	// idempotency check in prepareDirectCreateState prevents exact-replay
+	// double-counts.
+	if conversation.LastStatusID != status.StatusID {
+		conversation.TotalMessageCount++
+	}
+
 	if !skipConversationMetadata {
-		if conversation.LastStatusID != status.StatusID {
-			conversation.TotalMessageCount++
-		}
 		conversation.LastStatusID = status.StatusID
 		conversation.LastMessageTime = publishedAt
 		conversation.UpdatedAt = publishedAt
