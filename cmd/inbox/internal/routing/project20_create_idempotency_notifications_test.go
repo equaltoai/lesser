@@ -538,3 +538,149 @@ func (r *project20ErroringInboxProcessingRecorder) ForgetTarget(_ context.Contex
 	r.forgetCalls++
 	return r.err
 }
+
+// TestInboxHandler_CSR042_ConversationMetadataNotRegressedOnReplay verifies that
+// when a replayed inbound direct message carries an older timestamp than the
+// existing conversation LastMessageTime, the conversation metadata (LastMessageTime,
+// LastStatusID, TotalMessageCount) is not regressed. The per-user conversation
+// state row is still created so the inbox view is not silently lost.
+func TestInboxHandler_CSR042_ConversationMetadataNotRegressedOnReplay(t *testing.T) {
+	env := newInboxTestEnv(t)
+	conversations := inmemory.NewConversationRepository()
+	env.handler.conversationRepository = conversations
+	env.handler.statusRepository = newProject20StatusRepo()
+
+	// First message: newer timestamp (T+10m)
+	recentPublished := time.Date(2026, 4, 24, 15, 10, 0, 0, time.UTC)
+	note1 := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        "https://remote.example/users/bob/statuses/csr42-recent",
+			Type:      activitypub.NoteType,
+			Published: &recentPublished,
+			To:        []string{env.local.ID},
+			CC:        []string{},
+		},
+		AttributedTo: env.remoteActorID,
+		Content:      "<p>recent message</p>",
+		Visibility:   models.VisibilityDirect,
+	}
+	activity1 := remoteCreateActivityForNote(t, env.remoteActorID, note1,
+		"https://remote.example/activities/csr42-create-recent")
+
+	require.NoError(t, env.handler.processRemoteCreateActivity(context.Background(), activity1, env.local))
+
+	// Read back the conversation state after first message
+	conv, err := conversations.GetConversationByParticipants(context.Background(),
+		[]string{"alice", env.remoteActorID})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+	require.Equal(t, recentPublished, conv.LastMessageTime)
+	firstLastStatusID := conv.LastStatusID
+	firstMessageCount := conv.TotalMessageCount
+	require.Equal(t, int64(1), firstMessageCount)
+
+	// Second message: OLDER timestamp (T+1m), simulating a replayed/stale message
+	// that arrived later due to federation timing or a replay attack.
+	olderPublished := time.Date(2026, 4, 24, 15, 1, 0, 0, time.UTC)
+	note2 := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        "https://remote.example/users/bob/statuses/csr42-older",
+			Type:      activitypub.NoteType,
+			Published: &olderPublished,
+			To:        []string{env.local.ID},
+			CC:        []string{},
+		},
+		AttributedTo: env.remoteActorID,
+		Content:      "<p>older replayed message</p>",
+		Visibility:   models.VisibilityDirect,
+	}
+	activity2 := remoteCreateActivityForNote(t, env.remoteActorID, note2,
+		"https://remote.example/activities/csr42-create-older")
+
+	require.NoError(t, env.handler.processRemoteCreateActivity(context.Background(), activity2, env.local))
+
+	// Read back the conversation — metadata must NOT regress
+	conv, err = conversations.GetConversationByParticipants(context.Background(),
+		[]string{"alice", env.remoteActorID})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+
+	// LastMessageTime must remain at the newer timestamp
+	require.True(t, conv.LastMessageTime.Equal(recentPublished),
+		"LastMessageTime should remain at %v, got %v", recentPublished, conv.LastMessageTime)
+	// LastStatusID must not be overwritten by the older message
+	require.Equal(t, firstLastStatusID, conv.LastStatusID,
+		"LastStatusID should not regress from %s to an older status", firstLastStatusID)
+	// TotalMessageCount should not be incremented for the older message
+	// when the guard skips metadata update
+	require.Equal(t, firstMessageCount, conv.TotalMessageCount,
+		"TotalMessageCount should remain %d, got %d", firstMessageCount, conv.TotalMessageCount)
+
+	// Verify the per-user state row for the older message was still created
+	states, err := conversations.ListUserConversationStatesByFolder(context.Background(), "alice",
+		interfaces.UserConversationFolder(models.UserConversationFolderInbox),
+		interfaces.PaginationOptions{Limit: 10})
+	require.NoError(t, err)
+	// Both messages should produce state rows
+	require.GreaterOrEqual(t, len(states.Items), 1,
+		"user conversation state rows should exist for both messages")
+}
+
+// TestInboxHandler_CSR042_ReplaySameActivitySkippedAtStatusLevel verifies that
+// when the exact same inbound direct activity is replayed (same activity ID
+// mapping to the same canonical status after the target receipt guard is
+// bypassed), the status-level check prevents double processing.
+func TestInboxHandler_CSR042_ReplaySameActivitySkippedAtStatusLevel(t *testing.T) {
+	env := newInboxTestEnv(t)
+	conversations := inmemory.NewConversationRepository()
+	env.handler.conversationRepository = conversations
+	env.handler.statusRepository = newProject20StatusRepo()
+
+	published := time.Date(2026, 4, 24, 15, 30, 0, 0, time.UTC)
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        "https://remote.example/users/bob/statuses/csr42-same",
+			Type:      activitypub.NoteType,
+			Published: &published,
+			To:        []string{env.local.ID},
+			CC:        []string{},
+		},
+		AttributedTo: env.remoteActorID,
+		Content:      "<p>same message</p>",
+		Visibility:   models.VisibilityDirect,
+	}
+	activity := remoteCreateActivityForNote(t, env.remoteActorID, note,
+		"https://remote.example/activities/csr42-create-same")
+
+	// First delivery: should successfully process
+	require.NoError(t, env.handler.processRemoteCreateActivity(context.Background(), activity, env.local))
+
+	// Read back the conversation
+	conv, err := conversations.GetConversationByParticipants(context.Background(),
+		[]string{"alice", env.remoteActorID})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+
+	firstLastStatusID := conv.LastStatusID
+	firstMessageCount := conv.TotalMessageCount
+	firstLastMessageTime := conv.LastMessageTime
+
+	// Second delivery of the EXACT same activity (replay)
+	require.NoError(t, env.handler.processRemoteCreateActivity(context.Background(), activity, env.local))
+
+	// Conversation metadata must be unchanged
+	conv, err = conversations.GetConversationByParticipants(context.Background(),
+		[]string{"alice", env.remoteActorID})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+
+	require.Equal(t, firstLastStatusID, conv.LastStatusID,
+		"duplicate delivery must not change LastStatusID")
+	require.Equal(t, firstMessageCount, conv.TotalMessageCount,
+		"duplicate delivery must not increment TotalMessageCount")
+	require.True(t, conv.LastMessageTime.Equal(firstLastMessageTime),
+		"duplicate delivery must not change LastMessageTime")
+}

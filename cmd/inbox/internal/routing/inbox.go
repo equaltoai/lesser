@@ -2829,12 +2829,18 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 		publishedAt = time.Now().UTC()
 	}
 
-	if conversation.LastStatusID != status.StatusID {
-		conversation.TotalMessageCount++
+	skipConversationMetadata := !createConversation &&
+		!conversation.LastMessageTime.IsZero() &&
+		!publishedAt.After(conversation.LastMessageTime)
+
+	if !skipConversationMetadata {
+		if conversation.LastStatusID != status.StatusID {
+			conversation.TotalMessageCount++
+		}
+		conversation.LastStatusID = status.StatusID
+		conversation.LastMessageTime = publishedAt
+		conversation.UpdatedAt = publishedAt
 	}
-	conversation.LastStatusID = status.StatusID
-	conversation.LastMessageTime = publishedAt
-	conversation.UpdatedAt = publishedAt
 	conversation.ParticipantRefs = models.NormalizeConversationParticipantRefs(conversation.ParticipantRefs)
 	if len(conversation.ParticipantRefs) == 0 {
 		conversation.ParticipantRefs = info.participantRefs
@@ -2842,6 +2848,12 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 	conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
 
 	remoteRef := inboundDirectRemoteParticipantRef(info)
+	stateSortAt := publishedAt
+	if skipConversationMetadata && !conversation.LastMessageTime.IsZero() {
+		// When the incoming message is older, still record the state but
+		// anchor sort order to conversation time so the thread stays in place.
+		stateSortAt = conversation.LastMessageTime
+	}
 	state := &models.UserConversationState{
 		ViewerID:                 info.localParticipantID,
 		ConversationID:           conversation.ID,
@@ -2854,7 +2866,7 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 		RequestState:             models.DmRequestStateAccepted,
 		PreviewStatusID:          status.StatusID,
 		PreviewStatusPublishedAt: publishedAt,
-		SortAt:                   publishedAt,
+		SortAt:                   stateSortAt,
 		Unread:                   true,
 		CreatedAt:                conversation.CreatedAt,
 		UpdatedAt:                publishedAt,
