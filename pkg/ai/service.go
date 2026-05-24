@@ -121,14 +121,11 @@ func RedactPIIFromAnalysis(analysis *AIAnalysis) *AIAnalysis {
 	return &redacted
 }
 
-// AIConfig contains configuration for AI service features and thresholds
-//
 // defaultMaxImageDownloadBytes caps remote image downloads at 10 MiB
 // to prevent cost amplification via unbounded media downloads.
-//
-//nolint:revive // AI prefix clarifies this is AI-specific config
 const defaultMaxImageDownloadBytes = 10 * 1024 * 1024 // 10 MiB
 
+// AIConfig contains configuration for AI service features and thresholds.
 type AIConfig struct {
 	// Thresholds for auto-moderation
 	NSFWThreshold      float64
