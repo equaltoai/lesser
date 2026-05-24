@@ -46,7 +46,7 @@ func TestSearchServiceIntegration_Round09_SemanticSearchBranches(t *testing.T) {
 			},
 		}
 
-		return ai.NewAIService(cfg, &ai.AIConfig{})
+		return ai.NewAIService(cfg, &ai.Config{})
 	}
 
 	setupBudgetOK := func(mockQuery *mocks.MockQuery) {

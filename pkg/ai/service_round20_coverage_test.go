@@ -307,7 +307,7 @@ func TestAIService_Round20_AnalyzeText_ComprehendPaths(t *testing.T) {
 		svc := &AIService{
 			comprehend: comprehendClient,
 			logger:     zap.NewNop(),
-			config: &AIConfig{
+			config: &Config{
 				EnablePIIDetection: true,
 				ToxicityModelARN:   "arn:aws:comprehend:toxicity",
 			},
@@ -348,7 +348,7 @@ func TestAIService_Round20_AnalyzeText_ComprehendPaths(t *testing.T) {
 		svc := &AIService{
 			comprehend: comprehendClient,
 			logger:     zap.NewNop(),
-			config: &AIConfig{
+			config: &Config{
 				EnablePIIDetection: false,
 				ToxicityModelARN:   "",
 			},
@@ -364,7 +364,7 @@ func TestAIService_Round20_AnalyzeText_ComprehendPaths(t *testing.T) {
 
 func TestAIService_Round20_ImageAnalysis_Paths(t *testing.T) {
 	t.Run("analyzeImage_returns_empty_when_rekognition_nil", func(t *testing.T) {
-		svc := &AIService{config: &AIConfig{S3Bucket: "bucket"}}
+		svc := &AIService{config: &Config{S3Bucket: "bucket"}}
 		analysis, err := svc.analyzeImage(context.Background(), "ignored", "key")
 		require.NoError(t, err)
 		require.NotNil(t, analysis)
@@ -416,7 +416,7 @@ func TestAIService_Round20_ImageAnalysis_Paths(t *testing.T) {
 			comprehend:  textClient,
 			rekognition: rekognitionClient,
 			logger:      zap.NewNop(),
-			config: &AIConfig{
+			config: &Config{
 				S3Bucket: "bucket",
 			},
 		}
@@ -446,7 +446,7 @@ func TestAIService_Round20_ImageAnalysis_Paths(t *testing.T) {
 			detectTextErr:             errors.New("texterr"),
 			recognizeCelebritiesErr:   errors.New("celeberr"),
 		}
-		svc := &AIService{rekognition: rekognitionClient, config: &AIConfig{S3Bucket: "bucket"}}
+		svc := &AIService{rekognition: rekognitionClient, config: &Config{S3Bucket: "bucket"}}
 
 		analysis, err := svc.analyzeImage(context.Background(), "ignored", "key")
 		require.NoError(t, err)
@@ -473,7 +473,7 @@ func TestAIService_Round20_DetectAIContent_GenerateEmbedding_AndRequests(t *test
 		svc := &AIService{
 			bedrock: bedrockClient,
 			logger:  zap.NewNop(),
-			config: &AIConfig{
+			config: &Config{
 				BedrockModelID: aiModelID,
 			},
 		}
@@ -508,7 +508,7 @@ func TestAIService_Round20_DetectAIContent_GenerateEmbedding_AndRequests(t *test
 		svc := &AIService{
 			bedrock: bedrockClient,
 			logger:  zap.NewNop(),
-			config: &AIConfig{
+			config: &Config{
 				BedrockModelID: aiModelID,
 			},
 		}
@@ -529,7 +529,7 @@ func TestAIService_Round20_DetectAIContent_GenerateEmbedding_AndRequests(t *test
 			},
 		}
 
-		svc := &AIService{bedrock: bedrockClient, config: &AIConfig{}}
+		svc := &AIService{bedrock: bedrockClient, config: &Config{}}
 		_, err := svc.GenerateEmbedding(context.Background(), "hello")
 		require.Error(t, err)
 
@@ -544,7 +544,7 @@ func TestAIService_Round20_DetectAIContent_GenerateEmbedding_AndRequests(t *test
 		svc := &AIService{
 			sqsClient: sqsClient,
 			logger:    zap.NewNop(),
-			config:    &AIConfig{AIQueueURL: ""},
+			config:    &Config{AIQueueURL: ""},
 		}
 		reqID, err := svc.QueueAnalysisRequest(context.Background(), "obj", "note", false)
 		require.NoError(t, err)
@@ -569,7 +569,7 @@ func TestAIService_Round20_DetectAIContent_GenerateEmbedding_AndRequests(t *test
 
 func TestAIService_Round20_UploadImageToS3_Paths(t *testing.T) {
 	t.Run("existing_key_short_circuit", func(t *testing.T) {
-		svc := &AIService{config: &AIConfig{S3Bucket: "bucket"}}
+		svc := &AIService{config: &Config{S3Bucket: "bucket"}}
 		key, err := svc.uploadImageToS3(context.Background(), "https://bucket.s3.us-east-1.amazonaws.com/media/images/photo.jpg")
 		require.NoError(t, err)
 		require.Equal(t, "media/images/photo.jpg", key)
@@ -577,7 +577,7 @@ func TestAIService_Round20_UploadImageToS3_Paths(t *testing.T) {
 
 	t.Run("invalid_url_parse_scheme_local_network_and_download_errors", func(t *testing.T) {
 		svc := &AIService{
-			config:     &AIConfig{S3Bucket: "bucket"},
+			config:     &Config{S3Bucket: "bucket"},
 			httpClient: &round20HTTPClient{errByURL: map[string]error{"https://example.com/": errors.New("dial")}},
 			s3Client:   &round20S3{},
 			logger:     zap.NewNop(),
@@ -616,7 +616,7 @@ func TestAIService_Round20_UploadImageToS3_Paths(t *testing.T) {
 		}
 		s3Client := &round20S3{putObjectErr: errors.New("s3 down")}
 		svc := &AIService{
-			config:     &AIConfig{S3Bucket: "bucket"},
+			config:     &Config{S3Bucket: "bucket"},
 			httpClient: httpClient,
 			s3Client:   s3Client,
 			logger:     zap.NewNop(),
@@ -636,6 +636,81 @@ func TestAIService_Round20_UploadImageToS3_Paths(t *testing.T) {
 		require.NotNil(t, s3Client.putObjectIn)
 		require.Equal(t, "bucket", aws.ToString(s3Client.putObjectIn.Bucket))
 		require.Equal(t, key, aws.ToString(s3Client.putObjectIn.Key))
+	})
+}
+
+func TestAIService_Round20_UploadImageToS3_ContentLengthBound(t *testing.T) {
+	t.Run("content_length_exceeds_default_limit", func(t *testing.T) {
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 0, // use default 10 MiB
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/big/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: defaultMaxImageDownloadBytes + 1,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("img")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/big/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+	})
+
+	t.Run("content_length_exceeds_custom_limit", func(t *testing.T) {
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 1024, // 1 KiB
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/oversized/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: 2048,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("img")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/oversized/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+	})
+
+	t.Run("content_length_within_limit_succeeds", func(t *testing.T) {
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 1024,
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/small/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: 512,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("smallimg")),
+					},
+				},
+			},
+			s3Client: &round20S3{},
+			logger:   zap.NewNop(),
+		}
+
+		key, err := svc.uploadImageToS3(context.Background(), "https://example.com/small/")
+		require.NoError(t, err)
+		require.NotEmpty(t, key)
 	})
 }
 
@@ -675,7 +750,7 @@ func TestAIService_Round20_AnalyzeContent_ExerciseTopLevel(t *testing.T) {
 		bedrock:   bedrockClient,
 		sqsClient: sqsClient,
 		logger:    zap.NewNop(),
-		config: &AIConfig{
+		config: &Config{
 			EnablePIIDetection:  false,
 			EnableAIDetection:   true,
 			EnableImageAnalysis: true,

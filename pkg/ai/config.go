@@ -49,20 +49,21 @@ var SignalWeights = map[string]float64{
 	"harassment":    0.25, // High weight for harassment
 }
 
-// DefaultAIConfig returns a sensible default configuration
-func DefaultAIConfig() *AIConfig {
-	return &AIConfig{
-		NSFWThreshold:       0.8,
-		ToxicityThreshold:   0.7,
-		SpamThreshold:       0.75,
-		AIContentThreshold:  0.85,
-		EnablePIIDetection:  true,
-		EnableAIDetection:   true,
-		EnableImageAnalysis: true,
-		BedrockModelID:      "anthropic.claude-v2",
-		ToxicityModelARN:    "", // Custom model if available
-		S3Bucket:            "lesser-media-analysis",
-		AIQueueURL:          "", // Set from environment
+// DefaultConfig returns a sensible default configuration
+func DefaultConfig() *Config {
+	return &Config{
+		NSFWThreshold:         0.8,
+		ToxicityThreshold:     0.7,
+		SpamThreshold:         0.75,
+		AIContentThreshold:    0.85,
+		EnablePIIDetection:    true,
+		EnableAIDetection:     true,
+		EnableImageAnalysis:   true,
+		BedrockModelID:        "anthropic.claude-v2",
+		ToxicityModelARN:      "", // Custom model if available
+		S3Bucket:              "lesser-media-analysis",
+		AIQueueURL:            "", // Set from environment
+		MaxImageDownloadBytes: defaultMaxImageDownloadBytes,
 	}
 }
 

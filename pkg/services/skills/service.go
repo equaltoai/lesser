@@ -72,6 +72,11 @@ const (
 	skillBundleBase64        = "base64"
 	defaultCatalogListLimit  = 25
 	maxCatalogListLimit      = 100
+	// maxCatalogScanRevisions caps the number of raw approved revisions a single
+	// ListCatalog request may inspect before returning a cursor. This bounds
+	// per-request storage work when many approved revisions are hidden (non-public
+	// exposure) and prevents unbound catalog scans (CSR-039).
+	maxCatalogScanRevisions = 300
 )
 
 // CatalogFilter constrains approved skill catalog listing.
@@ -320,6 +325,7 @@ func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter Catalog
 	exposure := strings.ToLower(strings.TrimSpace(filter.Exposure))
 	out := make([]CatalogEntry, 0, limit)
 	nextCursor := ""
+	rawRevisionsInspected := 0
 
 	for len(out) < limit {
 		revisions, rawNextCursor, err := s.repo.ListSkillRevisionsByStatus(ctx, models.SkillRevisionStatusApproved, limit, cursor)
@@ -330,6 +336,7 @@ func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter Catalog
 			return out, "", nil
 		}
 
+		rawRevisionsInspected += len(revisions)
 		rawNextCursor = strings.TrimSpace(rawNextCursor)
 		for index, revision := range revisions {
 			entry, ok := s.catalogEntryForRevision(ctx, viewer, exposure, revision)
@@ -343,6 +350,18 @@ func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter Catalog
 			if len(out) >= limit {
 				return out, catalogCursorAfterVisibleLimit(index, len(revisions), rawNextCursor, nextCursor), nil
 			}
+		}
+
+		// Enforce per-request scan cap (CSR-039): if we have inspected the maximum
+		// allowed raw revisions without filling the visible page, stop scanning.
+		// When no visible entries were found (e.g. all revisions are hidden from
+		// the viewer), return no continuation cursor — rawNextCursor may reference
+		// non-public revision identifiers and must never leak to public callers.
+		if rawRevisionsInspected >= maxCatalogScanRevisions {
+			if len(out) == 0 {
+				return out, "", nil
+			}
+			return out, nextCursor, nil
 		}
 
 		nextRawCursor, ok := advanceCatalogRawCursor(cursor, rawNextCursor)

@@ -252,7 +252,7 @@ func initializeGraphQLSpecificServices() {
 	// Initialize AI service (optional)
 	var aiService *ai.AIService
 	if !cfg.DisableAI {
-		aiConfig := &ai.AIConfig{
+		aiConfig := &ai.Config{
 			ToxicityThreshold:   0.7,
 			NSFWThreshold:       0.8,
 			SpamThreshold:       0.75,

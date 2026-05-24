@@ -70,7 +70,7 @@ var (
 	processor              *StatusIndexer
 	mustInitializeLambdaFn = common.MustInitializeLambda
 	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
-	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.AIConfig) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
+	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.Config) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
 	newStatusIndexerFn     = NewStatusIndexer
 	newLambdaClientFn      = theorydb.NewLambdaOptimizedClient
 	lambdaStartFn          = lambda.Start
@@ -825,7 +825,7 @@ func main() {
 	}
 
 	// Initialize AI service
-	aiConfig := &ai.AIConfig{
+	aiConfig := &ai.Config{
 		NSFWThreshold:       0.8,
 		ToxicityThreshold:   0.7,
 		SpamThreshold:       0.6,
