@@ -51,11 +51,13 @@ func TestCSR044_FillStatusAgentIdentityDefaults_NoSoulAgentIDBackfill(t *testing
 	assert.NotEmpty(t, out.ModerationLabel, "public moderation label must be filled")
 }
 
-// TestCSR044_FillStatusAgentIdentityDefaults_PreservesExplicitID verifies
-// that a SoulAgentID explicitly stored by the agent on the Note at creation
-// time is preserved. The fix only removes the runtime backfill, not the
-// agent's own declared identity.
-func TestCSR044_FillStatusAgentIdentityDefaults_PreservesExplicitID(t *testing.T) {
+// TestCSR044_FillStatusAgentIdentityDefaults_RedactsExplicitID verifies
+// the M2.2 defense-in-depth: fillStatusAgentIdentityDefaults must explicitly
+// clear SoulAgentID so that even if an upstream path sets it (e.g., from
+// stored Note attribution), it is redacted before public output. The SoulAgentID
+// is private soul binding data and must never leak through public status
+// attribution regardless of how it was set.
+func TestCSR044_FillStatusAgentIdentityDefaults_RedactsExplicitID(t *testing.T) {
 	h := &Handler{}
 
 	agentUser := &storage.User{
@@ -75,8 +77,12 @@ func TestCSR044_FillStatusAgentIdentityDefaults_PreservesExplicitID(t *testing.T
 	ctx := context.Background()
 	h.fillStatusAgentIdentityDefaults(ctx, out, agentUser)
 
-	require.Equal(t, explicitID, out.SoulAgentID,
-		"explicitly stored SoulAgentID from the Note must be preserved")
+	// CSR-044 M2.2 second rework: SoulAgentID must be redacted even if it was
+	// explicitly set on the attribution before fillStatusAgentIdentityDefaults runs.
+	// This is defense-in-depth: no code path should be able to leak SoulAgentID
+	// through public status attribution.
+	require.Empty(t, out.SoulAgentID,
+		"CSR-044 defense-in-depth: explicitly set SoulAgentID must be redacted by fillStatusAgentIdentityDefaults")
 }
 
 // TestCSR044_RedactAPIAgentPrivateFields_ClearsSoulFields verifies that
@@ -234,4 +240,47 @@ func TestCSR044_FullBuildStatusAgentAttribution_NoLeak(t *testing.T) {
 	require.Equal(t, agents.DroneIdentityStateSouled, out.IdentityState)
 	require.Equal(t, "Souled", out.IdentityLabel)
 	require.Equal(t, "Souled", out.ModerationLabel)
+}
+
+// TestCSR044_StoredSoulAgentID_RedactedOnRender verifies the M2.2
+// defense-in-depth: even when a stored Note's AgentPostAttribution contains
+// a SoulAgentID (e.g., from a pre-fix creation path that stored it),
+// the rendering path (statusAgentAttributionFromNote → buildStatusAgentAttribution)
+// must NOT expose it on the public AgentPostAttribution.
+func TestCSR044_StoredSoulAgentID_RedactedOnRender(t *testing.T) {
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	account := &storage.Account{
+		User: &storage.User{
+			Username: "agent-bob",
+			IsAgent:  true,
+		},
+	}
+
+	// Simulate a Note that was created before the M2.2 fix, so its
+	// stored AgentAttribution contains a SoulAgentID.
+	status := &storagemodels.Status{
+		Note: &activitypub.Note{
+			AgentAttribution: &activitypub.AgentPostAttribution{
+				TriggerType:     "scheduled",
+				SoulAgentID:     "0xpre-fix-leaked-soul",
+				ModelID:         "gpt-4o",
+				SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
+				IdentityState:   agents.DroneIdentityStateSouled,
+				IdentityLabel:   "Souled",
+				ModerationLabel: "Souled",
+			},
+		},
+	}
+
+	out := h.buildStatusAgentAttribution(context.Background(), account, status)
+	require.NotNil(t, out)
+
+	// CSR-044 M2.2 defense-in-depth: stored SoulAgentID must not leak.
+	require.Empty(t, out.SoulAgentID,
+		"CSR-044 defense-in-depth: pre-fix stored SoulAgentID must be redacted on render")
+	require.Equal(t, "scheduled", out.TriggerType)
+	require.Equal(t, "gpt-4o", out.ModelID)
+	require.Equal(t, agents.DroneIdentityStateSouled, out.IdentityState)
 }

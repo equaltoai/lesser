@@ -213,6 +213,11 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 	}
 	droneIdentity := agents.DeriveDroneIdentitySemantics(agentUser.Username, workflowState, soulBound, soulAgentID)
 
+	// CSR-044 (M2.2 second rework): SoulAgentID is private soul binding data.
+	// It must NOT be stored on the Note's AgentPostAttribution via GraphQL.
+	// The drone identity semantics may derive a SoulAgentID, but that derivation
+	// is for authorized/internal consumers only — it must not persist into
+	// stored public post attribution.
 	return &activitypub.AgentPostAttribution{
 		TriggerType:       triggerType,
 		TriggerDetails:    triggerDetails,
@@ -226,7 +231,6 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 		IdentityLabel:     droneIdentity.IdentityLabel,
 		ContinuityState:   droneIdentity.ContinuityState,
 		ContinuitySummary: droneIdentity.ContinuitySummary,
-		SoulAgentID:       droneIdentity.SoulAgentID,
 		ModerationLabel:   droneIdentity.ModerationLabel,
 	}, nil
 }
