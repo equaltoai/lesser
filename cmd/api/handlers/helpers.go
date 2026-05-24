@@ -1024,7 +1024,9 @@ func statusAgentAttributionFromNote(noteAttr *activitypub.AgentPostAttribution) 
 	out.IdentityLabel = strings.TrimSpace(noteAttr.IdentityLabel)
 	out.ContinuityState = strings.TrimSpace(noteAttr.ContinuityState)
 	out.ContinuitySummary = strings.TrimSpace(noteAttr.ContinuitySummary)
-	out.SoulAgentID = strings.TrimSpace(noteAttr.SoulAgentID)
+	// CSR-044 (M2.2 second rework): SoulAgentID must not be copied from stored
+	// Note attribution to the public AgentPostAttribution. Even if older data
+	// contains a SoulAgentID on the Note, it must not leak through rendering.
 	out.ModerationLabel = strings.TrimSpace(noteAttr.ModerationLabel)
 	if v := strings.TrimSpace(noteAttr.SchemaVersion); v != "" {
 		out.SchemaVersion = v
@@ -1100,9 +1102,11 @@ func (h *Handler) fillStatusAgentIdentityDefaults(
 	if out.ContinuitySummary == "" {
 		out.ContinuitySummary = identity.ContinuitySummary
 	}
-	if out.SoulAgentID == "" {
-		out.SoulAgentID = identity.SoulAgentID
-	}
+	// CSR-044 (M2.2 second rework): SoulAgentID is private soul binding data
+	// and must never appear on public status attribution — neither from runtime
+	// backfill nor from stored Note attribution. Explicitly clear it so that
+	// even if an upstream code path sets it, it is redacted before public output.
+	out.SoulAgentID = ""
 	if out.ModerationLabel == "" {
 		out.ModerationLabel = identity.ModerationLabel
 	}

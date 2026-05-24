@@ -185,7 +185,11 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 	attribution.IdentityLabel = identity.IdentityLabel
 	attribution.ContinuityState = identity.ContinuityState
 	attribution.ContinuitySummary = identity.ContinuitySummary
-	attribution.SoulAgentID = identity.SoulAgentID
+	// CSR-044 (M2.2 second rework): SoulAgentID is private soul binding data.
+	// It must NOT be stored on the Note's AgentPostAttribution. The runtime
+	// identity semantics may derive a SoulAgentID, but that derivation is for
+	// authorized/internal consumers only — it must not persist into stored
+	// public post attribution.
 	attribution.ModerationLabel = identity.ModerationLabel
 
 	return attribution, nil, nil

@@ -231,7 +231,7 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 		require.Equal(t, "user-v2", out.ModelID)
 	})
 
-	t.Run("agent fills identity semantics from workflow metadata and soul binding", func(t *testing.T) {
+	t.Run("agent fills identity semantics from workflow metadata without leaking SoulAgentID", func(t *testing.T) {
 		metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
 			CurrentPhase: agents.DroneWorkflowPhaseContinuity,
 			CurrentState: agents.DroneWorkflowStateContinuityStable,
@@ -264,7 +264,11 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 		require.Equal(t, agents.DroneIdentityStateSouled, out.IdentityState)
 		require.Equal(t, "Souled", out.IdentityLabel)
 		require.Equal(t, agents.DroneContinuityStateStable, out.ContinuityState)
-		require.Equal(t, "0xagent-soul", out.SoulAgentID)
+		// CSR-044: SoulAgentID must NOT leak to public status attribution from
+		// runtime identity semantics. The identity semantics resolve the SoulAgentID
+		// from workflow metadata and soul body bindings, but fillStatusAgentIdentityDefaults
+		// no longer backfills it onto AgentPostAttribution for public viewers.
+		require.Empty(t, out.SoulAgentID, "CSR-044: SoulAgentID must not leak from identity semantics to public status attribution")
 		require.Equal(t, "Souled", out.ModerationLabel)
 	})
 }
