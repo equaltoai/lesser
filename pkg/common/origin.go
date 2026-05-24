@@ -178,32 +178,48 @@ func headerMapValue(headers map[string][]string, key string) string {
 	return ""
 }
 
-// ValidateRequestOriginDomain checks that the origin reconstructed from forwarded
-// headers matches the expected instance domain. This prevents forwarded-host spoofing
-// in federation-facing endpoints (actor, objects, inbox) where the reconstructed
-// origin feeds into ActivityPub HTTP Signature verification.
+// requestOriginHost returns the host from the request using the same reconstruction
+// semantics as RequestURLFromHeaders: forwarded headers take priority, then the
+// Host header is used as a safe fallback (same as RequestURLFromHeaders does at
+// lines 30–38). This ensures domain-binding validation (ValidateRequestOriginDomain)
+// and URL reconstruction (RequestURLFromHeaders) agree on which host to use.
+func requestOriginHost(headers map[string][]string) string {
+	// Forwarded headers first — matches OriginURLFromHeaders priority.
+	if origin := OriginURLFromHeaders(headers); origin != "" {
+		u, err := url.Parse(origin)
+		if err == nil && u != nil {
+			if host := strings.ToLower(strings.TrimSpace(u.Hostname())); host != "" {
+				return host
+			}
+		}
+	}
+	// Host header fallback — matches RequestURLFromHeaders lines 33–35.
+	if host, ok := normalizeForwardedHost(headerMapValue(headers, HostHeader)); ok {
+		u, err := url.Parse(SchemeHTTPS + "://" + host)
+		if err == nil && u != nil {
+			return strings.ToLower(strings.TrimSpace(u.Hostname()))
+		}
+	}
+	return ""
+}
+
+// ValidateRequestOriginDomain checks that the request origin host matches the
+// expected instance domain. Uses the same host reconstruction as
+// RequestURLFromHeaders (forwarded headers → Host header fallback) so that
+// Host-only requests reach existing auth/visibility gates rather than being
+// rejected early with a 400.
 //
 // Returns nil when validation passes or when localDomain is empty (caller cannot
-// bind without a known domain). Returns an error when the origin host differs from
-// the expected local domain.
+// bind without a known domain). Returns an error when the origin host cannot be
+// determined or differs from the expected local domain.
 func ValidateRequestOriginDomain(headers map[string][]string, localDomain string) error {
 	if strings.TrimSpace(localDomain) == "" {
 		return nil
 	}
 
-	origin := OriginURLFromHeaders(headers)
-	if origin == "" {
-		return errors.New("origin domain validation failed: no origin from forwarded headers")
-	}
-
-	u, err := url.Parse(origin)
-	if err != nil {
-		return fmt.Errorf("origin domain validation failed: invalid origin URL: %w", err)
-	}
-
-	originHost := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	originHost := requestOriginHost(headers)
 	if originHost == "" {
-		return errors.New("origin domain validation failed: missing origin host")
+		return errors.New("origin domain validation failed: no origin host determinable")
 	}
 
 	expectedHost := strings.ToLower(strings.TrimSpace(localDomain))

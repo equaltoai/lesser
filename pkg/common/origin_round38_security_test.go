@@ -72,12 +72,36 @@ func TestValidateRequestOriginDomain_BindsToInstanceDomain(t *testing.T) {
 			wantErr:     true, // normalizeForwardedHost rejects userinfo, so no origin
 		},
 		{
-			name: "no forwarded headers produces error",
+			name: "Host header matches (no forwarded headers)",
+			headers: map[string][]string{
+				"host": {"lesser.example"},
+			},
+			localDomain: "lesser.example",
+			wantErr:     false,
+		},
+		{
+			name: "Host header mismatches (no forwarded headers)",
 			headers: map[string][]string{
 				"host": {"internal.execute-api.us-east-1.amazonaws.com"},
 			},
 			localDomain: "lesser.example",
 			wantErr:     true,
+			errContains: "does not match instance host",
+		},
+		{
+			name: "Host header with port matches (no forwarded headers)",
+			headers: map[string][]string{
+				"host": {"lesser.example:8443"},
+			},
+			localDomain: "lesser.example",
+			wantErr:     false,
+		},
+		{
+			name:        "no host determinable (neither forwarded nor Host headers)",
+			headers:     map[string][]string{},
+			localDomain: "lesser.example",
+			wantErr:     true,
+			errContains: "no origin host determinable",
 		},
 		{
 			name: "case-insensitive domain comparison",
