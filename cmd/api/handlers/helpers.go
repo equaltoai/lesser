@@ -1100,9 +1100,12 @@ func (h *Handler) fillStatusAgentIdentityDefaults(
 	if out.ContinuitySummary == "" {
 		out.ContinuitySummary = identity.ContinuitySummary
 	}
-	if out.SoulAgentID == "" {
-		out.SoulAgentID = identity.SoulAgentID
-	}
+	// CSR-044: Do not backfill SoulAgentID from runtime identity semantics when
+	// rendering public statuses. The SoulAgentID originates from a private soul
+	// body binding and must not leak to unauthenticated viewers through the
+	// AgentPostAttribution attached to status responses. If the agent explicitly
+	// stored a SoulAgentID on the Note at creation time, that value (the agent's
+	// own declared identity) is preserved; only the runtime backfill is removed.
 	if out.ModerationLabel == "" {
 		out.ModerationLabel = identity.ModerationLabel
 	}
