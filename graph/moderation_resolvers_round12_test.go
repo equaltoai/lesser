@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
@@ -205,9 +206,11 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 // Assertions:
 //  1. AddCommunityNote returns ErrCommunityNoteRateLimited (or an equivalent
 //     app error containing "rate limit").
-//  2. No community note is created because the resolver returns early at the
-//     rate-limit gate — structurally, CreateCommunityNote is never reached
-//     when allowed==false.
+//  2. No community note is created — proved executably by counting
+//     Dynamorm Create/CreateOrUpdate calls before and after the mutation.
+//     If CreateCommunityNote were reached it would add a Create or
+//     CreateOrUpdate call to the mock query; the before-after diff being
+//     zero proves the early return at the rate-limit gate.
 //
 // Reputation baseline note:
 //
@@ -217,7 +220,7 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 //	the real TotalScore.  The flat baseline is an intentional conservative
 //	default for GraphQL, documented in mutation_resolvers_moderation.go.
 func TestAddCommunityNote_RateLimitExceeded(t *testing.T) {
-	resolver, storage, _, _, state := newRound12GraphResolverWithMocks(t)
+	resolver, storage, _, mockQuery, state := newRound12GraphResolverWithMocks(t)
 
 	// Seed a status object so GetNoteWithViewer passes validation.
 	status := &storageModels.Status{
@@ -251,6 +254,12 @@ func TestAddCommunityNote_RateLimitExceeded(t *testing.T) {
 	state.autoPopulateAll = true
 	state.autoPopulateCount = 5
 
+	// Count Create/CreateOrUpdate calls on the Dynamorm mock before the
+	// mutation.  If the resolver reaches CreateCommunityNote it will add a
+	// Create (or CreateOrUpdate) call; the diff must be zero to prove the
+	// early-return at the rate-limit gate works executably.
+	createCountBefore := countMockCreateCalls(mockQuery)
+
 	mut := resolver.Mutation()
 	userCtx := round12AuthContext("alice")
 
@@ -259,18 +268,34 @@ func TestAddCommunityNote_RateLimitExceeded(t *testing.T) {
 		Content:  "This note should be rate-limited",
 	})
 
+	createCountAfter := countMockCreateCalls(mockQuery)
+
 	// 1. Resolver must return a rate-limit error when the caller is at the limit.
 	require.Error(t, err)
 	require.Nil(t, payload)
 	require.Contains(t, err.Error(), "Rate limit",
 		"expected rate-limit error, got: %v", err)
 
-	// 2. No community note is created — the early return at the rate-limit gate
-	//    (line ~152 in mutation_resolvers_moderation.go) prevents execution
-	//    from reaching CreateCommunityNote.  This is structurally guaranteed;
-	//    the assertion above that err is a rate-limit error suffices as proof
-	//    because ErrCommunityNoteRateLimited is only returned before
-	//    CreateCommunityNote is called.
+	// 2. No community note is created — proved executably: the number of
+	//    Dynamorm Create/CreateOrUpdate calls did not change during the
+	//    rate-limited mutation.  If CreateCommunityNote were reached it would
+	//    add a Create (or CreateOrUpdate) call.
+	require.Equal(t, createCountBefore, createCountAfter,
+		"CreateCommunityNote must not be invoked after rate-limit denial")
+}
+
+// countMockCreateCalls returns the number of Create and CreateOrUpdate calls
+// recorded on a Dynamorm MockQuery.  It is used to prove executably that the
+// rate-limit gate prevents CreateCommunityNote from being reached: if the call
+// count does not change across a rate-limited mutation, no write occurred.
+func countMockCreateCalls(q *dynamormmocks.MockQuery) int {
+	count := 0
+	for _, call := range q.Calls {
+		if call.Method == "Create" || call.Method == "CreateOrUpdate" {
+			count++
+		}
+	}
+	return count
 }
 
 func TestRound12ModerationResolvers_DashboardStorageNil(t *testing.T) {
