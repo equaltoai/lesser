@@ -1,6 +1,8 @@
 package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -174,4 +176,40 @@ func headerMapValue(headers map[string][]string, key string) string {
 		return strings.TrimSpace(values[0])
 	}
 	return ""
+}
+
+// ValidateRequestOriginDomain checks that the origin reconstructed from forwarded
+// headers matches the expected instance domain. This prevents forwarded-host spoofing
+// in federation-facing endpoints (actor, objects, inbox) where the reconstructed
+// origin feeds into ActivityPub HTTP Signature verification.
+//
+// Returns nil when validation passes or when localDomain is empty (caller cannot
+// bind without a known domain). Returns an error when the origin host differs from
+// the expected local domain.
+func ValidateRequestOriginDomain(headers map[string][]string, localDomain string) error {
+	if strings.TrimSpace(localDomain) == "" {
+		return nil
+	}
+
+	origin := OriginURLFromHeaders(headers)
+	if origin == "" {
+		return errors.New("origin domain validation failed: no origin from forwarded headers")
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("origin domain validation failed: invalid origin URL: %w", err)
+	}
+
+	originHost := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if originHost == "" {
+		return errors.New("origin domain validation failed: missing origin host")
+	}
+
+	expectedHost := strings.ToLower(strings.TrimSpace(localDomain))
+	if originHost != expectedHost {
+		return fmt.Errorf("origin host %q does not match instance host %q", originHost, expectedHost)
+	}
+
+	return nil
 }
