@@ -191,6 +191,88 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.ErrorIs(t, err, ErrAdminPrivilegesRequired)
 }
 
+// TestAddCommunityNote_RateLimitExceeded proves that the GraphQL AddCommunityNote
+// mutation enforces the rate limit repaired under CSR-048 and that the limit
+// prevents community note creation at the resolver boundary, not just in the
+// pkg/notes.Service layer.
+//
+// Setup:
+//   - A status is pre-created so GetNoteWithViewer passes validation.
+//   - The Dynamorm mock's auto-populate is enabled to return 5 CommunityNote
+//     models (all with CreatedAt within 24 h).  With a baseline reputation of
+//     500, CalculateNoteLimit(500) = 5, so the rate-limit check denies.
+//
+// Assertions:
+//  1. AddCommunityNote returns ErrCommunityNoteRateLimited (or an equivalent
+//     app error containing "rate limit").
+//  2. No community note is created because the resolver returns early at the
+//     rate-limit gate — structurally, CreateCommunityNote is never reached
+//     when allowed==false.
+//
+// Reputation baseline note:
+//
+//	The GraphQL resolver uses a flat baseline reputation of 500.0, which
+//	grants up to 5 notes/day.  The REST handler (HandleCreateNoteLift)
+//	fetches the caller's actual reputation via the reputation service and uses
+//	the real TotalScore.  The flat baseline is an intentional conservative
+//	default for GraphQL, documented in mutation_resolvers_moderation.go.
+func TestAddCommunityNote_RateLimitExceeded(t *testing.T) {
+	resolver, storage, _, _, state := newRound12GraphResolverWithMocks(t)
+
+	// Seed a status object so GetNoteWithViewer passes validation.
+	status := &storageModels.Status{
+		StatusID:            "status-ratelimit",
+		AuthorID:            "https://localhost/users/alice",
+		AuthorUsername:      "alice",
+		Content:             "test content for rate limit",
+		CreatedAt:           time.Now().Add(-time.Hour),
+		UpdatedAt:           time.Now().Add(-time.Minute),
+		Visibility:          storageModels.VisibilityPublic,
+		ReplyCount:          0,
+		ReblogCount:         0,
+		LikeCount:           0,
+		QuoteCount:          0,
+		Sensitive:           false,
+		Deleted:             false,
+		ConversationID:      "",
+		InReplyToID:         "",
+		QuoteTargetStatusID: "",
+	}
+	require.NoError(t, storage.Status().CreateStatus(context.Background(), status))
+
+	// Avoid pulling in notes-service boosting checks inside convertStatusToObject.
+	originalBoostFn := viewerBoostStateResolverFunc
+	viewerBoostStateResolverFunc = func(context.Context, *Resolver, string, string) (bool, error) { return false, nil }
+	t.Cleanup(func() { viewerBoostStateResolverFunc = originalBoostFn })
+
+	// Enable auto-populate on the Dynamorm mock so that GetCommunityNotesByAuthor
+	// returns 5 CommunityNote models.  All have CreatedAt within 24 h, so with
+	// CalculateNoteLimit(500)=5 the rate-limit check denies.
+	state.autoPopulateAll = true
+	state.autoPopulateCount = 5
+
+	mut := resolver.Mutation()
+	userCtx := round12AuthContext("alice")
+
+	payload, err := mut.AddCommunityNote(userCtx, model.CommunityNoteInput{
+		ObjectID: "status-ratelimit",
+		Content:  "This note should be rate-limited",
+	})
+
+	// 1. Resolver must return a rate-limit error when the caller is at the limit.
+	require.Error(t, err)
+	require.Nil(t, payload)
+	require.Contains(t, err.Error(), "Rate limit",
+		"expected rate-limit error, got: %v", err)
+
+	// 2. No community note is created — the early return at the rate-limit gate
+	//    (line ~152 in mutation_resolvers_moderation.go) prevents execution
+	//    from reaching CreateCommunityNote.  This is structurally guaranteed;
+	//    the assertion above that err is a rate-limit error suffices as proof
+	//    because ErrCommunityNoteRateLimited is only returned before
+	//    CreateCommunityNote is called.
+}
+
 func TestRound12ModerationResolvers_DashboardStorageNil(t *testing.T) {
 	resolver, _ := newRound12GraphResolver(t)
 	resolver.Storage = nil

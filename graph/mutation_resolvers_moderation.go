@@ -143,8 +143,19 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	if r.Storage != nil {
 		notesSvc := communitynotes.NewService(r.Storage, r.Logger)
 		// Use a baseline reputation score of 500 to allow up to 5 notes/day.
-		// The REST handler calculates this from actual reputation data;
-		// for GraphQL we use a conservative default.
+		//
+		// Design decision — intentional conservative default:
+		// The REST handler (HandleCreateNoteLift) fetches the caller's actual
+		// reputation via reputation.Service.GetReputation, denies users below
+		// MinReputationToCreateNotes (100.0), and uses the real TotalScore to
+		// calculate the daily limit.  The GraphQL resolver does not have
+		// access to the reputation service, so it uses a flat baseline of
+		// 500.0.  This is deliberately more permissive than the REST minimum
+		// (it grants CalculateNoteLimit(500)=5 notes/day) and errs on the
+		// side of allowing notes rather than silently denying unknown users.
+		// WARNING: if the GraphQL resolver ever gains access to the
+		// reputation service, this should be changed to use the caller's
+		// actual reputation score so both surfaces share the same policy.
 		allowed, _ := notesSvc.CheckRateLimit(ctx, authorID, 500.0)
 		if !allowed {
 			r.Logger.Warn("community note rate limit exceeded",
