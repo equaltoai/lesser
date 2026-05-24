@@ -353,11 +353,13 @@ func (s *Service) ListCatalog(ctx context.Context, viewer Viewer, filter Catalog
 		}
 
 		// Enforce per-request scan cap (CSR-039): if we have inspected the maximum
-		// allowed raw revisions without filling the visible page, return a cursor
-		// so the caller may continue rather than scanning indefinitely.
+		// allowed raw revisions without filling the visible page, stop scanning.
+		// When no visible entries were found (e.g. all revisions are hidden from
+		// the viewer), return no continuation cursor — rawNextCursor may reference
+		// non-public revision identifiers and must never leak to public callers.
 		if rawRevisionsInspected >= maxCatalogScanRevisions {
 			if len(out) == 0 {
-				return out, rawNextCursor, nil
+				return out, "", nil
 			}
 			return out, nextCursor, nil
 		}

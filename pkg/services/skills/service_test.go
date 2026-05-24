@@ -888,9 +888,12 @@ func TestServiceListCatalogScansAreBounded(t *testing.T) {
 		repo.listRevisionsByStatusCallCount, maxExpectedCalls)
 
 	// Because all visible revisions are past the scan cap, the public viewer
-	// should see zero entries and receive a continuation cursor.
+	// should see zero entries and must NOT receive a continuation cursor that
+	// leaks hidden/non-public skill or revision identifiers.
 	require.Empty(t, catalog, "expected no visible entries when all public revisions are beyond scan cap")
-	require.NotEmpty(t, cursor, "expected a continuation cursor when scan cap is hit with no visible entries")
+	require.Empty(t, cursor, "expected no continuation cursor when scan cap is hit with no visible entries (cursor would leak hidden IDs)")
+	require.NotContains(t, cursor, "SKILL#hidden", "public cursor must not reveal hidden skill identifiers")
+	require.NotContains(t, cursor, "hidden-", "public cursor must not reveal hidden skill identifiers")
 
 	t.Logf("hidden=%d public=%d calls=%d cap=%d maxCalls=%d cursor=%q",
 		hiddenCount, publicCount, repo.listRevisionsByStatusCallCount,
@@ -936,10 +939,96 @@ func TestServiceListCatalogScansAreBoundedWithLimit100(t *testing.T) {
 	require.LessOrEqual(t, repo.listRevisionsByStatusCallCount, maxExpectedCalls,
 		"ListCatalog made %d calls at limit 100; expected at most %d",
 		repo.listRevisionsByStatusCallCount, maxExpectedCalls)
-	require.Empty(t, catalog)
-	require.NotEmpty(t, cursor)
+	require.Empty(t, catalog, "expected no visible entries when all revisions are hidden")
+	require.Empty(t, cursor, "expected no continuation cursor when scan cap is hit with no visible entries (cursor would leak hidden IDs)")
+	require.NotContains(t, cursor, "SKILL#hidden", "public cursor must not reveal hidden skill identifiers")
+	require.NotContains(t, cursor, "hidden-", "public cursor must not reveal hidden skill identifiers")
 
 	t.Logf("limit=100 calls=%d maxCalls=%d", repo.listRevisionsByStatusCallCount, maxExpectedCalls)
+}
+
+// TestServiceListCatalogPartialCursorDoesNotLeakHiddenIDs proves that when
+// ListCatalog returns a continuation cursor after filling a partial visible
+// page (i.e., some visible entries found before the scan cap), the cursor
+// references only visible revisions and never leaks hidden/private IDs.
+func TestServiceListCatalogPartialCursorDoesNotLeakHiddenIDs(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeSkillRepo()
+	svc := NewService(repo)
+
+	// Seed public revisions with IDs that sort before the hidden batch so they
+	// appear first in the repo's cursor-ordered listing.
+	const publicCount = 3
+	for i := 0; i < publicCount; i++ {
+		skillID := fmt.Sprintf("aaaa-public-%03d", i)
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       models.SkillExposurePublic,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:               skillID,
+			RevisionNumber:        1,
+			DefaultExposure:       models.SkillExposurePublic,
+			ApprovalID:            "approval-" + skillID,
+			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovedBy:            "ops",
+			PrincipalID:           "principal-1",
+		})
+	}
+
+	// Seed hidden revisions — these sort after "aaaa-public-*" but within the
+	// scan cap so the service may encounter them after filling the page.
+	const hiddenCount = 50
+	for i := 0; i < hiddenCount; i++ {
+		skillID := fmt.Sprintf("hidden-%03d", i)
+		require.NoError(t, repo.CreateSkill(ctx, &models.Skill{
+			ID:                    skillID,
+			Slug:                  skillID,
+			Name:                  skillID,
+			Status:                models.SkillStatusActive,
+			DefaultExposure:       models.SkillExposurePrivate,
+			CurrentRevisionID:     skillID + "-r1",
+			CurrentRevisionNumber: 1,
+		}))
+		seedApprovedRevision(t, ctx, repo, &models.SkillRevision{
+			SkillID:               skillID,
+			RevisionNumber:        1,
+			DefaultExposure:       models.SkillExposurePrivate,
+			ApprovalID:            "approval-" + skillID,
+			ApprovalAuthorityType: models.SkillApprovalAuthorityAdmin,
+			ApprovalAuthorityID:   "ops",
+			ApprovedBy:            "ops",
+			PrincipalID:           "principal-1",
+		})
+	}
+
+	repo.listRevisionsByStatusCallCount = 0
+
+	// Public viewer, limit 2 — there are 3 public entries, so the page fills
+	// and a continuation cursor is returned.
+	catalog, cursor, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, catalog, 2, "expected 2 visible entries")
+	require.NotEmpty(t, cursor, "expected a continuation cursor for the next page")
+	// The cursor must reference a visible (public) revision, never a hidden one.
+	require.NotContains(t, cursor, "hidden", "public continuation cursor must not leak hidden skill identifiers")
+	require.Contains(t, cursor, "SKILL#aaaa-public", "public continuation cursor should reference a visible revision")
+
+	// Page 2: one more public entry, then only hidden beyond — no more cursor
+	// because there are no more visible entries.
+	catalog2, cursor2, err := svc.ListCatalog(ctx, Viewer{}, CatalogFilter{Limit: 2, Cursor: cursor})
+	require.NoError(t, err)
+	require.Len(t, catalog2, 1, "expected the last visible entry on the second page")
+	require.Empty(t, cursor2, "expected no cursor when no more visible entries exist")
+	require.NotContains(t, cursor2, "hidden", "cursor must not leak hidden IDs even when exhausted")
+
+	t.Logf("public=%d hidden=%d calls=%d", publicCount, hiddenCount, repo.listRevisionsByStatusCallCount)
 }
 
 func TestServiceGetBundleIncludesContentAndRejectsUnpublished(t *testing.T) {
