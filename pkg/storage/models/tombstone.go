@@ -22,13 +22,15 @@ type Tombstone struct {
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2SK"` // DELETED#{timestamp}
 
 	// Core fields from legacy
-	ID         string    `theorydb:"attr:id" json:"id"`                     // Original object ID
-	Type       string    `theorydb:"attr:type" json:"type"`                 // Always "Tombstone"
-	FormerType string    `theorydb:"attr:formerType" json:"formerType"`     // Original object type
-	Deleted    time.Time `theorydb:"attr:deleted" json:"deleted"`           // When it was deleted
-	DeletedBy  string    `theorydb:"attr:deletedBy" json:"deletedBy"`       // Actor who deleted it
-	Summary    string    `theorydb:"attr:summary" json:"summary,omitempty"` // Optional deletion reason
-	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`       // When the tombstone was created
+	ID           string    `theorydb:"attr:id" json:"id"`                                         // Original object ID
+	Type         string    `theorydb:"attr:type" json:"type"`                                     // Always "Tombstone"
+	FormerType   string    `theorydb:"attr:formerType" json:"formerType"`                         // Original object type
+	Deleted      time.Time `theorydb:"attr:deleted" json:"deleted"`                               // When it was deleted
+	DeletedBy    string    `theorydb:"attr:deletedBy" json:"deletedBy"`                           // Actor who deleted it
+	AttributedTo string    `theorydb:"attr:attributedTo,omitempty" json:"attributedTo,omitempty"` // Original object's author actor ID
+	IsPublic     bool      `theorydb:"attr:isPublic" json:"isPublic"`                             // Whether the original object was publicly addressed
+	Summary      string    `theorydb:"attr:summary" json:"summary,omitempty"`                     // Optional deletion reason
+	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`                           // When the tombstone was created
 
 	// TTL field for automatic cleanup after 30 days
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`

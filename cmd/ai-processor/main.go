@@ -310,7 +310,7 @@ var (
 		if lambdaCtx == nil || lambdaCtx.AWSServices == nil {
 			return nil, fmt.Errorf("AI processor AWS services are not initialized")
 		}
-		return ai.NewAIService(lambdaCtx.AWSServices.Config, ai.DefaultAIConfig()), nil
+		return ai.NewAIService(lambdaCtx.AWSServices.Config, ai.DefaultConfig()), nil
 	}
 	newAnalysisSaverFn = func(repos storageCore.RepositoryStorage, _ core.DB, logger *zap.Logger) analysisSaver {
 		return aiService.NewService(repos, nil, logger)

@@ -1,6 +1,8 @@
 package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -174,4 +176,56 @@ func headerMapValue(headers map[string][]string, key string) string {
 		return strings.TrimSpace(values[0])
 	}
 	return ""
+}
+
+// requestOriginHost returns the host from the request using the same reconstruction
+// semantics as RequestURLFromHeaders: forwarded headers take priority, then the
+// Host header is used as a safe fallback (same as RequestURLFromHeaders does at
+// lines 30–38). This ensures domain-binding validation (ValidateRequestOriginDomain)
+// and URL reconstruction (RequestURLFromHeaders) agree on which host to use.
+func requestOriginHost(headers map[string][]string) string {
+	// Forwarded headers first — matches OriginURLFromHeaders priority.
+	if origin := OriginURLFromHeaders(headers); origin != "" {
+		u, err := url.Parse(origin)
+		if err == nil && u != nil {
+			if host := strings.ToLower(strings.TrimSpace(u.Hostname())); host != "" {
+				return host
+			}
+		}
+	}
+	// Host header fallback — matches RequestURLFromHeaders lines 33–35.
+	if host, ok := normalizeForwardedHost(headerMapValue(headers, HostHeader)); ok {
+		u, err := url.Parse(SchemeHTTPS + "://" + host)
+		if err == nil && u != nil {
+			return strings.ToLower(strings.TrimSpace(u.Hostname()))
+		}
+	}
+	return ""
+}
+
+// ValidateRequestOriginDomain checks that the request origin host matches the
+// expected instance domain. Uses the same host reconstruction as
+// RequestURLFromHeaders (forwarded headers → Host header fallback) so that
+// Host-only requests reach existing auth/visibility gates rather than being
+// rejected early with a 400.
+//
+// Returns nil when validation passes or when localDomain is empty (caller cannot
+// bind without a known domain). Returns an error when the origin host cannot be
+// determined or differs from the expected local domain.
+func ValidateRequestOriginDomain(headers map[string][]string, localDomain string) error {
+	if strings.TrimSpace(localDomain) == "" {
+		return nil
+	}
+
+	originHost := requestOriginHost(headers)
+	if originHost == "" {
+		return errors.New("origin domain validation failed: no origin host determinable")
+	}
+
+	expectedHost := strings.ToLower(strings.TrimSpace(localDomain))
+	if originHost != expectedHost {
+		return fmt.Errorf("origin host %q does not match instance host %q", originHost, expectedHost)
+	}
+
+	return nil
 }

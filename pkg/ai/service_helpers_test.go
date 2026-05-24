@@ -41,7 +41,7 @@ func TestRedactPIIFromAnalysis(t *testing.T) {
 func TestCalculateOverallRisk(t *testing.T) {
 	// Create a minimal AIService for testing - no AWS clients needed for pure helpers
 	service := &AIService{
-		config: &AIConfig{
+		config: &Config{
 			NSFWThreshold:     0.8,
 			ToxicityThreshold: 0.7,
 			SpamThreshold:     0.6,
@@ -161,7 +161,7 @@ func TestCalculateOverallRisk(t *testing.T) {
 
 func TestCalculateConfidence(t *testing.T) {
 	service := &AIService{
-		config: &AIConfig{},
+		config: &Config{},
 	}
 
 	tests := []struct {
@@ -243,14 +243,14 @@ func TestCalculateConfidence(t *testing.T) {
 func TestDetermineModerationAction(t *testing.T) {
 	tests := []struct {
 		name           string
-		config         *AIConfig
+		config         *Config
 		analysis       *AIAnalysis
 		expectedAction string
 	}{
 		// NSFW override path
 		{
 			name: "NSFW override triggers ActionRemove",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.7,
 				ToxicityThreshold: 0.8,
 				SpamThreshold:     0.8,
@@ -266,7 +266,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "NSFW below threshold does not trigger remove",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.8,
 				SpamThreshold:     0.8,
@@ -283,7 +283,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		// Toxicity triggers ActionHide
 		{
 			name: "toxicity triggers ActionHide",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.6,
 				SpamThreshold:     0.8,
@@ -298,7 +298,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "toxicity below threshold uses risk fallback",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.8,
 				SpamThreshold:     0.8,
@@ -314,7 +314,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		// Spam triggers ActionShadowBan
 		{
 			name: "spam triggers ActionShadowBan",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.8,
 				SpamThreshold:     0.5,
@@ -330,7 +330,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		// Risk-based actions (fallback)
 		{
 			name: "risk > 0.9 triggers ActionRemove",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -342,7 +342,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "risk > 0.7 triggers ActionHide",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -354,7 +354,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "risk > 0.5 triggers ActionFlag",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -366,7 +366,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "risk > 0.3 triggers ActionReview",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -378,7 +378,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "risk <= 0.3 triggers ActionNone",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -391,7 +391,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		// Edge cases
 		{
 			name: "exactly at risk boundary 0.3",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -403,7 +403,7 @@ func TestDetermineModerationAction(t *testing.T) {
 		},
 		{
 			name: "zero risk",
-			config: &AIConfig{
+			config: &Config{
 				NSFWThreshold:     0.9,
 				ToxicityThreshold: 0.9,
 				SpamThreshold:     0.9,
@@ -432,7 +432,7 @@ func TestDetermineModerationAction(t *testing.T) {
 
 func TestCalculateRepetition(t *testing.T) {
 	service := &AIService{
-		config: &AIConfig{},
+		config: &Config{},
 	}
 
 	tests := []struct {
@@ -501,7 +501,7 @@ func TestCalculateRepetition(t *testing.T) {
 
 func TestAnalyzeTopicConsistency(t *testing.T) {
 	service := &AIService{
-		config: &AIConfig{},
+		config: &Config{},
 	}
 
 	tests := []struct {
@@ -815,7 +815,7 @@ func TestMaxFloat64(t *testing.T) {
 // Test fallbackAIDetection which is a pure helper that doesn't use AWS
 func TestFallbackAIDetection(t *testing.T) {
 	service := &AIService{
-		config: &AIConfig{},
+		config: &Config{},
 	}
 
 	tests := []struct {
@@ -891,7 +891,7 @@ func TestFallbackAIDetection(t *testing.T) {
 // Test getFileExtensionFromContentType
 func TestGetFileExtensionFromContentType(t *testing.T) {
 	service := &AIService{
-		config: &AIConfig{},
+		config: &Config{},
 	}
 
 	tests := []struct {

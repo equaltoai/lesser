@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -264,4 +266,73 @@ func TestConfigResolveOptionalSecret_RetriesAfterFailureUntilSuccess(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, "recovered", value)
 	require.Equal(t, 2, callCount)
+}
+
+func TestConfigResolveRequiredSecret_RetryCooldownOnFailure(t *testing.T) {
+	ResetForTests()
+
+	origLoad := loadDefaultAWSConfig
+	origNew := newSecretsManagerValueGetter
+	origArgs := os.Args
+	t.Cleanup(func() {
+		loadDefaultAWSConfig = origLoad
+		newSecretsManagerValueGetter = origNew
+		os.Args = origArgs
+		ResetForTests()
+	})
+
+	os.Args = []string{"app"}
+
+	loadDefaultAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{Region: "us-east-1"}, nil
+	}
+
+	callCount := 0
+	newSecretsManagerValueGetter = func(_ aws.Config) secretsManagerValueGetter {
+		callCount++
+		return stubSecretsManagerGetter{err: errors.New("persistent")}
+	}
+
+	cfg := &Config{
+		JWTSecretARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:jwt-retry-test",
+	}
+
+	// First call: fetch fails, no value cached.
+	value, err := cfg.ResolveJWTSecret()
+	require.Error(t, err)
+	require.Equal(t, "", value)
+	require.Equal(t, 1, callCount)
+
+	// Second call within cooldown: must not retry fetch; must return cooldown error.
+	value, err = cfg.ResolveJWTSecret()
+	require.Error(t, err)
+	require.Equal(t, "", value)
+	require.Contains(t, strings.ToLower(err.Error()), "unavailable", "cooldown error should indicate temporary unavailability")
+	// Fetch must NOT have been called again — cooldown blocks retry.
+	require.Equal(t, 1, callCount)
+
+	// Advance past cooldown so the next call retries.
+	ResetForTests()
+	os.Args = []string{"app"}
+	loadDefaultAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{Region: "us-east-1"}, nil
+	}
+	callCount = 0
+	secretString := `{"secret":"recovered"}`
+	newSecretsManagerValueGetter = func(_ aws.Config) secretsManagerValueGetter {
+		callCount++
+		return stubSecretsManagerGetter{
+			output: &secretsmanager.GetSecretValueOutput{SecretString: &secretString},
+		}
+	}
+
+	// pastCooldown ensures the loader's lastAttempt is older than the cooldown.
+	pastCooldown := time.Now().Add(-(requiredSecretRetryCooldown + time.Second))
+	loader := &requiredSecretLoader{lastAttempt: pastCooldown}
+	requiredSecretLoaders.Store(cfg.JWTSecretARN, loader)
+
+	value, err = cfg.ResolveJWTSecret()
+	require.NoError(t, err)
+	require.Equal(t, "recovered", value)
+	require.Equal(t, 1, callCount)
 }

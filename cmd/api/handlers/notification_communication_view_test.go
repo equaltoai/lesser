@@ -92,7 +92,7 @@ func TestCommunicationNotificationView_HelperCoverage(t *testing.T) {
 		actor := communicationEmailActorPlaceholder("pilot.simulacrum@lessersoul.ai", "Pilot")
 		require.NotNil(t, actor)
 		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.ID)
-		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.URL)
+		require.Empty(t, actor.URL, "email addresses must not be used as actor URLs")
 		require.Equal(t, "pilot.simulacrum@lessersoul.ai", actor.PreferredUsername)
 		require.Equal(t, "Pilot", actor.Name)
 
@@ -126,5 +126,22 @@ func TestCommunicationNotificationView_HelperCoverage(t *testing.T) {
 
 		require.Nil(t, communicationEmailActorPlaceholder("pilot.simulacrum", "Pilot"))
 		require.Nil(t, communicationEmailActorPlaceholder("https://lessersoul.ai/users/pilot", "Pilot"))
+	})
+
+	t.Run("project38 CSR-027 rejects dangerous URL schemes in email placeholders", func(t *testing.T) {
+		// javascript: scheme — must be rejected even with @-sign
+		require.Nil(t, communicationEmailActorPlaceholder("javascript:void(0)@evil.com", "XSS"))
+		require.Nil(t, communicationEmailActorPlaceholder("JAVASCRIPT:alert('xss')", "XSS"))
+		// data: scheme
+		require.Nil(t, communicationEmailActorPlaceholder("data:text/html,<script>alert(1)</script>", "XSS"))
+		require.Nil(t, communicationEmailActorPlaceholder("DATA:image/svg+xml,<svg>", "XSS"))
+		// vbscript: scheme
+		require.Nil(t, communicationEmailActorPlaceholder("vbscript:msgbox(1)", "XSS"))
+		require.Nil(t, communicationEmailActorPlaceholder("VBSCRIPT:msgbox(1)", "XSS"))
+		// Safe email addresses still work
+		actor := communicationEmailActorPlaceholder("alice@example.com", "Alice")
+		require.NotNil(t, actor)
+		require.Equal(t, "alice@example.com", actor.ID)
+		require.Empty(t, actor.URL)
 	})
 }

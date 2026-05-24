@@ -812,7 +812,7 @@ func TestObjectRepository_ReplaceObjectWithTombstone_WarnsOnDeleteError(t *testi
 
 	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 
-	require.NoError(t, repo.ReplaceObjectWithTombstone(ctx, "note-1", activitypub.NoteType, "alice"))
+	require.NoError(t, repo.ReplaceObjectWithTombstone(ctx, "note-1", activitypub.NoteType, "alice", "alice", true))
 }
 
 func TestObjectRepository_ErrorPathCoveragePush(t *testing.T) {

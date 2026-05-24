@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -278,9 +279,13 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		EditorNotes:  cmsOptionalString(strings.TrimSpace(article.EditorNotes)),
 		ReviewStatus: cmsOptionalString(strings.TrimSpace(article.ReviewStatus)),
 
-		GeneratedBy: r.resolveActorByID(ctx, article.GeneratedBy),
-		ReviewedBy:  r.resolveActorByID(ctx, article.ReviewedBy),
-		PublishedBy: r.resolveActorByID(ctx, article.PublishedBy),
+		// CSR-049: generatedBy / reviewedBy / publishedBy are private CMS workflow
+		// attribution actors distinct from the public Author (attributedTo) byline.
+		// Only resolve them when the viewer is authenticated and is either the
+		// article author or an instance admin. Public viewers see nil for these fields.
+		GeneratedBy: r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.GeneratedBy),
+		ReviewedBy:  r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.ReviewedBy),
+		PublishedBy: r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.PublishedBy),
 
 		PublishedAt: model.Time(article.Published),
 		CreatedAt:   model.Time(article.CreatedAt),
@@ -463,4 +468,47 @@ func (r *Resolver) ensureAuthorCanWriteCMS(ctx context.Context, username string,
 	}
 
 	return errors.New("insufficient privileges for CMS write")
+}
+
+// resolveCMSPrivateAttributionActor gates CMS workflow attribution actor resolution
+// (generatedBy, reviewedBy, publishedBy) behind an authorization check. These fields
+// are private workflow metadata distinct from the public Author (attributedTo) byline.
+// Only the article author or an instance admin may view them; public viewers get nil.
+//
+// CSR-049: Public GraphQL articles leak CMS attribution actors.
+func (r *Resolver) resolveCMSPrivateAttributionActor(ctx context.Context, attributedTo string, actorID string) *activitypub.Actor {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil
+	}
+	if !r.canViewCMSPrivateAttribution(ctx, attributedTo) {
+		return nil
+	}
+	return r.resolveActorByID(ctx, actorID)
+}
+
+// canViewCMSPrivateAttribution returns true when the current viewer may see
+// CMS workflow attribution actors (generatedBy, reviewedBy, publishedBy).
+func (r *Resolver) canViewCMSPrivateAttribution(ctx context.Context, attributedTo string) bool {
+	attributedTo = strings.TrimSpace(attributedTo)
+	if attributedTo == "" {
+		return false
+	}
+
+	claims := optionalGraphAuthClaims(ctx)
+	if claims == nil || strings.TrimSpace(claims.Username) == "" {
+		return false
+	}
+
+	// Instance admins can view all CMS attribution.
+	if r.isAdmin(ctx, claims.Username) {
+		return true
+	}
+
+	// The article's attributed author can view their own CMS attribution.
+	expected := cmsLocalActorID(r.getDomain(), claims.Username)
+	if strings.EqualFold(attributedTo, expected) {
+		return true
+	}
+	return strings.EqualFold(cmsNormalizeUsername(attributedTo), claims.Username)
 }

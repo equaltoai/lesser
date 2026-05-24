@@ -19,6 +19,44 @@ import (
 	"go.uber.org/zap"
 )
 
+// secretEnvVarNames is the set of environment variable names known to carry
+// secret material. Any validation message that includes the value of one of
+// these variables must use RedactedSecretSentinel instead of the raw value.
+var secretEnvVarNames = map[string]bool{
+	"JWT_SECRET":                   true,
+	"OAUTH_CLIENT_SECRET":          true,
+	"PRIVATE_KEY_SECRET":           true,
+	"ENCRYPTION_KEY":               true,
+	"REPUTATION_PRIVATE_KEY":       true,
+	"PRIVACY_MASTER_KEY":           true,
+	"INSTANCE_API_KEY":             true,
+	"LESSER_HOST_INSTANCE_KEY":     true,
+	"CLOUDFRONT_PRIVATE_KEY_PATH":  true,
+	"DYNAMODB_ENCRYPTION_KEY":      true,
+	"ACTOR_PRIVATE_KEY_ENCRYPTION": true,
+	"ALERT_WEBHOOK_URL":            true,
+	"BUDGET_ALERT_WEBHOOK_URL":     true,
+	"VAPID_PUBLIC_KEY":             false, // public key OK to show
+	"SYSTEM_ACTOR_PUBLIC_KEY":      false, // public key OK to show
+}
+
+// isSecretEnvVar reports whether the named environment variable carries secret
+// material that must not appear in validation output, recovery snapshots, or
+// diagnostic logs.
+func isSecretEnvVar(name string) bool {
+	return secretEnvVarNames[strings.ToUpper(name)]
+}
+
+// safeEnvValue returns the environment variable value for diagnostic use,
+// substituting RedactedSecretSentinel for any variable known to carry secrets.
+func safeEnvValue(name string) string {
+	v := os.Getenv(name)
+	if isSecretEnvVar(name) {
+		return RedactedSecretSentinel
+	}
+	return v
+}
+
 type tableExistsChecker interface {
 	TableExists(tableName string) (bool, error)
 }
@@ -59,7 +97,9 @@ type ValidationResult struct {
 	Timestamp time.Time           `json:"timestamp"`
 }
 
-// ValidationError represents a configuration validation error
+// ValidationError represents a configuration validation error.
+// The Value field must never contain raw secret material; use
+// RedactedSecretSentinel for any field known to hold secrets.
 type ValidationError struct {
 	Field       string `json:"field"`
 	Value       string `json:"value,omitempty"`
@@ -201,8 +241,9 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 				Remediation: fmt.Sprintf("Set %s: %s", varName, description),
 			})
 		} else {
-			// Validate specific formats
-			v.validateEnvironmentVariableFormat(varName, value, result)
+			// Validate specific formats — use redacted values for secret fields.
+			safeVal := safeEnvValue(varName)
+			v.validateEnvironmentVariableFormat(varName, safeVal, result)
 		}
 	}
 
@@ -226,7 +267,7 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 			Remediation: "Set JWT_SECRET for plaintext or JWT_SECRET_ARN for Secrets Manager",
 		})
 	} else if jwtSecret != "" {
-		v.validateEnvironmentVariableFormat("JWT_SECRET", jwtSecret, result)
+		v.validateEnvironmentVariableFormat("JWT_SECRET", safeEnvValue("JWT_SECRET"), result)
 	}
 
 	// Check optional but recommended variables

@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultAIConfig(t *testing.T) {
-	cfg := DefaultAIConfig()
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
 	require.NotNil(t, cfg)
 	require.True(t, cfg.EnablePIIDetection)
 	require.True(t, cfg.EnableAIDetection)

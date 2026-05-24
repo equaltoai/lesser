@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	communitynotes "github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
@@ -135,6 +136,34 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 
 	// Create community note
 	authorID := config.Get().ActorURL(username)
+
+	// Check rate limit before creating community note (CSR-048).
+	// Mirror the REST handler's rate-limit discipline so that the GraphQL
+	// mutation path cannot be used to bypass it.
+	if r.Storage != nil {
+		notesSvc := communitynotes.NewService(r.Storage, r.Logger)
+		// Use a baseline reputation score of 500 to allow up to 5 notes/day.
+		//
+		// Design decision — intentional conservative default:
+		// The REST handler (HandleCreateNoteLift) fetches the caller's actual
+		// reputation via reputation.Service.GetReputation, denies users below
+		// MinReputationToCreateNotes (100.0), and uses the real TotalScore to
+		// calculate the daily limit.  The GraphQL resolver does not have
+		// access to the reputation service, so it uses a flat baseline of
+		// 500.0.  This is deliberately more permissive than the REST minimum
+		// (it grants CalculateNoteLimit(500)=5 notes/day) and errs on the
+		// side of allowing notes rather than silently denying unknown users.
+		// WARNING: if the GraphQL resolver ever gains access to the
+		// reputation service, this should be changed to use the caller's
+		// actual reputation score so both surfaces share the same policy.
+		allowed, _ := notesSvc.CheckRateLimit(ctx, authorID, 500.0)
+		if !allowed {
+			r.Logger.Warn("community note rate limit exceeded",
+				zap.String("authorID", authorID))
+			return nil, ErrCommunityNoteRateLimited
+		}
+	}
+
 	note := &storage.CommunityNote{
 		ObjectID:         input.ObjectID,
 		ObjectType:       "status", // For ActivityPub objects

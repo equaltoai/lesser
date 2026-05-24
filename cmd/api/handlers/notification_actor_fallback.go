@@ -24,12 +24,16 @@ func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 	}
 
 	baseURL := ""
+	localDomain := ""
 	if h != nil && h.cfg != nil {
 		baseURL = strings.TrimSuffix(strings.TrimSpace(h.cfg.BaseURL()), "/")
+		localDomain = strings.TrimSpace(h.cfg.Domain)
 	}
 
 	actor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{Type: activitypub.PersonType},
+		BaseObject:        activitypub.BaseObject{Type: activitypub.PersonType},
+		PreferredUsername: username,
+		Name:              username,
 	}
 
 	if strings.Contains(actorID, "://") {
@@ -39,18 +43,26 @@ func (h *Handler) fallbackNotificationActor(actorID string) *activitypub.Actor {
 		}
 		actor.ID = actorID
 		actor.URL = actorID
-	} else if baseURL != "" && username != "" {
+		// For foreign-domain URLs, surface the domain in the actor name to
+		// prevent the extracted username from being mistaken for a local user.
+		if localDomain != "" && username != "" {
+			actorDomain := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+			if actorDomain != "" && !strings.EqualFold(actorDomain, localDomain) {
+				actor.Name = username + "@" + actorDomain
+			}
+		}
+	} else if baseURL != "" && username != "" && !hasRemoteDomainIndicator(actorID, localDomain) {
+		// Create local URLs for bare usernames and local-domain handles.
+		// Remote user@domain and email-like identifiers with foreign domains
+		// are rejected from local URL creation and fall through to opaque IDs.
 		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
 		actor.URL = fmt.Sprintf("%s/@%s", baseURL, username)
 		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
 		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
 	} else {
+		// Non-URL identifiers (email addresses, opaque ids) must not be used as URLs.
 		actor.ID = actorID
-		actor.URL = actorID
 	}
-
-	actor.PreferredUsername = username
-	actor.Name = username
 
 	return actor
 }
@@ -124,4 +136,21 @@ func sanitizedNotificationActorUsername(username string) string {
 		return ""
 	}
 	return username
+}
+
+// hasRemoteDomainIndicator returns true when the actorID has a domain indicator
+// (@ sign after optional leading @) that points to a non-local domain. This
+// prevents email-like and user@remote.domain actor IDs from being assigned
+// local instance endpoints. (CSR-051)
+func hasRemoteDomainIndicator(actorID, localDomain string) bool {
+	cleaned := strings.TrimPrefix(strings.TrimSpace(actorID), "@")
+	at := strings.LastIndex(cleaned, "@")
+	if at == -1 {
+		return false // no domain indicator at all
+	}
+	if strings.TrimSpace(localDomain) == "" {
+		return false // can't determine — allow local URL creation
+	}
+	domainPart := strings.TrimSpace(cleaned[at+1:])
+	return !strings.EqualFold(domainPart, strings.TrimSpace(localDomain))
 }

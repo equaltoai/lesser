@@ -27,12 +27,13 @@ var (
 	ErrEmptyURL                   = errors.NewValidationError("url", "cannot be empty")
 
 	// Business logic validation errors
-	ErrTrustScoreRange      = errors.NewValidationError("trust_score", "must be between -1.0 and 1.0")
-	ErrCannotTrustYourself  = errors.OperationNotAllowedOnSelf("trust")
-	ErrScheduledTimeMinimum = errors.NewValidationError("scheduled_time", "must be at least 5 minutes in the future")
-	ErrScheduledTimeMaximum = errors.NewValidationError("scheduled_time", "cannot be more than 1 year in the future")
-	ErrAuthorsCannotVote    = errors.OperationNotAllowedOnSelf("vote on note")
-	ErrOwnerOnlyOperation   = errors.InsufficientPermissions("owner only operation")
+	ErrTrustScoreRange          = errors.NewValidationError("trust_score", "must be between -1.0 and 1.0")
+	ErrCannotTrustYourself      = errors.OperationNotAllowedOnSelf("trust")
+	ErrScheduledTimeMinimum     = errors.NewValidationError("scheduled_time", "must be at least 5 minutes in the future")
+	ErrScheduledTimeMaximum     = errors.NewValidationError("scheduled_time", "cannot be more than 1 year in the future")
+	ErrAuthorsCannotVote        = errors.OperationNotAllowedOnSelf("vote on note")
+	ErrOwnerOnlyOperation       = errors.InsufficientPermissions("owner only operation")
+	ErrCommunityNoteRateLimited = errors.RateLimitExceededGeneric("community note")
 
 	// Timeline type errors
 	ErrUnsupportedTimelineType = errors.UnsupportedTimelineType("unknown")

@@ -303,7 +303,12 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 		require.Equal(t, agents.DroneIdentityStateSouled, attribution.IdentityState)
 		require.Equal(t, "Souled", attribution.IdentityLabel)
 		require.Equal(t, agents.DroneContinuityStateStable, attribution.ContinuityState)
-		require.Equal(t, "0xagent-soul", attribution.SoulAgentID)
+		// CSR-044 M2.2 second rework: SoulAgentID must NOT be stored on the Note's
+		// AgentPostAttribution at creation time. The identity semantics resolve the
+		// SoulAgentID from soul body bindings, but it is private data that must not
+		// persist into stored public post attribution.
+		require.Empty(t, attribution.SoulAgentID,
+			"CSR-044: SoulAgentID must not be stored on the Note's AgentPostAttribution")
 		require.Equal(t, "Souled", attribution.ModerationLabel)
 	})
 }

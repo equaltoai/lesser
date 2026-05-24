@@ -48,7 +48,9 @@ func TestFallbackNotificationActor(t *testing.T) {
 		require.Equal(t, "https://remote.example/users/bob", actor.ID)
 		require.Equal(t, "https://remote.example/users/bob", actor.URL)
 		require.Equal(t, "bob", actor.PreferredUsername)
-		require.Equal(t, "bob", actor.Name)
+		// CSR-051: foreign-domain URLs now surface the domain in Name
+		// to prevent the extracted username from being mistaken for a local user.
+		require.Equal(t, "bob@remote.example", actor.Name)
 	})
 
 	t.Run("url_parse_error_is_rejected", func(t *testing.T) {
@@ -77,7 +79,7 @@ func TestFallbackNotificationActor(t *testing.T) {
 		actor := (&Handler{}).fallbackNotificationActor("carol")
 		require.NotNil(t, actor)
 		require.Equal(t, "carol", actor.ID)
-		require.Equal(t, "carol", actor.URL)
+		require.Empty(t, actor.URL)
 		require.Equal(t, "carol", actor.PreferredUsername)
 		require.Equal(t, "carol", actor.Name)
 	})

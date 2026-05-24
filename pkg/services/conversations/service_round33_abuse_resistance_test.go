@@ -45,11 +45,6 @@ func TestService_SendDirectMessage_BlockedBidirectional(t *testing.T) {
 }
 
 func TestService_SendDirectMessage_RateLimited_TotalThroughput(t *testing.T) {
-	relationshipRepo := testmocks.NewMockRelationshipRepository()
-	relationshipRepo.
-		On("IsBlockedBidirectional", mock.Anything, "alice", "bob").
-		Return(false, nil)
-
 	rateLimitRepo := testmocks.NewMockRateLimitRepository()
 	rateLimitRepo.
 		On("CheckFixedWindowRateLimit", mock.Anything, "dm:alice", "dm_send_total", dmSendTotalLimit, dmSendTotalWindow).
@@ -61,7 +56,7 @@ func TestService_SendDirectMessage_RateLimited_TotalThroughput(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		relationshipRepo,
+		nil,
 		nil,
 		rateLimitRepo,
 		nil,
@@ -77,7 +72,6 @@ func TestService_SendDirectMessage_RateLimited_TotalThroughput(t *testing.T) {
 		Content:    "hi",
 	})
 	require.ErrorIs(t, err, storage.ErrRateLimited)
-	relationshipRepo.AssertExpectations(t)
 	rateLimitRepo.AssertExpectations(t)
 }
 

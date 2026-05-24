@@ -67,6 +67,14 @@ func communicationEmailActorPlaceholder(address string, displayName string) *act
 		return nil
 	}
 
+	// Reject email addresses that contain URL scheme indicators even after trimming.
+	lower := strings.ToLower(address)
+	for _, scheme := range dangerousURLSchemes {
+		if strings.HasPrefix(lower, scheme+":") {
+			return nil
+		}
+	}
+
 	parts := strings.Split(address, "@")
 	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 		return nil
@@ -84,7 +92,8 @@ func communicationEmailActorPlaceholder(address string, displayName string) *act
 		},
 		PreferredUsername: address,
 		Name:              name,
-		URL:               address,
+		// URL intentionally empty — email addresses are not profile URLs.
+		// API consumers that render actor links should fall back to ID or omit the link.
 	}
 }
 

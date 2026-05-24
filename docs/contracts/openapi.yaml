@@ -13990,6 +13990,21 @@ paths:
                             description: RFC 8288 pagination links for recent messages.
                             schema:
                                 type: string
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -13998,6 +14013,8 @@ paths:
                     $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleLookupConversationByCounterpartLift
@@ -16546,8 +16563,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SkillListResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleListSkillsLift
@@ -16715,8 +16750,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SkillCatalogResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleListSkillCatalogLift

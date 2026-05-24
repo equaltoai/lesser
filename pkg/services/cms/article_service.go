@@ -289,6 +289,15 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 		slugCreated = created
 	}
 
+	// Roll back the slug index if it was created during this call and a
+	// subsequent step fails. Extracted to keep UpdateArticle under the
+	// gocognit threshold (CSR-029).
+	cleanupSlugIfCreated := func() {
+		if slugCreated {
+			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), cmsTenantFromID(article.ID), slug)
+		}
+	}
+
 	// Snapshot existing state before applying the update.
 	if s.revisionService != nil && existing != nil {
 		_, _ = s.revisionService.CreateRevision(ctx, existing)
@@ -303,15 +312,13 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 
 	if err := validateArticleRenderable(article); err != nil {
 		logCMSArticleRenderFailure(s.logger, "update_article", article, err)
+		cleanupSlugIfCreated()
 		return err
 	}
-
 	enrichArticleContent(article)
 
 	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
-		if slugCreated {
-			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), cmsTenantFromID(article.ID), slug)
-		}
+		cleanupSlugIfCreated()
 		return err
 	}
 

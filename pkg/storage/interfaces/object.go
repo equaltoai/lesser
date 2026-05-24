@@ -82,8 +82,13 @@ type ObjectRepository interface {
 	// CleanupExpiredTombstones removes tombstones that have exceeded their TTL
 	CleanupExpiredTombstones(ctx context.Context, batchSize int) (int, error)
 
-	// ReplaceObjectWithTombstone atomically replaces an object with a tombstone
-	ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy string) error
+	// ReplaceObjectWithTombstone atomically replaces an object with a tombstone.
+	// attributedTo is the original object's author actor ID; it is stored on the
+	// tombstone so that the tombstone handler can enforce visibility boundaries.
+	// isPublic records whether the original object was publicly addressed (To/CC
+	// contained https://www.w3.org/ns/activitystreams#Public), which determines
+	// whether the tombstone is visible without authorized-fetch verification.
+	ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy, attributedTo string, isPublic bool) error
 
 	// ===== Update History Operations =====
 

@@ -283,17 +283,43 @@ func Get() *Config {
 	return config
 }
 
+// RedactedSecretSentinel is the replacement text used for secret field values in
+// redacted config output. Recovery snapshots, validation reports, logs, and any
+// other artifact that includes config fields must use [REDACTED] in place of real
+// secret material.
+const RedactedSecretSentinel = "[REDACTED]"
+
+// Redacted returns a shallow copy of the config with every known secret field
+// replaced by RedactedSecretSentinel. The returned config is safe to serialize,
+// log, or embed in recovery artifacts without leaking Lambda environment secrets.
+//
+// Fields that are ARN pointers (not secret values themselves) are preserved
+// unchanged so operators can still verify secret-source configuration.
+func (c *Config) Redacted() *Config {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.JWTSecret = RedactedSecretSentinel
+	cp.ReputationPrivateKey = RedactedSecretSentinel
+	cp.PrivacyMasterKey = RedactedSecretSentinel
+	cp.InstanceAPIKey = RedactedSecretSentinel
+	cp.LesserHostInstanceKey = RedactedSecretSentinel
+	cp.CloudFrontPrivateKeyPath = RedactedSecretSentinel
+	cp.DynamoDBEncryptionKey = RedactedSecretSentinel
+	cp.ActorPrivateKeyEncryption = RedactedSecretSentinel
+	cp.AlertWebhookURL = RedactedSecretSentinel
+	cp.BudgetAlertWebhookURL = RedactedSecretSentinel
+	return &cp
+}
+
 // ResetForTests clears cached configuration so tests can vary environment variables
 // safely within a single package test run.
 //
 // This should only be used in tests.
 func ResetForTests() {
 	config = nil
-	jwtSecretLoader = struct {
-		once  sync.Once
-		value string
-		err   error
-	}{}
+	requiredSecretLoaders = sync.Map{}
 	optionalSecretLoaders = sync.Map{}
 }
 
@@ -619,10 +645,6 @@ func (c *Config) ResolveJWTSecret() (string, error) {
 	if arn == "" {
 		arn = "lesser/jwt-secret"
 	}
-	if isRunningTests() {
-		// Avoid reaching out to AWS Secrets Manager during unit tests.
-		return "dummy", nil
-	}
 	return resolveRequiredSecretValue(arn)
 }
 
@@ -644,11 +666,16 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-var jwtSecretLoader struct {
-	once  sync.Once
-	value string
-	err   error
+const requiredSecretRetryCooldown = 30 * time.Second
+
+type requiredSecretLoader struct {
+	mu          sync.Mutex
+	ready       bool
+	value       string
+	lastAttempt time.Time
 }
+
+var requiredSecretLoaders sync.Map
 
 type optionalSecretLoader struct {
 	mu    sync.Mutex
@@ -762,13 +789,33 @@ func resolveRequiredSecretValue(arn string) (string, error) {
 	if arn == "" {
 		return "", errors.New("secret ARN is required")
 	}
-	jwtSecretLoader.once.Do(func() {
-		jwtSecretLoader.value, jwtSecretLoader.err = fetchSecretValue(arn)
-	})
-	if jwtSecretLoader.err != nil {
-		return "", jwtSecretLoader.err
+	if isRunningTests() {
+		return "dummy", nil
 	}
-	return jwtSecretLoader.value, nil
+
+	loaderAny, _ := requiredSecretLoaders.LoadOrStore(arn, &requiredSecretLoader{})
+	loader := loaderAny.(*requiredSecretLoader)
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+
+	if loader.ready {
+		return loader.value, nil
+	}
+
+	// Prevent tight retry loops on persistent failures (e.g. misconfigured ARN).
+	if !loader.lastAttempt.IsZero() && time.Since(loader.lastAttempt) < requiredSecretRetryCooldown {
+		return "", fmt.Errorf("secret resolution temporarily unavailable (retry after %v)", requiredSecretRetryCooldown)
+	}
+	loader.lastAttempt = time.Now()
+
+	value, err := fetchSecretValue(arn)
+	if err != nil {
+		return "", err
+	}
+
+	loader.value = value
+	loader.ready = true
+	return value, nil
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {
