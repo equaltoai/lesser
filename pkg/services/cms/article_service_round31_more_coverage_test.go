@@ -307,4 +307,5 @@ func TestArticleService_CSR029_UpdateArticleCleansUpSlugIndexOnValidationFailure
 		ContentFormat: "markdown",
 	})
 	require.ErrorIs(t, err, cmsrender.ErrArticleRenderedContentTooLarge)
+	q.AssertExpectations(t)
 }
