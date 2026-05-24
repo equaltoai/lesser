@@ -516,6 +516,27 @@ func (s *Service) enforceDirectMessageTotalRateLimit(ctx context.Context, cmd *S
 	return s.consumeDirectMessageRateLimit(ctx, cmd, "", recipientID, "dm_send_total", dmSendTotalLimit, dmSendTotalWindow, "rate_limited_send_total")
 }
 
+// enforcePreValidationTotalRateLimit consumes the DM total rate limit before any preview/validation
+// checks. The rate-limit key is scoped to the sender, so we can consume it without a validated
+// recipient. This closes CSR-045: rate-limit bypass via preview-only checks.
+func (s *Service) enforcePreValidationTotalRateLimit(ctx context.Context, cmd *SendDirectMessageCommand) error {
+	if s.rateLimitRepo == nil || directMessageRateLimitingDisabled() {
+		return nil
+	}
+	identifier := fmt.Sprintf("dm:%s", cmd.SenderID)
+	if limiter, ok := s.rateLimitRepo.(fixedWindowRateLimiter); ok {
+		allowed, _, _, err := limiter.CheckFixedWindowRateLimit(ctx, identifier, "dm_send_total", dmSendTotalLimit, dmSendTotalWindow)
+		if err != nil {
+			return nil // Fail open on storage errors
+		}
+		if !allowed {
+			return storage.ErrRateLimited
+		}
+		return nil
+	}
+	return s.rateLimitRepo.CheckAPIRateLimit(ctx, identifier, "dm_send_total", dmSendTotalLimit, dmSendTotalWindow)
+}
+
 func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*storage.Account, *storage.Account, map[string]*storage.Account, error) {
 	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
 	if err != nil {
@@ -1328,6 +1349,15 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, err
 	}
 
+	// Consume DM total rate limit BEFORE any preview/validation checks.
+	// The rate-limit key is scoped to the sender, so we can consume it before
+	// recipient validation (including InReplyToID parent-message fetching).
+	// This closes a bypass where attackers could probe DM state via validation
+	// side effects without consuming rate limit (CSR-045).
+	if err := s.enforcePreValidationTotalRateLimit(ctx, cmd); err != nil {
+		return nil, err
+	}
+
 	s.logger.Info("sending direct message",
 		zap.String("sender_id", cmd.SenderID),
 		zap.Strings("recipients", cmd.Recipients),
@@ -1339,10 +1369,6 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	}
 
 	if err := s.enforceDirectMessageNotBlocked(ctx, cmd, recipientID); err != nil {
-		return nil, err
-	}
-
-	if err := s.enforceDirectMessageTotalRateLimit(ctx, cmd, recipientID); err != nil {
 		return nil, err
 	}
 
@@ -1660,8 +1686,19 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		return nil, err
 	}
 
+	// Consume DM total rate limit BEFORE any preview/validation checks.
+	// The rate-limit key is scoped to the sender, so we can consume it before
+	// conversation loading or message validation. This closes CSR-045:
+	// rate-limit bypass via preview-only checks.
+	{
+		rateLimitCmd := &SendDirectMessageCommand{SenderID: cmd.SenderID}
+		if err := s.enforcePreValidationTotalRateLimit(ctx, rateLimitCmd); err != nil {
+			return nil, err
+		}
+	}
+
 	var retryErr error
-	totalRateLimitConsumed := false
+	totalRateLimitConsumed := true // Already consumed above; skip inner check
 	requestRateLimitConsumed := false
 	for attempt := 0; attempt < directMessageSendRetryLimit; attempt++ {
 		result, retry, err := s.executeSendMessageAttempt(ctx, cmd, &totalRateLimitConsumed, &requestRateLimitConsumed)

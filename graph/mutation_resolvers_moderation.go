@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	communitynotes "github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
@@ -135,6 +136,23 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 
 	// Create community note
 	authorID := config.Get().ActorURL(username)
+
+	// Check rate limit before creating community note (CSR-048).
+	// Mirror the REST handler's rate-limit discipline so that the GraphQL
+	// mutation path cannot be used to bypass it.
+	if r.Storage != nil {
+		notesSvc := communitynotes.NewService(r.Storage, r.Logger)
+		// Use a baseline reputation score of 500 to allow up to 5 notes/day.
+		// The REST handler calculates this from actual reputation data;
+		// for GraphQL we use a conservative default.
+		allowed, _ := notesSvc.CheckRateLimit(ctx, authorID, 500.0)
+		if !allowed {
+			r.Logger.Warn("community note rate limit exceeded",
+				zap.String("authorID", authorID))
+			return nil, ErrCommunityNoteRateLimited
+		}
+	}
+
 	note := &storage.CommunityNote{
 		ObjectID:         input.ObjectID,
 		ObjectType:       "status", // For ActivityPub objects
