@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -493,3 +494,53 @@ func (b *mockUpdateBuilder) ConditionVersion(int64) core.UpdateBuilder    { retu
 func (b *mockUpdateBuilder) ReturnValues(string) core.UpdateBuilder       { return b }
 func (b *mockUpdateBuilder) Execute() error                               { return nil }
 func (b *mockUpdateBuilder) ExecuteWithResult(any) error                  { return nil }
+
+// TestBookmarkRepository_CSR055_LegacyBookmarksVisible proves that legacy
+// bookmarks stored with a raw RFC3339Nano timestamp SK (the format used before
+// the TIME# / OBJECT# dual-write schema) remain visible through every bookmark
+// read path: GetBookmark, IsBookmarked, GetUserBookmarks, and
+// CheckBookmarksForStatuses. This is a targeted regression probe for CSR-055.
+func TestBookmarkRepository_CSR055_LegacyBookmarksVisible(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestBookmarkRepository()
+	now := time.Date(2024, time.June, 1, 12, 0, 0, 0, time.UTC)
+
+	// Manually build a legacy bookmark: SK is a raw RFC3339Nano timestamp
+	// without any prefix, RecordType is empty, Locked is false.
+	legacy := &models.Bookmark{
+		PK:         fmt.Sprintf("%s#%s", models.BookmarkPartitionPrefix, "legacy-user"),
+		SK:         now.Format(time.RFC3339Nano),
+		Username:   "legacy-user",
+		ObjectID:   "legacy-status-1",
+		CreatedAt:  now,
+		RecordType: "",
+		Locked:     false,
+	}
+	repo.store[repo.makeKey(legacy.PK, legacy.SK)] = legacy
+
+	// Verify the legacy SK is recognized as a legacy timestamp.
+	require.True(t, isLegacyBookmarkTimestampSK(legacy.SK), "legacy SK should be recognized")
+	require.True(t, isReadableTimeBookmark(*legacy), "legacy bookmark should be readable")
+
+	// GetBookmark should find the legacy bookmark via findTimeBookmarkFn fallback.
+	found, err := repo.GetBookmark(ctx, "legacy-user", "legacy-status-1")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.Equal(t, "legacy-status-1", found.ObjectID)
+
+	// IsBookmarked should return true.
+	bookmarked, err := repo.IsBookmarked(ctx, "legacy-user", "legacy-status-1")
+	require.NoError(t, err)
+	require.True(t, bookmarked)
+
+	// GetUserBookmarks should include the legacy bookmark.
+	bookmarks, _, err := repo.GetUserBookmarks(ctx, "legacy-user", 10, "")
+	require.NoError(t, err)
+	require.Len(t, bookmarks, 1)
+	require.Equal(t, "legacy-status-1", bookmarks[0].ObjectID)
+
+	// CheckBookmarksForStatuses should find the legacy bookmark.
+	statusMap, err := repo.CheckBookmarksForStatuses(ctx, "legacy-user", []string{"legacy-status-1"})
+	require.NoError(t, err)
+	require.True(t, statusMap["legacy-status-1"], "legacy bookmark should be found in batch check")
+}
