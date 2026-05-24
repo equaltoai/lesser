@@ -391,6 +391,9 @@ func (r *Resolver) loadNotificationActor(ctx context.Context, notif *models.Noti
 		return nil
 	}
 
+	if r.Registry == nil {
+		return nil
+	}
 	accountsService := r.Registry.Accounts()
 	if accountsService == nil {
 		return nil
@@ -406,8 +409,22 @@ func (r *Resolver) loadNotificationActor(ctx context.Context, notif *models.Noti
 	}
 
 	localUsername := r.localUsernameForLookup(actorID)
-	if localUsername == "" && !strings.Contains(actorID, "://") && !strings.Contains(strings.TrimPrefix(actorID, "@"), "@") {
-		localUsername = strings.TrimPrefix(actorID, "@")
+	if localUsername == "" {
+		// If the actorID has domain indicators (URL scheme or user@domain) and
+		// localUsernameForLookup ruled it out, this is a remote identity that must
+		// not be resolved through a local account lookup. Reject rather than
+		// silently mistaking a remote actor for a local one.
+		if strings.Contains(actorID, "://") || strings.Contains(strings.TrimPrefix(actorID, "@"), "@") {
+			return nil
+		}
+		// Bare actor IDs (no URL scheme, no @-domain) are valid only when they
+		// pass ActivityPub username validation. Unvalidated bare strings must not
+		// become local account lookup keys.
+		bareName := strings.TrimPrefix(actorID, "@")
+		if err := common.ValidateActivityPubUsername(bareName); err != nil {
+			return nil
+		}
+		localUsername = bareName
 	}
 	if localUsername == "" {
 		return nil
@@ -455,8 +472,10 @@ func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activi
 
 	username := extractUsernameFromActorIdentifier(rawID)
 	baseURL := ""
+	localDomain := ""
 	if r.Config != nil {
 		baseURL = strings.TrimSuffix(r.Config.BaseURL(), "/")
+		localDomain = strings.TrimSpace(r.Config.Domain)
 	}
 
 	actor := &activitypub.Actor{
@@ -470,7 +489,17 @@ func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activi
 	if strings.Contains(rawID, "://") {
 		actor.ID = rawID
 		actor.URL = rawID
-	} else if baseURL != "" && username != "" {
+		// For foreign-domain URLs, surface the domain in the actor name to
+		// prevent the extracted username from being mistaken for a local user.
+		if localDomain != "" && username != "" {
+			if actorDomain := extractDomainFromActorURL(rawID); actorDomain != "" && !strings.EqualFold(actorDomain, localDomain) {
+				actor.Name = username + "@" + actorDomain
+			}
+		}
+	} else if baseURL != "" && username != "" && !hasRemoteDomainIndicator(rawID, localDomain) {
+		// Create local URLs for bare usernames and local-domain handles.
+		// Remote user@domain and email-like identifiers with foreign domains
+		// are rejected from local URL creation and fall through to opaque IDs.
 		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
 		actor.URL = fmt.Sprintf("%s/@%s", baseURL, username)
 		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
@@ -490,6 +519,37 @@ func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activi
 	}
 
 	return actor
+}
+
+// extractDomainFromActorURL returns the hostname portion of an ActivityPub actor
+// URL in lowercase, or "" if the URL cannot be parsed.
+func extractDomainFromActorURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+}
+
+// hasRemoteDomainIndicator returns true when the actorID has a domain indicator
+// (@ sign after optional leading @) that points to a non-local domain. This
+// prevents email-like and user@remote.domain actor IDs from being assigned
+// local instance endpoints. (CSR-051)
+func hasRemoteDomainIndicator(actorID, localDomain string) bool {
+	cleaned := strings.TrimPrefix(strings.TrimSpace(actorID), "@")
+	at := strings.LastIndex(cleaned, "@")
+	if at == -1 {
+		return false // no domain indicator at all
+	}
+	if strings.TrimSpace(localDomain) == "" {
+		return false // can't determine
+	}
+	domainPart := strings.TrimSpace(cleaned[at+1:])
+	return !strings.EqualFold(domainPart, strings.TrimSpace(localDomain))
 }
 
 func extractUsernameFromActorIdentifier(actorID string) string {

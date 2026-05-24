@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -253,8 +254,19 @@ func (s *Service) normalizeUsername(username string) string {
 	trimmed = strings.TrimPrefix(trimmed, "@")
 	trimmed = strings.TrimSuffix(trimmed, "/")
 
+	remoteDomain := ""
 	if strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "http://") {
 		urlWithoutScheme := strings.TrimSuffix(trimmed, "/")
+
+		// Extract the remote domain before stripping the URL structure so we
+		// can reconstruct user@domain for remote actors. Without this step,
+		// https://remote.example/users/admin would normalize to "admin" and
+		// collide with a same-named local account. (CSR-052)
+		parsed, parseErr := neturl.Parse(urlWithoutScheme)
+		if parseErr == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !s.isLocalDomain(parsed.Hostname()) {
+			remoteDomain = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+		}
+
 		if idx := strings.Index(urlWithoutScheme, "/users/"); idx != -1 && idx+7 < len(urlWithoutScheme) {
 			trimmed = urlWithoutScheme[idx+7:]
 		} else if idx := strings.LastIndex(urlWithoutScheme, "/@"); idx != -1 && idx+2 < len(urlWithoutScheme) {
@@ -266,6 +278,11 @@ func (s *Service) normalizeUsername(username string) string {
 			}
 		}
 		trimmed = strings.TrimPrefix(trimmed, "@")
+	}
+
+	// Reconstruct user@domain for remote actors when the URL had a foreign host.
+	if remoteDomain != "" && !strings.Contains(trimmed, "@") {
+		trimmed = fmt.Sprintf("%s@%s", trimmed, remoteDomain)
 	}
 
 	if at := strings.LastIndex(trimmed, "@"); at != -1 {
