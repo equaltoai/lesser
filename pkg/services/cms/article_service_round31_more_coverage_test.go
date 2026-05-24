@@ -271,3 +271,40 @@ func TestArticleService_federateArticleWriteActivity_ReturnsWhenActorLookupFails
 
 	svc.federateArticleWriteActivity(ctx, article, activitypub.CreateType, "create")
 }
+
+// TestArticleService_CSR029_UpdateArticleCleansUpSlugIndexOnValidationFailure
+// verifies that when article update validation fails after a slug index has been
+// created, the slug index is deleted to prevent orphaned indexes.
+func TestArticleService_CSR029_UpdateArticleCleansUpSlugIndexOnValidationFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, q := newCMSMockDB(t)
+
+	// Slug index create succeeds, then validation fails, then slug cleanup must fire.
+	q.On("Create").Return(nil).Once() // slug index create (IfNotExists via cmsEnsureSlugIndex)
+	q.On("Delete").Return(nil).Once() // slug cleanup (cmsDeleteArticleSlugIndexForTenant)
+
+	repo := &fakeArticleRepo{
+		db:       db,
+		articles: map[string]*models.Article{},
+	}
+
+	svc := NewArticleService(repo, fakeActorRepo{err: errors.New("no actor")}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+
+	// Use a non-canonical article ID so the canonical-slug-immutability check
+	// is not triggered; the slug index is still created before validation.
+	articleID := "https://example.com/objects/update-validation-fail"
+	err := svc.UpdateArticle(ctx, &models.Article{
+		Object: models.Object{
+			ID:           articleID,
+			Name:         "Update Validation Fail",
+			Content:      strings.Repeat("&", cmsrender.MaxArticleSourceBytes/2),
+			Published:    time.Now(),
+			AttributedTo: "https://example.com/users/alice",
+		},
+		Slug:          "validation-slug-test",
+		ContentFormat: "markdown",
+	})
+	require.ErrorIs(t, err, cmsrender.ErrArticleRenderedContentTooLarge)
+}

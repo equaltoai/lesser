@@ -303,9 +303,11 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 
 	if err := validateArticleRenderable(article); err != nil {
 		logCMSArticleRenderFailure(s.logger, "update_article", article, err)
+		if slugCreated {
+			cmsDeleteArticleSlugIndexForTenant(ctx, s.articleRepo.GetDB(), cmsTenantFromID(article.ID), slug)
+		}
 		return err
 	}
-
 	enrichArticleContent(article)
 
 	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
