@@ -565,7 +565,38 @@ func (s *Service) replaceLocalNoteObjectProjectionWithTombstone(ctx context.Cont
 	if objectID == "" {
 		return nil
 	}
-	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID))
+
+	attributedTo := ""
+	isPublic := false
+	if status != nil && status.Note != nil {
+		attributedTo = strings.TrimSpace(status.Note.AttributedTo)
+		// Preserve the original object's public-addressing state so the tombstone
+		// handler can apply visibility semantics consistent with live objects.
+		// A tombstone for a publicly-addressed object can be shown to anyone;
+		// a tombstone for a non-public object must be gated behind authorized
+		// fetch (same as the live-object visibility path in cmd/objects).
+		isPublic = noteIsPubliclyAddressed(status.Note)
+	}
+	return s.objectRepo.ReplaceObjectWithTombstone(ctx, objectID, activitypub.NoteType, s.localActorID(deleterID), attributedTo, isPublic)
+}
+
+// noteIsPubliclyAddressed returns true when the note's To or CC recipients
+// contain the ActivityPub public addressing constant.
+func noteIsPubliclyAddressed(note *activitypub.Note) bool {
+	if note == nil {
+		return false
+	}
+	for _, recipient := range note.To {
+		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
+			return true
+		}
+	}
+	for _, recipient := range note.CC {
+		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) localActorID(username string) string {
