@@ -14689,6 +14689,26 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /api/v1/instance/metrics/daily:
+        get:
+            operationId: get_api_v1_instance_metrics_daily
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetInstanceMetricsDailyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/instance/peers:
         get:
             operationId: get_api_v1_instance_peers
