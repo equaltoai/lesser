@@ -11,6 +11,108 @@ import (
 
 const bytesPerGB = 1024 * 1024 * 1024
 
+// HandleGetInstanceMetricsDailyLift handles GET /api/v1/instance/metrics/daily
+// with instance-key bearer auth for lesser-host portal cost/usage consumption.
+func (h *Handler) HandleGetInstanceMetricsDailyLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if h == nil || h.cfg == nil {
+		return common.RespondServiceUnavailable(ctx, "instance metrics")
+	}
+
+	// Authenticate with instance API key (same pattern as notification delivery).
+	expectedKeys, err := h.notificationDeliveryKeys(ctx.Context())
+	if err != nil {
+		h.logger.Warn("failed to resolve instance keys for metrics", zap.Error(err))
+		return common.RespondServiceUnavailable(ctx, "instance metrics")
+	}
+	if len(expectedKeys) == 0 {
+		return common.RespondServiceUnavailable(ctx, "instance metrics")
+	}
+
+	token, err := common.ExtractBearerToken(ctx.Header("Authorization"))
+	if err != nil {
+		return common.RespondMissingAuth(ctx)
+	}
+	if !matchesNotificationDeliveryKey(token, expectedKeys) {
+		return common.RespondForbidden(ctx, "invalid instance api key")
+	}
+
+	// Parse date range from query parameters.
+	// from/to: YYYY-MM-DD (preferred for host portal cost window).
+	// days: fallback bounded to <= 30.
+	fromStr := queryValue(ctx, "from")
+	toStr := queryValue(ctx, "to")
+	daysStr := queryValue(ctx, "days")
+
+	var startDate, endDate time.Time
+
+	if fromStr != "" && toStr != "" {
+		fromParsed, err := time.Parse(common.DateFormat, fromStr)
+		if err != nil {
+			return common.RespondBadRequest(ctx, "invalid from date format; use YYYY-MM-DD")
+		}
+		toParsed, err := time.Parse(common.DateFormat, toStr)
+		if err != nil {
+			return common.RespondBadRequest(ctx, "invalid to date format; use YYYY-MM-DD")
+		}
+		if toParsed.Before(fromParsed) {
+			return common.RespondBadRequest(ctx, "from date must be before or equal to to date")
+		}
+		startDate = fromParsed
+		// Make end date inclusive by adding one day.
+		endDate = toParsed.AddDate(0, 0, 1)
+	} else {
+		days, err := common.ParseAndValidateIntWithBounds("days", daysStr, 1, 30, 7)
+		if err != nil {
+			days = 7
+		}
+		endDate = time.Now().AddDate(0, 0, 1) // include today
+		startDate = endDate.AddDate(0, 0, -days)
+	}
+
+	// Get daily aggregates from cost tracking repository.
+	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context(), startDate, endDate)
+	if err != nil {
+		h.logger.Error("failed to get daily aggregates for instance metrics", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "failed to retrieve instance metrics")
+	}
+
+	// Build response with stable shape for host to map.
+	dailyRows := make([]map[string]any, 0)
+	for _, daily := range dailyAggregates {
+		row := map[string]any{
+			"date":               daily.Date.Format(common.DateFormat),
+			"total_requests":     daily.TotalRequests,
+			"unique_users":       daily.UniqueUsers,
+			"dynamodb_reads":     daily.TotalReads,
+			"dynamodb_writes":    daily.TotalWrites,
+			"lambda_duration_ms": daily.TotalDurationMs,
+			"cost_cents":         int64(daily.TotalCostDollars * 100),
+			"cost_dollars":       daily.TotalCostDollars,
+			"currency":           "USD",
+		}
+		dailyRows = append(dailyRows, row)
+	}
+
+	// Adjust end back for display (it was bumped for inclusive query).
+	displayEnd := endDate.AddDate(0, 0, -1)
+	daysInPeriod := int(displayEnd.Sub(startDate).Hours()/24) + 1
+	if daysInPeriod < 1 {
+		daysInPeriod = 1
+	}
+
+	response := map[string]any{
+		"period": map[string]any{
+			"start":    startDate.Format(common.DateFormat),
+			"end":      displayEnd.Format(common.DateFormat),
+			"days":     daysInPeriod,
+			"timezone": "UTC",
+		},
+		"daily": dailyRows,
+	}
+
+	return okJSON(response)
+}
+
 // HandleGetInstanceMetricsLift returns current instance metrics
 func (h *Handler) HandleGetInstanceMetricsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("HandleGetInstanceMetricsLift called")
