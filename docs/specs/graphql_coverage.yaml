@@ -55,6 +55,11 @@ exemptions:
       match:
         prefixes:
             - /api/v1/trust
+    - id: lesser_host_metrics
+      reason: Managed-instance lesser-host metrics/cost endpoints are REST-only (instance-key authenticated, no user-facing GraphQL equivalent).
+      match:
+        exact:
+            - /api/v1/instance/metrics/daily
     - id: lesser_soul
       reason: lesser-soul proof publication and internal notification delivery remain REST-only.
       match:
@@ -930,6 +935,10 @@ routes:
       status: covered
       graphql:
         - Query.instanceDomainBlocks
+    - method: GET
+      path: /api/v1/instance/metrics/daily
+      policy: rest_only
+      exemptedBy: lesser_host_metrics
     - method: GET
       path: /api/v1/instance/peers
       policy: graphql_required

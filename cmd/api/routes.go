@@ -579,6 +579,7 @@ func configureRoutes(app *apptheory.App) {
 
 	// Instance endpoints
 	app.Get("/api/v1/instance", apiHandler.HandleGetInstanceV1Lift)
+	app.Get("/api/v1/instance/metrics/daily", apiHandler.HandleGetInstanceMetricsDailyLift)
 	app.Get("/api/v1/instance/peers", apiHandler.HandleGetInstancePeersLift)
 	app.Get("/api/v1/instance/activity", apiHandler.HandleGetInstanceActivityLift)
 	app.Get("/api/v1/instance/domain_blocks", apiHandler.HandleGetInstanceDomainBlocksLift)

@@ -84,6 +84,7 @@ GET /api/v1/imports/{id}
 GET /api/v1/instance
 GET /api/v1/instance/activity
 GET /api/v1/instance/domain_blocks
+GET /api/v1/instance/metrics/daily
 GET /api/v1/instance/peers
 GET /api/v1/instance/translation_languages
 GET /api/v1/lists
