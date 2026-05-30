@@ -169,29 +169,31 @@ func (h *Handler) getOEmbedAuthorActor(ctx *apptheory.Context, note *activitypub
 		return nil
 	}
 
-	// Extract username from actor ID
-	parts := strings.Split(note.AttributedTo, "/")
-	if err := common.ValidateSliceNotEmpty("parts", parts); err != nil {
+	if actor := h.resolveAttributedActorForObject(ctx.Context(), note.AttributedTo); actor != nil {
+		return actor
+	}
+
+	username := h.localUsernameForStoredActorCandidate(note.AttributedTo)
+	if username == "" {
+		username = remoteActorPlaceholderUsername(note.AttributedTo)
+	}
+	if username == "" {
 		return nil
 	}
 
-	username := parts[len(parts)-1]
-	result, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
-	if err != nil {
-		h.logger.Warn("failed to get author account", zap.String("username", username), zap.Error(err))
-		// Create a minimal actor
-		return &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID: note.AttributedTo,
-			},
-			PreferredUsername: username,
-			Name:              username,
-			URL:               note.AttributedTo,
-		}
+	if h.logger != nil {
+		h.logger.Warn("failed to get author account", zap.String("username", username))
 	}
-	authorActor := result.Actor
-
-	return authorActor
+	// Create a minimal actor.
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   note.AttributedTo,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              username,
+		URL:               note.AttributedTo,
+	}
 }
 
 // sendOEmbedResponse sends the oEmbed response in the requested format
@@ -505,20 +507,23 @@ func (h *Handler) getEmbedAuthorInfo(ctx *apptheory.Context, note *activitypub.N
 		return info
 	}
 
-	// Extract username from actor ID
-	parts := strings.Split(note.AttributedTo, "/")
-	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
-		username := parts[len(parts)-1]
-		info.username = username
-
-		result, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
-		if err == nil && result != nil && result.Actor != nil {
-			info.actor = result.Actor
-			info.name = result.Actor.Name
-			if err := common.ValidateRequiredParam("actorName", info.name); err != nil {
-				info.name = result.Actor.PreferredUsername
-			}
+	if actor := h.resolveAttributedActorForObject(ctx.Context(), note.AttributedTo); actor != nil {
+		info.actor = actor
+		info.username = actor.PreferredUsername
+		if info.username == "" {
+			info.username = remoteActorPlaceholderUsername(note.AttributedTo)
 		}
+		info.name = actor.Name
+		if err := common.ValidateRequiredParam("actorName", info.name); err != nil {
+			info.name = actor.PreferredUsername
+		}
+		return info
+	}
+
+	if username := h.localUsernameForStoredActorCandidate(note.AttributedTo); username != "" {
+		info.username = username
+	} else if username := remoteActorPlaceholderUsername(note.AttributedTo); username != "" {
+		info.username = username
 	}
 
 	return info

@@ -1402,12 +1402,20 @@ func (h *Handler) extractStatusAuthor(ctx *apptheory.Context, obj any) *activity
 		return nil
 	}
 
-	parts := strings.Split(note.AttributedTo, "/")
-	if err := common.ValidateSliceNotEmpty("attributed_to_parts", parts); err != nil {
-		return nil
+	if h.actorIdentifierLooksRemote(note.AttributedTo) {
+		if actor := h.cachedRemoteActorForIdentifier(ctx.Context(), note.AttributedTo); actor != nil {
+			return actor
+		}
+		return syntheticRemoteActorFromIdentifier(note.AttributedTo)
 	}
 
-	username := parts[len(parts)-1]
+	username := h.localUsernameForStoredActorCandidate(note.AttributedTo)
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil
+	}
+	if h.repos == nil || h.repos.Actor() == nil {
+		return nil
+	}
 	statusActor, _ := h.repos.Actor().GetActor(ctx.Context(), username)
 	return statusActor
 }

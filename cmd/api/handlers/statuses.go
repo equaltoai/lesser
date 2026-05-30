@@ -1147,16 +1147,7 @@ func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activ
 		return nil
 	}
 
-	username := transformations.ExtractUsernameFromActorID(attributedTo)
-	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil
-	}
-
-	account, err := h.registry.Accounts().GetAccount(ctx, username)
-	if err != nil {
-		return nil
-	}
-	return account.Actor
+	return h.resolveAttributedActorForObject(ctx, attributedTo)
 }
 
 // getStatusDescendants retrieves the descendants (replies) of a status, enforcing viewer privacy.

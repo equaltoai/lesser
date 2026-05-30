@@ -54,7 +54,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.
 
 	authorUsername := strings.TrimSpace(result.AuthorUsername)
 	if authorUsername == "" {
-		authorUsername = transformations.ExtractUsernameFromActorID(result.AuthorID)
+		authorUsername = h.localUsernameForStoredActorCandidate(result.AuthorID)
 	}
 	if authorUsername != claims.Username {
 		return common.RespondNotFound(ctx, "status not found")
@@ -201,16 +201,7 @@ func (h *Handler) getHistoryAuthorActor(ctx *apptheory.Context, currentObject an
 		return nil
 	}
 
-	// Extract username from actor ID
-	parts := strings.Split(attributedTo, "/")
-	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
-		username := parts[len(parts)-1]
-		result, _ := h.registry.Accounts().GetAccount(ctx.Context(), username)
-		if result != nil {
-			return result.Actor
-		}
-	}
-	return nil
+	return h.resolveAttributedActorForObject(ctx.Context(), attributedTo)
 }
 
 // extractAttributedTo extracts the attributedTo field from an object
