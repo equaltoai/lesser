@@ -342,13 +342,14 @@ func (r *round20CommunityNoteRepo) GetCommunityNoteVotes(ctx context.Context, no
 }
 
 type round20Calculator struct {
-	rep *Reputation
-	err error
+	rep   *Reputation
+	err   error
+	input *CalculationInput
 }
 
 func (c *round20Calculator) Calculate(ctx context.Context, input *CalculationInput) (*Reputation, error) {
 	_ = ctx
-	_ = input
+	c.input = input
 	if c.err != nil {
 		return nil, c.err
 	}
@@ -566,10 +567,17 @@ func TestImportReputationRejectsMismatchedOuterAndInnerActors(t *testing.T) {
 func TestService_Round20_ExtractUsername_ParseSeverity_AndOutcome(t *testing.T) {
 	svc := &Service{logger: zap.NewNop()}
 
-	require.Equal(t, "alice", svc.extractUsername("https://example.com/users/alice"))
-	require.Equal(t, "bob", svc.extractUsername("https://example.com/@bob"))
-	require.Equal(t, "carol", svc.extractUsername("@carol"))
-	require.Equal(t, "dave", svc.extractUsername("dave?x=1"))
+	username, err := svc.extractUsername("https://example.com/users/alice")
+	require.NoError(t, err)
+	require.Equal(t, "alice", username)
+	username, err = svc.extractUsername("https://example.com/@bob")
+	require.NoError(t, err)
+	require.Equal(t, "bob", username)
+	username, err = svc.extractUsername("@carol")
+	require.NoError(t, err)
+	require.Equal(t, "carol", username)
+	_, err = svc.extractUsername("https://example.com/users/admin/mallory")
+	require.Error(t, err)
 
 	require.Equal(t, 1, svc.parseSeverity("1"))
 	require.Equal(t, 4, svc.parseSeverity("4"))
@@ -807,6 +815,184 @@ func TestService_GetReputation_RemoteActorDoesNotUseLocalUsername(t *testing.T) 
 	require.Contains(t, err.Error(), "actor not found")
 	require.Equal(t, 0, actorRepo.usernameCalls, "remote actor reputation must not fall back to local username lookup")
 	require.Equal(t, 1, actorRepo.remoteCalls)
+}
+
+func TestService_L05RejectsCraftedActorURIWithoutStorageWrite(t *testing.T) {
+	ctx := context.Background()
+	craftedActorID := "https://example.com/users/admin/mallory"
+
+	getCalls := 0
+	storeCalls := 0
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			getCalls++
+			return nil, storage.ErrNotFound
+		},
+		storeFn: func(_ context.Context, _ string, _ *storage.Reputation) error {
+			storeCalls++
+			return nil
+		},
+	}
+	actorRepo := &round20ActorRepo{
+		actorByUsername: map[string]*activitypub.Actor{
+			"admin": {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/admin"}},
+		},
+	}
+	svc := &Service{
+		userRepo:    userRepo,
+		actorRepo:   actorRepo,
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	for i := 0; i < 2; i++ {
+		rep, err := svc.GetReputation(ctx, craftedActorID)
+		require.Error(t, err)
+		require.Nil(t, rep)
+		require.Contains(t, err.Error(), "invalid actor ID")
+	}
+	require.Equal(t, 0, getCalls, "invalid crafted actor URI must not perform reputation storage reads")
+	require.Equal(t, 0, actorRepo.usernameCalls, "invalid crafted actor URI must not resolve admin actor data")
+	require.Equal(t, 0, storeCalls, "invalid crafted actor URI must not create reputation rows")
+}
+
+func TestService_L05RepeatedMissingLocalActorDoesNotStoreReputation(t *testing.T) {
+	ctx := context.Background()
+	actorID := "https://example.com/users/mallory"
+
+	storeCalls := 0
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			return nil, storage.ErrNotFound
+		},
+		storeFn: func(_ context.Context, _ string, _ *storage.Reputation) error {
+			storeCalls++
+			return nil
+		},
+	}
+	actorRepo := &round20ActorRepo{}
+	svc := &Service{
+		userRepo:    userRepo,
+		actorRepo:   actorRepo,
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	for i := 0; i < 3; i++ {
+		rep, err := svc.GetReputation(ctx, actorID)
+		require.Error(t, err)
+		require.Nil(t, rep)
+		require.Contains(t, err.Error(), "actor not found")
+	}
+	require.Equal(t, 3, actorRepo.usernameCalls, "valid but missing actors may be checked each read")
+	require.Equal(t, 0, storeCalls, "never-resolvable actor reads must not append reputation rows")
+}
+
+func TestService_L05LocalActorResolutionMustMatchCanonicalActorID(t *testing.T) {
+	ctx := context.Background()
+	actorID := "https://example.com/users/mallory"
+
+	storeCalls := 0
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			return nil, storage.ErrNotFound
+		},
+		storeFn: func(_ context.Context, _ string, _ *storage.Reputation) error {
+			storeCalls++
+			return nil
+		},
+	}
+	actorRepo := &round20ActorRepo{
+		actorByUsername: map[string]*activitypub.Actor{
+			"mallory": {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/admin"}},
+		},
+	}
+	svc := &Service{
+		userRepo:    userRepo,
+		actorRepo:   actorRepo,
+		logger:      zap.NewNop(),
+		instanceURL: "https://example.com",
+	}
+
+	rep, err := svc.GetReputation(ctx, actorID)
+	require.Error(t, err)
+	require.Nil(t, rep)
+	require.Contains(t, err.Error(), "actor not found")
+	require.Equal(t, 0, storeCalls, "mismatched actor resolution must not write reputation")
+}
+
+func TestService_L05CalculationUsernameMatchesStoragePartitionKey(t *testing.T) {
+	ctx := context.Background()
+	actorID := "https://example.com/users/alice"
+	now := time.Now()
+	var storedPK string
+
+	userRepo := &round20UserRepo{
+		getFn: func(_ context.Context, _ string) (*storage.Reputation, error) {
+			return nil, storage.ErrNotFound
+		},
+		storeFn: func(_ context.Context, actorID string, reputation *storage.Reputation) error {
+			reputationModel := &models.Reputation{}
+			require.NoError(t, reputationModel.UpdateKeys(actorID, reputation))
+			storedPK = reputationModel.PK
+			return nil
+		},
+	}
+	calculator := &round20Calculator{rep: &Reputation{
+		ActorID:      actorID,
+		InstanceURL:  "https://example.com",
+		CalculatedAt: now,
+		Version:      "1",
+	}}
+	svc := &Service{
+		userRepo:          userRepo,
+		actorRepo:         &round20ActorRepo{actorByUsername: map[string]*activitypub.Actor{"alice": {BaseObject: activitypub.BaseObject{ID: actorID, Published: ptrTime(now.AddDate(-1, 0, 0))}}}},
+		statusRepo:        &round20StatusRepo{countByUsername: map[string]int{"alice": 1}, timelineByUser: map[string][]*models.Status{"alice": nil}},
+		activityRepo:      &round20ActivityRepo{activitiesByUser: map[string][]*activitypub.Activity{"alice": nil}},
+		relationshipRepo:  &round20RelationshipRepo{followersByUser: map[string][]string{actorID: nil}},
+		trustRepo:         &round20TrustRepo{},
+		moderationRepo:    &round20ModerationRepo{},
+		communityNoteRepo: &round20CommunityNoteRepo{},
+		cache:             &round20CacheDB{store: &round20CacheStore{}},
+		calculator:        calculator,
+		signer:            &round20Signer{},
+		vouchManager:      &round20VouchManager{},
+		logger:            zap.NewNop(),
+		instanceURL:       "https://example.com",
+	}
+
+	rep, err := svc.GetReputation(ctx, actorID)
+	require.NoError(t, err)
+	require.NotNil(t, rep)
+	require.Equal(t, "alice", calculator.input.ActorUsername)
+	require.Equal(t, "ACTOR#alice", storedPK)
+	require.Equal(t, "ACTOR#"+calculator.input.ActorUsername, storedPK)
+}
+
+func TestService_L05CalculationStorageKeyAssertionErrors(t *testing.T) {
+	svc := &Service{instanceURL: "https://example.com", logger: zap.NewNop()}
+	validInput := &CalculationInput{ActorID: "https://example.com/users/alice", ActorUsername: "alice"}
+	validRep := &Reputation{ActorID: "https://example.com/users/alice"}
+
+	require.Error(t, svc.assertCalculationMatchesStorageKey(nil, validRep))
+	require.Error(t, svc.assertCalculationMatchesStorageKey(validInput, nil))
+
+	err := svc.assertCalculationMatchesStorageKey(validInput, &Reputation{ActorID: "https://example.com/users/bob"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "actor mismatch")
+
+	err = svc.assertCalculationMatchesStorageKey(
+		&CalculationInput{ActorID: "https://example.com/users/alice", ActorUsername: "mallory"},
+		validRep,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "calculation username")
+
+	remoteSvc := &Service{instanceURL: "https://example.com", logger: zap.NewNop()}
+	require.NoError(t, remoteSvc.assertCalculationMatchesStorageKey(
+		&CalculationInput{ActorID: "https://remote.example/users/alice"},
+		&Reputation{ActorID: "https://remote.example/users/alice"},
+	))
 }
 
 func TestService_getActorData_UsesCachedRemoteActorForRemoteIDs(t *testing.T) {
@@ -1083,7 +1269,7 @@ func TestService_Round20_ErrorAndEdgeBranches(t *testing.T) {
 		_, err := svc.calculateAndStore(ctx, "https://example.com/users/alice")
 		require.Error(t, err)
 
-		svc.actorRepo = &round20ActorRepo{actorByUsername: map[string]*activitypub.Actor{"alice": {BaseObject: activitypub.BaseObject{ID: "id"}}}}
+		svc.actorRepo = &round20ActorRepo{actorByUsername: map[string]*activitypub.Actor{"alice": {BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}}}
 		svc.statusRepo = &round20StatusRepo{}
 		svc.activityRepo = &round20ActivityRepo{}
 		svc.relationshipRepo = &round20RelationshipRepo{}
@@ -1096,7 +1282,7 @@ func TestService_Round20_ErrorAndEdgeBranches(t *testing.T) {
 		_, err = svc.calculateAndStore(ctx, "https://example.com/users/alice")
 		require.Error(t, err)
 
-		svc.calculator = &round20Calculator{rep: &Reputation{ActorID: "id", CalculatedAt: time.Now(), Version: "1"}}
+		svc.calculator = &round20Calculator{rep: &Reputation{ActorID: "https://example.com/users/alice", CalculatedAt: time.Now(), Version: "1"}}
 		svc.signer = &round20Signer{signRepErr: errors.New("sign")}
 		_, err = svc.calculateAndStore(ctx, "https://example.com/users/alice")
 		require.Error(t, err)

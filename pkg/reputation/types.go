@@ -88,7 +88,8 @@ type PortableReputation struct {
 
 // CalculationInput contains all data needed to calculate reputation
 type CalculationInput struct {
-	ActorID string
+	ActorID       string
+	ActorUsername string
 
 	// Activity metrics
 	PostCount      int

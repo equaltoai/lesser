@@ -29,6 +29,29 @@ func TestReputationActorPartitionKeyForRecordBindsRemoteDomain(t *testing.T) {
 	require.NotEqual(t, remotePK, otherRemotePK)
 }
 
+func TestReputationActorPartitionKeyForRecordRejectsCraftedLocalActorPaths(t *testing.T) {
+	localRep := &storage.Reputation{
+		InstanceURL:  "https://example.com",
+		CalculatedAt: time.Now().UTC(),
+	}
+
+	for _, actorID := range []string{
+		"https://example.com/users/admin/mallory",
+		"https://example.com/users/alice/bob",
+		"https://example.com/@admin/mallory",
+	} {
+		t.Run(actorID, func(t *testing.T) {
+			pk, err := models.ReputationActorPartitionKeyForRecord(actorID, localRep)
+			require.Error(t, err)
+			require.Empty(t, pk)
+
+			candidates, err := models.ReputationActorPartitionKeyCandidates(actorID)
+			require.Error(t, err)
+			require.Nil(t, candidates)
+		})
+	}
+}
+
 func TestReputationActorPartitionKeyCandidatesIncludeLegacyFallback(t *testing.T) {
 	candidates, err := models.ReputationActorPartitionKeyCandidates("https://remote.example/users/alice")
 	require.NoError(t, err)
@@ -50,6 +73,10 @@ func TestReputationActorIDHelpersCanonicalizeAndRejectUnsafeIDs(t *testing.T) {
 	require.False(t, models.ReputationActorIDsMatch(
 		"acct:alice@example.com",
 		"https://example.com/users/alice",
+	))
+	require.False(t, models.ReputationActorIDsMatch(
+		"https://example.com/users/admin/mallory",
+		"https://example.com/users/admin",
 	))
 
 	_, err := models.ReputationActorPartitionKeyCandidates("acct:alice@example.com")

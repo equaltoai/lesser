@@ -75,6 +75,21 @@ func TestCanonicalActorID(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "rejects multi segment users actor path",
+			actorID: "https://remote.example/users/alice/mallory",
+			wantErr: true,
+		},
+		{
+			name:    "rejects multi segment at actor path",
+			actorID: "https://remote.example/@alice/mallory",
+			wantErr: true,
+		},
+		{
+			name:    "rejects invalid users actor username",
+			actorID: "https://remote.example/users/-alice",
+			wantErr: true,
+		},
+		{
 			name:    "rejects root path",
 			actorID: "https://remote.example/",
 			wantErr: true,
@@ -127,6 +142,74 @@ func TestSameCanonicalActorID(t *testing.T) {
 		"alice@remote.example",
 		"https://remote.example/users/alice",
 	))
+}
+
+func TestActorUsernameFromID(t *testing.T) {
+	tests := []struct {
+		name    string
+		actorID string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "users URL",
+			actorID: "https://example.com/users/alice",
+			want:    "alice",
+		},
+		{
+			name:    "users URL with trailing slash",
+			actorID: "https://example.com/users/alice/",
+			want:    "alice",
+		},
+		{
+			name:    "at URL",
+			actorID: "https://example.com/@bob",
+			want:    "bob",
+		},
+		{
+			name:    "plain username",
+			actorID: "carol",
+			want:    "carol",
+		},
+		{
+			name:    "handle username",
+			actorID: "@dave",
+			want:    "dave",
+		},
+		{
+			name:    "rejects crafted users path",
+			actorID: "https://example.com/users/admin/mallory",
+			wantErr: true,
+		},
+		{
+			name:    "rejects crafted at path",
+			actorID: "https://example.com/@admin/mallory",
+			wantErr: true,
+		},
+		{
+			name:    "rejects unsupported actor path",
+			actorID: "https://example.com/api/v1/actors/alice",
+			wantErr: true,
+		},
+		{
+			name:    "rejects invalid username",
+			actorID: "https://example.com/users/-alice",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ActorUsernameFromID(tt.actorID)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Empty(t, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestCachedRemoteActorIDMatchesLookup(t *testing.T) {

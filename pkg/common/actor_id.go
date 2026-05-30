@@ -49,8 +49,48 @@ func CanonicalActorID(actorID string) (string, error) {
 	if path == "/users" || path == "/@" {
 		return "", fmt.Errorf("actor ID must include host and path")
 	}
+	if _, _, err := activityPubUsernameFromActorPath(path); err != nil {
+		return "", err
+	}
 
 	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host) + path, nil
+}
+
+// ActorUsernameFromID extracts a local ActivityPub username from an actor
+// identifier. Lesser-owned actor routes are intentionally strict: actor URLs of
+// the form /users/<username> and /@<username> must contain exactly one username
+// segment. Multi-segment paths such as /users/admin/mallory are not a username
+// for one component and a storage key for another; they are invalid.
+func ActorUsernameFromID(actorID string) (string, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return "", fmt.Errorf("actor ID is required")
+	}
+
+	if !strings.Contains(actorID, "://") {
+		username := strings.TrimPrefix(actorID, "@")
+		if err := ValidateActivityPubUsername(username); err != nil {
+			return "", err
+		}
+		return username, nil
+	}
+
+	canonical, err := CanonicalActorID(actorID)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(canonical)
+	if err != nil || parsed == nil {
+		return "", fmt.Errorf("actor ID must be a valid URL")
+	}
+	username, ok, err := activityPubUsernameFromActorPath(parsed.EscapedPath())
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("actor ID path is not a supported local actor route")
+	}
+	return username, nil
 }
 
 // SameCanonicalActorID reports whether two ActivityPub actor URI strings
@@ -81,4 +121,32 @@ func actorIDContainsControlRune(value string) bool {
 		}
 	}
 	return false
+}
+
+func activityPubUsernameFromActorPath(path string) (string, bool, error) {
+	path = strings.TrimRight(strings.TrimSpace(path), "/")
+	switch {
+	case strings.HasPrefix(path, "/users/"):
+		return activityPubUsernameFromSingleSegment(strings.TrimPrefix(path, "/users/"), true)
+	case strings.HasPrefix(path, "/@"):
+		return activityPubUsernameFromSingleSegment(strings.TrimPrefix(path, "/@"), true)
+	case path == "/users" || path == "/@":
+		return "", true, fmt.Errorf("actor ID must include a concrete actor username")
+	default:
+		return "", false, nil
+	}
+}
+
+func activityPubUsernameFromSingleSegment(escapedUsername string, knownActorPath bool) (string, bool, error) {
+	if escapedUsername == "" || strings.Contains(escapedUsername, "/") {
+		return "", knownActorPath, fmt.Errorf("actor ID must use exactly one actor username segment")
+	}
+	username, err := url.PathUnescape(escapedUsername)
+	if err != nil {
+		return "", knownActorPath, fmt.Errorf("actor ID username contains invalid escaping")
+	}
+	if err := ValidateActivityPubUsername(username); err != nil {
+		return "", knownActorPath, err
+	}
+	return username, knownActorPath, nil
 }
