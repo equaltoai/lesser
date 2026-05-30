@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -28,9 +29,12 @@ type round10Where struct {
 }
 
 type round10QueryState struct {
-	wheres []round10Where
-	model  any
-	sets   map[string]any
+	wheres         []round10Where
+	model          any
+	sets           map[string]any
+	limit          int
+	orderField     string
+	orderDirection string
 
 	usersByUsername               map[string]storagemodels.User
 	actorsByUser                  map[string]storagemodels.Actor
@@ -146,6 +150,9 @@ type round10QueryState struct {
 func (s *round10QueryState) reset() {
 	s.wheres = nil
 	s.sets = nil
+	s.limit = 0
+	s.orderField = ""
+	s.orderDirection = ""
 }
 
 func (s *round10QueryState) whereValue(field string) (any, bool) {
@@ -164,6 +171,46 @@ func (s *round10QueryState) whereString(field string) (string, bool) {
 	}
 	str, ok := v.(string)
 	return str, ok
+}
+
+func round10CommunityNoteGSI3SK(note storagemodels.CommunityNote) string {
+	if note.GSI3SK != "" {
+		return note.GSI3SK
+	}
+	return note.CreatedAt.Format(time.RFC3339) + "#" + note.ID
+}
+
+func round10ApplyCommunityNoteAuthorQuery(state *round10QueryState, notes []storagemodels.CommunityNote) []storagemodels.CommunityNote {
+	items := append([]storagemodels.CommunityNote(nil), notes...)
+	for i := range items {
+		if items[i].GSI3SK == "" {
+			items[i].GSI3SK = round10CommunityNoteGSI3SK(items[i])
+		}
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		left := round10CommunityNoteGSI3SK(items[i])
+		right := round10CommunityNoteGSI3SK(items[j])
+		if strings.EqualFold(state.orderField, "gsi3SK") && strings.EqualFold(state.orderDirection, "DESC") {
+			return left > right
+		}
+		return left < right
+	})
+
+	if cursor, ok := state.whereString("gsi3SK"); ok && cursor != "" {
+		filtered := items[:0]
+		for _, note := range items {
+			if round10CommunityNoteGSI3SK(note) < cursor {
+				filtered = append(filtered, note)
+			}
+		}
+		items = filtered
+	}
+
+	if state.limit > 0 && len(items) > state.limit {
+		items = items[:state.limit]
+	}
+	return items
 }
 
 func round10ResolveUserForRead(state *round10QueryState) storagemodels.User {
@@ -415,9 +462,21 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("OrFilter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
+		switch value := args.Get(0).(type) {
+		case int:
+			state.limit = value
+		case int32:
+			state.limit = int(value)
+		case int64:
+			state.limit = int(value)
+		}
+	}).Maybe()
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
+		state.orderField, _ = args.Get(0).(string)
+		state.orderDirection, _ = args.Get(1).(string)
+	}).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
@@ -2390,7 +2449,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			gsi3pk, _ := state.whereString("gsi3PK")
 			if gsi3pk != "" {
 				if notes, ok := state.communityNotesByGSI3PK[gsi3pk]; ok {
-					*d = notes
+					*d = round10ApplyCommunityNoteAuthorQuery(state, notes)
 					return
 				}
 			}

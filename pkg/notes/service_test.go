@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -32,8 +33,9 @@ type stubCommunityNoteRepo struct {
 	userVotesErr error
 	userVotes    map[string]*storage.CommunityNoteVote
 
-	notesByAuthorErr error
-	notesByAuthor    []*storage.CommunityNote
+	notesByAuthorErr   error
+	notesByAuthor      []*storage.CommunityNote
+	notesByAuthorCalls int
 
 	updateScoreErr error
 	updatedScore   struct {
@@ -73,25 +75,42 @@ func (s *stubCommunityNoteRepo) GetCommunityNotesByAuthor(_ context.Context, _ s
 	if s.notesByAuthorErr != nil {
 		return nil, "", s.notesByAuthorErr
 	}
-	start := 0
-	if cursor != "" {
-		parsed, err := strconv.Atoi(cursor)
-		if err == nil && parsed >= 0 {
-			start = parsed
+	s.notesByAuthorCalls++
+
+	ordered := make([]*storage.CommunityNote, 0, len(s.notesByAuthor))
+	for _, note := range s.notesByAuthor {
+		if note != nil {
+			ordered = append(ordered, note)
 		}
 	}
-	if start >= len(s.notesByAuthor) {
-		return []*storage.CommunityNote{}, "", nil
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return communityNoteAuthorCursor(ordered[i]) > communityNoteAuthorCursor(ordered[j])
+	})
+
+	results := make([]*storage.CommunityNote, 0, len(ordered))
+	for _, note := range ordered {
+		noteCursor := communityNoteAuthorCursor(note)
+		if cursor != "" && noteCursor >= cursor {
+			continue
+		}
+		results = append(results, note)
+		if limit > 0 && len(results) == limit {
+			break
+		}
 	}
-	end := len(s.notesByAuthor)
-	if limit > 0 && start+limit < end {
-		end = start + limit
-	}
+
 	nextCursor := ""
-	if end < len(s.notesByAuthor) {
-		nextCursor = strconv.Itoa(end)
+	if limit > 0 && len(results) == limit {
+		nextCursor = communityNoteAuthorCursor(results[len(results)-1])
 	}
-	return s.notesByAuthor[start:end], nextCursor, nil
+	return results, nextCursor, nil
+}
+
+func communityNoteAuthorCursor(note *storage.CommunityNote) string {
+	if note == nil {
+		return ""
+	}
+	return note.CreatedAt.Format(time.RFC3339) + "#" + note.ID
 }
 
 func (s *stubCommunityNoteRepo) UpdateCommunityNoteScore(_ context.Context, noteID string, score float64, status string) error {
@@ -126,11 +145,11 @@ func TestService_CreateNote_StoresDefaults(t *testing.T) {
 	assert.Equal(t, note.ID, repo.createdNote.ID)
 }
 
-func TestService_CheckNoteRateLimit_PaginatesPastOldNotes(t *testing.T) {
-	now := time.Now()
-	oldNotes := make([]*storage.CommunityNote, communityNoteRateLimitPageSize)
+func TestService_CheckNoteRateLimit_DeniesWithRecentNotesAfterManyOldRawNotes(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	oldNotes := make([]*storage.CommunityNote, communityNoteRateLimitPageSize+5)
 	for i := range oldNotes {
-		oldNotes[i] = &storage.CommunityNote{ID: strconv.Itoa(i), CreatedAt: now.Add(-48 * time.Hour)}
+		oldNotes[i] = &storage.CommunityNote{ID: "old-" + strconv.Itoa(i), CreatedAt: now.Add(-48*time.Hour - time.Duration(i)*time.Minute)}
 	}
 	recentNotes := []*storage.CommunityNote{
 		{ID: "recent-1", CreatedAt: now.Add(-2 * time.Hour)},
@@ -144,6 +163,7 @@ func TestService_CheckNoteRateLimit_PaginatesPastOldNotes(t *testing.T) {
 	allowed, remaining := svc.CheckNoteRateLimit(context.Background(), "alice", 2)
 	assert.False(t, allowed)
 	assert.Equal(t, 0, remaining)
+	assert.Equal(t, 1, repo.notesByAuthorCalls)
 }
 
 func TestService_StoreNote_ErrorWrapped(t *testing.T) {
@@ -258,18 +278,22 @@ func TestService_RecalculateNoteScore_UpdatesStorage(t *testing.T) {
 }
 
 func TestService_CheckNoteRateLimit_CountsRecentNotes(t *testing.T) {
-	now := time.Now()
+	now := time.Now().UTC().Truncate(time.Second)
+	oldNotes := make([]*storage.CommunityNote, communityNoteRateLimitPageSize+5)
+	for i := range oldNotes {
+		oldNotes[i] = &storage.CommunityNote{ID: "old-" + strconv.Itoa(i), CreatedAt: now.Add(-48*time.Hour - time.Duration(i)*time.Minute)}
+	}
 	repo := &stubCommunityNoteRepo{
-		notesByAuthor: []*storage.CommunityNote{
+		notesByAuthor: append(oldNotes, []*storage.CommunityNote{
 			{ID: "n1", CreatedAt: now.Add(-2 * time.Hour)},
-			{ID: "n2", CreatedAt: now.Add(-48 * time.Hour)},
-		},
+		}...),
 	}
 	svc := &Service{repo: repo, logger: zap.NewNop()}
 
 	allowed, remaining := svc.CheckNoteRateLimit(context.Background(), "alice", 2)
 	assert.True(t, allowed)
 	assert.Equal(t, 1, remaining)
+	assert.Equal(t, 1, repo.notesByAuthorCalls)
 }
 
 // TestService_CheckRateLimit_DeniesWhenAtLimit verifies CSR-048:
