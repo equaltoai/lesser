@@ -193,18 +193,22 @@ func (r *round20Rekognition) RecognizeCelebrities(ctx context.Context, params *r
 }
 
 type round20S3 struct {
-	putObjectErr error
-	putObjectIn  *s3.PutObjectInput
+	putObjectErr  error
+	putObjectIn   *s3.PutObjectInput
+	putObjectBody []byte
+	calls         int
 }
 
 func (s *round20S3) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	_ = ctx
 	_ = optFns
+	s.calls++
 	s.putObjectIn = params
 	if s.putObjectErr != nil {
 		return nil, s.putObjectErr
 	}
-	_, _ = io.ReadAll(params.Body)
+	body, _ := io.ReadAll(params.Body)
+	s.putObjectBody = body
 	return &s3.PutObjectOutput{}, nil
 }
 
@@ -254,6 +258,32 @@ type round20ErrCloseReadCloser struct {
 }
 
 func (r *round20ErrCloseReadCloser) Close() error { return r.closeErr }
+
+func TestAIService_Round20_ConstructorsAndRequestLookup(t *testing.T) {
+	cfg := aws.Config{Region: "us-east-1"}
+	aiConfig := &Config{S3Bucket: "bucket"}
+
+	svc := NewAIService(cfg, aiConfig)
+	require.NotNil(t, svc)
+	require.NotNil(t, svc.comprehend)
+	require.NotNil(t, svc.rekognition)
+	require.NotNil(t, svc.bedrock)
+	require.NotNil(t, svc.s3Client)
+	require.NotNil(t, svc.sqsClient)
+	require.NotNil(t, svc.httpClient)
+	require.Same(t, aiConfig, svc.config)
+
+	sqsClient := &round20SQS{}
+	svc = NewAIServiceWithSQS(cfg, aiConfig, sqsClient)
+	require.NotNil(t, svc)
+	require.Same(t, sqsClient, svc.sqsClient)
+
+	req, err := (&AIService{logger: zap.NewNop()}).GetAnalysisRequest(context.Background(), "ai-req-1")
+	require.NoError(t, err)
+	require.Equal(t, "ai-req-1", req.ID)
+	require.Equal(t, StatusPending, req.Status)
+	require.False(t, req.RequestedAt.IsZero())
+}
 
 func TestAIService_Round20_AnalyzeText_ComprehendPaths(t *testing.T) {
 	t.Run("happy_path_with_toxicity_and_pii", func(t *testing.T) {
@@ -689,6 +719,7 @@ func TestAIService_Round20_UploadImageToS3_ContentLengthBound(t *testing.T) {
 	})
 
 	t.Run("content_length_within_limit_succeeds", func(t *testing.T) {
+		s3Client := &round20S3{}
 		svc := &AIService{
 			config: &Config{
 				S3Bucket:              "bucket",
@@ -704,13 +735,111 @@ func TestAIService_Round20_UploadImageToS3_ContentLengthBound(t *testing.T) {
 					},
 				},
 			},
-			s3Client: &round20S3{},
+			s3Client: s3Client,
 			logger:   zap.NewNop(),
 		}
 
 		key, err := svc.uploadImageToS3(context.Background(), "https://example.com/small/")
 		require.NoError(t, err)
 		require.NotEmpty(t, key)
+		require.Equal(t, 1, s3Client.calls)
+		require.Equal(t, []byte("smallimg"), s3Client.putObjectBody)
+	})
+
+	t.Run("chunked_without_content_length_exceeding_limit_is_rejected_before_upload", func(t *testing.T) {
+		s3Client := &round20S3{}
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 4,
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/chunked/": {
+						StatusCode:       http.StatusOK,
+						ContentLength:    -1,
+						TransferEncoding: []string{"chunked"},
+						Header:           http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:             io.NopCloser(strings.NewReader("12345")),
+					},
+				},
+			},
+			s3Client: s3Client,
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/chunked/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+		require.Zero(t, s3Client.calls)
+		require.Nil(t, s3Client.putObjectIn)
+		require.Empty(t, s3Client.putObjectBody)
+	})
+
+	t.Run("understated_content_length_exceeding_limit_is_rejected_before_upload", func(t *testing.T) {
+		s3Client := &round20S3{}
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 4,
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/understated/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: 4,
+						Header:        http.Header{"Content-Type": []string{"image/jpeg"}},
+						Body:          io.NopCloser(strings.NewReader("12345")),
+					},
+				},
+			},
+			s3Client: s3Client,
+			logger:   zap.NewNop(),
+		}
+
+		_, err := svc.uploadImageToS3(context.Background(), "https://example.com/understated/")
+		require.ErrorIs(t, err, ErrImageDownloadTooLarge)
+		require.Zero(t, s3Client.calls)
+		require.Nil(t, s3Client.putObjectIn)
+		require.Empty(t, s3Client.putObjectBody)
+	})
+
+	t.Run("valid_sub_limit_download_uploads_and_analyzes", func(t *testing.T) {
+		s3Client := &round20S3{}
+		parent := "Safe"
+		rekognitionClient := &round20Rekognition{
+			detectModerationLabelsOut: &rekognition.DetectModerationLabelsOutput{
+				ModerationLabels: []rekognitiontypes.ModerationLabel{
+					{Name: aws.String("Benign"), Confidence: aws.Float32(99), ParentName: aws.String(parent)},
+				},
+			},
+		}
+		svc := &AIService{
+			config: &Config{
+				S3Bucket:              "bucket",
+				MaxImageDownloadBytes: 8,
+			},
+			httpClient: &round20HTTPClient{
+				respByURL: map[string]*http.Response{
+					"https://example.com/safe/": {
+						StatusCode:    http.StatusOK,
+						ContentLength: -1,
+						Header:        http.Header{"Content-Type": []string{"image/png"}},
+						Body:          io.NopCloser(strings.NewReader("safeimg")),
+					},
+				},
+			},
+			rekognition: rekognitionClient,
+			s3Client:    s3Client,
+			logger:      zap.NewNop(),
+		}
+
+		analysis, err := svc.analyzeImages(context.Background(), []string{"https://example.com/safe/"})
+		require.NoError(t, err)
+		require.NotNil(t, analysis)
+		require.Equal(t, 1, s3Client.calls)
+		require.Equal(t, []byte("safeimg"), s3Client.putObjectBody)
+		require.Len(t, analysis.ModerationLabels, 1)
+		require.Equal(t, "Benign", analysis.ModerationLabels[0].Name)
 	})
 }
 
