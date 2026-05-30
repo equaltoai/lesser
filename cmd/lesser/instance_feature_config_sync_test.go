@@ -70,6 +70,8 @@ func TestEnvFeatureConfigSeedAvailable_FalseWhenNoEnvSet(t *testing.T) {
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", "")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "")
 	t.Setenv("TRANSLATION_ENABLED", "")
+	t.Setenv("ALLOW_AGENTS", "")
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "")
 	t.Setenv("TIP_ENABLED", "")
 	t.Setenv("TIP_CHAIN_ID", "")
 	t.Setenv("TIP_CONTRACT_ADDRESS", "")
@@ -987,7 +989,7 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsAllowAgentsOnly(t *testing.T) 
 	q := new(dynamormmocks.MockQuery)
 
 	setupMockInstanceRepoDB(db, q)
-	setupMockFirstForFeatureConfigs(q)
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(dynamormerrors.ErrItemNotFound).Twice()
 
 	t.Setenv("ALLOW_AGENTS", "true")
 
@@ -1005,7 +1007,7 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsRegistrationOnly(t *testing.T)
 	q := new(dynamormmocks.MockQuery)
 
 	setupMockInstanceRepoDB(db, q)
-	setupMockFirstForFeatureConfigs(q)
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(dynamormerrors.ErrItemNotFound).Twice()
 
 	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
 
@@ -1023,7 +1025,7 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_SeedsWhenConfigNotConfigured(t *tes
 	q := new(dynamormmocks.MockQuery)
 
 	setupMockInstanceRepoDB(db, q)
-	setupMockFirstForFeatureConfigs(q)
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(dynamormerrors.ErrItemNotFound).Twice()
 
 	t.Setenv("ALLOW_AGENTS", "true")
 	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
@@ -1049,33 +1051,31 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_NoOpWhenEnvUnset(t *testing.T) {
 	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
 }
 
-func TestSeedAgentManagedDefaultsFromEnvOnce_AppliesEnvOverrideWhenAlreadyConfigured(t *testing.T) {
+func TestSeedAgentManagedDefaultsFromEnvOnce_DoesNotOverwriteExistingAdminRegistrationPolicy(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
 	q := new(dynamormmocks.MockQuery)
 
 	setupMockInstanceRepoDB(db, q)
 
-	// Row already exists with AllowAgents=true.
+	// Row already exists with admin-disabled agent registration.
 	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*models.AgentInstanceConfig)
 		out.PK = "INSTANCE#CONFIG"
 		out.SK = "AGENT_CONFIG"
 		out.AllowAgents = true
+		out.AllowAgentRegistration = false
 	}).Return(nil).Once()
 
-	// SetAgentInstanceConfig will call First again (EnsureAgentInstanceConfig) then Update.
-	// setupMockFirstForFeatureConfigs provides .Maybe() for any unmatched First calls.
-	// Update is mocked in setupMockInstanceRepoDB via .Maybe().
-
-	t.Setenv("ALLOW_AGENTS", "false")
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
 
 	instanceRepo := repositories.NewInstanceRepository(db, "test-table", zap.NewNop())
 	require.NoError(t, seedAgentManagedDefaultsFromEnvOnce(ctx, instanceRepo, "dev", "test-table"))
 
 	cfg, err := instanceRepo.GetAgentInstanceConfig(ctx)
 	require.NoError(t, err)
-	assert.False(t, cfg.AllowAgents) // env override applied even when row exists
+	assert.False(t, cfg.AllowAgentRegistration)
+	q.AssertNotCalled(t, "Update", mock.Anything)
 }
 
 func TestEnsureAndApplyManagedProvisioningConfig_ReturnsErrorWhenSetAgentFails(t *testing.T) {
@@ -1114,8 +1114,8 @@ func TestSeedAgentManagedDefaultsFromEnvOnce_ReturnsErrorWhenEnsureFails(t *test
 	db := new(dynamormmocks.MockDB)
 	q := new(dynamormmocks.MockQuery)
 
-	// Override First for AgentInstanceConfig to return a non-NotFound error.
-	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(errors.New("ensure failed")).Once()
+	// AgentConfigExists returns a non-NotFound error before EnsureAgentInstanceConfig runs.
+	q.On("First", mock.AnythingOfType("*models.AgentInstanceConfig")).Return(errors.New("exists failed")).Once()
 	setupMockInstanceRepoDB(db, q)
 	setupMockFirstForFeatureConfigs(q)
 

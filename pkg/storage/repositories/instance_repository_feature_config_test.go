@@ -291,6 +291,36 @@ func TestInstanceRepository_ConfigExists_ReturnsFalseOnNotFound(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestInstanceRepository_ConfigExists_ReturnsStorageErrors(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTrustConfig")).Return(assert.AnError).Once()
+	q.On("First", mock.AnythingOfType("*models.InstanceTranslationConfig")).Return(assert.AnError).Once()
+	q.On("First", mock.AnythingOfType("*models.InstanceTipsConfig")).Return(assert.AnError).Once()
+	q.On("First", mock.AnythingOfType("*models.AIInstanceConfig")).Return(assert.AnError).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+
+	ok, err := repo.TrustConfigExists(ctx)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.False(t, ok)
+
+	ok, err = repo.TranslationConfigExists(ctx)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.False(t, ok)
+
+	ok, err = repo.TipsConfigExists(ctx)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.False(t, ok)
+
+	ok, err = repo.AIConfigExists(ctx)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.False(t, ok)
+}
+
 func TestInstanceRepository_ConfigExists_ReturnsTrueAndCaches(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
@@ -612,6 +642,55 @@ func TestInstanceRepository_SetTrustOverride_UpdatesAndCaches(t *testing.T) {
 	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123:secret:abc", *cached.Override.InstanceKeySecretARN)
 }
 
+func TestInstanceRepository_SetTrustManagedDefaults_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTrustConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTrustConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTrustConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	baseURL := "https://managed.example"
+	require.NoError(t, repo.SetTrustManagedDefaults(ctx, models.InstanceTrustConfigPatch{BaseURL: &baseURL}))
+
+	cached, ok := repo.getCachedTrustConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Managed)
+	assert.Equal(t, "https://managed.example", cached.Managed.BaseURL)
+}
+
+func TestInstanceRepository_SetTrustOverride_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTrustConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTrustConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTrustConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	baseURL := "https://override.example"
+	require.NoError(t, repo.SetTrustOverride(ctx, models.InstanceTrustConfigPatch{BaseURL: &baseURL}))
+
+	cached, ok := repo.getCachedTrustConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Override)
+	require.NotNil(t, cached.Override.BaseURL)
+	assert.Equal(t, "https://override.example", *cached.Override.BaseURL)
+}
+
 func TestInstanceRepository_SetTranslationManagedDefaults_UpdatesAndCaches(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
@@ -850,6 +929,87 @@ func TestInstanceRepository_SetTipsOverride_UpdatesAndCaches(t *testing.T) {
 	assert.Equal(t, "0xoverride", *cached.Override.ContractAddress)
 }
 
+func TestInstanceRepository_SetTipsManagedDefaults_NoOpWhenPatchEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTipsConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTipsConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTipsConfig
+	}).Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, repo.SetTipsManagedDefaults(ctx, models.InstanceTipsConfigPatch{}))
+}
+
+func TestInstanceRepository_SetTipsOverride_NoOpWhenPatchEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTipsConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTipsConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTipsConfig
+	}).Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, repo.SetTipsOverride(ctx, models.InstanceTipsConfigPatch{}))
+}
+
+func TestInstanceRepository_SetTipsManagedDefaults_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTipsConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTipsConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTipsConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	enabled := true
+	require.NoError(t, repo.SetTipsManagedDefaults(ctx, models.InstanceTipsConfigPatch{Enabled: &enabled}))
+
+	cached, ok := repo.getCachedTipsConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Managed)
+	assert.True(t, cached.Managed.Enabled)
+}
+
+func TestInstanceRepository_SetTipsOverride_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.InstanceTipsConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.InstanceTipsConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKTipsConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	enabled := true
+	require.NoError(t, repo.SetTipsOverride(ctx, models.InstanceTipsConfigPatch{Enabled: &enabled}))
+
+	cached, ok := repo.getCachedTipsConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Override)
+	require.NotNil(t, cached.Override.Enabled)
+	assert.True(t, *cached.Override.Enabled)
+}
+
 func TestInstanceRepository_ClearTipsOverride_RemovesOverrideAttribute(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
@@ -1045,6 +1205,87 @@ func TestInstanceRepository_SetAIOverride_UpdatesAndCaches(t *testing.T) {
 	assert.True(t, *cached.Override.SpamDetectionEnabled)
 	assert.True(t, *cached.Override.PIIDetectionEnabled)
 	assert.True(t, *cached.Override.AIContentDetection)
+}
+
+func TestInstanceRepository_SetAIManagedDefaults_NoOpWhenPatchEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.AIInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AIInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKAIConfig
+	}).Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, repo.SetAIManagedDefaults(ctx, models.AIInstanceConfigPatch{}))
+}
+
+func TestInstanceRepository_SetAIOverride_NoOpWhenPatchEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.AIInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AIInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKAIConfig
+	}).Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	require.NoError(t, repo.SetAIOverride(ctx, models.AIInstanceConfigPatch{}))
+}
+
+func TestInstanceRepository_SetAIManagedDefaults_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.AIInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AIInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKAIConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	aiEnabled := true
+	require.NoError(t, repo.SetAIManagedDefaults(ctx, models.AIInstanceConfigPatch{AIEnabled: &aiEnabled}))
+
+	cached, ok := repo.getCachedAIConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Managed)
+	assert.True(t, cached.Managed.AIEnabled)
+}
+
+func TestInstanceRepository_SetAIOverride_CreatesWhenUpdateNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockDB)
+	q := new(dynamormmocks.MockQuery)
+
+	setupMockDB(db, q)
+	q.On("First", mock.AnythingOfType("*models.AIInstanceConfig")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*models.AIInstanceConfig)
+		out.PK = "INSTANCE#CONFIG"
+		out.SK = models.SKAIConfig
+	}).Return(nil).Once()
+	q.On("Update", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	q.On("Create").Return(nil).Once()
+
+	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
+	aiEnabled := true
+	require.NoError(t, repo.SetAIOverride(ctx, models.AIInstanceConfigPatch{AIEnabled: &aiEnabled}))
+
+	cached, ok := repo.getCachedAIConfig()
+	require.True(t, ok)
+	require.NotNil(t, cached.Override)
+	require.NotNil(t, cached.Override.AIEnabled)
+	assert.True(t, *cached.Override.AIEnabled)
 }
 
 func TestInstanceRepository_ClearAIOverride_RemovesOverrideAttribute(t *testing.T) {
