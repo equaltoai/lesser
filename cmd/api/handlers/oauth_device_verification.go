@@ -16,7 +16,10 @@ import (
 
 var oauthDeviceUserCodePattern = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$`)
 
-const oauthDeviceErrorInvalidRequest = "invalid_request"
+const (
+	oauthDeviceErrorInvalidRequest    = "invalid_request"
+	oauthDeviceErrorInsufficientScope = "insufficient_scope"
+)
 
 func normalizeOAuthDeviceUserCode(input string) string {
 	trimmed := strings.ToUpper(strings.TrimSpace(input))
@@ -74,6 +77,19 @@ func oauthScopeSetsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func oauthDeviceConsentMissingScope(claims *auth.Claims, requestedScopes []string) string {
+	for _, scope := range requestedScopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if claims == nil || !claims.HasScope(scope) {
+			return scope
+		}
+	}
+	return ""
 }
 
 func validateOAuthDeviceConsentBinding(params map[string]string, session *storage.OAuthDeviceSession) (string, string) {
@@ -310,6 +326,19 @@ func (h *Handler) HandleOAuthDeviceConsentLift(ctx *apptheory.Context) (*apptheo
 			Error:            code,
 			ErrorDescription: description,
 		})
+	}
+
+	if action == actionApprove {
+		// Device consent is intentionally principal-bound rather than OAuth-client-bound:
+		// hosted UI tokens may approve CLI/device sessions for the same operator. The
+		// non-negotiable safety gate is that the approving token must already cover
+		// every scope being granted to the device session.
+		if missingScope := oauthDeviceConsentMissingScope(claims, session.Scopes); missingScope != "" {
+			return apptheory.JSON(http.StatusForbidden, apimodels.OAuthErrorResponse{
+				Error:            oauthDeviceErrorInsufficientScope,
+				ErrorDescription: "approving token does not cover requested scope: " + missingScope,
+			})
+		}
 	}
 
 	switch action {
