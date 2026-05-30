@@ -27,7 +27,8 @@ func TestInstanceRepository_GetAgentInstanceConfig_DefaultWhenMissingAndCaches(t
 	cfg, err := repo.GetAgentInstanceConfig(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
-	assert.True(t, cfg.AllowAgents)
+	assert.False(t, cfg.AllowAgents)
+	assert.False(t, cfg.AllowAgentRegistration)
 	assert.NotEmpty(t, cfg.PK)
 	assert.Equal(t, "AGENT_CONFIG", cfg.SK)
 
@@ -54,6 +55,8 @@ func TestInstanceRepository_EnsureAgentInstanceConfig_CreateWhenMissing(t *testi
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "AGENT_CONFIG", cfg.SK)
+	assert.False(t, cfg.AllowAgents)
+	assert.False(t, cfg.AllowAgentRegistration)
 
 	cached, ok := repo.getCachedAgentConfig()
 	require.True(t, ok)

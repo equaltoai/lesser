@@ -114,3 +114,22 @@ func TestConfig_GraphQLMaxComplexity_DefaultAndOverride(t *testing.T) {
 	cfg = Get()
 	assert.Equal(t, 2500, cfg.GraphQLMaxComplexity)
 }
+
+func TestConfig_AgentRegistrationDefaultsSecureAndExplicitOptIn(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("ALLOW_AGENTS", "")
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "")
+
+	ResetForTests()
+	cfg := Get()
+	assert.False(t, cfg.AllowAgents)
+	assert.False(t, cfg.AllowAgentRegistration)
+
+	t.Setenv("ALLOW_AGENTS", "true")
+	t.Setenv("ALLOW_AGENT_REGISTRATION", "true")
+
+	ResetForTests()
+	cfg = Get()
+	assert.True(t, cfg.AllowAgents)
+	assert.True(t, cfg.AllowAgentRegistration)
+}
