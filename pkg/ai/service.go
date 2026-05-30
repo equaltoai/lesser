@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1124,15 +1125,27 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 	fileExt := s.getFileExtensionFromContentType(contentType)
 	s3Key := fmt.Sprintf("ai-analysis/%s%s", imageID, fileExt)
 
-	// Wrap body with a size-limited reader as defense-in-depth against
-	// servers that omit or misrepresent Content-Length.
-	limitedBody := io.LimitReader(resp.Body, maxBytes)
+	// Read one byte beyond the accepted maximum before uploading so
+	// chunked, missing, or understated Content-Length responses cannot be
+	// persisted as silently truncated S3 objects.
+	imageBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if int64(len(imageBytes)) > maxBytes {
+		s.logger.Warn("refusing oversized image download",
+			zap.String("url", imageURL),
+			zap.Int64("content_length", resp.ContentLength),
+			zap.Int64("max_bytes", maxBytes),
+			zap.Int("bytes_read", len(imageBytes)))
+		return "", fmt.Errorf("%w: downloaded image exceeds limit %d", ErrImageDownloadTooLarge, maxBytes)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to read image download: %w", err)
+	}
 
 	// Upload to S3
 	_, err = s.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.config.S3Bucket),
 		Key:         aws.String(s3Key),
-		Body:        io.Reader(limitedBody),
+		Body:        bytes.NewReader(imageBytes),
 		ContentType: aws.String(contentType),
 		// Set appropriate metadata
 		Metadata: map[string]string{
