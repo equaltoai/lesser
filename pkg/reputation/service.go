@@ -237,7 +237,7 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 		// No reputation history, calculate new
 		return s.calculateAndStore(ctx, actorID)
 	}
-	if !sameCanonicalActorID(storedRep.ActorID, actorID) {
+	if !common.SameCanonicalActorID(storedRep.ActorID, actorID) {
 		s.logger.Warn("stored reputation actor did not match requested actor; recalculating",
 			zap.String("requested_actor", actorID),
 			zap.String("stored_actor", storedRep.ActorID))
@@ -398,7 +398,7 @@ func (s *Service) getRemoteActorData(ctx context.Context, actorID string) (*acti
 			zap.Error(err))
 		return nil, fmt.Errorf("actor not found: %w", err)
 	}
-	if actor == nil || !sameCanonicalActorID(actor.ID, actorID) {
+	if actor == nil || !common.SameCanonicalActorID(actor.ID, actorID) {
 		return nil, fmt.Errorf("actor not found: %s", actorID)
 	}
 	return actor, nil
@@ -869,7 +869,7 @@ func (s *Service) ImportReputation(ctx context.Context, document string) (*Impor
 		}, nil
 	}
 
-	if pr.Reputation != nil && !sameCanonicalActorID(pr.Actor, pr.Reputation.ActorID) {
+	if pr.Reputation != nil && !common.SameCanonicalActorID(pr.Actor, pr.Reputation.ActorID) {
 		return &ImportResult{
 			Success: false,
 			Error:   "Reputation actor does not match document actor",

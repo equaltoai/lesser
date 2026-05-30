@@ -139,6 +139,37 @@ func TestConversationAPIRemoteAccountForParticipantRef_UsesCachedRemoteActor(t *
 	repos.AssertExpectations(t)
 }
 
+func TestConversationAPIRemoteAccountForParticipantRef_RejectsCanonicalMismatch(t *testing.T) {
+	ctx := context.Background()
+	victimActorID := "https://remote.example/users/bob"
+	craftedActorID := victimActorID + "/anything"
+	repos := &MockRepositoryStorage{}
+	actorRepo := &testmocks.MockActorRepository{}
+	repos.On("Actor").Return(actorRepo).Maybe()
+	victimActor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: victimActorID, Type: activitypub.PersonType},
+		PreferredUsername: "bob",
+		Name:              "Cached Bob",
+		URL:               victimActorID,
+	}
+	actorRepo.On("GetCachedRemoteActor", ctx, craftedActorID).Return(victimActor, nil).Once()
+	actorRepo.On("GetCachedRemoteActor", ctx, "bob@remote.example").Return(victimActor, nil).Once()
+
+	h := &Handler{cfg: &config.Config{Domain: "example.com"}, repos: repos}
+	account := h.conversationAPIRemoteAccountForParticipantRef(ctx, storageModels.ConversationParticipantRef{
+		ParticipantType: storageModels.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   craftedActorID,
+		Acct:            "bob@remote.example",
+	})
+
+	require.NotNil(t, account)
+	require.Equal(t, craftedActorID, account.Actor.ID)
+	require.NotEqual(t, victimActorID, account.Actor.ID)
+	require.NotEqual(t, "Cached Bob", account.User.DisplayName)
+	actorRepo.AssertExpectations(t)
+	repos.AssertExpectations(t)
+}
+
 func TestConversationAPIProjectionHelpers_EdgeBranches(t *testing.T) {
 	ctx := context.Background()
 

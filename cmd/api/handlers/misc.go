@@ -1266,6 +1266,9 @@ func (h *Handler) cachedRemoteNotificationActor(ctx context.Context, actorID str
 		}
 		actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
 		if err == nil && actor != nil {
+			if !common.CachedRemoteActorIDMatchesLookup(actor.ID, actorID) {
+				continue
+			}
 			return actor
 		}
 	}

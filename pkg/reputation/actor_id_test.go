@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,7 +70,7 @@ func TestCSR046_CanonicalActorIdempotency(t *testing.T) {
 	}
 	for _, pair := range samePairs {
 		t.Run("same_"+pair[0], func(t *testing.T) {
-			require.True(t, sameCanonicalActorID(pair[0], pair[1]),
+			require.True(t, common.SameCanonicalActorID(pair[0], pair[1]),
 				"%q and %q should canonicalize to the same ID", pair[0], pair[1])
 		})
 	}
@@ -84,7 +85,7 @@ func TestCSR046_CanonicalActorIdempotency(t *testing.T) {
 	}
 	for _, pair := range diffPairs {
 		t.Run("diff_"+pair[0], func(t *testing.T) {
-			require.False(t, sameCanonicalActorID(pair[0], pair[1]),
+			require.False(t, common.SameCanonicalActorID(pair[0], pair[1]),
 				"%q and %q should canonicalize to different IDs", pair[0], pair[1])
 		})
 	}

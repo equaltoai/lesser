@@ -99,3 +99,57 @@ func TestRound34ConvertStatusToGraphQLObject_DegradesToRemotePlaceholderWithoutC
 	require.Equal(t, "alice", obj.Actor.PreferredUsername)
 	require.NotEqual(t, config.Get().ActorURL("alice"), obj.Actor.ID)
 }
+
+func TestRound34ConvertStatusToGraphQLObject_RejectsCachedRemoteCanonicalMismatch(t *testing.T) {
+	storage := pkgtesting.NewMockRepositoryStorage()
+	actorRepo, ok := storage.Actor().(*inmemory.ActorRepository)
+	require.True(t, ok)
+
+	victimActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/victim",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "victim",
+		Name:              "Remote Victim",
+		Inbox:             "https://remote.example/users/victim/inbox",
+		Outbox:            "https://remote.example/users/victim/outbox",
+	}
+	actorRepo.SetCachedRemoteActor("victim@remote.example", victimActor, time.Hour)
+
+	resolver := &Resolver{
+		Storage: storage,
+		Config: &config.Config{
+			Domain: "localhost",
+		},
+		Logger: zap.NewNop(),
+	}
+
+	now := time.Now().UTC()
+	craftedActorID := "https://remote.example/users/victim/anything"
+	status := &storageModels.Status{
+		StatusID:       "status-remote-crafted",
+		AuthorID:       craftedActorID,
+		AuthorUsername: "victim@remote.example",
+		Content:        "crafted actor id should not hydrate victim",
+		CreatedAt:      now.Add(-time.Minute),
+		UpdatedAt:      now,
+		Visibility:     storageModels.VisibilityPublic,
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://remote.example/notes/1",
+				Type:      activitypub.NoteType,
+				Published: &now,
+			},
+			AttributedTo: craftedActorID,
+			Content:      "crafted actor id should not hydrate victim",
+		},
+	}
+
+	obj := resolver.ConvertStatusToGraphQLObject(context.Background(), status)
+	require.NotNil(t, obj)
+	require.NotNil(t, obj.Actor)
+	require.Equal(t, craftedActorID, obj.Actor.ID)
+	require.NotEqual(t, victimActor.ID, obj.Actor.ID)
+	require.NotEqual(t, victimActor.Name, obj.Actor.Name)
+}

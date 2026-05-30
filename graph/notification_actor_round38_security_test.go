@@ -9,7 +9,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,6 +59,67 @@ func TestLoadNotificationActor_RejectsRemoteIdentityAsLocal(t *testing.T) {
 			assert.Nil(t, actor, "remote actor ID %q must not be resolved as a local actor", tt.actorID)
 		})
 	}
+}
+
+func TestLoadNotificationActor_RejectsCachedRemoteCanonicalIDMismatch(t *testing.T) {
+	ctx := context.Background()
+	craftedActorID := "https://remote.example/users/victim/anything"
+	victimActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/victim",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "victim",
+		Name:              "Remote Victim",
+		URL:               "https://remote.example/@victim",
+		Inbox:             "https://remote.example/users/victim/inbox",
+		Outbox:            "https://remote.example/users/victim/outbox",
+	}
+
+	actorRepo := testmocks.NewMockActorRepository()
+	actorRepo.On("GetCachedRemoteActor", mock.Anything, craftedActorID).Return(victimActor, nil).Twice()
+
+	r, _ := newRound12GraphResolver(t)
+	r.Storage = pkgtesting.NewMockRepositoryStorage(pkgtesting.WithActorRepository(actorRepo))
+
+	resolution, err := r.resolveStoredActorLookup(ctx, craftedActorID)
+	require.Nil(t, resolution)
+	require.Error(t, err)
+	require.True(t, graphActorLookupNotFound(err), "expected actor-not-found error, got %v", err)
+
+	actor := r.loadNotificationActor(ctx, &models.Notification{ActorID: craftedActorID})
+	require.Nil(t, actor, "crafted notification ActorID must not materialize as cached victim actor")
+
+	actorRepo.AssertExpectations(t)
+}
+
+func TestLoadNotificationActor_AllowsCachedRemoteCanonicalIDMatch(t *testing.T) {
+	ctx := context.Background()
+	actorID := "https://remote.example/users/victim/"
+	victimActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/victim",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "victim",
+		Name:              "Remote Victim",
+		URL:               "https://remote.example/@victim",
+		Inbox:             "https://remote.example/users/victim/inbox",
+		Outbox:            "https://remote.example/users/victim/outbox",
+	}
+
+	actorRepo := testmocks.NewMockActorRepository()
+	actorRepo.On("GetCachedRemoteActor", mock.Anything, actorID).Return(victimActor, nil).Once()
+
+	r, _ := newRound12GraphResolver(t)
+	r.Storage = pkgtesting.NewMockRepositoryStorage(pkgtesting.WithActorRepository(actorRepo))
+
+	actor := r.loadNotificationActor(ctx, &models.Notification{ActorID: actorID})
+	require.NotNil(t, actor)
+	require.Equal(t, victimActor.ID, actor.ID)
+	require.Equal(t, "Remote Victim", actor.Name)
+
+	actorRepo.AssertExpectations(t)
 }
 
 // TestLocalUsernameForLookup_RemoteDomainsNotLocal verifies that
