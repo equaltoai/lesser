@@ -221,6 +221,23 @@ func (r *InstanceRepository) invalidateAgentConfigCache() {
 	r.agentCache.mu.Unlock()
 }
 
+// AgentConfigExists reports whether the agent config record exists in storage.
+func (r *InstanceRepository) AgentConfigExists(ctx context.Context) (bool, error) {
+	cfg := &models.AgentInstanceConfig{}
+	err := r.agentRepo.Get(ctx, storage.InstanceConfigKey, "AGENT_CONFIG", cfg)
+	if err != nil {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if strings.TrimSpace(cfg.PK) == "" || strings.TrimSpace(cfg.SK) == "" {
+		return false, nil
+	}
+	r.setCachedAgentConfig(cfg)
+	return true, nil
+}
+
 // GetInstanceState returns the current instance activation state.
 // If no state exists yet, it defaults to a locked state without persisting.
 func (r *InstanceRepository) GetInstanceState(ctx context.Context) (*models.InstanceState, error) {

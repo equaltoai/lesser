@@ -178,6 +178,14 @@ func seedManagedConfigFromEnvOnce(ctx context.Context, instanceRepo *repositorie
 }
 
 func seedAgentManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
+	agentExists, err := instanceRepo.AgentConfigExists(ctx)
+	if err != nil {
+		return err
+	}
+	if agentExists {
+		return nil
+	}
+
 	agentsEnabled := envBoolPtr("ALLOW_AGENTS")
 	registrationEnabled := envBoolPtr("ALLOW_AGENT_REGISTRATION")
 	if agentsEnabled == nil && registrationEnabled == nil {
