@@ -219,9 +219,11 @@ func NewService(cfg *Config) (*Service, error) {
 
 // GetReputation retrieves the current reputation for an actor
 func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputation, error) {
-	if err := ValidateActorID(actorID); err != nil {
+	canonicalActorID, err := common.CanonicalActorID(actorID)
+	if err != nil {
 		return nil, fmt.Errorf("invalid actor ID: %w", err)
 	}
+	actorID = canonicalActorID
 
 	// Get reputation from storage
 	storedRep, err := s.userRepo.GetReputation(ctx, actorID)
@@ -279,6 +281,12 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 
 // calculateAndStore calculates and stores reputation for an actor
 func (s *Service) calculateAndStore(ctx context.Context, actorID string) (*Reputation, error) {
+	canonicalActorID, err := common.CanonicalActorID(actorID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid actor ID: %w", err)
+	}
+	actorID = canonicalActorID
+
 	// Gather calculation input
 	input, err := s.gatherCalculationInput(ctx, actorID)
 	if err != nil {
@@ -296,6 +304,10 @@ func (s *Service) calculateAndStore(ctx context.Context, actorID string) (*Reput
 		return nil, fmt.Errorf("failed to sign reputation: %w", err)
 	}
 
+	if err := s.assertCalculationMatchesStorageKey(input, rep); err != nil {
+		return nil, err
+	}
+
 	// Store reputation
 	if err := s.storeReputation(ctx, rep); err != nil {
 		return nil, fmt.Errorf("failed to store reputation: %w", err)
@@ -311,7 +323,11 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 	}
 
 	// Extract username and get actor
-	username := s.extractUsername(actorID)
+	username, usernameErr := s.extractUsername(actorID)
+	if usernameErr != nil && !s.isRemoteActorID(actorID) {
+		return nil, usernameErr
+	}
+	input.ActorUsername = username
 	actor, err := s.getActorData(ctx, actorID, username)
 	if err != nil {
 		return nil, err
@@ -339,28 +355,14 @@ func (s *Service) gatherCalculationInput(ctx context.Context, actorID string) (*
 }
 
 // extractUsername extracts the username from an actor ID
-func (s *Service) extractUsername(actorID string) string {
-	username := actorID
-
-	// Try to extract from /users/ format
-	if idx := strings.LastIndex(actorID, "/users/"); idx != -1 {
-		username = actorID[idx+7:] // 7 is len("/users/")
-	} else if idx := strings.LastIndex(actorID, "/@"); idx != -1 {
-		username = actorID[idx+2:] // 2 is len("/@")
-	} else if strings.HasPrefix(actorID, "@") {
-		username = actorID[1:] // Remove leading @
-	}
-
-	// Remove any trailing slashes or query parameters
-	if idx := strings.IndexAny(username, "/?#"); idx != -1 {
-		username = username[:idx]
-	}
-
+func (s *Service) extractUsername(actorID string) (string, error) {
+	username, err := common.ActorUsernameFromID(actorID)
 	s.logger.Debug("Extracting username from actor ID",
 		zap.String("actorID", actorID),
-		zap.String("extracted_username", username))
+		zap.String("extracted_username", username),
+		zap.Error(err))
 
-	return username
+	return username, err
 }
 
 // getActorData retrieves actor data from storage
@@ -375,7 +377,10 @@ func (s *Service) getActorData(ctx context.Context, actorID, username string) (*
 			zap.String("actorID", actorID),
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, fmt.Errorf("actor not found: %w", err)
+	}
+	if actor == nil || !common.SameCanonicalActorID(actor.ID, actorID) {
+		return nil, fmt.Errorf("actor not found: %s", actorID)
 	}
 	return actor, nil
 }
@@ -427,7 +432,13 @@ func (s *Service) gatherActivityMetrics(ctx context.Context, input *CalculationI
 
 // getPostCount retrieves the total number of posts (statuses) by an actor
 func (s *Service) getPostCount(ctx context.Context, actorID string) int {
-	username := s.extractUsername(actorID)
+	username, err := s.extractUsername(actorID)
+	if err != nil {
+		s.logger.Warn("Failed to extract username for post count",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return 0
+	}
 
 	// Try cache first (cache for 10 minutes)
 	cacheKey := fmt.Sprintf("post_count_%s", username)
@@ -452,7 +463,13 @@ func (s *Service) getPostCount(ctx context.Context, actorID string) int {
 
 // getLastActivityTime retrieves the timestamp of the most recent activity by an actor
 func (s *Service) getLastActivityTime(ctx context.Context, actorID string) time.Time {
-	username := s.extractUsername(actorID)
+	username, err := s.extractUsername(actorID)
+	if err != nil {
+		s.logger.Warn("Failed to extract username for last activity",
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return time.Now().Add(-30 * 24 * time.Hour)
+	}
 
 	// Try cache first (cache for 5 minutes - activity timestamps change more frequently)
 	cacheKey := fmt.Sprintf("last_activity_%s", username)
@@ -763,6 +780,41 @@ func (s *Service) importedReputationStoreOptions(actorID string) []storeReputati
 	actorHost := actorIDHost(actorID)
 	if localHost == "" || actorHost == "" || actorHost != localHost {
 		return []storeReputationOption{withCanonicalActorKey()}
+	}
+	return nil
+}
+
+func (s *Service) assertCalculationMatchesStorageKey(input *CalculationInput, rep *Reputation) error {
+	if input == nil || rep == nil {
+		return fmt.Errorf("reputation calculation produced empty input or reputation")
+	}
+	if !common.SameCanonicalActorID(rep.ActorID, input.ActorID) {
+		return fmt.Errorf("calculated reputation actor mismatch: %s != %s", rep.ActorID, input.ActorID)
+	}
+
+	localHost := actorIDHost(s.instanceURL)
+	actorHost := actorIDHost(input.ActorID)
+	if localHost == "" || actorHost == "" || actorHost != localHost {
+		return nil
+	}
+
+	username, err := common.ActorUsernameFromID(input.ActorID)
+	if err != nil {
+		return err
+	}
+	if input.ActorUsername != "" && input.ActorUsername != username {
+		return fmt.Errorf("calculation username %q does not match canonical actor username %q", input.ActorUsername, username)
+	}
+
+	pk, err := models.ReputationActorPartitionKeyForRecord(input.ActorID, map[string]any{
+		"instanceURL": s.instanceURL,
+	})
+	if err != nil {
+		return err
+	}
+	expectedPK := fmt.Sprintf(models.KeyPatternActor, username)
+	if pk != expectedPK {
+		return fmt.Errorf("calculation username %q does not match reputation storage key %q", username, pk)
 	}
 	return nil
 }

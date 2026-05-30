@@ -121,6 +121,16 @@ func TestReputationHandlersRound12(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleGetReputationLift(ctx))
 	})
 
+	t.Run("get reputation rejects crafted multi-segment local actor id before writes", func(t *testing.T) {
+		noWriteState := &round10QueryState{createErrorOnce: errors.New("unexpected storage write")}
+		noWriteHandler, _, _ := round11NewHandler(t, cfg, noWriteState)
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/crafted", headers, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["actor_id"] = "https://example.com/users/admin/mallory"
+		requireStatus(t, http.StatusBadRequest)(noWriteHandler.HandleGetReputationLift(ctx))
+	})
+
 	t.Run("get reputation invalid token", func(t *testing.T) {
 		badHeaders := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", badHeaders, nil, nil)
