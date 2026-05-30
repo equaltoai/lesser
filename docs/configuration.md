@@ -95,6 +95,23 @@ These env vars are still read as a temporary bootstrap path, but should not be r
 - `TRANSLATION_ENABLED`
 - `TIP_ENABLED`, `TIP_CHAIN_ID`, `TIP_CONTRACT_ADDRESS`
 
+### Agent registration opt-in
+
+Agent accounts and self-registration default to disabled. The public self-sovereign agent registration endpoints
+(`POST /api/v1/agents/register/challenge` and `POST /api/v1/agents/register`) return `403` until an operator opts in.
+
+To intentionally run an agent-enabled deployment, set both deployment inputs/env vars and redeploy:
+
+```bash
+ALLOW_AGENTS=true
+ALLOW_AGENT_REGISTRATION=true
+```
+
+`lesser up` forwards those values into CDK context and seeds `SK="AGENT_CONFIG"` managed defaults when env-based
+feature seeding is active. Operators can also enable agents persistently by setting `allow_agents=true` and
+`allow_agent_registration=true` through the admin agent policy endpoint / GraphQL admin mutation. A persisted disabled
+`AGENT_CONFIG` policy keeps self-registration disabled even if the built-in defaults would otherwise apply.
+
 ## Runtime Environment Variables
 
 ### Baseline (set by CDK in deployed stacks)
@@ -162,6 +179,12 @@ REGISTRATIONS_OPEN=false
 APPROVAL_REQUIRED=true
 INVITES_ENABLED=false
 FEDERATION_ENABLED=true
+
+# Agent self-registration is secure-by-default. Intentional agent deployments
+# must explicitly opt in with both env vars or persist an enabling
+# AGENT_CONFIG policy through the admin agent policy endpoint.
+ALLOW_AGENTS=false
+ALLOW_AGENT_REGISTRATION=false
 
 # Limits
 MAX_STATUS_CHARS=5000

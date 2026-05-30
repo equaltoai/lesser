@@ -57,14 +57,14 @@ func (c *AgentInstanceConfig) GetSK() string {
 	return c.SK
 }
 
-// NewAgentInstanceConfig returns a config with agents enabled by default.
-// Operators can disable agents or agent registration via the UpdateAdminAgentPolicy mutation.
+// NewAgentInstanceConfig returns secure-by-default agent policy.
+// Operators must explicitly enable agents and agent registration via env or admin policy.
 func NewAgentInstanceConfig() *AgentInstanceConfig {
 	return &AgentInstanceConfig{
 		PK:                             instanceConfigPK,
 		SK:                             "AGENT_CONFIG",
-		AllowAgents:                    true,
-		AllowAgentRegistration:         true,
+		AllowAgents:                    false,
+		AllowAgentRegistration:         false,
 		DefaultQuarantineDays:          7,
 		MaxAgentsPerOwner:              3,
 		AllowRemoteAgents:              true,

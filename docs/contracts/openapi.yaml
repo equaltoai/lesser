@@ -13151,6 +13151,7 @@ paths:
             operationId: post_api_v1_agents_register
             tags:
                 - agents
+            description: Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration.
             requestBody:
                 content:
                     application/json:
@@ -13165,8 +13166,12 @@ paths:
                                 $ref: '#/components/schemas/AgentSelfRegistrationResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleAgentRegisterLift
@@ -13178,6 +13183,7 @@ paths:
             operationId: post_api_v1_agents_register_challenge
             tags:
                 - agents
+            description: Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration.
             requestBody:
                 content:
                     application/json:
@@ -13192,8 +13198,12 @@ paths:
                                 $ref: '#/components/schemas/AgentKeyChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleAgentRegisterChallengeLift

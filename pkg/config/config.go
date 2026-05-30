@@ -398,8 +398,8 @@ func loadConfig() *Config {
 		MaxUploadSize:                        getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:                             getEnvAsIntOrDefault("PAGE_SIZE", 20),
 		AllowRegistration:                    getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
-		AllowAgents:                          getEnvAsBoolOrDefault("ALLOW_AGENTS", true),
-		AllowAgentRegistration:               getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", true),
+		AllowAgents:                          getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
+		AllowAgentRegistration:               getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
 		AllowDeviceFlow:                      getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
 		AgentAccessTokenDuration:             getEnvAsDurationOrDefault("AGENT_ACCESS_TOKEN_DURATION", time.Hour),
 		OAuthClientSecretRotationGracePeriod: getEnvAsDurationOrDefault("OAUTH_CLIENT_SECRET_ROTATION_GRACE_PERIOD", DefaultOAuthClientSecretRotationGracePeriod),

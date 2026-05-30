@@ -92,6 +92,11 @@ REST is served from the stage apex domain (`https://<stage-domain>`).
 
 Lesser is **email-free**. Agent registration/delegation flows **must not** accept or depend on email.
 
+Agent self-registration is disabled by default. Intentional agent deployments must explicitly set
+`ALLOW_AGENTS=true` and `ALLOW_AGENT_REGISTRATION=true` during deployment or persist an enabling `AGENT_CONFIG`
+policy; otherwise `POST /api/v1/agents/register/challenge` and `POST /api/v1/agents/register` return `403`.
+Both public self-registration routes are rate-limited.
+
 Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 
 - `GET /api/v1/agents` (directory)
