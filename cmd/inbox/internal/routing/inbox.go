@@ -2831,7 +2831,7 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 
 	skipConversationMetadata := !createConversation &&
 		!conversation.LastMessageTime.IsZero() &&
-		!publishedAt.After(conversation.LastMessageTime)
+		publishedAt.Before(conversation.LastMessageTime)
 
 	// CSR-042: Always count unique messages, even when preserving
 	// last-message metadata for an older inbound status. The status-level
