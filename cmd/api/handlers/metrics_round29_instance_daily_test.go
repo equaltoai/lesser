@@ -11,7 +11,7 @@ import (
 )
 
 func TestInstanceMetricsDaily_Round29_AuthAndDateValidation(t *testing.T) {
-	now := time.Now()
+	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	cfg := round11TestConfig()
@@ -162,6 +162,29 @@ func TestInstanceMetricsDaily_Round29_AuthAndDateValidation(t *testing.T) {
 		require.Equal(t, to, period["end"])
 	})
 
+	t.Run("maximum explicit range is accepted", func(t *testing.T) {
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		from := today.AddDate(0, 0, -instanceMetricsDailyMaxRangeDays+1).Format("2006-01-02")
+		to := today.Format("2006-01-02")
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/metrics/daily", headers, map[string]string{
+			"from": from,
+			"to":   to,
+		}, nil)
+		require.NoError(t, err)
+
+		resp, err := h.HandleGetInstanceMetricsDailyLift(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		period, ok := body["period"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, from, period["start"])
+		require.Equal(t, to, period["end"])
+		require.Equal(t, float64(instanceMetricsDailyMaxRangeDays), period["days"])
+	})
+
 	t.Run("invalid from date format is rejected", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/metrics/daily", headers, map[string]string{
@@ -190,6 +213,58 @@ func TestInstanceMetricsDaily_Round29_AuthAndDateValidation(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusBadRequest)(h.HandleGetInstanceMetricsDailyLift(ctx))
+	})
+
+	t.Run("future from date is rejected", func(t *testing.T) {
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		tomorrow := today.AddDate(0, 0, 1).Format("2006-01-02")
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/metrics/daily", headers, map[string]string{
+			"from": tomorrow,
+			"to":   tomorrow,
+		}, nil)
+		require.NoError(t, err)
+
+		resp, err := h.HandleGetInstanceMetricsDailyLift(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body["error"], "future")
+	})
+
+	t.Run("future to date is rejected", func(t *testing.T) {
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/metrics/daily", headers, map[string]string{
+			"from": today.Format("2006-01-02"),
+			"to":   today.AddDate(0, 0, 1).Format("2006-01-02"),
+		}, nil)
+		require.NoError(t, err)
+
+		resp, err := h.HandleGetInstanceMetricsDailyLift(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body["error"], "future")
+	})
+
+	t.Run("over maximum explicit range is rejected", func(t *testing.T) {
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/metrics/daily", headers, map[string]string{
+			"from": today.AddDate(0, 0, -instanceMetricsDailyMaxRangeDays).Format("2006-01-02"),
+			"to":   today.Format("2006-01-02"),
+		}, nil)
+		require.NoError(t, err)
+
+		resp, err := h.HandleGetInstanceMetricsDailyLift(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body["error"], "date range too large")
 	})
 
 	t.Run("days bounded to max 30", func(t *testing.T) {

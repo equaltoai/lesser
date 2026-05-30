@@ -9,7 +9,15 @@ import (
 	"go.uber.org/zap"
 )
 
-const bytesPerGB = 1024 * 1024 * 1024
+const (
+	bytesPerGB = 1024 * 1024 * 1024
+
+	// Keep explicit from/to windows aligned with the days path's 1..30 bound.
+	// The from/to values are inclusive UTC dates, so a 30-day window has a
+	// maximum parsed date delta of 29 * 24h.
+	instanceMetricsDailyMaxRangeDays = 30
+	instanceMetricsDailyMaxDateDelta = time.Duration(instanceMetricsDailyMaxRangeDays-1) * 24 * time.Hour
+)
 
 // HandleGetInstanceMetricsDailyLift handles GET /api/v1/instance/metrics/daily
 // with instance-key bearer auth for lesser-host portal cost/usage consumption.
@@ -56,6 +64,14 @@ func (h *Handler) HandleGetInstanceMetricsDailyLift(ctx *apptheory.Context) (*ap
 		}
 		if toParsed.Before(fromParsed) {
 			return common.RespondBadRequest(ctx, "from date must be before or equal to to date")
+		}
+		todayUTC := time.Now().UTC()
+		todayUTC = time.Date(todayUTC.Year(), todayUTC.Month(), todayUTC.Day(), 0, 0, 0, 0, time.UTC)
+		if fromParsed.After(todayUTC) || toParsed.After(todayUTC) {
+			return common.RespondBadRequest(ctx, "date range cannot include future dates")
+		}
+		if toParsed.Sub(fromParsed) > instanceMetricsDailyMaxDateDelta {
+			return common.RespondBadRequest(ctx, "date range too large; maximum is 30 days")
 		}
 		startDate = fromParsed
 		// Make end date inclusive by adding one day.
