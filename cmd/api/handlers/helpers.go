@@ -499,6 +499,7 @@ func (h *Handler) loadStoredStatusAuthorActor(ctx context.Context, storageStatus
 	if storageStatus.Note != nil {
 		candidates = append(candidates, strings.TrimSpace(storageStatus.Note.AttributedTo))
 	}
+	actorURLLookupConstraint := statusActorURLLookupConstraint(storageStatus)
 
 	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
@@ -520,6 +521,10 @@ func (h *Handler) loadStoredStatusAuthorActor(ctx context.Context, storageStatus
 
 		actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
 		if err == nil && actor != nil {
+			if !common.CachedRemoteActorIDMatchesLookup(actor.ID, candidate) ||
+				!common.CachedRemoteActorIDMatchesLookup(actor.ID, actorURLLookupConstraint) {
+				continue
+			}
 			return actor
 		}
 	}
@@ -663,11 +668,31 @@ func (h *Handler) cachedRemoteActorForIdentifier(ctx context.Context, actorID st
 
 		actor, err := actorRepo.GetCachedRemoteActor(ctx, candidate)
 		if err == nil && actor != nil {
+			if !common.CachedRemoteActorIDMatchesLookup(actor.ID, actorID) {
+				continue
+			}
 			return actor
 		}
 	}
 
 	return nil
+}
+
+func statusActorURLLookupConstraint(status *storageModels.Status) string {
+	if status == nil {
+		return ""
+	}
+	candidates := []string{strings.TrimSpace(status.AuthorID)}
+	if status.Note != nil {
+		candidates = append(candidates, strings.TrimSpace(status.Note.AttributedTo))
+	}
+	for _, candidate := range candidates {
+		lowerCandidate := strings.ToLower(strings.TrimSpace(candidate))
+		if strings.HasPrefix(lowerCandidate, "http://") || strings.HasPrefix(lowerCandidate, "https://") {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func syntheticRemoteActorFromIdentifier(actorID string) *activitypub.Actor {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -327,6 +328,9 @@ func (r *Resolver) conversationRemoteAccountForParticipantRef(ctx context.Contex
 			}
 			actor, err := store.Actor().GetCachedRemoteActor(ctx, candidate)
 			if err == nil && actor != nil {
+				if !common.CachedRemoteActorIDMatchesLookup(actor.ID, ref.ParticipantID) {
+					continue
+				}
 				return &storage.Account{Actor: actor}
 			}
 		}

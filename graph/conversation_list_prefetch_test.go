@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -183,4 +184,31 @@ func TestConversationAccountsFromParticipantRefs_UsesSyntheticRemoteFallback(t *
 	require.Len(t, actors, 1)
 	require.Equal(t, remoteID, actors[0].ID)
 	require.Equal(t, "bob", actors[0].PreferredUsername)
+}
+
+func TestConversationRemoteAccountForParticipantRef_RejectsCanonicalMismatch(t *testing.T) {
+	resolver, graphStorage := newRound12GraphResolver(t)
+	actorRepo, ok := graphStorage.Actor().(*inmemory.ActorRepository)
+	require.True(t, ok)
+
+	victimActorID := "https://remote.example/users/bob"
+	craftedActorID := victimActorID + "/anything"
+	actorRepo.SetCachedRemoteActor("bob@remote.example", &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: victimActorID, Type: activitypub.PersonType},
+		PreferredUsername: "bob",
+		Name:              "Cached Bob",
+		URL:               victimActorID,
+	}, time.Hour)
+
+	account := resolver.conversationRemoteAccountForParticipantRef(context.Background(), storagemodels.ConversationParticipantRef{
+		ParticipantType: storagemodels.ConversationParticipantTypeRemoteActor,
+		ParticipantID:   craftedActorID,
+		Acct:            "bob@remote.example",
+	})
+
+	require.NotNil(t, account)
+	require.NotNil(t, account.Actor)
+	require.Equal(t, craftedActorID, account.Actor.ID)
+	require.NotEqual(t, victimActorID, account.Actor.ID)
+	require.NotEqual(t, "Cached Bob", account.Actor.Name)
 }

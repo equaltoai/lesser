@@ -105,6 +105,9 @@ func (r *Resolver) resolveStoredActorLookup(ctx context.Context, actorID string)
 
 	actor, err := store.Actor().GetCachedRemoteActor(ctx, actorID)
 	if err == nil && actor != nil {
+		if !common.CachedRemoteActorIDMatchesLookup(actor.ID, actorID) {
+			return nil, common.ActorNotFoundError{Username: actorID}
+		}
 		return &federation.ExactActorResolution{
 			Actor:         actor,
 			ActorIdentity: federation.DescribeActorIdentity(actor, r.localActorDomain()),

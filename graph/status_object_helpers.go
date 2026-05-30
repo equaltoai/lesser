@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -129,6 +130,7 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 
 	username := resolveStatusAuthorUsername(status)
 	lookupCandidates := statusActorLookupCandidates(status)
+	actorURLLookupConstraint := statusActorURLLookupConstraint(status)
 	authorIsRemote := statusAuthorIsRemote(status, r.localActorDomain())
 	if len(lookupCandidates) == 0 {
 		if convertLogger != nil {
@@ -157,6 +159,9 @@ func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Sta
 				zap.Error(err))
 		}
 		if err != nil || resolution == nil {
+			continue
+		}
+		if resolution.Actor != nil && !common.CachedRemoteActorIDMatchesLookup(resolution.Actor.ID, actorURLLookupConstraint) {
 			continue
 		}
 
@@ -307,6 +312,27 @@ func statusActorLookupCandidates(status *models.Status) []string {
 	appendStatusActorLookupCandidate(&candidates, status.AuthorUsername)
 
 	return candidates
+}
+
+func statusActorURLLookupConstraint(status *models.Status) string {
+	if status == nil {
+		return ""
+	}
+	for _, candidate := range []string{
+		strings.TrimSpace(status.AuthorID),
+		func() string {
+			if status.Note == nil {
+				return ""
+			}
+			return strings.TrimSpace(status.Note.AttributedTo)
+		}(),
+	} {
+		lowerCandidate := strings.ToLower(strings.TrimSpace(candidate))
+		if strings.HasPrefix(lowerCandidate, "http://") || strings.HasPrefix(lowerCandidate, "https://") {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func appendStatusActorLookupCandidate(dst *[]string, candidate string) {

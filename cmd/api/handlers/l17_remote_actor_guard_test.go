@@ -111,6 +111,15 @@ func TestL17RemoteActorHelperBranches(t *testing.T) {
 		require.NotNil(t, fromHandle)
 		require.Equal(t, remoteActor.ID, fromHandle.ID)
 
+		craftedActorID := remoteActor.ID + "/anything"
+		require.Nil(t, h.cachedRemoteActorForIdentifier(ctx, craftedActorID))
+		require.Nil(t, h.cachedRemoteNotificationActor(ctx, craftedActorID))
+
+		craftedSynthetic := h.resolveAttributedActorForObject(ctx, craftedActorID)
+		require.NotNil(t, craftedSynthetic)
+		require.Equal(t, craftedActorID, craftedSynthetic.ID)
+		require.NotEqual(t, remoteActor.ID, craftedSynthetic.ID)
+
 		require.Nil(t, h.cachedRemoteActorForIdentifier(ctx, "https://missing.example/users/alice"))
 		require.Nil(t, h.cachedRemoteActorForIdentifier(ctx, "missing@remote.example"))
 		require.Nil(t, h.cachedRemoteActorForIdentifier(ctx, "   "))
@@ -155,6 +164,19 @@ func TestL17RemoteActorHelperBranches(t *testing.T) {
 
 		missingLocal := h.resolveAttributedActorForObject(ctx, cfg.BaseURL()+"/users/missing")
 		require.Nil(t, missingLocal)
+	})
+
+	t.Run("stored status author rejects canonical mismatch before handle fallback", func(t *testing.T) {
+		craftedActorID := remoteActor.ID + "/anything"
+		actor := h.loadStoredStatusAuthorActor(ctx, &storagemodels.Status{
+			StatusID:       "crafted-status",
+			AuthorID:       craftedActorID,
+			AuthorUsername: "alice@remote.example",
+			Note: &activitypub.Note{
+				AttributedTo: craftedActorID,
+			},
+		})
+		require.Nil(t, actor)
 	})
 }
 
