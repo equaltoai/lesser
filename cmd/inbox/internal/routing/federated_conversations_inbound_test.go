@@ -381,6 +381,88 @@ func TestInboxHandler_M14_ReplayedRemoteDirectDoesNotOverwriteConversationMetada
 	require.Empty(t, publisher.events)
 }
 
+func TestInboxHandler_L14_EqualTimestampUniqueDirectMessageAdvancesMetadata(t *testing.T) {
+	env := newInboxTestEnv(t)
+	ctx := context.Background()
+	notifications := inmemory.NewNotificationRepository()
+	conversations := inmemory.NewConversationRepository()
+	statuses := inmemory.NewStatusRepository()
+	objects := inmemory.NewObjectRepository()
+	publisher := &inboundDirectCapturePublisher{}
+	env.handler.notificationRepository = notifications
+	env.handler.conversationRepository = conversations
+	env.handler.statusRepository = statuses
+	env.handler.objectRepository = objects
+	env.handler.publisher = publisher
+
+	published := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	conversationID := "conv-equal-unique"
+	participantRefs := models.NormalizeConversationParticipantRefs([]models.ConversationParticipantRef{
+		{
+			ParticipantType: models.ConversationParticipantTypeLocalUser,
+			ParticipantID:   "alice",
+		},
+		{
+			ParticipantType: models.ConversationParticipantTypeRemoteActor,
+			ParticipantID:   env.remoteActorID,
+			Acct:            "bob@remote.example",
+			Domain:          "remote.example",
+			ResolvedAt:      &published,
+		},
+	})
+	participants := models.ConversationParticipantIDsFromRefs(participantRefs)
+	existingConversation := &models.Conversation{
+		ID:                conversationID,
+		Participants:      participants,
+		ParticipantRefs:   participantRefs,
+		LastStatusID:      "first-equal-timestamp-status",
+		LastMessageTime:   published,
+		TotalMessageCount: 7,
+		CreatedAt:         published.Add(-24 * time.Hour),
+		UpdatedAt:         published.Add(-time.Minute),
+	}
+	require.NoError(t, conversations.CreateConversationWithParticipantStates(ctx, existingConversation, participants, nil))
+
+	equalNoteID := "https://remote.example/users/bob/statuses/direct-equal-unique"
+	equalStatusID := models.CanonicalStatusIDForDomain(equalNoteID, env.handler.localDomain())
+	equalNote := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			ID:        equalNoteID,
+			Type:      activitypub.NoteType,
+			Published: &published,
+			To:        []string{env.local.ID},
+		},
+		AttributedTo: env.remoteActorID,
+		Content:      "<p>equal timestamp unique direct message @alice</p>",
+		Tag: []activitypub.Tag{{
+			Type: "Mention",
+			Href: env.local.ID,
+			Name: "@alice@localhost",
+		}},
+	}
+	equalActivity := remoteCreateActivityForNote(t, env.remoteActorID, equalNote, "https://remote.example/activities/direct-equal-unique")
+
+	require.NoError(t, env.handler.processRemoteCreateActivity(ctx, equalActivity, env.local))
+
+	stored, err := conversations.GetConversation(ctx, conversationID)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(8), stored.TotalMessageCount)
+	require.Equal(t, equalStatusID, stored.LastStatusID)
+	require.Equal(t, published, stored.LastMessageTime)
+	require.Equal(t, published, stored.UpdatedAt)
+	require.ElementsMatch(t, participants, stored.Participants)
+	require.Equal(t, participantRefs, stored.ParticipantRefs)
+
+	stateResult, err := conversations.ListUserConversationStatesByFolder(ctx, "alice", interfaces.UserConversationFolder(models.UserConversationFolderInbox), interfaces.PaginationOptions{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, stateResult.Items, 1)
+	require.Equal(t, equalStatusID, stateResult.Items[0].PreviewStatusID)
+	require.Equal(t, published, stateResult.Items[0].PreviewStatusPublishedAt)
+	require.Equal(t, published, stateResult.Items[0].SortAt)
+}
+
 // TestInboxHandler_M14_OlderUniqueDirectMessageIncrementsCountPreservesMetadata verifies
 // CSR-042: a new unique inbound direct message with an older publishedAt still increments
 // TotalMessageCount while preserving the conversation's LastStatusID / LastMessageTime /
