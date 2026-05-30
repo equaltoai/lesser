@@ -13149,6 +13149,7 @@ paths:
     /api/v1/agents/register:
         post:
             operationId: post_api_v1_agents_register
+            description: Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
             requestBody:
@@ -13165,17 +13166,21 @@ paths:
                                 $ref: '#/components/schemas/AgentSelfRegistrationResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
-            x-lesser-handler: HandleAgentRegisterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
     /api/v1/agents/register/challenge:
         post:
             operationId: post_api_v1_agents_register_challenge
+            description: Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
             requestBody:
@@ -13192,11 +13197,14 @@ paths:
                                 $ref: '#/components/schemas/AgentKeyChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
-            x-lesser-handler: HandleAgentRegisterChallengeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

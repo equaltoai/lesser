@@ -105,6 +105,9 @@ func (r *Resolver) resolveStoredActorLookup(ctx context.Context, actorID string)
 
 	actor, err := store.Actor().GetCachedRemoteActor(ctx, actorID)
 	if err == nil && actor != nil {
+		if !common.CachedRemoteActorIDMatchesLookup(actor.ID, actorID) {
+			return nil, common.ActorNotFoundError{Username: actorID}
+		}
 		return &federation.ExactActorResolution{
 			Actor:         actor,
 			ActorIdentity: federation.DescribeActorIdentity(actor, r.localActorDomain()),
@@ -147,6 +150,35 @@ func (r *Resolver) materializeActorResolution(ctx context.Context, resolution *f
 	account, err := r.Registry.Accounts().GetAccount(ctx, username)
 	if err != nil || account == nil {
 		return resolution.Actor
+	}
+
+	return r.convertAccountToActor(account)
+}
+
+func (r *Resolver) resolveNoteAttributedActor(ctx context.Context, attributedTo string) *activitypub.Actor {
+	actorID := strings.TrimSpace(attributedTo)
+	if actorID == "" {
+		return nil
+	}
+
+	if resolution, err := r.resolveStoredActorLookup(ctx, actorID); err == nil && resolution != nil {
+		return r.materializeActorResolution(ctx, resolution)
+	} else if err != nil && !graphActorLookupNotFound(err) && r != nil && r.Logger != nil {
+		r.Logger.Debug("failed to resolve note attributed actor", zap.String("actor_id", actorID), zap.Error(err))
+	}
+
+	if actorIdentifierLooksRemote(actorID, r.localActorDomain()) {
+		return r.buildPlaceholderActor(actorID, "")
+	}
+
+	username := r.localUsernameForLookup(actorID)
+	if username == "" || r.Registry == nil || r.Registry.Accounts() == nil {
+		return nil
+	}
+
+	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if err != nil || account == nil {
+		return nil
 	}
 
 	return r.convertAccountToActor(account)

@@ -358,13 +358,11 @@ func (s *Status) setupGSIKeys() {
 
 // extractUsernameFromActorID extracts username from an ActivityPub actor ID
 func extractUsernameFromActorID(actorID string) string {
-	// Handle different actor ID formats
-	// e.g., "https://example.com/users/username" -> "username"
-	parts := strings.Split(actorID, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
+	username, err := common.ActorUsernameFromID(actorID)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return username
 }
 
 // extractStatusIDFromURL extracts status ID from a status URL

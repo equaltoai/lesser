@@ -176,3 +176,100 @@ func TestOAuthDeviceConsentLiftRound12(t *testing.T) {
 		require.Equal(t, "pending", strings.ToLower(state.oauthDeviceSessionsByUserCode["STUV-WXYZ"].Status))
 	})
 }
+
+func TestOAuthDeviceConsentLiftRound12_L01ScopeSubsetEnforced(t *testing.T) {
+	cfgDevice := round11TestConfig()
+	cfgDevice.AllowDeviceFlow = true
+	now := time.Now().UTC()
+
+	newHandler := func(t *testing.T, userCode string, sessionScopes []string) (*Handler, *round10QueryState) {
+		t.Helper()
+		state := &round10QueryState{
+			oauthDeviceSessionsByUserCode: map[string]storagemodels.OAuthDeviceSession{
+				userCode: {
+					DeviceCodeHash:  "hash-" + userCode,
+					UserCode:        userCode,
+					ClientID:        "device-client",
+					Scopes:          sessionScopes,
+					Status:          oauthDeviceSessionStatusPending,
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       now.Add(-1 * time.Minute),
+					UpdatedAt:       now.Add(-1 * time.Minute),
+					ExpiresAt:       now.Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		return h, state
+	}
+
+	accessToken := func(t *testing.T, h *Handler, scopes []string) string {
+		t.Helper()
+		// The approving token is intentionally minted for a different OAuth client to
+		// keep hosted UI consent working while the scope subset gate carries the
+		// privilege boundary.
+		oauthSvc := mustCreateOAuthService(t, cfgDevice.JWTSecret, cfgDevice, h.repos, h.logger)
+		token, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "hosted-ui-client", "", scopes)
+		require.NoError(t, err)
+		return token
+	}
+
+	consentBody := func(userCode, scope string) []byte {
+		return []byte("user_code=" + userCode + "&action=approve&client_id=device-client&scope=" + scope)
+	}
+
+	t.Run("read token cannot approve write admin device session", func(t *testing.T) {
+		userCode := "ABCD-EFGH"
+		h, state := newHandler(t, userCode, []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin})
+		token := accessToken(t, h, []string{auth.ScopeRead})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
+			"authorization": "Bearer " + token,
+		}, nil, consentBody(userCode, "read+write+admin"))
+		resp := requireStatus(t, http.StatusForbidden)(h.HandleOAuthDeviceConsentLift(ctx))
+
+		var body apimodels.OAuthErrorResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "insufficient_scope", body.Error)
+		require.Contains(t, body.ErrorDescription, auth.ScopeWrite)
+		session := state.oauthDeviceSessionsByUserCode[userCode]
+		require.Equal(t, oauthDeviceSessionStatusPending, strings.ToLower(session.Status))
+		require.Empty(t, session.ApprovedUsername)
+	})
+
+	t.Run("equal scopes approve", func(t *testing.T) {
+		userCode := "JKLM-NPQR"
+		h, state := newHandler(t, userCode, []string{auth.ScopeRead, auth.ScopeWrite})
+		token := accessToken(t, h, []string{auth.ScopeRead, auth.ScopeWrite})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
+			"authorization": "Bearer " + token,
+		}, nil, consentBody(userCode, "write+read"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthDeviceConsentLift(ctx))
+
+		var body apimodels.OAuthDeviceConsentResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, oauthDeviceSessionStatusApproved, strings.ToLower(body.Status))
+		session := state.oauthDeviceSessionsByUserCode[userCode]
+		require.Equal(t, oauthDeviceSessionStatusApproved, strings.ToLower(session.Status))
+		require.Equal(t, "alice", session.ApprovedUsername)
+	})
+
+	t.Run("superset scopes approve", func(t *testing.T) {
+		userCode := "PQRS-TUVW"
+		h, state := newHandler(t, userCode, []string{auth.ScopeRead, auth.ScopeWrite})
+		token := accessToken(t, h, []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/device/consent", map[string]string{
+			"authorization": "Bearer " + token,
+		}, nil, consentBody(userCode, "read+write"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthDeviceConsentLift(ctx))
+
+		var body apimodels.OAuthDeviceConsentResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, oauthDeviceSessionStatusApproved, strings.ToLower(body.Status))
+		session := state.oauthDeviceSessionsByUserCode[userCode]
+		require.Equal(t, oauthDeviceSessionStatusApproved, strings.ToLower(session.Status))
+		require.Equal(t, "alice", session.ApprovedUsername)
+	})
+}

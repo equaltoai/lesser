@@ -161,8 +161,12 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/agents/{username}/access-leases/{leaseID}/token", apiHandler.HandleExchangeAgentAccessLeaseTokenLift)
 	app.Get("/api/v1/agents/{username}/runtime-sessions", apiHandler.HandleListAgentRuntimeSessionsLift, requireManageAgents)
 	app.Post("/api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke", apiHandler.HandleRevokeAgentRuntimeSessionLift, requireManageAgents)
-	app.Post("/api/v1/agents/register/challenge", apiHandler.HandleAgentRegisterChallengeLift)
-	app.Post("/api/v1/agents/register", apiHandler.HandleAgentRegisterLift)
+	app.Post("/api/v1/agents/register/challenge", ratelimit.ApplyOAuthRegistrationRateLimit(
+		apiHandler.HandleAgentRegisterChallengeLift,
+		20, time.Minute, logger))
+	app.Post("/api/v1/agents/register", ratelimit.ApplyOAuthRegistrationRateLimit(
+		apiHandler.HandleAgentRegisterLift,
+		20, time.Minute, logger))
 	app.Post("/api/v1/agents/auth/challenge", apiHandler.HandleAgentAuthChallengeLift)
 	app.Post("/api/v1/agents/auth/token", apiHandler.HandleAgentAuthTokenLift)
 	app.Get("/api/v1/agents/{username}", apiHandler.HandleGetAgentLift)

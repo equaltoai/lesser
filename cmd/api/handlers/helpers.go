@@ -499,6 +499,7 @@ func (h *Handler) loadStoredStatusAuthorActor(ctx context.Context, storageStatus
 	if storageStatus.Note != nil {
 		candidates = append(candidates, strings.TrimSpace(storageStatus.Note.AttributedTo))
 	}
+	actorURLLookupConstraint := statusActorURLLookupConstraint(storageStatus)
 
 	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
@@ -520,6 +521,10 @@ func (h *Handler) loadStoredStatusAuthorActor(ctx context.Context, storageStatus
 
 		actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
 		if err == nil && actor != nil {
+			if !common.CachedRemoteActorIDMatchesLookup(actor.ID, candidate) ||
+				!common.CachedRemoteActorIDMatchesLookup(actor.ID, actorURLLookupConstraint) {
+				continue
+			}
 			return actor
 		}
 	}
@@ -561,6 +566,173 @@ func (h *Handler) localUsernameForStoredActorCandidate(candidate string) string 
 	}
 
 	return strings.TrimSpace(candidate)
+}
+
+func (h *Handler) actorIdentifierLooksRemote(identifier string) bool {
+	identifier = normalizeResolvedAccountID(identifier)
+	if identifier == "" {
+		return false
+	}
+
+	localDomain := ""
+	if h != nil && h.cfg != nil {
+		localDomain = normalizeLocalActorDomain(h.cfg.Domain)
+	}
+
+	lowerIdentifier := strings.ToLower(identifier)
+	if strings.HasPrefix(lowerIdentifier, "http://") || strings.HasPrefix(lowerIdentifier, "https://") {
+		parsed, err := url.Parse(identifier)
+		if err != nil || parsed == nil {
+			return false
+		}
+		host := normalizeLocalActorDomain(parsed.Hostname())
+		if host == "" {
+			return false
+		}
+		if localDomain == "" {
+			return true
+		}
+		return host != localDomain
+	}
+
+	handle := strings.TrimPrefix(identifier, "@")
+	if strings.Count(handle, "@") != 1 {
+		return false
+	}
+	parts := strings.Split(handle, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	domain := normalizeLocalActorDomain(parts[1])
+	if domain == "" {
+		return false
+	}
+	if localDomain == "" {
+		return true
+	}
+	return domain != localDomain
+}
+
+func (h *Handler) resolveAttributedActorForObject(ctx context.Context, attributedTo string) *activitypub.Actor {
+	actorID := normalizeResolvedAccountID(attributedTo)
+	if actorID == "" || h == nil {
+		return nil
+	}
+
+	if h.actorIdentifierLooksRemote(actorID) {
+		if actor := h.cachedRemoteActorForIdentifier(ctx, actorID); actor != nil {
+			return actor
+		}
+		return syntheticRemoteActorFromIdentifier(actorID)
+	}
+
+	username := h.localUsernameForStoredActorCandidate(actorID)
+	if username == "" || h.registry == nil || h.registry.Accounts() == nil {
+		return nil
+	}
+
+	account, err := h.registry.Accounts().GetAccount(ctx, username)
+	if err != nil || account == nil {
+		return nil
+	}
+	return account.Actor
+}
+
+func (h *Handler) cachedRemoteActorForIdentifier(ctx context.Context, actorID string) *activitypub.Actor {
+	if h == nil || h.repos == nil {
+		return nil
+	}
+	actorRepo := h.repos.Actor()
+	if actorRepo == nil {
+		return nil
+	}
+
+	candidates := []string{strings.TrimSpace(actorID)}
+	if handle := extractHandleFromActorID(actorID); handle != "" {
+		candidates = append(candidates, handle)
+	}
+	if strings.Contains(strings.TrimPrefix(actorID, "@"), "@") {
+		candidates = append(candidates, strings.TrimPrefix(actorID, "@"))
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		actor, err := actorRepo.GetCachedRemoteActor(ctx, candidate)
+		if err == nil && actor != nil {
+			if !common.CachedRemoteActorIDMatchesLookup(actor.ID, actorID) {
+				continue
+			}
+			return actor
+		}
+	}
+
+	return nil
+}
+
+func statusActorURLLookupConstraint(status *storageModels.Status) string {
+	if status == nil {
+		return ""
+	}
+	candidates := []string{strings.TrimSpace(status.AuthorID)}
+	if status.Note != nil {
+		candidates = append(candidates, strings.TrimSpace(status.Note.AttributedTo))
+	}
+	for _, candidate := range candidates {
+		lowerCandidate := strings.ToLower(strings.TrimSpace(candidate))
+		if strings.HasPrefix(lowerCandidate, "http://") || strings.HasPrefix(lowerCandidate, "https://") {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func syntheticRemoteActorFromIdentifier(actorID string) *activitypub.Actor {
+	actorID = normalizeResolvedAccountID(actorID)
+	if actorID == "" {
+		return nil
+	}
+
+	username := remoteActorPlaceholderUsername(actorID)
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   actorID,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              username,
+		URL:               actorID,
+	}
+}
+
+func remoteActorPlaceholderUsername(actorID string) string {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return ""
+	}
+
+	handle := strings.TrimPrefix(actorID, "@")
+	if strings.Count(handle, "@") == 1 {
+		if username, _, ok := strings.Cut(handle, "@"); ok {
+			return strings.TrimSpace(username)
+		}
+	}
+
+	if handle := extractHandleFromActorID(actorID); handle != "" {
+		if username, _, ok := strings.Cut(handle, "@"); ok {
+			return strings.TrimSpace(username)
+		}
+	}
+
+	return strings.TrimPrefix(transformations.ExtractUsernameFromActorID(actorID), "@")
 }
 
 func (h *Handler) resolveStatusAuthorActor(ctx context.Context, storageStatus *storageModels.Status) *activitypub.Actor {
@@ -1470,7 +1642,7 @@ func (h *Handler) statusLookupObjectIDs(storageStatus *storageModels.Status) []s
 
 	authorUsername := strings.TrimSpace(storageStatus.AuthorUsername)
 	if authorUsername == "" {
-		authorUsername = strings.TrimSpace(transformations.ExtractUsernameFromActorID(storageStatus.AuthorID))
+		authorUsername = h.localUsernameForStoredActorCandidate(storageStatus.AuthorID)
 	}
 	if h != nil && h.cfg != nil && authorUsername != "" && strings.TrimSpace(storageStatus.StatusID) != "" {
 		ids = appendUniqueLookupID(ids, fmt.Sprintf("%s/users/%s/statuses/%s", h.cfg.BaseURL(), authorUsername, storageStatus.StatusID))

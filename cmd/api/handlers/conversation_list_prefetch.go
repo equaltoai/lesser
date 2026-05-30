@@ -6,6 +6,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -305,6 +306,9 @@ func (h *Handler) conversationAPIRemoteAccountForParticipantRef(ctx context.Cont
 			}
 			actor, err := h.repos.Actor().GetCachedRemoteActor(ctx, candidate)
 			if err == nil && actor != nil {
+				if !common.CachedRemoteActorIDMatchesLookup(actor.ID, ref.ParticipantID) {
+					continue
+				}
 				return storageAccountFromActor(actor, localDomain)
 			}
 		}

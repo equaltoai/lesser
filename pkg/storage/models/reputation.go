@@ -117,8 +117,8 @@ func ReputationActorPartitionKeyForRecord(actorID string, reputation interface{}
 
 	instanceURL := reputationInstanceURL(reputation)
 	if instanceURL != "" && reputationActorHostMatchesInstance(canonicalActorID, instanceURL) {
-		username := strings.TrimSpace(strings.TrimPrefix(extractUsernameFromActorID(strings.TrimRight(actorID, "/")), "@"))
-		if err := common.ValidateRequiredParam("username", username); err != nil {
+		username, err := common.ActorUsernameFromID(canonicalActorID)
+		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf(KeyPatternActor, username), nil
@@ -138,8 +138,8 @@ func ReputationActorPartitionKeyCandidates(actorID string) ([]string, error) {
 	}
 
 	candidates := []string{fmt.Sprintf(KeyPatternActor, canonicalActorID)}
-	username := strings.TrimSpace(strings.TrimPrefix(extractUsernameFromActorID(strings.TrimRight(actorID, "/")), "@"))
-	if username != "" {
+	username, err := common.ActorUsernameFromID(canonicalActorID)
+	if err == nil && username != "" {
 		legacy := fmt.Sprintf(KeyPatternActor, username)
 		if legacy != candidates[0] {
 			candidates = append(candidates, legacy)
@@ -204,40 +204,7 @@ func reputationActorHostMatchesInstance(actorID, instanceURL string) bool {
 }
 
 func canonicalReputationActorID(actorID string) (string, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return "", fmt.Errorf("actor ID is required")
-	}
-	if strings.IndexFunc(actorID, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
-		return "", fmt.Errorf("actor ID contains control characters")
-	}
-	if err := common.ValidateActivityPubURL(actorID, "actor_id"); err != nil {
-		return "", err
-	}
-
-	parsed, err := url.Parse(actorID)
-	if err != nil || parsed == nil {
-		return "", err
-	}
-	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
-	if scheme != schemeHTTP && scheme != schemeHTTPS {
-		return "", fmt.Errorf("actor ID must use HTTP or HTTPS")
-	}
-	if parsed.User != nil || strings.TrimSpace(parsed.Hostname()) == "" {
-		return "", fmt.Errorf("actor ID must include a bare host")
-	}
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("actor ID must not include query or fragment")
-	}
-	path := strings.TrimRight(parsed.EscapedPath(), "/")
-	if path == "" {
-		return "", fmt.Errorf("actor ID must include a path")
-	}
-	if path == "/users" || path == "/@" {
-		return "", fmt.Errorf("actor ID must include a concrete actor path")
-	}
-
-	return fmt.Sprintf("%s://%s%s", scheme, strings.ToLower(parsed.Host), path), nil
+	return common.CanonicalActorID(actorID)
 }
 
 // ToStorageReputation converts the model back to a map that can be used as storage.Reputation

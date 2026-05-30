@@ -7,8 +7,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+func TestExtractUsernameFromActorIDRejectsCraftedMultiSegmentActorPath(t *testing.T) {
+	require.Equal(t, "alice", extractUsernameFromActorID("https://example.com/users/alice"))
+	require.Equal(t, "bob", extractUsernameFromActorID("https://example.com/@bob"))
+	require.Empty(t, extractUsernameFromActorID("https://example.com/users/admin/mallory"))
+	require.Empty(t, extractUsernameFromActorID("https://example.com/@admin/mallory"))
+}
 
 // StatusModelTestSuite contains tests for Status model
 type StatusModelTestSuite struct {
@@ -639,7 +647,7 @@ func (suite *StatusModelTestSuite) TestExtractUsernameFromActorID() {
 		{
 			name:     "URL with trailing slash",
 			actorID:  "https://example.com/users/bob/",
-			expected: "",
+			expected: "bob",
 		},
 		{
 			name:     "simple username",

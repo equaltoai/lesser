@@ -10,7 +10,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	ai "github.com/equaltoai/lesser/pkg/services/ai"
-	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
@@ -128,7 +127,7 @@ func (h *Handler) aiAnalysisOwnerUsername(ctx context.Context, objectID string) 
 	if owner := strings.TrimSpace(status.AuthorUsername); owner != "" {
 		return owner, nil
 	}
-	return strings.TrimPrefix(strings.TrimSpace(transformations.ExtractUsernameFromActorID(status.AuthorID)), "@"), nil
+	return h.localUsernameForStoredActorCandidate(status.AuthorID), nil
 }
 
 // HandleRequestAIAnalysisLift triggers AI analysis for an object

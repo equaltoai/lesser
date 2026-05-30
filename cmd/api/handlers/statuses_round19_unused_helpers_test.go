@@ -90,6 +90,11 @@ func TestStatusesRound19_UnusedHelpers(t *testing.T) {
 		require.NotNil(t, actor)
 		require.Equal(t, "https://example.com/users/alice", actor.ID)
 
+		remoteActor := h.getActorForObject(context.Background(), &activitypub.Note{AttributedTo: "https://remote.example/users/alice"})
+		require.NotNil(t, remoteActor)
+		require.Equal(t, "https://remote.example/users/alice", remoteActor.ID)
+		require.NotEqual(t, "https://example.com/users/alice", remoteActor.ID)
+
 		replyStatus := h.convertReplyToStatus(context.Background(), &activitypub.Note{
 			BaseObject:   activitypub.BaseObject{ID: "https://example.com/objects/s1"},
 			AttributedTo: "https://example.com/users/alice",
