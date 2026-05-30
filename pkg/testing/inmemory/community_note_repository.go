@@ -3,7 +3,9 @@ package inmemory
 
 import (
 	"context"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -86,30 +88,40 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, a
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	noteIDs := r.notesByAuthor[authorID]
-	var results []*storage.CommunityNote
-
-	startIdx := 0
-	if cursor != "" {
-		for i, id := range noteIDs {
-			if id == cursor {
-				startIdx = i + 1
-				break
-			}
+	ordered := make([]*storage.CommunityNote, 0, len(r.notesByAuthor[authorID]))
+	for _, noteID := range r.notesByAuthor[authorID] {
+		if note, exists := r.notes[noteID]; exists && note != nil {
+			ordered = append(ordered, note)
 		}
 	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return inMemoryCommunityNoteAuthorCursor(ordered[i]) > inMemoryCommunityNoteAuthorCursor(ordered[j])
+	})
 
-	for i := startIdx; i < len(noteIDs) && (limit <= 0 || len(results) < limit); i++ {
-		if note, exists := r.notes[noteIDs[i]]; exists {
-			results = append(results, note)
+	results := make([]*storage.CommunityNote, 0, len(ordered))
+	for _, note := range ordered {
+		noteCursor := inMemoryCommunityNoteAuthorCursor(note)
+		if cursor != "" && noteCursor >= cursor {
+			continue
+		}
+		results = append(results, note)
+		if limit > 0 && len(results) == limit {
+			break
 		}
 	}
 
 	nextCursor := ""
-	if limit > 0 && startIdx+limit < len(noteIDs) {
-		nextCursor = noteIDs[startIdx+limit-1]
+	if limit > 0 && len(results) == limit {
+		nextCursor = inMemoryCommunityNoteAuthorCursor(results[len(results)-1])
 	}
 	return results, nextCursor, nil
+}
+
+func inMemoryCommunityNoteAuthorCursor(note *storage.CommunityNote) string {
+	if note == nil {
+		return ""
+	}
+	return note.CreatedAt.Format(time.RFC3339) + "#" + note.ID
 }
 
 // UpdateCommunityNoteScore updates a note's score and visibility

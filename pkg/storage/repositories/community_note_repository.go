@@ -305,9 +305,11 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 	query := r.GetDB().WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("AUTHOR#%s#NOTES", authorID)).
-		Limit(limit)
+		Limit(limit).
+		OrderBy("gsi3SK", "DESC")
 
-	// Add cursor if provided - preserve exact cursor logic
+	// Add cursor if provided. With DESC ordering, gsi3SK < cursor advances
+	// from newest notes toward older notes.
 	if cursor != "" {
 		// Parse cursor - expecting format "timestamp#noteID" - preserve exact parsing
 		parts := strings.Split(cursor, "#")

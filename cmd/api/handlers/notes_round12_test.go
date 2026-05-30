@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -137,20 +138,31 @@ func TestNotesHandlersRound12(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
 	})
 
-	t.Run("create note rate limited", func(t *testing.T) {
+	t.Run("create note rate limited despite many older author notes", func(t *testing.T) {
 		minRep := round12StoredReputationModel(t, aliceActorID, 100)
 		authorKey := "AUTHOR#" + aliceActorID + "#NOTES"
+		now := time.Now().UTC().Truncate(time.Second)
+		authorNotes := make([]storagemodels.CommunityNote, 0, 106)
+		for i := 0; i < 105; i++ {
+			authorNotes = append(authorNotes, storagemodels.CommunityNote{
+				ID:        fmt.Sprintf("old-%03d", i),
+				AuthorID:  aliceActorID,
+				Content:   "existing old",
+				CreatedAt: now.Add(-48*time.Hour - time.Duration(i)*time.Minute),
+			})
+		}
+		authorNotes = append(authorNotes, storagemodels.CommunityNote{
+			ID:        "recent-at-limit",
+			AuthorID:  aliceActorID,
+			Content:   "existing recent",
+			CreatedAt: now.Add(-1 * time.Hour),
+		})
 		rateState := &round10QueryState{
 			reputationsByPK: map[string][]storagemodels.Reputation{
 				alicePK: {minRep},
 			},
 			communityNotesByGSI3PK: map[string][]storagemodels.CommunityNote{
-				authorKey: {{
-					ID:        "existing",
-					AuthorID:  aliceActorID,
-					Content:   "existing",
-					CreatedAt: time.Now().Add(-1 * time.Hour),
-				}},
+				authorKey: authorNotes,
 			},
 		}
 		rateHandler, _, _ := round11NewHandler(t, cfg, rateState, &RegistryStub{NotesSvc: notesSvc})
