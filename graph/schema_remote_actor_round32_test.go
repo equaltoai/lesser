@@ -3,8 +3,11 @@ package graph
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
@@ -58,4 +61,70 @@ func TestRound32ActivityResolver_ActorPreservesRemoteIdentifiers(t *testing.T) {
 	require.NotNil(t, handleActor)
 	require.Equal(t, remoteActorHandle, handleActor.ID)
 	require.Equal(t, "alice", handleActor.PreferredUsername)
+}
+
+func TestRound32ConvertThreadContextRemoteNoteDoesNotUseLocalAccount(t *testing.T) {
+	resolver, graphStorage := newRound12GraphResolver(t)
+	graphStorage.SeedAccountUser(&storage.User{
+		Username:    "alice",
+		DisplayName: "Local Alice",
+		Approved:    true,
+	})
+
+	now := time.Now().UTC()
+	remoteActorURL := "https://remote.example/users/alice"
+	threadCtx := resolver.convertThreadContextResultToModel(context.Background(), &threads.ThreadContextResult{
+		RootNote: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://remote.example/notes/1",
+				Type:      activitypub.NoteType,
+				Published: &now,
+			},
+			AttributedTo: remoteActorURL,
+			Content:      "remote alice should not resolve to local alice",
+		},
+		LastActivity: now,
+		SyncStatus:   threads.SyncStatusComplete,
+	})
+
+	require.NotNil(t, threadCtx)
+	require.NotNil(t, threadCtx.RootNote)
+	require.NotNil(t, threadCtx.RootNote.Actor)
+	require.Equal(t, remoteActorURL, threadCtx.RootNote.Actor.ID)
+	require.Equal(t, "alice", threadCtx.RootNote.Actor.PreferredUsername)
+	require.NotEqual(t, resolver.Config.ActorURL("alice"), threadCtx.RootNote.Actor.ID)
+	require.NotEqual(t, "Local Alice", threadCtx.RootNote.Actor.Name)
+}
+
+func TestRound32ConvertThreadContextLocalNoteStillUsesLocalAccount(t *testing.T) {
+	resolver, graphStorage := newRound12GraphResolver(t)
+	graphStorage.SeedAccountUser(&storage.User{
+		Username:    "alice",
+		DisplayName: "Local Alice",
+		Approved:    true,
+	})
+
+	now := time.Now().UTC()
+	localActorURL := resolver.Config.ActorURL("alice")
+	threadCtx := resolver.convertThreadContextResultToModel(context.Background(), &threads.ThreadContextResult{
+		RootNote: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:        resolver.Config.ObjectURL("objects", "local-note-1"),
+				Type:      activitypub.NoteType,
+				Published: &now,
+			},
+			AttributedTo: localActorURL,
+			Content:      "local alice should still resolve locally",
+		},
+		LastActivity: now,
+		SyncStatus:   threads.SyncStatusComplete,
+	})
+
+	require.NotNil(t, threadCtx)
+	require.NotNil(t, threadCtx.RootNote)
+	require.NotNil(t, threadCtx.RootNote.Actor)
+	require.True(t, common.IsLocalActorID(threadCtx.RootNote.Actor.ID, resolver.Config.Domain))
+	require.Contains(t, threadCtx.RootNote.Actor.ID, "/users/alice")
+	require.Equal(t, "alice", threadCtx.RootNote.Actor.PreferredUsername)
+	require.Equal(t, "Local Alice", threadCtx.RootNote.Actor.Name)
 }

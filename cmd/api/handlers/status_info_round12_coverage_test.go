@@ -135,6 +135,10 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 		require.Equal(t, "", h.extractAttributedTo(map[string]any{"attributedTo": 123}))
 		require.Nil(t, h.getHistoryAuthorActor(ctx, map[string]any{}))
 		require.NotNil(t, h.getHistoryAuthorActor(ctx, map[string]any{"attributedTo": cfg.BaseURL() + "/users/alice"}))
+		remoteHistoryActor := h.getHistoryAuthorActor(ctx, map[string]any{"attributedTo": "https://remote.example/users/alice"})
+		require.NotNil(t, remoteHistoryActor)
+		require.Equal(t, "https://remote.example/users/alice", remoteHistoryActor.ID)
+		require.NotEqual(t, cfg.BaseURL()+"/users/alice", remoteHistoryActor.ID)
 
 		// extractEditContent covers note + map paths (and extractNoteContent branches)
 		edit := models.StatusEdit{CreatedAt: "baseline"}

@@ -341,11 +341,18 @@ func TestAI_Round12_AuthorizationHelpers_Coverage(t *testing.T) {
 				StatusID: "actor-id-only",
 				AuthorID: "https://example.com/users/carol",
 			},
+			"remote-actor-id-only": {
+				StatusID: "remote-actor-id-only",
+				AuthorID: "https://remote.example/users/alice",
+			},
 		},
 	})
 	owner, err = handler.aiAnalysisOwnerUsername(ctx, "actor-id-only")
 	require.NoError(t, err)
 	require.Equal(t, "carol", owner)
+	owner, err = handler.aiAnalysisOwnerUsername(ctx, "remote-actor-id-only")
+	require.NoError(t, err)
+	require.Empty(t, owner)
 
 	liftCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/status-1", nil, nil, nil)
 	require.NoError(t, err)

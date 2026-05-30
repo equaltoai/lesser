@@ -1019,19 +1019,8 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		}
 	}
 
-	// Get actor information
-	var actor *activitypub.Actor
-	if note.AttributedTo != "" {
-		// Extract username from actor ID
-		parts := strings.Split(note.AttributedTo, "/")
-		username := parts[len(parts)-1]
-		if username != "" {
-			result, err := r.Registry.Accounts().GetAccount(ctx, username)
-			if err == nil && result != nil {
-				actor = r.convertAccountToActor(result)
-			}
-		}
-	}
+	// Get actor information without collapsing remote actor URLs to local usernames.
+	actor := r.resolveNoteAttributedActor(ctx, note.AttributedTo)
 
 	// Convert attachments
 	attachments := make([]*activitypub.Attachment, len(note.Attachment))
