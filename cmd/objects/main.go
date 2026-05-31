@@ -31,6 +31,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const objectsServiceName = "objects"
+
 var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
@@ -58,7 +60,7 @@ func init() {
 func initializeObjects() {
 	// Standardized Lambda initialization with automatic service detection
 	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
-		ServiceName: "objects",
+		ServiceName: objectsServiceName,
 		LambdaType:  common.LambdaTypeAPI,
 	})
 
@@ -70,7 +72,7 @@ func initializeObjects() {
 	}
 
 	deps, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
-		ServiceName:          "objects",
+		ServiceName:          objectsServiceName,
 		RequireRepositories:  true,
 		NewDB:                newLambdaOptimizedClientFn,
 		NewRepositoryStorage: newRepositoryFactoryFn,
@@ -227,6 +229,14 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 		// Verify authorized fetch
 		verifiedFetchActor, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
 		if err != nil {
+			// Tombstoned non-public objects must stay indistinguishable from
+			// nonexistent objects even when authorized fetch is enabled. If the
+			// tombstone is legacy or otherwise not visible to this requester, hide
+			// it before returning the generic authorized-fetch 401/403 response.
+			if h.shouldSuppressTombstoneForActor(runCtx, lookupID, objectID, requestID, nil) {
+				return objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+			}
+
 			// Check if signature is missing vs invalid
 			if strings.Contains(err.Error(), "missing signature") {
 				logger.Debug("unauthorized request - missing signature",
@@ -259,8 +269,7 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	// attributed to a specific actor and its tombstone must not be returned
 	// before verifying authorized-fetch credentials.
 	if tombstoneResp, handled, tombErr := h.handleTombstonedObjectVisible(
-		runCtx, lookupID, objectID, requestID, wantsHTML,
-		authorizedFetchEnabled, verifiedFetchActor,
+		runCtx, lookupID, objectID, requestID, wantsHTML, verifiedFetchActor,
 	); handled {
 		return tombstoneResp, tombErr
 	}
@@ -270,8 +279,7 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			if tombstoneResp, handled, tombErr := h.handleTombstonedObjectVisible(
-				runCtx, lookupID, objectID, requestID, wantsHTML,
-				authorizedFetchEnabled, verifiedFetchActor,
+				runCtx, lookupID, objectID, requestID, wantsHTML, verifiedFetchActor,
 			); handled {
 				return tombstoneResp, tombErr
 			}
@@ -455,14 +463,13 @@ func (h *Handler) handleTombstonedObject(ctx context.Context, lookupID, objectID
 // signal deletion to the author's own federation peers.
 //
 // Legacy tombstones (IsPublic=false, AttributedTo="") were created before
-// visibility context was stored. They are treated conservatively: hidden when
-// authorized fetch is enabled without verification; shown otherwise (backward
-// compatibility).
+// visibility context was stored. They are treated conservatively and hidden from
+// all callers because the handler cannot prove that the original object was
+// public or identify the original author.
 func (h *Handler) handleTombstonedObjectVisible(
 	ctx context.Context,
 	lookupID, objectID, requestID string,
 	wantsHTML bool,
-	authorizedFetchEnabled bool,
 	verifiedFetchActor *activitypub.Actor,
 ) (*apptheory.Response, bool, error) {
 	if h.objectRepo == nil {
@@ -481,80 +488,76 @@ func (h *Handler) handleTombstonedObjectVisible(
 			zap.String("request_id", requestID),
 			zap.Error(err),
 		)
-		// Without tombstone details we cannot determine visibility. When
-		// authorized fetch is enabled, err on the side of hiding to avoid
-		// leaking a potentially non-public deletion.
-		if authorizedFetchEnabled && verifiedFetchActor == nil {
-			logger.Debug("suppressing tombstone response for unauthorized viewer",
-				zap.String("object_id", objectID),
-				zap.String("request_id", requestID),
-			)
-			return nil, false, nil
-		}
-		return objectsJSONError(http.StatusGone, fmt.Sprintf("object %s deleted", objectID)), true, nil
+		// Without tombstone details we cannot determine whether the original
+		// object was public or who authored it. Hide rather than leak a deletion
+		// marker for a potentially non-public object.
+		return nil, false, nil
 	}
 
-	// Public tombstone: original object was publicly addressed. Return
-	// unconditionally — revealing that a public object was deleted is not
-	// a visibility leak.
-	if tombstone.IsPublic {
-		return h.handleTombstonedObject(ctx, lookupID, objectID, requestID, wantsHTML)
-	}
-
-	// Non-public tombstone: the original object's addressing did not include
-	// the public collection, so its deletion metadata must be gated.
-	//
-	// When the tombstone carries an AttributedTo, only the verified author
-	// may see it. When authorized fetch is globally disabled, even unsigned
-	// requests are hidden — consistent with live non-public object behavior
-	// (see TestHandleGetObject_PrivateVisibilityGate_Round29).
-	if strings.TrimSpace(tombstone.AttributedTo) != "" {
-		if !authorizedFetchEnabled {
-			logger.Debug("suppressing non-public tombstone when authorized fetch is disabled",
-				zap.String("object_id", objectID),
-				zap.String("attributed_to", tombstone.AttributedTo),
-				zap.String("request_id", requestID),
-			)
-			return nil, false, nil
-		}
-
-		if verifiedFetchActor == nil {
-			logger.Debug("suppressing non-public tombstone for unverified viewer",
-				zap.String("object_id", objectID),
-				zap.String("attributed_to", tombstone.AttributedTo),
-				zap.String("request_id", requestID),
-			)
-			return nil, false, nil
-		}
-
-		actorID := objectsActorID(verifiedFetchActor)
-		if !objectsActorIdentifiersMatch(actorID, tombstone.AttributedTo) {
-			logger.Debug("suppressing non-public tombstone for non-author verified fetch",
-				zap.String("object_id", objectID),
-				zap.String("attributed_to", tombstone.AttributedTo),
-				zap.String("verified_actor_id", actorID),
-				zap.String("request_id", requestID),
-			)
-			return nil, false, nil
-		}
-
-		// Verified actor is the original author — allow the tombstone.
-		return h.handleTombstonedObject(ctx, lookupID, objectID, requestID, wantsHTML)
-	}
-
-	// Legacy tombstone: IsPublic is false (zero value) and AttributedTo is
-	// empty. These tombstones were created before visibility context was
-	// stored. When authorized fetch is enabled without verification, hide
-	// conservatively; otherwise show (backward compatibility).
-	if authorizedFetchEnabled && verifiedFetchActor == nil {
-		logger.Debug("suppressing legacy tombstone for unauthorized viewer",
+	if !objectsTombstoneVisibleToActor(tombstone, verifiedFetchActor) {
+		logger.Debug("suppressing tombstone response for unauthorized viewer",
 			zap.String("object_id", objectID),
+			zap.String("attributed_to", tombstone.AttributedTo),
+			zap.Bool("is_public", tombstone.IsPublic),
 			zap.String("request_id", requestID),
 		)
 		return nil, false, nil
 	}
 
 	return h.handleTombstonedObject(ctx, lookupID, objectID, requestID, wantsHTML)
+}
+
+func (h *Handler) shouldSuppressTombstoneForActor(
+	ctx context.Context,
+	lookupID, objectID, requestID string,
+	verifiedFetchActor *activitypub.Actor,
+) bool {
+	if h.objectRepo == nil {
+		return false
+	}
+
+	tombstoned, err := h.objectRepo.IsTombstoned(ctx, lookupID)
+	if err != nil || !tombstoned {
+		return false
+	}
+
+	tombstone, err := h.objectRepo.GetTombstone(ctx, lookupID)
+	if err != nil {
+		logger.Warn("failed to load tombstone details for authorized-fetch visibility check",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return true
+	}
+
+	if objectsTombstoneVisibleToActor(tombstone, verifiedFetchActor) {
+		return false
+	}
+
+	logger.Debug("suppressing authorized-fetch error for hidden tombstone",
+		zap.String("object_id", objectID),
+		zap.String("attributed_to", tombstone.AttributedTo),
+		zap.Bool("is_public", tombstone.IsPublic),
+		zap.String("request_id", requestID),
+	)
+	return true
+}
+
+func objectsTombstoneVisibleToActor(tombstone *storageModels.Tombstone, verifiedFetchActor *activitypub.Actor) bool {
+	if tombstone == nil {
+		return false
+	}
+	if tombstone.IsPublic {
+		return true
+	}
+
+	attributedTo := strings.TrimSpace(tombstone.AttributedTo)
+	if attributedTo == "" {
+		return false
+	}
+
+	return objectsActorIdentifiersMatch(objectsActorID(verifiedFetchActor), attributedTo)
 }
 
 func (h *Handler) resolveObjectLookup(ctx *apptheory.Context) (string, string) {
@@ -1095,7 +1098,7 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 	app.Use(func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			if ctx != nil {
-				ctx.Set("requestID", objectsRequestID(ctx, "objects"))
+				ctx.Set("requestID", objectsRequestID(ctx, objectsServiceName))
 			}
 			return next(ctx)
 		}
@@ -1469,7 +1472,7 @@ func objectsRequestID(ctx *apptheory.Context, prefix string) string {
 	}
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
-		prefix = "objects"
+		prefix = objectsServiceName
 	}
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 }
