@@ -1,3 +1,4 @@
+//nolint:goconst // OpenAPI query parameter literals are clearer inline.
 package main
 
 import (

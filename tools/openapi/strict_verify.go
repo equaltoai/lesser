@@ -1,3 +1,4 @@
+//nolint:goconst // Strict verifier mirrors OpenAPI literal names directly.
 package main
 
 import (
