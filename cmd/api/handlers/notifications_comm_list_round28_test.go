@@ -146,6 +146,7 @@ func TestNotifications_ListIncludesReplyNotifications_Round28(t *testing.T) {
 				Content:      "reply body",
 				Published:    now.Add(-1 * time.Minute),
 				AttributedTo: cfg.BaseURL() + "/users/bob",
+				Visibility:   storageModels.VisibilityPublic,
 			},
 		},
 	}
@@ -228,6 +229,7 @@ func TestNotifications_ListHandlesSnapshotAndLegacyStatuses_Round28(t *testing.T
 				Content:      "legacy body",
 				Published:    now.Add(-2 * time.Minute),
 				AttributedTo: cfg.BaseURL() + "/users/bob",
+				Visibility:   storageModels.VisibilityPublic,
 			},
 		},
 		firstErrorPK: map[string]error{

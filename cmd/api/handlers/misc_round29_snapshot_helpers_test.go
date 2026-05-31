@@ -241,8 +241,16 @@ func TestMisc_NotificationStatusVisibleToViewer_Round29(t *testing.T) {
 	ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 	require.NoError(t, err)
 
-	t.Run("public defaults visible before notification scoping", func(t *testing.T) {
-		require.True(t, handler.notificationStatusVisibleToViewer(ctx.Context(), nil, "", "", nil, nil))
+	t.Run("empty visibility fails closed before notification scoping", func(t *testing.T) {
+		require.False(t, handler.notificationStatusVisibleToViewer(ctx.Context(), nil, "", "", nil, nil))
+		require.True(t, handler.notificationStatusVisibleToViewer(
+			ctx.Context(),
+			nil,
+			storagemodels.VisibilityPublic,
+			"",
+			nil,
+			nil,
+		))
 	})
 
 	t.Run("private requires scoped notification viewer", func(t *testing.T) {

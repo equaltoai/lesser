@@ -49,6 +49,7 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 				Published:    now.Add(-1 * time.Hour),
 				AttributedTo: "https://example.com/users/alice",
 				URL:          cfg.BaseURL() + "/objects/obj-1",
+				Visibility:   storagemodels.VisibilityPublic,
 			},
 		},
 		objectsByID: map[string]storagemodels.Object{
@@ -59,6 +60,7 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 				Published:    now.Add(-1 * time.Hour),
 				AttributedTo: "https://example.com/users/alice",
 				URL:          cfg.BaseURL() + "/objects/obj-1",
+				Visibility:   storagemodels.VisibilityPublic,
 			},
 		},
 		statusByID: map[string]storagemodels.Status{
@@ -115,6 +117,7 @@ func TestMiscNotificationsAndGrouping_Round11(t *testing.T) {
 				Content:      "hello",
 				Published:    now.Add(-1 * time.Hour),
 				AttributedTo: "https://example.com/users/alice",
+				Visibility:   storagemodels.VisibilityPublic,
 			},
 		},
 		notificationsByID: map[string]storagemodels.Notification{
