@@ -622,7 +622,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Equal(t, "https://example.com/users/alice/statuses/123", body["id"])
 	})
 
-	t.Run("canonical status route preserves authorized fetch behavior", func(t *testing.T) {
+	t.Run("canonical status route returns authorized fetch error when no hidden tombstone exists", func(t *testing.T) {
 		objRepo := &fakeObjectRepo{obj: map[string]any{"id": "https://example.com/users/alice/statuses/123", "type": "Note"}}
 		h := &Handler{
 			instanceRepo:           instanceRepo,
@@ -646,7 +646,7 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, 401, resp.Status)
-		require.Empty(t, objRepo.gotID)
+		require.Equal(t, "https://example.com/users/alice/statuses/123", objRepo.gotID)
 	})
 
 	t.Run("canonical status route returns tombstone when object was deleted", func(t *testing.T) {
@@ -655,10 +655,12 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			err:        errors.New("not found"),
 			tombstoned: true,
 			tombstone: &storageModels.Tombstone{
-				ID:         "https://example.com/users/alice/statuses/123",
-				FormerType: activitypub.NoteType,
-				Deleted:    deletedAt,
-				DeletedBy:  "https://example.com/users/alice",
+				ID:           "https://example.com/users/alice/statuses/123",
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     true,
 			},
 		}
 		h := &Handler{
@@ -696,10 +698,12 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			err:        errors.New("not found"),
 			tombstoned: true,
 			tombstone: &storageModels.Tombstone{
-				ID:         articleID,
-				FormerType: activitypub.ArticleType,
-				Deleted:    deletedAt,
-				DeletedBy:  "https://example.com/users/alice",
+				ID:           articleID,
+				FormerType:   activitypub.ArticleType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     true,
 			},
 		}
 		h := &Handler{
@@ -747,10 +751,12 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			},
 			tombstoned: true,
 			tombstone: &storageModels.Tombstone{
-				ID:         articleID,
-				FormerType: activitypub.ArticleType,
-				Deleted:    deletedAt,
-				DeletedBy:  "https://example.com/users/alice",
+				ID:           articleID,
+				FormerType:   activitypub.ArticleType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     true,
 			},
 		}
 		h := &Handler{
@@ -784,10 +790,12 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			err:        errors.New("not found"),
 			tombstoned: true,
 			tombstone: &storageModels.Tombstone{
-				ID:         legacyID,
-				FormerType: activitypub.ArticleType,
-				Deleted:    deletedAt,
-				DeletedBy:  "https://example.com/users/alice",
+				ID:           legacyID,
+				FormerType:   activitypub.ArticleType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     true,
 			},
 		}
 		h := &Handler{
@@ -1563,8 +1571,8 @@ func TestObjectsSecurityHeaders_Round12(t *testing.T) {
 
 // TestTombstoneVisibility_Round38 verifies tombstone visibility is governed by
 // the IsPublic field, which records whether the original object was publicly
-// addressed. Non-public tombstones are gated behind authorized fetch and
-// author verification; public tombstones are returned unconditionally.
+// addressed. Non-public tombstones are hidden unless the requester is verified
+// as the original author; public tombstones are returned unconditionally.
 // This is consistent with live-object visibility semantics (see
 // TestHandleGetObject_PrivateVisibilityGate_Round29). CSR-030 regression coverage.
 func TestTombstoneVisibility_Round38(t *testing.T) {
@@ -1584,7 +1592,7 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 
 	deletedAt := time.Date(2026, time.May, 22, 10, 0, 0, 0, time.UTC)
 
-	t.Run("non-public attributed tombstone hidden when auth enabled and no signature", func(t *testing.T) {
+	t.Run("non-public attributed tombstone hidden as not found when auth enabled and no signature", func(t *testing.T) {
 		objID := "https://example.com/users/alice/statuses/private-deleted"
 		objRepo := &fakeObjectRepo{
 			err:        errors.New("not found"),
@@ -1619,7 +1627,7 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		require.Equal(t, http.StatusUnauthorized, resp.Status)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
 	t.Run("non-public attributed tombstone hidden when authorized fetch is globally disabled", func(t *testing.T) {
@@ -1650,6 +1658,38 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 				Method:  http.MethodGet,
 				Path:    "/users/alice/statuses/private-deleted",
 				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"username": "alice", "id": "private-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+	})
+
+	t.Run("non-public attributed tombstone hidden for HTML when authorized fetch is disabled", func(t *testing.T) {
+		objID := "https://example.com/users/alice/statuses/private-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "https://example.com/users/alice",
+				IsPublic:     false,
+			},
+		}
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice/statuses/private-deleted",
+				Headers: map[string][]string{"accept": {"text/html"}},
 			},
 			Params: map[string]string{"username": "alice", "id": "private-deleted"},
 		})
@@ -1821,9 +1861,9 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
-	t.Run("legacy tombstone without IsPublic or AttributedTo visible when auth disabled", func(t *testing.T) {
+	t.Run("legacy tombstone without IsPublic or AttributedTo hidden when auth disabled", func(t *testing.T) {
 		// Legacy tombstone (IsPublic=false zero-value, AttributedTo empty):
-		// backward compatible when authorized fetch is disabled.
+		// hide conservatively because we cannot prove public visibility or author.
 		objID := "https://example.com/objects/legacy-deleted"
 		objRepo := &fakeObjectRepo{
 			err:        errors.New("not found"),
@@ -1852,7 +1892,45 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		require.Equal(t, http.StatusGone, resp.Status)
+		require.Equal(t, http.StatusNotFound, resp.Status)
+	})
+
+	t.Run("legacy tombstone without IsPublic or AttributedTo hidden when auth enabled and no signature", func(t *testing.T) {
+		objID := "https://example.com/objects/legacy-deleted"
+		objRepo := &fakeObjectRepo{
+			err:        errors.New("not found"),
+			tombstoned: true,
+			tombstone: &storageModels.Tombstone{
+				ID:           objID,
+				FormerType:   activitypub.NoteType,
+				Deleted:      deletedAt,
+				DeletedBy:    "https://example.com/users/alice",
+				AttributedTo: "",
+				IsPublic:     false,
+			},
+		}
+		h := &Handler{
+			instanceRepo: instanceRepo,
+			objectRepo:   objRepo,
+			authorizedFetchService: &fakeAuthorizedFetch{
+				enabled:   true,
+				verifyErr: errors.New("missing signature"),
+			},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/objects/legacy-deleted",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"id": "legacy-deleted"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
 	t.Run("public tombstone with HTML Accept returns text response", func(t *testing.T) {
@@ -1895,11 +1973,10 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		require.Contains(t, string(resp.Body), "deleted")
 	})
 
-	t.Run("tombstoned object with missing metadata returns 410 when auth disabled", func(t *testing.T) {
+	t.Run("tombstoned object with missing metadata is hidden when auth disabled", func(t *testing.T) {
 		// IsTombstoned=true but GetTombstone returns an error because
-		// the tombstone metadata row is missing. With authorized fetch
-		// disabled the error fallthrough returns 410 Gone (safe because
-		// auth is off — we are not leaking visibility metadata).
+		// the tombstone metadata row is missing. Without metadata the handler
+		// cannot prove the deleted object was public, so it must hide the tombstone.
 		objID := "https://example.com/objects/broken-tombstone"
 		objRepo := &fakeObjectRepo{
 			err:        errors.New("not found"),
@@ -1921,8 +1998,7 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		require.Equal(t, http.StatusGone, resp.Status)
-		require.Contains(t, string(resp.Body), "deleted")
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 }
 
@@ -1932,7 +2008,7 @@ func TestTombstoneVisibility_Round38(t *testing.T) {
 func TestHandleTombstonedObjectVisible_NilRepoBranch_Round38(t *testing.T) {
 	h := &Handler{}
 	resp, handled, err := h.handleTombstonedObjectVisible(
-		context.Background(), "lookup", "object", "req", false, false, nil,
+		context.Background(), "lookup", "object", "req", false, nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, resp)

@@ -41,6 +41,36 @@ func TestObjectRepository_BackgroundFetchAndCache(t *testing.T) {
 	})
 }
 
+func TestObjectRepository_ModelToActivityPubObjectPreservesVisibility(t *testing.T) {
+	now := time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC)
+
+	note := objectModelToActivityPubNote(&models.Object{
+		ID:           "note-visibility",
+		Type:         activitypub.NoteType,
+		Content:      "private note",
+		AttributedTo: "https://example.com/users/bob",
+		Published:    now,
+		Updated:      now,
+		Visibility:   models.VisibilityPrivate,
+	})
+	require.Equal(t, models.VisibilityPrivate, note.Visibility)
+
+	repo := &ObjectRepository{}
+	generic, err := repo.modelToActivityPubObject(context.Background(), &models.Object{
+		ID:           "question-visibility",
+		Type:         "Question",
+		Content:      "private question",
+		AttributedTo: "https://example.com/users/bob",
+		Published:    now,
+		Updated:      now,
+		Visibility:   models.VisibilityDirect,
+	})
+	require.NoError(t, err)
+	genericMap, ok := generic.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, models.VisibilityDirect, genericMap["visibility"])
+}
+
 func TestObjectRepository_ThreadContextFallbackPaths(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 1, 4, 5, 6, 7, 0, time.UTC)
