@@ -1,3 +1,4 @@
+//nolint:goconst // OpenAPI operation override literals are clearer inline.
 package main
 
 import "strings"

@@ -1,3 +1,4 @@
+//nolint:goconst // OpenAPI response header literals are clearer inline.
 package main
 
 import (

@@ -9411,6 +9411,8 @@ paths:
             operationId: get_api_v1_accounts_by_id_followers
             tags:
                 - accounts
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -9426,6 +9428,10 @@ paths:
                                 $ref: '#/components/schemas/AccountList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -9434,11 +9440,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:accounts
     /api/v1/accounts/{id}/following:
         get:
             operationId: get_api_v1_accounts_by_id_following
             tags:
                 - accounts
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -9454,6 +9464,10 @@ paths:
                                 $ref: '#/components/schemas/AccountList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -9462,6 +9476,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:accounts
     /api/v1/accounts/{id}/mute:
         post:
             operationId: post_api_v1_accounts_by_id_mute
@@ -12380,6 +12396,8 @@ paths:
             operationId: patch_api_v1_agents_by_username
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12414,10 +12432,18 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
         delete:
             operationId: delete_api_v1_agents_by_username
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12445,11 +12471,19 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
     /api/v1/agents/{username}/access-leases:
         get:
             operationId: get_api_v1_agents_by_username_access_leases
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12465,6 +12499,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseListResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -12473,10 +12511,18 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
         post:
             operationId: post_api_v1_agents_by_username_access_leases
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12497,6 +12543,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLease'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12507,6 +12557,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
     /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_renew_challenge
@@ -12547,6 +12600,8 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_revoke
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12572,6 +12627,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLease'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12582,6 +12641,12 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
     /api/v1/agents/{username}/access-leases/{leaseID}/session-key:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key
@@ -12707,6 +12772,8 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_challenge_agent
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12727,6 +12794,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12737,11 +12808,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
     /api/v1/agents/{username}/access-leases/challenge/principal:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_challenge_principal
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12762,6 +12838,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12772,6 +12852,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
     /api/v1/agents/{username}/activity:
         get:
             operationId: get_api_v1_agents_by_username_activity
@@ -12897,6 +12980,8 @@ paths:
             operationId: get_api_v1_agents_by_username_runtime_sessions
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12912,6 +12997,10 @@ paths:
                                 $ref: '#/components/schemas/AgentRuntimeSessionList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -12920,11 +13009,19 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
     /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke:
         post:
             operationId: post_api_v1_agents_by_username_runtime_sessions_by_sessionID_revoke
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: sessionID
                   in: path
@@ -12950,6 +13047,10 @@ paths:
                                 $ref: '#/components/schemas/AgentRuntimeSession'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12960,6 +13061,12 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
     /api/v1/agents/{username}/suspend:
         post:
             operationId: post_api_v1_agents_by_username_suspend
@@ -13057,6 +13164,8 @@ paths:
             operationId: post_api_v1_agents_delegate
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -13084,6 +13193,12 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - write
+                - write:accounts
     /api/v1/agents/memory/search:
         get:
             operationId: get_api_v1_agents_memory_search
@@ -13242,6 +13357,8 @@ paths:
             operationId: post_api_v1_announcements_by_id_dismiss
             tags:
                 - announcements
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -13271,13 +13388,14 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/announcements/{id}/reactions/{name}:
         put:
             operationId: put_api_v1_announcements_by_id_reactions_by_name
             tags:
                 - announcements
             security:
-                - {}
                 - bearerAuth: []
             parameters:
                 - name: id
@@ -13320,7 +13438,6 @@ paths:
             tags:
                 - announcements
             security:
-                - {}
                 - bearerAuth: []
             parameters:
                 - name: id
@@ -14239,6 +14356,8 @@ paths:
             operationId: get_api_v1_exports
             tags:
                 - exports
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -14258,6 +14377,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_exports
             tags:
@@ -14315,6 +14436,8 @@ paths:
             operationId: get_api_v1_exports_by_id
             tags:
                 - exports
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -14342,11 +14465,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/exports/{id}/download:
         get:
             operationId: get_api_v1_exports_by_id_download
             tags:
                 - exports
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -14374,6 +14501,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/favourites:
         get:
             operationId: get_api_v1_favourites
@@ -14407,6 +14536,8 @@ paths:
             operationId: get_api_v1_follow_requests
             tags:
                 - follow_requests
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -14426,11 +14557,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:follows
     /api/v1/follow_requests/{account_id}/authorize:
         post:
             operationId: post_api_v1_follow_requests_by_account_id_authorize
             tags:
                 - follow_requests
+            security:
+                - bearerAuth: []
             parameters:
                 - name: account_id
                   in: path
@@ -14456,11 +14591,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write:follows
     /api/v1/follow_requests/{account_id}/reject:
         post:
             operationId: post_api_v1_follow_requests_by_account_id_reject
             tags:
                 - follow_requests
+            security:
+                - bearerAuth: []
             parameters:
                 - name: account_id
                   in: path
@@ -14486,6 +14625,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write:follows
     /api/v1/imports:
         get:
             operationId: get_api_v1_imports
@@ -15262,6 +15403,8 @@ paths:
             operationId: get_api_v1_moderation_consensus_by_event_id
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             parameters:
                 - name: event_id
                   in: path
@@ -15289,11 +15432,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/moderation/flag:
         post:
             operationId: post_api_v1_moderation_flag
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -15338,11 +15485,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/moderation/history/{object_id}:
         get:
             operationId: get_api_v1_moderation_history_by_object_id
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             parameters:
                 - name: object_id
                   in: path
@@ -15370,11 +15521,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/moderation/queue:
         get:
             operationId: get_api_v1_moderation_queue
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Cursor'
                 - $ref: '#/components/parameters/Limit'
@@ -15397,11 +15552,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/moderation/review:
         post:
             operationId: post_api_v1_moderation_review
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -15446,11 +15605,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/moderation/trust:
         get:
             operationId: get_api_v1_moderation_trust
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             parameters:
                 - name: direction
                   in: query
@@ -15475,10 +15638,14 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
         put:
             operationId: put_api_v1_moderation_trust
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -15505,11 +15672,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/moderation/trust/{actor_id}/score:
         get:
             operationId: get_api_v1_moderation_trust_by_actor_id_score
             tags:
                 - moderation
+            security:
+                - bearerAuth: []
             parameters:
                 - name: actor_id
                   in: path
@@ -15537,6 +15708,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/mutes:
         get:
             operationId: get_api_v1_mutes
@@ -15595,6 +15768,8 @@ paths:
             operationId: post_api_v1_notes
             tags:
                 - notes
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -15657,11 +15832,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/notes/{id}/vote:
         post:
             operationId: post_api_v1_notes_by_id_vote
             tags:
                 - notes
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -15714,6 +15893,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/notes/{object_id}:
         get:
             operationId: get_api_v1_notes_by_object_id
@@ -15997,6 +16178,8 @@ paths:
             operationId: get_api_v1_push_subscription
             tags:
                 - push
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -16016,10 +16199,14 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - push
         post:
             operationId: post_api_v1_push_subscription
             tags:
                 - push
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16064,10 +16251,14 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - push
         put:
             operationId: put_api_v1_push_subscription
             tags:
                 - push
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16112,10 +16303,14 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - push
         delete:
             operationId: delete_api_v1_push_subscription
             tags:
                 - push
+            security:
+                - bearerAuth: []
             responses:
                 "204":
                     description: No Content
@@ -16131,11 +16326,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - push
     /api/v1/reports:
         post:
             operationId: post_api_v1_reports
             tags:
                 - reports
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16180,11 +16379,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/reputation/{actor_id}:
         get:
             operationId: get_api_v1_reputation_by_actor_id
             tags:
                 - reputation
+            security:
+                - bearerAuth: []
             parameters:
                 - name: actor_id
                   in: path
@@ -16212,11 +16415,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/reputation/export:
         post:
             operationId: post_api_v1_reputation_export
             tags:
                 - reputation
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -16238,11 +16445,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/reputation/import:
         post:
             operationId: post_api_v1_reputation_import
             tags:
                 - reputation
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16269,11 +16480,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/reputation/verify:
         post:
             operationId: post_api_v1_reputation_verify
             tags:
                 - reputation
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16288,6 +16503,10 @@ paths:
                                 $ref: '#/components/schemas/ReputationVerificationResult'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
@@ -16296,6 +16515,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/scheduled_statuses:
         get:
             operationId: get_api_v1_scheduled_statuses
@@ -16584,6 +16805,9 @@ paths:
             operationId: get_api_v1_skills
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -16609,6 +16833,10 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
@@ -16617,11 +16845,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/{skillId}:
         get:
             operationId: get_api_v1_skills_by_skillId
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: skillId
                   in: path
@@ -16637,6 +16870,10 @@ paths:
                                 $ref: '#/components/schemas/SkillResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -16645,11 +16882,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/{skillId}/revisions:
         get:
             operationId: get_api_v1_skills_by_skillId_revisions
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: skillId
                   in: path
@@ -16665,6 +16907,10 @@ paths:
                                 $ref: '#/components/schemas/SkillRevisionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -16673,11 +16919,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/{skillId}/revisions/{revisionNumber}:
         get:
             operationId: get_api_v1_skills_by_skillId_revisions_by_revisionNumber
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: revisionNumber
                   in: path
@@ -16698,6 +16949,10 @@ paths:
                                 $ref: '#/components/schemas/SkillRevisionResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -16706,11 +16961,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle:
         get:
             operationId: get_api_v1_skills_by_skillId_revisions_by_revisionNumber_bundle
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: revisionNumber
                   in: path
@@ -16737,6 +16997,10 @@ paths:
                                 $ref: '#/components/schemas/SkillBundleResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -16747,11 +17011,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/catalog:
         get:
             operationId: get_api_v1_skills_catalog
             tags:
                 - skills
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: exposure
                   in: query
@@ -16796,6 +17065,10 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
@@ -16804,6 +17077,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/skills/resolve:
         get:
             operationId: get_api_v1_skills_resolve
@@ -17147,7 +17422,6 @@ paths:
             tags:
                 - statuses
             security:
-                - {}
                 - bearerAuth: []
             parameters:
                 - name: id
@@ -17317,6 +17591,9 @@ paths:
             operationId: get_api_v1_statuses_by_id_context
             tags:
                 - statuses
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -17332,6 +17609,10 @@ paths:
                                 $ref: '#/components/schemas/StatusContext'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -17340,6 +17621,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:statuses
     /api/v1/statuses/{id}/favourite:
         post:
             operationId: post_api_v1_statuses_by_id_favourite
@@ -17860,6 +18143,8 @@ paths:
             operationId: post_api_v1_statuses_by_id_translate
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -17903,6 +18188,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/unbookmark:
         post:
             operationId: post_api_v1_statuses_by_id_unbookmark
@@ -18520,6 +18807,8 @@ paths:
             operationId: get_api_v1_suggestions
             tags:
                 - suggestions
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -18541,11 +18830,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/suggestions/{account_id}:
         delete:
             operationId: delete_api_v1_suggestions_by_account_id
             tags:
                 - suggestions
+            security:
+                - bearerAuth: []
             parameters:
                 - name: account_id
                   in: path
@@ -18573,6 +18866,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/timelines/direct:
         get:
             operationId: get_api_v1_timelines_direct
@@ -19253,6 +19548,8 @@ paths:
             operationId: post_api_v1_vouches
             tags:
                 - vouches
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -19279,6 +19576,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/vouches/{actor_id}:
         get:
             operationId: get_api_v1_vouches_by_actor_id
@@ -19316,6 +19615,8 @@ paths:
             operationId: delete_api_v1_vouches_by_vouch_id
             tags:
                 - vouches
+            security:
+                - bearerAuth: []
             parameters:
                 - name: vouch_id
                   in: path
@@ -19339,6 +19640,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v2/filters:
         get:
             operationId: get_api_v2_filters
@@ -19979,6 +20282,8 @@ paths:
             operationId: get_api_v2_suggestions
             tags:
                 - suggestions
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -20000,6 +20305,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v2/trends:
         get:
             operationId: get_api_v2_trends
@@ -20811,6 +21118,9 @@ paths:
             operationId: post_oauth_register
             tags:
                 - oauth
+            security:
+                - {}
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -20857,6 +21167,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /oauth/revoke:
         post:
             operationId: post_oauth_revoke

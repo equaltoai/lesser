@@ -1,3 +1,4 @@
+//nolint:goconst // OpenAPI schema override literals are clearer inline.
 package main
 
 func applySchemaOverrides(spec *openAPISpec) {

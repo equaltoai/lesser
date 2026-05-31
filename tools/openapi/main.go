@@ -1,4 +1,6 @@
 // Package main provides a drift-checked OpenAPI generator for Lesser's REST surface.
+//
+//nolint:goconst,gosec // OpenAPI schema literals are clearer inline; OAuth field names trip G101.
 package main
 
 import (
@@ -1446,6 +1448,7 @@ type apiRouteMeta struct {
 	Method      string
 	Path        string
 	Handler     string
+	RouteAuth   authMode
 	RateLimited bool
 }
 
@@ -1465,6 +1468,9 @@ func extractAPIRoutes(repoRoot string) ([]routeDef, error) {
 		auth := handlerAuth[meta.Handler]
 		if auth == "" {
 			auth = authModePublic
+		}
+		if authPriority(meta.RouteAuth) > authPriority(auth) {
+			auth = meta.RouteAuth
 		}
 		auth = applyAuthOverrides(meta.Method, meta.Path, meta.Handler, "api", auth)
 
@@ -1548,6 +1554,7 @@ func extractAPIRouteMetaFromArgs(method string, args []ast.Expr, handlerIndex in
 		Method:      method,
 		Path:        routePath,
 		Handler:     handlerName,
+		RouteAuth:   inferRouteAuthFromArgs(args, handlerIndex),
 		RateLimited: isRateLimitedHandler(handlerExpr),
 	}, true
 }
@@ -1574,8 +1581,55 @@ func extractAPIRouteMetaFromHandleArgs(args []ast.Expr) (apiRouteMeta, bool) {
 		Method:      methodStr,
 		Path:        routePath,
 		Handler:     handlerName,
+		RouteAuth:   inferRouteAuthFromArgs(args, 2),
 		RateLimited: isRateLimitedHandler(handlerExpr),
 	}, true
+}
+
+func inferRouteAuthFromArgs(args []ast.Expr, handlerIndex int) authMode {
+	if len(args) <= handlerIndex {
+		return authModePublic
+	}
+
+	auth := authModePublic
+	for _, arg := range args[handlerIndex:] {
+		if mode := inferRouteAuthFromExpr(arg); authPriority(mode) > authPriority(auth) {
+			auth = mode
+		}
+	}
+	return auth
+}
+
+func inferRouteAuthFromExpr(expr ast.Expr) authMode {
+	switch v := expr.(type) {
+	case *ast.Ident:
+		return authModeFromRouteMiddlewareToken(v.Name)
+	case *ast.SelectorExpr:
+		if v.Sel == nil {
+			return authModePublic
+		}
+		return authModeFromRouteMiddlewareToken(v.Sel.Name)
+	case *ast.CallExpr:
+		auth := inferRouteAuthFromExpr(v.Fun)
+		for _, arg := range v.Args {
+			if mode := inferRouteAuthFromExpr(arg); authPriority(mode) > authPriority(auth) {
+				auth = mode
+			}
+		}
+		return auth
+	}
+	return authModePublic
+}
+
+func authModeFromRouteMiddlewareToken(name string) authMode {
+	switch {
+	case name == "optionalAuth" || name == "OptionalAuth":
+		return authModeBearerOptional
+	case strings.HasPrefix(name, "require") || strings.HasPrefix(name, "Require"):
+		return authModeBearerRequired
+	default:
+		return authModePublic
+	}
 }
 
 type handlerAnalysis struct {
