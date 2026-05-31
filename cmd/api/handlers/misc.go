@@ -927,13 +927,23 @@ func (h *Handler) shouldIncludeStatus(view *notificationView) bool {
 
 // attachStatusToNotification attaches status information to a notification.
 func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, view *notificationView, apiNotif *models.Notification) {
-	if snapshotStatus := h.statusFromNotificationSnapshot(ctx, view); snapshotStatus != nil {
-		apiNotif.Status = snapshotStatus
+	if snapshotStatus, handled := h.statusFromNotificationSnapshotForExpansion(ctx, view); handled {
+		if snapshotStatus != nil {
+			apiNotif.Status = snapshotStatus
+		}
 		return
 	}
 
 	statusID := view.statusID()
 	if statusID == "" {
+		return
+	}
+
+	if h.notificationStatusDeleted(ctx.Context(), statusID) {
+		h.logger.Debug("skipping notification status expansion because status is deleted",
+			zap.String("notification_id", view.ID),
+			zap.String("status_id", statusID),
+			zap.String("viewer", view.UserID))
 		return
 	}
 
@@ -946,7 +956,8 @@ func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, view *notif
 		return
 	}
 
-	if !h.notificationObjectVisibleToViewer(ctx.Context(), view, obj) {
+	visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(obj)
+	if !h.notificationStatusVisibleToViewer(ctx.Context(), view, visibility, attributedTo, recipients, mentions) {
 		h.logger.Debug("skipping notification status expansion due to visibility",
 			zap.String("notification_id", view.ID),
 			zap.String("status_id", statusID),
@@ -957,9 +968,15 @@ func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, view *notif
 	statusActor := h.extractStatusAuthor(ctx, obj)
 	if objMap, ok := obj.(map[string]interface{}); ok {
 		status := transformations.ObjectToStatusBase(objMap, statusActor, h.cfg.BaseURL())
+		if normalizedVisibility := normalizeNotificationStatusVisibility(visibility); normalizedVisibility != "" {
+			status.Visibility = normalizedVisibility
+		}
 		apiNotif.Status = &status
 	} else {
 		status := transformations.ObjectToStatusAny(obj, statusActor, h.cfg.BaseURL())
+		if normalizedVisibility := normalizeNotificationStatusVisibility(visibility); normalizedVisibility != "" {
+			status.Visibility = normalizedVisibility
+		}
 		apiNotif.Status = &status
 	}
 }
@@ -982,23 +999,32 @@ func (h *Handler) notificationPostSnapshot(view *notificationView) (map[string]i
 	return snapshot, true
 }
 
-func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, view *notificationView) *models.Status {
+func (h *Handler) statusFromNotificationSnapshotForExpansion(ctx *apptheory.Context, view *notificationView) (*models.Status, bool) {
 	snapshot, ok := h.notificationPostSnapshot(view)
 	if !ok {
-		return nil
+		return nil, false
+	}
+
+	snapshotStatusID := strings.TrimSpace(notificationSnapshotString(snapshot, "id"))
+	if h.notificationStatusDeleted(ctx.Context(), snapshotStatusID, view.statusID()) {
+		h.logger.Debug("skipping notification snapshot expansion because status is deleted",
+			zap.String("notification_id", view.ID),
+			zap.String("status_id", firstNonEmptyString(snapshotStatusID, view.statusID())),
+			zap.String("viewer", view.UserID))
+		return nil, true
 	}
 
 	if !h.notificationSnapshotVisibleToViewer(ctx.Context(), view, snapshot) {
 		h.logger.Debug("skipping notification snapshot expansion due to visibility",
 			zap.String("notification_id", view.ID),
 			zap.String("viewer", view.UserID))
-		return nil
+		return nil, true
 	}
 
 	statusActor := h.notificationSnapshotActor(ctx, snapshot)
 	status := transformations.ObjectToStatusBase(notificationSnapshotObjectMap(snapshot), statusActor, h.cfg.BaseURL())
 	if status.ID == "" {
-		return nil
+		return nil, true
 	}
 
 	if safeURL, ok := common.SafeHTTPURL(status.URL); ok {
@@ -1015,7 +1041,7 @@ func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, view *n
 		status.Visibility = visibility
 	}
 
-	return &status
+	return &status, true
 }
 
 func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, view *notificationView, snapshot map[string]interface{}) bool {
@@ -1028,11 +1054,6 @@ func (h *Handler) notificationSnapshotVisibleToViewer(ctx context.Context, view 
 	)
 }
 
-func (h *Handler) notificationObjectVisibleToViewer(ctx context.Context, view *notificationView, obj any) bool {
-	visibility, attributedTo, recipients, mentions := notificationObjectVisibilityContext(obj)
-	return h.notificationStatusVisibleToViewer(ctx, view, visibility, attributedTo, recipients, mentions)
-}
-
 func (h *Handler) notificationStatusVisibleToViewer(
 	ctx context.Context,
 	view *notificationView,
@@ -1041,9 +1062,17 @@ func (h *Handler) notificationStatusVisibleToViewer(
 	recipients []string,
 	mentions []string,
 ) bool {
-	visibility = strings.TrimSpace(visibility)
+	visibility = normalizeNotificationStatusVisibility(visibility)
 	if visibility == "" {
-		visibility = storagemodels.VisibilityPublic
+		if h != nil && h.logger != nil {
+			notificationID := ""
+			if view != nil {
+				notificationID = view.ID
+			}
+			h.logger.Warn("empty notification status visibility denied",
+				zap.String("notification_id", notificationID))
+		}
+		return false
 	}
 
 	switch visibility {
@@ -1074,6 +1103,80 @@ func (h *Handler) notificationStatusVisibleToViewer(
 			zap.String("visibility", visibility))
 		return false
 	}
+}
+
+func normalizeNotificationStatusVisibility(visibility string) string {
+	return strings.ToLower(strings.TrimSpace(visibility))
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (h *Handler) notificationStatusDeleted(ctx context.Context, statusIDs ...string) bool {
+	if h == nil || h.repos == nil || h.repos.Object() == nil {
+		return true
+	}
+
+	for _, statusID := range h.notificationDeletionStatusCandidates(statusIDs...) {
+		deleted, err := h.repos.Object().IsTombstoned(ctx, statusID)
+		if err != nil {
+			if h.logger != nil {
+				h.logger.Warn("failed to check notification status tombstone state",
+					zap.String("status_id", statusID),
+					zap.Error(err))
+			}
+			return true
+		}
+		if deleted {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (h *Handler) notificationDeletionStatusCandidates(statusIDs ...string) []string {
+	candidates := make([]string, 0, len(statusIDs)*3)
+	seen := make(map[string]struct{}, len(statusIDs)*3)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
+	}
+
+	for _, statusID := range statusIDs {
+		statusID = strings.TrimSpace(statusID)
+		if statusID == "" {
+			continue
+		}
+		add(statusID)
+
+		if parsed, err := url.Parse(statusID); err == nil && parsed != nil && parsed.Scheme != "" && parsed.Host != "" {
+			parts := strings.Split(strings.Trim(strings.TrimSpace(parsed.Path), "/"), "/")
+			if len(parts) > 0 {
+				add(parts[len(parts)-1])
+			}
+			continue
+		}
+
+		if h != nil && h.cfg != nil {
+			add(strings.TrimRight(h.cfg.BaseURL(), "/") + "/objects/" + statusID)
+		}
+	}
+
+	return candidates
 }
 
 func (h *Handler) notificationViewerFollowsAuthor(ctx context.Context, viewer, author string) bool {

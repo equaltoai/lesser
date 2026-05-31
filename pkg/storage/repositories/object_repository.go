@@ -625,6 +625,7 @@ func (r *ObjectRepository) modelToActivityPubObject(ctx context.Context, objMode
 			"content":      objModel.Content,
 			"published":    objModel.Published,
 			"updated":      objModel.Updated,
+			"visibility":   objModel.Visibility,
 		}
 
 		if objModel.To != nil {
@@ -651,6 +652,7 @@ func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
 		},
 		Content:      objModel.Content,
 		AttributedTo: objModel.AttributedTo,
+		Visibility:   objModel.Visibility,
 	}
 
 	if objModel.InReplyTo != nil {

@@ -174,6 +174,7 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 				Content:      "hello",
 				Published:    now.Add(-1 * time.Hour),
 				AttributedTo: cfg.BaseURL() + "/users/bob",
+				Visibility:   storagemodels.VisibilityPublic,
 			},
 			"obj-1": {
 				ID:           "obj-1",
@@ -181,6 +182,7 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 				Content:      "image content",
 				Published:    now.Add(-2 * time.Hour),
 				AttributedTo: cfg.BaseURL() + "/users/bob",
+				Visibility:   storagemodels.VisibilityPublic,
 			},
 		},
 	}
@@ -499,6 +501,16 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 						PreferredUsername: "alice",
 						Name:              "Alice",
 					},
+				},
+			},
+			objectsByID: map[string]storagemodels.Object{
+				"status-1": {
+					ID:           "status-1",
+					Type:         activitypub.NoteType,
+					Content:      "hello",
+					Published:    now.Add(-1 * time.Hour),
+					AttributedTo: cfg.BaseURL() + "/users/alice",
+					Visibility:   storagemodels.VisibilityPublic,
 				},
 			},
 		}
