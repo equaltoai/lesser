@@ -100,7 +100,11 @@ func TestServerlessCircuitBreaker_IsOpen_EvaluatesStates(t *testing.T) {
 		}))
 
 		assert.True(t, cb.IsOpen(ctx, instanceID))
-		repo.waitForCall(t, repo.updateCalls)
+
+		require.Eventually(t, func() bool {
+			updated, err := repo.GetCircuitState(ctx, instanceID)
+			return err == nil && updated.Status == stateOpen && updated.Reason == "half-open timeout"
+		}, 5*time.Second, 10*time.Millisecond)
 
 		updated, err := repo.GetCircuitState(ctx, instanceID)
 		require.NoError(t, err)

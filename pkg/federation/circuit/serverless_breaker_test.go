@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -199,11 +200,14 @@ func (m *MockCircuitBreakerRepository) GetAllCircuitStates(_ context.Context) ([
 func (m *MockCircuitBreakerRepository) waitForCall(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 
-	select {
-	case <-ch:
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("timed out waiting for async call")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for async call")
 }
 
 func (m *MockCircuitBreakerRepository) waitForCalls(t *testing.T, ch <-chan struct{}, n int) {

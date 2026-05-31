@@ -103,10 +103,15 @@ func TestActivityPubDeliverySigningParity(t *testing.T) {
 	managerSig, err := federation.ParseSignatureHeader(managerCapture.req.Header.Get(federation.SignatureHeader))
 	require.NoError(t, err)
 
-	classicCanonical, err := federation.BuildHTTPSignatureString(classicReq, classicSig.Headers)
-	require.NoError(t, err)
-	managerCanonical, err := federation.BuildHTTPSignatureString(managerCapture.req, managerSig.Headers)
-	require.NoError(t, err)
+	requireWellFormedDateHeader(t, classicReq)
+	requireWellFormedDateHeader(t, managerCapture.req)
+
+	// The two signing paths stamp Date independently. Normalize it only for
+	// the canonical-string parity assertion so a one-second wall-clock rollover
+	// cannot hide whether the non-time signing inputs still match.
+	const normalizedSignatureDate = "Tue, 15 Nov 1994 08:12:31 GMT"
+	classicCanonical := canonicalSignatureStringWithDate(t, classicReq, classicSig.Headers, normalizedSignatureDate)
+	managerCanonical := canonicalSignatureStringWithDate(t, managerCapture.req, managerSig.Headers, normalizedSignatureDate)
 
 	require.Equal(t, classicSig.Algorithm, managerSig.Algorithm)
 	require.Equal(t, classicSig.Headers, managerSig.Headers)
@@ -114,4 +119,25 @@ func TestActivityPubDeliverySigningParity(t *testing.T) {
 	require.Equal(t, classicBody, managerCapture.body)
 	require.NoError(t, federation.VerifyHTTPSignature(classicReq, &privateKey.PublicKey))
 	require.NoError(t, federation.VerifyHTTPSignature(managerCapture.req, &privateKey.PublicKey))
+}
+
+func requireWellFormedDateHeader(t *testing.T, req *http.Request) {
+	t.Helper()
+
+	date := req.Header.Get(federation.DateHeader)
+	require.NotEmpty(t, date)
+	_, err := http.ParseTime(date)
+	require.NoError(t, err)
+}
+
+func canonicalSignatureStringWithDate(t *testing.T, req *http.Request, headers []string, date string) string {
+	t.Helper()
+
+	canonicalReq := req.Clone(req.Context())
+	canonicalReq.Header = req.Header.Clone()
+	canonicalReq.Header.Set(federation.DateHeader, date)
+
+	canonical, err := federation.BuildHTTPSignatureString(canonicalReq, headers)
+	require.NoError(t, err)
+	return canonical
 }
