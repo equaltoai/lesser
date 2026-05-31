@@ -16,6 +16,9 @@ TEST_ENVIRONMENT ?= test
 TEST_STAGE ?= test
 INTEGRATION_ENVIRONMENT ?= integration
 INTEGRATION_STAGE ?= integration
+LESSER_TEST_GOMEMLIMIT ?= 6GiB
+LESSER_TEST_PARALLELISM ?= 4
+LESSER_TEST_RACE_PARALLELISM ?= 2
 
 # Seed/validation configuration
 SEED_BASE_URL ?= https://dev.lesser.host
@@ -706,7 +709,8 @@ test:
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} \
-		GOCACHE=$(CURDIR)/tmp/go-cache go test -v ./...
+		GOMEMLIMIT=$${GOMEMLIMIT:-$(LESSER_TEST_GOMEMLIMIT)} \
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -p=$(LESSER_TEST_PARALLELISM) -v ./...
 
 .PHONY: schema
 schema:
@@ -719,7 +723,8 @@ test-coverage:
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} \
-		GOCACHE=$(CURDIR)/tmp/go-cache go test -v -coverprofile=coverage.out ./...
+		GOMEMLIMIT=$${GOMEMLIMIT:-$(LESSER_TEST_GOMEMLIMIT)} \
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -p=$(LESSER_TEST_PARALLELISM) -v -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
@@ -729,7 +734,8 @@ test-race:
 	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
-		GOCACHE=$(CURDIR)/tmp/go-cache go test -race -v ./...
+		GOMEMLIMIT=$${GOMEMLIMIT:-$(LESSER_TEST_GOMEMLIMIT)} \
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -p=$(LESSER_TEST_RACE_PARALLELISM) -race -v ./...
 
 ## Run integration tests
 test-integration:
@@ -746,7 +752,8 @@ test-unit:
 	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
-		GOCACHE=$(CURDIR)/tmp/go-cache go test -short -v ./...
+		GOMEMLIMIT=$${GOMEMLIMIT:-$(LESSER_TEST_GOMEMLIMIT)} \
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -p=$(LESSER_TEST_PARALLELISM) -short -v ./...
 
 ## Clear all data from DynamoDB table
 clear-data:

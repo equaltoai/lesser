@@ -11,6 +11,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  LESSER_GOCACHE_CACHE_SALT: v1
 
 jobs:
   verify:
@@ -37,11 +38,13 @@ jobs:
             go.sum
             infra/cdk/go.sum
 
+      - name: Configure Go build cache
+        run: |
+          echo "GOCACHE=$GITHUB_WORKSPACE/tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}"
+
       - name: Disk usage (post setup-go)
         run: bash scripts/ci_disk_usage.sh "post setup-go"
-
-      - name: Install Go tools
-        run: bash scripts/install_ci_tools.sh
 
       - name: Cache Lesser XDG caches
         uses: actions/cache@v5
@@ -52,8 +55,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-lesser-xdg-go${{ steps.setup-go.outputs.go-version }}-
 
-      - name: Disk usage (post xdg cache restore)
-        run: bash scripts/ci_disk_usage.sh "post xdg cache restore"
+      - name: Cache Go build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}
+          key: ${{ runner.os }}-gocache-${{ env.LESSER_GOCACHE_CACHE_SALT }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ env.LESSER_GOCACHE_CACHE_SALT }}-go${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Disk usage (post cache restore)
+        run: bash scripts/ci_disk_usage.sh "post cache restore"
+
+      - name: Install Go tools
+        run: bash scripts/install_ci_tools.sh
 
       - name: Build lesser CLI
         run: go build -o lesser ./cmd/lesser

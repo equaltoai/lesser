@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	defaultVerifyCIJobs               = 20
+	defaultVerifyCIJobs               = 4
 	defaultVerifyCILintBatchSize      = 50
 	defaultVerifyCISecScanBatchSize   = 25
 	defaultVerifyCIVulnCheckBatchSize = 15
 	defaultVerifyCICoverageBatchSize  = 25
-	defaultVerifyCIGOMEMLIMIT         = "1536MiB"
-	defaultVerifyCIGOGC               = "50"
+	defaultVerifyCIGOMEMLIMIT         = "2048MiB"
+	defaultVerifyCIGOGC               = "80"
 	envValueOff                       = "off"
 	lesserVerifyCIJobsEnv             = "LESSER_VERIFY_CI_JOBS"
 	lesserVerifyCIGOMEMLIMITEnv       = "LESSER_VERIFY_CI_GOMEMLIMIT"

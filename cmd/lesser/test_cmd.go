@@ -14,8 +14,14 @@ import (
 )
 
 const (
-	defaultCoverageBatchSize = 25
-	coverageBatchSizeEnvVar  = "LESSER_TEST_COVERAGE_BATCH_SIZE"
+	defaultCoverageBatchSize     = 25
+	defaultTestGOMEMLIMIT        = "6GiB"
+	defaultTestParallelism       = 4
+	defaultTestRaceParallelism   = 2
+	coverageBatchSizeEnvVar      = "LESSER_TEST_COVERAGE_BATCH_SIZE"
+	lesserTestGOMEMLIMITEnv      = "LESSER_TEST_GOMEMLIMIT"
+	lesserTestParallelismEnv     = "LESSER_TEST_PARALLELISM"
+	lesserTestRaceParallelismEnv = "LESSER_TEST_RACE_PARALLELISM"
 )
 
 func runTest(argv []string) error {
@@ -63,7 +69,7 @@ func runTestAll(argv []string) error {
 		return err
 	}
 
-	return runGoTests(args, []string{"test", "-v", "./..."}, nil)
+	return runGoTests(args, memorySafeGoTestArgs([]string{"test", "-v", "./..."}, false), nil)
 }
 
 func runTestUnit(argv []string) error {
@@ -77,7 +83,7 @@ func runTestUnit(argv []string) error {
 		return err
 	}
 
-	return runGoTests(args, []string{"test", "-short", "-v", "./..."}, nil)
+	return runGoTests(args, memorySafeGoTestArgs([]string{"test", "-short", "-v", "./..."}, false), nil)
 }
 
 func runTestIntegration(argv []string) error {
@@ -110,7 +116,7 @@ func runTestRace(argv []string) error {
 		return err
 	}
 
-	return runGoTests(args, []string{"test", "-race", "-v", "./..."}, nil)
+	return runGoTests(args, memorySafeGoTestArgs([]string{"test", "-race", "-v", "./..."}, true), nil)
 }
 
 func runTestCoverage(argv []string) error {
@@ -192,6 +198,7 @@ func runTestCoverage(argv []string) error {
 	}
 
 	goArgs := []string{"test"}
+	goArgs = memorySafeGoTestArgs(goArgs, false)
 	if short {
 		goArgs = append(goArgs, "-short")
 	}
@@ -263,6 +270,56 @@ func resolveCoverageBatchSize() int {
 		}
 	}
 	return defaultCoverageBatchSize
+}
+
+func memorySafeGoTestArgs(goArgs []string, race bool) []string {
+	jobs := resolveTestParallelism(race)
+	if jobs <= 0 || len(goArgs) == 0 || goTestArgsHaveParallelism(goArgs) {
+		return goArgs
+	}
+
+	out := make([]string, 0, len(goArgs)+1)
+	out = append(out, goArgs[0], fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs))
+	out = append(out, goArgs[1:]...)
+	return out
+}
+
+func goTestArgsHaveParallelism(goArgs []string) bool {
+	for _, arg := range goArgs {
+		if arg == goBuildParallelismFlag || strings.HasPrefix(arg, goBuildParallelismFlag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveTestParallelism(race bool) int {
+	envName := lesserTestParallelismEnv
+	fallback := defaultTestParallelism
+	if race {
+		envName = lesserTestRaceParallelismEnv
+		fallback = defaultTestRaceParallelism
+	}
+
+	if raw := strings.TrimSpace(os.Getenv(envName)); raw != "" {
+		if strings.EqualFold(raw, envValueOff) {
+			return 0
+		}
+		if jobs, err := strconv.Atoi(raw); err == nil && jobs > 0 {
+			return jobs
+		}
+	}
+	return fallback
+}
+
+func resolveTestGOMEMLIMIT() string {
+	if value := strings.TrimSpace(os.Getenv(lesserTestGOMEMLIMITEnv)); value != "" {
+		return value
+	}
+	if strings.TrimSpace(os.Getenv(goMemoryLimitEnvVar)) != "" {
+		return ""
+	}
+	return defaultTestGOMEMLIMIT
 }
 
 func mergeCoverageProfiles(destPath string, profilePaths []string) error {
@@ -480,6 +537,9 @@ func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) erro
 		"STAGE":       args.Stage,
 		"JWT_SECRET":  envOrDefault("JWT_SECRET", "dummy_value"),
 		"GOCACHE":     goCache,
+	}
+	if limit := resolveTestGOMEMLIMIT(); limit != "" {
+		env[goMemoryLimitEnvVar] = limit
 	}
 	if _, ok := env["DYNAMODB_ENCRYPTION_KEY"]; !ok {
 		env["DYNAMODB_ENCRYPTION_KEY"] = envOrDefault("DYNAMODB_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
