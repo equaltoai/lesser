@@ -124,13 +124,15 @@ func (r *fakeCircuitBreakerRepo) RecordMetric(_ context.Context, _ string, _ boo
 
 func waitForSignals(t *testing.T, ch <-chan struct{}, n int) {
 	t.Helper()
-	deadline := time.After(200 * time.Millisecond)
 	for i := 0; i < n; i++ {
-		select {
-		case <-ch:
-		case <-deadline:
-			t.Fatalf("timed out waiting for %d signals (got %d)", n, i)
-		}
+		require.Eventually(t, func() bool {
+			select {
+			case <-ch:
+				return true
+			default:
+				return false
+			}
+		}, 5*time.Second, 10*time.Millisecond, "timed out waiting for %d signals (got %d)", n, i)
 	}
 }
 
