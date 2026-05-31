@@ -216,11 +216,21 @@ func (s *Service) CheckNoteRateLimit(ctx context.Context, userID string, limit i
 		}
 
 		for _, note := range notes {
-			if note != nil && note.CreatedAt.After(cutoff) {
-				count++
-				if count >= limit {
-					return false, 0
+			if note == nil {
+				continue
+			}
+
+			if !note.CreatedAt.After(cutoff) {
+				remaining := limit - count
+				if remaining < 0 {
+					remaining = 0
 				}
+				return true, remaining
+			}
+
+			count++
+			if count >= limit {
+				return false, 0
 			}
 		}
 

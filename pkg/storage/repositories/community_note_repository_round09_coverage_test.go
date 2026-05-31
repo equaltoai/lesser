@@ -191,6 +191,7 @@ func TestCommunityNoteRepository_round09_vote_paths_and_author_listing(t *testin
 		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi3PK", "=", "AUTHOR#u1#NOTES").Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
+		mockQuery.On("OrderBy", "gsi3SK", "DESC").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi3SK", "<", "123#n1").Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.CommunityNote)
@@ -205,6 +206,7 @@ func TestCommunityNoteRepository_round09_vote_paths_and_author_listing(t *testin
 		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi3PK", "=", "AUTHOR#u1#NOTES").Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
+		mockQuery.On("OrderBy", "gsi3SK", "DESC").Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 		notes, next, err = repo.GetCommunityNotesByAuthor(ctx, "u1", 2, "badcursor")
 		require.NoError(t, err)

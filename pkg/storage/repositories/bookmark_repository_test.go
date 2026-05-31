@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -39,6 +38,10 @@ func newTestBookmarkRepository() *testBookmarkRepository {
 	return repo
 }
 
+func legacyBookmarkSK(createdAt time.Time, objectID string) string {
+	return createdAt.Format(time.RFC3339Nano) + "#" + objectID
+}
+
 func (r *testBookmarkRepository) overrideHooks() {
 	r.transactWriteFn = r.mockTransactWrite
 	r.batchGetFn = r.mockBatchGet
@@ -53,11 +56,15 @@ func (r *testBookmarkRepository) overrideHooks() {
 	r.findTimeBookmarkFn = func(_ context.Context, username, objectID string) (*models.Bookmark, error) {
 		pk := buildBookmarkPK(username)
 		for _, bookmark := range r.store {
-			if bookmark.PK != pk || bookmark.ObjectID != objectID {
+			if bookmark.PK != pk || bookmarkObjectID(*bookmark) != objectID {
 				continue
 			}
 			if bookmark.RecordType == models.BookmarkRecordTypeTime || isTimeBookmarkSK(bookmark.SK) || isReadableTimeBookmark(*bookmark) {
-				return r.clone(bookmark), nil
+				clone := r.clone(bookmark)
+				if clone.ObjectID == "" {
+					clone.ObjectID = bookmarkObjectID(*clone)
+				}
+				return clone, nil
 			}
 		}
 		return nil, nil
@@ -290,7 +297,7 @@ func TestBookmarkRepositoryLegacyTimestampBookmarksRemainVisible(t *testing.T) {
 	createdAt := time.Date(2026, time.May, 14, 16, 45, 0, 0, time.UTC)
 	legacy := &models.Bookmark{
 		PK:        buildBookmarkPK("frank"),
-		SK:        createdAt.Format(time.RFC3339Nano),
+		SK:        legacyBookmarkSK(createdAt, "status-legacy"),
 		Username:  "frank",
 		ObjectID:  "status-legacy",
 		CreatedAt: createdAt,
@@ -496,7 +503,7 @@ func (b *mockUpdateBuilder) Execute() error                               { retu
 func (b *mockUpdateBuilder) ExecuteWithResult(any) error                  { return nil }
 
 // TestBookmarkRepository_CSR055_LegacyBookmarksVisible proves that legacy
-// bookmarks stored with a raw RFC3339Nano timestamp SK (the format used before
+// bookmarks stored with the real timestamp#objectID SK (the format used before
 // the TIME# / OBJECT# dual-write schema) remain visible through every bookmark
 // read path: GetBookmark, IsBookmarked, GetUserBookmarks, and
 // CheckBookmarksForStatuses. This is a targeted regression probe for CSR-055.
@@ -505,11 +512,11 @@ func TestBookmarkRepository_CSR055_LegacyBookmarksVisible(t *testing.T) {
 	repo := newTestBookmarkRepository()
 	now := time.Date(2024, time.June, 1, 12, 0, 0, 0, time.UTC)
 
-	// Manually build a legacy bookmark: SK is a raw RFC3339Nano timestamp
-	// without any prefix, RecordType is empty, Locked is false.
+	// Manually build a legacy bookmark: SK is the genuine pre-refactor
+	// RFC3339Nano timestamp#objectID shape, RecordType is empty, Locked is false.
 	legacy := &models.Bookmark{
-		PK:         fmt.Sprintf("%s#%s", models.BookmarkPartitionPrefix, "legacy-user"),
-		SK:         now.Format(time.RFC3339Nano),
+		PK:         buildBookmarkPK("legacy-user"),
+		SK:         legacyBookmarkSK(now, "legacy-status-1"),
 		Username:   "legacy-user",
 		ObjectID:   "legacy-status-1",
 		CreatedAt:  now,
@@ -521,6 +528,10 @@ func TestBookmarkRepository_CSR055_LegacyBookmarksVisible(t *testing.T) {
 	// Verify the legacy SK is recognized as a legacy timestamp.
 	require.True(t, isLegacyBookmarkTimestampSK(legacy.SK), "legacy SK should be recognized")
 	require.True(t, isReadableTimeBookmark(*legacy), "legacy bookmark should be readable")
+	require.False(t, isLegacyBookmarkTimestampSK("TIME#"+now.Format(time.RFC3339Nano)+"#legacy-status-1"))
+	require.False(t, isLegacyBookmarkTimestampSK("OBJECT#legacy-status-1"))
+	require.False(t, isLegacyBookmarkTimestampSK(now.Format(time.RFC3339Nano)))
+	require.Equal(t, "legacy-status-1", bookmarkObjectID(models.Bookmark{SK: legacy.SK}))
 
 	// GetBookmark should find the legacy bookmark via findTimeBookmarkFn fallback.
 	found, err := repo.GetBookmark(ctx, "legacy-user", "legacy-status-1")

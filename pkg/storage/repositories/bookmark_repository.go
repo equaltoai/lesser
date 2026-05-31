@@ -317,7 +317,9 @@ func (r *BookmarkRepository) CheckBookmarksForStatuses(ctx context.Context, user
 			if bookmark == nil {
 				continue
 			}
-			result[bookmark.ObjectID] = true
+			if objectID := bookmarkObjectID(*bookmark); objectID != "" {
+				result[objectID] = true
+			}
 		}
 
 		for _, statusID := range batch {
@@ -535,13 +537,39 @@ func isReadableTimeBookmark(bookmark models.Bookmark) bool {
 
 func isLegacyBookmarkTimestampSK(sk string) bool {
 	trimmed := strings.TrimSpace(sk)
-	if trimmed == "" || strings.Contains(trimmed, "#") {
+	timestamp, objectID, ok := legacyBookmarkSKParts(trimmed)
+	if !ok || timestamp == "" || strings.TrimSpace(objectID) == "" {
 		return false
 	}
-	if _, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+
+	return isBookmarkTimestampSegment(timestamp)
+}
+
+func legacyBookmarkSKParts(sk string) (string, string, bool) {
+	trimmed := strings.TrimSpace(sk)
+	if trimmed == "" {
+		return "", "", false
+	}
+
+	timestamp, objectID, ok := strings.Cut(trimmed, "#")
+	if !ok {
+		return "", "", false
+	}
+	if timestamp == models.BookmarkSortKeyPrefixTime || timestamp == models.BookmarkSortKeyPrefixObject {
+		return "", "", false
+	}
+	return timestamp, objectID, true
+}
+
+func isBookmarkTimestampSegment(segment string) bool {
+	segment = strings.TrimSpace(segment)
+	if segment == "" {
+		return false
+	}
+	if _, err := time.Parse(time.RFC3339Nano, segment); err == nil {
 		return true
 	}
-	if _, err := time.Parse(time.RFC3339, trimmed); err == nil {
+	if _, err := time.Parse(time.RFC3339, segment); err == nil {
 		return true
 	}
 	return false
@@ -560,6 +588,8 @@ func bookmarkCreatedAt(bookmark models.Bookmark) time.Time {
 		} else {
 			sk = remainder
 		}
+	} else if timestamp, _, ok := legacyBookmarkSKParts(sk); ok {
+		sk = timestamp
 	}
 
 	if parsed, err := time.Parse(time.RFC3339Nano, sk); err == nil {
@@ -569,6 +599,35 @@ func bookmarkCreatedAt(bookmark models.Bookmark) time.Time {
 		return parsed
 	}
 	return time.Time{}
+}
+
+func bookmarkObjectID(bookmark models.Bookmark) string {
+	if strings.TrimSpace(bookmark.ObjectID) != "" {
+		return bookmark.ObjectID
+	}
+
+	sk := strings.TrimSpace(bookmark.SK)
+	if strings.HasPrefix(sk, models.BookmarkSortKeyPrefixObject+"#") {
+		return strings.TrimPrefix(sk, models.BookmarkSortKeyPrefixObject+"#")
+	}
+	if strings.HasPrefix(sk, models.BookmarkSortKeyPrefixTime+"#") {
+		remainder := strings.TrimPrefix(sk, models.BookmarkSortKeyPrefixTime+"#")
+		if _, objectID, ok := strings.Cut(remainder, "#"); ok {
+			return objectID
+		}
+		return ""
+	}
+	if _, objectID, ok := legacyBookmarkSKParts(sk); ok {
+		return objectID
+	}
+	return ""
+}
+
+func filterBookmarkObjectID(query core.Query, objectID string) core.Query {
+	return query.FilterGroup(func(group core.Query) {
+		group.Filter("ObjectID", "=", objectID)
+		group.OrFilter("object_id", "=", objectID)
+	})
 }
 
 const (
@@ -730,6 +789,9 @@ func appendReadableBookmarkStreamPage(
 		if bookmark.CreatedAt.IsZero() {
 			bookmark.CreatedAt = bookmarkCreatedAt(bookmark)
 		}
+		if bookmark.ObjectID == "" {
+			bookmark.ObjectID = bookmarkObjectID(bookmark)
+		}
 		result = append(result, bookmark)
 		if len(result) >= target {
 			return result, true
@@ -830,7 +892,7 @@ func validateBookmarkPageCursor(cursor bookmarkPageCursor) error {
 
 func isLegacyBookmarkCursorSK(sk string) bool {
 	trimmed := strings.TrimSuffix(sk, "\xff")
-	return isLegacyBookmarkTimestampSK(trimmed)
+	return isLegacyBookmarkTimestampSK(trimmed) || isBookmarkTimestampSegment(trimmed)
 }
 
 func encodeBookmarkPageCursor(cursor bookmarkPageCursor) string {
@@ -987,37 +1049,43 @@ func (r *BookmarkRepository) dynamoGetObjectBookmark(ctx context.Context, userna
 func (r *BookmarkRepository) dynamoFindTimeBookmarkByObject(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
 	pk := buildBookmarkPK(username)
 	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+	timeQuery := r.db.WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", models.BookmarkSortKeyPrefixTime).
-		Filter("ObjectID", "=", objectID).
+		Where("SK", "BEGINS_WITH", models.BookmarkSortKeyPrefixTime)
+	err := filterBookmarkObjectID(timeQuery, objectID).
 		Limit(1).
 		All(&bookmarks)
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, err
 	}
 	for _, bookmark := range bookmarks {
-		if bookmark.ObjectID == objectID && (strings.HasPrefix(bookmark.SK, models.BookmarkSortKeyPrefixTime+"#") || bookmark.RecordType == models.BookmarkRecordTypeTime) {
+		if bookmarkObjectID(bookmark) == objectID && (strings.HasPrefix(bookmark.SK, models.BookmarkSortKeyPrefixTime+"#") || bookmark.RecordType == models.BookmarkRecordTypeTime) {
 			if bookmark.CreatedAt.IsZero() {
 				bookmark.CreatedAt = bookmarkCreatedAt(bookmark)
+			}
+			if bookmark.ObjectID == "" {
+				bookmark.ObjectID = bookmarkObjectID(bookmark)
 			}
 			return &bookmark, nil
 		}
 	}
 
 	bookmarks = nil
-	err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		Filter("ObjectID", "=", objectID).
+	legacyQuery := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk)
+	err = filterBookmarkObjectID(legacyQuery, objectID).
 		Limit(25).
 		All(&bookmarks)
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, err
 	}
 	for _, bookmark := range bookmarks {
-		if bookmark.ObjectID == objectID && isReadableTimeBookmark(bookmark) {
+		if bookmarkObjectID(bookmark) == objectID && isReadableTimeBookmark(bookmark) {
 			if bookmark.CreatedAt.IsZero() {
 				bookmark.CreatedAt = bookmarkCreatedAt(bookmark)
+			}
+			if bookmark.ObjectID == "" {
+				bookmark.ObjectID = bookmarkObjectID(bookmark)
 			}
 			return &bookmark, nil
 		}

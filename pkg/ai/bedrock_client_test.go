@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -43,6 +44,14 @@ func TestBedrockClient_isClaudeModel(t *testing.T) {
 	require.True(t, (&BedrockClient{modelID: "claude-v2"}).isClaudeModel())
 	require.False(t, (&BedrockClient{modelID: "ai21.j2-ultra"}).isClaudeModel())
 	require.False(t, (&BedrockClient{modelID: ""}).isClaudeModel())
+}
+
+func TestBedrockClient_ConfigHelpersUseDefaults(t *testing.T) {
+	appconfig.ResetForTests()
+	t.Cleanup(appconfig.ResetForTests)
+
+	require.Equal(t, "us-east-1", getAWSRegion())
+	require.Equal(t, "anthropic.claude-3-haiku-20240307-v1:0", getBedrockModelID())
 }
 
 func TestBedrockClient_buildReputationAnalysisPrompt_IncludesInputs(t *testing.T) {
