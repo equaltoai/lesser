@@ -85,7 +85,7 @@ func TestBookmarkRepository_Round08_DynamoLookup_ErrorBranches(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("ConsistentRead").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("FilterGroup", mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
 	mockQuery.On("First", mock.Anything).Return(errors.New("first failed")).Once()
@@ -299,7 +299,7 @@ func TestBookmarkRepository_Round08_DynamoFindTimeBookmarkByObject_EmptyList(t *
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("FilterGroup", mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Bookmark)

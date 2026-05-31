@@ -40,7 +40,7 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
 				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
 				{PK: pk, SK: "OBJECT#o1", ObjectID: "o1", CreatedAt: base, RecordType: models.BookmarkRecordTypeObject},
-				{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
+				{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "legacy"), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
 			}
 			return
 		}
@@ -52,7 +52,7 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 			return
 		}
 		*dest = []models.Bookmark{
-			{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
+			{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "legacy"), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
 		}
 	}).Return(nil)
 

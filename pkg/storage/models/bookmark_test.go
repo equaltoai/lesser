@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
+	theorytypes "github.com/theory-cloud/tabletheory/pkg/types"
 )
 
 func TestBookmarkUpdateKeysTimeRecord(t *testing.T) {
@@ -95,4 +97,23 @@ func TestUpdateKeysRequiresTimeSKForObject(t *testing.T) {
 		RecordType: BookmarkRecordTypeObject,
 	}
 	require.Error(t, b.UpdateKeys())
+}
+
+func TestBookmarkUnmarshalAcceptsLegacyJSONObjectIDAttribute(t *testing.T) {
+	createdAt := time.Date(2025, time.January, 1, 0, 0, 0, 123, time.UTC)
+	legacySK := createdAt.Format(time.RFC3339Nano) + "#status-legacy-json"
+
+	var bookmark Bookmark
+	err := theorytypes.NewConverter().FromAttributeValue(&dynamodbtypes.AttributeValueMemberM{Value: map[string]dynamodbtypes.AttributeValue{
+		"PK":         &dynamodbtypes.AttributeValueMemberS{Value: "BOOKMARK#legacy-user"},
+		"SK":         &dynamodbtypes.AttributeValueMemberS{Value: legacySK},
+		"username":   &dynamodbtypes.AttributeValueMemberS{Value: "legacy-user"},
+		"object_id":  &dynamodbtypes.AttributeValueMemberS{Value: "status-legacy-json"},
+		"created_at": &dynamodbtypes.AttributeValueMemberS{Value: createdAt.Format(time.RFC3339Nano)},
+	}}, &bookmark)
+
+	require.NoError(t, err)
+	require.Equal(t, "legacy-user", bookmark.Username)
+	require.Equal(t, "status-legacy-json", bookmark.ObjectID)
+	require.True(t, bookmark.CreatedAt.Equal(createdAt))
 }

@@ -140,6 +140,7 @@ func setupPermissiveStatusMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("FilterGroup", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()

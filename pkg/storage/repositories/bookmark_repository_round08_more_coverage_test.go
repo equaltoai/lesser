@@ -130,6 +130,7 @@ func TestBookmarkRepository_Round08_DynamoHelpers_TransactWriteBatchGetAndLookup
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("FilterGroup", mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())

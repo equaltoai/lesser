@@ -22,7 +22,7 @@ func TestBookmarkRepository_M10_DynamoFindTimeBookmarkByObjectReadsLegacyTimesta
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("FilterGroup", mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
 	allCalls := 0
@@ -36,7 +36,7 @@ func TestBookmarkRepository_M10_DynamoFindTimeBookmarkByObjectReadsLegacyTimesta
 		*dest = []models.Bookmark{
 			{
 				PK:       buildBookmarkPK("alice"),
-				SK:       createdAt.Format(time.RFC3339Nano),
+				SK:       legacyBookmarkSK(createdAt, "status-1"),
 				Username: "alice",
 				ObjectID: "status-1",
 				Locked:   false,
@@ -93,7 +93,7 @@ func TestBookmarkRepository_M10_QueryUnlockedTimeBookmarksIncludesLegacyTimestam
 		*dest = []models.Bookmark{
 			{
 				PK:       pk,
-				SK:       base.Add(3 * time.Minute).Format(time.RFC3339Nano),
+				SK:       legacyBookmarkSK(base.Add(3*time.Minute), "status-legacy"),
 				Username: "alice",
 				ObjectID: "status-legacy",
 				Locked:   false,
@@ -120,8 +120,8 @@ func TestBookmarkRepository_M10_QueryUnlockedTimeBookmarksPaginatesMixedNamespac
 
 	timeSK4 := "TIME#" + base.Add(4*time.Minute).Format(time.RFC3339Nano) + "#status-time-4"
 	timeSK1 := "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#status-time-1"
-	legacySK3 := base.Add(3 * time.Minute).Format(time.RFC3339Nano)
-	legacySK2 := base.Add(2 * time.Minute).Format(time.RFC3339Nano)
+	legacySK3 := legacyBookmarkSK(base.Add(3*time.Minute), "status-legacy-3")
+	legacySK2 := legacyBookmarkSK(base.Add(2*time.Minute), "status-legacy-2")
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
@@ -185,7 +185,7 @@ func TestBookmarkRepository_M10_CountUserBookmarksCountsLegacyAndTimeRecords(t *
 		dest := args.Get(0).(*[]models.Bookmark)
 		*dest = []models.Bookmark{
 			{PK: pk, SK: "TIME#" + base.Format(time.RFC3339Nano) + "#status-time", ObjectID: "status-time", Locked: false},
-			{PK: pk, SK: base.Add(-time.Minute).Format(time.RFC3339Nano), ObjectID: "status-legacy", Locked: false},
+			{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "status-legacy"), ObjectID: "status-legacy", Locked: false},
 			{PK: pk, SK: "OBJECT#status-time", ObjectID: "status-time", RecordType: models.BookmarkRecordTypeObject},
 			{PK: pk, SK: "TIME#" + base.Add(-2*time.Minute).Format(time.RFC3339Nano) + "#status-locked", ObjectID: "status-locked", Locked: true},
 		}
@@ -200,17 +200,18 @@ func TestBookmarkRepository_M10_CountUserBookmarksCountsLegacyAndTimeRecords(t *
 func TestBookmarkRepository_M10_BookmarkPageCursorCompatibility(t *testing.T) {
 	createdAt := time.Date(2025, 12, 28, 12, 30, 0, 123, time.UTC)
 	timeSK := "TIME#" + createdAt.Format(time.RFC3339Nano) + "#status-time"
-	legacySK := createdAt.Format(time.RFC3339Nano)
+	legacySK := legacyBookmarkSK(createdAt, "status-legacy")
+	legacyTimeUpperBound := createdAt.Format(time.RFC3339Nano) + "\xff"
 
 	fromTime, err := parseBookmarkPageCursor(timeSK)
 	require.NoError(t, err)
 	require.Equal(t, timeSK, fromTime.TimeSK)
-	require.Equal(t, legacySK+"\xff", fromTime.LegacySK)
+	require.Equal(t, legacyTimeUpperBound, fromTime.LegacySK)
 
 	fromLegacy, err := parseBookmarkPageCursor(legacySK)
 	require.NoError(t, err)
 	require.Equal(t, legacySK, fromLegacy.LegacySK)
-	require.Equal(t, "TIME#"+legacySK, fromLegacy.TimeSK)
+	require.Equal(t, "TIME#"+createdAt.Format(time.RFC3339Nano), fromLegacy.TimeSK)
 
 	encoded := encodeBookmarkPageCursor(bookmarkPageCursor{TimeSK: timeSK, LegacySK: legacySK})
 	decoded, err := parseBookmarkPageCursor(encoded)
