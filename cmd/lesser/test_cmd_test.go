@@ -131,6 +131,85 @@ func TestRunTest_DispatchesSubcommands(t *testing.T) {
 	require.NotEmpty(t, goCalls)
 }
 
+func TestRunTest_MemorySafeDefaults(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousRunCommand := runCommandFn
+	previousCapture := captureCommandOutputFn
+	previousEnsureTool := ensureToolAvailableFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		runCommandFn = previousRunCommand
+		captureCommandOutputFn = previousCapture
+		ensureToolAvailableFn = previousEnsureTool
+	})
+
+	t.Setenv(lesserTestGOMEMLIMITEnv, "")
+	t.Setenv(lesserTestParallelismEnv, "")
+	t.Setenv(lesserTestRaceParallelismEnv, "")
+	t.Setenv(goMemoryLimitEnvVar, "")
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n"), 0o644))
+
+	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, _ ...string) (string, error) {
+		return "github.com/equaltoai/lesser/pkg/foo\n", nil
+	}
+
+	type goCall struct {
+		args []string
+		env  map[string]string
+	}
+	var calls []goCall
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
+		if name != "go" || firstArgOrEmpty(args) != "test" {
+			return nil
+		}
+		env := make(map[string]string, len(opts.Env))
+		for key, value := range opts.Env {
+			env[key] = value
+		}
+		calls = append(calls, goCall{args: append([]string(nil), args...), env: env})
+		return writeCoverageProfileFromArgs(repoRoot, args)
+	}
+
+	require.NoError(t, runTestAll(nil))
+	require.NoError(t, runTestUnit(nil))
+	require.NoError(t, runTestRace(nil))
+	require.NoError(t, runTestCoverage([]string{"--scope", "pkg", "--html=false"}))
+	require.Len(t, calls, 4)
+
+	require.Contains(t, calls[0].args, "-p=4")
+	require.Equal(t, defaultTestGOMEMLIMIT, calls[0].env[goMemoryLimitEnvVar])
+
+	require.Contains(t, calls[1].args, "-p=4")
+	require.Contains(t, calls[1].args, "-short")
+	require.Equal(t, defaultTestGOMEMLIMIT, calls[1].env[goMemoryLimitEnvVar])
+
+	require.Contains(t, calls[2].args, "-p=2")
+	require.Contains(t, calls[2].args, "-race")
+	require.Equal(t, defaultTestGOMEMLIMIT, calls[2].env[goMemoryLimitEnvVar])
+
+	require.Contains(t, calls[3].args, "-p=4")
+	require.NotContains(t, calls[3].args, "-short")
+	require.Equal(t, defaultTestGOMEMLIMIT, calls[3].env[goMemoryLimitEnvVar])
+}
+
+func TestRunTest_MemorySafeOverrides(t *testing.T) {
+	t.Setenv(lesserTestParallelismEnv, "7")
+	t.Setenv(lesserTestRaceParallelismEnv, "3")
+	t.Setenv(lesserTestGOMEMLIMITEnv, "8GiB")
+	t.Setenv(goMemoryLimitEnvVar, "5GiB")
+
+	require.Equal(t, []string{"test", "-p=7", "-v", "./..."}, memorySafeGoTestArgs([]string{"test", "-v", "./..."}, false))
+	require.Equal(t, []string{"test", "-p=3", "-race", "-v", "./..."}, memorySafeGoTestArgs([]string{"test", "-race", "-v", "./..."}, true))
+	require.Equal(t, "8GiB", resolveTestGOMEMLIMIT())
+
+	t.Setenv(lesserTestParallelismEnv, envValueOff)
+	require.Equal(t, []string{"test", "-v", "./..."}, memorySafeGoTestArgs([]string{"test", "-v", "./..."}, false))
+}
+
 func TestRunTestCoverage_ErrorsWhenNoPackagesRemainAfterFiltering(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousCapture := captureCommandOutputFn
