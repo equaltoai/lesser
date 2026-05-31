@@ -999,11 +999,6 @@ func (h *Handler) notificationPostSnapshot(view *notificationView) (map[string]i
 	return snapshot, true
 }
 
-func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, view *notificationView) *models.Status {
-	status, _ := h.statusFromNotificationSnapshotForExpansion(ctx, view)
-	return status
-}
-
 func (h *Handler) statusFromNotificationSnapshotForExpansion(ctx *apptheory.Context, view *notificationView) (*models.Status, bool) {
 	snapshot, ok := h.notificationPostSnapshot(view)
 	if !ok {

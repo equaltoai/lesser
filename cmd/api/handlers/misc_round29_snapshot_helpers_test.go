@@ -41,17 +41,18 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		require.False(t, ok)
 	})
 
-	t.Run("statusFromNotificationSnapshot returns nil for malformed snapshots", func(t *testing.T) {
+	t.Run("statusFromNotificationSnapshotForExpansion returns nil for malformed snapshots", func(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := handler.statusFromNotificationSnapshot(ctx, &notificationView{
+		status, handled := handler.statusFromNotificationSnapshotForExpansion(ctx, &notificationView{
 			Data: map[string]interface{}{
 				"postSnapshot": map[string]interface{}{
 					"id": 123,
 				},
 			},
 		})
+		require.True(t, handled)
 		require.Nil(t, status)
 	})
 
@@ -71,7 +72,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := handler.statusFromNotificationSnapshot(ctx, &notificationView{
+		status, handled := handler.statusFromNotificationSnapshotForExpansion(ctx, &notificationView{
 			ID:     "n-private",
 			Type:   models.NotificationTypeMention,
 			UserID: "alice",
@@ -84,6 +85,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 				},
 			},
 		})
+		require.True(t, handled)
 		require.Nil(t, status)
 	})
 
@@ -100,7 +102,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 		ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 		require.NoError(t, err)
 
-		status := followerHandler.statusFromNotificationSnapshot(ctx, &notificationView{
+		status, handled := followerHandler.statusFromNotificationSnapshotForExpansion(ctx, &notificationView{
 			ID:     "n-private",
 			Type:   models.NotificationTypeMention,
 			UserID: "alice",
@@ -113,6 +115,7 @@ func TestMisc_NotificationSnapshotHelpers_Round29(t *testing.T) {
 				},
 			},
 		})
+		require.True(t, handled)
 		require.NotNil(t, status)
 		require.Equal(t, "private", status.Visibility)
 	})
