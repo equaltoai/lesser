@@ -8,6 +8,36 @@ import (
 
 const apiV1AppsPath = "/api/v1/apps"
 
+// RuleMatch describes how a public-surface rule matches paths.
+type RuleMatch string
+
+const (
+	// RuleMatchExact matches one exact path.
+	RuleMatchExact RuleMatch = "exact"
+	// RuleMatchPrefix matches every path with the configured prefix.
+	RuleMatchPrefix RuleMatch = "prefix"
+	// RuleMatchStatusRead matches public status-read paths except sensitive
+	// status subresources.
+	RuleMatchStatusRead RuleMatch = "status_read"
+	// RuleMatchAccountContent matches public account statuses/notes reads.
+	RuleMatchAccountContent RuleMatch = "account_content"
+	// RuleMatchSkills matches the public skills catalog with one exact exclusion.
+	RuleMatchSkills RuleMatch = "skills_catalog"
+)
+
+// PublicRule is one source-of-truth entry in Lesser's anonymous public surface.
+// The runtime gate, generated docs, and reconciliation tests all derive from
+// these rules.
+type PublicRule struct {
+	Methods          []string
+	Path             string
+	Match            RuleMatch
+	Description      string
+	ExceptExactPaths []string
+	ExceptSuffixes   []string
+	RequiredContains []string
+}
+
 // ContractAuthClass describes auth requirements that are enforced outside the
 // API gateway public-surface middleware but still need to be reflected in the
 // generated public contract.
@@ -22,134 +52,464 @@ const (
 	ContractAuthInternalOnly ContractAuthClass = "internal_only"
 )
 
-// IsPublic reports whether the normalized method/path pair is in Lesser's
-// explicitly allowlisted anonymous API surface.
+// ContractAuthRule is one handler-enforced contract-auth override for a route
+// that remains gate-reachable through IsPublic.
+type ContractAuthRule struct {
+	Method      string
+	Path        string
+	Class       ContractAuthClass
+	Description string
+}
+
+// ClassificationKind identifies how publicsurface resolves a route.
+type ClassificationKind string
+
+const (
+	// ClassificationAnonymous means the route is in the anonymous public surface.
+	ClassificationAnonymous ClassificationKind = "anonymous"
+	// ClassificationContractAuth means the gate is reachable but handlers enforce
+	// a non-anonymous auth class that the generated contract must advertise.
+	ClassificationContractAuth ClassificationKind = "contract_auth"
+	// ClassificationAuthRequired is the default-deny classification for routes
+	// outside the anonymous allowlist.
+	ClassificationAuthRequired ClassificationKind = "auth_required"
+	// ClassificationUnknown means the route could not be classified because the
+	// method or path is empty.
+	ClassificationUnknown ClassificationKind = "unknown"
+)
+
+// Classification is publicsurface's resolved auth posture for a method/path.
+type Classification struct {
+	Kind              ClassificationKind
+	Public            bool
+	Rule              *PublicRule
+	ContractAuthClass ContractAuthClass
+}
+
+var publicRules = []PublicRule{
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/",
+		Match:       RuleMatchExact,
+		Description: "root document",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/robots.txt",
+		Match:       RuleMatchExact,
+		Description: "robots metadata",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/.well-known/oauth-authorization-server",
+		Match:       RuleMatchExact,
+		Description: "OAuth authorization-server metadata",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/.well-known/nodeinfo",
+		Match:       RuleMatchExact,
+		Description: "NodeInfo discovery",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/.well-known/lesser-soul-agent",
+		Match:       RuleMatchExact,
+		Description: "Lesser Soul agent discovery",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/nodeinfo/2.0",
+		Match:       RuleMatchExact,
+		Description: "NodeInfo document",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/.well-known/reputation-keys",
+		Match:       RuleMatchExact,
+		Description: "reputation key discovery",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/health",
+		Match:       RuleMatchExact,
+		Description: "legacy liveness health check",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/health/live",
+		Match:       RuleMatchExact,
+		Description: "liveness health check",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/health/ready",
+		Match:       RuleMatchExact,
+		Description: "readiness health check",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/auth/device",
+		Match:       RuleMatchExact,
+		Description: "device authorization status",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/oembed",
+		Match:       RuleMatchExact,
+		Description: "oEmbed lookup",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/instance",
+		Match:       RuleMatchExact,
+		Description: "Mastodon instance metadata",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v2/instance",
+		Match:       RuleMatchExact,
+		Description: "Mastodon v2 instance metadata",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/custom_emojis",
+		Match:       RuleMatchExact,
+		Description: "custom emoji catalog",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/directory",
+		Match:       RuleMatchExact,
+		Description: "public profile directory",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/announcements",
+		Match:       RuleMatchExact,
+		Description: "public announcements",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/timelines/public",
+		Match:       RuleMatchExact,
+		Description: "public timeline",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/timelines/link",
+		Match:       RuleMatchExact,
+		Description: "public link timeline",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v2/search",
+		Match:       RuleMatchExact,
+		Description: "Mastodon v2 search endpoint",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v2/suggestions",
+		Match:       RuleMatchExact,
+		Description: "public suggestions endpoint",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/setup/status",
+		Match:       RuleMatchExact,
+		Description: "setup status check",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/oauth/authorize",
+		Match:       RuleMatchExact,
+		Description: "OAuth authorization entrypoint",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/trust/jwks.json",
+		Match:       RuleMatchExact,
+		Description: "lesser.host trust-proxy JWKS",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/trust/attestations",
+		Match:       RuleMatchExact,
+		Description: "lesser.host trust-proxy attestation index",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/embed/",
+		Match:       RuleMatchPrefix,
+		Description: "public embeds",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/instance/",
+		Match:       RuleMatchPrefix,
+		Description: "instance metadata subresources",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/trends",
+		Match:       RuleMatchPrefix,
+		Description: "Mastodon v1 trends endpoints",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v2/trends",
+		Match:       RuleMatchPrefix,
+		Description: "Mastodon v2 trends endpoints",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/timelines/tag/",
+		Match:       RuleMatchPrefix,
+		Description: "public hashtag timelines",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/trust/attestations/",
+		Match:       RuleMatchPrefix,
+		Description: "lesser.host trust-proxy attestation reads",
+	},
+	{
+		Methods:        []string{http.MethodGet, http.MethodHead},
+		Path:           "/api/v1/statuses/",
+		Match:          RuleMatchStatusRead,
+		Description:    "public status reads; visibility remains handler/service enforced",
+		ExceptSuffixes: []string{"/source", "/favourited_by", "/reblogged_by"},
+	},
+	{
+		Methods:          []string{http.MethodGet, http.MethodHead},
+		Path:             "/api/v1/accounts/",
+		Match:            RuleMatchAccountContent,
+		Description:      "public account statuses/notes reads",
+		RequiredContains: []string{"/statuses", "/notes"},
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/accounts/search",
+		Match:       RuleMatchPrefix,
+		Description: "public account search and suggestions",
+	},
+	{
+		Methods:          []string{http.MethodGet, http.MethodHead},
+		Path:             "/api/v1/skills",
+		Match:            RuleMatchSkills,
+		Description:      "public skills catalog; exact resolver remains private",
+		ExceptExactPaths: []string{"/api/v1/skills/resolve"},
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/search/statuses",
+		Match:       RuleMatchPrefix,
+		Description: "public status-search read path; route-level guard may still require OAuth",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/notes/",
+		Match:       RuleMatchPrefix,
+		Description: "public community-note reads",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        apiV1AppsPath,
+		Match:       RuleMatchExact,
+		Description: "OAuth app registration",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/register",
+		Match:       RuleMatchExact,
+		Description: "legacy OAuth app registration",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/accounts",
+		Match:       RuleMatchExact,
+		Description: "account registration with wallet/WebAuthn proof",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/notifications/deliver",
+		Match:       RuleMatchExact,
+		Description: "gate-reachable notification delivery; handler enforces internal instance key",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/token",
+		Match:       RuleMatchExact,
+		Description: "OAuth token exchange",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/revoke",
+		Match:       RuleMatchExact,
+		Description: "OAuth token revocation",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/consent",
+		Match:       RuleMatchExact,
+		Description: "OAuth consent submission",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/device/code",
+		Match:       RuleMatchExact,
+		Description: "OAuth device-code start",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/oauth/device/verify",
+		Match:       RuleMatchExact,
+		Description: "OAuth device verification",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/setup/bootstrap/challenge",
+		Match:       RuleMatchExact,
+		Description: "setup bootstrap challenge",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/setup/bootstrap/verify",
+		Match:       RuleMatchExact,
+		Description: "setup bootstrap verification",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/setup/admin",
+		Match:       RuleMatchExact,
+		Description: "gate-reachable setup admin creation; handler enforces setup bearer",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/setup/finalize",
+		Match:       RuleMatchExact,
+		Description: "gate-reachable setup finalization; handler enforces OAuth bearer/admin scope",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/auth/webauthn/login/begin",
+		Match:       RuleMatchExact,
+		Description: "WebAuthn login begin",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/auth/webauthn/login/finish",
+		Match:       RuleMatchExact,
+		Description: "WebAuthn login finish",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/auth/wallet/challenge",
+		Match:       RuleMatchExact,
+		Description: "wallet challenge",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/auth/wallet/verify",
+		Match:       RuleMatchExact,
+		Description: "wallet verification",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/auth/wallet/login",
+		Match:       RuleMatchExact,
+		Description: "wallet login",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/auth/wallet/link",
+		Match:       RuleMatchExact,
+		Description: "wallet link during registration flow",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/search/statuses",
+		Match:       RuleMatchExact,
+		Description: "status-search write-compatible method; route-level guard may still require OAuth",
+	},
+}
+
+var contractAuthRules = []ContractAuthRule{
+	{
+		Method:      http.MethodPost,
+		Path:        "/setup/admin",
+		Class:       ContractAuthSetupBearer,
+		Description: "setup-session bearer token enforced in handler",
+	},
+	{
+		Method:      http.MethodPost,
+		Path:        "/setup/finalize",
+		Class:       ContractAuthBearerRequired,
+		Description: "OAuth bearer/admin setup finalization enforced in handler",
+	},
+	{
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notifications/deliver",
+		Class:       ContractAuthInternalOnly,
+		Description: "internal instance-key bearer validation enforced in handler",
+	},
+}
+
+// PublicRules returns a copy of Lesser's anonymous public-surface rules.
+func PublicRules() []PublicRule {
+	out := make([]PublicRule, len(publicRules))
+	for i, rule := range publicRules {
+		out[i] = clonePublicRule(rule)
+	}
+	return out
+}
+
+// ContractAuthRules returns a copy of Lesser's handler-enforced contract auth
+// overrides.
+func ContractAuthRules() []ContractAuthRule {
+	out := make([]ContractAuthRule, len(contractAuthRules))
+	copy(out, contractAuthRules)
+	return out
+}
+
+// IsPublic reports whether the method/path pair is in Lesser's explicitly
+// allowlisted anonymous API surface.
 //
 // The default is deny: method/path pairs missing from this allowlist are not
 // public.
-//
-//nolint:gocyclo,gocognit // Public surface allowlist requires many explicit method/path checks.
 func IsPublic(method, path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
 	}
 
-	switch method {
-	case http.MethodGet, http.MethodHead:
-		switch path {
-		case "/",
-			"/robots.txt",
-			"/.well-known/oauth-authorization-server",
-			"/.well-known/nodeinfo",
-			"/.well-known/lesser-soul-agent",
-			"/nodeinfo/2.0",
-			"/.well-known/reputation-keys",
-			"/health",
-			"/health/live",
-			"/health/ready",
-			"/auth/device",
-			"/api/oembed",
-			"/api/v1/instance",
-			"/api/v2/instance",
-			"/api/v1/custom_emojis",
-			"/api/v1/directory",
-			"/api/v1/announcements",
-			"/api/v1/timelines/public",
-			"/api/v1/timelines/link",
-			"/api/v2/search",
-			"/api/v2/suggestions",
-			"/setup/status",
-			"/oauth/authorize",
-			"/api/v1/trust/jwks.json",
-			"/api/v1/trust/attestations":
+	for _, rule := range publicRules {
+		if rule.matches(method, path) {
 			return true
 		}
-
-		if strings.HasPrefix(path, "/embed/") {
-			return true
-		}
-
-		if strings.HasPrefix(path, "/api/v1/instance/") {
-			return true
-		}
-
-		if strings.HasPrefix(path, "/api/v1/trends") || strings.HasPrefix(path, "/api/v2/trends") {
-			return true
-		}
-
-		if strings.HasPrefix(path, "/api/v1/timelines/tag/") {
-			return true
-		}
-
-		// lesser.host trust proxy endpoints (public reads).
-		if strings.HasPrefix(path, "/api/v1/trust/attestations/") {
-			return true
-		}
-
-		// Public status reads (visibility still enforced in handlers/services).
-		if strings.HasPrefix(path, "/api/v1/statuses/") {
-			// Explicitly exclude sensitive per-status reads.
-			if strings.HasSuffix(path, "/source") || strings.HasSuffix(path, "/favourited_by") || strings.HasSuffix(path, "/reblogged_by") {
-				return false
-			}
-			return true
-		}
-
-		if strings.HasPrefix(path, "/api/v1/accounts/") {
-			if strings.Contains(path, "/statuses") || strings.Contains(path, "/notes") {
-				return true
-			}
-		}
-
-		if strings.HasPrefix(path, "/api/v1/accounts/search") {
-			return true
-		}
-
-		if path == "/api/v1/skills" || strings.HasPrefix(path, "/api/v1/skills/") {
-			return path != "/api/v1/skills/resolve"
-		}
-
-		if strings.HasPrefix(path, "/api/v1/search/statuses") {
-			return true
-		}
-
-		if strings.HasPrefix(path, "/api/v1/notes/") {
-			return true
-		}
-
-		return false
-
-	case http.MethodPost:
-		switch path {
-		case apiV1AppsPath,
-			"/oauth/register",
-			"/api/v1/accounts",
-			"/api/v1/notifications/deliver",
-			"/oauth/token",
-			"/oauth/revoke",
-			"/oauth/consent",
-			"/oauth/device/code",
-			"/oauth/device/verify",
-			"/setup/bootstrap/challenge",
-			"/setup/bootstrap/verify",
-			"/setup/admin",
-			"/setup/finalize",
-			"/api/v1/auth/webauthn/login/begin",
-			"/api/v1/auth/webauthn/login/finish":
-			return true
-		case "/auth/wallet/challenge",
-			"/auth/wallet/verify",
-			"/auth/wallet/login",
-			"/auth/wallet/link":
-			return true
-		case "/api/v1/search/statuses":
-			return true
-		default:
-			return false
-		}
-	default:
-		return false
 	}
+	return false
+}
+
+// Classify resolves a method/path through publicsurface so tests and tools can
+// prove every route is intentionally public, contract-auth, or auth-required.
+func Classify(method, path string) Classification {
+	if strings.TrimSpace(method) == "" || strings.TrimSpace(path) == "" {
+		return Classification{Kind: ClassificationUnknown}
+	}
+	if class, ok := ContractAuth(method, path); ok {
+		return Classification{
+			Kind:              ClassificationContractAuth,
+			Public:            true,
+			ContractAuthClass: class,
+		}
+	}
+	for _, rule := range publicRules {
+		if rule.matches(method, path) {
+			ruleCopy := clonePublicRule(rule)
+			return Classification{Kind: ClassificationAnonymous, Public: true, Rule: &ruleCopy}
+		}
+	}
+	return Classification{Kind: ClassificationAuthRequired}
 }
 
 // ContractAuth returns handler-enforced contract auth requirements for routes
@@ -162,16 +522,74 @@ func ContractAuth(method, path string) (ContractAuthClass, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = normalizeContractPath(path)
 
-	switch method + " " + path {
-	case "POST /setup/admin":
-		return ContractAuthSetupBearer, true
-	case "POST /setup/finalize":
-		return ContractAuthBearerRequired, true
-	case "POST /api/v1/notifications/deliver":
-		return ContractAuthInternalOnly, true
-	default:
-		return "", false
+	for _, rule := range contractAuthRules {
+		if rule.Method == method && rule.Path == path {
+			return rule.Class, true
+		}
 	}
+	return "", false
+}
+
+func clonePublicRule(rule PublicRule) PublicRule {
+	rule.Methods = append([]string(nil), rule.Methods...)
+	rule.ExceptExactPaths = append([]string(nil), rule.ExceptExactPaths...)
+	rule.ExceptSuffixes = append([]string(nil), rule.ExceptSuffixes...)
+	rule.RequiredContains = append([]string(nil), rule.RequiredContains...)
+	return rule
+}
+
+func (rule PublicRule) matches(method, path string) bool {
+	if !rule.matchesMethod(method) {
+		return false
+	}
+
+	switch rule.Match {
+	case RuleMatchExact:
+		return path == rule.Path
+	case RuleMatchPrefix:
+		return strings.HasPrefix(path, rule.Path)
+	case RuleMatchStatusRead:
+		if !strings.HasPrefix(path, rule.Path) {
+			return false
+		}
+		for _, suffix := range rule.ExceptSuffixes {
+			if strings.HasSuffix(path, suffix) {
+				return false
+			}
+		}
+		return true
+	case RuleMatchAccountContent:
+		if !strings.HasPrefix(path, rule.Path) {
+			return false
+		}
+		for _, required := range rule.RequiredContains {
+			if strings.Contains(path, required) {
+				return true
+			}
+		}
+		return false
+	case RuleMatchSkills:
+		if path != rule.Path && !strings.HasPrefix(path, rule.Path+"/") {
+			return false
+		}
+		for _, excluded := range rule.ExceptExactPaths {
+			if path == excluded {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (rule PublicRule) matchesMethod(method string) bool {
+	for _, candidate := range rule.Methods {
+		if method == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeContractPath(path string) string {
