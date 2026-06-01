@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/auth/publicsurface"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +36,7 @@ type routeDef struct {
 	Lambda         string
 	Handler        string
 	Auth           authMode
+	HandlerAuth    authMode
 	RateLimited    bool
 	RequestSchema  string
 	ResponseSchema string
@@ -1041,6 +1043,7 @@ type routeAgg struct {
 	Handler     string
 	LambdaScore int
 	Auth        authMode
+	HandlerAuth authMode
 	AuthScore   int
 	RateLimited bool
 	Sources     map[string]struct{}
@@ -1104,6 +1107,7 @@ func addRouteAgg(routesByKey map[string]*routeAgg, r routeDef, source string) {
 	lambda := strings.TrimSpace(r.Lambda)
 	handler := strings.TrimSpace(r.Handler)
 	auth := r.Auth
+	handlerAuth := r.HandlerAuth
 	rateLimited := r.RateLimited
 
 	if method == "" || path == "" {
@@ -1123,6 +1127,7 @@ func addRouteAgg(routesByKey map[string]*routeAgg, r routeDef, source string) {
 			Handler:     handler,
 			LambdaScore: lambdaPriority(lambda),
 			Auth:        auth,
+			HandlerAuth: handlerAuth,
 			AuthScore:   authPriority(auth),
 			RateLimited: rateLimited,
 			Sources:     map[string]struct{}{},
@@ -1140,6 +1145,7 @@ func addRouteAgg(routesByKey map[string]*routeAgg, r routeDef, source string) {
 			entry.Handler = handler
 		}
 		entry.Auth = auth
+		entry.HandlerAuth = handlerAuth
 		entry.AuthScore = authPriority(auth)
 		entry.RateLimited = rateLimited
 	}
@@ -1149,6 +1155,9 @@ func addRouteAgg(routesByKey map[string]*routeAgg, r routeDef, source string) {
 	if score := authPriority(auth); score > entry.AuthScore {
 		entry.Auth = auth
 		entry.AuthScore = score
+	}
+	if authPriority(handlerAuth) > authPriority(entry.HandlerAuth) {
+		entry.HandlerAuth = handlerAuth
 	}
 	if rateLimited {
 		entry.RateLimited = true
@@ -1170,6 +1179,7 @@ func finalizeRouteAgg(routesByKey map[string]*routeAgg) []routeDef {
 			Lambda:      strings.TrimSpace(entry.Lambda),
 			Handler:     strings.TrimSpace(entry.Handler),
 			Auth:        entry.Auth,
+			HandlerAuth: entry.HandlerAuth,
 			RateLimited: entry.RateLimited,
 			Sources:     sources,
 		})
@@ -1205,16 +1215,13 @@ func sanitizeRoutes(routes []routeDef) []routeDef {
 		r.Method = strings.ToUpper(strings.TrimSpace(r.Method))
 		r.Path = normalizePath(r.Path)
 		r.Lambda = strings.TrimSpace(r.Lambda)
-		if r.Auth == "" {
-			r.Auth = authModePublic
-		}
-		r.Auth = applyAuthOverrides(r.Method, r.Path, "", r.Lambda, r.Auth)
 		if r.Method == "" || r.Path == "" {
 			continue
 		}
 		if r.Method != methodGET && r.Method != methodPOST && r.Method != methodPUT && r.Method != methodPATCH && r.Method != methodDELETE {
 			continue
 		}
+		r.Auth = resolveContractAuthMode(r.Method, r.Path, r.Lambda, r.Auth, r.HandlerAuth)
 		out = append(out, r)
 	}
 	return out
@@ -1465,21 +1472,13 @@ func extractAPIRoutes(repoRoot string) ([]routeDef, error) {
 
 	var routes []routeDef
 	for _, meta := range metas {
-		auth := handlerAuth[meta.Handler]
-		if auth == "" {
-			auth = authModePublic
-		}
-		if authPriority(meta.RouteAuth) > authPriority(auth) {
-			auth = meta.RouteAuth
-		}
-		auth = applyAuthOverrides(meta.Method, meta.Path, meta.Handler, "api", auth)
-
 		routes = append(routes, routeDef{
 			Method:      meta.Method,
 			Path:        meta.Path,
 			Lambda:      lambdaAPI,
 			Handler:     meta.Handler,
-			Auth:        auth,
+			Auth:        meta.RouteAuth,
+			HandlerAuth: handlerAuth[meta.Handler],
 			RateLimited: meta.RateLimited,
 		})
 	}
@@ -2097,59 +2096,81 @@ func isRateLimitedHandler(expr ast.Expr) bool {
 	return ok && recv.Name == "ratelimit" && sel.Sel.Name == "ApplyRateLimit"
 }
 
-func applyAuthOverrides(method, path, handler, lambda string, current authMode) authMode {
+func resolveContractAuthMode(method, path, lambda string, routeGuard, handlerAuth authMode) authMode {
+	method = strings.ToUpper(strings.TrimSpace(method))
 	normPath := normalizePath(path)
+	lambda = strings.TrimSpace(lambda)
 
-	switch normPath {
-	case "/setup/admin":
-		return authModeSetupBearer
-	case "/setup/finalize":
-		return authModeBearerRequired
-	case pathTrustJWKS, pathTrustAttest, pathTrustAttestID:
-		// These trust-discovery reads are part of the explicit public surface.
-		// The shared proxy helper also backs authenticated trust write/read
-		// routes, so AST auth propagation would otherwise over-classify them.
-		return authModePublic
-	case pathApps:
-		// Public app registration may opportunistically attach an owner from a valid
-		// bearer token, but it is not an OAuth-protected route in the published contract.
-		return authModePublic
-	case pathAppsRotate:
-		return authModeBearerRequired
-	}
-
-	if strings.HasPrefix(normPath, "/api/v1/admin/") {
-		return authModeBearerRequired
-	}
-
-	if strings.HasPrefix(normPath, "/api/v1/auth/webauthn/register") ||
-		strings.HasPrefix(normPath, "/api/v1/auth/webauthn/credentials") {
-		return authModeBearerRequired
-	}
-
-	if lambda == lambdaSSE {
+	switch lambda {
+	case lambdaAPI:
+		return resolveAPIContractAuthMode(method, normPath, routeGuard, handlerAuth)
+	case lambdaSSE:
 		if normPath == pathStreamingRoot || normPath == pathStreamingHealth {
 			return authModePublic
 		}
 		return authModeBearerRequired
-	}
-
-	if lambda == lambdaGraphQL && strings.HasPrefix(normPath, pathGraphQL) {
-		return authModeBearerOptional
-	}
-
-	if strings.HasPrefix(normPath, "/auth/wallet/") {
-		switch normPath {
-		case "/auth/wallet/unlink/{address}", "/auth/wallet/list":
-			return authModeBearerRequired
-		case "/auth/wallet/link":
+	case lambdaGraphQL:
+		if strings.HasPrefix(normPath, pathGraphQL) {
 			return authModeBearerOptional
-		default:
+		}
+		return authModeBearerRequired
+	default:
+		if isActivityPubPublicLambda(lambda) {
 			return authModePublic
 		}
+		if routeGuard == authModeBearerRequired || routeGuard == authModeBearerOptional || routeGuard == authModeSetupBearer {
+			return routeGuard
+		}
+		return authModeBearerRequired
+	}
+}
+
+func resolveAPIContractAuthMode(method, path string, routeGuard, handlerAuth authMode) authMode {
+	if class, ok := publicsurface.ContractAuth(method, path); ok {
+		return authModeFromPublicSurfaceContract(class)
 	}
 
-	_ = method
-	_ = handler
-	return current
+	if method == methodPOST && path == pathApps {
+		// App registration accepts optional auth only to opportunistically attach
+		// an owner; the published Mastodon-compatible contract remains public.
+		return authModePublic
+	}
+
+	// Route-level required guards remain authoritative even when the API gateway
+	// public-surface gate is reachable; handlers such as status search enforce
+	// OAuth after the gate.
+	if routeGuard == authModeBearerRequired || routeGuard == authModeSetupBearer {
+		return routeGuard
+	}
+
+	if publicsurface.IsPublic(method, path) {
+		if routeGuard == authModeBearerOptional || handlerAuth == authModeBearerOptional {
+			return authModeBearerOptional
+		}
+		return authModePublic
+	}
+
+	// Fail closed: a guardless API route outside the publicsurface allowlist is
+	// bearer-required in the generated contract.
+	return authModeBearerRequired
+}
+
+func authModeFromPublicSurfaceContract(class publicsurface.ContractAuthClass) authMode {
+	switch class {
+	case publicsurface.ContractAuthSetupBearer:
+		return authModeSetupBearer
+	case publicsurface.ContractAuthBearerRequired, publicsurface.ContractAuthInternalOnly:
+		return authModeBearerRequired
+	default:
+		return authModeBearerRequired
+	}
+}
+
+func isActivityPubPublicLambda(lambda string) bool {
+	switch strings.TrimSpace(lambda) {
+	case "actor", "collections", "inbox", "objects", "outbox", "webfinger":
+		return true
+	default:
+		return false
+	}
 }

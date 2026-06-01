@@ -91,6 +91,129 @@ func TestExtractAPIRouteMetaInfersRouteMiddlewareAuth(t *testing.T) {
 	}
 }
 
+func TestResolveContractAuthModeUsesPublicSurfaceFailClosed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		lambda      string
+		routeGuard  authMode
+		handlerAuth authMode
+		want        authMode
+	}{
+		{
+			name:   "guardless api route outside public surface is bearer required",
+			method: methodGET,
+			path:   "/api/v1/agents",
+			lambda: lambdaAPI,
+			want:   authModeBearerRequired,
+		},
+		{
+			name:       "public route with optional guard is bearer optional",
+			method:     methodGET,
+			path:       "/api/v1/accounts/search",
+			lambda:     lambdaAPI,
+			routeGuard: authModeBearerOptional,
+			want:       authModeBearerOptional,
+		},
+		{
+			name:       "public route with required guard remains bearer required",
+			method:     methodGET,
+			path:       "/api/v1/search/statuses",
+			lambda:     lambdaAPI,
+			routeGuard: authModeBearerRequired,
+			want:       authModeBearerRequired,
+		},
+		{
+			name:   "normal public route remains public",
+			method: methodGET,
+			path:   "/api/v1/custom_emojis",
+			lambda: lambdaAPI,
+			want:   authModePublic,
+		},
+		{
+			name:        "public route with optional handler remains bearer optional",
+			method:      methodGET,
+			path:        "/api/v1/announcements",
+			lambda:      lambdaAPI,
+			handlerAuth: authModeBearerOptional,
+			want:        authModeBearerOptional,
+		},
+		{
+			name:       "app registration preserves public contract despite optional guard",
+			method:     methodPOST,
+			path:       "/api/v1/apps",
+			lambda:     lambdaAPI,
+			routeGuard: authModeBearerOptional,
+			want:       authModePublic,
+		},
+		{
+			name:   "setup admin uses setup bearer override",
+			method: methodPOST,
+			path:   "/setup/admin",
+			lambda: lambdaAPI,
+			want:   authModeSetupBearer,
+		},
+		{
+			name:   "setup finalize preserves oauth bearer override",
+			method: methodPOST,
+			path:   "/setup/finalize",
+			lambda: lambdaAPI,
+			want:   authModeBearerRequired,
+		},
+		{
+			name:   "internal notification delivery is bearer required",
+			method: methodPOST,
+			path:   "/api/v1/notifications/deliver",
+			lambda: lambdaAPI,
+			want:   authModeBearerRequired,
+		},
+		{
+			name:   "streaming health remains public",
+			method: methodGET,
+			path:   "/api/v1/streaming/health",
+			lambda: lambdaSSE,
+			want:   authModePublic,
+		},
+		{
+			name:   "streaming user endpoint remains bearer required",
+			method: methodGET,
+			path:   "/api/v1/streaming/user",
+			lambda: lambdaSSE,
+			want:   authModeBearerRequired,
+		},
+		{
+			name:   "graphql remains bearer optional",
+			method: methodPOST,
+			path:   "/api/graphql",
+			lambda: lambdaGraphQL,
+			want:   authModeBearerOptional,
+		},
+		{
+			name:   "activitypub actor route remains public",
+			method: methodGET,
+			path:   "/users/{username}",
+			lambda: "actor",
+			want:   authModePublic,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := resolveContractAuthMode(tc.method, tc.path, tc.lambda, tc.routeGuard, tc.handlerAuth)
+			if got != tc.want {
+				t.Fatalf("resolveContractAuthMode(%s %s, %s, %s, %s) = %q, want %q",
+					tc.method, tc.path, tc.lambda, tc.routeGuard, tc.handlerAuth, got, tc.want)
+			}
+		})
+	}
+}
+
 func parseAPIRouteMetaForTest(t *testing.T, src string) apiRouteMeta {
 	t.Helper()
 

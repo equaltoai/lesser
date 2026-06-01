@@ -9573,6 +9573,8 @@ paths:
             operationId: get_api_v1_accounts_by_id_quote_permissions
             tags:
                 - accounts
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -9588,6 +9590,10 @@ paths:
                                 $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -9596,6 +9602,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:accounts
     /api/v1/accounts/{id}/statuses:
         get:
             operationId: get_api_v1_accounts_by_id_statuses
@@ -9903,6 +9911,7 @@ paths:
             tags:
                 - accounts
             security:
+                - {}
                 - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
@@ -12349,6 +12358,8 @@ paths:
             operationId: get_api_v1_agents
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -12358,17 +12369,27 @@ paths:
                                 $ref: '#/components/schemas/AgentList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleListAgentsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
     /api/v1/agents/{username}:
         get:
             operationId: get_api_v1_agents_by_username
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12384,6 +12405,10 @@ paths:
                                 $ref: '#/components/schemas/Agent'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -12392,6 +12417,10 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
         patch:
             operationId: patch_api_v1_agents_by_username
             tags:
@@ -12565,6 +12594,8 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_renew_challenge
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12585,6 +12616,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12595,6 +12630,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/revoke:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_revoke
@@ -12652,6 +12689,8 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12677,6 +12716,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLease'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12687,11 +12730,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key_challenge
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12717,6 +12764,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12727,11 +12778,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/token:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_token
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12757,6 +12812,10 @@ paths:
                                 $ref: '#/components/schemas/AgentAccessLeaseTokenResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12767,6 +12826,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/{username}/access-leases/challenge/agent:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_challenge_agent
@@ -13110,6 +13171,8 @@ paths:
             operationId: post_api_v1_agents_auth_challenge
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13124,6 +13187,10 @@ paths:
                                 $ref: '#/components/schemas/AgentKeyChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
@@ -13132,11 +13199,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/auth/token:
         post:
             operationId: post_api_v1_agents_auth_token
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13151,6 +13222,10 @@ paths:
                                 $ref: '#/components/schemas/OAuthTokenResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
@@ -13159,6 +13234,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/delegate:
         post:
             operationId: post_api_v1_agents_delegate
@@ -13267,6 +13344,8 @@ paths:
             description: Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13281,6 +13360,8 @@ paths:
                                 $ref: '#/components/schemas/AgentSelfRegistrationResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
                 "422":
@@ -13292,12 +13373,16 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/agents/register/challenge:
         post:
             operationId: post_api_v1_agents_register_challenge
             description: Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13312,6 +13397,8 @@ paths:
                                 $ref: '#/components/schemas/AgentKeyChallengeResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
                 "422":
@@ -13323,6 +13410,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements
@@ -16091,6 +16180,8 @@ paths:
             operationId: post_api_v1_notifications_deliver
             tags:
                 - notifications
+            security:
+                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -16103,6 +16194,10 @@ paths:
                     description: No Content
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
@@ -16111,6 +16206,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - write:notifications
     /api/v1/preferences:
         get:
             operationId: get_api_v1_preferences
@@ -19583,6 +19680,8 @@ paths:
             operationId: get_api_v1_vouches_by_actor_id
             tags:
                 - vouches
+            security:
+                - bearerAuth: []
             parameters:
                 - name: actor_id
                   in: path
@@ -19610,6 +19709,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/vouches/{vouch_id}:
         delete:
             operationId: delete_api_v1_vouches_by_vouch_id
@@ -20715,11 +20816,17 @@ paths:
             operationId: get_health_detailed
             tags:
                 - health
+            security:
+                - bearerAuth: []
             responses:
                 "200":
                     description: OK
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
                 "503":
@@ -20727,6 +20834,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/main.go
+            x-oauth-scopes:
+                - read
     /health/live:
         get:
             operationId: get_health_live

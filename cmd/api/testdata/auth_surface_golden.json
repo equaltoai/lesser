@@ -80,8 +80,8 @@
     "method": "GET",
     "path": "/api/v1/accounts/search",
     "runtimePosture": "anonymous",
-    "openapiSecurity": "required",
-    "verdict": "overMark"
+    "openapiSecurity": "optional",
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -150,8 +150,8 @@
     "method": "GET",
     "path": "/api/v1/accounts/{id}/quote_permissions",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -612,22 +612,22 @@
     "method": "GET",
     "path": "/api/v1/agents",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/auth/challenge",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/auth/token",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
@@ -654,15 +654,15 @@
     "method": "POST",
     "path": "/api/v1/agents/register",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/register/challenge",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "DELETE",
@@ -675,8 +675,8 @@
     "method": "GET",
     "path": "/api/v1/agents/{username}",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "PATCH",
@@ -717,8 +717,8 @@
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
@@ -731,22 +731,22 @@
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/token",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -1291,7 +1291,7 @@
     "method": "POST",
     "path": "/api/v1/notifications/deliver",
     "runtimePosture": "anonymous",
-    "openapiSecurity": "public",
+    "openapiSecurity": "required",
     "verdict": "failOpen"
   },
   {
@@ -1949,8 +1949,8 @@
     "method": "GET",
     "path": "/api/v1/vouches/{actor_id}",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "DELETE",
@@ -2173,8 +2173,8 @@
     "method": "GET",
     "path": "/health/detailed",
     "runtimePosture": "auth-required",
-    "openapiSecurity": "public",
-    "verdict": "underMark"
+    "openapiSecurity": "required",
+    "verdict": "agree"
   },
   {
     "method": "GET",

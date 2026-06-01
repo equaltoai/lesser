@@ -1,139 +1,27 @@
 [
   {
-    "method": "GET",
-    "path": "/api/v1/accounts/search",
-    "verdict": "overMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI marks bearer required, but runtime gate allows anonymous optional-auth account search; current-main discrepancy from brief baseline."
-  },
-  {
     "method": "POST",
     "path": "/setup/admin",
     "verdict": "overMark",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "Allowlist-public setup POST has no route guard while OpenAPI requires setupBearer; handler-defended bootstrap flow; fail-closed verification deferred to P1/P2."
+    "expiry": "handler-enforced; gate backstop deferred",
+    "note": "Allowlist-public setup POST is handler-defended by setup-session bearer; OpenAPI intentionally advertises setupBearer so clients do not treat admin creation as anonymous."
   },
   {
     "method": "POST",
     "path": "/setup/finalize",
     "verdict": "overMark",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "Allowlist-public setup POST has no route guard while OpenAPI requires bearerAuth; handler-defended bootstrap flow; fail-closed verification deferred to P1/P2."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/accounts/{id}/quote_permissions",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/agents",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/auth/challenge",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/auth/token",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/register",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/register/challenge",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/agents/{username}",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/token",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/vouches/{actor_id}",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/health/detailed",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
+    "expiry": "handler-enforced; gate backstop deferred",
+    "note": "Allowlist-public setup POST is handler-defended by OAuth bearer/write-scope admin checks; OpenAPI intentionally advertises bearerAuth while gate-level backstop remains out of scope."
   },
   {
     "method": "POST",
     "path": "/api/v1/notifications/deliver",
     "verdict": "failOpen",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "handler-defended; gate-level backstop deferred to P1. Handler enforces instance API-key bearer and returns 503 if no keys are configured."
+    "expiry": "handler-enforced; gate backstop deferred",
+    "note": "Handler-enforced internal delivery route remains gate-reachable for instance-key bearer validation; OpenAPI intentionally advertises bearerAuth via publicsurface ContractAuth override."
   },
   {
     "method": "DOC",
