@@ -1,0 +1,2298 @@
+[
+  {
+    "method": "GET",
+    "path": "/",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "HEAD",
+    "path": "/",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/.well-known/lesser-soul-agent",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/.well-known/nodeinfo",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/.well-known/oauth-authorization-server",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/.well-known/reputation-keys",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/.well-known/webfinger",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/oembed",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/accounts/quote_permissions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/relationships",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/search",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "required",
+    "verdict": "overMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/search/suggestions",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/accounts/update_credentials",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/verify_credentials",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/block",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/follow",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}/followers",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}/following",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/mute",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}/notes",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}/quote_permissions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}/statuses",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/unblock",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/unfollow",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/{id}/unmute",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/accounts",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/accounts/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/action",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/approve",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/enable",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/reject",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/unsensitive",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/unsilence",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/accounts/{id}/unsuspend",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/agents/policy",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/agents/policy",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/agents/{username}/unlock",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/agents/{username}/unverify",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/agents/{username}/verify",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/announcements",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/custom_emojis",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/custom_emojis/{shortcode}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/custom_emojis/{shortcode}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/domain_allows",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/domain_allows",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/domain_allows/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/domain_blocks/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/domain_blocks/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/domain_blocks/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/email_domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/email_domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/email_domain_blocks/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/federation/instance/{domain}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/federation/instances",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/federation/statistics",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/moderation/events",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/moderation/events/{id}/override",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/moderation/overview",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/moderation/reviewers",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/moderation/reviewers/{id}/demote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/moderation/reviewers/{id}/promote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/moderation/trust/graph",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/moderation/trust/{from}/{to}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/reports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/reports/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/reports/{id}/assign_to_self",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/reports/{id}/reopen",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/reports/{id}/resolve",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/reports/{id}/unassign",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/skills/proposals",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/skills/proposals/{proposalId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/skills/{skillId}/assignments",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/skills/{skillId}/assignments",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/soul/well-known",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/statuses/{id}/sensitive",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/statuses/{id}/unsensitive",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/auth/challenge",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/auth/token",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/delegate",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/memory/search",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/memory/search",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/register",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/register/challenge",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/agents/{username}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/{username}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/agents/{username}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/{username}/access-leases",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/challenge/agent",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/challenge/principal",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/revoke",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/access-leases/{leaseID}/token",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/{username}/activity",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/rotate-key",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/rotate-key/challenge",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/{username}/runtime-sessions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/agents/{username}/suspend",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/announcements",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/announcements/{id}/dismiss",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/announcements/{id}/reactions/{name}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/announcements/{id}/reactions/{name}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/apps",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/apps/{id}/rotate_secret",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/webauthn/credentials",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/auth/webauthn/credentials/{credentialId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/auth/webauthn/credentials/{credentialId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/login/begin",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/login/finish",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/register/begin",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/register/finish",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bookmarks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/conversations",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/conversations/lookup",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/conversations/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/conversations/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/conversations/{id}/read",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/custom_emojis",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/directory",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/domain_blocks",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/endorsements",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/exports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/exports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/exports/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/exports/{id}/download",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/favourites",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/follow_requests",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/follow_requests/{account_id}/authorize",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/follow_requests/{account_id}/reject",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/imports/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance/activity",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance/domain_blocks",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance/metrics/daily",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance/peers",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/instance/translation_languages",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/lists",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/lists",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/lists/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/lists/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/lists/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/lists/{id}/accounts",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/lists/{id}/accounts",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/lists/{id}/accounts",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/markers",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/markers",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/media",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/media/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/moderation/consensus/{event_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/moderation/flag",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/moderation/history/{object_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/moderation/queue",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/moderation/review",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/moderation/trust",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/moderation/trust",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/moderation/trust/{actor_id}/score",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/mutes",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notes",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notes/{id}/vote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notes/{object_id}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notifications/clear",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notifications/deliver",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "failOpen"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notifications/{id}/dismiss",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/preferences",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/preferences",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/push/subscription",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/push/subscription",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/push/subscription",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/push/subscription",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reports",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reputation/export",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reputation/import",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reputation/verify",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reputation/{actor_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/scheduled_statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/scheduled_statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/scheduled_statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/scheduled_statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/search/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/search/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/catalog",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/resolve",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/{skillId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/{skillId}/revisions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "optional",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/bound/me",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/bound/me/mint-conversations",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/bound/me/mint-conversations/{conversationId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/mine",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/souls/{agentId}/incorporate",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/statuses/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/bookmark",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/context",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/favourite",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/favourited_by",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/history",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/mute",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/pin",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/quote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/statuses/{id}/quote/{quote_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/quotes",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/reblog",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/reblogged_by",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/statuses/{id}/source",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/translate",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/unbookmark",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/unfavourite",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/unmute",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/unpin",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/statuses/{id}/unreblog",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/direct",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/hashtag",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/hashtag/local",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/health",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/list",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/oauth/device",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/public",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/public/local",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/public/remote",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/user",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/streaming/user/notification",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/suggestions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/suggestions/{account_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/direct",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/home",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/link",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/list/{list_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/public",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timelines/tag/{hashtag}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trends",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trends/links",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trends/statuses",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trends/tags",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/trust/ai/claims/verify",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/ai/jobs/{jobId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/attestations",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/attestations/{id}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/jwks.json",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/trust/previews",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/previews/images/{imageId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/previews/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/trust/publish/jobs",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/publish/jobs/{jobId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/trust/renders",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/renders/{renderId}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/renders/{renderId}/snapshot",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/trust/renders/{renderId}/thumbnail",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/vouches",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/vouches/{actor_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/vouches/{vouch_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/filters",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/filters",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/filters/test",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/filters/{filter_id}/keywords",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/filters/{filter_id}/keywords",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/filters/{filter_id}/keywords/{keyword_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/filters/{filter_id}/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/filters/{filter_id}/statuses",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/filters/{filter_id}/statuses/{status_id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/filters/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/filters/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/filters/{id}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/instance",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/notifications/grouped",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/notifications/groups/{group_id}/read",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/search",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/suggestions",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/trends",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/trends/links",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/trends/statuses",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/trends/tags",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/device",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/auth/wallet/challenge",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/auth/wallet/link",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/wallet/list",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/auth/wallet/login",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/auth/wallet/unlink/{address}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/auth/wallet/verify",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/embed/{id}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/health/detailed",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/health/live",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/health/ready",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "GET",
+    "path": "/nodeinfo/2.0",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/oauth/authorize",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/consent",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/device/code",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/device/consent",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/device/verify",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "public",
+    "verdict": "underMark"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/register",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/revoke",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/oauth/token",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/robots.txt",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/setup/admin",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "required",
+    "verdict": "overMark"
+  },
+  {
+    "method": "POST",
+    "path": "/setup/bootstrap/challenge",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/setup/bootstrap/verify",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/setup/finalize",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "required",
+    "verdict": "overMark"
+  },
+  {
+    "method": "GET",
+    "path": "/setup/status",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  }
+]
