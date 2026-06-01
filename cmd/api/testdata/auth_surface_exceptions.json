@@ -113,78 +113,6 @@
   },
   {
     "method": "GET",
-    "path": "/api/v1/announcements",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/custom_emojis",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/directory",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills/catalog",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills/{skillId}",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills/{skillId}/revisions",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
     "path": "/api/v1/vouches/{actor_id}",
     "verdict": "underMark",
     "owner": "lesser-auth-surface-ssot",
@@ -193,55 +121,7 @@
   },
   {
     "method": "GET",
-    "path": "/auth/device",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/health",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
     "path": "/health/detailed",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/health/live",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "GET",
-    "path": "/health/ready",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/oauth/device/code",
-    "verdict": "underMark",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1",
-    "note": "OpenAPI advertises public/optional, but apiRequestIsPublic default-deny gate denies anonymous requests before the guardless/optional route can serve them."
-  },
-  {
-    "method": "POST",
-    "path": "/oauth/device/verify",
     "verdict": "underMark",
     "owner": "lesser-auth-surface-ssot",
     "expiry": "resolves-in-P1",

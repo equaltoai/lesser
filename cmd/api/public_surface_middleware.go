@@ -57,9 +57,16 @@ func apiRequestIsPublic(method, path string) bool {
 			"/.well-known/lesser-soul-agent",
 			"/nodeinfo/2.0",
 			"/.well-known/reputation-keys",
+			"/health",
+			"/health/live",
+			"/health/ready",
+			"/auth/device",
 			"/api/oembed",
 			"/api/v1/instance",
 			"/api/v2/instance",
+			"/api/v1/custom_emojis",
+			"/api/v1/directory",
+			"/api/v1/announcements",
 			"/api/v1/timelines/public",
 			"/api/v1/timelines/link",
 			"/api/v2/search",
@@ -111,6 +118,10 @@ func apiRequestIsPublic(method, path string) bool {
 			return true
 		}
 
+		if path == "/api/v1/skills" || strings.HasPrefix(path, "/api/v1/skills/") {
+			return path != "/api/v1/skills/resolve"
+		}
+
 		if strings.HasPrefix(path, "/api/v1/search/statuses") {
 			return true
 		}
@@ -130,6 +141,8 @@ func apiRequestIsPublic(method, path string) bool {
 			"/oauth/token",
 			"/oauth/revoke",
 			"/oauth/consent",
+			"/oauth/device/code",
+			"/oauth/device/verify",
 			"/setup/bootstrap/challenge",
 			"/setup/bootstrap/verify",
 			"/setup/admin",
