@@ -8,6 +8,20 @@ import (
 
 const apiV1AppsPath = "/api/v1/apps"
 
+// ContractAuthClass describes auth requirements that are enforced outside the
+// API gateway public-surface middleware but still need to be reflected in the
+// generated public contract.
+type ContractAuthClass string
+
+const (
+	// ContractAuthSetupBearer uses the temporary setup-session bearer token.
+	ContractAuthSetupBearer ContractAuthClass = "setup_bearer"
+	// ContractAuthBearerRequired uses the normal OAuth bearer-token posture.
+	ContractAuthBearerRequired ContractAuthClass = "bearer_required"
+	// ContractAuthInternalOnly is handler-enforced with internal instance keys.
+	ContractAuthInternalOnly ContractAuthClass = "internal_only"
+)
+
 // IsPublic reports whether the normalized method/path pair is in Lesser's
 // explicitly allowlisted anonymous API surface.
 //
@@ -136,4 +150,43 @@ func IsPublic(method, path string) bool {
 	default:
 		return false
 	}
+}
+
+// ContractAuth returns handler-enforced contract auth requirements for routes
+// that remain gate-reachable through IsPublic but must not be advertised as
+// anonymous in the generated OpenAPI contract.
+//
+// This is additive contract metadata only. It intentionally does not change
+// IsPublic's gate decision.
+func ContractAuth(method, path string) (ContractAuthClass, bool) {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = normalizeContractPath(path)
+
+	switch method + " " + path {
+	case "POST /setup/admin":
+		return ContractAuthSetupBearer, true
+	case "POST /setup/finalize":
+		return ContractAuthBearerRequired, true
+	case "POST /api/v1/notifications/deliver":
+		return ContractAuthInternalOnly, true
+	default:
+		return "", false
+	}
+}
+
+func normalizeContractPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	for strings.Contains(path, "//") {
+		path = strings.ReplaceAll(path, "//", "/")
+	}
+	if len(path) > 1 {
+		path = strings.TrimSuffix(path, "/")
+	}
+	return path
 }
