@@ -1,0 +1,26 @@
+[
+  {
+    "method": "POST",
+    "path": "/setup/admin",
+    "verdict": "overMark",
+    "owner": "lesser-auth-surface-ssot",
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by setup-session bearer; gate-level backstop deferred as optional defense-in-depth."
+  },
+  {
+    "method": "POST",
+    "path": "/setup/finalize",
+    "verdict": "overMark",
+    "owner": "lesser-auth-surface-ssot",
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by OAuth bearer/write-scope admin checks; gate-level backstop deferred as optional defense-in-depth."
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notifications/deliver",
+    "verdict": "failOpen",
+    "owner": "lesser-auth-surface-ssot",
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by internal instance-key bearer validation; gate-level backstop deferred as optional defense-in-depth."
+  }
+]

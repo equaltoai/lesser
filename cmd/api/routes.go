@@ -406,7 +406,8 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/souls/{agentId}/incorporate", apiHandler.HandleIncorporateSoulLift, requireWrite)
 
 	// lesser-host trust proxy (managed instances)
-	// Requires user auth for all JSON endpoints; public media endpoints do not require auth.
+	// Requires user auth for JSON endpoints and trust media reads
+	// (previews/images, renders/thumbnail, renders/snapshot).
 	app.Post("/api/v1/trust/previews", apiHandler.HandleTrustCreateLinkPreviewLift, requireAuth)
 	app.Get("/api/v1/trust/previews/{id}", apiHandler.HandleTrustGetLinkPreviewLift, requireAuth)
 	app.Get("/api/v1/trust/previews/images/{imageId}", apiHandler.HandleTrustGetLinkPreviewImageLift)
