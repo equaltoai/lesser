@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/auth/publicsurface"
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,7 +100,8 @@ type authSurfaceOpenAPIOperation struct {
 
 func TestAuthSurfaceReconciliationGolden(t *testing.T) {
 	repoRoot := authSurfaceRepoRoot(t)
-	actual := authSurfaceClassifyCurrent(t, repoRoot)
+	routes := enumerateAuthSurfaceRoutes(t, repoRoot)
+	actual := authSurfaceClassifyRoutes(t, repoRoot, routes)
 
 	if *updateAuthSurfaceGolden {
 		writeAuthSurfaceGolden(t, filepath.Join(repoRoot, authSurfaceGoldenRelPath), actual)
@@ -107,6 +109,9 @@ func TestAuthSurfaceReconciliationGolden(t *testing.T) {
 	}
 
 	golden := readAuthSurfaceGolden(t, filepath.Join(repoRoot, authSurfaceGoldenRelPath))
+	if failures := validateAuthSurfaceRouteCoverage(routes, golden); len(failures) > 0 {
+		t.Fatalf("auth surface route coverage drift:\n%s", strings.Join(failures, "\n"))
+	}
 	if failures := compareAuthSurfaceSnapshots(golden, actual); len(failures) > 0 {
 		t.Fatalf("auth surface golden drift:\n%s", strings.Join(failures, "\n"))
 	}
@@ -141,10 +146,13 @@ func TestAuthSurfaceReconcilerDetectsSyntheticDrift(t *testing.T) {
 	}
 }
 
-func authSurfaceClassifyCurrent(t *testing.T, repoRoot string) []authSurfaceSnapshotEntry {
+func authSurfaceClassifyRoutes(
+	t *testing.T,
+	repoRoot string,
+	routes []authSurfaceRoute,
+) []authSurfaceSnapshotEntry {
 	t.Helper()
 
-	routes := enumerateAuthSurfaceRoutes(t, repoRoot)
 	operations := readAuthSurfaceOpenAPIOperations(t, repoRoot)
 
 	snapshots := make([]authSurfaceSnapshotEntry, 0, len(routes))
@@ -572,6 +580,48 @@ var authSurfaceExpectedPublicMutations = map[string]bool{
 	"POST /setup/finalize":                    true,
 }
 
+func validateAuthSurfaceRouteCoverage(
+	routes []authSurfaceRoute,
+	golden []authSurfaceSnapshotEntry,
+) []string {
+	goldenByRoute := authSurfaceSnapshotMap(golden)
+	routesByKey := make(map[string]authSurfaceRoute, len(routes))
+	var failures []string
+
+	for _, route := range routes {
+		key := authSurfaceRouteKey(route.Method, route.Path)
+		routesByKey[key] = route
+		if _, ok := goldenByRoute[key]; !ok {
+			failures = append(failures, fmt.Sprintf("registered route %s from %s is missing from the golden snapshot", key, route.Source))
+		}
+
+		classification := publicsurface.Classify(route.Method, route.Path)
+		if classification.Kind == publicsurface.ClassificationUnknown {
+			failures = append(failures, fmt.Sprintf("registered route %s from %s did not resolve through publicsurface", key, route.Source))
+			continue
+		}
+		if route.Lambda == "api" {
+			gatePublic := apiRequestIsPublic(route.Method, route.Path)
+			if gatePublic != classification.Public {
+				failures = append(failures, fmt.Sprintf(
+					"api route %s publicsurface/gate mismatch: classify public=%t gate public=%t",
+					key,
+					classification.Public,
+					gatePublic,
+				))
+			}
+		}
+	}
+
+	for key := range goldenByRoute {
+		if _, ok := routesByKey[key]; !ok {
+			failures = append(failures, fmt.Sprintf("golden route %s is no longer registered", key))
+		}
+	}
+	sort.Strings(failures)
+	return failures
+}
+
 func compareAuthSurfaceSnapshots(
 	golden []authSurfaceSnapshotEntry,
 	actual []authSurfaceSnapshotEntry,
@@ -616,15 +666,20 @@ func validateAuthSurfaceExceptions(
 ) []string {
 	actualByRoute := authSurfaceSnapshotMap(actual)
 	exceptionsByRoute := map[string]authSurfaceException{}
-	docDriftCount := 0
+	docDriftExceptions := map[string]authSurfaceException{}
 	var failures []string
 
 	for _, exception := range exceptions {
+		key := authSurfaceRouteKey(exception.Method, exception.Path)
+		failures = append(failures, validateAuthSurfaceExceptionMetadata(key, exception)...)
 		if exception.Verdict == authSurfaceVerdictDocDrift {
-			docDriftCount++
+			if _, ok := docDriftExceptions[key]; ok {
+				failures = append(failures, fmt.Sprintf("duplicate docDrift exception for %s", key))
+				continue
+			}
+			docDriftExceptions[key] = exception
 			continue
 		}
-		key := authSurfaceRouteKey(exception.Method, exception.Path)
 		if _, ok := exceptionsByRoute[key]; ok {
 			failures = append(failures, fmt.Sprintf("duplicate exception for %s", key))
 			continue
@@ -654,10 +709,24 @@ func validateAuthSurfaceExceptions(
 			failures = append(failures, fmt.Sprintf("non-agree route %s lacks an exception", key))
 		}
 	}
-	if docDriftCount != 6 {
-		failures = append(failures, fmt.Sprintf("expected 6 informational docDrift exceptions, got %d", docDriftCount))
-	}
 	sort.Strings(failures)
+	return failures
+}
+
+func validateAuthSurfaceExceptionMetadata(
+	key string,
+	exception authSurfaceException,
+) []string {
+	var failures []string
+	if strings.TrimSpace(exception.Owner) == "" {
+		failures = append(failures, fmt.Sprintf("exception %s is missing owner", key))
+	}
+	if strings.TrimSpace(exception.Expiry) == "" {
+		failures = append(failures, fmt.Sprintf("exception %s is missing expiry", key))
+	}
+	if strings.TrimSpace(exception.Note) == "" {
+		failures = append(failures, fmt.Sprintf("exception %s is missing note", key))
+	}
 	return failures
 }
 

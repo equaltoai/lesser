@@ -4,71 +4,23 @@
     "path": "/setup/admin",
     "verdict": "overMark",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "handler-enforced; gate backstop deferred",
-    "note": "Allowlist-public setup POST is handler-defended by setup-session bearer; OpenAPI intentionally advertises setupBearer so clients do not treat admin creation as anonymous."
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by setup-session bearer; gate-level backstop deferred as optional defense-in-depth."
   },
   {
     "method": "POST",
     "path": "/setup/finalize",
     "verdict": "overMark",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "handler-enforced; gate backstop deferred",
-    "note": "Allowlist-public setup POST is handler-defended by OAuth bearer/write-scope admin checks; OpenAPI intentionally advertises bearerAuth while gate-level backstop remains out of scope."
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by OAuth bearer/write-scope admin checks; gate-level backstop deferred as optional defense-in-depth."
   },
   {
     "method": "POST",
     "path": "/api/v1/notifications/deliver",
     "verdict": "failOpen",
     "owner": "lesser-auth-surface-ssot",
-    "expiry": "handler-enforced; gate backstop deferred",
-    "note": "Handler-enforced internal delivery route remains gate-reachable for instance-key bearer validation; OpenAPI intentionally advertises bearerAuth via publicsurface ContractAuth override."
-  },
-  {
-    "method": "DOC",
-    "path": "docs/security-public-surface.md#accounts-search-shadow",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "Brief baseline records accounts/search allowlist prose/code drift; current main resolves this as route-level GET /api/v1/accounts/search overMark rather than suggestions underMark."
-  },
-  {
-    "method": "DOC",
-    "path": "cmd/api/public_surface_middleware.go#search-statuses-duplicate",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "/api/v1/search/statuses is public-surface duplicated by GET prefix and POST exact allowlist while routes require read scope."
-  },
-  {
-    "method": "DOC",
-    "path": "cmd/api/routes.go#admin-requireauth-rbac",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "Admin routes use bare requireAuth at the route layer while RBAC is enforced in-handler by requireAdminLift; SSOT manifest should make this explicit."
-  },
-  {
-    "method": "DOC",
-    "path": "docs/security-public-surface.md#three-source-public-split",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "Public posture is split across generator inference, apiRequestIsPublic, and prose docs instead of one manifest."
-  },
-  {
-    "method": "DOC",
-    "path": "cmd/api/health.go#dead-register-health-routes",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "health.go RegisterHealthRoutes is not wired; cmd/api/main.go configureHealthRoutes registers the live health endpoints."
-  },
-  {
-    "method": "DOC",
-    "path": "docs/security-public-surface.md#trust-proxy-hand-maintained",
-    "verdict": "docDrift",
-    "owner": "lesser-auth-surface-ssot",
-    "expiry": "resolves-in-P1/P2",
-    "note": "lesser.host trust proxy public surface is agreed only by hand-maintained mechanisms; latent drift risk until manifest SSOT."
+    "expiry": "2026-09-01",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by internal instance-key bearer validation; gate-level backstop deferred as optional defense-in-depth."
   }
 ]
