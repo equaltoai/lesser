@@ -793,9 +793,9 @@
   {
     "method": "GET",
     "path": "/api/v1/announcements",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "POST",
@@ -933,16 +933,16 @@
   {
     "method": "GET",
     "path": "/api/v1/custom_emojis",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/api/v1/directory",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "DELETE",
@@ -1430,16 +1430,16 @@
   {
     "method": "GET",
     "path": "/api/v1/skills",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/api/v1/skills/catalog",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -1451,30 +1451,30 @@
   {
     "method": "GET",
     "path": "/api/v1/skills/{skillId}",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/api/v1/skills/{skillId}/revisions",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "optional",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -2109,9 +2109,9 @@
   {
     "method": "GET",
     "path": "/auth/device",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "POST",
@@ -2165,9 +2165,9 @@
   {
     "method": "GET",
     "path": "/health",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -2179,16 +2179,16 @@
   {
     "method": "GET",
     "path": "/health/live",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
     "path": "/health/ready",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -2214,9 +2214,9 @@
   {
     "method": "POST",
     "path": "/oauth/device/code",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "POST",
@@ -2228,9 +2228,9 @@
   {
     "method": "POST",
     "path": "/oauth/device/verify",
-    "runtimePosture": "auth-required",
+    "runtimePosture": "anonymous",
     "openapiSecurity": "public",
-    "verdict": "underMark"
+    "verdict": "agree"
   },
   {
     "method": "POST",
