@@ -173,6 +173,7 @@ func (r *Resolver) buildDroneWorkflowSurface(
 	continuityModel := graphDroneContinuityPanelModel(workflowState)
 	lifecycleModel := graphDroneLifecycleModels(workflowState)
 	conversationModel := r.graphDroneConversationModel(ctx, viewerUsername, workflowState, agentUser)
+	bootstrapModel := graphSoulBootstrapStateModel(workflowState, agentUser, binding)
 
 	currentPhase := workflow.DroneWorkflowPhaseRequest
 	currentState := workflow.DroneWorkflowStateRequestDraft
@@ -204,6 +205,7 @@ func (r *Resolver) buildDroneWorkflowSurface(
 		Continuity:        continuityModel,
 		Lifecycle:         lifecycleModel,
 		Conversation:      conversationModel,
+		SoulBootstrap:     bootstrapModel,
 		IdentitySemantics: identityModel,
 	}, identityModel, nil
 }
