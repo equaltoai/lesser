@@ -99,3 +99,39 @@ func TestSoulBootstrapDefaultAndUnavailableState(t *testing.T) {
 	require.Equal(t, "begin-2", unavailable.Correlation.BeginIdempotencyKey)
 	require.Equal(t, now, *unavailable.UpdatedAt)
 }
+
+func TestSoulBootstrapErrorStateAndCheckpointMetadata(t *testing.T) {
+	now := time.Date(2026, 6, 12, 17, 0, 0, 0, time.UTC)
+	state := NewSoulBootstrapErrorState(
+		"drone-gamma",
+		&SoulBootstrapCorrelationState{CorrelationKey: " corr-3 "},
+		SoulBootstrapErrorHostInstanceKeyMissing,
+		" missing key ",
+		" lesser ",
+		0,
+		" host-req ",
+		now,
+	)
+	require.Equal(t, SoulBootstrapPhaseError, state.Phase)
+	require.Equal(t, SoulBootstrapStateHostInstanceKeyMissing, state.State)
+	require.Equal(t, SoulBootstrapErrorHostInstanceKeyMissing, state.Error.Code)
+	require.Equal(t, "missing key", state.Error.Message)
+	require.Equal(t, "lesser", state.Error.Source)
+	require.Equal(t, "host-req", state.Error.HostRequestID)
+	require.Equal(t, "corr-3", state.Correlation.CorrelationKey)
+
+	normalized := NormalizeSoulBootstrap(&SoulBootstrapState{
+		Username: "drone-gamma",
+		SigningCheckpoints: []SoulBootstrapSigningCheckpoint{{
+			Version:         " 1 ",
+			Name:            " wallet ",
+			MessageEncoding: " utf8 ",
+			Message:         " sign me ",
+		}},
+	}, "")
+	require.Len(t, normalized.SigningCheckpoints, 1)
+	require.Equal(t, "1", normalized.SigningCheckpoints[0].Version)
+	require.Equal(t, "wallet", normalized.SigningCheckpoints[0].Name)
+	require.Equal(t, "utf8", normalized.SigningCheckpoints[0].MessageEncoding)
+	require.Equal(t, "sign me", normalized.SigningCheckpoints[0].Message)
+}

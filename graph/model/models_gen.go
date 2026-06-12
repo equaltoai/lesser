@@ -2741,12 +2741,14 @@ type SoulBootstrapMutationPayload struct {
 }
 
 type SoulBootstrapSigningCheckpoint struct {
+	Version          *string `json:"version,omitempty"`
 	Name             string  `json:"name"`
 	Status           string  `json:"status"`
 	PrincipalAddress *string `json:"principalAddress,omitempty"`
 	SignerAddress    *string `json:"signerAddress,omitempty"`
 	SigningMethod    *string `json:"signingMethod,omitempty"`
 	MessageEncoding  *string `json:"messageEncoding,omitempty"`
+	Message          *string `json:"message,omitempty"`
 	MessageHex       *string `json:"messageHex,omitempty"`
 	DigestHex        *string `json:"digestHex,omitempty"`
 	CanonicalJSON    *string `json:"canonicalJson,omitempty"`

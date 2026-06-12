@@ -657,6 +657,14 @@ func (c *Config) ResolveLesserHostInstanceKey() (string, error) {
 	return resolveOptionalSecretValue(c.LesserHostInstanceKey, c.LesserHostInstanceKeyARN)
 }
 
+// ResolveOptionalSecretValue returns value when set, otherwise resolves arn
+// through the same optional Secrets Manager path used by server-side instance
+// credentials. It is intended for config records whose secret ARN is resolved
+// outside the static environment-backed Config fields.
+func ResolveOptionalSecretValue(value string, arn string) (string, error) {
+	return resolveOptionalSecretValue(value, arn)
+}
+
 // Helper functions
 
 func getEnvOrDefault(key, defaultValue string) string {
