@@ -37,6 +37,20 @@ const (
 	SoulBootstrapStateHostUnavailable = "error.host_unavailable"
 	// SoulBootstrapStateHostSigningPayloadUnsupported marks unsupported Host signing metadata.
 	SoulBootstrapStateHostSigningPayloadUnsupported = "error.host_signing_payload_unsupported"
+	// SoulBootstrapStateConversationInProgress marks an active Host mint conversation.
+	SoulBootstrapStateConversationInProgress = "conversation.in_progress"
+	// SoulBootstrapStateConversationCompleted marks a completed Host mint conversation.
+	SoulBootstrapStateConversationCompleted = "conversation.completed"
+	// SoulBootstrapStateFinalizeReady marks Host finalize preflight signing material readiness.
+	SoulBootstrapStateFinalizeReady = "finalize.ready"
+	// SoulBootstrapStateFinalizePublished marks Host publication before local binding completes.
+	SoulBootstrapStateFinalizePublished = "finalize.published"
+	// SoulBootstrapStateCorrelationMismatch marks a local replay/correlation mismatch.
+	SoulBootstrapStateCorrelationMismatch = "error.correlation_mismatch"
+	// SoulBootstrapStateBindingConflict marks a safe local soul/body binding conflict.
+	SoulBootstrapStateBindingConflict = "error.binding_conflict"
+	// SoulBootstrapStateSoulNotAvailable marks Host publication evidence that cannot be bound locally.
+	SoulBootstrapStateSoulNotAvailable = "error.soul_not_available"
 	// SoulBootstrapStateCompleteBound marks an existing soul/body binding projection.
 	SoulBootstrapStateCompleteBound = "complete.bound"
 
@@ -52,6 +66,16 @@ const (
 	SoulBootstrapErrorHostUnavailable = "HOST_UNAVAILABLE"
 	// SoulBootstrapErrorHostSigningPayloadUnsupported is exposed for unsupported Host signing metadata.
 	SoulBootstrapErrorHostSigningPayloadUnsupported = "HOST_SIGNING_PAYLOAD_UNSUPPORTED"
+	// SoulBootstrapErrorHostRegistrationIDRequired is exposed when no Host registration id is available.
+	SoulBootstrapErrorHostRegistrationIDRequired = "HOST_REGISTRATION_ID_REQUIRED"
+	// SoulBootstrapErrorHostConversationIDRequired is exposed when no Host conversation id is available.
+	SoulBootstrapErrorHostConversationIDRequired = "HOST_CONVERSATION_ID_REQUIRED"
+	// SoulBootstrapErrorHostBootstrapReplayRejected is exposed when caller ids do not match local bootstrap state.
+	SoulBootstrapErrorHostBootstrapReplayRejected = "HOST_BOOTSTRAP_REPLAY_REJECTED"
+	// SoulBootstrapErrorSoulBindingConflict is exposed when local binding uniqueness rejects finalization.
+	SoulBootstrapErrorSoulBindingConflict = "SOUL_BINDING_CONFLICT"
+	// SoulBootstrapErrorSoulNotAvailable is exposed when Host-published soul identity is not locally bindable.
+	SoulBootstrapErrorSoulNotAvailable = "SOUL_NOT_AVAILABLE"
 )
 
 // SoulBootstrapState stores local correlation state for zero-state soul creation.
@@ -61,39 +85,58 @@ const (
 // represented here; only Host-issued identifiers, signing checkpoint metadata, and
 // client-safe error/correlation values are persisted.
 type SoulBootstrapState struct {
-	Username           string                           `json:"username,omitempty"`
-	BodyID             string                           `json:"body_id,omitempty"`
-	HostRegistrationID string                           `json:"host_registration_id,omitempty"`
-	HostConversationID string                           `json:"host_conversation_id,omitempty"`
-	HostSoulAgentID    string                           `json:"host_soul_agent_id,omitempty"`
-	WalletAddress      string                           `json:"wallet_address,omitempty"`
-	PrincipalAddress   string                           `json:"principal_address,omitempty"`
-	Phase              string                           `json:"phase,omitempty"`
-	State              string                           `json:"state,omitempty"`
-	SigningCheckpoints []SoulBootstrapSigningCheckpoint `json:"signing_checkpoints,omitempty"`
-	Error              *SoulBootstrapErrorState         `json:"error,omitempty"`
-	Correlation        *SoulBootstrapCorrelationState   `json:"correlation,omitempty"`
-	UpdatedAt          *time.Time                       `json:"updated_at,omitempty"`
+	Username           string                            `json:"username,omitempty"`
+	BodyID             string                            `json:"body_id,omitempty"`
+	HostRegistrationID string                            `json:"host_registration_id,omitempty"`
+	HostConversationID string                            `json:"host_conversation_id,omitempty"`
+	HostSoulAgentID    string                            `json:"host_soul_agent_id,omitempty"`
+	WalletAddress      string                            `json:"wallet_address,omitempty"`
+	PrincipalAddress   string                            `json:"principal_address,omitempty"`
+	Phase              string                            `json:"phase,omitempty"`
+	State              string                            `json:"state,omitempty"`
+	SigningCheckpoints []SoulBootstrapSigningCheckpoint  `json:"signing_checkpoints,omitempty"`
+	Publication        *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
+	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
+	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
+	UpdatedAt          *time.Time                        `json:"updated_at,omitempty"`
 }
 
 // SoulBootstrapSigningCheckpoint records non-secret signing material metadata
 // returned by Host preflight endpoints.
 type SoulBootstrapSigningCheckpoint struct {
-	Version          string     `json:"version,omitempty"`
-	Name             string     `json:"name,omitempty"`
-	Status           string     `json:"status,omitempty"`
-	PrincipalAddress string     `json:"principal_address,omitempty"`
-	SignerAddress    string     `json:"signer_address,omitempty"`
-	SigningMethod    string     `json:"signing_method,omitempty"`
-	MessageEncoding  string     `json:"message_encoding,omitempty"`
-	Message          string     `json:"message,omitempty"`
-	MessageHex       string     `json:"message_hex,omitempty"`
-	DigestHex        string     `json:"digest_hex,omitempty"`
-	CanonicalJSON    string     `json:"canonical_json,omitempty"`
-	HostRequestID    string     `json:"host_request_id,omitempty"`
-	IssuedAt         *time.Time `json:"issued_at,omitempty"`
-	DeclaredAt       *time.Time `json:"declared_at,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	Version                     string     `json:"version,omitempty"`
+	Name                        string     `json:"name,omitempty"`
+	Status                      string     `json:"status,omitempty"`
+	PrincipalAddress            string     `json:"principal_address,omitempty"`
+	SignerAddress               string     `json:"signer_address,omitempty"`
+	SigningMethod               string     `json:"signing_method,omitempty"`
+	MessageEncoding             string     `json:"message_encoding,omitempty"`
+	Message                     string     `json:"message,omitempty"`
+	MessageHex                  string     `json:"message_hex,omitempty"`
+	DigestHex                   string     `json:"digest_hex,omitempty"`
+	CanonicalJSON               string     `json:"canonical_json,omitempty"`
+	ExpectedVersion             int        `json:"expected_version,omitempty"`
+	NextVersion                 int        `json:"next_version,omitempty"`
+	BoundaryRequirementsJSON    string     `json:"boundary_requirements_json,omitempty"`
+	FinalizeRequestTemplateJSON string     `json:"finalize_request_template_json,omitempty"`
+	RegistrationPreviewJSON     string     `json:"registration_preview_json,omitempty"`
+	HostRequestID               string     `json:"host_request_id,omitempty"`
+	IssuedAt                    *time.Time `json:"issued_at,omitempty"`
+	DeclaredAt                  *time.Time `json:"declared_at,omitempty"`
+	CompletedAt                 *time.Time `json:"completed_at,omitempty"`
+}
+
+// SoulBootstrapPublicationEvidence records Host publication evidence without
+// storing any Host instance key or browser credential material.
+type SoulBootstrapPublicationEvidence struct {
+	AgentID                    string     `json:"agent_id,omitempty"`
+	PublishedVersion           int        `json:"published_version,omitempty"`
+	RegistrationURI            string     `json:"registration_uri,omitempty"`
+	RegistrationS3Key          string     `json:"registration_s3_key,omitempty"`
+	VersionedRegistrationURI   string     `json:"versioned_registration_uri,omitempty"`
+	VersionedRegistrationS3Key string     `json:"versioned_registration_s3_key,omitempty"`
+	AnchorState                string     `json:"anchor_state,omitempty"`
+	PublishedAt                *time.Time `json:"published_at,omitempty"`
 }
 
 // SoulBootstrapErrorState stores a typed, client-safe bootstrap error.
@@ -147,6 +190,9 @@ func NormalizeSoulBootstrap(state *SoulBootstrapState, username string) *SoulBoo
 	}
 	if normalized.Error != nil {
 		normalized.Error.trim()
+	}
+	if normalized.Publication != nil {
+		normalized.Publication.trim()
 	}
 	for idx := range normalized.SigningCheckpoints {
 		normalized.SigningCheckpoints[idx].trim()
@@ -218,6 +264,7 @@ func (s *SoulBootstrapState) Clone() *SoulBootstrapState {
 	}
 	cloned.Error = cloneSoulBootstrapError(s.Error)
 	cloned.Correlation = cloneSoulBootstrapCorrelation(s.Correlation)
+	cloned.Publication = cloneSoulBootstrapPublication(s.Publication)
 	cloned.UpdatedAt = cloneDroneTime(s.UpdatedAt)
 	return &cloned
 }
@@ -229,6 +276,15 @@ func (c SoulBootstrapSigningCheckpoint) Clone() SoulBootstrapSigningCheckpoint {
 	cloned.DeclaredAt = cloneDroneTime(c.DeclaredAt)
 	cloned.CompletedAt = cloneDroneTime(c.CompletedAt)
 	return cloned
+}
+
+func cloneSoulBootstrapPublication(in *SoulBootstrapPublicationEvidence) *SoulBootstrapPublicationEvidence {
+	if in == nil {
+		return nil
+	}
+	cloned := *in
+	cloned.PublishedAt = cloneDroneTime(in.PublishedAt)
+	return &cloned
 }
 
 func cloneSoulBootstrapError(in *SoulBootstrapErrorState) *SoulBootstrapErrorState {
@@ -304,6 +360,14 @@ func errorStateForBootstrapCode(code string) string {
 		return SoulBootstrapStateHostInstanceKeyUnavailable
 	case SoulBootstrapErrorHostSigningPayloadUnsupported:
 		return SoulBootstrapStateHostSigningPayloadUnsupported
+	case SoulBootstrapErrorHostRegistrationIDRequired,
+		SoulBootstrapErrorHostConversationIDRequired,
+		SoulBootstrapErrorHostBootstrapReplayRejected:
+		return SoulBootstrapStateCorrelationMismatch
+	case SoulBootstrapErrorSoulBindingConflict:
+		return SoulBootstrapStateBindingConflict
+	case SoulBootstrapErrorSoulNotAvailable:
+		return SoulBootstrapStateSoulNotAvailable
 	default:
 		return SoulBootstrapStateHostUnavailable
 	}
@@ -347,5 +411,20 @@ func (c *SoulBootstrapSigningCheckpoint) trim() {
 	c.MessageHex = strings.TrimSpace(c.MessageHex)
 	c.DigestHex = strings.TrimSpace(c.DigestHex)
 	c.CanonicalJSON = strings.TrimSpace(c.CanonicalJSON)
+	c.BoundaryRequirementsJSON = strings.TrimSpace(c.BoundaryRequirementsJSON)
+	c.FinalizeRequestTemplateJSON = strings.TrimSpace(c.FinalizeRequestTemplateJSON)
+	c.RegistrationPreviewJSON = strings.TrimSpace(c.RegistrationPreviewJSON)
 	c.HostRequestID = strings.TrimSpace(c.HostRequestID)
+}
+
+func (p *SoulBootstrapPublicationEvidence) trim() {
+	if p == nil {
+		return
+	}
+	p.AgentID = strings.TrimSpace(p.AgentID)
+	p.RegistrationURI = strings.TrimSpace(p.RegistrationURI)
+	p.RegistrationS3Key = strings.TrimSpace(p.RegistrationS3Key)
+	p.VersionedRegistrationURI = strings.TrimSpace(p.VersionedRegistrationURI)
+	p.VersionedRegistrationS3Key = strings.TrimSpace(p.VersionedRegistrationS3Key)
+	p.AnchorState = strings.TrimSpace(p.AnchorState)
 }

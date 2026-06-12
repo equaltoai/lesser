@@ -331,6 +331,325 @@ func TestRound44SoulBootstrapPrincipalPreflightAndVerifyPersistIdempotently(t *t
 	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", derefString(verified.Bootstrap.State.SigningCheckpoints[0].MessageHex))
 }
 
+func TestRound44SoulBootstrapConversationFinalizeBindsAndProjects(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 12, 15, 30, 0, 0, time.UTC)
+	issuedAt := time.Date(2026, 6, 12, 15, 35, 0, 0, time.UTC)
+	const (
+		agentID   = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		principal = "0x2222222222222222222222222222222222222222"
+	)
+
+	resolver.soulsClient = &stubSoulService{
+		sendBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+			require.Equal(t, "reg_123", input.RegistrationID)
+			require.Empty(t, input.ConversationID)
+			require.Equal(t, "Review my hosted identity.", input.Message)
+			return &soulservice.BootstrapConversationMessageResult{
+				RegistrationID: "reg_123",
+				ConversationID: "conv_123",
+				Model:          "claude",
+				FullResponse:   "Host response",
+				HostRequestID:  "host-req-conv",
+			}, nil
+		},
+		completeBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			require.Equal(t, "reg_123", input.RegistrationID)
+			require.Equal(t, "conv_123", input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:       "reg_123",
+				HostSoulAgentID:      agentID,
+				ConversationID:       "conv_123",
+				Status:               "completed",
+				ProducedDeclarations: `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`,
+				CompletedAt:          &issuedAt,
+				HostRequestID:        "host-req-complete",
+			}, nil
+		},
+		prepareBootstrapFinalizeFunc: func(_ context.Context, input soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error) {
+			require.Equal(t, map[string]string{"b1": "0xboundary"}, input.BoundarySignatures)
+			return &soulservice.BootstrapFinalizePreflightResult{
+				Version:         "1",
+				DigestHex:       "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				IssuedAt:        &issuedAt,
+				ExpectedVersion: 0,
+				NextVersion:     1,
+				SelfAttestationSigning: soulservice.BootstrapFinalizeSigningInput{
+					SignerWallet:    principal,
+					SigningMethod:   "eip191_personal_sign",
+					MessageEncoding: "hex_bytes",
+					MessageHex:      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					DigestHex:       "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					CanonicalJSON:   `{"host":"finalize"}`,
+				},
+				BoundaryRequirementsJSON:    `[{"boundary_id":"b1"}]`,
+				FinalizeRequestTemplateJSON: `{"expected_version":0}`,
+				RegistrationPreviewJSON:     `{"agent_id":"` + agentID + `"}`,
+				HostRequestID:               "host-req-preflight",
+			}, nil
+		},
+		finalizeBootstrapFunc: func(_ context.Context, input soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error) {
+			require.Equal(t, "reg_123", input.RegistrationID)
+			require.Equal(t, "conv_123", input.ConversationID)
+			require.Equal(t, map[string]string{"b1": "0xboundary"}, input.BoundarySignatures)
+			require.Equal(t, issuedAt, input.IssuedAt)
+			require.Equal(t, 0, input.ExpectedVersion)
+			require.Equal(t, "0xself", input.SelfAttestation)
+			publishedAt := issuedAt.Add(2 * time.Minute)
+			return &soulservice.BootstrapFinalizeResult{
+				Version:          "1",
+				HostSoulAgentID:  agentID,
+				PublishedVersion: 1,
+				PrincipalAddress: principal,
+				Publication: soulservice.BootstrapPublicationEvidence{
+					AgentID:          agentID,
+					PublishedVersion: 1,
+					RegistrationURI:  "s3://bucket/registry/v1/agents/" + agentID + "/registration.json",
+					AnchorState:      "hosted_offchain",
+					PublishedAt:      &publishedAt,
+				},
+				Promotion: soulservice.BootstrapPromotionEvidence{
+					AgentID:                  agentID,
+					RegistrationID:           "reg_123",
+					Stage:                    "graduated",
+					LatestConversationID:     "conv_123",
+					LatestConversationStatus: "completed",
+					PublishedVersion:         1,
+					GraduatedAt:              &publishedAt,
+				},
+				HostRequestID: "host-req-finalize",
+			}, nil
+		},
+		incorporateFunc: func(_ context.Context, principalUsername string, targetAgentUsername string, soulAgentID string) (*soulservice.Soul, error) {
+			require.Equal(t, "owner", principalUsername)
+			require.Equal(t, "drone-epsilon", targetAgentUsername)
+			require.Equal(t, agentID, soulAgentID)
+			return &soulservice.Soul{
+				AgentID:               soulAgentID,
+				PrincipalAddress:      principal,
+				Bound:                 true,
+				BoundAgentUsername:    targetAgentUsername,
+				BoundPrincipalAddress: principal,
+			}, nil
+		},
+	}
+
+	seedMetadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		CurrentPhase: workflow.DroneWorkflowPhaseReview,
+		CurrentState: workflow.DroneWorkflowStateReviewApproved,
+		Review: &workflow.DroneReviewCard{
+			ID:              "drone-epsilon:review",
+			Title:           "Reviewer handoff",
+			Decision:        workflow.DroneReviewDecisionApproved,
+			Reviewer:        workflow.DroneActor{ID: "reviewer", Name: "Reviewer", Role: "reviewer", Handle: "@reviewer"},
+			DecisionSummary: "Reviewer may conduct hosted conversation.",
+		},
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-epsilon",
+			BodyID:             "drone-epsilon",
+			HostRegistrationID: "reg_123",
+			HostSoulAgentID:    agentID,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              "conversation.pending",
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "reviewer",
+		DisplayName: "Reviewer",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-epsilon",
+		DisplayName: "Drone Epsilon",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    seedMetadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-epsilon",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	sent, err := (&mutationResolver{resolver}).SendSoulBootstrapConversationMessage(
+		round13DroneAuthContext("reviewer", auth.ScopeWrite),
+		model.SendSoulBootstrapConversationMessageInput{
+			Username: "drone-epsilon",
+			Message:  "Review my hosted identity.",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, model.SoulBootstrapPhaseConversation, sent.Bootstrap.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, sent.Bootstrap.State.State)
+	require.Equal(t, "conv_123", derefString(sent.Bootstrap.State.HostConversationID))
+	require.Equal(t, workflow.DroneWorkflowPhaseDeclaration, sent.Bootstrap.Workflow.CurrentPhase)
+
+	completed, err := (&mutationResolver{resolver}).CompleteSoulBootstrapConversation(
+		round13DroneAuthContext("reviewer", auth.ScopeWrite),
+		model.CompleteSoulBootstrapConversationInput{
+			Username:       "drone-epsilon",
+			ConversationID: "conv_123",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, workflow.SoulBootstrapStateConversationCompleted, completed.Bootstrap.State.State)
+	require.Equal(t, workflow.DroneWorkflowPhaseSigning, completed.Bootstrap.Workflow.CurrentPhase)
+	require.NotNil(t, completed.Bootstrap.Workflow.Declaration)
+
+	preflight, err := (&mutationResolver{resolver}).PrepareSoulBootstrapFinalize(
+		round13DroneAuthContext("reviewer", auth.ScopeWrite),
+		model.PrepareSoulBootstrapFinalizeInput{
+			Username:               "drone-epsilon",
+			ConversationID:         "conv_123",
+			BoundarySignaturesJSON: round13StringPtr(`{"b1":"0xboundary"}`),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, model.SoulBootstrapPhaseFinalize, preflight.Bootstrap.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateFinalizeReady, preflight.Bootstrap.State.State)
+	var finalizeCheckpoint *model.SoulBootstrapSigningCheckpoint
+	for _, checkpoint := range preflight.Bootstrap.State.SigningCheckpoints {
+		if checkpoint.Name == "finalize" {
+			finalizeCheckpoint = checkpoint
+			break
+		}
+	}
+	require.NotNil(t, finalizeCheckpoint)
+	require.Equal(t, "finalize", finalizeCheckpoint.Name)
+	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", derefString(finalizeCheckpoint.MessageHex))
+	require.Equal(t, 0, *finalizeCheckpoint.ExpectedVersion)
+	require.Contains(t, derefString(finalizeCheckpoint.BoundaryRequirementsJSON), `"boundary_id":"b1"`)
+
+	finalized, err := (&mutationResolver{resolver}).FinalizeSoulBootstrap(
+		round13DroneAuthContext("reviewer", auth.ScopeWrite),
+		model.FinalizeSoulBootstrapInput{
+			Username:               "drone-epsilon",
+			ConversationID:         "conv_123",
+			BoundarySignaturesJSON: round13StringPtr(`{"b1":"0xboundary"}`),
+			SelfAttestation:        round13StringPtr("0xself"),
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, finalized.Error)
+	require.Equal(t, model.SoulBootstrapPhaseComplete, finalized.Bootstrap.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateCompleteBound, finalized.Bootstrap.State.State)
+	require.Equal(t, agentID, derefString(finalized.Bootstrap.State.HostSoulAgentID))
+	require.NotNil(t, finalized.Bootstrap.State.Publication)
+	require.Equal(t, "hosted_offchain", derefString(finalized.Bootstrap.State.Publication.AnchorState))
+	require.Equal(t, workflow.DroneWorkflowPhaseContinuity, finalized.Bootstrap.Workflow.CurrentPhase)
+	require.NotNil(t, finalized.Bootstrap.Workflow.Continuity)
+
+	replay, err := (&mutationResolver{resolver}).CompleteSoulBootstrapConversation(
+		round13DroneAuthContext("reviewer", auth.ScopeWrite),
+		model.CompleteSoulBootstrapConversationInput{
+			Username:       "drone-epsilon",
+			ConversationID: "conv_other",
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, replay.Error)
+	require.Equal(t, workflow.SoulBootstrapErrorHostBootstrapReplayRejected, replay.Error.Code)
+}
+
+func TestRound44SoulBootstrapFinalizeBindingConflictIsTyped(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 12, 16, 0, 0, 0, time.UTC)
+	issuedAt := time.Date(2026, 6, 12, 16, 5, 0, 0, time.UTC)
+	const agentID = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	resolver.soulsClient = &stubSoulService{
+		finalizeBootstrapFunc: func(_ context.Context, input soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error) {
+			require.Equal(t, "reg_conflict", input.RegistrationID)
+			require.Equal(t, "conv_conflict", input.ConversationID)
+			publishedAt := issuedAt.Add(time.Minute)
+			return &soulservice.BootstrapFinalizeResult{
+				Version:          "1",
+				HostSoulAgentID:  agentID,
+				PublishedVersion: 1,
+				Publication: soulservice.BootstrapPublicationEvidence{
+					AgentID:          agentID,
+					PublishedVersion: 1,
+					AnchorState:      "hosted_offchain",
+					PublishedAt:      &publishedAt,
+				},
+				HostRequestID: "host-req-finalize-conflict",
+			}, nil
+		},
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
+			return nil, soulservice.ErrTargetAgentAlreadyHasSoul
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-conflict",
+			BodyID:             "drone-conflict",
+			HostRegistrationID: "reg_conflict",
+			HostConversationID: "conv_conflict",
+			Phase:              workflow.SoulBootstrapPhaseFinalize,
+			State:              workflow.SoulBootstrapStateFinalizeReady,
+			SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{
+				{
+					Name:            "finalize",
+					Status:          "ready",
+					ExpectedVersion: 0,
+					IssuedAt:        &issuedAt,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-conflict",
+		DisplayName: "Drone Conflict",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-conflict",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	payload, err := (&mutationResolver{resolver}).FinalizeSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.FinalizeSoulBootstrapInput{
+			Username:               "drone-conflict",
+			ConversationID:         "conv_conflict",
+			BoundarySignaturesJSON: round13StringPtr(`{"b1":"0xboundary"}`),
+			SelfAttestation:        round13StringPtr("0xself"),
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, payload.Error)
+	require.Equal(t, workflow.SoulBootstrapErrorSoulBindingConflict, payload.Error.Code)
+	require.Equal(t, workflow.SoulBootstrapStateBindingConflict, payload.Bootstrap.State.State)
+	require.Equal(t, agentID, derefString(payload.Bootstrap.State.HostSoulAgentID))
+	require.NotNil(t, payload.Bootstrap.State.Publication)
+}
+
 func TestRound44SoulBootstrapBindingProjectionWinsOverLocalError(t *testing.T) {
 	now := time.Date(2026, 6, 12, 14, 0, 0, 0, time.UTC)
 	workflowState := &workflow.DroneWorkflowState{
