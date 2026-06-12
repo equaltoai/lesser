@@ -317,6 +317,186 @@ func TestService_VerifyBootstrapPrincipalDeclarationSendsCombinedHostVerifyReque
 	require.Equal(t, "host-req-verify", result.HostRequestID)
 }
 
+func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		principal   = "0x2222222222222222222222222222222222222222"
+	)
+	issuedAt := time.Date(2026, 6, 12, 21, 15, 0, 0, time.UTC)
+
+	var sawSendBody map[string]any
+	var sawPreflightBody map[string]map[string]string
+	var sawFinalizeBody map[string]any
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		w.Header().Set("X-Request-Id", "host-req-"+strings.Trim(strings.ReplaceAll(r.URL.Path, "/", "-"), "-"))
+
+		switch r.URL.Path {
+		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation":
+			require.Equal(t, "text/event-stream", r.Header.Get("Accept"))
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&sawSendBody))
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: conversation_start\n"))
+			_, _ = w.Write([]byte("data: {\"conversation_id\":\"conv_123\",\"model\":\"claude\"}\n\n"))
+			_, _ = w.Write([]byte("event: delta\n"))
+			_, _ = w.Write([]byte("data: {\"text\":\"hello\"}\n\n"))
+			_, _ = w.Write([]byte("event: conversation_done\n"))
+			_, _ = w.Write([]byte("data: {\"conversation_id\":\"conv_123\",\"full_response\":\"complete response\"}\n\n"))
+		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation/conv_123/complete":
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"agent_id":              agentID,
+				"conversation_id":       "conv_123",
+				"model":                 "claude",
+				"status":                "completed",
+				"produced_declarations": `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`,
+				"completed_at":          "2026-06-12T21:16:00Z",
+			}))
+		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation/conv_123/finalize/preflight":
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&sawPreflightBody))
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"version":          "1",
+				"digest_hex":       "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				"issued_at":        issuedAt.Format(time.RFC3339),
+				"expected_version": 0,
+				"next_version":     1,
+				"declarations_preview": map[string]any{
+					"selfDescription": map[string]any{"summary": "ready"},
+					"capabilities":    []any{},
+					"boundaries":      []any{},
+					"transparency":    map[string]any{},
+				},
+				"boundary_requirements": []map[string]any{
+					{
+						"boundary_id":      "b1",
+						"category":         "safety",
+						"statement":        "Respect boundaries.",
+						"signer_wallet":    principal,
+						"signing_method":   "eip191_personal_sign",
+						"message_encoding": "utf8",
+						"message":          "Sign boundary",
+						"digest_hex":       "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					},
+				},
+				"self_attestation_signing": map[string]any{
+					"signer_wallet":    principal,
+					"signing_method":   "eip191_personal_sign",
+					"message_encoding": "hex_bytes",
+					"message_hex":      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"digest_hex":       "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					"canonical_json":   `{"host":"finalize"}`,
+				},
+				"finalize_request_template": map[string]any{
+					"boundary_signatures": map[string]string{"b1": ""},
+					"issued_at":           issuedAt.Format(time.RFC3339),
+					"expected_version":    0,
+					"self_attestation":    "",
+				},
+				"registration_preview": map[string]any{"agent_id": agentID},
+			}))
+		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation/conv_123/finalize":
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&sawFinalizeBody))
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"version":           "1",
+				"agent_id":          agentID,
+				"published_version": 1,
+				"agent": map[string]any{
+					"agent_id":          agentID,
+					"principal_address": principal,
+					"wallet":            principal,
+					"status":            "active",
+					"lifecycle_status":  "active",
+				},
+				"publication": map[string]any{
+					"agent_id":                      agentID,
+					"published_version":             1,
+					"registration_uri":              "s3://bucket/registry/v1/agents/" + agentID + "/registration.json",
+					"registration_s3_key":           "registry/v1/agents/" + agentID + "/registration.json",
+					"versioned_registration_uri":    "s3://bucket/registry/v1/agents/" + agentID + "/versions/1/registration.json",
+					"versioned_registration_s3_key": "registry/v1/agents/" + agentID + "/versions/1/registration.json",
+					"anchor_state":                  "hosted_offchain",
+					"published_at":                  "2026-06-12T21:17:00Z",
+				},
+				"promotion": map[string]any{
+					"agent_id":                   agentID,
+					"registration_id":            "reg_123",
+					"stage":                      "graduated",
+					"request_status":             "graduated",
+					"review_status":              "published",
+					"readiness_status":           "graduated",
+					"anchor_state":               "hosted_offchain",
+					"latest_conversation_id":     "conv_123",
+					"latest_conversation_status": "completed",
+					"published_version":          1,
+					"graduated_at":               "2026-06-12T21:17:00Z",
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	sent, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: "reg_123",
+		Message:        "Review my declaration.",
+		Model:          "claude",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Review my declaration.", sawSendBody["message"])
+	require.Equal(t, "claude", sawSendBody["model"])
+	require.Equal(t, "conv_123", sent.ConversationID)
+	require.Equal(t, "complete response", sent.FullResponse)
+
+	completed, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_123",
+		ConversationID: "conv_123",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "completed", completed.Status)
+	require.Equal(t, agentID, completed.HostSoulAgentID)
+	require.NotNil(t, completed.CompletedAt)
+
+	preflight, err := service.PrepareBootstrapFinalize(context.Background(), BootstrapFinalizePreflightInput{
+		RegistrationID:     "reg_123",
+		ConversationID:     "conv_123",
+		BoundarySignatures: map[string]string{"b1": "0xsig"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0xsig", sawPreflightBody["boundary_signatures"]["b1"])
+	require.Equal(t, "eip191_personal_sign", preflight.SelfAttestationSigning.SigningMethod)
+	require.Equal(t, "hex_bytes", preflight.SelfAttestationSigning.MessageEncoding)
+	require.Contains(t, preflight.BoundaryRequirementsJSON, `"boundary_id":"b1"`)
+	require.Contains(t, preflight.FinalizeRequestTemplateJSON, `"expected_version":0`)
+
+	finalized, err := service.FinalizeBootstrap(context.Background(), BootstrapFinalizeInput{
+		RegistrationID:     "reg_123",
+		ConversationID:     "conv_123",
+		BoundarySignatures: map[string]string{"b1": "0xsig"},
+		IssuedAt:           issuedAt,
+		ExpectedVersion:    0,
+		SelfAttestation:    "0xself",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0xself", sawFinalizeBody["self_attestation"])
+	require.Equal(t, agentID, finalized.HostSoulAgentID)
+	require.Equal(t, principal, finalized.PrincipalAddress)
+	require.Equal(t, "hosted_offchain", finalized.Publication.AnchorState)
+	require.Equal(t, "graduated", finalized.Promotion.Stage)
+}
+
 func TestService_BootstrapRejectsInvalidLocalInputsAndResponses(t *testing.T) {
 	t.Parallel()
 
@@ -338,6 +518,63 @@ func TestService_BootstrapRejectsInvalidLocalInputsAndResponses(t *testing.T) {
 	require.ErrorAs(t, err, &hostErr)
 	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
 	require.Equal(t, "HOST_REGISTRATION_ID_REQUIRED", hostErr.Code)
+
+	_, err = service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: "reg_123",
+		Message:        " ",
+	})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_INVALID_REQUEST", hostErr.Code)
+
+	_, err = service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_REGISTRATION_ID_REQUIRED", hostErr.Code)
+
+	_, err = service.PrepareBootstrapFinalize(context.Background(), BootstrapFinalizePreflightInput{
+		RegistrationID: "reg_123",
+	})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_CONVERSATION_ID_REQUIRED", hostErr.Code)
+
+	_, err = service.FinalizeBootstrap(context.Background(), BootstrapFinalizeInput{
+		RegistrationID:  "reg_123",
+		ConversationID:  "conv_123",
+		ExpectedVersion: 0,
+		SelfAttestation: "0xself",
+	})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_INVALID_REQUEST", hostErr.Code)
+
+	_, err = service.FinalizeBootstrap(context.Background(), BootstrapFinalizeInput{
+		RegistrationID:  "reg_123",
+		ConversationID:  "conv_123",
+		IssuedAt:        time.Date(2026, 6, 12, 22, 0, 0, 0, time.UTC),
+		ExpectedVersion: -1,
+		SelfAttestation: "0xself",
+	})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_INVALID_REQUEST", hostErr.Code)
+
+	_, err = service.FinalizeBootstrap(context.Background(), BootstrapFinalizeInput{
+		RegistrationID:  "reg_123",
+		ConversationID:  "conv_123",
+		IssuedAt:        time.Date(2026, 6, 12, 22, 0, 0, 0, time.UTC),
+		ExpectedVersion: 0,
+	})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+	require.Equal(t, "HOST_INVALID_REQUEST", hostErr.Code)
 }
 
 func TestBootstrapHelperBranches(t *testing.T) {
@@ -396,6 +633,40 @@ func TestBootstrapHelperBranches(t *testing.T) {
 	require.Empty(t, firstNonEmpty("", " "))
 	require.Nil(t, normalizeBootstrapCapabilities(nil))
 	require.Equal(t, []string{"A", "b"}, normalizeBootstrapCapabilities([]string{" A ", "b", "a", ""}))
+	require.Equal(t, map[string]string{"b1": "0xsig"}, normalizeBootstrapSignatureMap(map[string]string{" b1 ": " 0xsig ", " ": "ignored"}))
+
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(" reg_123 ", " conv_123 ")
+	require.NoError(t, err)
+	require.Equal(t, "reg_123", registrationID)
+	require.Equal(t, "conv_123", conversationID)
+	_, _, err = requireBootstrapRegistrationConversation("reg_123", "")
+	require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
+
+	require.Equal(t, `{"a":1}`, compactHostJSON(json.RawMessage(` { "a" : 1 } `)))
+	require.Empty(t, compactHostJSON(nil))
+	require.Equal(t, "{bad", compactHostJSON(json.RawMessage(` {bad `)))
+
+	var sseOut hostConversationSSECollectResult
+	require.NoError(t, parseHostConversationSSE([]byte("event: conversation_start\n"+
+		"data: {\"conversation_id\":\"conv_start\",\"model\":\"claude\"}\n\n"+
+		"event: conversation_done\n"+
+		"data: {\"full_response\":\"done\"}\n\n"), &sseOut))
+	require.Equal(t, "conv_start", sseOut.ConversationID)
+	require.Equal(t, "claude", sseOut.Model)
+	require.Equal(t, "done", sseOut.FullResponse)
+	require.Error(t, parseHostConversationSSE([]byte("data: {}\n\n"), nil))
+	require.ErrorContains(t, parseHostConversationSSE([]byte("event: delta\ndata: {}\n\n"), &hostConversationSSECollectResult{}), "terminal")
+	require.Error(t, parseHostConversationSSE([]byte("event: conversation_done\ndata: {bad}\n\n"), &hostConversationSSECollectResult{}))
+	err = parseHostConversationSSE([]byte("event: error\ndata: {\"error\":\"model unavailable\"}\n\n"), &hostConversationSSECollectResult{})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
+	require.Equal(t, "model unavailable", hostErr.Message)
+	err = parseHostConversationSSE([]byte("event: error\ndata: {}\n\n"), &hostConversationSSECollectResult{})
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
+	require.NotEmpty(t, hostErr.Message)
 
 	require.NoError(t, validateHostPrincipalSigningPayload(hostPrincipalPreflightResponse{
 		Version:         "1",
@@ -413,6 +684,66 @@ func TestBootstrapHelperBranches(t *testing.T) {
 		err := validateHostPrincipalSigningPayload(payload)
 		require.ErrorIs(t, err, ErrHostSigningPayloadUnsupported)
 	}
+
+	validFinalize := hostFinalizePreflightResponse{
+		Version:         "1",
+		ExpectedVersion: 0,
+		NextVersion:     1,
+		SelfAttestationSigning: hostFinalizeSigningInput{
+			SigningMethod:   "eip191_personal_sign",
+			MessageEncoding: "hex_bytes",
+			MessageHex:      "0xabc",
+			DigestHex:       "0xabc",
+		},
+		BoundaryRequirementsRaw: json.RawMessage(`[{"boundary_id":"b1","signing_method":"eip191_personal_sign","message_encoding":"utf8","message":"Sign","digest_hex":"0xabc"}]`),
+	}
+	require.NoError(t, validateHostFinalizePreflightPayload(validFinalize))
+	badFinalize := validFinalize
+	badFinalize.Version = "2"
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.SelfAttestationSigning.SigningMethod = "unknown"
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.SelfAttestationSigning.MessageEncoding = "utf8"
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.SelfAttestationSigning.MessageHex = ""
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.ExpectedVersion = -1
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.NextVersion = 0
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.BoundaryRequirementsRaw = json.RawMessage(`{bad`)
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.BoundaryRequirementsRaw = json.RawMessage(`[{"boundary_id":"b1","signing_method":"unknown","message_encoding":"utf8","message":"Sign","digest_hex":"0xabc"}]`)
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.BoundaryRequirementsRaw = json.RawMessage(`[{"boundary_id":"b1","signing_method":"eip191_personal_sign","message_encoding":"hex_bytes","message":"Sign","digest_hex":"0xabc"}]`)
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+	badFinalize = validFinalize
+	badFinalize.BoundaryRequirementsRaw = json.RawMessage(`[{"boundary_id":"b1","signing_method":"eip191_personal_sign","message_encoding":"utf8","message":"","digest_hex":"0xabc"}]`)
+	require.ErrorIs(t, validateHostFinalizePreflightPayload(badFinalize), ErrHostSigningPayloadUnsupported)
+
+	validFinalizeResponse := hostFinalizeResponse{
+		Version:          "1",
+		AgentID:          "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		PublishedVersion: 1,
+	}
+	require.NoError(t, validateHostFinalizeResponse(validFinalizeResponse))
+	badFinalizeResponse := validFinalizeResponse
+	badFinalizeResponse.Version = "2"
+	require.ErrorIs(t, validateHostFinalizeResponse(badFinalizeResponse), ErrHostUnavailable)
+	badFinalizeResponse = validFinalizeResponse
+	badFinalizeResponse.AgentID = "not-an-agent-id"
+	require.ErrorIs(t, validateHostFinalizeResponse(badFinalizeResponse), ErrHostUnavailable)
+	badFinalizeResponse = validFinalizeResponse
+	badFinalizeResponse.PublishedVersion = 0
+	require.ErrorIs(t, validateHostFinalizeResponse(badFinalizeResponse), ErrHostUnavailable)
 }
 
 func TestService_BootstrapInvalidHostResponseIsTyped(t *testing.T) {

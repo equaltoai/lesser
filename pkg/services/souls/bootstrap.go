@@ -1,6 +1,7 @@
 package souls
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 
 const (
 	hostBootstrapMaxResponseBytes = 256 * 1024
+	hostBootstrapSSETimeout       = 90 * time.Second
 
 	hostBootstrapSigningMethodEIP191 = "eip191_personal_sign"
 	hostBootstrapEncodingHexBytes    = "hex_bytes"
@@ -139,6 +141,129 @@ type BootstrapPrincipalVerifyResult struct {
 	PrincipalAddress string
 	OperationID      string
 	PromotionStage   string
+	HostRequestID    string
+}
+
+// BootstrapConversationMessageInput is the Lesser-local request for sending a
+// Host mint-conversation turn through the server-side instance-key route.
+type BootstrapConversationMessageInput struct {
+	RegistrationID string
+	ConversationID string
+	Message        string
+	Model          string
+}
+
+// BootstrapConversationMessageResult contains the Host conversation ids and
+// terminal assistant response metadata collected from the SSE stream.
+type BootstrapConversationMessageResult struct {
+	RegistrationID string
+	ConversationID string
+	Model          string
+	FullResponse   string
+	HostRequestID  string
+}
+
+// BootstrapConversationCompleteInput is the Lesser-local request for completing
+// a Host mint conversation.
+type BootstrapConversationCompleteInput struct {
+	RegistrationID string
+	ConversationID string
+}
+
+// BootstrapConversationCompleteResult contains Host completion state.
+type BootstrapConversationCompleteResult struct {
+	RegistrationID       string
+	HostSoulAgentID      string
+	ConversationID       string
+	Status               string
+	ProducedDeclarations string
+	CompletedAt          *time.Time
+	HostRequestID        string
+}
+
+// BootstrapFinalizePreflightInput is the Lesser-local request for Host finalize
+// preflight/signing material.
+type BootstrapFinalizePreflightInput struct {
+	RegistrationID     string
+	ConversationID     string
+	BoundarySignatures map[string]string
+}
+
+// BootstrapFinalizeSigningInput contains the Host-owned self-attestation
+// signing payload.
+type BootstrapFinalizeSigningInput struct {
+	SignerWallet    string
+	SigningMethod   string
+	MessageEncoding string
+	MessageHex      string
+	DigestHex       string
+	CanonicalJSON   string
+}
+
+// BootstrapFinalizePreflightResult contains Host-owned finalize signing
+// material. Lesser relays these fields unchanged; it never reconstructs the
+// signing payload locally.
+type BootstrapFinalizePreflightResult struct {
+	Version                     string
+	DigestHex                   string
+	IssuedAt                    *time.Time
+	ExpectedVersion             int
+	NextVersion                 int
+	SelfAttestationSigning      BootstrapFinalizeSigningInput
+	BoundaryRequirementsJSON    string
+	FinalizeRequestTemplateJSON string
+	RegistrationPreviewJSON     string
+	HostRequestID               string
+}
+
+// BootstrapFinalizeInput is the Lesser-local request for Host hosted/off-chain
+// finalize and publication.
+type BootstrapFinalizeInput struct {
+	RegistrationID     string
+	ConversationID     string
+	BoundarySignatures map[string]string
+	IssuedAt           time.Time
+	ExpectedVersion    int
+	SelfAttestation    string
+}
+
+// BootstrapPublicationEvidence contains Host publication evidence for the
+// versioned hosted/off-chain registration artifact.
+type BootstrapPublicationEvidence struct {
+	AgentID                    string
+	PublishedVersion           int
+	RegistrationURI            string
+	RegistrationS3Key          string
+	VersionedRegistrationURI   string
+	VersionedRegistrationS3Key string
+	AnchorState                string
+	PublishedAt                *time.Time
+}
+
+// BootstrapPromotionEvidence contains Host promotion continuity fields.
+type BootstrapPromotionEvidence struct {
+	AgentID                  string
+	RegistrationID           string
+	Stage                    string
+	RequestStatus            string
+	ReviewStatus             string
+	ReadinessStatus          string
+	AnchorState              string
+	LatestConversationID     string
+	LatestConversationStatus string
+	PublishedVersion         int
+	GraduatedAt              *time.Time
+}
+
+// BootstrapFinalizeResult contains Host finalize/publication output needed for
+// Lesser local soul binding and workflow projection.
+type BootstrapFinalizeResult struct {
+	Version          string
+	HostSoulAgentID  string
+	PublishedVersion int
+	PrincipalAddress string
+	Publication      BootstrapPublicationEvidence
+	Promotion        BootstrapPromotionEvidence
 	HostRequestID    string
 }
 
@@ -287,6 +412,191 @@ func (s *Service) VerifyBootstrapPrincipalDeclaration(ctx context.Context, input
 	}, nil
 }
 
+// SendBootstrapConversationMessage relays one mint-conversation turn to Host's
+// instance-key SSE route and consumes the terminal event so GraphQL receives a
+// bounded same-origin mutation result.
+func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input BootstrapConversationMessageInput) (*BootstrapConversationMessageResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	registrationID := strings.TrimSpace(input.RegistrationID)
+	if registrationID == "" {
+		return nil, &HostBootstrapError{Code: "HOST_REGISTRATION_ID_REQUIRED", Message: "registration id is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if strings.TrimSpace(input.Message) == "" {
+		return nil, &HostBootstrapError{Code: "HOST_INVALID_REQUEST", Message: "conversation message is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+
+	payload := map[string]any{
+		"message": strings.TrimSpace(input.Message),
+	}
+	if conversationID := strings.TrimSpace(input.ConversationID); conversationID != "" {
+		payload["conversation_id"] = conversationID
+	}
+	if model := strings.TrimSpace(input.Model); model != "" {
+		payload["model"] = model
+	}
+
+	var out hostConversationSSECollectResult
+	requestID, err := s.doHostBootstrapSSE(ctx, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation", instanceKey, payload, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &BootstrapConversationMessageResult{
+		RegistrationID: registrationID,
+		ConversationID: strings.TrimSpace(out.ConversationID),
+		Model:          strings.TrimSpace(out.Model),
+		FullResponse:   strings.TrimSpace(out.FullResponse),
+		HostRequestID:  requestID,
+	}, nil
+}
+
+// CompleteBootstrapConversation completes a Host mint conversation and returns
+// the Host-owned declaration output checkpoint.
+func (s *Service) CompleteBootstrapConversation(ctx context.Context, input BootstrapConversationCompleteInput) (*BootstrapConversationCompleteResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var out hostMintConversationResponse
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/complete", instanceKey, map[string]any{}, http.StatusOK, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &BootstrapConversationCompleteResult{
+		RegistrationID:       registrationID,
+		HostSoulAgentID:      strings.ToLower(strings.TrimSpace(out.AgentID)),
+		ConversationID:       strings.TrimSpace(out.ConversationID),
+		Status:               strings.TrimSpace(out.Status),
+		ProducedDeclarations: strings.TrimSpace(out.ProducedDeclarations),
+		CompletedAt:          parseHostTimePtr(out.CompletedAt),
+		HostRequestID:        requestID,
+	}, nil
+}
+
+// PrepareBootstrapFinalize calls Host finalize preflight and fails closed on
+// unsupported signing metadata.
+func (s *Service) PrepareBootstrapFinalize(ctx context.Context, input BootstrapFinalizePreflightInput) (*BootstrapFinalizePreflightResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{
+		"boundary_signatures": normalizeBootstrapSignatureMap(input.BoundarySignatures),
+	}
+
+	var out hostFinalizePreflightResponse
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/finalize/preflight", instanceKey, payload, http.StatusOK, &out)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostFinalizePreflightPayload(out); err != nil {
+		return nil, err
+	}
+
+	return &BootstrapFinalizePreflightResult{
+		Version:         strings.TrimSpace(out.Version),
+		DigestHex:       strings.TrimSpace(out.DigestHex),
+		IssuedAt:        parseHostTimePtr(out.IssuedAt),
+		ExpectedVersion: out.ExpectedVersion,
+		NextVersion:     out.NextVersion,
+		SelfAttestationSigning: BootstrapFinalizeSigningInput{
+			SignerWallet:    strings.ToLower(strings.TrimSpace(out.SelfAttestationSigning.SignerWallet)),
+			SigningMethod:   strings.TrimSpace(out.SelfAttestationSigning.SigningMethod),
+			MessageEncoding: strings.TrimSpace(out.SelfAttestationSigning.MessageEncoding),
+			MessageHex:      strings.TrimSpace(out.SelfAttestationSigning.MessageHex),
+			DigestHex:       strings.TrimSpace(out.SelfAttestationSigning.DigestHex),
+			CanonicalJSON:   strings.TrimSpace(out.SelfAttestationSigning.CanonicalJSON),
+		},
+		BoundaryRequirementsJSON:    compactHostJSON(out.BoundaryRequirementsRaw),
+		FinalizeRequestTemplateJSON: compactHostJSON(out.FinalizeRequestTemplateRaw),
+		RegistrationPreviewJSON:     compactHostJSON(out.RegistrationPreviewRaw),
+		HostRequestID:               requestID,
+	}, nil
+}
+
+// FinalizeBootstrap relays Host finalize and publication. Hosted/off-chain
+// success does not require on-chain mint transaction fields.
+func (s *Service) FinalizeBootstrap(ctx context.Context, input BootstrapFinalizeInput) (*BootstrapFinalizeResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	if input.IssuedAt.IsZero() {
+		return nil, &HostBootstrapError{Code: "HOST_INVALID_REQUEST", Message: "issued_at is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if input.ExpectedVersion < 0 {
+		return nil, &HostBootstrapError{Code: "HOST_INVALID_REQUEST", Message: "expected_version is invalid", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if strings.TrimSpace(input.SelfAttestation) == "" {
+		return nil, &HostBootstrapError{Code: "HOST_INVALID_REQUEST", Message: "self_attestation is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+
+	payload := map[string]any{
+		"boundary_signatures": normalizeBootstrapSignatureMap(input.BoundarySignatures),
+		"issued_at":           input.IssuedAt.UTC().Format(time.RFC3339),
+		"expected_version":    input.ExpectedVersion,
+		"self_attestation":    strings.TrimSpace(input.SelfAttestation),
+	}
+
+	var out hostFinalizeResponse
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/finalize", instanceKey, payload, http.StatusOK, &out)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostFinalizeResponse(out); err != nil {
+		return nil, err
+	}
+
+	agentID := strings.ToLower(strings.TrimSpace(firstNonEmpty(out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID)))
+	return &BootstrapFinalizeResult{
+		Version:          strings.TrimSpace(out.Version),
+		HostSoulAgentID:  agentID,
+		PublishedVersion: out.PublishedVersion,
+		PrincipalAddress: strings.ToLower(strings.TrimSpace(out.Agent.PrincipalAddress)),
+		Publication: BootstrapPublicationEvidence{
+			AgentID:                    strings.ToLower(strings.TrimSpace(out.Publication.AgentID)),
+			PublishedVersion:           out.Publication.PublishedVersion,
+			RegistrationURI:            strings.TrimSpace(out.Publication.RegistrationURI),
+			RegistrationS3Key:          strings.TrimSpace(out.Publication.RegistrationS3Key),
+			VersionedRegistrationURI:   strings.TrimSpace(out.Publication.VersionedRegistrationURI),
+			VersionedRegistrationS3Key: strings.TrimSpace(out.Publication.VersionedRegistrationS3Key),
+			AnchorState:                strings.TrimSpace(out.Publication.AnchorState),
+			PublishedAt:                parseHostTimePtr(out.Publication.PublishedAt),
+		},
+		Promotion: BootstrapPromotionEvidence{
+			AgentID:                  strings.ToLower(strings.TrimSpace(out.Promotion.AgentID)),
+			RegistrationID:           strings.TrimSpace(out.Promotion.RegistrationID),
+			Stage:                    strings.TrimSpace(out.Promotion.Stage),
+			RequestStatus:            strings.TrimSpace(out.Promotion.RequestStatus),
+			ReviewStatus:             strings.TrimSpace(out.Promotion.ReviewStatus),
+			ReadinessStatus:          strings.TrimSpace(out.Promotion.ReadinessStatus),
+			AnchorState:              strings.TrimSpace(out.Promotion.AnchorState),
+			LatestConversationID:     strings.TrimSpace(out.Promotion.LatestConversationID),
+			LatestConversationStatus: strings.TrimSpace(out.Promotion.LatestConversationStatus),
+			PublishedVersion:         out.Promotion.PublishedVersion,
+			GraduatedAt:              parseHostTimePtr(out.Promotion.GraduatedAt),
+		},
+		HostRequestID: requestID,
+	}, nil
+}
+
 func (s *Service) hostBootstrapInputs(ctx context.Context) (string, string, string, error) {
 	if s == nil || s.instanceRepo == nil || s.cfg == nil {
 		return "", "", "", fmt.Errorf("soul service misconfigured")
@@ -371,6 +681,65 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 		}
 	}
 
+	return requestID, nil
+}
+
+func (s *Service) doHostBootstrapSSE(ctx context.Context, baseURL string, path string, instanceKey string, payload any, out *hostConversationSSECollectResult) (string, error) {
+	endpoint, err := hostBootstrapURL(baseURL, path)
+	if err != nil {
+		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+instanceKey)
+
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: hostBootstrapSSETimeout}
+	} else if client.Timeout > 0 && client.Timeout < hostBootstrapSSETimeout {
+		cloned := *client
+		cloned.Timeout = hostBootstrapSSETimeout
+		client = &cloned
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+	defer resp.Body.Close()
+
+	responseBody, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, hostBootstrapMaxResponseBytes)
+	if err != nil {
+		return requestIDFromHeaders(resp.Header), &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+	requestID := requestIDFromHeaders(resp.Header)
+
+	if resp.StatusCode != http.StatusOK {
+		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated)
+	}
+	if truncated {
+		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
+	}
+	if err := parseHostConversationSSE(responseBody, out); err != nil {
+		var hostErr *HostBootstrapError
+		if errors.As(err, &hostErr) {
+			hostErr.StatusCode = resp.StatusCode
+			if hostErr.HostRequestID == "" {
+				hostErr.HostRequestID = requestID
+			}
+			return requestID, hostErr
+		}
+		return requestID, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
 	return requestID, nil
 }
 
@@ -463,6 +832,203 @@ func requestIDFromHeaders(headers http.Header) string {
 	return ""
 }
 
+func requireBootstrapRegistrationConversation(registrationID string, conversationID string) (string, string, error) {
+	registrationID = strings.TrimSpace(registrationID)
+	if registrationID == "" {
+		return "", "", &HostBootstrapError{Code: "HOST_REGISTRATION_ID_REQUIRED", Message: "registration id is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return "", "", &HostBootstrapError{Code: "HOST_CONVERSATION_ID_REQUIRED", Message: "conversation id is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	return registrationID, conversationID, nil
+}
+
+func normalizeBootstrapSignatureMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+func parseHostConversationSSE(body []byte, out *hostConversationSSECollectResult) error {
+	if out == nil {
+		return errors.New("nil SSE output")
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), hostBootstrapMaxResponseBytes)
+
+	eventName := ""
+	var dataLines []string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
+				return err
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "event:"):
+			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
+		return err
+	}
+	if !out.Done || strings.TrimSpace(out.ConversationID) == "" {
+		return errors.New("missing terminal conversation_done event")
+	}
+	return nil
+}
+
+func flushHostConversationSSEEvent(eventName *string, dataLines *[]string, out *hostConversationSSECollectResult) error {
+	if eventName == nil || dataLines == nil || out == nil {
+		return nil
+	}
+	if *eventName == "" && len(*dataLines) == 0 {
+		return nil
+	}
+	name := strings.TrimSpace(*eventName)
+	if name == "" {
+		name = "message"
+	}
+	rawData := strings.TrimSpace(strings.Join(*dataLines, "\n"))
+	*eventName = ""
+	*dataLines = nil
+	return applyHostConversationSSEEvent(name, rawData, out)
+}
+
+func applyHostConversationSSEEvent(name string, rawData string, out *hostConversationSSECollectResult) error {
+	switch strings.TrimSpace(name) {
+	case "conversation_start":
+		return applyHostConversationStartEvent(rawData, out)
+	case "conversation_done":
+		return applyHostConversationDoneEvent(rawData, out)
+	case "error":
+		return hostConversationSSEError(rawData)
+	default:
+		return nil
+	}
+}
+
+func applyHostConversationStartEvent(rawData string, out *hostConversationSSECollectResult) error {
+	var payload struct {
+		ConversationID string `json:"conversation_id"`
+		Model          string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.ConversationID) != "" {
+		out.ConversationID = strings.TrimSpace(payload.ConversationID)
+	}
+	if strings.TrimSpace(payload.Model) != "" {
+		out.Model = strings.TrimSpace(payload.Model)
+	}
+	return nil
+}
+
+func applyHostConversationDoneEvent(rawData string, out *hostConversationSSECollectResult) error {
+	var payload struct {
+		ConversationID string `json:"conversation_id"`
+		FullResponse   string `json:"full_response"`
+	}
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.ConversationID) != "" {
+		out.ConversationID = strings.TrimSpace(payload.ConversationID)
+	}
+	out.FullResponse = payload.FullResponse
+	out.Done = true
+	return nil
+}
+
+func hostConversationSSEError(rawData string) error {
+	var payload struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal([]byte(rawData), &payload)
+	message := strings.TrimSpace(payload.Error)
+	if message == "" {
+		message = "Host mint conversation failed."
+	}
+	return &HostBootstrapError{Code: "HOST_CONVERSATION_FAILED", Message: message, Source: "host", Err: ErrHostUnavailable}
+}
+
+func compactHostJSON(raw json.RawMessage) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return strings.TrimSpace(string(raw))
+	}
+	return buf.String()
+}
+
+func validateHostFinalizePreflightPayload(out hostFinalizePreflightResponse) error {
+	if strings.TrimSpace(out.Version) != hostBootstrapVersion1 {
+		return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned an unsupported finalize payload version.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if strings.TrimSpace(out.SelfAttestationSigning.SigningMethod) != hostBootstrapSigningMethodEIP191 {
+		return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned an unsupported finalize signing method.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if strings.TrimSpace(out.SelfAttestationSigning.MessageEncoding) != hostBootstrapEncodingHexBytes {
+		return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned an unsupported finalize message encoding.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if strings.TrimSpace(out.SelfAttestationSigning.MessageHex) == "" || strings.TrimSpace(out.SelfAttestationSigning.DigestHex) == "" {
+		return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned incomplete finalize signing material.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if out.ExpectedVersion < 0 || out.NextVersion < 1 {
+		return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned invalid finalize version metadata.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	var boundaries []hostFinalizeBoundaryRequirement
+	if len(bytes.TrimSpace(out.BoundaryRequirementsRaw)) > 0 {
+		if err := json.Unmarshal(out.BoundaryRequirementsRaw, &boundaries); err != nil {
+			return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned invalid boundary signing material.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+		}
+	}
+	for _, boundary := range boundaries {
+		if strings.TrimSpace(boundary.SigningMethod) != hostBootstrapSigningMethodEIP191 {
+			return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned an unsupported boundary signing method.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+		}
+		if strings.TrimSpace(boundary.MessageEncoding) != "utf8" {
+			return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned an unsupported boundary message encoding.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+		}
+		if strings.TrimSpace(boundary.Message) == "" || strings.TrimSpace(boundary.DigestHex) == "" {
+			return &HostBootstrapError{Code: "HOST_SIGNING_PAYLOAD_UNSUPPORTED", Message: "Host returned incomplete boundary signing material.", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+		}
+	}
+	return nil
+}
+
+func validateHostFinalizeResponse(out hostFinalizeResponse) error {
+	if strings.TrimSpace(out.Version) != hostBootstrapVersion1 {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host returned an unsupported finalize response version.", Source: "host", Err: ErrHostUnavailable}
+	}
+	agentID := strings.TrimSpace(firstNonEmpty(out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID))
+	if _, err := validateAgentID(agentID); err != nil {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host finalize response did not include a valid soul agent id.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if out.PublishedVersion < 1 && out.Publication.PublishedVersion < 1 {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host finalize response did not include publication evidence.", Source: "host", Err: ErrHostUnavailable}
+	}
+	return nil
+}
+
 func normalizeBootstrapCapabilities(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -519,6 +1085,94 @@ type hostRegistrationVerifyResponse struct {
 	Registration hostRegistration      `json:"registration"`
 	Operation    hostOperation         `json:"operation"`
 	Promotion    hostPromotionResponse `json:"promotion,omitempty"`
+}
+
+type hostConversationSSECollectResult struct {
+	ConversationID string
+	Model          string
+	FullResponse   string
+	Done           bool
+}
+
+type hostMintConversationResponse struct {
+	AgentID              string `json:"agent_id"`
+	ConversationID       string `json:"conversation_id"`
+	Model                string `json:"model"`
+	Messages             string `json:"messages"`
+	ProducedDeclarations string `json:"produced_declarations"`
+	Status               string `json:"status"`
+	CompletedAt          string `json:"completed_at"`
+}
+
+type hostFinalizeSigningInput struct {
+	SignerWallet    string `json:"signer_wallet"`
+	SigningMethod   string `json:"signing_method"`
+	MessageEncoding string `json:"message_encoding"`
+	MessageHex      string `json:"message_hex"`
+	DigestHex       string `json:"digest_hex"`
+	CanonicalJSON   string `json:"canonical_json"`
+}
+
+type hostFinalizeBoundaryRequirement struct {
+	BoundaryID      string `json:"boundary_id"`
+	SigningMethod   string `json:"signing_method"`
+	MessageEncoding string `json:"message_encoding"`
+	Message         string `json:"message"`
+	DigestHex       string `json:"digest_hex"`
+}
+
+type hostFinalizePreflightResponse struct {
+	Version                    string                   `json:"version"`
+	DigestHex                  string                   `json:"digest_hex"`
+	IssuedAt                   string                   `json:"issued_at"`
+	ExpectedVersion            int                      `json:"expected_version"`
+	NextVersion                int                      `json:"next_version"`
+	SelfAttestationSigning     hostFinalizeSigningInput `json:"self_attestation_signing"`
+	BoundaryRequirementsRaw    json.RawMessage          `json:"boundary_requirements"`
+	FinalizeRequestTemplateRaw json.RawMessage          `json:"finalize_request_template"`
+	RegistrationPreviewRaw     json.RawMessage          `json:"registration_preview,omitempty"`
+}
+
+type hostFinalizeResponse struct {
+	Version          string                  `json:"version"`
+	AgentID          string                  `json:"agent_id"`
+	Agent            hostFinalizeAgent       `json:"agent"`
+	PublishedVersion int                     `json:"published_version"`
+	Publication      hostFinalizePublication `json:"publication"`
+	Promotion        hostFinalizePromotion   `json:"promotion,omitempty"`
+}
+
+type hostFinalizeAgent struct {
+	AgentID          string `json:"agent_id"`
+	PrincipalAddress string `json:"principal_address"`
+	Wallet           string `json:"wallet"`
+	Status           string `json:"status"`
+	LifecycleStatus  string `json:"lifecycle_status"`
+}
+
+type hostFinalizePublication struct {
+	AgentID                    string `json:"agent_id"`
+	PublishedVersion           int    `json:"published_version"`
+	RegistrationURI            string `json:"registration_uri"`
+	RegistrationS3Key          string `json:"registration_s3_key"`
+	VersionedRegistrationURI   string `json:"versioned_registration_uri"`
+	VersionedRegistrationS3Key string `json:"versioned_registration_s3_key"`
+	AnchorState                string `json:"anchor_state"`
+	PublishedAt                string `json:"published_at"`
+}
+
+type hostFinalizePromotion struct {
+	AgentID                  string `json:"agent_id"`
+	RegistrationID           string `json:"registration_id"`
+	Stage                    string `json:"stage"`
+	RequestStatus            string `json:"request_status"`
+	ReviewStatus             string `json:"review_status"`
+	ReadinessStatus          string `json:"readiness_status"`
+	AnchorState              string `json:"anchor_state"`
+	LatestConversationID     string `json:"latest_conversation_id"`
+	LatestConversationStatus string `json:"latest_conversation_status"`
+	PublishedVersion         int    `json:"published_version"`
+	GraduatedAt              string `json:"graduated_at"`
 }
 
 type hostRegistration struct {

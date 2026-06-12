@@ -15,12 +15,16 @@ import (
 )
 
 type stubSoulService struct {
-	listMineFunc                  func(context.Context, string) ([]soulservice.Soul, error)
-	incorporateFunc               func(context.Context, string, string, string) (*soulservice.Soul, error)
-	resolveBoundFunc              func(context.Context, string) (*soulservice.Soul, error)
-	beginBootstrapFunc            func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error)
-	prepareBootstrapPrincipalFunc func(context.Context, soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error)
-	verifyBootstrapPrincipalFunc  func(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
+	listMineFunc                      func(context.Context, string) ([]soulservice.Soul, error)
+	incorporateFunc                   func(context.Context, string, string, string) (*soulservice.Soul, error)
+	resolveBoundFunc                  func(context.Context, string) (*soulservice.Soul, error)
+	beginBootstrapFunc                func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error)
+	prepareBootstrapPrincipalFunc     func(context.Context, soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error)
+	verifyBootstrapPrincipalFunc      func(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
+	sendBootstrapConversationFunc     func(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
+	completeBootstrapConversationFunc func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	prepareBootstrapFinalizeFunc      func(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
+	finalizeBootstrapFunc             func(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
 }
 
 func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
@@ -63,6 +67,34 @@ func (s *stubSoulService) VerifyBootstrapPrincipalDeclaration(ctx context.Contex
 		return nil, errors.New("verify bootstrap principal declaration not implemented")
 	}
 	return s.verifyBootstrapPrincipalFunc(ctx, input)
+}
+
+func (s *stubSoulService) SendBootstrapConversationMessage(ctx context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+	if s.sendBootstrapConversationFunc == nil {
+		return nil, errors.New("send bootstrap conversation not implemented")
+	}
+	return s.sendBootstrapConversationFunc(ctx, input)
+}
+
+func (s *stubSoulService) CompleteBootstrapConversation(ctx context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+	if s.completeBootstrapConversationFunc == nil {
+		return nil, errors.New("complete bootstrap conversation not implemented")
+	}
+	return s.completeBootstrapConversationFunc(ctx, input)
+}
+
+func (s *stubSoulService) PrepareBootstrapFinalize(ctx context.Context, input soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error) {
+	if s.prepareBootstrapFinalizeFunc == nil {
+		return nil, errors.New("prepare bootstrap finalize not implemented")
+	}
+	return s.prepareBootstrapFinalizeFunc(ctx, input)
+}
+
+func (s *stubSoulService) FinalizeBootstrap(ctx context.Context, input soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error) {
+	if s.finalizeBootstrapFunc == nil {
+		return nil, errors.New("finalize bootstrap not implemented")
+	}
+	return s.finalizeBootstrapFunc(ctx, input)
 }
 
 func soulAuthContext(username string, scopes ...string) context.Context {

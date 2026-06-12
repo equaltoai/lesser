@@ -2740,22 +2740,38 @@ type SoulBootstrapMutationPayload struct {
 	Error      *SoulBootstrapErrorState `json:"error,omitempty"`
 }
 
+type SoulBootstrapPublicationEvidence struct {
+	AgentID                    *string `json:"agentId,omitempty"`
+	PublishedVersion           *int    `json:"publishedVersion,omitempty"`
+	RegistrationURI            *string `json:"registrationUri,omitempty"`
+	RegistrationS3Key          *string `json:"registrationS3Key,omitempty"`
+	VersionedRegistrationURI   *string `json:"versionedRegistrationUri,omitempty"`
+	VersionedRegistrationS3Key *string `json:"versionedRegistrationS3Key,omitempty"`
+	AnchorState                *string `json:"anchorState,omitempty"`
+	PublishedAt                *Time   `json:"publishedAt,omitempty"`
+}
+
 type SoulBootstrapSigningCheckpoint struct {
-	Version          *string `json:"version,omitempty"`
-	Name             string  `json:"name"`
-	Status           string  `json:"status"`
-	PrincipalAddress *string `json:"principalAddress,omitempty"`
-	SignerAddress    *string `json:"signerAddress,omitempty"`
-	SigningMethod    *string `json:"signingMethod,omitempty"`
-	MessageEncoding  *string `json:"messageEncoding,omitempty"`
-	Message          *string `json:"message,omitempty"`
-	MessageHex       *string `json:"messageHex,omitempty"`
-	DigestHex        *string `json:"digestHex,omitempty"`
-	CanonicalJSON    *string `json:"canonicalJson,omitempty"`
-	HostRequestID    *string `json:"hostRequestId,omitempty"`
-	IssuedAt         *Time   `json:"issuedAt,omitempty"`
-	DeclaredAt       *Time   `json:"declaredAt,omitempty"`
-	CompletedAt      *Time   `json:"completedAt,omitempty"`
+	Version                     *string `json:"version,omitempty"`
+	Name                        string  `json:"name"`
+	Status                      string  `json:"status"`
+	PrincipalAddress            *string `json:"principalAddress,omitempty"`
+	SignerAddress               *string `json:"signerAddress,omitempty"`
+	SigningMethod               *string `json:"signingMethod,omitempty"`
+	MessageEncoding             *string `json:"messageEncoding,omitempty"`
+	Message                     *string `json:"message,omitempty"`
+	MessageHex                  *string `json:"messageHex,omitempty"`
+	DigestHex                   *string `json:"digestHex,omitempty"`
+	CanonicalJSON               *string `json:"canonicalJson,omitempty"`
+	ExpectedVersion             *int    `json:"expectedVersion,omitempty"`
+	NextVersion                 *int    `json:"nextVersion,omitempty"`
+	BoundaryRequirementsJSON    *string `json:"boundaryRequirementsJson,omitempty"`
+	FinalizeRequestTemplateJSON *string `json:"finalizeRequestTemplateJson,omitempty"`
+	RegistrationPreviewJSON     *string `json:"registrationPreviewJson,omitempty"`
+	HostRequestID               *string `json:"hostRequestId,omitempty"`
+	IssuedAt                    *Time   `json:"issuedAt,omitempty"`
+	DeclaredAt                  *Time   `json:"declaredAt,omitempty"`
+	CompletedAt                 *Time   `json:"completedAt,omitempty"`
 }
 
 type SoulBootstrapState struct {
@@ -2769,6 +2785,7 @@ type SoulBootstrapState struct {
 	Phase              SoulBootstrapPhase                `json:"phase"`
 	State              string                            `json:"state"`
 	SigningCheckpoints []*SoulBootstrapSigningCheckpoint `json:"signingCheckpoints"`
+	Publication        *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
 	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
 	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
 	UpdatedAt          *Time                             `json:"updatedAt,omitempty"`

@@ -564,10 +564,26 @@ type SoulBootstrapSigningCheckpoint {
   messageHex: String
   digestHex: String
   canonicalJson: String
+  expectedVersion: Int
+  nextVersion: Int
+  boundaryRequirementsJson: String
+  finalizeRequestTemplateJson: String
+  registrationPreviewJson: String
   hostRequestId: String
   issuedAt: Time
   declaredAt: Time
   completedAt: Time
+}
+
+type SoulBootstrapPublicationEvidence {
+  agentId: ID
+  publishedVersion: Int
+  registrationUri: String
+  registrationS3Key: String
+  versionedRegistrationUri: String
+  versionedRegistrationS3Key: String
+  anchorState: String
+  publishedAt: Time
 }
 
 type SoulBootstrapCorrelationState {
@@ -600,6 +616,7 @@ type SoulBootstrapState {
   phase: SoulBootstrapPhase!
   state: String!
   signingCheckpoints: [SoulBootstrapSigningCheckpoint!]!
+  publication: SoulBootstrapPublicationEvidence
   error: SoulBootstrapErrorState
   correlation: SoulBootstrapCorrelationState
   updatedAt: Time
