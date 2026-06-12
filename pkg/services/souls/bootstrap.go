@@ -69,8 +69,9 @@ func (e *HostBootstrapError) Unwrap() error {
 
 // BootstrapBeginInput is the Lesser-local request for Host registration begin.
 type BootstrapBeginInput struct {
+	// Username is the Lesser-local body handle Host receives as local_id.
 	Username      string
-	BodyID        string
+	BodyID        string // Lesser-local state/UI identity; never serialized as Host local_id.
 	WalletAddress string
 	Capabilities  []string
 }
@@ -172,7 +173,7 @@ func (s *Service) BeginBootstrapRegistration(ctx context.Context, input Bootstra
 
 	payload := map[string]any{
 		"domain":         instanceDomain,
-		"local_id":       strings.TrimSpace(input.BodyID),
+		"local_id":       bootstrapHostLocalID(input),
 		"wallet_address": strings.TrimSpace(input.WalletAddress),
 	}
 	if len(input.Capabilities) > 0 {
@@ -200,6 +201,10 @@ func (s *Service) BeginBootstrapRegistration(ctx context.Context, input Bootstra
 		},
 		HostRequestID: requestID,
 	}, nil
+}
+
+func bootstrapHostLocalID(input BootstrapBeginInput) string {
+	return strings.ToLower(strings.TrimSpace(input.Username))
 }
 
 // PrepareBootstrapPrincipalDeclaration calls Host's principal declaration

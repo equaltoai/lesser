@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	workflow "github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -70,9 +71,12 @@ func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	now := time.Date(2026, 6, 12, 13, 0, 0, 0, time.UTC)
 	hostIssuedAt := time.Date(2026, 6, 12, 13, 1, 0, 0, time.UTC)
 	hostExpiresAt := hostIssuedAt.Add(10 * time.Minute)
+	numericBodyID := common.GenerateNumericID("drone-beta")
 	resolver.soulsClient = &stubSoulService{
 		beginBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
-			require.NotEmpty(t, input.BodyID)
+			require.Equal(t, "drone-beta", input.Username)
+			require.Equal(t, numericBodyID, input.BodyID)
+			require.NotEqual(t, input.BodyID, input.Username)
 			require.Equal(t, "0x1111111111111111111111111111111111111111", input.WalletAddress)
 			return &soulservice.BootstrapBeginResult{
 				RegistrationID:  "reg_123",
@@ -98,7 +102,7 @@ func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	}, nil)
 	round13SeedGraphUser(t, storageRepo, &storage.User{
 		Username:    "drone-beta",
-		ID:          "drone-beta",
+		ID:          numericBodyID,
 		DisplayName: "Drone Beta",
 		Approved:    true,
 		IsAgent:     true,
@@ -126,6 +130,7 @@ func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	require.True(t, payload.Bootstrap.HostBridgeAvailable)
 	require.Equal(t, model.SoulBootstrapPhaseBegin, payload.Bootstrap.State.Phase)
 	require.Equal(t, "begin.ready", payload.Bootstrap.State.State)
+	require.Equal(t, numericBodyID, payload.Bootstrap.State.BodyID)
 	require.Equal(t, "reg_123", derefString(payload.Bootstrap.State.HostRegistrationID))
 	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", derefString(payload.Bootstrap.State.HostSoulAgentID))
 	require.NotNil(t, payload.Bootstrap.State.Correlation)
@@ -144,6 +149,7 @@ func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, storedWorkflow)
 	require.NotNil(t, storedWorkflow.SoulBootstrap)
+	require.Equal(t, numericBodyID, storedWorkflow.SoulBootstrap.BodyID)
 	require.Equal(t, "reg_123", storedWorkflow.SoulBootstrap.HostRegistrationID)
 
 	_, err = (&mutationResolver{resolver}).BeginSoulBootstrap(

@@ -59,12 +59,9 @@ func (r *mutationResolver) BeginSoulBootstrap(ctx context.Context, input model.B
 		existing *workflow.SoulBootstrapState,
 		now time.Time,
 	) (*workflow.SoulBootstrapState, error) {
-		bodyID := strings.TrimSpace(agentUser.ID)
-		if bodyID == "" {
-			bodyID = agentUser.Username
-		}
+		bodyID := soulBootstrapBodyID(agentUser)
 		result, err := service.BeginBootstrapRegistration(ctx, soulservice.BootstrapBeginInput{
-			Username:      agentUser.Username,
+			Username:      soulBootstrapHostLocalID(agentUser),
 			BodyID:        bodyID,
 			WalletAddress: input.WalletAddress,
 			Capabilities:  input.Capabilities,
@@ -333,10 +330,7 @@ func soulBootstrapStateAfterBegin(
 	bodyID := ""
 	if agentUser != nil {
 		username = agentUser.Username
-		bodyID = strings.TrimSpace(agentUser.ID)
-	}
-	if bodyID == "" {
-		bodyID = username
+		bodyID = soulBootstrapBodyID(agentUser)
 	}
 
 	state := workflow.NormalizeSoulBootstrap(existing, username)
@@ -640,16 +634,30 @@ func graphSoulBootstrapIdentityTarget(ctx context.Context, r *Resolver, agentUse
 	if agentUser == nil {
 		return nil
 	}
-	bodyID := strings.TrimSpace(agentUser.ID)
-	if bodyID == "" {
-		bodyID = agentUser.Username
-	}
 	return &model.SoulBootstrapIdentityTarget{
 		Username:    agentUser.Username,
-		BodyID:      bodyID,
+		BodyID:      soulBootstrapBodyID(agentUser),
 		DisplayName: optionalString(agentUser.DisplayName),
 		Owner:       r.graphDroneOwnerActor(ctx, agentUser),
 	}
+}
+
+func soulBootstrapBodyID(agentUser *storage.User) string {
+	if agentUser == nil {
+		return ""
+	}
+	bodyID := strings.TrimSpace(agentUser.ID)
+	if bodyID == "" {
+		bodyID = strings.TrimSpace(agentUser.Username)
+	}
+	return bodyID
+}
+
+func soulBootstrapHostLocalID(agentUser *storage.User) string {
+	if agentUser == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(agentUser.Username))
 }
 
 func graphSoulBootstrapStateModel(

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -67,7 +68,8 @@ func TestService_BeginBootstrapRegistrationUsesInstanceKeyAndNotUserBearer(t *te
 	).WithHTTPClient(host.Client())
 
 	result, err := service.BeginBootstrapRegistration(context.Background(), BootstrapBeginInput{
-		BodyID:        "drone-alpha",
+		Username:      " drone-alpha ",
+		BodyID:        common.GenerateNumericID("drone-alpha"),
 		WalletAddress: wallet,
 		Capabilities:  []string{"post", "post", " reply "},
 	})
@@ -75,6 +77,7 @@ func TestService_BeginBootstrapRegistrationUsesInstanceKeyAndNotUserBearer(t *te
 	require.Equal(t, "Bearer "+instanceKey, sawAuth)
 	require.Equal(t, "example.com", sawBody["domain"])
 	require.Equal(t, "drone-alpha", sawBody["local_id"])
+	require.NotEqual(t, common.GenerateNumericID("drone-alpha"), sawBody["local_id"])
 	require.Equal(t, wallet, sawBody["wallet_address"])
 	require.Equal(t, []any{"post", "reply"}, sawBody["capabilities"])
 	require.Equal(t, "reg_123", result.RegistrationID)
