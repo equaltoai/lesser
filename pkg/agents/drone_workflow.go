@@ -110,15 +110,16 @@ type DroneWorkflowState struct {
 	CurrentState string `json:"current_state,omitempty"`
 	SoulAgentID  string `json:"soul_agent_id,omitempty"`
 
-	Request      *DroneRequestCard           `json:"request,omitempty"`
-	Review       *DroneReviewCard            `json:"review,omitempty"`
-	Declaration  *DroneDeclarationCard       `json:"declaration,omitempty"`
-	Checkpoint   *DroneSignatureCheckpoint   `json:"checkpoint,omitempty"`
-	Graduation   *DroneGraduationSummaryCard `json:"graduation,omitempty"`
-	Continuity   *DroneContinuityPanel       `json:"continuity,omitempty"`
-	Conversation *DroneConversationState     `json:"conversation,omitempty"`
-	Lifecycle    []DroneLifecycleStep        `json:"lifecycle,omitempty"`
-	UpdatedAt    *time.Time                  `json:"updated_at,omitempty"`
+	Request       *DroneRequestCard           `json:"request,omitempty"`
+	Review        *DroneReviewCard            `json:"review,omitempty"`
+	Declaration   *DroneDeclarationCard       `json:"declaration,omitempty"`
+	Checkpoint    *DroneSignatureCheckpoint   `json:"checkpoint,omitempty"`
+	Graduation    *DroneGraduationSummaryCard `json:"graduation,omitempty"`
+	Continuity    *DroneContinuityPanel       `json:"continuity,omitempty"`
+	Conversation  *DroneConversationState     `json:"conversation,omitempty"`
+	SoulBootstrap *SoulBootstrapState         `json:"soul_bootstrap,omitempty"`
+	Lifecycle     []DroneLifecycleStep        `json:"lifecycle,omitempty"`
+	UpdatedAt     *time.Time                  `json:"updated_at,omitempty"`
 }
 
 // DroneMetric describes one labeled workflow metric.
@@ -363,6 +364,9 @@ func NormalizeDroneWorkflow(workflow *DroneWorkflowState) *DroneWorkflowState {
 	if len(workflow.Lifecycle) == 0 {
 		workflow.Lifecycle = BuildDroneLifecycle(workflow.CurrentPhase, workflow.CurrentState)
 	}
+	if workflow.SoulBootstrap != nil {
+		workflow.SoulBootstrap = NormalizeSoulBootstrap(workflow.SoulBootstrap, "")
+	}
 	return workflow
 }
 
@@ -466,6 +470,9 @@ func (w *DroneWorkflowState) Clone() *DroneWorkflowState {
 	cloned.Graduation = cloneDroneGraduationCard(w.Graduation)
 	cloned.Continuity = cloneDroneContinuityPanel(w.Continuity)
 	cloned.Conversation = cloneDroneConversationState(w.Conversation)
+	if w.SoulBootstrap != nil {
+		cloned.SoulBootstrap = NormalizeSoulBootstrap(w.SoulBootstrap, "")
+	}
 	cloned.Lifecycle = append([]DroneLifecycleStep(nil), w.Lifecycle...)
 	cloned.UpdatedAt = cloneDroneTime(w.UpdatedAt)
 	return &cloned

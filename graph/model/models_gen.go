@@ -762,6 +762,7 @@ type AgentWorkflowSurface struct {
 	Continuity        *ContinuityPanel                `json:"continuity,omitempty"`
 	Lifecycle         []*AgentLifecycleStep           `json:"lifecycle"`
 	Conversation      *AgentWorkflowConversationState `json:"conversation,omitempty"`
+	SoulBootstrap     *SoulBootstrapState             `json:"soulBootstrap"`
 	IdentitySemantics *AgentIdentitySemantics         `json:"identitySemantics"`
 }
 
@@ -802,6 +803,14 @@ type BedrockTrainingOptions struct {
 	OutputS3Path         *string `json:"outputS3Path,omitempty"`
 	MaxTrainingTime      *int    `json:"maxTrainingTime,omitempty"`
 	EarlyStoppingEnabled *bool   `json:"earlyStoppingEnabled,omitempty"`
+}
+
+type BeginSoulBootstrapInput struct {
+	Username       string   `json:"username"`
+	WalletAddress  string   `json:"walletAddress"`
+	Capabilities   []string `json:"capabilities,omitempty"`
+	IdempotencyKey *string  `json:"idempotencyKey,omitempty"`
+	CorrelationKey *string  `json:"correlationKey,omitempty"`
 }
 
 type Bitrate struct {
@@ -894,6 +903,14 @@ type CommunityNoteInput struct {
 type CommunityNotePayload struct {
 	Note   *CommunityNote `json:"note"`
 	Object *Object        `json:"object"`
+}
+
+type CompleteSoulBootstrapConversationInput struct {
+	Username       string  `json:"username"`
+	RegistrationID *string `json:"registrationId,omitempty"`
+	ConversationID string  `json:"conversationId"`
+	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey *string `json:"correlationKey,omitempty"`
 }
 
 type ContentMap struct {
@@ -1338,6 +1355,19 @@ type FilterTestResult struct {
 	MatchedRules []string `json:"matchedRules"`
 	FilterID     string   `json:"filterId"`
 	FilterTitle  string   `json:"filterTitle"`
+}
+
+type FinalizeSoulBootstrapInput struct {
+	Username               string  `json:"username"`
+	RegistrationID         *string `json:"registrationId,omitempty"`
+	ConversationID         string  `json:"conversationId"`
+	BoundarySignaturesJSON *string `json:"boundarySignaturesJson,omitempty"`
+	IssuedAt               *Time   `json:"issuedAt,omitempty"`
+	SelfAttestation        *string `json:"selfAttestation,omitempty"`
+	ExpectedVersion        *int    `json:"expectedVersion,omitempty"`
+	Signature              *string `json:"signature,omitempty"`
+	IdempotencyKey         *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey         *string `json:"correlationKey,omitempty"`
 }
 
 type FinalizeSoulPromotionInput struct {
@@ -2202,6 +2232,25 @@ type PostingPreferences struct {
 	DefaultLanguage   string     `json:"defaultLanguage"`
 }
 
+type PrepareSoulBootstrapFinalizeInput struct {
+	Username               string  `json:"username"`
+	RegistrationID         *string `json:"registrationId,omitempty"`
+	ConversationID         string  `json:"conversationId"`
+	BoundarySignaturesJSON *string `json:"boundarySignaturesJson,omitempty"`
+	IdempotencyKey         *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey         *string `json:"correlationKey,omitempty"`
+}
+
+type PrepareSoulBootstrapPrincipalDeclarationInput struct {
+	Username             string  `json:"username"`
+	RegistrationID       *string `json:"registrationId,omitempty"`
+	PrincipalAddress     string  `json:"principalAddress"`
+	PrincipalDeclaration string  `json:"principalDeclaration"`
+	DeclaredAt           Time    `json:"declaredAt"`
+	IdempotencyKey       *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey       *string `json:"correlationKey,omitempty"`
+}
+
 type PrivacyPreferences struct {
 	DefaultVisibility  Visibility         `json:"defaultVisibility"`
 	Indexable          bool               `json:"indexable"`
@@ -2537,6 +2586,16 @@ type SendMessagePayload struct {
 	Message      *Object       `json:"message"`
 }
 
+type SendSoulBootstrapConversationMessageInput struct {
+	Username       string  `json:"username"`
+	RegistrationID *string `json:"registrationId,omitempty"`
+	ConversationID *string `json:"conversationId,omitempty"`
+	Message        string  `json:"message"`
+	Model          *string `json:"model,omitempty"`
+	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey *string `json:"correlationKey,omitempty"`
+}
+
 type SentimentScores struct {
 	Positive float64 `json:"positive"`
 	Negative float64 `json:"negative"`
@@ -2647,6 +2706,83 @@ type SoulAgentIdentity struct {
 	MintTxHash             *string          `json:"mintTxHash,omitempty"`
 	MintedAt               *Time            `json:"mintedAt,omitempty"`
 	UpdatedAt              *Time            `json:"updatedAt,omitempty"`
+}
+
+type SoulBootstrapCorrelationState struct {
+	CorrelationKey                     *string `json:"correlationKey,omitempty"`
+	BeginIdempotencyKey                *string `json:"beginIdempotencyKey,omitempty"`
+	WalletVerificationIdempotencyKey   *string `json:"walletVerificationIdempotencyKey,omitempty"`
+	PrincipalDeclarationIdempotencyKey *string `json:"principalDeclarationIdempotencyKey,omitempty"`
+	ConversationIdempotencyKey         *string `json:"conversationIdempotencyKey,omitempty"`
+	FinalizeIdempotencyKey             *string `json:"finalizeIdempotencyKey,omitempty"`
+	LastHostRequestID                  *string `json:"lastHostRequestId,omitempty"`
+}
+
+type SoulBootstrapErrorState struct {
+	Code          string  `json:"code"`
+	Message       string  `json:"message"`
+	Source        *string `json:"source,omitempty"`
+	StatusCode    *int    `json:"statusCode,omitempty"`
+	HostRequestID *string `json:"hostRequestId,omitempty"`
+	At            *Time   `json:"at,omitempty"`
+}
+
+type SoulBootstrapIdentityTarget struct {
+	Username    string             `json:"username"`
+	BodyID      string             `json:"bodyId"`
+	DisplayName *string            `json:"displayName,omitempty"`
+	Owner       *AgentSurfaceActor `json:"owner,omitempty"`
+}
+
+type SoulBootstrapMutationPayload struct {
+	Bootstrap  *SoulBootstrapSurface    `json:"bootstrap"`
+	Executable bool                     `json:"executable"`
+	Error      *SoulBootstrapErrorState `json:"error,omitempty"`
+}
+
+type SoulBootstrapSigningCheckpoint struct {
+	Name             string  `json:"name"`
+	Status           string  `json:"status"`
+	PrincipalAddress *string `json:"principalAddress,omitempty"`
+	SignerAddress    *string `json:"signerAddress,omitempty"`
+	SigningMethod    *string `json:"signingMethod,omitempty"`
+	MessageEncoding  *string `json:"messageEncoding,omitempty"`
+	MessageHex       *string `json:"messageHex,omitempty"`
+	DigestHex        *string `json:"digestHex,omitempty"`
+	CanonicalJSON    *string `json:"canonicalJson,omitempty"`
+	HostRequestID    *string `json:"hostRequestId,omitempty"`
+	IssuedAt         *Time   `json:"issuedAt,omitempty"`
+	DeclaredAt       *Time   `json:"declaredAt,omitempty"`
+	CompletedAt      *Time   `json:"completedAt,omitempty"`
+}
+
+type SoulBootstrapState struct {
+	Username           string                            `json:"username"`
+	BodyID             string                            `json:"bodyId"`
+	HostRegistrationID *string                           `json:"hostRegistrationId,omitempty"`
+	HostConversationID *string                           `json:"hostConversationId,omitempty"`
+	HostSoulAgentID    *string                           `json:"hostSoulAgentId,omitempty"`
+	WalletAddress      *string                           `json:"walletAddress,omitempty"`
+	PrincipalAddress   *string                           `json:"principalAddress,omitempty"`
+	Phase              SoulBootstrapPhase                `json:"phase"`
+	State              string                            `json:"state"`
+	SigningCheckpoints []*SoulBootstrapSigningCheckpoint `json:"signingCheckpoints"`
+	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
+	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
+	UpdatedAt          *Time                             `json:"updatedAt,omitempty"`
+}
+
+type SoulBootstrapSurface struct {
+	Username            string                       `json:"username"`
+	Body                *SoulBootstrapIdentityTarget `json:"body"`
+	Workflow            *AgentWorkflowSurface        `json:"workflow"`
+	State               *SoulBootstrapState          `json:"state"`
+	SoulBindingState    SoulBindingState             `json:"soulBindingState"`
+	ExistingSoulAgentID *string                      `json:"existingSoulAgentId,omitempty"`
+	HostBridgeAvailable bool                         `json:"hostBridgeAvailable"`
+	Executable          bool                         `json:"executable"`
+	NextAction          *string                      `json:"nextAction,omitempty"`
+	Error               *SoulBootstrapErrorState     `json:"error,omitempty"`
 }
 
 type SoulInventoryItem struct {
@@ -3064,6 +3200,26 @@ type UserPreferences struct {
 	Notifications *NotificationPreferences `json:"notifications"`
 	Privacy       *PrivacyPreferences      `json:"privacy"`
 	ReblogFilters []*ReblogFilter          `json:"reblogFilters"`
+}
+
+type VerifySoulBootstrapPrincipalDeclarationInput struct {
+	Username             string  `json:"username"`
+	RegistrationID       *string `json:"registrationId,omitempty"`
+	Signature            string  `json:"signature"`
+	PrincipalAddress     string  `json:"principalAddress"`
+	PrincipalDeclaration string  `json:"principalDeclaration"`
+	PrincipalSignature   string  `json:"principalSignature"`
+	DeclaredAt           Time    `json:"declaredAt"`
+	IdempotencyKey       *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey       *string `json:"correlationKey,omitempty"`
+}
+
+type VerifySoulBootstrapWalletInput struct {
+	Username       string  `json:"username"`
+	RegistrationID *string `json:"registrationId,omitempty"`
+	Signature      string  `json:"signature"`
+	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey *string `json:"correlationKey,omitempty"`
 }
 
 type ViewerRole struct {
@@ -5936,6 +6092,73 @@ func (e *SoulBindingState) UnmarshalJSON(b []byte) error {
 }
 
 func (e SoulBindingState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapPhase string
+
+const (
+	SoulBootstrapPhaseNotStarted           SoulBootstrapPhase = "NOT_STARTED"
+	SoulBootstrapPhaseBegin                SoulBootstrapPhase = "BEGIN"
+	SoulBootstrapPhaseWalletVerification   SoulBootstrapPhase = "WALLET_VERIFICATION"
+	SoulBootstrapPhasePrincipalDeclaration SoulBootstrapPhase = "PRINCIPAL_DECLARATION"
+	SoulBootstrapPhaseConversation         SoulBootstrapPhase = "CONVERSATION"
+	SoulBootstrapPhaseFinalize             SoulBootstrapPhase = "FINALIZE"
+	SoulBootstrapPhaseComplete             SoulBootstrapPhase = "COMPLETE"
+	SoulBootstrapPhaseError                SoulBootstrapPhase = "ERROR"
+)
+
+var AllSoulBootstrapPhase = []SoulBootstrapPhase{
+	SoulBootstrapPhaseNotStarted,
+	SoulBootstrapPhaseBegin,
+	SoulBootstrapPhaseWalletVerification,
+	SoulBootstrapPhasePrincipalDeclaration,
+	SoulBootstrapPhaseConversation,
+	SoulBootstrapPhaseFinalize,
+	SoulBootstrapPhaseComplete,
+	SoulBootstrapPhaseError,
+}
+
+func (e SoulBootstrapPhase) IsValid() bool {
+	switch e {
+	case SoulBootstrapPhaseNotStarted, SoulBootstrapPhaseBegin, SoulBootstrapPhaseWalletVerification, SoulBootstrapPhasePrincipalDeclaration, SoulBootstrapPhaseConversation, SoulBootstrapPhaseFinalize, SoulBootstrapPhaseComplete, SoulBootstrapPhaseError:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapPhase) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapPhase) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapPhase(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapPhase", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapPhase) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapPhase) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapPhase) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

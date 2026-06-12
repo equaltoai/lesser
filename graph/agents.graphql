@@ -534,6 +534,94 @@ type AgentWorkflowConversationState {
   updatedAt: Time!
 }
 
+enum SoulBootstrapPhase {
+  NOT_STARTED
+  BEGIN
+  WALLET_VERIFICATION
+  PRINCIPAL_DECLARATION
+  CONVERSATION
+  FINALIZE
+  COMPLETE
+  ERROR
+}
+
+type SoulBootstrapIdentityTarget {
+  username: String!
+  bodyId: ID!
+  displayName: String
+  owner: AgentSurfaceActor
+}
+
+type SoulBootstrapSigningCheckpoint {
+  name: String!
+  status: String!
+  principalAddress: String
+  signerAddress: String
+  signingMethod: String
+  messageEncoding: String
+  messageHex: String
+  digestHex: String
+  canonicalJson: String
+  hostRequestId: String
+  issuedAt: Time
+  declaredAt: Time
+  completedAt: Time
+}
+
+type SoulBootstrapCorrelationState {
+  correlationKey: String
+  beginIdempotencyKey: String
+  walletVerificationIdempotencyKey: String
+  principalDeclarationIdempotencyKey: String
+  conversationIdempotencyKey: String
+  finalizeIdempotencyKey: String
+  lastHostRequestId: String
+}
+
+type SoulBootstrapErrorState {
+  code: String!
+  message: String!
+  source: String
+  statusCode: Int
+  hostRequestId: String
+  at: Time
+}
+
+type SoulBootstrapState {
+  username: String!
+  bodyId: ID!
+  hostRegistrationId: ID
+  hostConversationId: ID
+  hostSoulAgentId: ID
+  walletAddress: String
+  principalAddress: String
+  phase: SoulBootstrapPhase!
+  state: String!
+  signingCheckpoints: [SoulBootstrapSigningCheckpoint!]!
+  error: SoulBootstrapErrorState
+  correlation: SoulBootstrapCorrelationState
+  updatedAt: Time
+}
+
+type SoulBootstrapSurface {
+  username: String!
+  body: SoulBootstrapIdentityTarget!
+  workflow: AgentWorkflowSurface!
+  state: SoulBootstrapState!
+  soulBindingState: SoulBindingState!
+  existingSoulAgentId: ID
+  hostBridgeAvailable: Boolean!
+  executable: Boolean!
+  nextAction: String
+  error: SoulBootstrapErrorState
+}
+
+type SoulBootstrapMutationPayload {
+  bootstrap: SoulBootstrapSurface!
+  executable: Boolean!
+  error: SoulBootstrapErrorState
+}
+
 type AgentWorkflowSurface {
   username: String!
   currentPhase: String!
@@ -547,6 +635,7 @@ type AgentWorkflowSurface {
   continuity: ContinuityPanel
   lifecycle: [AgentLifecycleStep!]!
   conversation: AgentWorkflowConversationState
+  soulBootstrap: SoulBootstrapState!
   identitySemantics: AgentIdentitySemantics!
 }
 
@@ -602,6 +691,84 @@ input FinalizeSoulPromotionInput {
   conversationId: ID
 }
 
+input BeginSoulBootstrapInput {
+  username: String!
+  walletAddress: String!
+  capabilities: [String!]
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input VerifySoulBootstrapWalletInput {
+  username: String!
+  registrationId: ID
+  signature: String!
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input PrepareSoulBootstrapPrincipalDeclarationInput {
+  username: String!
+  registrationId: ID
+  principalAddress: String!
+  principalDeclaration: String!
+  declaredAt: Time!
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input VerifySoulBootstrapPrincipalDeclarationInput {
+  username: String!
+  registrationId: ID
+  signature: String!
+  principalAddress: String!
+  principalDeclaration: String!
+  principalSignature: String!
+  declaredAt: Time!
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input SendSoulBootstrapConversationMessageInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID
+  message: String!
+  model: String
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input CompleteSoulBootstrapConversationInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID!
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input PrepareSoulBootstrapFinalizeInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID!
+  boundarySignaturesJson: String
+  idempotencyKey: String
+  correlationKey: String
+}
+
+input FinalizeSoulBootstrapInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID!
+  boundarySignaturesJson: String
+  issuedAt: Time
+  selfAttestation: String
+  expectedVersion: Int
+  signature: String
+  idempotencyKey: String
+  correlationKey: String
+}
+
 type DroneWorkflowMutationPayload {
   agent: Agent!
   workflow: AgentWorkflowSurface!
@@ -620,6 +787,7 @@ extend type Query {
   myDroneRequests: [SoulRequestCard!]!
   myDroneReviews: [ReviewDecisionCard!]!
   droneWorkflow(username: String!): AgentWorkflowSurface
+  soulBootstrap(username: String!): SoulBootstrapSurface
 }
 
 extend type Mutation {
@@ -647,6 +815,14 @@ extend type Mutation {
   requestSoulPromotion(input: RequestSoulPromotionInput!): DroneWorkflowMutationPayload!
   reviewSoulPromotion(input: ReviewSoulPromotionInput!): DroneWorkflowMutationPayload!
   finalizeSoulPromotion(input: FinalizeSoulPromotionInput!): DroneWorkflowMutationPayload!
+  beginSoulBootstrap(input: BeginSoulBootstrapInput!): SoulBootstrapMutationPayload!
+  verifySoulBootstrapWallet(input: VerifySoulBootstrapWalletInput!): SoulBootstrapMutationPayload!
+  prepareSoulBootstrapPrincipalDeclaration(input: PrepareSoulBootstrapPrincipalDeclarationInput!): SoulBootstrapMutationPayload!
+  verifySoulBootstrapPrincipalDeclaration(input: VerifySoulBootstrapPrincipalDeclarationInput!): SoulBootstrapMutationPayload!
+  sendSoulBootstrapConversationMessage(input: SendSoulBootstrapConversationMessageInput!): SoulBootstrapMutationPayload!
+  completeSoulBootstrapConversation(input: CompleteSoulBootstrapConversationInput!): SoulBootstrapMutationPayload!
+  prepareSoulBootstrapFinalize(input: PrepareSoulBootstrapFinalizeInput!): SoulBootstrapMutationPayload!
+  finalizeSoulBootstrap(input: FinalizeSoulBootstrapInput!): SoulBootstrapMutationPayload!
 }
 
 extend type Subscription {
