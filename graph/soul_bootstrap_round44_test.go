@@ -66,6 +66,68 @@ func TestRound44SoulBootstrapQueryProjectsZeroStateWorkflow(t *testing.T) {
 	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
 }
 
+func TestRound44SoulBootstrapRequiresAuthWriteScopeAndBodyAuthorization(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 12, 12, 30, 0, 0, time.UTC)
+	resolver.soulsClient = &stubSoulService{
+		beginBootstrapFunc: func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			t.Fatal("host bootstrap should not be called when Lesser auth or body authorization fails")
+			return nil, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "other-owner",
+		DisplayName: "Other Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-auth",
+		DisplayName: "Drone Auth",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-auth",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	_, err := (&queryResolver{resolver}).SoulBootstrap(context.Background(), "drone-auth")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
+
+	_, err = (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner"), "drone-auth")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
+
+	beginInput := model.BeginSoulBootstrapInput{
+		Username:      "drone-auth",
+		WalletAddress: "0x1111111111111111111111111111111111111111",
+	}
+	_, err = (&mutationResolver{resolver}).BeginSoulBootstrap(context.Background(), beginInput)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
+
+	_, err = (&mutationResolver{resolver}).BeginSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), beginInput)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
+
+	_, err = (&mutationResolver{resolver}).BeginSoulBootstrap(round13DroneAuthContext("other-owner", auth.ScopeWrite), beginInput)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+}
+
 func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	now := time.Date(2026, 6, 12, 13, 0, 0, 0, time.UTC)
@@ -161,6 +223,81 @@ func TestRound44SoulBootstrapBeginPersistsHostState(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+}
+
+func TestRound44SoulBootstrapBeginReplayDoesNotDuplicateHostRegistration(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 12, 13, 15, 0, 0, time.UTC)
+	const (
+		wallet  = "0x1111111111111111111111111111111111111111"
+		agentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	beginCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		beginBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			beginCalls++
+			require.Equal(t, 1, beginCalls, "idempotent begin replay must not call Host again")
+			require.Equal(t, "drone-replay", input.Username)
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:  "reg_replay",
+				HostSoulAgentID: agentID,
+				WalletAddress:   input.WalletAddress,
+				WalletChallenge: soulservice.BootstrapWalletChallenge{
+					Address: input.WalletAddress,
+					Message: "Sign this stable Host wallet challenge.",
+				},
+				HostRequestID: "host-req-replay",
+			}, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-replay",
+		DisplayName: "Drone Replay",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-replay",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	input := model.BeginSoulBootstrapInput{
+		Username:       "drone-replay",
+		WalletAddress:  wallet,
+		IdempotencyKey: round13StringPtr("begin-stable-replay"),
+		CorrelationKey: round13StringPtr("corr-stable"),
+	}
+	first, err := (&mutationResolver{resolver}).BeginSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeWrite), input)
+	require.NoError(t, err)
+	require.Nil(t, first.Error)
+	require.Equal(t, "reg_replay", derefString(first.Bootstrap.State.HostRegistrationID))
+	require.Equal(t, "begin-stable-replay", derefString(first.Bootstrap.State.Correlation.BeginIdempotencyKey))
+
+	second, err := (&mutationResolver{resolver}).BeginSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeWrite), input)
+	require.NoError(t, err)
+	require.Nil(t, second.Error)
+	require.Equal(t, 1, beginCalls)
+	require.Equal(t, "reg_replay", derefString(second.Bootstrap.State.HostRegistrationID))
+	require.Equal(t, agentID, derefString(second.Bootstrap.State.HostSoulAgentID))
+
+	mismatch := input
+	mismatch.WalletAddress = "0x2222222222222222222222222222222222222222"
+	rejected, err := (&mutationResolver{resolver}).BeginSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeWrite), mismatch)
+	require.NoError(t, err)
+	require.NotNil(t, rejected.Error)
+	require.Equal(t, 1, beginCalls)
+	require.Equal(t, workflow.SoulBootstrapErrorHostBootstrapReplayRejected, rejected.Error.Code)
+	require.Equal(t, workflow.SoulBootstrapStateCorrelationMismatch, rejected.Bootstrap.State.State)
 }
 
 func TestRound44SoulBootstrapHostErrorsPersistTypedState(t *testing.T) {

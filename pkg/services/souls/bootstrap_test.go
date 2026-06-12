@@ -322,6 +322,7 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 
 	const (
 		instanceKey = "host-instance-key"
+		userBearer  = "user-oauth-token"
 		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		principal   = "0x2222222222222222222222222222222222222222"
 	)
@@ -330,8 +331,11 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	var sawSendBody map[string]any
 	var sawPreflightBody map[string]map[string]string
 	var sawFinalizeBody map[string]any
+	var sawAuthHeaders []string
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuthHeaders = append(sawAuthHeaders, r.Header.Get("Authorization"))
 		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.NotEqual(t, "Bearer "+userBearer, r.Header.Get("Authorization"))
 		w.Header().Set("X-Request-Id", "host-req-"+strings.Trim(strings.ReplaceAll(r.URL.Path, "/", "-"), "-"))
 
 		switch r.URL.Path {
@@ -495,6 +499,11 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	require.Equal(t, principal, finalized.PrincipalAddress)
 	require.Equal(t, "hosted_offchain", finalized.Publication.AnchorState)
 	require.Equal(t, "graduated", finalized.Promotion.Stage)
+	require.Len(t, sawAuthHeaders, 4)
+	for _, authHeader := range sawAuthHeaders {
+		require.Equal(t, "Bearer "+instanceKey, authHeader)
+		require.NotEqual(t, "Bearer "+userBearer, authHeader)
+	}
 }
 
 func TestService_BootstrapRejectsInvalidLocalInputsAndResponses(t *testing.T) {
