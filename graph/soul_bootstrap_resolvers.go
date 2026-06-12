@@ -61,6 +61,9 @@ func (r *mutationResolver) BeginSoulBootstrap(ctx context.Context, input model.B
 		existing *workflow.SoulBootstrapState,
 		now time.Time,
 	) (*workflow.SoulBootstrapState, error) {
+		if replayState, handled := soulBootstrapBeginReplayState(agentUser, existing, correlation, input.WalletAddress, now); handled {
+			return replayState, nil
+		}
 		bodyID := soulBootstrapBodyID(agentUser)
 		result, err := service.BeginBootstrapRegistration(ctx, soulservice.BootstrapBeginInput{
 			Username:      soulBootstrapHostLocalID(agentUser),
@@ -480,6 +483,44 @@ func soulBootstrapStateAfterBegin(
 	state.Error = nil
 	state.UpdatedAt = &now
 	return workflow.NormalizeSoulBootstrap(state, username)
+}
+
+func soulBootstrapBeginReplayState(
+	agentUser *storage.User,
+	existing *workflow.SoulBootstrapState,
+	correlation *workflow.SoulBootstrapCorrelationState,
+	walletAddress string,
+	now time.Time,
+) (*workflow.SoulBootstrapState, bool) {
+	if existing == nil || correlation == nil || strings.TrimSpace(correlation.BeginIdempotencyKey) == "" {
+		return nil, false
+	}
+	username := ""
+	if agentUser != nil {
+		username = agentUser.Username
+	}
+	state := workflow.NormalizeSoulBootstrap(existing, username)
+	if strings.TrimSpace(state.HostRegistrationID) == "" || state.Correlation == nil {
+		return nil, false
+	}
+	if strings.TrimSpace(state.Correlation.BeginIdempotencyKey) != strings.TrimSpace(correlation.BeginIdempotencyKey) {
+		return nil, false
+	}
+	if storedWallet := strings.TrimSpace(state.WalletAddress); storedWallet != "" {
+		providedWallet := strings.ToLower(strings.TrimSpace(walletAddress))
+		if providedWallet != "" && !strings.EqualFold(storedWallet, providedWallet) {
+			return soulBootstrapErrorState(
+				agentUser,
+				state,
+				correlation,
+				soulBootstrapReplayRejectedError("wallet address does not match local bootstrap state"),
+				now,
+			), true
+		}
+	}
+	state.Correlation = mergeSoulBootstrapCorrelation(state.Correlation, correlation)
+	state.UpdatedAt = &now
+	return workflow.NormalizeSoulBootstrap(state, username), true
 }
 
 func soulBootstrapStateAfterPrincipalPreflight(
@@ -1316,12 +1357,7 @@ func soulBootstrapRegistrationID(existing *workflow.SoulBootstrapState, input *s
 	}
 	provided := strings.TrimSpace(derefString(input))
 	if stored != "" && provided != "" && stored != provided {
-		return "", &soulservice.HostBootstrapError{
-			Code:    workflow.SoulBootstrapErrorHostBootstrapReplayRejected,
-			Message: "registration id does not match local bootstrap state",
-			Source:  soulBootstrapErrorSourceLesser,
-			Err:     soulservice.ErrHostSigningPayloadUnsupported,
-		}
+		return "", soulBootstrapReplayRejectedError("registration id does not match local bootstrap state")
 	}
 	registrationID := provided
 	if registrationID == "" {
@@ -1345,12 +1381,7 @@ func soulBootstrapOptionalConversationID(existing *workflow.SoulBootstrapState, 
 	}
 	provided := strings.TrimSpace(derefString(input))
 	if stored != "" && provided != "" && stored != provided {
-		return "", &soulservice.HostBootstrapError{
-			Code:    workflow.SoulBootstrapErrorHostBootstrapReplayRejected,
-			Message: "conversation id does not match local bootstrap state",
-			Source:  soulBootstrapErrorSourceLesser,
-			Err:     soulservice.ErrHostSigningPayloadUnsupported,
-		}
+		return "", soulBootstrapReplayRejectedError("conversation id does not match local bootstrap state")
 	}
 	if provided != "" {
 		return provided, nil
@@ -1365,12 +1396,7 @@ func soulBootstrapRequiredConversationID(existing *workflow.SoulBootstrapState, 
 		stored = strings.TrimSpace(existing.HostConversationID)
 	}
 	if stored != "" && provided != "" && stored != provided {
-		return "", &soulservice.HostBootstrapError{
-			Code:    workflow.SoulBootstrapErrorHostBootstrapReplayRejected,
-			Message: "conversation id does not match local bootstrap state",
-			Source:  soulBootstrapErrorSourceLesser,
-			Err:     soulservice.ErrHostSigningPayloadUnsupported,
-		}
+		return "", soulBootstrapReplayRejectedError("conversation id does not match local bootstrap state")
 	}
 	conversationID := provided
 	if conversationID == "" {
@@ -1385,6 +1411,15 @@ func soulBootstrapRequiredConversationID(existing *workflow.SoulBootstrapState, 
 		}
 	}
 	return conversationID, nil
+}
+
+func soulBootstrapReplayRejectedError(message string) *soulservice.HostBootstrapError {
+	return &soulservice.HostBootstrapError{
+		Code:    workflow.SoulBootstrapErrorHostBootstrapReplayRejected,
+		Message: message,
+		Source:  soulBootstrapErrorSourceLesser,
+		Err:     soulservice.ErrHostSigningPayloadUnsupported,
+	}
 }
 
 func graphBootstrapSignatureMap(raw *string) (map[string]string, error) {
