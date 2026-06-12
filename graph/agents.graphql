@@ -553,12 +553,14 @@ type SoulBootstrapIdentityTarget {
 }
 
 type SoulBootstrapSigningCheckpoint {
+  version: String
   name: String!
   status: String!
   principalAddress: String
   signerAddress: String
   signingMethod: String
   messageEncoding: String
+  message: String
   messageHex: String
   digestHex: String
   canonicalJson: String

@@ -55,6 +55,8 @@ type Service struct {
 	cfg          *config.Config
 	logger       *zap.Logger
 	httpClient   *http.Client
+
+	hostInstanceKeyResolver hostInstanceKeyResolver
 }
 
 // Soul represents a host-discovered soul plus local binding state.

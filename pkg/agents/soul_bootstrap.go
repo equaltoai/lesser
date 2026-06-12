@@ -27,11 +27,31 @@ const (
 	SoulBootstrapStateNotStarted = "not_started"
 	// SoulBootstrapStateHostBridgeUnavailable is returned by M2.1 resolver skeletons.
 	SoulBootstrapStateHostBridgeUnavailable = "error.host_bridge_unavailable"
+	// SoulBootstrapStateHostTrustNotConfigured marks a missing effective Host trust base URL.
+	SoulBootstrapStateHostTrustNotConfigured = "error.host_trust_not_configured"
+	// SoulBootstrapStateHostInstanceKeyMissing marks a missing server-side Host instance key.
+	SoulBootstrapStateHostInstanceKeyMissing = "error.host_instance_key_missing"
+	// SoulBootstrapStateHostInstanceKeyUnavailable marks an unresolvable Host instance key.
+	SoulBootstrapStateHostInstanceKeyUnavailable = "error.host_instance_key_unavailable"
+	// SoulBootstrapStateHostUnavailable marks a bounded Host/network failure.
+	SoulBootstrapStateHostUnavailable = "error.host_unavailable"
+	// SoulBootstrapStateHostSigningPayloadUnsupported marks unsupported Host signing metadata.
+	SoulBootstrapStateHostSigningPayloadUnsupported = "error.host_signing_payload_unsupported"
 	// SoulBootstrapStateCompleteBound marks an existing soul/body binding projection.
 	SoulBootstrapStateCompleteBound = "complete.bound"
 
 	// SoulBootstrapErrorHostBridgeUnavailable is the typed M2.1 not-yet-executable error.
 	SoulBootstrapErrorHostBridgeUnavailable = "HOST_BRIDGE_UNAVAILABLE"
+	// SoulBootstrapErrorHostTrustNotConfigured is exposed when effective Host trust config is missing.
+	SoulBootstrapErrorHostTrustNotConfigured = "HOST_TRUST_NOT_CONFIGURED"
+	// SoulBootstrapErrorHostInstanceKeyMissing is exposed when the server-side Host instance key is absent.
+	SoulBootstrapErrorHostInstanceKeyMissing = "HOST_INSTANCE_KEY_MISSING"
+	// SoulBootstrapErrorHostInstanceKeyUnavailable is exposed when the Host instance key secret cannot be resolved.
+	SoulBootstrapErrorHostInstanceKeyUnavailable = "HOST_INSTANCE_KEY_UNAVAILABLE"
+	// SoulBootstrapErrorHostUnavailable is exposed for Host network/availability failures.
+	SoulBootstrapErrorHostUnavailable = "HOST_UNAVAILABLE"
+	// SoulBootstrapErrorHostSigningPayloadUnsupported is exposed for unsupported Host signing metadata.
+	SoulBootstrapErrorHostSigningPayloadUnsupported = "HOST_SIGNING_PAYLOAD_UNSUPPORTED"
 )
 
 // SoulBootstrapState stores local correlation state for zero-state soul creation.
@@ -59,12 +79,14 @@ type SoulBootstrapState struct {
 // SoulBootstrapSigningCheckpoint records non-secret signing material metadata
 // returned by Host preflight endpoints.
 type SoulBootstrapSigningCheckpoint struct {
+	Version          string     `json:"version,omitempty"`
 	Name             string     `json:"name,omitempty"`
 	Status           string     `json:"status,omitempty"`
 	PrincipalAddress string     `json:"principal_address,omitempty"`
 	SignerAddress    string     `json:"signer_address,omitempty"`
 	SigningMethod    string     `json:"signing_method,omitempty"`
 	MessageEncoding  string     `json:"message_encoding,omitempty"`
+	Message          string     `json:"message,omitempty"`
 	MessageHex       string     `json:"message_hex,omitempty"`
 	DigestHex        string     `json:"digest_hex,omitempty"`
 	CanonicalJSON    string     `json:"canonical_json,omitempty"`
@@ -146,6 +168,39 @@ func NewSoulBootstrapHostBridgeUnavailableState(username string, correlation *So
 			Message: "Lesser Host bridge calls are not executable until Project 44 M2.2.",
 			Source:  "lesser",
 			At:      &now,
+		},
+		UpdatedAt: &now,
+	}, username)
+}
+
+// NewSoulBootstrapErrorState builds a typed, client-safe error state.
+func NewSoulBootstrapErrorState(username string, correlation *SoulBootstrapCorrelationState, code string, message string, source string, statusCode int, hostRequestID string, now time.Time) *SoulBootstrapState {
+	now = now.UTC()
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = SoulBootstrapErrorHostUnavailable
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "Soul bootstrap could not complete."
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "lesser"
+	}
+	return NormalizeSoulBootstrap(&SoulBootstrapState{
+		Username:    username,
+		BodyID:      username,
+		Phase:       SoulBootstrapPhaseError,
+		State:       errorStateForBootstrapCode(code),
+		Correlation: correlation,
+		Error: &SoulBootstrapErrorState{
+			Code:          code,
+			Message:       message,
+			Source:        source,
+			StatusCode:    statusCode,
+			HostRequestID: strings.TrimSpace(hostRequestID),
+			At:            &now,
 		},
 		UpdatedAt: &now,
 	}, username)
@@ -237,6 +292,23 @@ func defaultBootstrapStateForPhase(phase string) string {
 	}
 }
 
+func errorStateForBootstrapCode(code string) string {
+	switch strings.TrimSpace(code) {
+	case SoulBootstrapErrorHostBridgeUnavailable:
+		return SoulBootstrapStateHostBridgeUnavailable
+	case SoulBootstrapErrorHostTrustNotConfigured:
+		return SoulBootstrapStateHostTrustNotConfigured
+	case SoulBootstrapErrorHostInstanceKeyMissing:
+		return SoulBootstrapStateHostInstanceKeyMissing
+	case SoulBootstrapErrorHostInstanceKeyUnavailable:
+		return SoulBootstrapStateHostInstanceKeyUnavailable
+	case SoulBootstrapErrorHostSigningPayloadUnsupported:
+		return SoulBootstrapStateHostSigningPayloadUnsupported
+	default:
+		return SoulBootstrapStateHostUnavailable
+	}
+}
+
 func (c *SoulBootstrapCorrelationState) trim() {
 	if c == nil {
 		return
@@ -264,12 +336,14 @@ func (c *SoulBootstrapSigningCheckpoint) trim() {
 	if c == nil {
 		return
 	}
+	c.Version = strings.TrimSpace(c.Version)
 	c.Name = strings.TrimSpace(c.Name)
 	c.Status = strings.TrimSpace(c.Status)
 	c.PrincipalAddress = strings.TrimSpace(c.PrincipalAddress)
 	c.SignerAddress = strings.TrimSpace(c.SignerAddress)
 	c.SigningMethod = strings.TrimSpace(c.SigningMethod)
 	c.MessageEncoding = strings.TrimSpace(c.MessageEncoding)
+	c.Message = strings.TrimSpace(c.Message)
 	c.MessageHex = strings.TrimSpace(c.MessageHex)
 	c.DigestHex = strings.TrimSpace(c.DigestHex)
 	c.CanonicalJSON = strings.TrimSpace(c.CanonicalJSON)

@@ -2976,6 +2976,7 @@ type ComplexityRoot struct {
 		DigestHex        func(childComplexity int) int
 		HostRequestID    func(childComplexity int) int
 		IssuedAt         func(childComplexity int) int
+		Message          func(childComplexity int) int
 		MessageEncoding  func(childComplexity int) int
 		MessageHex       func(childComplexity int) int
 		Name             func(childComplexity int) int
@@ -2983,6 +2984,7 @@ type ComplexityRoot struct {
 		SignerAddress    func(childComplexity int) int
 		SigningMethod    func(childComplexity int) int
 		Status           func(childComplexity int) int
+		Version          func(childComplexity int) int
 	}
 
 	SoulBootstrapState struct {
@@ -19656,6 +19658,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulBootstrapSigningCheckpoint.IssuedAt(childComplexity), true
 
+	case "SoulBootstrapSigningCheckpoint.message":
+		if e.complexity.SoulBootstrapSigningCheckpoint.Message == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapSigningCheckpoint.Message(childComplexity), true
+
 	case "SoulBootstrapSigningCheckpoint.messageEncoding":
 		if e.complexity.SoulBootstrapSigningCheckpoint.MessageEncoding == nil {
 			break
@@ -19704,6 +19713,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SoulBootstrapSigningCheckpoint.Status(childComplexity), true
+
+	case "SoulBootstrapSigningCheckpoint.version":
+		if e.complexity.SoulBootstrapSigningCheckpoint.Version == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapSigningCheckpoint.Version(childComplexity), true
 
 	case "SoulBootstrapState.bodyId":
 		if e.complexity.SoulBootstrapState.BodyID == nil {
@@ -131193,6 +131209,47 @@ func (ec *executionContext) fieldContext_SoulBootstrapMutationPayload_error(_ co
 	return fc, nil
 }
 
+func (ec *executionContext) _SoulBootstrapSigningCheckpoint_version(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapSigningCheckpoint) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapSigningCheckpoint_version(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Version, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapSigningCheckpoint_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapSigningCheckpoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SoulBootstrapSigningCheckpoint_name(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapSigningCheckpoint) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SoulBootstrapSigningCheckpoint_name(ctx, field)
 	if err != nil {
@@ -131433,6 +131490,47 @@ func (ec *executionContext) _SoulBootstrapSigningCheckpoint_messageEncoding(ctx 
 }
 
 func (ec *executionContext) fieldContext_SoulBootstrapSigningCheckpoint_messageEncoding(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapSigningCheckpoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapSigningCheckpoint_message(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapSigningCheckpoint) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapSigningCheckpoint_message(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Message, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapSigningCheckpoint_message(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "SoulBootstrapSigningCheckpoint",
 		Field:      field,
@@ -132152,6 +132250,8 @@ func (ec *executionContext) fieldContext_SoulBootstrapState_signingCheckpoints(_
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "version":
+				return ec.fieldContext_SoulBootstrapSigningCheckpoint_version(ctx, field)
 			case "name":
 				return ec.fieldContext_SoulBootstrapSigningCheckpoint_name(ctx, field)
 			case "status":
@@ -132164,6 +132264,8 @@ func (ec *executionContext) fieldContext_SoulBootstrapState_signingCheckpoints(_
 				return ec.fieldContext_SoulBootstrapSigningCheckpoint_signingMethod(ctx, field)
 			case "messageEncoding":
 				return ec.fieldContext_SoulBootstrapSigningCheckpoint_messageEncoding(ctx, field)
+			case "message":
+				return ec.fieldContext_SoulBootstrapSigningCheckpoint_message(ctx, field)
 			case "messageHex":
 				return ec.fieldContext_SoulBootstrapSigningCheckpoint_messageHex(ctx, field)
 			case "digestHex":
@@ -176052,6 +176154,8 @@ func (ec *executionContext) _SoulBootstrapSigningCheckpoint(ctx context.Context,
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("SoulBootstrapSigningCheckpoint")
+		case "version":
+			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_version(ctx, field, obj)
 		case "name":
 			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_name(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -176070,6 +176174,8 @@ func (ec *executionContext) _SoulBootstrapSigningCheckpoint(ctx context.Context,
 			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_signingMethod(ctx, field, obj)
 		case "messageEncoding":
 			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_messageEncoding(ctx, field, obj)
+		case "message":
+			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_message(ctx, field, obj)
 		case "messageHex":
 			out.Values[i] = ec._SoulBootstrapSigningCheckpoint_messageHex(ctx, field, obj)
 		case "digestHex":

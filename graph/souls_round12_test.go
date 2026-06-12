@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 )
 
 type stubSoulService struct {
-	listMineFunc     func(context.Context, string) ([]soulservice.Soul, error)
-	incorporateFunc  func(context.Context, string, string, string) (*soulservice.Soul, error)
-	resolveBoundFunc func(context.Context, string) (*soulservice.Soul, error)
+	listMineFunc                  func(context.Context, string) ([]soulservice.Soul, error)
+	incorporateFunc               func(context.Context, string, string, string) (*soulservice.Soul, error)
+	resolveBoundFunc              func(context.Context, string) (*soulservice.Soul, error)
+	beginBootstrapFunc            func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error)
+	prepareBootstrapPrincipalFunc func(context.Context, soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error)
+	verifyBootstrapPrincipalFunc  func(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 }
 
 func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
@@ -38,6 +42,27 @@ func (s *stubSoulService) ResolveBoundAgent(ctx context.Context, agentUsername s
 		return nil, nil
 	}
 	return s.resolveBoundFunc(ctx, agentUsername)
+}
+
+func (s *stubSoulService) BeginBootstrapRegistration(ctx context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+	if s.beginBootstrapFunc == nil {
+		return nil, errors.New("begin bootstrap not implemented")
+	}
+	return s.beginBootstrapFunc(ctx, input)
+}
+
+func (s *stubSoulService) PrepareBootstrapPrincipalDeclaration(ctx context.Context, input soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error) {
+	if s.prepareBootstrapPrincipalFunc == nil {
+		return nil, errors.New("prepare bootstrap principal declaration not implemented")
+	}
+	return s.prepareBootstrapPrincipalFunc(ctx, input)
+}
+
+func (s *stubSoulService) VerifyBootstrapPrincipalDeclaration(ctx context.Context, input soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error) {
+	if s.verifyBootstrapPrincipalFunc == nil {
+		return nil, errors.New("verify bootstrap principal declaration not implemented")
+	}
+	return s.verifyBootstrapPrincipalFunc(ctx, input)
 }
 
 func soulAuthContext(username string, scopes ...string) context.Context {
