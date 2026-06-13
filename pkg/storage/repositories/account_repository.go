@@ -50,7 +50,7 @@ type userVersionProjection struct {
 	Table string `json:"-"`
 	PK    string `theorydb:"pk"`
 	SK    string `theorydb:"sk"`
-	Value int    `theorydb:"version"`
+	Value *int   `theorydb:"attr:version"`
 }
 
 type userCoreProjection struct {
@@ -137,6 +137,13 @@ func (p userVersionProjection) TableName() string {
 		return p.Table
 	}
 	return models.MainTableName
+}
+
+func (p userVersionProjection) versionValue() (int, bool) {
+	if p.Value == nil {
+		return 0, false
+	}
+	return *p.Value, true
 }
 
 func (p userEmailLookupProjection) TableName() string {
@@ -517,11 +524,14 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 			r.logger.Warn("failed to hydrate user version",
 				zap.String("username", username),
 				zap.Error(err))
-		} else if versionProjection.Value > 0 {
-			user.Version = versionProjection.Value
-		} else if user.Version == 0 {
-			user.Version = 1
-			r.logger.Warn("user version attribute missing; defaulting to 1",
+		} else if versionValue, ok := versionProjection.versionValue(); ok {
+			user.Version = versionValue
+			if versionValue == 0 {
+				r.logger.Warn("user version is zero; preserving zero for optimistic update",
+					zap.String("username", username))
+			}
+		} else {
+			r.logger.Warn("user version attribute missing; proceeding with zero-version optimistic update",
 				zap.String("username", username))
 		}
 	}
@@ -1823,15 +1833,15 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 				zap.Error(err))
 			userModel.Version = 1     // Default to 1 if hydration fails
 			versionExistsInDB = false // Version doesn't exist in DB
-		} else if versionProjection.Value > 0 {
-			userModel.Version = versionProjection.Value
+		} else if versionValue, ok := versionProjection.versionValue(); ok && versionValue > 0 {
+			userModel.Version = versionValue
 			versionExistsInDB = true // Version exists in DB
 		} else {
-			// Version attribute doesn't exist in DB (Value=0 means not set)
-			// We'll initialize it without condition check
+			// Version attribute is missing or zero. Keep UpdateAccount's existing
+			// bootstrap behavior: initialize it without a condition check.
 			userModel.Version = 1
 			versionExistsInDB = false // Version doesn't exist in DB
-			r.logger.Warn("user version attribute missing during update; will initialize to 1",
+			r.logger.Warn("user version attribute missing or zero during update; will initialize to 1",
 				zap.String("username", username))
 		}
 	}

@@ -217,7 +217,8 @@ func TestAccountRepository_UpdateAccount_VersionProjectionZeroInitializes(t *tes
 		return ok
 	})).Run(func(args mock.Arguments) {
 		proj := args.Get(0).(*userVersionProjection)
-		proj.Value = 0
+		version := 0
+		proj.Value = &version
 	}).Return(nil).Once()
 
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, mockUpdateBuilder, baseTime)

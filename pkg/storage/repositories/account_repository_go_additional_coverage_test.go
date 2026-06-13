@@ -276,7 +276,7 @@ func TestAccountRepository_UpdateUser_VersionHydrationErrors(t *testing.T) {
 		require.NoError(t, repo.UpdateUser(ctx, "alice", map[string]interface{}{"display_name": "x"}))
 	})
 
-	t.Run("hydration_zero_defaults_to_one", func(t *testing.T) {
+	t.Run("hydration_zero_preserves_zero", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockUpdateBuilder := new(mocks.MockUpdateBuilder)
@@ -286,7 +286,8 @@ func TestAccountRepository_UpdateUser_VersionHydrationErrors(t *testing.T) {
 			return ok
 		})).Run(func(args mock.Arguments) {
 			proj := args.Get(0).(*userVersionProjection)
-			proj.Value = 0
+			version := 0
+			proj.Value = &version
 		}).Return(nil).Once()
 
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, mockUpdateBuilder, baseTime)
@@ -294,6 +295,78 @@ func TestAccountRepository_UpdateUser_VersionHydrationErrors(t *testing.T) {
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
 		require.NoError(t, repo.UpdateUser(ctx, "alice", map[string]interface{}{"display_name": "x"}))
 	})
+}
+
+func TestAccountRepository_UpdateUser_OptimisticVersionHydration(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name             string
+		projectedVersion int
+		wantVersion      int
+	}{
+		{
+			name:             "existing_zero_version_remains_zero_for_tabletheory_condition",
+			projectedVersion: 0,
+			wantVersion:      0,
+		},
+		{
+			name:             "positive_version_remains_optimistic_lock_baseline",
+			projectedVersion: 7,
+			wantVersion:      7,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := new(mocks.MockDB)
+			mockQuery := new(mocks.MockQuery)
+
+			var updateModel *models.User
+
+			mockDB.On("WithContext", mock.Anything).Return(mockDB)
+			mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+				if user, ok := args.Get(0).(*models.User); ok {
+					updateModel = user
+				}
+			}).Return(mockQuery)
+
+			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+			mockQuery.On("ConsistentRead").Return(mockQuery)
+			mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+				switch dest := args.Get(0).(type) {
+				case *models.User:
+					dest.Username = "scout"
+					dest.Role = "user"
+					dest.CreatedAt = baseTime
+					dest.UpdatedAt = baseTime
+					dest.Metadata = map[string]interface{}{"existing": true}
+					dest.Version = 0
+					require.NoError(t, dest.UpdateKeys())
+				case *userVersionProjection:
+					version := tt.projectedVersion
+					dest.Value = &version
+				default:
+					t.Fatalf("unexpected First destination %T", dest)
+				}
+			}).Return(nil)
+			mockQuery.On("Update", mock.Anything).Run(func(mock.Arguments) {
+				require.NotNil(t, updateModel)
+				require.Equal(t, tt.wantVersion, updateModel.Version)
+				require.Equal(t, map[string]interface{}{"drone": "workflow"}, updateModel.Metadata)
+			}).Return(nil).Once()
+
+			repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+			err := repo.UpdateUser(ctx, "scout", map[string]interface{}{
+				"metadata": map[string]interface{}{"drone": "workflow"},
+			})
+			require.NoError(t, err)
+
+			mockDB.AssertExpectations(t)
+			mockQuery.AssertExpectations(t)
+		})
+	}
 }
 
 func TestAccountRepository_DiscoveryAndPreferences_CursorAndTypeBranches(t *testing.T) {

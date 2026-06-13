@@ -212,7 +212,8 @@ func populateAccountRepositoryStructForCoverage(target any, idx int, baseTime ti
 		model.Table = "test-table"
 		model.PK = "USER#user-1"
 		model.SK = models.SKMetadata
-		model.Value = 1
+		version := 1
+		model.Value = &version
 
 	case *userCoreProjection:
 		model.Table = "test-table"

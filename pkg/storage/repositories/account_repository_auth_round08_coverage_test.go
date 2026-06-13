@@ -206,7 +206,8 @@ func TestRound08_AccountRepositoryAuth_PasswordResetFlow(t *testing.T) {
 				v.Username = "user-1"
 				v.Version = 1
 			case *userVersionProjection:
-				v.Value = 1
+				version := 1
+				v.Value = &version
 			}
 		}).Return(nil).Maybe()
 
