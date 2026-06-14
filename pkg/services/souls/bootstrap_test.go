@@ -674,6 +674,12 @@ func TestValidateHostHostedFinalizeResponse_Guardrails(t *testing.T) {
 	const agentID = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	valid := validHostedFinalizeResponse(agentID)
 	require.NoError(t, validateHostHostedFinalizeResponse(valid, "example.com", "drone-hosted"))
+	mixedCaseIDs := valid
+	mixedCaseIDs.AgentID = strings.ToUpper(agentID)
+	mixedCaseIDs.Agent.AgentID = strings.ToUpper(agentID)
+	mixedCaseIDs.Publication.AgentID = strings.ToUpper(agentID)
+	mixedCaseIDs.Promotion.AgentID = strings.ToUpper(agentID)
+	require.NoError(t, validateHostHostedFinalizeResponse(mixedCaseIDs, "example.com", "drone-hosted"))
 
 	testCases := []struct {
 		name   string
@@ -692,6 +698,30 @@ func TestValidateHostHostedFinalizeResponse_Guardrails(t *testing.T) {
 				out.Agent.AgentID = ""
 				out.Publication.AgentID = ""
 				out.Promotion.AgentID = ""
+			},
+		},
+		{
+			name: "top-level agent id mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.AgentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+		},
+		{
+			name: "nested agent id mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.AgentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+		},
+		{
+			name: "publication agent id mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Publication.AgentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+		},
+		{
+			name: "promotion agent id mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Promotion.AgentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 			},
 		},
 		{

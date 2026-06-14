@@ -1198,7 +1198,7 @@ func validateHostHostedFinalizeResponse(out hostFinalizeResponse, instanceDomain
 	if strings.TrimSpace(out.Version) != hostBootstrapVersion1 {
 		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host returned an unsupported hosted finalize response version.", Source: "host", Err: ErrHostUnavailable}
 	}
-	if _, err := validateAgentID(firstNonEmpty(out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID)); err != nil {
+	if _, err := validateHostFinalizeAgentIDConsistency(out); err != nil {
 		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not include a valid soul agent id.", Source: "host", Err: ErrHostUnavailable}
 	}
 	if !domainMatches(out.Agent.Domain, instanceDomain) {
@@ -1229,6 +1229,30 @@ func validateHostHostedFinalizeResponse(out hostFinalizeResponse, instanceDomain
 		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not publish a version.", Source: "host", Err: ErrHostUnavailable}
 	}
 	return nil
+}
+
+func validateHostFinalizeAgentIDConsistency(out hostFinalizeResponse) (string, error) {
+	var normalizedAgentID string
+	for _, agentID := range []string{out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID} {
+		if strings.TrimSpace(agentID) == "" {
+			continue
+		}
+		normalized, err := validateAgentID(agentID)
+		if err != nil {
+			return "", err
+		}
+		if normalizedAgentID == "" {
+			normalizedAgentID = normalized
+			continue
+		}
+		if normalized != normalizedAgentID {
+			return "", fmt.Errorf("inconsistent agent id %q", agentID)
+		}
+	}
+	if normalizedAgentID == "" {
+		return "", errors.New("agent id is required")
+	}
+	return normalizedAgentID, nil
 }
 
 func normalizeBootstrapCapabilities(values []string) []string {
