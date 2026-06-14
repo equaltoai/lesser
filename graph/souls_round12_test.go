@@ -17,14 +17,17 @@ import (
 type stubSoulService struct {
 	listMineFunc                      func(context.Context, string) ([]soulservice.Soul, error)
 	incorporateFunc                   func(context.Context, string, string, string) (*soulservice.Soul, error)
+	bindHostedBootstrapFunc           func(context.Context, string, *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error)
 	resolveBoundFunc                  func(context.Context, string) (*soulservice.Soul, error)
 	beginBootstrapFunc                func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error)
+	beginHostedBootstrapFunc          func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error)
 	prepareBootstrapPrincipalFunc     func(context.Context, soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error)
 	verifyBootstrapPrincipalFunc      func(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 	sendBootstrapConversationFunc     func(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
 	completeBootstrapConversationFunc func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	prepareBootstrapFinalizeFunc      func(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	finalizeBootstrapFunc             func(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
+	publishHostedBootstrapFunc        func(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error)
 }
 
 func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
@@ -41,6 +44,13 @@ func (s *stubSoulService) Incorporate(ctx context.Context, username string, targ
 	return s.incorporateFunc(ctx, username, targetAgentUsername, agentID)
 }
 
+func (s *stubSoulService) BindHostedBootstrap(ctx context.Context, targetAgentUsername string, result *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+	if s.bindHostedBootstrapFunc == nil {
+		return nil, nil
+	}
+	return s.bindHostedBootstrapFunc(ctx, targetAgentUsername, result)
+}
+
 func (s *stubSoulService) ResolveBoundAgent(ctx context.Context, agentUsername string) (*soulservice.Soul, error) {
 	if s.resolveBoundFunc == nil {
 		return nil, nil
@@ -53,6 +63,13 @@ func (s *stubSoulService) BeginBootstrapRegistration(ctx context.Context, input 
 		return nil, errors.New("begin bootstrap not implemented")
 	}
 	return s.beginBootstrapFunc(ctx, input)
+}
+
+func (s *stubSoulService) BeginHostedBootstrapRegistration(ctx context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+	if s.beginHostedBootstrapFunc == nil {
+		return nil, errors.New("begin hosted bootstrap not implemented")
+	}
+	return s.beginHostedBootstrapFunc(ctx, input)
 }
 
 func (s *stubSoulService) PrepareBootstrapPrincipalDeclaration(ctx context.Context, input soulservice.BootstrapPrincipalPreflightInput) (*soulservice.BootstrapPrincipalPreflightResult, error) {
@@ -95,6 +112,13 @@ func (s *stubSoulService) FinalizeBootstrap(ctx context.Context, input soulservi
 		return nil, errors.New("finalize bootstrap not implemented")
 	}
 	return s.finalizeBootstrapFunc(ctx, input)
+}
+
+func (s *stubSoulService) PublishHostedBootstrap(ctx context.Context, input soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+	if s.publishHostedBootstrapFunc == nil {
+		return nil, errors.New("publish hosted bootstrap not implemented")
+	}
+	return s.publishHostedBootstrapFunc(ctx, input)
 }
 
 func soulAuthContext(username string, scopes ...string) context.Context {

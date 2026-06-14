@@ -6,6 +6,73 @@ import (
 )
 
 const (
+	// SoulBootstrapModeHosted is the hosted-first instance-trust bootstrap path.
+	SoulBootstrapModeHosted = "hosted"
+	// SoulBootstrapModeWalletPrincipal is the compatibility wallet/principal assurance-upgrade path.
+	SoulBootstrapModeWalletPrincipal = "wallet_principal"
+
+	// SoulBootstrapAuthorityModelInstanceTrust is Host's managed instance-key authority model.
+	SoulBootstrapAuthorityModelInstanceTrust = "instance_trust"
+	// SoulBootstrapAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
+	SoulBootstrapAuthorityModelWalletPrincipal = "wallet_principal"
+
+	// SoulBootstrapAnchorStateHostedOffchain is Host's hosted/off-chain anchor state.
+	SoulBootstrapAnchorStateHostedOffchain = "hosted_offchain"
+	// SoulBootstrapAnchorStateImmutableOnchain is Host's on-chain assurance state.
+	SoulBootstrapAnchorStateImmutableOnchain = "immutable_onchain"
+
+	// SoulBootstrapAssuranceStateHostedOffchain is a hosted Host record assurance tier.
+	SoulBootstrapAssuranceStateHostedOffchain = "hosted_offchain"
+	// SoulBootstrapAssuranceStateImmutableOnchain is an on-chain receipt assurance tier.
+	SoulBootstrapAssuranceStateImmutableOnchain = "immutable_onchain"
+
+	// SoulBootstrapNextActionStartHostedBootstrap starts the default hosted bootstrap path.
+	SoulBootstrapNextActionStartHostedBootstrap = "start_hosted_bootstrap"
+	// SoulBootstrapNextActionSendHostedGenesisMessage sends the hosted genesis conversation turn.
+	SoulBootstrapNextActionSendHostedGenesisMessage = "send_hosted_soul_genesis_message"
+	// SoulBootstrapNextActionCompleteHostedGenesis completes the hosted genesis conversation.
+	SoulBootstrapNextActionCompleteHostedGenesis = "complete_hosted_soul_genesis"
+	// SoulBootstrapNextActionPublishHostedSoul publishes and binds the hosted soul.
+	SoulBootstrapNextActionPublishHostedSoul = "publish_hosted_soul"
+	// SoulBootstrapNextActionRestartSoulBootstrap restarts stale hosted bootstrap state.
+	SoulBootstrapNextActionRestartSoulBootstrap = "restart_soul_bootstrap"
+	// SoulBootstrapNextActionRetrySameStep retries a transient failed step.
+	SoulBootstrapNextActionRetrySameStep = "retry_same_step"
+	// SoulBootstrapNextActionRefreshState asks clients to refresh current state.
+	SoulBootstrapNextActionRefreshState = "refresh_state"
+	// SoulBootstrapNextActionOperatorActionRequired requires operator configuration/action.
+	SoulBootstrapNextActionOperatorActionRequired = "operator_action_required"
+	// SoulBootstrapNextActionVerifyWallet continues the wallet/principal compatibility path.
+	SoulBootstrapNextActionVerifyWallet = "verify_wallet"
+	// SoulBootstrapNextActionPreparePrincipalDeclaration prepares wallet/principal declaration signing.
+	SoulBootstrapNextActionPreparePrincipalDeclaration = "prepare_principal_declaration"
+	// SoulBootstrapNextActionVerifyPrincipalDeclaration verifies wallet/principal declaration signing.
+	SoulBootstrapNextActionVerifyPrincipalDeclaration = "verify_principal_declaration"
+	// SoulBootstrapNextActionContinueConversation continues a wallet/principal conversation.
+	SoulBootstrapNextActionContinueConversation = "continue_conversation"
+	// SoulBootstrapNextActionFinalize finalizes the wallet/principal compatibility path.
+	SoulBootstrapNextActionFinalize = "finalize"
+	// SoulBootstrapNextActionComplete marks completed bootstrap.
+	SoulBootstrapNextActionComplete = "complete"
+
+	// SoulBootstrapRecoveryCategoryRetrySameStep is safe to retry the same operation.
+	SoulBootstrapRecoveryCategoryRetrySameStep = "retry_same_step"
+	// SoulBootstrapRecoveryCategoryRestartRequired requires a new restart attempt.
+	SoulBootstrapRecoveryCategoryRestartRequired = "restart_required"
+	// SoulBootstrapRecoveryCategoryOperatorActionRequired requires operator action.
+	SoulBootstrapRecoveryCategoryOperatorActionRequired = "operator_action_required"
+	// SoulBootstrapRecoveryCategoryRefreshState asks clients to refresh current state.
+	SoulBootstrapRecoveryCategoryRefreshState = "refresh_state"
+
+	// SoulBootstrapRecoveryActionRetrySameStep is the stable retry action.
+	SoulBootstrapRecoveryActionRetrySameStep = "retry_same_step"
+	// SoulBootstrapRecoveryActionRestartBootstrap is the stable restart action.
+	SoulBootstrapRecoveryActionRestartBootstrap = "restart_bootstrap"
+	// SoulBootstrapRecoveryActionContactOperator is the stable operator action.
+	SoulBootstrapRecoveryActionContactOperator = "contact_operator"
+	// SoulBootstrapRecoveryActionRefreshState is the stable refresh action.
+	SoulBootstrapRecoveryActionRefreshState = "refresh_state"
+
 	// SoulBootstrapPhaseNotStarted marks a local body with no Host bootstrap state yet.
 	SoulBootstrapPhaseNotStarted = "not_started"
 	// SoulBootstrapPhaseBegin tracks Host registration begin.
@@ -92,12 +159,22 @@ type SoulBootstrapState struct {
 	HostSoulAgentID    string                            `json:"host_soul_agent_id,omitempty"`
 	WalletAddress      string                            `json:"wallet_address,omitempty"`
 	PrincipalAddress   string                            `json:"principal_address,omitempty"`
+	BootstrapMode      string                            `json:"bootstrap_mode,omitempty"`
+	AuthorityModel     string                            `json:"authority_model,omitempty"`
+	AnchorState        string                            `json:"anchor_state,omitempty"`
+	AssuranceState     string                            `json:"assurance_state,omitempty"`
 	Phase              string                            `json:"phase,omitempty"`
 	State              string                            `json:"state,omitempty"`
+	NextAction         string                            `json:"next_action,omitempty"`
+	RecoveryCategory   string                            `json:"recovery_category,omitempty"`
+	RecoveryAction     string                            `json:"recovery_action,omitempty"`
+	Retryable          bool                              `json:"retryable,omitempty"`
+	RestartRequired    bool                              `json:"restart_required,omitempty"`
 	SigningCheckpoints []SoulBootstrapSigningCheckpoint  `json:"signing_checkpoints,omitempty"`
 	Publication        *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
 	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
 	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
+	RestartedAt        *time.Time                        `json:"restarted_at,omitempty"`
 	UpdatedAt          *time.Time                        `json:"updated_at,omitempty"`
 }
 
@@ -131,6 +208,7 @@ type SoulBootstrapSigningCheckpoint struct {
 type SoulBootstrapPublicationEvidence struct {
 	AgentID                    string     `json:"agent_id,omitempty"`
 	PublishedVersion           int        `json:"published_version,omitempty"`
+	AuthorityModel             string     `json:"authority_model,omitempty"`
 	RegistrationURI            string     `json:"registration_uri,omitempty"`
 	RegistrationS3Key          string     `json:"registration_s3_key,omitempty"`
 	VersionedRegistrationURI   string     `json:"versioned_registration_uri,omitempty"`
@@ -141,12 +219,17 @@ type SoulBootstrapPublicationEvidence struct {
 
 // SoulBootstrapErrorState stores a typed, client-safe bootstrap error.
 type SoulBootstrapErrorState struct {
-	Code          string     `json:"code,omitempty"`
-	Message       string     `json:"message,omitempty"`
-	Source        string     `json:"source,omitempty"`
-	StatusCode    int        `json:"status_code,omitempty"`
-	HostRequestID string     `json:"host_request_id,omitempty"`
-	At            *time.Time `json:"at,omitempty"`
+	Code             string     `json:"code,omitempty"`
+	Message          string     `json:"message,omitempty"`
+	Source           string     `json:"source,omitempty"`
+	StatusCode       int        `json:"status_code,omitempty"`
+	DetailsJSON      string     `json:"details_json,omitempty"`
+	HostRequestID    string     `json:"host_request_id,omitempty"`
+	RecoveryCategory string     `json:"recovery_category,omitempty"`
+	RecoveryAction   string     `json:"recovery_action,omitempty"`
+	Retryable        bool       `json:"retryable,omitempty"`
+	RestartRequired  bool       `json:"restart_required,omitempty"`
+	At               *time.Time `json:"at,omitempty"`
 }
 
 // SoulBootstrapCorrelationState stores caller-provided correlation keys and
@@ -160,6 +243,10 @@ type SoulBootstrapCorrelationState struct {
 	PrincipalDeclarationIdempotencyKey string `json:"principal_declaration_idempotency_key,omitempty"`
 	ConversationIdempotencyKey         string `json:"conversation_idempotency_key,omitempty"`
 	FinalizeIdempotencyKey             string `json:"finalize_idempotency_key,omitempty"`
+	RestartIdempotencyKey              string `json:"restart_idempotency_key,omitempty"`
+	RecoveryAttemptID                  string `json:"recovery_attempt_id,omitempty"`
+	SupersededHostRegistrationID       string `json:"superseded_host_registration_id,omitempty"`
+	SupersededHostConversationID       string `json:"superseded_host_conversation_id,omitempty"`
 	LastHostRequestID                  string `json:"last_host_request_id,omitempty"`
 }
 
@@ -181,10 +268,17 @@ func NormalizeSoulBootstrap(state *SoulBootstrapState, username string) *SoulBoo
 	normalized.HostSoulAgentID = strings.TrimSpace(normalized.HostSoulAgentID)
 	normalized.WalletAddress = strings.TrimSpace(normalized.WalletAddress)
 	normalized.PrincipalAddress = strings.TrimSpace(normalized.PrincipalAddress)
+	normalized.BootstrapMode = normalizeBootstrapMode(normalized.BootstrapMode, normalized.AuthorityModel, normalized.WalletAddress)
+	normalized.AuthorityModel = normalizeBootstrapAuthorityModel(normalized.AuthorityModel, normalized.BootstrapMode)
+	normalized.AnchorState = strings.TrimSpace(normalized.AnchorState)
+	normalized.AssuranceState = normalizeBootstrapAssuranceState(normalized.AssuranceState, normalized.AnchorState)
 	normalized.Phase = normalizeBootstrapPhase(normalized.Phase, normalized.State)
 	if normalized.State = strings.TrimSpace(normalized.State); normalized.State == "" {
 		normalized.State = defaultBootstrapStateForPhase(normalized.Phase)
 	}
+	normalized.NextAction = strings.TrimSpace(normalized.NextAction)
+	normalized.RecoveryCategory = strings.TrimSpace(normalized.RecoveryCategory)
+	normalized.RecoveryAction = strings.TrimSpace(normalized.RecoveryAction)
 	if normalized.Correlation != nil {
 		normalized.Correlation.trim()
 	}
@@ -265,6 +359,7 @@ func (s *SoulBootstrapState) Clone() *SoulBootstrapState {
 	cloned.Error = cloneSoulBootstrapError(s.Error)
 	cloned.Correlation = cloneSoulBootstrapCorrelation(s.Correlation)
 	cloned.Publication = cloneSoulBootstrapPublication(s.Publication)
+	cloned.RestartedAt = cloneDroneTime(s.RestartedAt)
 	cloned.UpdatedAt = cloneDroneTime(s.UpdatedAt)
 	return &cloned
 }
@@ -310,6 +405,48 @@ func defaultBootstrapString(value string, fallback string) string {
 		return value
 	}
 	return strings.TrimSpace(fallback)
+}
+
+func normalizeBootstrapMode(mode string, authorityModel string, walletAddress string) string {
+	mode = strings.TrimSpace(mode)
+	switch mode {
+	case SoulBootstrapModeHosted, SoulBootstrapModeWalletPrincipal:
+		return mode
+	}
+	switch strings.TrimSpace(authorityModel) {
+	case SoulBootstrapAuthorityModelInstanceTrust:
+		return SoulBootstrapModeHosted
+	case SoulBootstrapAuthorityModelWalletPrincipal:
+		return SoulBootstrapModeWalletPrincipal
+	}
+	if strings.TrimSpace(walletAddress) != "" {
+		return SoulBootstrapModeWalletPrincipal
+	}
+	return SoulBootstrapModeHosted
+}
+
+func normalizeBootstrapAuthorityModel(authorityModel string, mode string) string {
+	authorityModel = strings.TrimSpace(authorityModel)
+	switch authorityModel {
+	case SoulBootstrapAuthorityModelInstanceTrust, SoulBootstrapAuthorityModelWalletPrincipal:
+		return authorityModel
+	}
+	if strings.TrimSpace(mode) == SoulBootstrapModeWalletPrincipal {
+		return SoulBootstrapAuthorityModelWalletPrincipal
+	}
+	return SoulBootstrapAuthorityModelInstanceTrust
+}
+
+func normalizeBootstrapAssuranceState(assuranceState string, anchorState string) string {
+	assuranceState = strings.TrimSpace(assuranceState)
+	if assuranceState != "" {
+		return assuranceState
+	}
+	anchorState = strings.TrimSpace(anchorState)
+	if anchorState != "" {
+		return anchorState
+	}
+	return ""
 }
 
 func normalizeBootstrapPhase(phase string, state string) string {
@@ -383,6 +520,10 @@ func (c *SoulBootstrapCorrelationState) trim() {
 	c.PrincipalDeclarationIdempotencyKey = strings.TrimSpace(c.PrincipalDeclarationIdempotencyKey)
 	c.ConversationIdempotencyKey = strings.TrimSpace(c.ConversationIdempotencyKey)
 	c.FinalizeIdempotencyKey = strings.TrimSpace(c.FinalizeIdempotencyKey)
+	c.RestartIdempotencyKey = strings.TrimSpace(c.RestartIdempotencyKey)
+	c.RecoveryAttemptID = strings.TrimSpace(c.RecoveryAttemptID)
+	c.SupersededHostRegistrationID = strings.TrimSpace(c.SupersededHostRegistrationID)
+	c.SupersededHostConversationID = strings.TrimSpace(c.SupersededHostConversationID)
 	c.LastHostRequestID = strings.TrimSpace(c.LastHostRequestID)
 }
 
@@ -393,7 +534,10 @@ func (e *SoulBootstrapErrorState) trim() {
 	e.Code = strings.TrimSpace(e.Code)
 	e.Message = strings.TrimSpace(e.Message)
 	e.Source = strings.TrimSpace(e.Source)
+	e.DetailsJSON = strings.TrimSpace(e.DetailsJSON)
 	e.HostRequestID = strings.TrimSpace(e.HostRequestID)
+	e.RecoveryCategory = strings.TrimSpace(e.RecoveryCategory)
+	e.RecoveryAction = strings.TrimSpace(e.RecoveryAction)
 }
 
 func (c *SoulBootstrapSigningCheckpoint) trim() {
@@ -422,6 +566,7 @@ func (p *SoulBootstrapPublicationEvidence) trim() {
 		return
 	}
 	p.AgentID = strings.TrimSpace(p.AgentID)
+	p.AuthorityModel = strings.TrimSpace(p.AuthorityModel)
 	p.RegistrationURI = strings.TrimSpace(p.RegistrationURI)
 	p.RegistrationS3Key = strings.TrimSpace(p.RegistrationS3Key)
 	p.VersionedRegistrationURI = strings.TrimSpace(p.VersionedRegistrationURI)

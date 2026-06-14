@@ -4703,6 +4703,52 @@ enum SoulBootstrapPhase {
   ERROR
 }
 
+enum SoulBootstrapMode {
+  HOSTED
+  WALLET_PRINCIPAL
+}
+
+enum SoulBootstrapAuthorityModel {
+  INSTANCE_TRUST
+  WALLET_PRINCIPAL
+}
+
+enum SoulBootstrapAnchorState {
+  HOSTED_OFFCHAIN
+  IMMUTABLE_ONCHAIN
+}
+
+enum SoulBootstrapNextAction {
+  START_HOSTED_BOOTSTRAP
+  SEND_HOSTED_SOUL_GENESIS_MESSAGE
+  COMPLETE_HOSTED_SOUL_GENESIS
+  PUBLISH_HOSTED_SOUL
+  RESTART_SOUL_BOOTSTRAP
+  RETRY_SAME_STEP
+  REFRESH_STATE
+  OPERATOR_ACTION_REQUIRED
+  VERIFY_WALLET
+  PREPARE_PRINCIPAL_DECLARATION
+  VERIFY_PRINCIPAL_DECLARATION
+  CONTINUE_CONVERSATION
+  FINALIZE
+  COMPLETE
+}
+
+enum SoulBootstrapRecoveryCategory {
+  RETRY_SAME_STEP
+  RESTART_REQUIRED
+  OPERATOR_ACTION_REQUIRED
+  REFRESH_STATE
+}
+
+enum SoulBootstrapRecoveryAction {
+  RETRY_SAME_STEP
+  RESTART_BOOTSTRAP
+  CONTACT_OPERATOR
+  REFRESH_STATE
+}
+
 type SoulBootstrapIdentityTarget {
   username: String!
   bodyId: ID!
@@ -4736,6 +4782,7 @@ type SoulBootstrapSigningCheckpoint {
 type SoulBootstrapPublicationEvidence {
   agentId: ID
   publishedVersion: Int
+  authorityModel: SoulBootstrapAuthorityModel
   registrationUri: String
   registrationS3Key: String
   versionedRegistrationUri: String
@@ -4751,6 +4798,10 @@ type SoulBootstrapCorrelationState {
   principalDeclarationIdempotencyKey: String
   conversationIdempotencyKey: String
   finalizeIdempotencyKey: String
+  restartIdempotencyKey: String
+  recoveryAttemptId: ID
+  supersededHostRegistrationId: ID
+  supersededHostConversationId: ID
   lastHostRequestId: String
 }
 
@@ -4759,7 +4810,12 @@ type SoulBootstrapErrorState {
   message: String!
   source: String
   statusCode: Int
+  detailsJson: String
   hostRequestId: String
+  recoveryCategory: SoulBootstrapRecoveryCategory
+  recoveryAction: SoulBootstrapRecoveryAction
+  retryable: Boolean!
+  restartRequired: Boolean!
   at: Time
 }
 
@@ -4771,12 +4827,26 @@ type SoulBootstrapState {
   hostSoulAgentId: ID
   walletAddress: String
   principalAddress: String
+  bootstrapMode: SoulBootstrapMode!
+  authorityModel: SoulBootstrapAuthorityModel!
+  anchorState: SoulBootstrapAnchorState
+  assuranceState: SoulBootstrapAnchorState
   phase: SoulBootstrapPhase!
   state: String!
+  typedNextAction: SoulBootstrapNextAction!
+  recoveryCategory: SoulBootstrapRecoveryCategory
+  recoveryAction: SoulBootstrapRecoveryAction
+  retryable: Boolean!
+  restartRequired: Boolean!
+  restartAvailable: Boolean!
   signingCheckpoints: [SoulBootstrapSigningCheckpoint!]!
   publication: SoulBootstrapPublicationEvidence
   error: SoulBootstrapErrorState
   correlation: SoulBootstrapCorrelationState
+  recoveryAttemptId: ID
+  restartIdempotencyKey: String
+  lastHostRequestId: String
+  restartedAt: Time
   updatedAt: Time
 }
 
@@ -4790,6 +4860,11 @@ type SoulBootstrapSurface {
   hostBridgeAvailable: Boolean!
   executable: Boolean!
   nextAction: String
+  typedNextAction: SoulBootstrapNextAction!
+  recoveryCategory: SoulBootstrapRecoveryCategory
+  recoveryAction: SoulBootstrapRecoveryAction
+  retryable: Boolean!
+  restartAvailable: Boolean!
   error: SoulBootstrapErrorState
 }
 
@@ -4866,6 +4941,51 @@ input FinalizeSoulPromotionInput {
   continuityObjective: String
   continuityFeedbackLoop: String
   conversationId: ID
+}
+
+input StartHostedSoulBootstrapInput {
+  username: String!
+  capabilities: [String!]
+  idempotencyKey: String
+  recoveryAttemptId: ID
+  correlationKey: String
+}
+
+input SendHostedSoulGenesisMessageInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID
+  message: String!
+  model: String
+  idempotencyKey: String
+  recoveryAttemptId: ID
+  correlationKey: String
+}
+
+input CompleteHostedSoulGenesisInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID!
+  idempotencyKey: String
+  recoveryAttemptId: ID
+  correlationKey: String
+}
+
+input PublishHostedSoulInput {
+  username: String!
+  registrationId: ID
+  conversationId: ID!
+  idempotencyKey: String
+  recoveryAttemptId: ID
+  correlationKey: String
+}
+
+input RestartSoulBootstrapInput {
+  username: String!
+  reason: String
+  recoveryAttemptId: ID!
+  idempotencyKey: String
+  correlationKey: String
 }
 
 input BeginSoulBootstrapInput {
@@ -4992,6 +5112,11 @@ extend type Mutation {
   requestSoulPromotion(input: RequestSoulPromotionInput!): DroneWorkflowMutationPayload!
   reviewSoulPromotion(input: ReviewSoulPromotionInput!): DroneWorkflowMutationPayload!
   finalizeSoulPromotion(input: FinalizeSoulPromotionInput!): DroneWorkflowMutationPayload!
+  startHostedSoulBootstrap(input: StartHostedSoulBootstrapInput!): SoulBootstrapMutationPayload!
+  sendHostedSoulGenesisMessage(input: SendHostedSoulGenesisMessageInput!): SoulBootstrapMutationPayload!
+  completeHostedSoulGenesis(input: CompleteHostedSoulGenesisInput!): SoulBootstrapMutationPayload!
+  publishHostedSoul(input: PublishHostedSoulInput!): SoulBootstrapMutationPayload!
+  restartSoulBootstrap(input: RestartSoulBootstrapInput!): SoulBootstrapMutationPayload!
   beginSoulBootstrap(input: BeginSoulBootstrapInput!): SoulBootstrapMutationPayload!
   verifySoulBootstrapWallet(input: VerifySoulBootstrapWalletInput!): SoulBootstrapMutationPayload!
   prepareSoulBootstrapPrincipalDeclaration(input: PrepareSoulBootstrapPrincipalDeclarationInput!): SoulBootstrapMutationPayload!
