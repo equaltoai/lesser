@@ -632,6 +632,77 @@ func TestRound44PublishHostedSoulRequiresLocalTerminalDeclarationEvidence(t *tes
 	require.Equal(t, model.SoulBootstrapNextActionRefreshState, payload.Bootstrap.TypedNextAction)
 }
 
+func TestRound44HostedPublishEvidenceHelpersRequireTerminalDeclarations(t *testing.T) {
+	validDeclaration := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+	validCheckpoint := workflow.SoulBootstrapSigningCheckpoint{
+		Name:          "hosted_conversation",
+		Status:        " completed ",
+		CanonicalJSON: validDeclaration,
+		HostRequestID: "host-req-complete",
+	}
+	validState := &workflow.SoulBootstrapState{
+		BootstrapMode:      workflow.SoulBootstrapModeHosted,
+		Phase:              workflow.SoulBootstrapPhaseConversation,
+		State:              workflow.SoulBootstrapStateConversationCompleted,
+		HostConversationID: "conv_hosted",
+		SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{validCheckpoint},
+	}
+
+	require.NoError(t, soulBootstrapRequireHostedPublishEvidence(validState, " conv_hosted "))
+	require.True(t, soulBootstrapHasTerminalConversationDeclarationEvidence(
+		[]workflow.SoulBootstrapSigningCheckpoint{validCheckpoint},
+		"conv_hosted",
+	))
+
+	legacyNameCheckpoint := validCheckpoint
+	legacyNameCheckpoint.Name = "conversation"
+	require.True(t, soulBootstrapHasTerminalConversationDeclarationEvidence(
+		[]workflow.SoulBootstrapSigningCheckpoint{legacyNameCheckpoint},
+		"conv_hosted",
+	))
+
+	staleConversation := *validState
+	staleConversation.HostConversationID = "conv_other"
+	err := soulBootstrapRequireHostedPublishEvidence(&staleConversation, "conv_hosted")
+	var hostErr *soulservice.HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, workflow.SoulBootstrapErrorHostBootstrapReplayRejected, hostErr.Code)
+	require.Contains(t, hostErr.Message, "conversation id")
+
+	invalidCheckpointState := *validState
+	invalidCheckpoint := validCheckpoint
+	invalidCheckpoint.CanonicalJSON = `{"selfDescription":{"summary":"ready"},"capabilities":[]}`
+	invalidCheckpointState.SigningCheckpoints = []workflow.SoulBootstrapSigningCheckpoint{invalidCheckpoint}
+	err = soulBootstrapRequireHostedPublishEvidence(&invalidCheckpointState, "conv_hosted")
+	hostErr = nil
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, workflow.SoulBootstrapErrorHostBootstrapReplayRejected, hostErr.Code)
+	require.Contains(t, hostErr.Message, "declaration evidence")
+	require.False(t, soulBootstrapHasTerminalConversationDeclarationEvidence(
+		[]workflow.SoulBootstrapSigningCheckpoint{invalidCheckpoint},
+		"conv_hosted",
+	))
+
+	modelState := &model.SoulBootstrapState{
+		BootstrapMode:      model.SoulBootstrapModeHosted,
+		HostConversationID: round13StringPtr("conv_hosted"),
+		SigningCheckpoints: []*model.SoulBootstrapSigningCheckpoint{
+			nil,
+			{
+				Name:          "hosted_conversation",
+				Status:        "completed",
+				CanonicalJSON: round13StringPtr(validDeclaration),
+				HostRequestID: round13StringPtr("host-req-complete"),
+			},
+		},
+	}
+	require.True(t, graphSoulBootstrapStateHasTerminalDeclarationEvidence(modelState))
+
+	modelState.SigningCheckpoints[1].CanonicalJSON = nil
+	require.False(t, graphSoulBootstrapStateHasTerminalDeclarationEvidence(modelState))
+	require.False(t, graphSoulBootstrapStateHasTerminalDeclarationEvidence(nil))
+}
+
 func TestRound44SoulBootstrapHostErrorsPersistTypedState(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	now := time.Date(2026, 6, 12, 13, 30, 0, 0, time.UTC)
