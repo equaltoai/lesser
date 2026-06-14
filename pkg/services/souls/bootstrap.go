@@ -541,7 +541,7 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 	if err != nil {
 		return nil, err
 	}
-	return &BootstrapConversationCompleteResult{
+	result := &BootstrapConversationCompleteResult{
 		RegistrationID:       registrationID,
 		HostSoulAgentID:      strings.ToLower(strings.TrimSpace(out.AgentID)),
 		ConversationID:       strings.TrimSpace(out.ConversationID),
@@ -549,7 +549,14 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 		ProducedDeclarations: strings.TrimSpace(out.ProducedDeclarations),
 		CompletedAt:          parseHostTimePtr(out.CompletedAt),
 		HostRequestID:        requestID,
-	}, nil
+	}
+	if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+		return nil, err
+	}
+	if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+		result.ProducedDeclarations = compact
+	}
+	return result, nil
 }
 
 // PrepareBootstrapFinalize calls Host finalize preflight and fails closed on
@@ -1128,6 +1135,93 @@ func hostConversationSSEError(rawData string) error {
 		message = "Host mint conversation failed."
 	}
 	return &HostBootstrapError{Code: "HOST_CONVERSATION_FAILED", Message: message, Source: "host", Err: ErrHostUnavailable}
+}
+
+// ValidateHostedBootstrapCompletionEvidence fails closed unless Host returned
+// terminal completion evidence for the requested hosted mint conversation.
+func ValidateHostedBootstrapCompletionEvidence(result *BootstrapConversationCompleteResult, expectedConversationID string) error {
+	if result == nil {
+		return hostBootstrapInvalidResponse("Host complete response is missing.", "")
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.Status), "completed") {
+		return hostBootstrapInvalidResponse("Host complete response was not terminal.", result.HostRequestID)
+	}
+	expectedConversationID = strings.TrimSpace(expectedConversationID)
+	if expectedConversationID == "" {
+		return &HostBootstrapError{Code: "HOST_CONVERSATION_ID_REQUIRED", Message: "conversation id is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+	if actual := strings.TrimSpace(result.ConversationID); actual == "" || actual != expectedConversationID {
+		return hostBootstrapInvalidResponse("Host complete response conversation id does not match the requested conversation.", result.HostRequestID)
+	}
+	_, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID)
+	return err
+}
+
+func compactHostedBootstrapProducedDeclarations(raw string, hostRequestID string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", hostBootstrapInvalidResponse("Host complete response did not include produced declarations.", hostRequestID)
+	}
+	var declaration map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &declaration); err != nil {
+		return "", hostBootstrapInvalidResponse("Host complete response produced declarations were not valid JSON.", hostRequestID)
+	}
+	if len(declaration) == 0 {
+		return "", hostBootstrapInvalidResponse("Host complete response produced declarations were empty.", hostRequestID)
+	}
+	if err := requireHostedDeclarationObject(declaration, "selfDescription", true, hostRequestID); err != nil {
+		return "", err
+	}
+	if err := requireHostedDeclarationArray(declaration, "capabilities", hostRequestID); err != nil {
+		return "", err
+	}
+	if err := requireHostedDeclarationArray(declaration, "boundaries", hostRequestID); err != nil {
+		return "", err
+	}
+	if err := requireHostedDeclarationObject(declaration, "transparency", false, hostRequestID); err != nil {
+		return "", err
+	}
+	return compactHostJSON(json.RawMessage(raw)), nil
+}
+
+func requireHostedDeclarationObject(declaration map[string]json.RawMessage, field string, requireNonEmpty bool, hostRequestID string) error {
+	raw, ok := declaration[field]
+	if !ok {
+		return hostBootstrapInvalidResponse("Host complete response produced declarations were missing "+field+".", hostRequestID)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return hostBootstrapInvalidResponse("Host complete response produced declarations had invalid "+field+".", hostRequestID)
+	}
+	if requireNonEmpty {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &object); err != nil || len(object) == 0 {
+			return hostBootstrapInvalidResponse("Host complete response produced declarations had empty "+field+".", hostRequestID)
+		}
+	}
+	return nil
+}
+
+func requireHostedDeclarationArray(declaration map[string]json.RawMessage, field string, hostRequestID string) error {
+	raw, ok := declaration[field]
+	if !ok {
+		return hostBootstrapInvalidResponse("Host complete response produced declarations were missing "+field+".", hostRequestID)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return hostBootstrapInvalidResponse("Host complete response produced declarations had invalid "+field+".", hostRequestID)
+	}
+	return nil
+}
+
+func hostBootstrapInvalidResponse(message string, hostRequestID string) *HostBootstrapError {
+	return &HostBootstrapError{
+		Code:          "HOST_RESPONSE_INVALID",
+		Message:       message,
+		Source:        "host",
+		HostRequestID: strings.TrimSpace(hostRequestID),
+		Err:           ErrHostUnavailable,
+	}
 }
 
 func compactHostJSON(raw json.RawMessage) string {

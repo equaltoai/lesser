@@ -579,6 +579,90 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	}
 }
 
+func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidence(t *testing.T) {
+	t.Parallel()
+
+	const instanceKey = "host-instance-key"
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	tests := []struct {
+		name         string
+		response     map[string]any
+		wantContains string
+	}{
+		{
+			name: "in progress is not terminal",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "in_progress",
+				"produced_declarations": validDeclarations,
+			},
+			wantContains: "not terminal",
+		},
+		{
+			name: "empty declarations",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "completed",
+				"produced_declarations": "",
+			},
+			wantContains: "produced declarations",
+		},
+		{
+			name: "conversation mismatch",
+			response: map[string]any{
+				"conversation_id":       "conv_other",
+				"status":                "completed",
+				"produced_declarations": validDeclarations,
+			},
+			wantContains: "conversation id",
+		},
+		{
+			name: "missing declaration shape",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "completed",
+				"produced_declarations": `{"selfDescription":{"summary":"ready"}}`,
+			},
+			wantContains: "capabilities",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete", r.URL.Path)
+				require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Request-Id", "host-req-complete-invalid")
+				require.NoError(t, json.NewEncoder(w).Encode(tt.response))
+			}))
+			defer host.Close()
+
+			service := NewService(
+				&fakeAccountRepo{},
+				&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+				&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+				zap.NewNop(),
+			).WithHTTPClient(host.Client())
+
+			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+				RegistrationID: "reg_hosted",
+				ConversationID: "conv_hosted",
+			})
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.ErrorIs(t, err, ErrHostUnavailable)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+			require.Equal(t, "host", hostErr.Source)
+			require.Equal(t, "host-req-complete-invalid", hostErr.HostRequestID)
+			require.Contains(t, hostErr.Message, tt.wantContains)
+		})
+	}
+}
+
 func TestService_PublishHostedBootstrapOmitsWalletSigningMaterial(t *testing.T) {
 	t.Parallel()
 

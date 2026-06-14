@@ -23,6 +23,8 @@ const (
 	soulBootstrapCorrelationOpFinalize             = "finalize"
 	soulBootstrapCorrelationOpRestart              = "restart"
 	soulBootstrapErrorSourceLesser                 = "lesser"
+	soulBootstrapCheckpointConversation            = "conversation"
+	soulBootstrapCheckpointHostedConversation      = "hosted_conversation"
 )
 
 func (r *queryResolver) SoulBootstrap(ctx context.Context, username string) (*model.SoulBootstrapSurface, error) {
@@ -127,6 +129,9 @@ func (r *mutationResolver) CompleteHostedSoulGenesis(ctx context.Context, input 
 		if err != nil {
 			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
 		}
+		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
 		return soulBootstrapStateAfterHostedConversationComplete(agentUser, existing, correlation, result, now), nil
 	})
 }
@@ -152,6 +157,9 @@ func (r *mutationResolver) PublishHostedSoul(ctx context.Context, input model.Pu
 		}
 		conversationID, err := soulBootstrapRequiredConversationID(existing, input.ConversationID)
 		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		if err := soulBootstrapRequireHostedPublishEvidence(existing, conversationID); err != nil {
 			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
 		}
 		result, err := service.PublishHostedBootstrap(ctx, soulservice.HostedBootstrapPublishInput{
@@ -845,7 +853,17 @@ func soulBootstrapStateAfterHostedConversationComplete(
 	if strings.TrimSpace(result.ConversationID) != "" {
 		state.HostConversationID = strings.TrimSpace(result.ConversationID)
 	}
-	state.SigningCheckpoints = nil
+	completedAt := result.CompletedAt
+	if completedAt == nil {
+		completedAt = &now
+	}
+	state.SigningCheckpoints = upsertSoulBootstrapCheckpoint(state.SigningCheckpoints, workflow.SoulBootstrapSigningCheckpoint{
+		Name:          soulBootstrapCheckpointHostedConversation,
+		Status:        strings.TrimSpace(defaultString(result.Status, "completed")),
+		CanonicalJSON: strings.TrimSpace(result.ProducedDeclarations),
+		HostRequestID: result.HostRequestID,
+		CompletedAt:   completedAt,
+	})
 	state.Correlation = mergeSoulBootstrapCorrelation(state.Correlation, correlation)
 	if state.Correlation == nil {
 		state.Correlation = &workflow.SoulBootstrapCorrelationState{}
@@ -1119,7 +1137,7 @@ func soulBootstrapStateAfterConversationComplete(
 		completedAt = &now
 	}
 	state.SigningCheckpoints = upsertSoulBootstrapCheckpoint(state.SigningCheckpoints, workflow.SoulBootstrapSigningCheckpoint{
-		Name:          "conversation",
+		Name:          soulBootstrapCheckpointConversation,
 		Status:        strings.TrimSpace(defaultString(result.Status, "completed")),
 		CanonicalJSON: strings.TrimSpace(result.ProducedDeclarations),
 		HostRequestID: result.HostRequestID,
@@ -1830,6 +1848,9 @@ func graphSoulBootstrapRecoveryActionPtr(action string) *model.SoulBootstrapReco
 func graphSoulBootstrapNextActionFromStored(state *workflow.SoulBootstrapState) model.SoulBootstrapNextAction {
 	if state != nil {
 		if action := graphSoulBootstrapNextActionEnumString(state.NextAction); action != "" {
+			if action == "PUBLISH_HOSTED_SOUL" && !soulBootstrapHasTerminalConversationDeclarationEvidence(state.SigningCheckpoints, state.HostConversationID) {
+				return graphSoulBootstrapNextActionEnum(graphSoulBootstrapStoredStateModelShallow(state), model.SoulBindingStateUnbound)
+			}
 			return model.SoulBootstrapNextAction(action)
 		}
 	}
@@ -1841,12 +1862,14 @@ func graphSoulBootstrapStoredStateModelShallow(state *workflow.SoulBootstrapStat
 		return nil
 	}
 	return &model.SoulBootstrapState{
-		Phase:            graphSoulBootstrapPhase(state.Phase),
-		State:            state.State,
-		BootstrapMode:    graphSoulBootstrapMode(state.BootstrapMode),
-		AuthorityModel:   graphSoulBootstrapAuthorityModel(state.AuthorityModel),
-		RestartRequired:  state.RestartRequired,
-		RecoveryCategory: graphSoulBootstrapRecoveryCategoryPtr(state.RecoveryCategory),
+		HostConversationID: optionalString(state.HostConversationID),
+		Phase:              graphSoulBootstrapPhase(state.Phase),
+		State:              state.State,
+		BootstrapMode:      graphSoulBootstrapMode(state.BootstrapMode),
+		AuthorityModel:     graphSoulBootstrapAuthorityModel(state.AuthorityModel),
+		SigningCheckpoints: graphSoulBootstrapSigningCheckpoints(state.SigningCheckpoints),
+		RestartRequired:    state.RestartRequired,
+		RecoveryCategory:   graphSoulBootstrapRecoveryCategoryPtr(state.RecoveryCategory),
 	}
 }
 
@@ -2024,6 +2047,9 @@ func graphSoulBootstrapNextActionEnum(state *model.SoulBootstrapState, bindingSt
 		return model.SoulBootstrapNextAction("RETRY_SAME_STEP")
 	}
 	if state.TypedNextAction != "" {
+		if state.TypedNextAction == model.SoulBootstrapNextAction("PUBLISH_HOSTED_SOUL") && !graphSoulBootstrapStateHasTerminalDeclarationEvidence(state) {
+			return model.SoulBootstrapNextAction("COMPLETE_HOSTED_SOUL_GENESIS")
+		}
 		return state.TypedNextAction
 	}
 	switch state.Phase {
@@ -2037,7 +2063,7 @@ func graphSoulBootstrapNextActionEnum(state *model.SoulBootstrapState, bindingSt
 	case model.SoulBootstrapPhase("PRINCIPAL_DECLARATION"):
 		return model.SoulBootstrapNextAction("VERIFY_PRINCIPAL_DECLARATION")
 	case model.SoulBootstrapPhase("CONVERSATION"):
-		if state.BootstrapMode == model.SoulBootstrapMode("HOSTED") && state.State == workflow.SoulBootstrapStateConversationCompleted {
+		if state.BootstrapMode == model.SoulBootstrapMode("HOSTED") && state.State == workflow.SoulBootstrapStateConversationCompleted && graphSoulBootstrapStateHasTerminalDeclarationEvidence(state) {
 			return model.SoulBootstrapNextAction("PUBLISH_HOSTED_SOUL")
 		}
 		if state.BootstrapMode == model.SoulBootstrapMode("HOSTED") {
@@ -2205,6 +2231,79 @@ func soulBootstrapRequiredConversationID(existing *workflow.SoulBootstrapState, 
 	return conversationID, nil
 }
 
+func soulBootstrapRequireHostedPublishEvidence(existing *workflow.SoulBootstrapState, conversationID string) error {
+	state := workflow.NormalizeSoulBootstrap(existing, "")
+	if state == nil {
+		return soulBootstrapReplayRejectedError("hosted conversation completion evidence is required before publish")
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if state.BootstrapMode != workflow.SoulBootstrapModeHosted ||
+		state.Phase != workflow.SoulBootstrapPhaseConversation ||
+		state.State != workflow.SoulBootstrapStateConversationCompleted {
+		return soulBootstrapReplayRejectedError("hosted conversation must be completed before publish")
+	}
+	if strings.TrimSpace(state.HostConversationID) == "" || strings.TrimSpace(state.HostConversationID) != conversationID {
+		return soulBootstrapReplayRejectedError("hosted conversation id does not match local terminal evidence")
+	}
+	if !soulBootstrapHasTerminalConversationDeclarationEvidence(state.SigningCheckpoints, conversationID) {
+		return soulBootstrapReplayRejectedError("hosted conversation declaration evidence is required before publish")
+	}
+	return nil
+}
+
+func soulBootstrapHasTerminalConversationDeclarationEvidence(checkpoints []workflow.SoulBootstrapSigningCheckpoint, conversationID string) bool {
+	conversationID = strings.TrimSpace(conversationID)
+	for _, checkpoint := range checkpoints {
+		name := strings.TrimSpace(checkpoint.Name)
+		if !strings.EqualFold(name, soulBootstrapCheckpointHostedConversation) && !strings.EqualFold(name, soulBootstrapCheckpointConversation) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(checkpoint.Status), "completed") {
+			continue
+		}
+		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
+			ConversationID:       conversationID,
+			Status:               checkpoint.Status,
+			ProducedDeclarations: checkpoint.CanonicalJSON,
+			HostRequestID:        checkpoint.HostRequestID,
+		}, conversationID); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func graphSoulBootstrapStateHasTerminalDeclarationEvidence(state *model.SoulBootstrapState) bool {
+	if state == nil || state.BootstrapMode != model.SoulBootstrapModeHosted {
+		return false
+	}
+	conversationID := strings.TrimSpace(derefString(state.HostConversationID))
+	for _, checkpoint := range state.SigningCheckpoints {
+		if checkpoint == nil {
+			continue
+		}
+		name := strings.TrimSpace(checkpoint.Name)
+		if !strings.EqualFold(name, soulBootstrapCheckpointHostedConversation) && !strings.EqualFold(name, soulBootstrapCheckpointConversation) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(checkpoint.Status), "completed") {
+			continue
+		}
+		if checkpoint.CanonicalJSON == nil {
+			continue
+		}
+		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
+			ConversationID:       conversationID,
+			Status:               checkpoint.Status,
+			ProducedDeclarations: *checkpoint.CanonicalJSON,
+			HostRequestID:        derefString(checkpoint.HostRequestID),
+		}, conversationID); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func soulBootstrapReplayRejectedError(message string) *soulservice.HostBootstrapError {
 	return &soulservice.HostBootstrapError{
 		Code:    workflow.SoulBootstrapErrorHostBootstrapReplayRejected,
@@ -2320,11 +2419,13 @@ func applySoulBootstrapWorkflowProjection(
 		workflowState.CurrentState = workflow.DroneWorkflowStateDeclarationReady
 	case bootstrap.Phase == workflow.SoulBootstrapPhaseConversation &&
 		bootstrap.BootstrapMode == workflow.SoulBootstrapModeHosted &&
-		bootstrap.State == workflow.SoulBootstrapStateConversationCompleted:
+		bootstrap.State == workflow.SoulBootstrapStateConversationCompleted &&
+		soulBootstrapHasTerminalConversationDeclarationEvidence(bootstrap.SigningCheckpoints, bootstrap.HostConversationID):
 		workflowState.CurrentPhase = workflow.DroneWorkflowPhaseGraduation
 		workflowState.CurrentState = workflow.DroneWorkflowStateGraduationReady
 	case bootstrap.Phase == workflow.SoulBootstrapPhaseConversation:
-		if bootstrap.State == workflow.SoulBootstrapStateConversationCompleted {
+		if bootstrap.State == workflow.SoulBootstrapStateConversationCompleted &&
+			soulBootstrapHasTerminalConversationDeclarationEvidence(bootstrap.SigningCheckpoints, bootstrap.HostConversationID) {
 			workflowState.CurrentPhase = workflow.DroneWorkflowPhaseSigning
 			workflowState.CurrentState = workflow.DroneWorkflowStateSigningPending
 		} else {
@@ -2348,7 +2449,9 @@ func applySoulBootstrapWorkflowProjection(
 		return
 	}
 
-	if bootstrap.Phase == workflow.SoulBootstrapPhaseConversation && bootstrap.State == workflow.SoulBootstrapStateConversationCompleted {
+	if bootstrap.Phase == workflow.SoulBootstrapPhaseConversation &&
+		bootstrap.State == workflow.SoulBootstrapStateConversationCompleted &&
+		soulBootstrapHasTerminalConversationDeclarationEvidence(bootstrap.SigningCheckpoints, bootstrap.HostConversationID) {
 		workflowState.Declaration = &workflow.DroneDeclarationCard{
 			ID:            agentUser.Username + ":bootstrap-declaration",
 			Title:         "Soul bootstrap declaration",
