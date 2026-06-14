@@ -579,6 +579,264 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	}
 }
 
+func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidence(t *testing.T) {
+	t.Parallel()
+
+	const instanceKey = "host-instance-key"
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	tests := []struct {
+		name         string
+		response     map[string]any
+		wantContains string
+	}{
+		{
+			name: "in progress is not terminal",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "in_progress",
+				"produced_declarations": validDeclarations,
+			},
+			wantContains: "not terminal",
+		},
+		{
+			name: "empty declarations",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "completed",
+				"produced_declarations": "",
+			},
+			wantContains: "produced declarations",
+		},
+		{
+			name: "conversation mismatch",
+			response: map[string]any{
+				"conversation_id":       "conv_other",
+				"status":                "completed",
+				"produced_declarations": validDeclarations,
+			},
+			wantContains: "conversation id",
+		},
+		{
+			name: "missing declaration shape",
+			response: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"status":                "completed",
+				"produced_declarations": `{"selfDescription":{"summary":"ready"}}`,
+			},
+			wantContains: "capabilities",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete", r.URL.Path)
+				require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Request-Id", "host-req-complete-invalid")
+				require.NoError(t, json.NewEncoder(w).Encode(tt.response))
+			}))
+			defer host.Close()
+
+			service := NewService(
+				&fakeAccountRepo{},
+				&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+				&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+				zap.NewNop(),
+			).WithHTTPClient(host.Client())
+
+			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+				RegistrationID: "reg_hosted",
+				ConversationID: "conv_hosted",
+			})
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.ErrorIs(t, err, ErrHostUnavailable)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+			require.Equal(t, "host", hostErr.Source)
+			require.Equal(t, "host-req-complete-invalid", hostErr.HostRequestID)
+			require.Contains(t, hostErr.Message, tt.wantContains)
+		})
+	}
+}
+
+func TestValidateHostedBootstrapCompletionEvidenceCoversDeclarationShape(t *testing.T) {
+	t.Parallel()
+
+	validDeclarations := `{
+		"selfDescription":{"summary":"ready"},
+		"capabilities":[{"name":"post"}],
+		"boundaries":[],
+		"transparency":{}
+	}`
+
+	tests := []struct {
+		name           string
+		result         *BootstrapConversationCompleteResult
+		expected       string
+		wantErr        bool
+		wantCode       string
+		wantSource     string
+		wantContains   string
+		wantHostReqID  string
+		wantErrMatches error
+	}{
+		{
+			name:         "nil result",
+			result:       nil,
+			expected:     "conv_hosted",
+			wantErr:      true,
+			wantCode:     "HOST_RESPONSE_INVALID",
+			wantSource:   "host",
+			wantContains: "missing",
+		},
+		{
+			name: "missing expected conversation id is local invalid request",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: validDeclarations,
+				HostRequestID:        "host-req-complete",
+			},
+			expected:       " ",
+			wantErr:        true,
+			wantCode:       "HOST_CONVERSATION_ID_REQUIRED",
+			wantSource:     "lesser",
+			wantContains:   "conversation id",
+			wantErrMatches: ErrHostSigningPayloadUnsupported,
+		},
+		{
+			name: "invalid declarations json",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{`,
+				HostRequestID:        "host-req-invalid-json",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "not valid JSON",
+			wantHostReqID: "host-req-invalid-json",
+		},
+		{
+			name: "empty declarations object",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{}`,
+				HostRequestID:        "host-req-empty",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "empty",
+			wantHostReqID: "host-req-empty",
+		},
+		{
+			name: "empty self description fails closed",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{"selfDescription":{},"capabilities":[],"boundaries":[],"transparency":{}}`,
+				HostRequestID:        "host-req-empty-self",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "empty selfDescription",
+			wantHostReqID: "host-req-empty-self",
+		},
+		{
+			name: "missing self description fails closed",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{"capabilities":[],"boundaries":[],"transparency":{}}`,
+				HostRequestID:        "host-req-missing-self",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "missing selfDescription",
+			wantHostReqID: "host-req-missing-self",
+		},
+		{
+			name: "invalid boundaries type fails closed",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":{},"transparency":{}}`,
+				HostRequestID:        "host-req-boundaries",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "invalid boundaries",
+			wantHostReqID: "host-req-boundaries",
+		},
+		{
+			name: "invalid transparency type fails closed",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":[]}`,
+				HostRequestID:        "host-req-transparency",
+			},
+			expected:      "conv_hosted",
+			wantErr:       true,
+			wantCode:      "HOST_RESPONSE_INVALID",
+			wantSource:    "host",
+			wantContains:  "invalid transparency",
+			wantHostReqID: "host-req-transparency",
+		},
+		{
+			name: "complete terminal declarations accepted",
+			result: &BootstrapConversationCompleteResult{
+				ConversationID:       " conv_hosted ",
+				Status:               "COMPLETED",
+				ProducedDeclarations: validDeclarations,
+				HostRequestID:        "host-req-valid",
+			},
+			expected: "conv_hosted",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateHostedBootstrapCompletionEvidence(tt.result, tt.expected)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.Equal(t, tt.wantCode, hostErr.Code)
+			require.Equal(t, tt.wantSource, hostErr.Source)
+			require.Contains(t, hostErr.Message, tt.wantContains)
+			require.Equal(t, tt.wantHostReqID, hostErr.HostRequestID)
+			if tt.wantErrMatches != nil {
+				require.ErrorIs(t, err, tt.wantErrMatches)
+			} else {
+				require.ErrorIs(t, err, ErrHostUnavailable)
+			}
+		})
+	}
+}
+
 func TestService_PublishHostedBootstrapOmitsWalletSigningMaterial(t *testing.T) {
 	t.Parallel()
 
