@@ -905,6 +905,15 @@ type CommunityNotePayload struct {
 	Object *Object        `json:"object"`
 }
 
+type CompleteHostedSoulGenesisInput struct {
+	Username          string  `json:"username"`
+	RegistrationID    *string `json:"registrationId,omitempty"`
+	ConversationID    string  `json:"conversationId"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string `json:"recoveryAttemptId,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
+}
+
 type CompleteSoulBootstrapConversationInput struct {
 	Username       string  `json:"username"`
 	RegistrationID *string `json:"registrationId,omitempty"`
@@ -2269,6 +2278,15 @@ type ProfileFieldInput struct {
 	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
 }
 
+type PublishHostedSoulInput struct {
+	Username          string  `json:"username"`
+	RegistrationID    *string `json:"registrationId,omitempty"`
+	ConversationID    string  `json:"conversationId"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string `json:"recoveryAttemptId,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
+}
+
 type PushSubscription struct {
 	ID        string                  `json:"id"`
 	Endpoint  string                  `json:"endpoint"`
@@ -2517,6 +2535,14 @@ type RequestSoulPromotionInput struct {
 	ConversationID *string                      `json:"conversationId,omitempty"`
 }
 
+type RestartSoulBootstrapInput struct {
+	Username          string  `json:"username"`
+	Reason            *string `json:"reason,omitempty"`
+	RecoveryAttemptID string  `json:"recoveryAttemptId"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
+}
+
 type ReviewDecisionCard struct {
 	ID              string                  `json:"id"`
 	Title           string                  `json:"title"`
@@ -2579,6 +2605,17 @@ type SearchResult struct {
 	Accounts []*activitypub.Actor `json:"accounts"`
 	Statuses []*Object            `json:"statuses"`
 	Hashtags []*activitypub.Tag   `json:"hashtags"`
+}
+
+type SendHostedSoulGenesisMessageInput struct {
+	Username          string  `json:"username"`
+	RegistrationID    *string `json:"registrationId,omitempty"`
+	ConversationID    *string `json:"conversationId,omitempty"`
+	Message           string  `json:"message"`
+	Model             *string `json:"model,omitempty"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string `json:"recoveryAttemptId,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
 }
 
 type SendMessagePayload struct {
@@ -2715,16 +2752,25 @@ type SoulBootstrapCorrelationState struct {
 	PrincipalDeclarationIdempotencyKey *string `json:"principalDeclarationIdempotencyKey,omitempty"`
 	ConversationIdempotencyKey         *string `json:"conversationIdempotencyKey,omitempty"`
 	FinalizeIdempotencyKey             *string `json:"finalizeIdempotencyKey,omitempty"`
+	RestartIdempotencyKey              *string `json:"restartIdempotencyKey,omitempty"`
+	RecoveryAttemptID                  *string `json:"recoveryAttemptId,omitempty"`
+	SupersededHostRegistrationID       *string `json:"supersededHostRegistrationId,omitempty"`
+	SupersededHostConversationID       *string `json:"supersededHostConversationId,omitempty"`
 	LastHostRequestID                  *string `json:"lastHostRequestId,omitempty"`
 }
 
 type SoulBootstrapErrorState struct {
-	Code          string  `json:"code"`
-	Message       string  `json:"message"`
-	Source        *string `json:"source,omitempty"`
-	StatusCode    *int    `json:"statusCode,omitempty"`
-	HostRequestID *string `json:"hostRequestId,omitempty"`
-	At            *Time   `json:"at,omitempty"`
+	Code             string                         `json:"code"`
+	Message          string                         `json:"message"`
+	Source           *string                        `json:"source,omitempty"`
+	StatusCode       *int                           `json:"statusCode,omitempty"`
+	DetailsJSON      *string                        `json:"detailsJson,omitempty"`
+	HostRequestID    *string                        `json:"hostRequestId,omitempty"`
+	RecoveryCategory *SoulBootstrapRecoveryCategory `json:"recoveryCategory,omitempty"`
+	RecoveryAction   *SoulBootstrapRecoveryAction   `json:"recoveryAction,omitempty"`
+	Retryable        bool                           `json:"retryable"`
+	RestartRequired  bool                           `json:"restartRequired"`
+	At               *Time                          `json:"at,omitempty"`
 }
 
 type SoulBootstrapIdentityTarget struct {
@@ -2741,14 +2787,15 @@ type SoulBootstrapMutationPayload struct {
 }
 
 type SoulBootstrapPublicationEvidence struct {
-	AgentID                    *string `json:"agentId,omitempty"`
-	PublishedVersion           *int    `json:"publishedVersion,omitempty"`
-	RegistrationURI            *string `json:"registrationUri,omitempty"`
-	RegistrationS3Key          *string `json:"registrationS3Key,omitempty"`
-	VersionedRegistrationURI   *string `json:"versionedRegistrationUri,omitempty"`
-	VersionedRegistrationS3Key *string `json:"versionedRegistrationS3Key,omitempty"`
-	AnchorState                *string `json:"anchorState,omitempty"`
-	PublishedAt                *Time   `json:"publishedAt,omitempty"`
+	AgentID                    *string                      `json:"agentId,omitempty"`
+	PublishedVersion           *int                         `json:"publishedVersion,omitempty"`
+	AuthorityModel             *SoulBootstrapAuthorityModel `json:"authorityModel,omitempty"`
+	RegistrationURI            *string                      `json:"registrationUri,omitempty"`
+	RegistrationS3Key          *string                      `json:"registrationS3Key,omitempty"`
+	VersionedRegistrationURI   *string                      `json:"versionedRegistrationUri,omitempty"`
+	VersionedRegistrationS3Key *string                      `json:"versionedRegistrationS3Key,omitempty"`
+	AnchorState                *string                      `json:"anchorState,omitempty"`
+	PublishedAt                *Time                        `json:"publishedAt,omitempty"`
 }
 
 type SoulBootstrapSigningCheckpoint struct {
@@ -2775,33 +2822,52 @@ type SoulBootstrapSigningCheckpoint struct {
 }
 
 type SoulBootstrapState struct {
-	Username           string                            `json:"username"`
-	BodyID             string                            `json:"bodyId"`
-	HostRegistrationID *string                           `json:"hostRegistrationId,omitempty"`
-	HostConversationID *string                           `json:"hostConversationId,omitempty"`
-	HostSoulAgentID    *string                           `json:"hostSoulAgentId,omitempty"`
-	WalletAddress      *string                           `json:"walletAddress,omitempty"`
-	PrincipalAddress   *string                           `json:"principalAddress,omitempty"`
-	Phase              SoulBootstrapPhase                `json:"phase"`
-	State              string                            `json:"state"`
-	SigningCheckpoints []*SoulBootstrapSigningCheckpoint `json:"signingCheckpoints"`
-	Publication        *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
-	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
-	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
-	UpdatedAt          *Time                             `json:"updatedAt,omitempty"`
+	Username              string                            `json:"username"`
+	BodyID                string                            `json:"bodyId"`
+	HostRegistrationID    *string                           `json:"hostRegistrationId,omitempty"`
+	HostConversationID    *string                           `json:"hostConversationId,omitempty"`
+	HostSoulAgentID       *string                           `json:"hostSoulAgentId,omitempty"`
+	WalletAddress         *string                           `json:"walletAddress,omitempty"`
+	PrincipalAddress      *string                           `json:"principalAddress,omitempty"`
+	BootstrapMode         SoulBootstrapMode                 `json:"bootstrapMode"`
+	AuthorityModel        SoulBootstrapAuthorityModel       `json:"authorityModel"`
+	AnchorState           *SoulBootstrapAnchorState         `json:"anchorState,omitempty"`
+	AssuranceState        *SoulBootstrapAnchorState         `json:"assuranceState,omitempty"`
+	Phase                 SoulBootstrapPhase                `json:"phase"`
+	State                 string                            `json:"state"`
+	TypedNextAction       SoulBootstrapNextAction           `json:"typedNextAction"`
+	RecoveryCategory      *SoulBootstrapRecoveryCategory    `json:"recoveryCategory,omitempty"`
+	RecoveryAction        *SoulBootstrapRecoveryAction      `json:"recoveryAction,omitempty"`
+	Retryable             bool                              `json:"retryable"`
+	RestartRequired       bool                              `json:"restartRequired"`
+	RestartAvailable      bool                              `json:"restartAvailable"`
+	SigningCheckpoints    []*SoulBootstrapSigningCheckpoint `json:"signingCheckpoints"`
+	Publication           *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
+	Error                 *SoulBootstrapErrorState          `json:"error,omitempty"`
+	Correlation           *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
+	RecoveryAttemptID     *string                           `json:"recoveryAttemptId,omitempty"`
+	RestartIdempotencyKey *string                           `json:"restartIdempotencyKey,omitempty"`
+	LastHostRequestID     *string                           `json:"lastHostRequestId,omitempty"`
+	RestartedAt           *Time                             `json:"restartedAt,omitempty"`
+	UpdatedAt             *Time                             `json:"updatedAt,omitempty"`
 }
 
 type SoulBootstrapSurface struct {
-	Username            string                       `json:"username"`
-	Body                *SoulBootstrapIdentityTarget `json:"body"`
-	Workflow            *AgentWorkflowSurface        `json:"workflow"`
-	State               *SoulBootstrapState          `json:"state"`
-	SoulBindingState    SoulBindingState             `json:"soulBindingState"`
-	ExistingSoulAgentID *string                      `json:"existingSoulAgentId,omitempty"`
-	HostBridgeAvailable bool                         `json:"hostBridgeAvailable"`
-	Executable          bool                         `json:"executable"`
-	NextAction          *string                      `json:"nextAction,omitempty"`
-	Error               *SoulBootstrapErrorState     `json:"error,omitempty"`
+	Username            string                         `json:"username"`
+	Body                *SoulBootstrapIdentityTarget   `json:"body"`
+	Workflow            *AgentWorkflowSurface          `json:"workflow"`
+	State               *SoulBootstrapState            `json:"state"`
+	SoulBindingState    SoulBindingState               `json:"soulBindingState"`
+	ExistingSoulAgentID *string                        `json:"existingSoulAgentId,omitempty"`
+	HostBridgeAvailable bool                           `json:"hostBridgeAvailable"`
+	Executable          bool                           `json:"executable"`
+	NextAction          *string                        `json:"nextAction,omitempty"`
+	TypedNextAction     SoulBootstrapNextAction        `json:"typedNextAction"`
+	RecoveryCategory    *SoulBootstrapRecoveryCategory `json:"recoveryCategory,omitempty"`
+	RecoveryAction      *SoulBootstrapRecoveryAction   `json:"recoveryAction,omitempty"`
+	Retryable           bool                           `json:"retryable"`
+	RestartAvailable    bool                           `json:"restartAvailable"`
+	Error               *SoulBootstrapErrorState       `json:"error,omitempty"`
 }
 
 type SoulInventoryItem struct {
@@ -2838,6 +2904,14 @@ type SpamIndicator struct {
 	Type        string  `json:"type"`
 	Description string  `json:"description"`
 	Severity    float64 `json:"severity"`
+}
+
+type StartHostedSoulBootstrapInput struct {
+	Username          string   `json:"username"`
+	Capabilities      []string `json:"capabilities,omitempty"`
+	IdempotencyKey    *string  `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string  `json:"recoveryAttemptId,omitempty"`
+	CorrelationKey    *string  `json:"correlationKey,omitempty"`
 }
 
 type StatusEdit struct {
@@ -6116,6 +6190,250 @@ func (e SoulBindingState) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type SoulBootstrapAnchorState string
+
+const (
+	SoulBootstrapAnchorStateHostedOffchain   SoulBootstrapAnchorState = "HOSTED_OFFCHAIN"
+	SoulBootstrapAnchorStateImmutableOnchain SoulBootstrapAnchorState = "IMMUTABLE_ONCHAIN"
+)
+
+var AllSoulBootstrapAnchorState = []SoulBootstrapAnchorState{
+	SoulBootstrapAnchorStateHostedOffchain,
+	SoulBootstrapAnchorStateImmutableOnchain,
+}
+
+func (e SoulBootstrapAnchorState) IsValid() bool {
+	switch e {
+	case SoulBootstrapAnchorStateHostedOffchain, SoulBootstrapAnchorStateImmutableOnchain:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapAnchorState) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapAnchorState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapAnchorState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapAnchorState", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapAnchorState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapAnchorState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapAnchorState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapAuthorityModel string
+
+const (
+	SoulBootstrapAuthorityModelInstanceTrust   SoulBootstrapAuthorityModel = "INSTANCE_TRUST"
+	SoulBootstrapAuthorityModelWalletPrincipal SoulBootstrapAuthorityModel = "WALLET_PRINCIPAL"
+)
+
+var AllSoulBootstrapAuthorityModel = []SoulBootstrapAuthorityModel{
+	SoulBootstrapAuthorityModelInstanceTrust,
+	SoulBootstrapAuthorityModelWalletPrincipal,
+}
+
+func (e SoulBootstrapAuthorityModel) IsValid() bool {
+	switch e {
+	case SoulBootstrapAuthorityModelInstanceTrust, SoulBootstrapAuthorityModelWalletPrincipal:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapAuthorityModel) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapAuthorityModel) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapAuthorityModel(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapAuthorityModel", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapAuthorityModel) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapAuthorityModel) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapAuthorityModel) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapMode string
+
+const (
+	SoulBootstrapModeHosted          SoulBootstrapMode = "HOSTED"
+	SoulBootstrapModeWalletPrincipal SoulBootstrapMode = "WALLET_PRINCIPAL"
+)
+
+var AllSoulBootstrapMode = []SoulBootstrapMode{
+	SoulBootstrapModeHosted,
+	SoulBootstrapModeWalletPrincipal,
+}
+
+func (e SoulBootstrapMode) IsValid() bool {
+	switch e {
+	case SoulBootstrapModeHosted, SoulBootstrapModeWalletPrincipal:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapMode) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapMode) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapMode(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapMode", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapMode) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapMode) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapMode) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapNextAction string
+
+const (
+	SoulBootstrapNextActionStartHostedBootstrap         SoulBootstrapNextAction = "START_HOSTED_BOOTSTRAP"
+	SoulBootstrapNextActionSendHostedSoulGenesisMessage SoulBootstrapNextAction = "SEND_HOSTED_SOUL_GENESIS_MESSAGE"
+	SoulBootstrapNextActionCompleteHostedSoulGenesis    SoulBootstrapNextAction = "COMPLETE_HOSTED_SOUL_GENESIS"
+	SoulBootstrapNextActionPublishHostedSoul            SoulBootstrapNextAction = "PUBLISH_HOSTED_SOUL"
+	SoulBootstrapNextActionRestartSoulBootstrap         SoulBootstrapNextAction = "RESTART_SOUL_BOOTSTRAP"
+	SoulBootstrapNextActionRetrySameStep                SoulBootstrapNextAction = "RETRY_SAME_STEP"
+	SoulBootstrapNextActionRefreshState                 SoulBootstrapNextAction = "REFRESH_STATE"
+	SoulBootstrapNextActionOperatorActionRequired       SoulBootstrapNextAction = "OPERATOR_ACTION_REQUIRED"
+	SoulBootstrapNextActionVerifyWallet                 SoulBootstrapNextAction = "VERIFY_WALLET"
+	SoulBootstrapNextActionPreparePrincipalDeclaration  SoulBootstrapNextAction = "PREPARE_PRINCIPAL_DECLARATION"
+	SoulBootstrapNextActionVerifyPrincipalDeclaration   SoulBootstrapNextAction = "VERIFY_PRINCIPAL_DECLARATION"
+	SoulBootstrapNextActionContinueConversation         SoulBootstrapNextAction = "CONTINUE_CONVERSATION"
+	SoulBootstrapNextActionFinalize                     SoulBootstrapNextAction = "FINALIZE"
+	SoulBootstrapNextActionComplete                     SoulBootstrapNextAction = "COMPLETE"
+)
+
+var AllSoulBootstrapNextAction = []SoulBootstrapNextAction{
+	SoulBootstrapNextActionStartHostedBootstrap,
+	SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+	SoulBootstrapNextActionCompleteHostedSoulGenesis,
+	SoulBootstrapNextActionPublishHostedSoul,
+	SoulBootstrapNextActionRestartSoulBootstrap,
+	SoulBootstrapNextActionRetrySameStep,
+	SoulBootstrapNextActionRefreshState,
+	SoulBootstrapNextActionOperatorActionRequired,
+	SoulBootstrapNextActionVerifyWallet,
+	SoulBootstrapNextActionPreparePrincipalDeclaration,
+	SoulBootstrapNextActionVerifyPrincipalDeclaration,
+	SoulBootstrapNextActionContinueConversation,
+	SoulBootstrapNextActionFinalize,
+	SoulBootstrapNextActionComplete,
+}
+
+func (e SoulBootstrapNextAction) IsValid() bool {
+	switch e {
+	case SoulBootstrapNextActionStartHostedBootstrap, SoulBootstrapNextActionSendHostedSoulGenesisMessage, SoulBootstrapNextActionCompleteHostedSoulGenesis, SoulBootstrapNextActionPublishHostedSoul, SoulBootstrapNextActionRestartSoulBootstrap, SoulBootstrapNextActionRetrySameStep, SoulBootstrapNextActionRefreshState, SoulBootstrapNextActionOperatorActionRequired, SoulBootstrapNextActionVerifyWallet, SoulBootstrapNextActionPreparePrincipalDeclaration, SoulBootstrapNextActionVerifyPrincipalDeclaration, SoulBootstrapNextActionContinueConversation, SoulBootstrapNextActionFinalize, SoulBootstrapNextActionComplete:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapNextAction) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapNextAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapNextAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapNextAction", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapNextAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapNextAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapNextAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type SoulBootstrapPhase string
 
 const (
@@ -6178,6 +6496,124 @@ func (e *SoulBootstrapPhase) UnmarshalJSON(b []byte) error {
 }
 
 func (e SoulBootstrapPhase) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapRecoveryAction string
+
+const (
+	SoulBootstrapRecoveryActionRetrySameStep    SoulBootstrapRecoveryAction = "RETRY_SAME_STEP"
+	SoulBootstrapRecoveryActionRestartBootstrap SoulBootstrapRecoveryAction = "RESTART_BOOTSTRAP"
+	SoulBootstrapRecoveryActionContactOperator  SoulBootstrapRecoveryAction = "CONTACT_OPERATOR"
+	SoulBootstrapRecoveryActionRefreshState     SoulBootstrapRecoveryAction = "REFRESH_STATE"
+)
+
+var AllSoulBootstrapRecoveryAction = []SoulBootstrapRecoveryAction{
+	SoulBootstrapRecoveryActionRetrySameStep,
+	SoulBootstrapRecoveryActionRestartBootstrap,
+	SoulBootstrapRecoveryActionContactOperator,
+	SoulBootstrapRecoveryActionRefreshState,
+}
+
+func (e SoulBootstrapRecoveryAction) IsValid() bool {
+	switch e {
+	case SoulBootstrapRecoveryActionRetrySameStep, SoulBootstrapRecoveryActionRestartBootstrap, SoulBootstrapRecoveryActionContactOperator, SoulBootstrapRecoveryActionRefreshState:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapRecoveryAction) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapRecoveryAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapRecoveryAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapRecoveryAction", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapRecoveryAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapRecoveryAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapRecoveryAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapRecoveryCategory string
+
+const (
+	SoulBootstrapRecoveryCategoryRetrySameStep          SoulBootstrapRecoveryCategory = "RETRY_SAME_STEP"
+	SoulBootstrapRecoveryCategoryRestartRequired        SoulBootstrapRecoveryCategory = "RESTART_REQUIRED"
+	SoulBootstrapRecoveryCategoryOperatorActionRequired SoulBootstrapRecoveryCategory = "OPERATOR_ACTION_REQUIRED"
+	SoulBootstrapRecoveryCategoryRefreshState           SoulBootstrapRecoveryCategory = "REFRESH_STATE"
+)
+
+var AllSoulBootstrapRecoveryCategory = []SoulBootstrapRecoveryCategory{
+	SoulBootstrapRecoveryCategoryRetrySameStep,
+	SoulBootstrapRecoveryCategoryRestartRequired,
+	SoulBootstrapRecoveryCategoryOperatorActionRequired,
+	SoulBootstrapRecoveryCategoryRefreshState,
+}
+
+func (e SoulBootstrapRecoveryCategory) IsValid() bool {
+	switch e {
+	case SoulBootstrapRecoveryCategoryRetrySameStep, SoulBootstrapRecoveryCategoryRestartRequired, SoulBootstrapRecoveryCategoryOperatorActionRequired, SoulBootstrapRecoveryCategoryRefreshState:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapRecoveryCategory) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapRecoveryCategory) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapRecoveryCategory(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapRecoveryCategory", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapRecoveryCategory) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapRecoveryCategory) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapRecoveryCategory) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

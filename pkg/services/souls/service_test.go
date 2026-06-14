@@ -388,6 +388,223 @@ func TestService_Incorporate_Success(t *testing.T) {
 	require.Equal(t, ensName, *soul.ENSName)
 }
 
+func TestService_BindHostedBootstrap_VerifiesHostedAuthorityBeforeBinding(t *testing.T) {
+	t.Parallel()
+
+	const agentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	instanceRepo := &fakeInstanceRepo{
+		trust:           &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://host.example"},
+		bindingsByAgent: map[string]*storageModels.InstanceSoulBodyBinding{},
+		bindingsByUser:  map[string]*storageModels.InstanceSoulBodyBinding{},
+	}
+	service := NewService(
+		&fakeAccountRepo{
+			usersByUsername: map[string]*storage.User{
+				"drone-hosted": {
+					Username:   "drone-hosted",
+					IsAgent:    true,
+					AgentOwner: "@alice",
+				},
+			},
+		},
+		instanceRepo,
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	)
+
+	result := &BootstrapFinalizeResult{
+		Version:                 "1",
+		HostSoulAgentID:         agentID,
+		PublishedVersion:        1,
+		AgentDomain:             "example.com",
+		AgentLocalID:            "drone-hosted",
+		AgentAuthorityModel:     SoulAuthorityModelInstanceTrust,
+		AgentAnchorState:        SoulAnchorStateHostedOffchain,
+		AgentOperationalBinding: SoulOperationalBindingHostedBound,
+		AgentStatus:             "active",
+		AgentLifecycleStatus:    "active",
+		Publication: BootstrapPublicationEvidence{
+			AgentID:          agentID,
+			PublishedVersion: 1,
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+		},
+		Promotion: BootstrapPromotionEvidence{
+			AgentID:          agentID,
+			Stage:            "graduated",
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+			PublishedVersion: 1,
+		},
+	}
+
+	soul, err := service.BindHostedBootstrap(context.Background(), "drone-hosted", result)
+	require.NoError(t, err)
+	require.NotNil(t, soul)
+	require.True(t, soul.Bound)
+	require.Equal(t, agentID, soul.AgentID)
+	require.Equal(t, "drone-hosted", soul.BoundAgentUsername)
+	require.Empty(t, soul.BoundPrincipalAddress)
+
+	bad := *result
+	bad.AgentAuthorityModel = SoulAuthorityModelWalletPrincipal
+	_, err = service.BindHostedBootstrap(context.Background(), "drone-hosted", &bad)
+	require.ErrorIs(t, err, ErrSoulNotAvailable)
+}
+
+func TestValidateHostedBootstrapBinding_Guardrails(t *testing.T) {
+	t.Parallel()
+
+	const agentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	valid := validHostedBootstrapFinalizeResult(agentID)
+	require.NoError(t, validateHostedBootstrapBinding(valid, "example.com", "drone-hosted"))
+	require.Empty(t, hostedBindingPrincipal(nil))
+	require.Equal(t, "", hostedBindingPrincipal(valid))
+
+	withPrincipal := *valid
+	withPrincipal.PrincipalAddress = "0x1111111111111111111111111111111111111111"
+	require.Equal(t, strings.ToLower(withPrincipal.PrincipalAddress), hostedBindingPrincipal(&withPrincipal))
+
+	invalidPrincipal := *valid
+	invalidPrincipal.PrincipalAddress = "not-a-wallet"
+	require.Empty(t, hostedBindingPrincipal(&invalidPrincipal))
+
+	testCases := []struct {
+		name   string
+		mutate func(*BootstrapFinalizeResult)
+	}{
+		{
+			name: "invalid host soul id",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.HostSoulAgentID = "not-a-soul-id"
+			},
+		},
+		{
+			name: "publication agent mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Publication.AgentID = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+			},
+		},
+		{
+			name: "promotion agent mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Promotion.AgentID = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+			},
+		},
+		{
+			name: "domain mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentDomain = "other.example"
+			},
+		},
+		{
+			name: "local id mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentLocalID = "other-drone"
+			},
+		},
+		{
+			name: "agent authority mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentAuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "publication authority mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Publication.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "promotion authority mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Promotion.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "agent anchor mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentAnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "publication anchor mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Publication.AnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "promotion anchor mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Promotion.AnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "operational binding mismatch",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentOperationalBinding = "wallet_bound_soul"
+			},
+		},
+		{
+			name: "missing published version",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.PublishedVersion = 0
+				result.Publication.PublishedVersion = 0
+			},
+		},
+		{
+			name: "inactive status",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.AgentLifecycleStatus = "suspended"
+			},
+		},
+		{
+			name: "promotion not graduated",
+			mutate: func(result *BootstrapFinalizeResult) {
+				result.Promotion.Stage = "pending_review"
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := *valid
+			tc.mutate(&result)
+			require.ErrorIs(t, validateHostedBootstrapBinding(&result, "example.com", "drone-hosted"), ErrSoulNotAvailable)
+		})
+	}
+
+	require.ErrorIs(t, validateHostedBootstrapBinding(nil, "example.com", "drone-hosted"), ErrSoulNotAvailable)
+}
+
+func validHostedBootstrapFinalizeResult(agentID string) *BootstrapFinalizeResult {
+	return &BootstrapFinalizeResult{
+		Version:                 "1",
+		HostSoulAgentID:         agentID,
+		PublishedVersion:        1,
+		AgentDomain:             "example.com",
+		AgentLocalID:            "drone-hosted",
+		AgentAuthorityModel:     SoulAuthorityModelInstanceTrust,
+		AgentAnchorState:        SoulAnchorStateHostedOffchain,
+		AgentOperationalBinding: SoulOperationalBindingHostedBound,
+		AgentStatus:             "active",
+		AgentLifecycleStatus:    "active",
+		Publication: BootstrapPublicationEvidence{
+			AgentID:          agentID,
+			PublishedVersion: 1,
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+		},
+		Promotion: BootstrapPromotionEvidence{
+			AgentID:          agentID,
+			Stage:            "graduated",
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+			PublishedVersion: 1,
+		},
+	}
+}
+
 func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 	t.Parallel()
 

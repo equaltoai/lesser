@@ -23,6 +23,17 @@ const (
 	hostBootstrapSigningMethodEIP191 = "eip191_personal_sign"
 	hostBootstrapEncodingHexBytes    = "hex_bytes"
 	hostBootstrapVersion1            = "1"
+
+	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
+	SoulAuthorityModelWalletPrincipal = "wallet_principal"
+	// SoulAuthorityModelInstanceTrust is Host's managed instance-key authority model.
+	SoulAuthorityModelInstanceTrust = "instance_trust"
+	// SoulAnchorStateHostedOffchain is Host's hosted/off-chain anchor state.
+	SoulAnchorStateHostedOffchain = "hosted_offchain"
+	// SoulAnchorStateImmutableOnchain is Host's on-chain anchor state.
+	SoulAnchorStateImmutableOnchain = "immutable_onchain"
+	// SoulOperationalBindingHostedBound is Host's hosted-bound operational binding marker.
+	SoulOperationalBindingHostedBound = "hosted_bound_soul"
 )
 
 var (
@@ -46,6 +57,7 @@ type HostBootstrapError struct {
 	Source        string
 	StatusCode    int
 	HostRequestID string
+	DetailsJSON   string
 	Err           error
 }
 
@@ -80,11 +92,14 @@ type BootstrapBeginInput struct {
 
 // BootstrapBeginResult contains Host begin output needed by the GraphQL state.
 type BootstrapBeginResult struct {
-	RegistrationID  string
-	HostSoulAgentID string
-	WalletAddress   string
-	WalletChallenge BootstrapWalletChallenge
-	HostRequestID   string
+	RegistrationID     string
+	HostSoulAgentID    string
+	WalletAddress      string
+	AuthorityModel     string
+	AnchorState        string
+	RegistrationStatus string
+	WalletChallenge    BootstrapWalletChallenge
+	HostRequestID      string
 }
 
 // BootstrapWalletChallenge contains the Host-issued wallet signing message.
@@ -227,11 +242,19 @@ type BootstrapFinalizeInput struct {
 	SelfAttestation    string
 }
 
+// HostedBootstrapPublishInput is the hosted-first no-wallet publish request.
+type HostedBootstrapPublishInput struct {
+	RegistrationID string
+	ConversationID string
+	LocalID        string
+}
+
 // BootstrapPublicationEvidence contains Host publication evidence for the
 // versioned hosted/off-chain registration artifact.
 type BootstrapPublicationEvidence struct {
 	AgentID                    string
 	PublishedVersion           int
+	AuthorityModel             string
 	RegistrationURI            string
 	RegistrationS3Key          string
 	VersionedRegistrationURI   string
@@ -248,6 +271,7 @@ type BootstrapPromotionEvidence struct {
 	RequestStatus            string
 	ReviewStatus             string
 	ReadinessStatus          string
+	AuthorityModel           string
 	AnchorState              string
 	LatestConversationID     string
 	LatestConversationStatus string
@@ -258,13 +282,20 @@ type BootstrapPromotionEvidence struct {
 // BootstrapFinalizeResult contains Host finalize/publication output needed for
 // Lesser local soul binding and workflow projection.
 type BootstrapFinalizeResult struct {
-	Version          string
-	HostSoulAgentID  string
-	PublishedVersion int
-	PrincipalAddress string
-	Publication      BootstrapPublicationEvidence
-	Promotion        BootstrapPromotionEvidence
-	HostRequestID    string
+	Version                 string
+	HostSoulAgentID         string
+	PublishedVersion        int
+	AgentDomain             string
+	AgentLocalID            string
+	AgentAuthorityModel     string
+	AgentAnchorState        string
+	AgentOperationalBinding string
+	AgentStatus             string
+	AgentLifecycleStatus    string
+	PrincipalAddress        string
+	Publication             BootstrapPublicationEvidence
+	Promotion               BootstrapPromotionEvidence
+	HostRequestID           string
 }
 
 type hostInstanceKeyResolver func(ctx context.Context, cfg *config.Config, secretARN string) (string, error)
@@ -297,9 +328,10 @@ func (s *Service) BeginBootstrapRegistration(ctx context.Context, input Bootstra
 	}
 
 	payload := map[string]any{
-		"domain":         instanceDomain,
-		"local_id":       bootstrapHostLocalID(input),
-		"wallet_address": strings.TrimSpace(input.WalletAddress),
+		"domain":          instanceDomain,
+		"local_id":        bootstrapHostLocalID(input),
+		"wallet_address":  strings.TrimSpace(input.WalletAddress),
+		"authority_model": SoulAuthorityModelWalletPrincipal,
 	}
 	if len(input.Capabilities) > 0 {
 		payload["capabilities"] = normalizeBootstrapCapabilities(input.Capabilities)
@@ -312,9 +344,12 @@ func (s *Service) BeginBootstrapRegistration(ctx context.Context, input Bootstra
 	}
 
 	return &BootstrapBeginResult{
-		RegistrationID:  strings.TrimSpace(out.Registration.ID),
-		HostSoulAgentID: strings.ToLower(strings.TrimSpace(out.Registration.AgentID)),
-		WalletAddress:   strings.ToLower(strings.TrimSpace(firstNonEmpty(out.Wallet.Address, out.Registration.WalletAddress))),
+		RegistrationID:     strings.TrimSpace(out.Registration.ID),
+		HostSoulAgentID:    strings.ToLower(strings.TrimSpace(out.Registration.AgentID)),
+		WalletAddress:      strings.ToLower(strings.TrimSpace(firstNonEmpty(out.Wallet.Address, out.Registration.WalletAddress))),
+		AuthorityModel:     strings.TrimSpace(out.Registration.AuthorityModel),
+		AnchorState:        strings.TrimSpace(out.Promotion.AnchorState),
+		RegistrationStatus: strings.TrimSpace(out.Registration.Status),
 		WalletChallenge: BootstrapWalletChallenge{
 			ID:        strings.TrimSpace(out.Wallet.ID),
 			Address:   strings.ToLower(strings.TrimSpace(out.Wallet.Address)),
@@ -325,6 +360,42 @@ func (s *Service) BeginBootstrapRegistration(ctx context.Context, input Bootstra
 			ExpiresAt: parseHostTimePtr(out.Wallet.ExpiresAt),
 		},
 		HostRequestID: requestID,
+	}, nil
+}
+
+// BeginHostedBootstrapRegistration calls Host's M7.1 instance-trust begin route.
+func (s *Service) BeginHostedBootstrapRegistration(ctx context.Context, input BootstrapBeginInput) (*BootstrapBeginResult, error) {
+	baseURL, instanceDomain, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	localID := bootstrapHostLocalID(input)
+	payload := map[string]any{
+		"domain":          instanceDomain,
+		"local_id":        localID,
+		"authority_model": SoulAuthorityModelInstanceTrust,
+	}
+	if len(input.Capabilities) > 0 {
+		payload["capabilities"] = normalizeBootstrapCapabilities(input.Capabilities)
+	}
+
+	var out hostRegistrationBeginResponse
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/begin", instanceKey, payload, http.StatusCreated, &out)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostedBeginResponse(out, instanceDomain, localID); err != nil {
+		return nil, err
+	}
+
+	return &BootstrapBeginResult{
+		RegistrationID:     strings.TrimSpace(out.Registration.ID),
+		HostSoulAgentID:    strings.ToLower(strings.TrimSpace(out.Registration.AgentID)),
+		AuthorityModel:     firstNonEmpty(strings.TrimSpace(out.Registration.AuthorityModel), strings.TrimSpace(out.Promotion.AuthorityModel), SoulAuthorityModelInstanceTrust),
+		AnchorState:        strings.TrimSpace(out.Promotion.AnchorState),
+		RegistrationStatus: strings.TrimSpace(out.Registration.Status),
+		HostRequestID:      requestID,
 	}, nil
 }
 
@@ -564,15 +635,50 @@ func (s *Service) FinalizeBootstrap(ctx context.Context, input BootstrapFinalize
 		return nil, err
 	}
 
+	return bootstrapFinalizeResultFromHost(out, requestID), nil
+}
+
+// PublishHostedBootstrap relays the hosted-first no-wallet finalize request.
+func (s *Service) PublishHostedBootstrap(ctx context.Context, input HostedBootstrapPublishInput) (*BootstrapFinalizeResult, error) {
+	baseURL, instanceDomain, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var out hostFinalizeResponse
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/finalize", instanceKey, map[string]any{}, http.StatusOK, &out)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostHostedFinalizeResponse(out, instanceDomain, bootstrapHostLocalID(BootstrapBeginInput{Username: input.LocalID})); err != nil {
+		return nil, err
+	}
+
+	return bootstrapFinalizeResultFromHost(out, requestID), nil
+}
+
+func bootstrapFinalizeResultFromHost(out hostFinalizeResponse, requestID string) *BootstrapFinalizeResult {
 	agentID := strings.ToLower(strings.TrimSpace(firstNonEmpty(out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID)))
 	return &BootstrapFinalizeResult{
-		Version:          strings.TrimSpace(out.Version),
-		HostSoulAgentID:  agentID,
-		PublishedVersion: out.PublishedVersion,
-		PrincipalAddress: strings.ToLower(strings.TrimSpace(out.Agent.PrincipalAddress)),
+		Version:                 strings.TrimSpace(out.Version),
+		HostSoulAgentID:         agentID,
+		PublishedVersion:        out.PublishedVersion,
+		AgentDomain:             strings.ToLower(strings.TrimSpace(out.Agent.Domain)),
+		AgentLocalID:            strings.ToLower(strings.TrimSpace(out.Agent.LocalID)),
+		AgentAuthorityModel:     strings.TrimSpace(out.Agent.AuthorityModel),
+		AgentAnchorState:        strings.TrimSpace(out.Agent.AnchorState),
+		AgentOperationalBinding: strings.TrimSpace(out.Agent.OperationalBinding),
+		AgentStatus:             strings.TrimSpace(out.Agent.Status),
+		AgentLifecycleStatus:    strings.TrimSpace(out.Agent.LifecycleStatus),
+		PrincipalAddress:        strings.ToLower(strings.TrimSpace(out.Agent.PrincipalAddress)),
 		Publication: BootstrapPublicationEvidence{
 			AgentID:                    strings.ToLower(strings.TrimSpace(out.Publication.AgentID)),
 			PublishedVersion:           out.Publication.PublishedVersion,
+			AuthorityModel:             strings.TrimSpace(out.Publication.AuthorityModel),
 			RegistrationURI:            strings.TrimSpace(out.Publication.RegistrationURI),
 			RegistrationS3Key:          strings.TrimSpace(out.Publication.RegistrationS3Key),
 			VersionedRegistrationURI:   strings.TrimSpace(out.Publication.VersionedRegistrationURI),
@@ -587,6 +693,7 @@ func (s *Service) FinalizeBootstrap(ctx context.Context, input BootstrapFinalize
 			RequestStatus:            strings.TrimSpace(out.Promotion.RequestStatus),
 			ReviewStatus:             strings.TrimSpace(out.Promotion.ReviewStatus),
 			ReadinessStatus:          strings.TrimSpace(out.Promotion.ReadinessStatus),
+			AuthorityModel:           strings.TrimSpace(out.Promotion.AuthorityModel),
 			AnchorState:              strings.TrimSpace(out.Promotion.AnchorState),
 			LatestConversationID:     strings.TrimSpace(out.Promotion.LatestConversationID),
 			LatestConversationStatus: strings.TrimSpace(out.Promotion.LatestConversationStatus),
@@ -594,7 +701,7 @@ func (s *Service) FinalizeBootstrap(ctx context.Context, input BootstrapFinalize
 			GraduatedAt:              parseHostTimePtr(out.Promotion.GraduatedAt),
 		},
 		HostRequestID: requestID,
-	}, nil
+	}
 }
 
 func (s *Service) hostBootstrapInputs(ctx context.Context) (string, string, string, error) {
@@ -670,7 +777,7 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 	requestID := requestIDFromHeaders(resp.Header)
 
 	if resp.StatusCode != expectedStatus {
-		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated)
+		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
 	}
 	if truncated {
 		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
@@ -724,7 +831,7 @@ func (s *Service) doHostBootstrapSSE(ctx context.Context, baseURL string, path s
 	requestID := requestIDFromHeaders(resp.Header)
 
 	if resp.StatusCode != http.StatusOK {
-		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated)
+		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
 	}
 	if truncated {
 		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
@@ -743,25 +850,67 @@ func (s *Service) doHostBootstrapSSE(ctx context.Context, baseURL string, path s
 	return requestID, nil
 }
 
-func hostBootstrapHTTPError(status int, headers http.Header, body []byte, truncated bool) error {
+func hostBootstrapHTTPError(status int, headers http.Header, body []byte, truncated bool, secrets ...string) error {
 	requestID := requestIDFromHeaders(headers)
 	envelope := hostBootstrapErrorEnvelope{}
 	if !truncated && len(body) > 0 {
 		_ = json.Unmarshal(body, &envelope)
 	}
-	if envelope.Error.RequestID != "" {
+	if strings.TrimSpace(envelope.Error.RequestID) != "" {
 		requestID = strings.TrimSpace(envelope.Error.RequestID)
+	}
+	statusCode := status
+	if envelope.Error.StatusCode != 0 {
+		statusCode = envelope.Error.StatusCode
+	}
+	if strings.TrimSpace(envelope.Error.Code) != "" {
+		message := strings.TrimSpace(envelope.Error.Message)
+		if message == "" {
+			_, message = mapHostBootstrapStatus(status)
+		}
+		return &HostBootstrapError{
+			Code:          strings.TrimSpace(envelope.Error.Code),
+			Message:       redactHostBootstrapSecret(message, secrets...),
+			Source:        "host",
+			StatusCode:    statusCode,
+			HostRequestID: requestID,
+			DetailsJSON:   sanitizeHostBootstrapDetails(envelope.Error.DetailsRaw, secrets...),
+			Err:           ErrHostUnavailable,
+		}
 	}
 
 	code, message := mapHostBootstrapStatus(status)
 	return &HostBootstrapError{
 		Code:          code,
-		Message:       message,
+		Message:       redactHostBootstrapSecret(message, secrets...),
 		Source:        "host",
-		StatusCode:    status,
+		StatusCode:    statusCode,
 		HostRequestID: requestID,
 		Err:           ErrHostUnavailable,
 	}
+}
+
+func sanitizeHostBootstrapDetails(raw json.RawMessage, secrets ...string) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	compact := compactHostJSON(raw)
+	if compact == "" {
+		return ""
+	}
+	return redactHostBootstrapSecret(compact, secrets...)
+}
+
+func redactHostBootstrapSecret(value string, secrets ...string) string {
+	out := value
+	for _, secret := range secrets {
+		secret = strings.TrimSpace(secret)
+		if secret == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, secret, "[redacted]")
+	}
+	return out
 }
 
 func mapHostBootstrapStatus(status int) (string, string) {
@@ -779,6 +928,19 @@ func mapHostBootstrapStatus(status int) (string, string) {
 	default:
 		return "HOST_UNAVAILABLE", "Host bootstrap endpoint is unavailable."
 	}
+}
+
+func validateHostedBeginResponse(out hostRegistrationBeginResponse, instanceDomain string, localID string) error {
+	if authority := firstNonEmpty(out.Registration.AuthorityModel, out.Promotion.AuthorityModel); strings.TrimSpace(authority) != "" && strings.TrimSpace(authority) != SoulAuthorityModelInstanceTrust {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host begin response did not preserve hosted authority.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if domain := firstNonEmpty(out.Registration.DomainNormalized, out.Registration.DomainRaw, out.Promotion.Domain); strings.TrimSpace(domain) != "" && !domainMatches(domain, instanceDomain) {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host begin response domain does not match this instance.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if hostLocalID := firstNonEmpty(out.Registration.LocalID, out.Registration.LocalIDRaw, out.Promotion.LocalID); strings.TrimSpace(hostLocalID) != "" && !strings.EqualFold(strings.TrimSpace(hostLocalID), strings.TrimSpace(localID)) {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host begin response local id does not match this body.", Source: "host", Err: ErrHostUnavailable}
+	}
+	return nil
 }
 
 func validateHostPrincipalSigningPayload(out hostPrincipalPreflightResponse) error {
@@ -1029,6 +1191,46 @@ func validateHostFinalizeResponse(out hostFinalizeResponse) error {
 	return nil
 }
 
+func validateHostHostedFinalizeResponse(out hostFinalizeResponse, instanceDomain string, localID string) error {
+	if err := validateHostFinalizeResponse(out); err != nil {
+		return err
+	}
+	if strings.TrimSpace(out.Version) != hostBootstrapVersion1 {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host returned an unsupported hosted finalize response version.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if _, err := validateAgentID(firstNonEmpty(out.AgentID, out.Agent.AgentID, out.Publication.AgentID, out.Promotion.AgentID)); err != nil {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not include a valid soul agent id.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if !domainMatches(out.Agent.Domain, instanceDomain) {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response domain does not match this instance.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if !strings.EqualFold(strings.TrimSpace(out.Agent.LocalID), strings.TrimSpace(localID)) {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response local id does not match this body.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Agent.AuthorityModel) != SoulAuthorityModelInstanceTrust || strings.TrimSpace(out.Publication.AuthorityModel) != SoulAuthorityModelInstanceTrust {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not preserve instance trust authority.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Promotion.AgentID) != "" && strings.TrimSpace(out.Promotion.AuthorityModel) != SoulAuthorityModelInstanceTrust {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted promotion did not preserve instance trust authority.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Agent.AnchorState) != SoulAnchorStateHostedOffchain || strings.TrimSpace(out.Publication.AnchorState) != SoulAnchorStateHostedOffchain {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not preserve hosted off-chain anchor state.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Promotion.AgentID) != "" && strings.TrimSpace(out.Promotion.AnchorState) != SoulAnchorStateHostedOffchain {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted promotion did not preserve hosted off-chain anchor state.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Agent.OperationalBinding) != SoulOperationalBindingHostedBound {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not preserve hosted operational binding.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if strings.TrimSpace(out.Agent.Status) != "" && !strings.EqualFold(out.Agent.Status, "active") {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response is not active.", Source: "host", Err: ErrHostUnavailable}
+	}
+	if out.PublishedVersion < 1 && out.Publication.PublishedVersion < 1 {
+		return &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host hosted finalize response did not publish a version.", Source: "host", Err: ErrHostUnavailable}
+	}
+	return nil
+}
+
 func normalizeBootstrapCapabilities(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -1143,16 +1345,22 @@ type hostFinalizeResponse struct {
 }
 
 type hostFinalizeAgent struct {
-	AgentID          string `json:"agent_id"`
-	PrincipalAddress string `json:"principal_address"`
-	Wallet           string `json:"wallet"`
-	Status           string `json:"status"`
-	LifecycleStatus  string `json:"lifecycle_status"`
+	AgentID            string `json:"agent_id"`
+	Domain             string `json:"domain"`
+	LocalID            string `json:"local_id"`
+	PrincipalAddress   string `json:"principal_address"`
+	Wallet             string `json:"wallet"`
+	AuthorityModel     string `json:"authority_model"`
+	AnchorState        string `json:"anchor_state"`
+	OperationalBinding string `json:"operational_binding"`
+	Status             string `json:"status"`
+	LifecycleStatus    string `json:"lifecycle_status"`
 }
 
 type hostFinalizePublication struct {
 	AgentID                    string `json:"agent_id"`
 	PublishedVersion           int    `json:"published_version"`
+	AuthorityModel             string `json:"authority_model"`
 	RegistrationURI            string `json:"registration_uri"`
 	RegistrationS3Key          string `json:"registration_s3_key"`
 	VersionedRegistrationURI   string `json:"versioned_registration_uri"`
@@ -1168,6 +1376,7 @@ type hostFinalizePromotion struct {
 	RequestStatus            string `json:"request_status"`
 	ReviewStatus             string `json:"review_status"`
 	ReadinessStatus          string `json:"readiness_status"`
+	AuthorityModel           string `json:"authority_model"`
 	AnchorState              string `json:"anchor_state"`
 	LatestConversationID     string `json:"latest_conversation_id"`
 	LatestConversationStatus string `json:"latest_conversation_status"`
@@ -1176,10 +1385,15 @@ type hostFinalizePromotion struct {
 }
 
 type hostRegistration struct {
-	ID            string `json:"id"`
-	AgentID       string `json:"agent_id"`
-	WalletAddress string `json:"wallet_address"`
-	Status        string `json:"status"`
+	ID               string `json:"id"`
+	AgentID          string `json:"agent_id"`
+	DomainRaw        string `json:"domain_raw"`
+	DomainNormalized string `json:"domain_normalized"`
+	LocalIDRaw       string `json:"local_id_raw"`
+	LocalID          string `json:"local_id"`
+	WalletAddress    string `json:"wallet_address"`
+	AuthorityModel   string `json:"authority_model"`
+	Status           string `json:"status"`
 }
 
 type hostWalletChallenge struct {
@@ -1213,15 +1427,20 @@ type hostOperation struct {
 type hostPromotionResponse struct {
 	AgentID          string `json:"agent_id"`
 	RegistrationID   string `json:"registration_id"`
+	Domain           string `json:"domain"`
+	LocalID          string `json:"local_id"`
 	Stage            string `json:"stage"`
+	AuthorityModel   string `json:"authority_model"`
+	AnchorState      string `json:"anchor_state"`
 	PrincipalAddress string `json:"principal_address"`
 }
 
 type hostBootstrapErrorEnvelope struct {
 	Error struct {
-		Code       string `json:"code"`
-		Message    string `json:"message"`
-		StatusCode int    `json:"status_code"`
-		RequestID  string `json:"request_id"`
+		Code       string          `json:"code"`
+		Message    string          `json:"message"`
+		StatusCode int             `json:"status_code"`
+		DetailsRaw json.RawMessage `json:"details"`
+		RequestID  string          `json:"request_id"`
 	} `json:"error"`
 }

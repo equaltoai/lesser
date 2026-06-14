@@ -50,7 +50,9 @@ func TestRound44SoulBootstrapQueryProjectsZeroStateWorkflow(t *testing.T) {
 	require.False(t, surface.HostBridgeAvailable)
 	require.False(t, surface.Executable)
 	require.Equal(t, model.SoulBindingStateUnbound, surface.SoulBindingState)
-	require.Equal(t, "begin", derefString(surface.NextAction))
+	require.Equal(t, "start_hosted_bootstrap", derefString(surface.NextAction))
+	require.Equal(t, model.SoulBootstrapNextActionStartHostedBootstrap, surface.TypedNextAction)
+	require.Equal(t, model.SoulBootstrapModeHosted, surface.State.BootstrapMode)
 	require.NotNil(t, surface.Workflow)
 	require.NotNil(t, surface.Workflow.SoulBootstrap)
 	require.Equal(t, model.SoulBootstrapPhaseNotStarted, surface.State.Phase)
@@ -300,6 +302,186 @@ func TestRound44SoulBootstrapBeginReplayDoesNotDuplicateHostRegistration(t *test
 	require.Equal(t, workflow.SoulBootstrapStateCorrelationMismatch, rejected.Bootstrap.State.State)
 }
 
+func TestRound44HostedSoulBootstrapDrivesNoWalletDefinitionThroughPublish(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 14, 2, 0, 0, 0, time.UTC)
+	const agentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	var (
+		hostedBeginCalls int
+		publishCalls     int
+		hostedBindCalls  int
+		incorporateCalls int
+	)
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			hostedBeginCalls++
+			require.Equal(t, "drone-hosted", input.Username)
+			require.Empty(t, input.WalletAddress)
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:     "reg_hosted",
+				HostSoulAgentID:    agentID,
+				AuthorityModel:     "instance_trust",
+				AnchorState:        "hosted_offchain",
+				RegistrationStatus: "pending",
+				HostRequestID:      "host-req-hosted-begin",
+			}, nil
+		},
+		sendBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+			require.Equal(t, "reg_hosted", input.RegistrationID)
+			require.Empty(t, input.ConversationID)
+			require.Equal(t, "Help me define this soul.", input.Message)
+			return &soulservice.BootstrapConversationMessageResult{
+				RegistrationID: "reg_hosted",
+				ConversationID: "conv_hosted",
+				Model:          "claude",
+				FullResponse:   "Ready for completion.",
+				HostRequestID:  "host-req-hosted-conversation",
+			}, nil
+		},
+		completeBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			require.Equal(t, "reg_hosted", input.RegistrationID)
+			require.Equal(t, "conv_hosted", input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:       "reg_hosted",
+				HostSoulAgentID:      agentID,
+				ConversationID:       "conv_hosted",
+				Status:               "completed",
+				ProducedDeclarations: `{"selfDescription":{"summary":"ready"}}`,
+				CompletedAt:          &now,
+				HostRequestID:        "host-req-hosted-complete",
+			}, nil
+		},
+		publishHostedBootstrapFunc: func(_ context.Context, input soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+			publishCalls++
+			require.Equal(t, "reg_hosted", input.RegistrationID)
+			require.Equal(t, "conv_hosted", input.ConversationID)
+			require.Equal(t, "drone-hosted", input.LocalID)
+			publishedAt := now.Add(time.Minute)
+			return &soulservice.BootstrapFinalizeResult{
+				Version:                 "1",
+				HostSoulAgentID:         agentID,
+				PublishedVersion:        1,
+				AgentDomain:             "example.com",
+				AgentLocalID:            "drone-hosted",
+				AgentAuthorityModel:     "instance_trust",
+				AgentAnchorState:        "hosted_offchain",
+				AgentOperationalBinding: "hosted_bound_soul",
+				AgentStatus:             "active",
+				AgentLifecycleStatus:    "active",
+				Publication: soulservice.BootstrapPublicationEvidence{
+					AgentID:          agentID,
+					PublishedVersion: 1,
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedAt:      &publishedAt,
+				},
+				Promotion: soulservice.BootstrapPromotionEvidence{
+					AgentID:          agentID,
+					RegistrationID:   "reg_hosted",
+					Stage:            "graduated",
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedVersion: 1,
+					GraduatedAt:      &publishedAt,
+				},
+				HostRequestID: "host-req-hosted-publish",
+			}, nil
+		},
+		bindHostedBootstrapFunc: func(_ context.Context, targetAgentUsername string, result *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+			hostedBindCalls++
+			require.Equal(t, "drone-hosted", targetAgentUsername)
+			require.Equal(t, agentID, result.HostSoulAgentID)
+			require.Equal(t, "instance_trust", result.AgentAuthorityModel)
+			return &soulservice.Soul{AgentID: agentID, Bound: true, BoundAgentUsername: targetAgentUsername}, nil
+		},
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
+			incorporateCalls++
+			return nil, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-hosted",
+		DisplayName: "Drone Hosted",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-hosted",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	started, err := (&mutationResolver{resolver}).StartHostedSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.StartHostedSoulBootstrapInput{
+			Username:       "drone-hosted",
+			IdempotencyKey: round13StringPtr("hosted-begin-1"),
+			CorrelationKey: round13StringPtr("corr-hosted"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, hostedBeginCalls)
+	require.Equal(t, model.SoulBootstrapModeHosted, started.Bootstrap.State.BootstrapMode)
+	require.Equal(t, model.SoulBootstrapAuthorityModelInstanceTrust, started.Bootstrap.State.AuthorityModel)
+	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, started.Bootstrap.TypedNextAction)
+	require.Empty(t, started.Bootstrap.State.SigningCheckpoints)
+	require.Nil(t, started.Bootstrap.State.WalletAddress)
+	require.Nil(t, started.Bootstrap.State.PrincipalAddress)
+
+	sent, err := (&mutationResolver{resolver}).SendHostedSoulGenesisMessage(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.SendHostedSoulGenesisMessageInput{
+			Username: "drone-hosted",
+			Message:  "Help me define this soul.",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, model.SoulBootstrapNextActionCompleteHostedSoulGenesis, sent.Bootstrap.TypedNextAction)
+	require.Empty(t, sent.Bootstrap.State.SigningCheckpoints)
+
+	completed, err := (&mutationResolver{resolver}).CompleteHostedSoulGenesis(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.CompleteHostedSoulGenesisInput{
+			Username:       "drone-hosted",
+			ConversationID: "conv_hosted",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, workflow.SoulBootstrapStateConversationCompleted, completed.Bootstrap.State.State)
+	require.Equal(t, model.SoulBootstrapNextActionPublishHostedSoul, completed.Bootstrap.TypedNextAction)
+	require.Empty(t, completed.Bootstrap.State.SigningCheckpoints)
+	require.Nil(t, completed.Bootstrap.Workflow.Checkpoint)
+
+	published, err := (&mutationResolver{resolver}).PublishHostedSoul(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.PublishHostedSoulInput{
+			Username:       "drone-hosted",
+			ConversationID: "conv_hosted",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, publishCalls)
+	require.Equal(t, 1, hostedBindCalls)
+	require.Equal(t, 0, incorporateCalls)
+	require.Nil(t, published.Error)
+	require.Equal(t, model.SoulBootstrapPhaseComplete, published.Bootstrap.State.Phase)
+	require.Equal(t, model.SoulBootstrapNextActionComplete, published.Bootstrap.TypedNextAction)
+	require.Equal(t, agentID, derefString(published.Bootstrap.State.HostSoulAgentID))
+	require.Empty(t, published.Bootstrap.State.SigningCheckpoints)
+	require.NotNil(t, published.Bootstrap.State.Publication)
+	require.Equal(t, model.SoulBootstrapAuthorityModelInstanceTrust, *published.Bootstrap.State.Publication.AuthorityModel)
+	require.Equal(t, "hosted_offchain", derefString(published.Bootstrap.State.Publication.AnchorState))
+}
+
 func TestRound44SoulBootstrapHostErrorsPersistTypedState(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	now := time.Date(2026, 6, 12, 13, 30, 0, 0, time.UTC)
@@ -356,6 +538,144 @@ func TestRound44SoulBootstrapHostErrorsPersistTypedState(t *testing.T) {
 	require.NotNil(t, storedWorkflow)
 	require.NotNil(t, storedWorkflow.SoulBootstrap)
 	require.Equal(t, workflow.SoulBootstrapErrorHostTrustNotConfigured, storedWorkflow.SoulBootstrap.Error.Code)
+}
+
+func TestRound44HostedSoulBootstrapErrorsExposeRecoveryContract(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 14, 2, 30, 0, 0, time.UTC)
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(context.Context, soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			return nil, &soulservice.HostBootstrapError{
+				Code:          "soul_instance.not_found",
+				Message:       "registration expired",
+				Source:        "host",
+				StatusCode:    404,
+				HostRequestID: "host-req-expired",
+				DetailsJSON:   `{"field":"registration","reason":"expired"}`,
+				Err:           soulservice.ErrHostUnavailable,
+			}
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-recover",
+		DisplayName: "Drone Recover",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-recover",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	payload, err := (&mutationResolver{resolver}).StartHostedSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.StartHostedSoulBootstrapInput{Username: "drone-recover"},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, payload.Error)
+	require.Equal(t, "soul_instance.not_found", payload.Error.Code)
+	require.Equal(t, 404, *payload.Error.StatusCode)
+	require.Equal(t, "host-req-expired", derefString(payload.Error.HostRequestID))
+	require.JSONEq(t, `{"field":"registration","reason":"expired"}`, derefString(payload.Error.DetailsJSON))
+	require.Equal(t, model.SoulBootstrapRecoveryCategoryRestartRequired, *payload.Error.RecoveryCategory)
+	require.Equal(t, model.SoulBootstrapRecoveryActionRestartBootstrap, *payload.Error.RecoveryAction)
+	require.True(t, payload.Error.RestartRequired)
+	require.True(t, payload.Bootstrap.RestartAvailable)
+	require.Equal(t, model.SoulBootstrapNextActionRestartSoulBootstrap, payload.Bootstrap.TypedNextAction)
+}
+
+func TestRound44RestartSoulBootstrapSupersedesStaleStateIdempotently(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 14, 3, 0, 0, 0, time.UTC)
+	const agentID = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	beginCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			beginCalls++
+			require.Equal(t, 1, beginCalls, "same recovery attempt must not duplicate Host begin")
+			require.Equal(t, "drone-stale", input.Username)
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:  "reg_fresh",
+				HostSoulAgentID: agentID,
+				AuthorityModel:  "instance_trust",
+				AnchorState:     "hosted_offchain",
+				HostRequestID:   "host-req-restart",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-stale",
+			BodyID:             "drone-stale",
+			HostRegistrationID: "reg_stale",
+			HostConversationID: "conv_stale",
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			Phase:              workflow.SoulBootstrapPhaseError,
+			State:              workflow.SoulBootstrapStateHostUnavailable,
+			Error: &workflow.SoulBootstrapErrorState{
+				Code:    "soul_instance.not_found",
+				Message: "registration expired",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-stale",
+		DisplayName: "Drone Stale",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-stale",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	input := model.RestartSoulBootstrapInput{
+		Username:          "drone-stale",
+		RecoveryAttemptID: "attempt-1",
+		IdempotencyKey:    round13StringPtr("restart-key-1"),
+		CorrelationKey:    round13StringPtr("corr-restart"),
+	}
+	first, err := (&mutationResolver{resolver}).RestartSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeWrite), input)
+	require.NoError(t, err)
+	require.Nil(t, first.Error)
+	require.Equal(t, "reg_fresh", derefString(first.Bootstrap.State.HostRegistrationID))
+	require.Equal(t, agentID, derefString(first.Bootstrap.State.HostSoulAgentID))
+	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, first.Bootstrap.TypedNextAction)
+	require.Equal(t, "attempt-1", derefString(first.Bootstrap.State.Correlation.RecoveryAttemptID))
+	require.Equal(t, "restart-key-1", derefString(first.Bootstrap.State.Correlation.RestartIdempotencyKey))
+	require.Equal(t, "reg_stale", derefString(first.Bootstrap.State.Correlation.SupersededHostRegistrationID))
+	require.Equal(t, "conv_stale", derefString(first.Bootstrap.State.Correlation.SupersededHostConversationID))
+	require.NotNil(t, first.Bootstrap.State.RestartedAt)
+
+	second, err := (&mutationResolver{resolver}).RestartSoulBootstrap(round13DroneAuthContext("owner", auth.ScopeWrite), input)
+	require.NoError(t, err)
+	require.Nil(t, second.Error)
+	require.Equal(t, 1, beginCalls)
+	require.Equal(t, "reg_fresh", derefString(second.Bootstrap.State.HostRegistrationID))
 }
 
 func TestRound44SoulBootstrapPrincipalPreflightAndVerifyPersistIdempotently(t *testing.T) {

@@ -225,7 +225,11 @@ func TestService_HostNon2xxIsBoundedTypedAndSanitized(t *testing.T) {
 				"code":        "soul_instance.boundary_violation",
 				"message":     "do not leak " + instanceKey,
 				"status_code": 403,
-				"request_id":  "host-req-body",
+				"details": map[string]any{
+					"boundary": "instance_domain",
+					"reason":   "tenant_domain_mismatch",
+				},
+				"request_id": "host-req-body",
 			},
 		}))
 	}))
@@ -241,10 +245,79 @@ func TestService_HostNon2xxIsBoundedTypedAndSanitized(t *testing.T) {
 	_, err := service.BeginBootstrapRegistration(context.Background(), BootstrapBeginInput{})
 	var hostErr *HostBootstrapError
 	require.ErrorAs(t, err, &hostErr)
-	require.Equal(t, "HOST_INSTANCE_TRUST_REJECTED", hostErr.Code)
+	require.Equal(t, "soul_instance.boundary_violation", hostErr.Code)
 	require.Equal(t, http.StatusForbidden, hostErr.StatusCode)
 	require.Equal(t, "host-req-body", hostErr.HostRequestID)
 	require.NotContains(t, hostErr.Message, instanceKey)
+	require.Contains(t, hostErr.Message, "[redacted]")
+	require.JSONEq(t, `{"boundary":"instance_domain","reason":"tenant_domain_mismatch"}`, hostErr.DetailsJSON)
+}
+
+func TestService_BeginHostedBootstrapUsesInstanceTrustWithoutWallet(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	var sawAuth string
+	var sawBody map[string]any
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/begin", r.URL.Path)
+		sawAuth = r.Header.Get("Authorization")
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&sawBody))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-hosted-begin")
+		w.WriteHeader(http.StatusCreated)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"registration": map[string]any{
+				"id":                "reg_hosted",
+				"agent_id":          agentID,
+				"domain_normalized": "example.com",
+				"local_id":          "drone-hosted",
+				"authority_model":   "instance_trust",
+				"status":            "pending",
+			},
+			"proofs": []map[string]any{},
+			"promotion": map[string]any{
+				"agent_id":         agentID,
+				"registration_id":  "reg_hosted",
+				"domain":           "example.com",
+				"local_id":         "drone-hosted",
+				"authority_model":  "instance_trust",
+				"anchor_state":     "hosted_offchain",
+				"readiness_status": "ready_for_conversation",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.BeginHostedBootstrapRegistration(context.Background(), BootstrapBeginInput{
+		Username:     "drone-hosted",
+		BodyID:       common.GenerateNumericID("drone-hosted"),
+		Capabilities: []string{"post"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Bearer "+instanceKey, sawAuth)
+	require.Equal(t, "example.com", sawBody["domain"])
+	require.Equal(t, "drone-hosted", sawBody["local_id"])
+	require.Equal(t, "instance_trust", sawBody["authority_model"])
+	require.NotContains(t, sawBody, "wallet_address")
+	require.Equal(t, []any{"post"}, sawBody["capabilities"])
+	require.Equal(t, "reg_hosted", result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "instance_trust", result.AuthorityModel)
+	require.Equal(t, "hosted_offchain", result.AnchorState)
+	require.Empty(t, result.WalletAddress)
+	require.Empty(t, result.WalletChallenge.Message)
+	require.Equal(t, "host-req-hosted-begin", result.HostRequestID)
 }
 
 func TestService_VerifyBootstrapPrincipalDeclarationSendsCombinedHostVerifyRequest(t *testing.T) {
@@ -503,6 +576,381 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	for _, authHeader := range sawAuthHeaders {
 		require.Equal(t, "Bearer "+instanceKey, authHeader)
 		require.NotEqual(t, "Bearer "+userBearer, authHeader)
+	}
+}
+
+func TestService_PublishHostedBootstrapOmitsWalletSigningMaterial(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		userBearer  = "user-oauth-token"
+		agentID     = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	var sawBody map[string]any
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/finalize", r.URL.Path)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.NotEqual(t, "Bearer "+userBearer, r.Header.Get("Authorization"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&sawBody))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-hosted-publish")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version":           "1",
+			"agent_id":          agentID,
+			"published_version": 1,
+			"agent": map[string]any{
+				"agent_id":              agentID,
+				"domain":                "example.com",
+				"local_id":              "drone-hosted",
+				"authority_model":       "instance_trust",
+				"anchor_state":          "hosted_offchain",
+				"operational_binding":   "hosted_bound_soul",
+				"status":                "active",
+				"lifecycle_status":      "active",
+				"principal_address":     "",
+				"principal_declaration": "",
+			},
+			"publication": map[string]any{
+				"agent_id":                      agentID,
+				"published_version":             1,
+				"authority_model":               "instance_trust",
+				"registration_uri":              "s3://bucket/registry/v1/agents/" + agentID + "/registration.json",
+				"registration_s3_key":           "registry/v1/agents/" + agentID + "/registration.json",
+				"versioned_registration_uri":    "s3://bucket/registry/v1/agents/" + agentID + "/versions/1/registration.json",
+				"versioned_registration_s3_key": "registry/v1/agents/" + agentID + "/versions/1/registration.json",
+				"anchor_state":                  "hosted_offchain",
+				"published_at":                  "2026-06-14T02:00:00Z",
+			},
+			"promotion": map[string]any{
+				"agent_id":                   agentID,
+				"registration_id":            "reg_hosted",
+				"stage":                      "graduated",
+				"request_status":             "graduated",
+				"review_status":              "published",
+				"readiness_status":           "graduated",
+				"authority_model":            "instance_trust",
+				"anchor_state":               "hosted_offchain",
+				"latest_conversation_id":     "conv_hosted",
+				"latest_conversation_status": "completed",
+				"published_version":          1,
+				"graduated_at":               "2026-06-14T02:00:00Z",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.PublishHostedBootstrap(context.Background(), HostedBootstrapPublishInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+		LocalID:        "drone-hosted",
+	})
+	require.NoError(t, err)
+	require.Empty(t, sawBody)
+	require.NotContains(t, sawBody, "boundary_signatures")
+	require.NotContains(t, sawBody, "self_attestation")
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "example.com", result.AgentDomain)
+	require.Equal(t, "drone-hosted", result.AgentLocalID)
+	require.Equal(t, "instance_trust", result.AgentAuthorityModel)
+	require.Equal(t, "hosted_offchain", result.AgentAnchorState)
+	require.Equal(t, "hosted_bound_soul", result.AgentOperationalBinding)
+	require.Equal(t, "instance_trust", result.Publication.AuthorityModel)
+	require.Equal(t, "hosted_offchain", result.Publication.AnchorState)
+	require.Equal(t, "instance_trust", result.Promotion.AuthorityModel)
+	require.Equal(t, "host-req-hosted-publish", result.HostRequestID)
+}
+
+func TestValidateHostHostedFinalizeResponse_Guardrails(t *testing.T) {
+	t.Parallel()
+
+	const agentID = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	valid := validHostedFinalizeResponse(agentID)
+	require.NoError(t, validateHostHostedFinalizeResponse(valid, "example.com", "drone-hosted"))
+
+	testCases := []struct {
+		name   string
+		mutate func(*hostFinalizeResponse)
+	}{
+		{
+			name: "unsupported version",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Version = "2"
+			},
+		},
+		{
+			name: "invalid soul id",
+			mutate: func(out *hostFinalizeResponse) {
+				out.AgentID = "not-a-soul-id"
+				out.Agent.AgentID = ""
+				out.Publication.AgentID = ""
+				out.Promotion.AgentID = ""
+			},
+		},
+		{
+			name: "domain mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.Domain = "other.example"
+			},
+		},
+		{
+			name: "local id mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.LocalID = "other-drone"
+			},
+		},
+		{
+			name: "agent authority mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "publication authority mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Publication.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "promotion authority mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Promotion.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "agent anchor mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.AnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "publication anchor mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Publication.AnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "promotion anchor mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Promotion.AnchorState = SoulAnchorStateImmutableOnchain
+			},
+		},
+		{
+			name: "operational binding mismatch",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.OperationalBinding = "wallet_bound_soul"
+			},
+		},
+		{
+			name: "inactive status",
+			mutate: func(out *hostFinalizeResponse) {
+				out.Agent.Status = "suspended"
+			},
+		},
+		{
+			name: "missing published version",
+			mutate: func(out *hostFinalizeResponse) {
+				out.PublishedVersion = 0
+				out.Publication.PublishedVersion = 0
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := valid
+			tc.mutate(&out)
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, validateHostHostedFinalizeResponse(out, "example.com", "drone-hosted"), &hostErr)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+		})
+	}
+}
+
+func TestValidateHostedBeginResponse_Guardrails(t *testing.T) {
+	t.Parallel()
+
+	valid := hostRegistrationBeginResponse{
+		Registration: hostRegistration{
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			DomainNormalized: "example.com",
+			LocalID:          "drone-hosted",
+		},
+		Promotion: hostPromotionResponse{
+			AuthorityModel: SoulAuthorityModelInstanceTrust,
+			Domain:         "example.com",
+			LocalID:        "drone-hosted",
+		},
+	}
+	require.NoError(t, validateHostedBeginResponse(valid, "example.com", "drone-hosted"))
+
+	testCases := []struct {
+		name   string
+		mutate func(*hostRegistrationBeginResponse)
+	}{
+		{
+			name: "authority mismatch",
+			mutate: func(out *hostRegistrationBeginResponse) {
+				out.Registration.AuthorityModel = SoulAuthorityModelWalletPrincipal
+			},
+		},
+		{
+			name: "domain mismatch",
+			mutate: func(out *hostRegistrationBeginResponse) {
+				out.Registration.DomainNormalized = "other.example"
+			},
+		},
+		{
+			name: "local id mismatch",
+			mutate: func(out *hostRegistrationBeginResponse) {
+				out.Registration.LocalID = "other-drone"
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := valid
+			tc.mutate(&out)
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, validateHostedBeginResponse(out, "example.com", "drone-hosted"), &hostErr)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+		})
+	}
+}
+
+func TestHostedBootstrapRejectsInvalidLocalInputs(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://host.example"}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: "instance-key"},
+		zap.NewNop(),
+	)
+
+	var hostErr *HostBootstrapError
+	_, err := service.PublishHostedBootstrap(context.Background(), HostedBootstrapPublishInput{})
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_REGISTRATION_ID_REQUIRED", hostErr.Code)
+
+	hostErr = nil
+	_, err = service.PublishHostedBootstrap(context.Background(), HostedBootstrapPublishInput{RegistrationID: "reg_hosted"})
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_CONVERSATION_ID_REQUIRED", hostErr.Code)
+
+	noKeyService := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://host.example"}},
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	)
+	hostErr = nil
+	_, err = noKeyService.BeginHostedBootstrapRegistration(context.Background(), BootstrapBeginInput{Username: "drone-hosted"})
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_INSTANCE_KEY_MISSING", hostErr.Code)
+}
+
+func TestHostBootstrapInputsRejectInvalidTrustConfiguration(t *testing.T) {
+	t.Parallel()
+
+	_, err := defaultHostInstanceKeyResolver(context.Background(), nil, "")
+	require.NoError(t, err)
+
+	var nilService *Service
+	_, _, _, err = nilService.hostBootstrapInputs(context.Background())
+	require.Error(t, err)
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: "instance-key"},
+		zap.NewNop(),
+	)
+	service.WithHostInstanceKeyResolver(nil)
+	var hostErr *HostBootstrapError
+	_, _, _, err = service.hostBootstrapInputs(context.Background())
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_TRUST_NOT_CONFIGURED", hostErr.Code)
+
+	service = NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "host.example"}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: "instance-key"},
+		zap.NewNop(),
+	)
+	hostErr = nil
+	_, _, _, err = service.hostBootstrapInputs(context.Background())
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_TRUST_NOT_CONFIGURED", hostErr.Code)
+
+	service = NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://host.example"}},
+		&config.Config{Domain: ""},
+		zap.NewNop(),
+	)
+	_, _, _, err = service.hostBootstrapInputs(context.Background())
+	require.ErrorContains(t, err, "instance domain is required")
+
+	service = NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://host.example"}},
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	).WithHostInstanceKeyResolver(func(context.Context, *config.Config, string) (string, error) {
+		return "", errors.New("kms unavailable")
+	})
+	hostErr = nil
+	_, _, _, err = service.hostBootstrapInputs(context.Background())
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_INSTANCE_KEY_UNAVAILABLE", hostErr.Code)
+}
+
+func TestHostBootstrapSecretRedactionHelpers(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, sanitizeHostBootstrapDetails(nil, "secret-token"))
+	require.Empty(t, sanitizeHostBootstrapDetails(json.RawMessage(`   `), "secret-token"))
+	require.JSONEq(t, `{"token":"[redacted]"}`, sanitizeHostBootstrapDetails(json.RawMessage(`{"token":"secret-token"}`), "secret-token"))
+	require.Equal(t, "no secret", redactHostBootstrapSecret("no secret", ""))
+}
+
+func validHostedFinalizeResponse(agentID string) hostFinalizeResponse {
+	return hostFinalizeResponse{
+		Version:          hostBootstrapVersion1,
+		AgentID:          agentID,
+		PublishedVersion: 1,
+		Agent: hostFinalizeAgent{
+			AgentID:            agentID,
+			Domain:             "example.com",
+			LocalID:            "drone-hosted",
+			AuthorityModel:     SoulAuthorityModelInstanceTrust,
+			AnchorState:        SoulAnchorStateHostedOffchain,
+			OperationalBinding: SoulOperationalBindingHostedBound,
+			Status:             "active",
+			LifecycleStatus:    "active",
+		},
+		Publication: hostFinalizePublication{
+			AgentID:          agentID,
+			PublishedVersion: 1,
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+		},
+		Promotion: hostFinalizePromotion{
+			AgentID:          agentID,
+			Stage:            "graduated",
+			AuthorityModel:   SoulAuthorityModelInstanceTrust,
+			AnchorState:      SoulAnchorStateHostedOffchain,
+			PublishedVersion: 1,
+		},
 	}
 }
 

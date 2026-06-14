@@ -219,6 +219,55 @@ func (s *Service) Incorporate(ctx context.Context, principalUsername string, tar
 	return &soul, nil
 }
 
+// BindHostedBootstrap binds a Host-published instance-trust soul to a local body
+// after validating the hosted authority, anchor, domain, and local id returned by Host.
+func (s *Service) BindHostedBootstrap(ctx context.Context, targetAgentUsername string, result *BootstrapFinalizeResult) (*Soul, error) {
+	if s == nil || s.instanceRepo == nil {
+		return nil, fmt.Errorf("soul service misconfigured")
+	}
+
+	_, instanceDomain, err := s.trustInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	targetAgent, err := s.resolveHostedTargetAgent(ctx, targetAgentUsername)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostedBootstrapBinding(result, instanceDomain, targetAgent.Username); err != nil {
+		return nil, err
+	}
+	normalizedAgentID, _ := validateAgentID(result.HostSoulAgentID)
+
+	binding, err := s.instanceRepo.BindSoulBody(ctx, normalizedAgentID, targetAgent.Username, hostedBindingPrincipal(result))
+	if err != nil {
+		switch {
+		case errors.Is(err, storageRepos.ErrSoulBodyBindingAlreadyExists):
+			return nil, ErrSoulAlreadyBound
+		case errors.Is(err, storageRepos.ErrSoulBodyAlreadyHasBinding):
+			return nil, ErrTargetAgentAlreadyHasSoul
+		default:
+			return nil, err
+		}
+	}
+
+	identity := &hostSoulIdentity{
+		AgentID:            normalizedAgentID,
+		Domain:             result.AgentDomain,
+		LocalID:            result.AgentLocalID,
+		PrincipalAddress:   result.PrincipalAddress,
+		Status:             result.AgentStatus,
+		LifecycleStatus:    result.AgentLifecycleStatus,
+		AuthorityModel:     result.AgentAuthorityModel,
+		AnchorState:        result.AgentAnchorState,
+		OperationalBinding: result.AgentOperationalBinding,
+		UpdatedAt:          result.Publication.PublishedAt,
+	}
+	soul := soulFromIdentity(identity, binding)
+	return &soul, nil
+}
+
 // ResolveBoundAgent returns the canonical bound soul identity for a local agent username.
 // It returns (nil, nil) when the agent is not soul-bound.
 func (s *Service) ResolveBoundAgent(ctx context.Context, agentUsername string) (*Soul, error) {
@@ -335,6 +384,99 @@ func (s *Service) resolveTargetAgent(ctx context.Context, principalUsername stri
 	}
 
 	return targetAgent, nil
+}
+
+func (s *Service) resolveHostedTargetAgent(ctx context.Context, targetAgentUsername string) (*storage.User, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("soul service misconfigured")
+	}
+
+	targetAgentUsername = strings.TrimSpace(targetAgentUsername)
+	if targetAgentUsername == "" {
+		return nil, ErrTargetAgentRequired
+	}
+	targetAgent, err := s.accountRepo.GetUser(ctx, targetAgentUsername)
+	if err != nil {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return nil, ErrTargetAgentNotFound
+		}
+		return nil, err
+	}
+	if targetAgent == nil {
+		return nil, ErrTargetAgentNotFound
+	}
+	if !targetAgent.IsAgent {
+		return nil, ErrTargetAgentMustBeAgent
+	}
+	return targetAgent, nil
+}
+
+func validateHostedBootstrapBinding(result *BootstrapFinalizeResult, instanceDomain string, targetAgentUsername string) error {
+	if result == nil {
+		return ErrSoulNotAvailable
+	}
+	normalizedAgentID, err := validateAgentID(result.HostSoulAgentID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSoulNotAvailable, err)
+	}
+	if result.Publication.AgentID != "" && !strings.EqualFold(result.Publication.AgentID, normalizedAgentID) {
+		return ErrSoulNotAvailable
+	}
+	if result.Promotion.AgentID != "" && !strings.EqualFold(result.Promotion.AgentID, normalizedAgentID) {
+		return ErrSoulNotAvailable
+	}
+	if !domainMatches(result.AgentDomain, instanceDomain) {
+		return ErrSoulNotAvailable
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.AgentLocalID), strings.ToLower(strings.TrimSpace(targetAgentUsername))) {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.AgentAuthorityModel) != SoulAuthorityModelInstanceTrust {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.Publication.AuthorityModel) != SoulAuthorityModelInstanceTrust {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.Promotion.AgentID) != "" && strings.TrimSpace(result.Promotion.AuthorityModel) != SoulAuthorityModelInstanceTrust {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.AgentAnchorState) != SoulAnchorStateHostedOffchain {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.Publication.AnchorState) != SoulAnchorStateHostedOffchain {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.Promotion.AgentID) != "" && strings.TrimSpace(result.Promotion.AnchorState) != SoulAnchorStateHostedOffchain {
+		return ErrSoulNotAvailable
+	}
+	if strings.TrimSpace(result.AgentOperationalBinding) != SoulOperationalBindingHostedBound {
+		return ErrSoulNotAvailable
+	}
+	if result.PublishedVersion < 1 && result.Publication.PublishedVersion < 1 {
+		return ErrSoulNotAvailable
+	}
+	status := strings.TrimSpace(result.AgentLifecycleStatus)
+	if status == "" {
+		status = strings.TrimSpace(result.AgentStatus)
+	}
+	if !strings.EqualFold(status, "active") {
+		return ErrSoulNotAvailable
+	}
+	if result.Promotion.Stage != "" && !strings.EqualFold(result.Promotion.Stage, "graduated") {
+		return ErrSoulNotAvailable
+	}
+	return nil
+}
+
+func hostedBindingPrincipal(result *BootstrapFinalizeResult) string {
+	if result == nil {
+		return ""
+	}
+	principal := strings.ToLower(strings.TrimSpace(result.PrincipalAddress))
+	if ethcommon.IsHexAddress(principal) {
+		return principal
+	}
+	return ""
 }
 
 func agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {
@@ -632,6 +774,9 @@ type hostSoulIdentity struct {
 	LocalID                string          `json:"local_id"`
 	ENSName                *string         `json:"ens_name"`
 	Wallet                 string          `json:"wallet"`
+	AuthorityModel         string          `json:"authority_model"`
+	AnchorState            string          `json:"anchor_state"`
+	OperationalBinding     string          `json:"operational_binding"`
 	TokenID                string          `json:"token_id"`
 	MetaURI                string          `json:"meta_uri"`
 	Avatar                 *hostSoulAvatar `json:"avatar"`
