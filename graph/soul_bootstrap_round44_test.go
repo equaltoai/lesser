@@ -486,6 +486,201 @@ func TestRound44HostedSoulBootstrapDrivesNoWalletDefinitionThroughPublish(t *tes
 	require.Equal(t, "hosted_offchain", derefString(published.Bootstrap.State.Publication.AnchorState))
 }
 
+func TestRound44CompleteHostedSoulGenesisPersistsRecoveredTerminalConversationEvidence(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 17, 15, 0, 0, 0, time.UTC)
+	completedAt := now.Add(-5 * time.Minute)
+	validDeclaration := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	resolver.soulsClient = &stubSoulService{
+		completeBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			require.Equal(t, "reg_recovered", input.RegistrationID)
+			require.Equal(t, "conv_recovered", input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:       "reg_recovered",
+				HostSoulAgentID:      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				ConversationID:       "conv_recovered",
+				Status:               "completed",
+				ProducedDeclarations: validDeclaration,
+				CompletedAt:          &completedAt,
+				HostRequestID:        "host-req-read-after-conflict",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-recovered",
+			BodyID:             "drone-recovered",
+			HostRegistrationID: "reg_recovered",
+			HostConversationID: "conv_recovered",
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              workflow.SoulBootstrapStateConversationInProgress,
+			NextAction:         workflow.SoulBootstrapNextActionCompleteHostedGenesis,
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-recovered",
+		DisplayName: "Drone Recovered",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-recovered",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	payload, err := (&mutationResolver{resolver}).CompleteHostedSoulGenesis(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.CompleteHostedSoulGenesisInput{
+			Username:       "drone-recovered",
+			ConversationID: "conv_recovered",
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, payload.Error)
+	require.Equal(t, workflow.SoulBootstrapStateConversationCompleted, payload.Bootstrap.State.State)
+	require.Equal(t, model.SoulBootstrapNextActionPublishHostedSoul, payload.Bootstrap.TypedNextAction)
+	require.Len(t, payload.Bootstrap.State.SigningCheckpoints, 1)
+	checkpoint := payload.Bootstrap.State.SigningCheckpoints[0]
+	require.Equal(t, "hosted_conversation", checkpoint.Name)
+	require.Equal(t, "completed", checkpoint.Status)
+	require.JSONEq(t, validDeclaration, derefString(checkpoint.CanonicalJSON))
+	require.Equal(t, "host-req-read-after-conflict", derefString(checkpoint.HostRequestID))
+	require.NotNil(t, payload.Bootstrap.Workflow.Declaration)
+
+	storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-recovered")
+	require.NoError(t, err)
+	storedWorkflow, err := workflow.ParseDroneWorkflowMetadata(storedUser.Metadata)
+	require.NoError(t, err)
+	require.NotNil(t, storedWorkflow.SoulBootstrap)
+	require.Equal(t, workflow.SoulBootstrapNextActionPublishHostedSoul, storedWorkflow.SoulBootstrap.NextAction)
+	require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 1)
+	require.Equal(t, soulBootstrapCheckpointHostedConversation, storedWorkflow.SoulBootstrap.SigningCheckpoints[0].Name)
+}
+
+func TestRound44CompleteHostedSoulGenesisConflictRecoveryFailuresDoNotRefreshLoop(t *testing.T) {
+	tests := []struct {
+		name             string
+		err              error
+		wantRestart      bool
+		wantRecoveryEnum model.SoulBootstrapRecoveryCategory
+		wantNextAction   model.SoulBootstrapNextAction
+	}{
+		{
+			name: "read failed without terminal declarations retries instead of refresh",
+			err: &soulservice.HostBootstrapError{
+				Code:          "HOST_RESPONSE_INVALID",
+				Message:       "Host complete recovery did not find terminal declaration evidence.",
+				Source:        "host",
+				HostRequestID: "host-req-read-failed",
+				Err:           soulservice.ErrHostUnavailable,
+			},
+			wantRecoveryEnum: model.SoulBootstrapRecoveryCategoryRetrySameStep,
+			wantNextAction:   model.SoulBootstrapNextActionRetrySameStep,
+		},
+		{
+			name: "exact conversation not in progress conflict restarts instead of refresh",
+			err: &soulservice.HostBootstrapError{
+				Code:          "soul_instance.conflict",
+				Message:       "conversation is not in progress",
+				Source:        "host",
+				StatusCode:    409,
+				HostRequestID: "3c424c44f662425a14533b2cdd36a2d6",
+				Err:           soulservice.ErrHostUnavailable,
+			},
+			wantRestart:      true,
+			wantRecoveryEnum: model.SoulBootstrapRecoveryCategoryRestartRequired,
+			wantNextAction:   model.SoulBootstrapNextActionRestartSoulBootstrap,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storageRepo := newRound12GraphResolver(t)
+			now := time.Date(2026, 6, 17, 15, 30, 0, 0, time.UTC)
+			resolver.soulsClient = &stubSoulService{
+				completeBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+					require.Equal(t, "reg_conflict", input.RegistrationID)
+					require.Equal(t, "conv_conflict", input.ConversationID)
+					return nil, tt.err
+				},
+			}
+
+			metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+				SoulBootstrap: &workflow.SoulBootstrapState{
+					Username:           "drone-conflict",
+					BodyID:             "drone-conflict",
+					HostRegistrationID: "reg_conflict",
+					HostConversationID: "conv_conflict",
+					BootstrapMode:      workflow.SoulBootstrapModeHosted,
+					AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+					Phase:              workflow.SoulBootstrapPhaseConversation,
+					State:              workflow.SoulBootstrapStateConversationInProgress,
+					NextAction:         workflow.SoulBootstrapNextActionCompleteHostedGenesis,
+				},
+			})
+			require.NoError(t, err)
+
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    "owner",
+				DisplayName: "Owner",
+				Approved:    true,
+				CreatedAt:   now.Add(-48 * time.Hour),
+				UpdatedAt:   now.Add(-24 * time.Hour),
+			}, nil)
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    "drone-conflict",
+				DisplayName: "Drone Conflict",
+				Approved:    true,
+				IsAgent:     true,
+				AgentOwner:  "@owner",
+				Metadata:    metadata,
+				CreatedAt:   now.Add(-24 * time.Hour),
+				UpdatedAt:   now,
+			}, &storage.AgentGovernanceState{
+				Username:        "drone-conflict",
+				DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+			})
+
+			payload, err := (&mutationResolver{resolver}).CompleteHostedSoulGenesis(
+				round13DroneAuthContext("owner", auth.ScopeWrite),
+				model.CompleteHostedSoulGenesisInput{
+					Username:       "drone-conflict",
+					ConversationID: "conv_conflict",
+				},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, payload.Error)
+			require.Equal(t, tt.wantRecoveryEnum, *payload.Error.RecoveryCategory)
+			require.Equal(t, tt.wantNextAction, payload.Bootstrap.TypedNextAction)
+			require.NotEqual(t, model.SoulBootstrapRecoveryCategoryRefreshState, *payload.Error.RecoveryCategory)
+			require.NotEqual(t, model.SoulBootstrapNextActionRefreshState, payload.Bootstrap.TypedNextAction)
+			require.Equal(t, tt.wantRestart, payload.Error.RestartRequired)
+			if tt.wantRestart {
+				require.True(t, payload.Bootstrap.RestartAvailable)
+			}
+			require.Empty(t, payload.Bootstrap.State.SigningCheckpoints)
+			require.Nil(t, payload.Bootstrap.Workflow.Declaration)
+		})
+	}
+}
+
 func TestRound44CompleteHostedSoulGenesisRequiresTerminalDeclarationEvidence(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	now := time.Date(2026, 6, 14, 6, 0, 0, 0, time.UTC)
