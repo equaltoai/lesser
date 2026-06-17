@@ -663,6 +663,339 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 	}
 }
 
+func TestService_CompleteBootstrapConversationRecoversCompletedConflictFromReadRoute(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+	completedAt := "2026-06-17T14:15:00Z"
+
+	completeCalls := 0
+	readCalls := 0
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.Equal(t, "application/json", r.Header.Get("Accept"))
+		switch r.URL.Path {
+		case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete":
+			completeCalls++
+			require.Equal(t, http.MethodPost, r.Method)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Request-Id", "host-req-complete-conflict-header")
+			w.WriteHeader(http.StatusConflict)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":        "soul_instance.conflict",
+					"message":     "conversation is not in progress",
+					"status_code": 409,
+					"request_id":  "host-req-complete-conflict",
+				},
+			}))
+		case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted":
+			readCalls++
+			require.Equal(t, http.MethodGet, r.Method)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Request-Id", "host-req-read-completed")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"version": "1",
+				"conversation": map[string]any{
+					"agent_id":              agentID,
+					"conversation_id":       "conv_hosted",
+					"model":                 "claude",
+					"messages":              `[{"role":"assistant","content":"ready"}]`,
+					"status":                "completed",
+					"produced_declarations": validDeclarations,
+					"completed_at":          completedAt,
+					"created_at":            "2026-06-17T14:00:00Z",
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, completeCalls)
+	require.Equal(t, 1, readCalls)
+	require.Equal(t, "reg_hosted", result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "conv_hosted", result.ConversationID)
+	require.Equal(t, "completed", result.Status)
+	require.JSONEq(t, validDeclarations, result.ProducedDeclarations)
+	require.Equal(t, "host-req-read-completed", result.HostRequestID)
+	require.NotNil(t, result.CompletedAt)
+	require.Equal(t, completedAt, result.CompletedAt.Format(time.RFC3339))
+}
+
+func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefreshEvidence(t *testing.T) {
+	t.Parallel()
+
+	const instanceKey = "host-instance-key"
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	tests := []struct {
+		name         string
+		conversation map[string]any
+		wantContains string
+	}{
+		{
+			name: "failed terminal conversation",
+			conversation: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"model":                 "claude",
+				"status":                "failed",
+				"produced_declarations": validDeclarations,
+				"created_at":            "2026-06-17T14:00:00Z",
+			},
+			wantContains: "not terminal",
+		},
+		{
+			name: "completed without declarations",
+			conversation: map[string]any{
+				"conversation_id":       "conv_hosted",
+				"model":                 "claude",
+				"status":                "completed",
+				"produced_declarations": "",
+				"created_at":            "2026-06-17T14:00:00Z",
+			},
+			wantContains: "produced declarations",
+		},
+		{
+			name: "completed with stale conversation id",
+			conversation: map[string]any{
+				"conversation_id":       "conv_other",
+				"model":                 "claude",
+				"status":                "completed",
+				"produced_declarations": validDeclarations,
+				"created_at":            "2026-06-17T14:00:00Z",
+			},
+			wantContains: "conversation id",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+				switch r.URL.Path {
+				case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete":
+					require.Equal(t, http.MethodPost, r.Method)
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-Request-Id", "host-req-conflict-header")
+					w.WriteHeader(http.StatusConflict)
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+						"error": map[string]any{
+							"code":        "HOST_BOOTSTRAP_CONFLICT",
+							"message":     "Host reported a bootstrap conflict.",
+							"status_code": 409,
+							"request_id":  "host-req-conflict",
+						},
+					}))
+				case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted":
+					require.Equal(t, http.MethodGet, r.Method)
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-Request-Id", "host-req-read-no-evidence")
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+						"version":      "1",
+						"conversation": tt.conversation,
+					}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer host.Close()
+
+			service := NewService(
+				&fakeAccountRepo{},
+				&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+				&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+				zap.NewNop(),
+			).WithHTTPClient(host.Client())
+
+			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+				RegistrationID: "reg_hosted",
+				ConversationID: "conv_hosted",
+			})
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+			require.Equal(t, "host", hostErr.Source)
+			require.Equal(t, "host-req-read-no-evidence", hostErr.HostRequestID)
+			require.Contains(t, hostErr.Message, tt.wantContains)
+		})
+	}
+}
+
+func TestService_ReadBootstrapConversationUsesInstanceReadRoute(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted", r.URL.Path)
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.Equal(t, "application/json", r.Header.Get("Accept"))
+		require.Empty(t, r.Header.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-read-direct")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version": "1",
+			"conversation": map[string]any{
+				"agent_id":              agentID,
+				"conversation_id":       "conv_hosted",
+				"model":                 "claude",
+				"status":                "completed",
+				"produced_declarations": validDeclarations,
+				"created_at":            "2026-06-17T14:00:00Z",
+				"completed_at":          "2026-06-17T14:15:00Z",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.ReadBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "reg_hosted", result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "conv_hosted", result.ConversationID)
+	require.Equal(t, "completed", result.Status)
+	require.Equal(t, "host-req-read-direct", result.HostRequestID)
+	require.NoError(t, ValidateHostedBootstrapCompletionEvidence(result, "conv_hosted"))
+}
+
+func TestService_ReadBootstrapConversationRejectsUnsupportedEnvelopeVersion(t *testing.T) {
+	t.Parallel()
+
+	const instanceKey = "host-instance-key"
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted", r.URL.Path)
+		require.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-read-version")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version": "2",
+			"conversation": map[string]any{
+				"conversation_id": "conv_hosted",
+				"status":          "completed",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.ReadBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+	})
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+	require.Equal(t, "host-req-read-version", hostErr.HostRequestID)
+	require.Contains(t, hostErr.Message, "unsupported version")
+}
+
+func TestService_CompleteBootstrapConversationConflictRecoveryFallsBackToConflictRequestID(t *testing.T) {
+	t.Parallel()
+
+	const instanceKey = "host-instance-key"
+	validDeclarations := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":        "soul_instance.conflict",
+					"message":     "conversation is not in progress",
+					"status_code": 409,
+					"request_id":  "host-req-conflict-fallback",
+				},
+			}))
+		case "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted":
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"version": "1",
+				"conversation": map[string]any{
+					"conversation_id":       "conv_hosted",
+					"model":                 "claude",
+					"status":                "completed",
+					"produced_declarations": validDeclarations,
+					"created_at":            "2026-06-17T14:00:00Z",
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "host-req-conflict-fallback", result.HostRequestID)
+}
+
+func TestHostBootstrapConversationConflictClassifier(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isHostBootstrapConversationConflict(errors.New("plain")))
+	require.True(t, isHostBootstrapConversationConflict(&HostBootstrapError{Code: "soul_instance.conflict"}))
+	require.True(t, isHostBootstrapConversationConflict(&HostBootstrapError{Code: "HOST_BOOTSTRAP_CONFLICT"}))
+	require.True(t, isHostBootstrapConversationConflict(&HostBootstrapError{StatusCode: http.StatusConflict}))
+	require.True(t, isHostBootstrapConversationConflict(&HostBootstrapError{Message: "conversation is not in progress"}))
+	require.Equal(t, "host-req", hostBootstrapRequestIDFromError(&HostBootstrapError{HostRequestID: " host-req "}))
+	require.Empty(t, hostBootstrapRequestIDFromError(errors.New("plain")))
+}
+
 func TestValidateHostedBootstrapCompletionEvidenceCoversDeclarationShape(t *testing.T) {
 	t.Parallel()
 

@@ -1309,7 +1309,7 @@ func soulBootstrapErrorState(
 		state = &workflow.SoulBootstrapState{}
 	}
 	details := soulBootstrapErrorDetails(err)
-	recovery := soulBootstrapRecoveryForError(details.Code, details.StatusCode)
+	recovery := soulBootstrapRecoveryForError(details.Code, details.StatusCode, details.Message)
 	state.Username = username
 	state.BodyID = defaultString(state.BodyID, bodyID)
 	state.Phase = workflow.SoulBootstrapPhaseError
@@ -1416,7 +1416,15 @@ type soulBootstrapRecoveryPlan struct {
 	RestartRequired bool
 }
 
-func soulBootstrapRecoveryForError(code string, statusCode int) soulBootstrapRecoveryPlan {
+func soulBootstrapRecoveryForError(code string, statusCode int, message string) soulBootstrapRecoveryPlan {
+	if soulBootstrapConversationNotInProgressConflict(code, statusCode, message) {
+		return soulBootstrapRecoveryPlan{
+			Category:        workflow.SoulBootstrapRecoveryCategoryRestartRequired,
+			Action:          workflow.SoulBootstrapRecoveryActionRestartBootstrap,
+			NextAction:      workflow.SoulBootstrapNextActionRestartSoulBootstrap,
+			RestartRequired: true,
+		}
+	}
 	switch strings.TrimSpace(code) {
 	case workflow.SoulBootstrapErrorHostTrustNotConfigured,
 		workflow.SoulBootstrapErrorHostInstanceKeyMissing,
@@ -1461,6 +1469,14 @@ func soulBootstrapRecoveryForError(code string, statusCode int) soulBootstrapRec
 			Retryable:  true,
 		}
 	}
+}
+
+func soulBootstrapConversationNotInProgressConflict(code string, statusCode int, message string) bool {
+	code = strings.TrimSpace(code)
+	if code != "soul_instance.conflict" && code != "HOST_BOOTSTRAP_CONFLICT" && statusCode != 409 {
+		return false
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(message)), "conversation is not in progress")
 }
 
 func mergeSoulBootstrapCorrelation(existing *workflow.SoulBootstrapCorrelationState, next *workflow.SoulBootstrapCorrelationState) *workflow.SoulBootstrapCorrelationState {
