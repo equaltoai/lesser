@@ -47,6 +47,9 @@ func (r *queryResolver) SoulBootstrap(ctx context.Context, username string) (*mo
 	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
 		return nil, apperrors.Forbidden("not authorized to view soul bootstrap")
 	}
+	if err := r.reconcileHostedSoulBootstrapState(ctx, claims.Username, agentUser, workflowState); err != nil {
+		return nil, err
+	}
 	return r.buildSoulBootstrapSurface(ctx, claims.Username, agentUser, governance, nil)
 }
 
@@ -486,6 +489,7 @@ type soulBootstrapHostService interface {
 	VerifyBootstrapPrincipalDeclaration(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 	SendBootstrapConversationMessage(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
 	CompleteBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	ReadBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	PrepareBootstrapFinalize(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	FinalizeBootstrap(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
 	PublishHostedBootstrap(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error)
@@ -639,6 +643,66 @@ func (r *Resolver) soulBootstrapService() (soulBootstrapHostService, error) {
 		return nil, errors.New("soul bootstrap service is not available")
 	}
 	return bootstrap, nil
+}
+
+func (r *Resolver) reconcileHostedSoulBootstrapState(
+	ctx context.Context,
+	viewerUsername string,
+	agentUser *storage.User,
+	workflowState *workflow.DroneWorkflowState,
+) error {
+	if r == nil || agentUser == nil || workflowState == nil || workflowState.SoulBootstrap == nil {
+		return nil
+	}
+	state := workflow.NormalizeSoulBootstrap(workflowState.SoulBootstrap, agentUser.Username)
+	if !soulBootstrapShouldReadRepairHostedState(state) {
+		return nil
+	}
+	service, err := r.soulBootstrapService()
+	if err != nil {
+		return nil
+	}
+	result, err := service.ReadBootstrapConversation(ctx, soulservice.BootstrapConversationCompleteInput{
+		RegistrationID: state.HostRegistrationID,
+		ConversationID: state.HostConversationID,
+	})
+	if err != nil {
+		return nil
+	}
+	if err := soulservice.ValidateHostedBootstrapCompletionEvidence(result, state.HostConversationID); err != nil {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	next := soulBootstrapStateAfterHostedConversationComplete(agentUser, state, state.Correlation, result, now)
+	workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(next, agentUser.Username)
+	applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
+	workflowState.UpdatedAt = &now
+	if err := r.persistDroneWorkflowState(ctx, agentUser, workflowState); err != nil {
+		return apperrors.InternalWithCause(err, "failed to persist reconciled hosted soul bootstrap state")
+	}
+	return nil
+}
+
+func soulBootstrapShouldReadRepairHostedState(state *workflow.SoulBootstrapState) bool {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil || state.BootstrapMode != workflow.SoulBootstrapModeHosted {
+		return false
+	}
+	if strings.TrimSpace(state.HostRegistrationID) == "" || strings.TrimSpace(state.HostConversationID) == "" {
+		return false
+	}
+	if soulBootstrapHasTerminalConversationDeclarationEvidence(state.SigningCheckpoints, state.HostConversationID) {
+		return false
+	}
+	if state.Phase == workflow.SoulBootstrapPhaseError {
+		return strings.EqualFold(strings.TrimSpace(state.NextAction), workflow.SoulBootstrapNextActionRefreshState) ||
+			strings.EqualFold(strings.TrimSpace(state.RecoveryAction), workflow.SoulBootstrapRecoveryActionRefreshState) ||
+			(state.Error != nil && soulBootstrapConversationNotInProgressConflict(state.Error.Code, state.Error.StatusCode, state.Error.Message))
+	}
+	return state.Phase == workflow.SoulBootstrapPhaseConversation &&
+		state.State == workflow.SoulBootstrapStateConversationCompleted &&
+		strings.EqualFold(strings.TrimSpace(state.NextAction), workflow.SoulBootstrapNextActionPublishHostedSoul)
 }
 
 func soulBootstrapStateAfterBegin(
