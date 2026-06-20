@@ -52,6 +52,12 @@ The project aims for “secure by default” and predictable contributor workflo
 - **SSRF/URL validation**: untrusted outbound URLs must pass the shared URL/SSRF validator and use hardened dialing paths (no bespoke validators).
 - **No secrets in logs**: sensitive values must be scrubbed/redacted; add tests when touching auth/logging.
 
+## Branching and releases
+
+Lesser uses `feature -> staging -> main`. Open feature PRs against `staging`; the existing `verify` job (`./lesser verify ci`) is the required feature -> staging gate. `main` is operator-owned and accepts promotion PRs from `staging` only; do not require or rerun the lesser verify/rubric gate for staging -> main promotion. Releases are manual `v*` tags cut from `main`.
+
+See `docs/release-branching.md` for the branch-protection specs and operator apply commands.
+
 ## Repo conventions
 
 ### CLI-first workflows
