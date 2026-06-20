@@ -76,6 +76,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 - Release notes: `docs/operations/release-notes.md`
 - Incident stewardship packets: `docs/operations/processor-storm-apptheory-stewardship-evidence.md`
 - Release checklist: `docs/release-checklist.md`
+- Release branching and branch protection: `docs/release-branching.md`
 - Troubleshoot: `docs/troubleshooting.md`
 - Federation checks: `docs/federation.md`
 
