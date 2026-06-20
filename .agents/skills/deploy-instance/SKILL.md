@@ -5,13 +5,13 @@ description: Use to walk a merged change through per-deployment per-stage rollou
 
 # Deploy lesser to a stage
 
-After `implement-milestone` lands a PR to `main`, the change is ready to reach operator deployments. This skill is the discipline for walking a change through `dev → staging → live` for a given `(<app>, <base-domain>)` deployment, respecting the stack-deploy order, preserving bootstrap mnemonic state, and handling release-artifact publication.
+After a feature → `staging` milestone is promoted to `main` by the operator, the change is ready to reach operator deployments. This skill is the discipline for walking a change through `dev → staging → live` for a given `(<app>, <base-domain>)` deployment, respecting the stack-deploy order, preserving bootstrap mnemonic state, and handling release-artifact publication.
 
 ## When this skill runs
 
 Invoke when:
 
-- A change has merged to `main` and is ready for rollout on a given deployment
+- A change has been promoted from `staging` to `main` and is ready for rollout on a given deployment
 - An operational change (configuration, dependency) needs to propagate across stages
 - A security or federation-trust fix is ready for compressed-cadence rollout (compression authorized separately)
 - A rollback to a prior Lambda version or CloudFormation state is required
@@ -19,7 +19,7 @@ Invoke when:
 
 ## Preconditions
 
-- **The change is merged to `main`.** Per-stage deploys run against the checked-out `main` (or specified commit).
+- **The change is on `main`.** Per-stage deploys run against the checked-out `main` (or specified commit) after the operator-owned staging → main promotion.
 - **The deployment is identified** — `(<app>, <base-domain>, <aws-profile>)`.
 - **The stage sequence is planned** — typically `dev → staging → live` or `dev → live` where staging is unused.
 - **The roadmap's soak criteria are documented.** Soak is observable evidence, not a timer.
