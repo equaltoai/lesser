@@ -82,6 +82,21 @@ jobs:
           git tag "${RELEASE_VERSION}" "${GITHUB_SHA}"
           git push origin "refs/tags/${RELEASE_VERSION}"
 
+      - name: Assert release target is on main
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          git fetch --tags --force origin "refs/tags/${RELEASE_VERSION}:refs/tags/${RELEASE_VERSION}" || git fetch --tags --force origin
+
+          tagged_sha="$(git rev-list -n 1 "${RELEASE_VERSION}")"
+          if ! git merge-base --is-ancestor "${tagged_sha}" origin/main; then
+            echo "release tag '${RELEASE_VERSION}' points at ${tagged_sha}, which is not an ancestor of origin/main" >&2
+            exit 1
+          fi
+
+          echo "release tag '${RELEASE_VERSION}' points at ${tagged_sha}, an ancestor of origin/main"
+
       - name: Build release assets
         run: bash scripts/build_release_assets.sh "${RELEASE_VERSION}" dist/release
 
