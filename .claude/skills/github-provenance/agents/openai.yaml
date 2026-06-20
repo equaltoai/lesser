@@ -1,4 +1,0 @@
-interface:
-  display_name: "GitHub Provenance"
-  short_description: "Track lesser steward GitHub provenance"
-  default_prompt: "Use $github-provenance to handle lesser GitHub work with routed provenance-aware tools first."

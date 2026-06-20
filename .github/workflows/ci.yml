@@ -33,10 +33,11 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: true
-          cache-dependency-path: |
-            go.sum
-            infra/cdk/go.sum
+          # CI manages the build cache explicitly under tmp/go-cache after
+          # setup-go. Keeping setup-go's default cache enabled also restores
+          # /home/runner/.cache/go-build, duplicating several GiB of cache data
+          # and leaving the verify job without enough runner disk headroom.
+          cache: false
 
       - name: Configure Go build cache
         run: |
