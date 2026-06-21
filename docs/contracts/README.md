@@ -28,6 +28,7 @@ running environment.
 ## Soul / MCP / Hosted-Boundary Contracts
 
 - Hosted bound souls + x402 boundary contract: `docs/contracts/hosted-bound-souls-x402-boundary.md`
+- Hosted soul genesis GraphQL projection table: `docs/contracts/hosted-soul-genesis-projection.md`
 
 ## Deploy And Release Contracts
 
