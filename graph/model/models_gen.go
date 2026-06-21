@@ -2759,6 +2759,11 @@ type SoulBootstrapCorrelationState struct {
 	LastHostRequestID                  *string `json:"lastHostRequestId,omitempty"`
 }
 
+type SoulBootstrapDeclarationPreview struct {
+	Title            *string `json:"title,omitempty"`
+	DeclarationCount int     `json:"declarationCount"`
+}
+
 type SoulBootstrapErrorState struct {
 	Code             string                         `json:"code"`
 	Message          string                         `json:"message"`
@@ -2798,6 +2803,12 @@ type SoulBootstrapPublicationEvidence struct {
 	PublishedAt                *Time                        `json:"publishedAt,omitempty"`
 }
 
+type SoulBootstrapPublishGate struct {
+	CanPublishHostedSoul                                  bool   `json:"canPublishHostedSoul"`
+	Reason                                                string `json:"reason"`
+	RequiresActiveConversationTerminalDeclarationEvidence bool   `json:"requiresActiveConversationTerminalDeclarationEvidence"`
+}
+
 type SoulBootstrapSigningCheckpoint struct {
 	Version                     *string `json:"version,omitempty"`
 	Name                        string  `json:"name"`
@@ -2822,34 +2833,38 @@ type SoulBootstrapSigningCheckpoint struct {
 }
 
 type SoulBootstrapState struct {
-	Username              string                            `json:"username"`
-	BodyID                string                            `json:"bodyId"`
-	HostRegistrationID    *string                           `json:"hostRegistrationId,omitempty"`
-	HostConversationID    *string                           `json:"hostConversationId,omitempty"`
-	HostSoulAgentID       *string                           `json:"hostSoulAgentId,omitempty"`
-	WalletAddress         *string                           `json:"walletAddress,omitempty"`
-	PrincipalAddress      *string                           `json:"principalAddress,omitempty"`
-	BootstrapMode         SoulBootstrapMode                 `json:"bootstrapMode"`
-	AuthorityModel        SoulBootstrapAuthorityModel       `json:"authorityModel"`
-	AnchorState           *SoulBootstrapAnchorState         `json:"anchorState,omitempty"`
-	AssuranceState        *SoulBootstrapAnchorState         `json:"assuranceState,omitempty"`
-	Phase                 SoulBootstrapPhase                `json:"phase"`
-	State                 string                            `json:"state"`
-	TypedNextAction       SoulBootstrapNextAction           `json:"typedNextAction"`
-	RecoveryCategory      *SoulBootstrapRecoveryCategory    `json:"recoveryCategory,omitempty"`
-	RecoveryAction        *SoulBootstrapRecoveryAction      `json:"recoveryAction,omitempty"`
-	Retryable             bool                              `json:"retryable"`
-	RestartRequired       bool                              `json:"restartRequired"`
-	RestartAvailable      bool                              `json:"restartAvailable"`
-	SigningCheckpoints    []*SoulBootstrapSigningCheckpoint `json:"signingCheckpoints"`
-	Publication           *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
-	Error                 *SoulBootstrapErrorState          `json:"error,omitempty"`
-	Correlation           *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
-	RecoveryAttemptID     *string                           `json:"recoveryAttemptId,omitempty"`
-	RestartIdempotencyKey *string                           `json:"restartIdempotencyKey,omitempty"`
-	LastHostRequestID     *string                           `json:"lastHostRequestId,omitempty"`
-	RestartedAt           *Time                             `json:"restartedAt,omitempty"`
-	UpdatedAt             *Time                             `json:"updatedAt,omitempty"`
+	Username                    string                                    `json:"username"`
+	BodyID                      string                                    `json:"bodyId"`
+	HostRegistrationID          *string                                   `json:"hostRegistrationId,omitempty"`
+	HostConversationID          *string                                   `json:"hostConversationId,omitempty"`
+	HostSoulAgentID             *string                                   `json:"hostSoulAgentId,omitempty"`
+	WalletAddress               *string                                   `json:"walletAddress,omitempty"`
+	PrincipalAddress            *string                                   `json:"principalAddress,omitempty"`
+	BootstrapMode               SoulBootstrapMode                         `json:"bootstrapMode"`
+	AuthorityModel              SoulBootstrapAuthorityModel               `json:"authorityModel"`
+	AnchorState                 *SoulBootstrapAnchorState                 `json:"anchorState,omitempty"`
+	AssuranceState              *SoulBootstrapAnchorState                 `json:"assuranceState,omitempty"`
+	Phase                       SoulBootstrapPhase                        `json:"phase"`
+	State                       string                                    `json:"state"`
+	HostConversationStatus      *string                                   `json:"hostConversationStatus,omitempty"`
+	TypedNextAction             SoulBootstrapNextAction                   `json:"typedNextAction"`
+	RecoveryCategory            *SoulBootstrapRecoveryCategory            `json:"recoveryCategory,omitempty"`
+	RecoveryAction              *SoulBootstrapRecoveryAction              `json:"recoveryAction,omitempty"`
+	Retryable                   bool                                      `json:"retryable"`
+	RestartRequired             bool                                      `json:"restartRequired"`
+	RestartAvailable            bool                                      `json:"restartAvailable"`
+	SigningCheckpoints          []*SoulBootstrapSigningCheckpoint         `json:"signingCheckpoints"`
+	TerminalDeclarationEvidence *SoulBootstrapTerminalDeclarationEvidence `json:"terminalDeclarationEvidence,omitempty"`
+	Publication                 *SoulBootstrapPublicationEvidence         `json:"publication,omitempty"`
+	PublicationEvidence         *SoulBootstrapPublicationEvidence         `json:"publicationEvidence,omitempty"`
+	PublishGate                 *SoulBootstrapPublishGate                 `json:"publishGate"`
+	Error                       *SoulBootstrapErrorState                  `json:"error,omitempty"`
+	Correlation                 *SoulBootstrapCorrelationState            `json:"correlation,omitempty"`
+	RecoveryAttemptID           *string                                   `json:"recoveryAttemptId,omitempty"`
+	RestartIdempotencyKey       *string                                   `json:"restartIdempotencyKey,omitempty"`
+	LastHostRequestID           *string                                   `json:"lastHostRequestId,omitempty"`
+	RestartedAt                 *Time                                     `json:"restartedAt,omitempty"`
+	UpdatedAt                   *Time                                     `json:"updatedAt,omitempty"`
 }
 
 type SoulBootstrapSurface struct {
@@ -2868,6 +2883,14 @@ type SoulBootstrapSurface struct {
 	Retryable           bool                           `json:"retryable"`
 	RestartAvailable    bool                           `json:"restartAvailable"`
 	Error               *SoulBootstrapErrorState       `json:"error,omitempty"`
+}
+
+type SoulBootstrapTerminalDeclarationEvidence struct {
+	ConversationID              string                           `json:"conversationId"`
+	HostStatus                  string                           `json:"hostStatus"`
+	HostRequestID               *string                          `json:"hostRequestId,omitempty"`
+	DeclarationsHash            *string                          `json:"declarationsHash,omitempty"`
+	ProducedDeclarationsPreview *SoulBootstrapDeclarationPreview `json:"producedDeclarationsPreview,omitempty"`
 }
 
 type SoulInventoryItem struct {

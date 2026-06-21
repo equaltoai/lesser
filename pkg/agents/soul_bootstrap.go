@@ -102,10 +102,20 @@ const (
 	SoulBootstrapStateHostInstanceKeyUnavailable = "error.host_instance_key_unavailable"
 	// SoulBootstrapStateHostUnavailable marks a bounded Host/network failure.
 	SoulBootstrapStateHostUnavailable = "error.host_unavailable"
+	// SoulBootstrapStateHostFailed marks a Host-authored conversation failure.
+	SoulBootstrapStateHostFailed = "error.host_failed"
 	// SoulBootstrapStateHostSigningPayloadUnsupported marks unsupported Host signing metadata.
 	SoulBootstrapStateHostSigningPayloadUnsupported = "error.host_signing_payload_unsupported"
+	// SoulBootstrapStateConversationRegistrationActive marks a hosted registration before Host creates a conversation.
+	SoulBootstrapStateConversationRegistrationActive = "conversation.registration_active"
 	// SoulBootstrapStateConversationInProgress marks an active Host mint conversation.
 	SoulBootstrapStateConversationInProgress = "conversation.in_progress"
+	// SoulBootstrapStateConversationAssistantTurnReady marks a durable Host assistant turn awaiting completion.
+	SoulBootstrapStateConversationAssistantTurnReady = "conversation.assistant_turn_ready"
+	// SoulBootstrapStateConversationDeclarationExtractionPending marks Host declaration extraction in progress.
+	SoulBootstrapStateConversationDeclarationExtractionPending = "conversation.declaration_extraction_pending"
+	// SoulBootstrapStateConversationDeclarationReady marks Host terminal declaration evidence readiness.
+	SoulBootstrapStateConversationDeclarationReady = "conversation.declaration_ready"
 	// SoulBootstrapStateConversationCompleted marks a completed Host mint conversation.
 	SoulBootstrapStateConversationCompleted = "conversation.completed"
 	// SoulBootstrapStateFinalizeReady marks Host finalize preflight signing material readiness.
@@ -131,6 +141,8 @@ const (
 	SoulBootstrapErrorHostInstanceKeyUnavailable = "HOST_INSTANCE_KEY_UNAVAILABLE"
 	// SoulBootstrapErrorHostUnavailable is exposed for Host network/availability failures.
 	SoulBootstrapErrorHostUnavailable = "HOST_UNAVAILABLE"
+	// SoulBootstrapErrorHostConversationFailed is exposed for Host-authored durable conversation failures.
+	SoulBootstrapErrorHostConversationFailed = "HOST_CONVERSATION_FAILED"
 	// SoulBootstrapErrorHostSigningPayloadUnsupported is exposed for unsupported Host signing metadata.
 	SoulBootstrapErrorHostSigningPayloadUnsupported = "HOST_SIGNING_PAYLOAD_UNSUPPORTED"
 	// SoulBootstrapErrorHostRegistrationIDRequired is exposed when no Host registration id is available.
@@ -143,6 +155,23 @@ const (
 	SoulBootstrapErrorSoulBindingConflict = "SOUL_BINDING_CONFLICT"
 	// SoulBootstrapErrorSoulNotAvailable is exposed when Host-published soul identity is not locally bindable.
 	SoulBootstrapErrorSoulNotAvailable = "SOUL_NOT_AVAILABLE"
+
+	// SoulBootstrapHostConversationStatusCreated is Host's pre-turn durable-created status.
+	SoulBootstrapHostConversationStatusCreated = "created"
+	// SoulBootstrapHostConversationStatusInProgress is Host's active durable work status.
+	SoulBootstrapHostConversationStatusInProgress = "in_progress"
+	// SoulBootstrapHostConversationStatusAssistantTurnReady is Host's assistant-turn-ready status.
+	SoulBootstrapHostConversationStatusAssistantTurnReady = "assistant_turn_ready"
+	// SoulBootstrapHostConversationStatusDeclarationExtractionPending is Host's declaration extraction status.
+	SoulBootstrapHostConversationStatusDeclarationExtractionPending = "declaration_extraction_pending"
+	// SoulBootstrapHostConversationStatusDeclarationReady is Host's terminal declaration-ready status.
+	SoulBootstrapHostConversationStatusDeclarationReady = "declaration_ready"
+	// SoulBootstrapHostConversationStatusFailed is Host's failed conversation status.
+	SoulBootstrapHostConversationStatusFailed = "failed"
+	// SoulBootstrapHostConversationStatusPublished is a post-finalize Host publication status.
+	SoulBootstrapHostConversationStatusPublished = "published"
+	// SoulBootstrapHostConversationStatusBound is a post-bind Host status.
+	SoulBootstrapHostConversationStatusBound = "bound"
 )
 
 // SoulBootstrapState stores local correlation state for zero-state soul creation.
