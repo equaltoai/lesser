@@ -49,7 +49,7 @@ func TestProject49HostedInProgressPersistsConversationAndBlocksPublish(t *testin
 				ConversationID:  conversationID,
 				Status:          "in_progress",
 				MessageCount:    1,
-				HostRequestID:  "host-req-p49-turn-001",
+				HostRequestID:   "host-req-p49-turn-001",
 			}, nil
 		},
 		publishHostedBootstrapFunc: func(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
