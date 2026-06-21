@@ -1,18 +1,18 @@
 ---
 name: implement-milestone
-description: Use to execute a single milestone (or GitHub Project phase) of work — feature branch off main, commits per enumerated task, PR review, merge to main. Runs one milestone at a time. Deploys themselves go through deploy-instance.
+description: Use to execute a single milestone (or GitHub Project phase) of work — feature branch off main, commits per enumerated task, PR review, and feature → staging integration. Runs one milestone at a time. Main promotion and deploys are operator-owned follow-ons.
 ---
 
 # Implement a milestone
 
-This skill moves lesser work through code, review, and merge to `main`. lesser uses a single-main branch model with feature branches; there is no staging or premain branch. Once a change merges to `main`, `deploy-instance` owns the per-stage rollout.
+This skill moves lesser work through code, review, and feature → `staging` integration. lesser uses a feature → staging → main release model: feature branches PR to `staging` and are gated by the existing `verify` job (`./lesser verify ci`); staging → main promotion is operator-owned, accepts PRs only from `staging`, and intentionally does not re-run the lesser verify gate.
 
 ## Hard preconditions
 
 Do not start without all of the following:
 
 - **A specific milestone named**, coming from `plan-roadmap` or a GitHub Project phase.
-- **Clean working tree on `main`** at a known-green commit.
+- **Clean working tree on current `main`** at a known-green commit, with `staging` refreshed from `main` before protection/rules change milestones when required.
 - **MCP tools healthy.** Call `memory_recent` first.
 - **`go test ./...` passes** on `main` as of your checkout.
 - **`go vet ./...` passes.**
@@ -30,7 +30,7 @@ One feature branch per milestone. One PR per milestone. One commit per task.
 
 - **Branch name**: descriptive, milestone-scoped. Observed patterns: `aron/<topic>`, `codex/<milestone-identifier>`, `chore/<dep-bump>`, `feat/<feature>`, `fix/<symptom>`. Issue number suffixes welcome: `codex/federation-m1.4g`.
 - **Branched from**: `main` at a known-green commit.
-- **PR target**: `main`.
+- **PR target**: `staging` for feature/milestone work. Only operator-owned promotion PRs target `main`, and those must use `staging` as the source branch.
 - **PR title**: clear. Conventional Commits style welcome (`fix(federation): tighten signature verification`); lowercase present-tense also welcome (`feat: complete federation m1.4g`).
 - **Open the PR as a draft** with the milestone goal and an unchecked task list.
 
@@ -68,7 +68,8 @@ PR description template:
 - `cdk synth` for representative stage (if CDK changed)
 
 ## Stage rollout plan (handoff to deploy-instance)
-- [ ] Merged to main
+- [ ] Merged to staging
+- [ ] Promoted from staging to main by operator
 - [ ] Deployed to dev
 - [ ] Dev soak complete
 - [ ] Deployed to staging (if used)
@@ -141,11 +142,11 @@ When all tasks are committed, pushed, and linked project items closed (if applic
 8. Request required review.
 9. **Leave merging to a reviewer.** You do not merge PRs.
 
-The PR merges to `main`. Hand off to `deploy-instance` for the per-stage rollout.
+The milestone PR merges to `staging` after the required `verify` check is green. Staging → main promotion is operator-owned; after that promotion lands on `main`, hand off to `deploy-instance` for the per-stage rollout.
 
 ## Hand off to deploy-instance
 
-Once the milestone is merged to `main`, `deploy-instance` owns:
+Once the milestone is promoted from `staging` to `main`, `deploy-instance` owns:
 
 - `./lesser up --stage dev` deploys per operator
 - Dev soak
@@ -155,7 +156,7 @@ Once the milestone is merged to `main`, `deploy-instance` owns:
 - Post-deploy monitoring
 - Release artifact production (GitHub Release, checksums, release notes)
 
-`implement-milestone` does not run deploy commands. Its output is a merged PR on `main` and a handoff.
+`implement-milestone` does not run deploy commands. Its output is a merged PR on `staging` plus promotion evidence for the operator; deploy handoff begins only after the operator-owned staging → main promotion.
 
 ## What this skill will not do
 

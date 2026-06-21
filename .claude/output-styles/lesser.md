@@ -124,16 +124,19 @@ Bending a Theory Cloud framework locally — monkey-patching AppTheory middlewar
 
 lesser work runs in two shapes, both governed by Ground → Act → Record → Re-ground:
 
-- **Change** — scope-need → (specialist walk) → enumerate-changes → plan-roadmap → implement-milestone. Feature branches off `main`, one commit per enumerated task, one PR per milestone. You open PRs and report evidence; **a reviewer merges — you do not merge.**
+- **Change** — scope-need → (specialist walk) → enumerate-changes → plan-roadmap → implement-milestone. Feature branches off current `main`, one commit per enumerated task, one PR to `staging` per milestone. You open PRs and report evidence; **a reviewer/factory grant merges to `staging` — you do not merge.** Operator-owned promotion from `staging` to `main` remains separate.
 - **Operate / deploy** — deploy-instance walks a merged change through `dev → staging → live` per `(<app>, <base-domain>)`. You describe the deploy discipline and capture evidence; live deploys run on the operator's explicit authorization. You do not initiate live deploys, sign, mutate cloud or on-chain state, or modify SSM / IAM / Route53 / Secrets Manager outside CDK.
 
 ### Branch and release model
 
-lesser uses a **single-`main` branch model** with short-lived feature branches and a **CLI-driven deployment model**, not CI-driven per-branch pipelines. This differs from other Theory Cloud / PayTheory repos (staging → premain → main): lesser's shape reflects its open-source operator-run posture — the repo is the source of truth; operators consume releases and run their own deployments.
+lesser uses a **feature → staging → main** release model with short-lived feature branches and a **manual, tag-driven release model** off `main`. The repo remains operator-run and release-artifact-oriented; the structural source-control gate is now an integration branch named `staging`, not a deploy-stage substitute.
 
-- **`main`** — canonical, always deployable. Every merge lands here. No staging or premain branch. `premain` / `staging` as *branches* are NOT lesser's model; `staging` is a deploy *stage*, not a branch.
-- **Feature branches** — `aron/*`, `chore/*`, `codex/*`, `feat/*`, `fix/*`; issue-number suffixes welcome.
-- **The hard local pre-PR gate** is the repo-native CI command: `go build -o lesser ./cmd/lesser && ./lesser build lambdas && ./lesser verify ci`. Nothing gets PR'd without `./lesser verify ci` passing locally. A full run can take ~30 minutes; long quiet stretches are normal. Do not infer a broken gate from impatience; do not substitute `go vet`, `gofmt -l`, or ad hoc bundles for the PR-readiness decision.
+- **Feature branches** — `aron/*`, `chore/*`, `codex/*`, `feat/*`, `fix/*`, `milestone/*`; issue-number suffixes welcome. Feature work opens PRs to `staging`.
+- **`staging`** — long-lived integration branch created from current `main`. Feature → staging PRs are gated by the existing GitHub Actions `verify` job, which runs `./lesser verify ci` and requires branches to be up to date before merge.
+- **`main`** — canonical, always deployable, protected, and operator-owned. `main` accepts PRs only from `staging`; direct pushes and force-pushes are blocked. Staging → main promotion intentionally uses default GitHub checks and branch rules only — do **not** re-run the lesser rubric/verify gate for main promotion.
+- **`premain`** — not part of lesser's active two-branch release model. Treat stale `premain` refs as legacy unless an operator explicitly directs cleanup.
+- **Release cuts** — manual tag-driven releases off `main` (`v*` tags). The release workflow must fail if the tagged commit is not an ancestor of `origin/main`.
+- **The hard local pre-PR gate** is the repo-native CI command: `go build -o lesser ./cmd/lesser && ./lesser build lambdas && ./lesser verify ci`. Nothing gets proposed to `staging` without `./lesser verify ci` passing locally unless an infrastructure failure is reported as a blocker. A full run can take ~30 minutes; long quiet stretches are normal. Do not infer a broken gate from impatience; do not substitute `go vet`, `gofmt -l`, or ad hoc bundles for the PR-readiness decision.
 - **Contract artifacts ride with code.** GraphQL schema changes (`graph/*.graphql`) commit alongside regenerated `docs/contracts/graphql-schema.graphql` (via `./lesser schema`). OpenAPI (`docs/contracts/openapi.yaml`) updates ride with the handler change. Smoke tests are not part of this workflow — use static contract verification plus targeted tests.
 
 ### Deploy discipline
