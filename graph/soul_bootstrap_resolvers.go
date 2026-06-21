@@ -1,7 +1,10 @@
 package graph
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -1932,34 +1935,190 @@ func graphSoulBootstrapStoredStateModel(state *workflow.SoulBootstrapState) *mod
 		return nil
 	}
 	return &model.SoulBootstrapState{
-		Username:              state.Username,
-		BodyID:                state.BodyID,
-		HostRegistrationID:    optionalString(state.HostRegistrationID),
-		HostConversationID:    optionalString(state.HostConversationID),
-		HostSoulAgentID:       optionalString(state.HostSoulAgentID),
-		WalletAddress:         optionalString(state.WalletAddress),
-		PrincipalAddress:      optionalString(state.PrincipalAddress),
-		BootstrapMode:         graphSoulBootstrapMode(state.BootstrapMode),
-		AuthorityModel:        graphSoulBootstrapAuthorityModel(state.AuthorityModel),
-		AnchorState:           graphSoulBootstrapAnchorStatePtr(state.AnchorState),
-		AssuranceState:        graphSoulBootstrapAnchorStatePtr(state.AssuranceState),
-		Phase:                 graphSoulBootstrapPhase(state.Phase),
-		State:                 state.State,
-		TypedNextAction:       graphSoulBootstrapNextActionFromStored(state),
-		RecoveryCategory:      graphSoulBootstrapRecoveryCategoryPtr(state.RecoveryCategory),
-		RecoveryAction:        graphSoulBootstrapRecoveryActionPtr(state.RecoveryAction),
-		Retryable:             state.Retryable,
-		RestartRequired:       state.RestartRequired,
-		RestartAvailable:      soulBootstrapRestartAvailable(state),
-		SigningCheckpoints:    graphSoulBootstrapSigningCheckpoints(state.SigningCheckpoints),
-		Publication:           graphSoulBootstrapPublication(state.Publication),
-		Error:                 graphSoulBootstrapError(state.Error),
-		Correlation:           graphSoulBootstrapCorrelationModel(state.Correlation),
-		RecoveryAttemptID:     optionalBootstrapRecoveryAttemptID(state.Correlation),
-		RestartIdempotencyKey: optionalBootstrapRestartID(state.Correlation),
-		LastHostRequestID:     optionalBootstrapLastHostRequestID(state.Correlation),
-		RestartedAt:           graphTimePtr(state.RestartedAt),
-		UpdatedAt:             graphTimePtr(state.UpdatedAt),
+		Username:                    state.Username,
+		BodyID:                      state.BodyID,
+		HostRegistrationID:          optionalString(state.HostRegistrationID),
+		HostConversationID:          optionalString(state.HostConversationID),
+		HostSoulAgentID:             optionalString(state.HostSoulAgentID),
+		WalletAddress:               optionalString(state.WalletAddress),
+		PrincipalAddress:            optionalString(state.PrincipalAddress),
+		BootstrapMode:               graphSoulBootstrapMode(state.BootstrapMode),
+		AuthorityModel:              graphSoulBootstrapAuthorityModel(state.AuthorityModel),
+		AnchorState:                 graphSoulBootstrapAnchorStatePtr(state.AnchorState),
+		AssuranceState:              graphSoulBootstrapAnchorStatePtr(state.AssuranceState),
+		Phase:                       graphSoulBootstrapPhase(state.Phase),
+		State:                       state.State,
+		HostConversationStatus:      optionalString(graphSoulBootstrapHostConversationStatus(state)),
+		TypedNextAction:             graphSoulBootstrapNextActionFromStored(state),
+		RecoveryCategory:            graphSoulBootstrapRecoveryCategoryPtr(state.RecoveryCategory),
+		RecoveryAction:              graphSoulBootstrapRecoveryActionPtr(state.RecoveryAction),
+		Retryable:                   state.Retryable,
+		RestartRequired:             state.RestartRequired,
+		RestartAvailable:            soulBootstrapRestartAvailable(state),
+		SigningCheckpoints:          graphSoulBootstrapSigningCheckpoints(state.SigningCheckpoints),
+		TerminalDeclarationEvidence: graphSoulBootstrapTerminalDeclarationEvidence(state),
+		Publication:                 graphSoulBootstrapPublication(state.Publication),
+		PublicationEvidence:         graphSoulBootstrapPublication(state.Publication),
+		PublishGate:                 graphSoulBootstrapPublishGate(state),
+		Error:                       graphSoulBootstrapError(state.Error),
+		Correlation:                 graphSoulBootstrapCorrelationModel(state.Correlation),
+		RecoveryAttemptID:           optionalBootstrapRecoveryAttemptID(state.Correlation),
+		RestartIdempotencyKey:       optionalBootstrapRestartID(state.Correlation),
+		LastHostRequestID:           optionalBootstrapLastHostRequestID(state.Correlation),
+		RestartedAt:                 graphTimePtr(state.RestartedAt),
+		UpdatedAt:                   graphTimePtr(state.UpdatedAt),
+	}
+}
+
+func graphSoulBootstrapHostConversationStatus(state *workflow.SoulBootstrapState) string {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil {
+		return ""
+	}
+	switch strings.TrimSpace(state.State) {
+	case workflow.SoulBootstrapStateConversationRegistrationActive:
+		return "registration_active"
+	case workflow.SoulBootstrapStateConversationInProgress:
+		return workflow.SoulBootstrapHostConversationStatusInProgress
+	case workflow.SoulBootstrapStateConversationAssistantTurnReady:
+		return workflow.SoulBootstrapHostConversationStatusAssistantTurnReady
+	case workflow.SoulBootstrapStateConversationDeclarationExtractionPending:
+		return workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending
+	case workflow.SoulBootstrapStateConversationDeclarationReady,
+		workflow.SoulBootstrapStateConversationCompleted:
+		return workflow.SoulBootstrapHostConversationStatusDeclarationReady
+	case workflow.SoulBootstrapStateHostFailed:
+		return workflow.SoulBootstrapHostConversationStatusFailed
+	case workflow.SoulBootstrapStateFinalizePublished:
+		return workflow.SoulBootstrapHostConversationStatusPublished
+	case workflow.SoulBootstrapStateCompleteBound:
+		return workflow.SoulBootstrapHostConversationStatusBound
+	default:
+		if state.Publication != nil {
+			return workflow.SoulBootstrapHostConversationStatusPublished
+		}
+		return ""
+	}
+}
+
+func graphSoulBootstrapTerminalDeclarationEvidence(state *workflow.SoulBootstrapState) *model.SoulBootstrapTerminalDeclarationEvidence {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil || state.BootstrapMode != workflow.SoulBootstrapModeHosted {
+		return nil
+	}
+	conversationID := strings.TrimSpace(state.HostConversationID)
+	if conversationID == "" {
+		return nil
+	}
+	for _, checkpoint := range state.SigningCheckpoints {
+		name := strings.TrimSpace(checkpoint.Name)
+		if !strings.EqualFold(name, soulBootstrapCheckpointHostedConversation) && !strings.EqualFold(name, soulBootstrapCheckpointConversation) {
+			continue
+		}
+		if !soulservice.IsHostedBootstrapTerminalDeclarationStatus(checkpoint.Status) {
+			continue
+		}
+		canonical := strings.TrimSpace(checkpoint.CanonicalJSON)
+		if canonical == "" {
+			continue
+		}
+		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
+			ConversationID:       conversationID,
+			Status:               checkpoint.Status,
+			ProducedDeclarations: canonical,
+			HostRequestID:        checkpoint.HostRequestID,
+		}, conversationID); err != nil {
+			continue
+		}
+		return &model.SoulBootstrapTerminalDeclarationEvidence{
+			ConversationID:              conversationID,
+			HostStatus:                  soulservice.NormalizeHostedBootstrapConversationStatus(checkpoint.Status),
+			HostRequestID:               optionalString(checkpoint.HostRequestID),
+			DeclarationsHash:            optionalString(hostedDeclarationEvidenceHash(canonical)),
+			ProducedDeclarationsPreview: hostedDeclarationPreview(canonical),
+		}
+	}
+	return nil
+}
+
+func hostedDeclarationEvidenceHash(canonical string) string {
+	canonical = strings.TrimSpace(canonical)
+	if canonical == "" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(canonical)); err != nil {
+		compact.WriteString(canonical)
+	}
+	sum := sha256.Sum256(compact.Bytes())
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func hostedDeclarationPreview(canonical string) *model.SoulBootstrapDeclarationPreview {
+	canonical = strings.TrimSpace(canonical)
+	if canonical == "" {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(canonical), &payload); err != nil {
+		return nil
+	}
+	preview := &model.SoulBootstrapDeclarationPreview{DeclarationCount: len(payload)}
+	if title := hostedDeclarationPreviewString(payload["title"]); title != "" {
+		preview.Title = optionalString(title)
+		return preview
+	}
+	var selfDescription map[string]json.RawMessage
+	if err := json.Unmarshal(payload["selfDescription"], &selfDescription); err == nil {
+		if title := hostedDeclarationPreviewString(selfDescription["title"]); title != "" {
+			preview.Title = optionalString(title)
+		} else if summary := hostedDeclarationPreviewString(selfDescription["summary"]); summary != "" {
+			preview.Title = optionalString(summary)
+		} else if name := hostedDeclarationPreviewString(selfDescription["name"]); name != "" {
+			preview.Title = optionalString(name)
+		}
+	}
+	return preview
+}
+
+func hostedDeclarationPreviewString(raw json.RawMessage) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func graphSoulBootstrapPublishGate(state *workflow.SoulBootstrapState) *model.SoulBootstrapPublishGate {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	reason := "blocked:no_host_registration"
+	canPublish := false
+	switch {
+	case state == nil || strings.TrimSpace(state.HostRegistrationID) == "":
+		reason = "blocked:no_host_registration"
+	case strings.TrimSpace(state.HostConversationID) == "":
+		reason = "blocked:no_host_conversation"
+	case strings.TrimSpace(state.State) == workflow.SoulBootstrapStateConversationInProgress:
+		reason = "blocked:conversation_in_progress"
+	case strings.TrimSpace(state.State) == workflow.SoulBootstrapStateConversationDeclarationExtractionPending:
+		reason = "blocked:declaration_extraction_pending"
+	case strings.TrimSpace(state.State) == workflow.SoulBootstrapStateHostFailed:
+		reason = "blocked:host_failure"
+	case strings.TrimSpace(state.State) == workflow.SoulBootstrapStateCompleteBound:
+		reason = "complete:already_published_bound"
+	case soulBootstrapStateHasActiveTerminalDeclarationEvidence(state):
+		canPublish = true
+		reason = "allowed:active_conversation_terminal_declaration_evidence"
+	default:
+		reason = "blocked:terminal_declaration_evidence_absent"
+	}
+	return &model.SoulBootstrapPublishGate{
+		CanPublishHostedSoul: canPublish,
+		Reason:               reason,
+		RequiresActiveConversationTerminalDeclarationEvidence: true,
 	}
 }
 
