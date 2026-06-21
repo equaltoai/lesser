@@ -4791,6 +4791,25 @@ type SoulBootstrapPublicationEvidence {
   publishedAt: Time
 }
 
+type SoulBootstrapDeclarationPreview {
+  title: String
+  declarationCount: Int!
+}
+
+type SoulBootstrapTerminalDeclarationEvidence {
+  conversationId: ID!
+  hostStatus: String!
+  hostRequestId: String
+  declarationsHash: String
+  producedDeclarationsPreview: SoulBootstrapDeclarationPreview
+}
+
+type SoulBootstrapPublishGate {
+  canPublishHostedSoul: Boolean!
+  reason: String!
+  requiresActiveConversationTerminalDeclarationEvidence: Boolean!
+}
+
 type SoulBootstrapCorrelationState {
   correlationKey: String
   beginIdempotencyKey: String
@@ -4833,6 +4852,7 @@ type SoulBootstrapState {
   assuranceState: SoulBootstrapAnchorState
   phase: SoulBootstrapPhase!
   state: String!
+  hostConversationStatus: String
   typedNextAction: SoulBootstrapNextAction!
   recoveryCategory: SoulBootstrapRecoveryCategory
   recoveryAction: SoulBootstrapRecoveryAction
@@ -4840,7 +4860,10 @@ type SoulBootstrapState {
   restartRequired: Boolean!
   restartAvailable: Boolean!
   signingCheckpoints: [SoulBootstrapSigningCheckpoint!]!
+  terminalDeclarationEvidence: SoulBootstrapTerminalDeclarationEvidence
   publication: SoulBootstrapPublicationEvidence
+  publicationEvidence: SoulBootstrapPublicationEvidence
+  publishGate: SoulBootstrapPublishGate!
   error: SoulBootstrapErrorState
   correlation: SoulBootstrapCorrelationState
   recoveryAttemptId: ID

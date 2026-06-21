@@ -1,7 +1,6 @@
 package souls
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,12 +17,12 @@ import (
 )
 
 const (
-	hostBootstrapMaxResponseBytes = 256 * 1024
-	hostBootstrapSSETimeout       = 90 * time.Second
-
+	hostBootstrapMaxResponseBytes    = 256 * 1024
 	hostBootstrapSigningMethodEIP191 = "eip191_personal_sign"
 	hostBootstrapEncodingHexBytes    = "hex_bytes"
 	hostBootstrapVersion1            = "1"
+
+	hostConversationStatusDeclarationReady = "declaration_ready"
 
 	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
 	SoulAuthorityModelWalletPrincipal = "wallet_principal"
@@ -170,13 +169,23 @@ type BootstrapConversationMessageInput struct {
 }
 
 // BootstrapConversationMessageResult contains the Host conversation ids and
-// terminal assistant response metadata collected from the SSE stream.
+// durable conversation status returned by Host's JSON instance-key route.
 type BootstrapConversationMessageResult struct {
-	RegistrationID string
-	ConversationID string
-	Model          string
-	FullResponse   string
-	HostRequestID  string
+	RegistrationID        string
+	HostSoulAgentID       string
+	ConversationID        string
+	Status                string
+	Model                 string
+	LatestTurnID          string
+	MessageCount          int
+	FullResponse          string
+	ProducedDeclarations  string
+	CompletedAt           *time.Time
+	HostRequestID         string
+	FailureCode           string
+	FailureMessage        string
+	FailureRetryable      bool
+	FailureRecoveryAction string
 }
 
 // BootstrapConversationCompleteInput is the Lesser-local request for completing
@@ -188,13 +197,19 @@ type BootstrapConversationCompleteInput struct {
 
 // BootstrapConversationCompleteResult contains Host completion state.
 type BootstrapConversationCompleteResult struct {
-	RegistrationID       string
-	HostSoulAgentID      string
-	ConversationID       string
-	Status               string
-	ProducedDeclarations string
-	CompletedAt          *time.Time
-	HostRequestID        string
+	RegistrationID        string
+	HostSoulAgentID       string
+	ConversationID        string
+	Status                string
+	LatestTurnID          string
+	MessageCount          int
+	ProducedDeclarations  string
+	CompletedAt           *time.Time
+	HostRequestID         string
+	FailureCode           string
+	FailureMessage        string
+	FailureRetryable      bool
+	FailureRecoveryAction string
 }
 
 // BootstrapFinalizePreflightInput is the Lesser-local request for Host finalize
@@ -485,8 +500,8 @@ func (s *Service) VerifyBootstrapPrincipalDeclaration(ctx context.Context, input
 }
 
 // SendBootstrapConversationMessage relays one mint-conversation turn to Host's
-// instance-key SSE route and consumes the terminal event so GraphQL receives a
-// bounded same-origin mutation result.
+// durable JSON instance-key route. HTTP 200/202 is transport success only; the
+// returned Host status drives Lesser's local projection.
 func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input BootstrapConversationMessageInput) (*BootstrapConversationMessageResult, error) {
 	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
 	if err != nil {
@@ -511,18 +526,28 @@ func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input Bo
 		payload["model"] = model
 	}
 
-	var out hostConversationSSECollectResult
-	requestID, err := s.doHostBootstrapSSE(ctx, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation", instanceKey, payload, &out)
+	var raw json.RawMessage
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation", instanceKey, payload, http.StatusOK, http.StatusAccepted, &raw)
 	if err != nil {
 		return nil, err
 	}
-	return &BootstrapConversationMessageResult{
-		RegistrationID: registrationID,
-		ConversationID: strings.TrimSpace(out.ConversationID),
-		Model:          strings.TrimSpace(out.Model),
-		FullResponse:   strings.TrimSpace(out.FullResponse),
-		HostRequestID:  requestID,
-	}, nil
+	out, err := parseHostConversationEnvelope(raw, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHostConversationSnapshot(out, registrationID, false, requestID); err != nil {
+		return nil, err
+	}
+	result := bootstrapConversationMessageResultFromHost(registrationID, out, hostConversationRequestID(requestID, out.RequestID))
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(completeResultFromMessageResult(result), result.ConversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
+	}
+	return result, nil
 }
 
 // CompleteBootstrapConversation completes a Host mint conversation and returns
@@ -537,20 +562,29 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 		return nil, err
 	}
 
-	var out hostMintConversationResponse
-	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/complete", instanceKey, map[string]any{}, http.StatusOK, &out)
+	var raw json.RawMessage
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/complete", instanceKey, map[string]any{}, http.StatusOK, http.StatusAccepted, &raw)
 	if err != nil {
 		if isHostBootstrapConversationConflict(err) {
 			return s.recoverCompletedBootstrapConversation(ctx, baseURL, instanceKey, registrationID, conversationID, err)
 		}
 		return nil, err
 	}
-	result := bootstrapConversationCompleteResultFromHost(registrationID, out, requestID)
-	if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+	out, err := parseHostConversationEnvelope(raw, requestID)
+	if err != nil {
 		return nil, err
 	}
-	if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
-		result.ProducedDeclarations = compact
+	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
+		return nil, err
+	}
+	result := bootstrapConversationCompleteResultFromHost(registrationID, out, hostConversationRequestID(requestID, out.RequestID))
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
 	}
 	return result, nil
 }
@@ -578,36 +612,101 @@ func (s *Service) recoverCompletedBootstrapConversation(ctx context.Context, bas
 	if result.HostRequestID == "" {
 		result.HostRequestID = hostBootstrapRequestIDFromError(conflictErr)
 	}
-	if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
-		return nil, err
-	}
-	if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
-		result.ProducedDeclarations = compact
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
 	}
 	return result, nil
 }
 
 func (s *Service) readBootstrapConversation(ctx context.Context, baseURL string, instanceKey string, registrationID string, conversationID string) (*BootstrapConversationCompleteResult, error) {
-	var out hostMintConversationReadResponse
-	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodGet, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID), instanceKey, nil, http.StatusOK, &out)
+	var raw json.RawMessage
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodGet, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID), instanceKey, nil, http.StatusOK, &raw)
 	if err != nil {
 		return nil, err
 	}
-	if version := strings.TrimSpace(out.Version); version != hostBootstrapVersion1 {
+	out, version, err := parseHostConversationReadEnvelope(raw, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if version != "" && version != hostBootstrapVersion1 {
 		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation read response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: requestID, Err: ErrHostUnavailable}
 	}
-	return bootstrapConversationCompleteResultFromHost(registrationID, out.Conversation, requestID), nil
+	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
+		return nil, err
+	}
+	result := bootstrapConversationCompleteResultFromHost(registrationID, out, hostConversationRequestID(requestID, out.RequestID))
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
+	}
+	return result, nil
 }
 
 func bootstrapConversationCompleteResultFromHost(registrationID string, out hostMintConversationResponse, requestID string) *BootstrapConversationCompleteResult {
 	return &BootstrapConversationCompleteResult{
-		RegistrationID:       registrationID,
-		HostSoulAgentID:      strings.ToLower(strings.TrimSpace(out.AgentID)),
-		ConversationID:       strings.TrimSpace(out.ConversationID),
-		Status:               strings.TrimSpace(out.Status),
-		ProducedDeclarations: strings.TrimSpace(out.ProducedDeclarations),
-		CompletedAt:          parseHostTimePtr(out.CompletedAt),
-		HostRequestID:        requestID,
+		RegistrationID:        firstNonEmpty(strings.TrimSpace(out.RegistrationID), registrationID),
+		HostSoulAgentID:       strings.ToLower(strings.TrimSpace(out.AgentID)),
+		ConversationID:        strings.TrimSpace(out.ConversationID),
+		Status:                NormalizeHostedBootstrapConversationStatus(out.Status),
+		LatestTurnID:          strings.TrimSpace(out.LatestTurnID),
+		MessageCount:          out.MessageCount,
+		ProducedDeclarations:  hostRawJSONValue(out.ProducedDeclarationsRaw),
+		CompletedAt:           parseHostTimePtr(out.CompletedAt),
+		HostRequestID:         strings.TrimSpace(requestID),
+		FailureCode:           strings.TrimSpace(out.Failure.Code),
+		FailureMessage:        strings.TrimSpace(out.Failure.Message),
+		FailureRetryable:      out.Failure.Retryable,
+		FailureRecoveryAction: strings.TrimSpace(out.Failure.Recovery.Action),
+	}
+}
+
+func bootstrapConversationMessageResultFromHost(registrationID string, out hostMintConversationResponse, requestID string) *BootstrapConversationMessageResult {
+	return &BootstrapConversationMessageResult{
+		RegistrationID:        firstNonEmpty(strings.TrimSpace(out.RegistrationID), registrationID),
+		HostSoulAgentID:       strings.ToLower(strings.TrimSpace(out.AgentID)),
+		ConversationID:        strings.TrimSpace(out.ConversationID),
+		Status:                NormalizeHostedBootstrapConversationStatus(out.Status),
+		Model:                 strings.TrimSpace(out.Model),
+		LatestTurnID:          strings.TrimSpace(out.LatestTurnID),
+		MessageCount:          out.MessageCount,
+		FullResponse:          strings.TrimSpace(out.FullResponse),
+		ProducedDeclarations:  hostRawJSONValue(out.ProducedDeclarationsRaw),
+		CompletedAt:           parseHostTimePtr(out.CompletedAt),
+		HostRequestID:         strings.TrimSpace(requestID),
+		FailureCode:           strings.TrimSpace(out.Failure.Code),
+		FailureMessage:        strings.TrimSpace(out.Failure.Message),
+		FailureRetryable:      out.Failure.Retryable,
+		FailureRecoveryAction: strings.TrimSpace(out.Failure.Recovery.Action),
+	}
+}
+
+func completeResultFromMessageResult(in *BootstrapConversationMessageResult) *BootstrapConversationCompleteResult {
+	if in == nil {
+		return nil
+	}
+	return &BootstrapConversationCompleteResult{
+		RegistrationID:        in.RegistrationID,
+		HostSoulAgentID:       in.HostSoulAgentID,
+		ConversationID:        in.ConversationID,
+		Status:                in.Status,
+		LatestTurnID:          in.LatestTurnID,
+		MessageCount:          in.MessageCount,
+		ProducedDeclarations:  in.ProducedDeclarations,
+		CompletedAt:           in.CompletedAt,
+		HostRequestID:         in.HostRequestID,
+		FailureCode:           in.FailureCode,
+		FailureMessage:        in.FailureMessage,
+		FailureRetryable:      in.FailureRetryable,
+		FailureRecoveryAction: in.FailureRecoveryAction,
 	}
 }
 
@@ -800,11 +899,12 @@ func (s *Service) hostBootstrapInputs(ctx context.Context) (string, string, stri
 	return baseURL, instanceDomain, strings.TrimSpace(instanceKey), nil
 }
 
-func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseURL string, path string, instanceKey string, payload any, expectedStatus int, out any) (string, error) {
+func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseURL string, path string, instanceKey string, payload any, expectedStatuses ...any) (string, error) {
 	endpoint, err := hostBootstrapURL(baseURL, path)
 	if err != nil {
 		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
+	expected, out := splitHostBootstrapJSONExpectedStatuses(expectedStatuses...)
 
 	var body io.Reader
 	if payload != nil {
@@ -841,7 +941,7 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 	}
 	requestID := requestIDFromHeaders(resp.Header)
 
-	if resp.StatusCode != expectedStatus {
+	if !hostBootstrapStatusAllowed(resp.StatusCode, expected) {
 		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
 	}
 	if truncated {
@@ -856,63 +956,30 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 	return requestID, nil
 }
 
-func (s *Service) doHostBootstrapSSE(ctx context.Context, baseURL string, path string, instanceKey string, payload any, out *hostConversationSSECollectResult) (string, error) {
-	endpoint, err := hostBootstrapURL(baseURL, path)
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+instanceKey)
-
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: hostBootstrapSSETimeout}
-	} else if client.Timeout > 0 && client.Timeout < hostBootstrapSSETimeout {
-		cloned := *client
-		cloned.Timeout = hostBootstrapSSETimeout
-		client = &cloned
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	defer resp.Body.Close()
-
-	responseBody, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, hostBootstrapMaxResponseBytes)
-	if err != nil {
-		return requestIDFromHeaders(resp.Header), &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	requestID := requestIDFromHeaders(resp.Header)
-
-	if resp.StatusCode != http.StatusOK {
-		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
-	}
-	if truncated {
-		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
-	}
-	if err := parseHostConversationSSE(responseBody, out); err != nil {
-		var hostErr *HostBootstrapError
-		if errors.As(err, &hostErr) {
-			hostErr.StatusCode = resp.StatusCode
-			if hostErr.HostRequestID == "" {
-				hostErr.HostRequestID = requestID
-			}
-			return requestID, hostErr
+func splitHostBootstrapJSONExpectedStatuses(values ...any) ([]int, any) {
+	expected := make([]int, 0, len(values))
+	var out any
+	for _, value := range values {
+		switch typed := value.(type) {
+		case int:
+			expected = append(expected, typed)
+		default:
+			out = value
 		}
-		return requestID, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
-	return requestID, nil
+	if len(expected) == 0 {
+		expected = append(expected, http.StatusOK)
+	}
+	return expected, out
+}
+
+func hostBootstrapStatusAllowed(status int, expected []int) bool {
+	for _, want := range expected {
+		if status == want {
+			return true
+		}
+	}
+	return false
 }
 
 func hostBootstrapHTTPError(status int, headers http.Header, body []byte, truncated bool, secrets ...string) error {
@@ -1106,116 +1173,112 @@ func normalizeBootstrapSignatureMap(in map[string]string) map[string]string {
 	return out
 }
 
-func parseHostConversationSSE(body []byte, out *hostConversationSSECollectResult) error {
-	if out == nil {
-		return errors.New("nil SSE output")
+func parseHostConversationEnvelope(raw json.RawMessage, hostRequestID string) (hostMintConversationResponse, error) {
+	var out hostMintConversationResponse
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return out, hostBootstrapInvalidResponse("Host conversation response is missing.", hostRequestID)
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	scanner.Buffer(make([]byte, 0, 64*1024), hostBootstrapMaxResponseBytes)
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return out, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation response is invalid.", Source: "host", HostRequestID: strings.TrimSpace(hostRequestID), Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+	return out, nil
+}
 
-	eventName := ""
-	var dataLines []string
+func parseHostConversationReadEnvelope(raw json.RawMessage, hostRequestID string) (hostMintConversationResponse, string, error) {
+	var wrapper hostMintConversationReadResponse
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return hostMintConversationResponse{}, "", hostBootstrapInvalidResponse("Host conversation read response is missing.", hostRequestID)
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return hostMintConversationResponse{}, "", &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation read response is invalid.", Source: "host", HostRequestID: strings.TrimSpace(hostRequestID), Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+	if len(bytes.TrimSpace(wrapper.ConversationRaw)) > 0 {
+		conversation, err := parseHostConversationEnvelope(wrapper.ConversationRaw, hostRequestID)
+		if err != nil {
+			return hostMintConversationResponse{}, strings.TrimSpace(wrapper.Version), err
+		}
+		return conversation, strings.TrimSpace(wrapper.Version), nil
+	}
+	conversation, err := parseHostConversationEnvelope(raw, hostRequestID)
+	return conversation, strings.TrimSpace(wrapper.Version), err
+}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
-				return err
-			}
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "event:"):
-			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		case strings.HasPrefix(line, "data:"):
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
+func validateHostConversationSnapshot(out hostMintConversationResponse, fallbackRegistrationID string, requireConversationID bool, headerRequestID string) error {
+	requestID := hostConversationRequestID(headerRequestID, out.RequestID)
+	status := NormalizeHostedBootstrapConversationStatus(out.Status)
+	if status == "" {
+		return hostBootstrapInvalidResponse("Host conversation response did not include a valid status.", requestID)
 	}
-	if err := scanner.Err(); err != nil {
-		return err
+	if strings.TrimSpace(out.RegistrationID) == "" && strings.TrimSpace(fallbackRegistrationID) == "" {
+		return hostBootstrapInvalidResponse("Host conversation response did not include a registration id.", requestID)
 	}
-	if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
-		return err
+	if requireConversationID && strings.TrimSpace(out.ConversationID) == "" {
+		return hostBootstrapInvalidResponse("Host conversation response did not include a conversation id.", requestID)
 	}
-	if !out.Done || strings.TrimSpace(out.ConversationID) == "" {
-		return errors.New("missing terminal conversation_done event")
+	if strings.TrimSpace(out.ConversationID) == "" && status != NormalizeHostedBootstrapConversationStatus("failed") {
+		return hostBootstrapInvalidResponse("Host conversation response did not include a conversation id.", requestID)
+	}
+	if isHostedBootstrapTerminalDeclarationStatus(status) {
+		return ValidateHostedBootstrapCompletionEvidence(bootstrapConversationCompleteResultFromHost(fallbackRegistrationID, out, requestID), out.ConversationID)
 	}
 	return nil
 }
 
-func flushHostConversationSSEEvent(eventName *string, dataLines *[]string, out *hostConversationSSECollectResult) error {
-	if eventName == nil || dataLines == nil || out == nil {
-		return nil
+func hostConversationRequestID(headerRequestID string, bodyRequestID string) string {
+	if body := strings.TrimSpace(bodyRequestID); body != "" {
+		return body
 	}
-	if *eventName == "" && len(*dataLines) == 0 {
-		return nil
-	}
-	name := strings.TrimSpace(*eventName)
-	if name == "" {
-		name = "message"
-	}
-	rawData := strings.TrimSpace(strings.Join(*dataLines, "\n"))
-	*eventName = ""
-	*dataLines = nil
-	return applyHostConversationSSEEvent(name, rawData, out)
+	return strings.TrimSpace(headerRequestID)
 }
 
-func applyHostConversationSSEEvent(name string, rawData string, out *hostConversationSSECollectResult) error {
-	switch strings.TrimSpace(name) {
-	case "conversation_start":
-		return applyHostConversationStartEvent(rawData, out)
-	case "conversation_done":
-		return applyHostConversationDoneEvent(rawData, out)
-	case "error":
-		return hostConversationSSEError(rawData)
+// NormalizeHostedBootstrapConversationStatus returns the canonical Host M1.1
+// status spelling Lesser projects. Host's Lesser-visible instance-key path
+// collapses created to in_progress; completed remains accepted as a legacy
+// spelling for declaration_ready only when declaration evidence validates.
+func NormalizeHostedBootstrapConversationStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "created", "in_progress":
+		return "in_progress"
+	case "assistant_turn_ready":
+		return "assistant_turn_ready"
+	case "declaration_extraction_pending":
+		return "declaration_extraction_pending"
+	case hostConversationStatusDeclarationReady, "completed":
+		return hostConversationStatusDeclarationReady
+	case "failed":
+		return "failed"
+	case "published":
+		return "published"
+	case "bound":
+		return "bound"
 	default:
-		return nil
+		return ""
 	}
 }
 
-func applyHostConversationStartEvent(rawData string, out *hostConversationSSECollectResult) error {
-	var payload struct {
-		ConversationID string `json:"conversation_id"`
-		Model          string `json:"model"`
-	}
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		return err
-	}
-	if strings.TrimSpace(payload.ConversationID) != "" {
-		out.ConversationID = strings.TrimSpace(payload.ConversationID)
-	}
-	if strings.TrimSpace(payload.Model) != "" {
-		out.Model = strings.TrimSpace(payload.Model)
-	}
-	return nil
+func isHostedBootstrapTerminalDeclarationStatus(status string) bool {
+	return NormalizeHostedBootstrapConversationStatus(status) == hostConversationStatusDeclarationReady
 }
 
-func applyHostConversationDoneEvent(rawData string, out *hostConversationSSECollectResult) error {
-	var payload struct {
-		ConversationID string `json:"conversation_id"`
-		FullResponse   string `json:"full_response"`
-	}
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		return err
-	}
-	if strings.TrimSpace(payload.ConversationID) != "" {
-		out.ConversationID = strings.TrimSpace(payload.ConversationID)
-	}
-	out.FullResponse = payload.FullResponse
-	out.Done = true
-	return nil
+// IsHostedBootstrapTerminalDeclarationStatus reports whether a Host status is
+// terminal declaration evidence status after Lesser's compatibility
+// normalization. It is exported for GraphQL projection/publish-gate helpers.
+func IsHostedBootstrapTerminalDeclarationStatus(status string) bool {
+	return isHostedBootstrapTerminalDeclarationStatus(status)
 }
 
-func hostConversationSSEError(rawData string) error {
-	var payload struct {
-		Error string `json:"error"`
+func hostRawJSONValue(raw json.RawMessage) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return ""
 	}
-	_ = json.Unmarshal([]byte(rawData), &payload)
-	message := strings.TrimSpace(payload.Error)
-	if message == "" {
-		message = "Host mint conversation failed."
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var value string
+		if err := json.Unmarshal(trimmed, &value); err == nil {
+			return strings.TrimSpace(value)
+		}
 	}
-	return &HostBootstrapError{Code: "HOST_CONVERSATION_FAILED", Message: message, Source: "host", Err: ErrHostUnavailable}
+	return compactHostJSON(trimmed)
 }
 
 // ValidateHostedBootstrapCompletionEvidence fails closed unless Host returned
@@ -1224,7 +1287,7 @@ func ValidateHostedBootstrapCompletionEvidence(result *BootstrapConversationComp
 	if result == nil {
 		return hostBootstrapInvalidResponse("Host complete response is missing.", "")
 	}
-	if !strings.EqualFold(strings.TrimSpace(result.Status), "completed") {
+	if !isHostedBootstrapTerminalDeclarationStatus(result.Status) {
 		return hostBootstrapInvalidResponse("Host complete response was not terminal.", result.HostRequestID)
 	}
 	expectedConversationID = strings.TrimSpace(expectedConversationID)
@@ -1488,26 +1551,34 @@ type hostRegistrationVerifyResponse struct {
 	Promotion    hostPromotionResponse `json:"promotion,omitempty"`
 }
 
-type hostConversationSSECollectResult struct {
-	ConversationID string
-	Model          string
-	FullResponse   string
-	Done           bool
-}
-
 type hostMintConversationResponse struct {
-	AgentID              string `json:"agent_id"`
-	ConversationID       string `json:"conversation_id"`
-	Model                string `json:"model"`
-	Messages             string `json:"messages"`
-	ProducedDeclarations string `json:"produced_declarations"`
-	Status               string `json:"status"`
-	CompletedAt          string `json:"completed_at"`
+	RegistrationID          string                  `json:"registration_id"`
+	AgentID                 string                  `json:"agent_id"`
+	ConversationID          string                  `json:"conversation_id"`
+	Model                   string                  `json:"model"`
+	Messages                string                  `json:"messages"`
+	FullResponse            string                  `json:"full_response"`
+	LatestTurnID            string                  `json:"latest_turn_id"`
+	MessageCount            int                     `json:"message_count"`
+	ProducedDeclarationsRaw json.RawMessage         `json:"produced_declarations"`
+	Status                  string                  `json:"status"`
+	CompletedAt             string                  `json:"completed_at"`
+	RequestID               string                  `json:"request_id"`
+	Failure                 hostConversationFailure `json:"failure"`
 }
 
 type hostMintConversationReadResponse struct {
-	Version      string                       `json:"version"`
-	Conversation hostMintConversationResponse `json:"conversation"`
+	Version         string          `json:"version"`
+	ConversationRaw json.RawMessage `json:"conversation"`
+}
+
+type hostConversationFailure struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable"`
+	Recovery  struct {
+		Action string `json:"action"`
+	} `json:"recovery"`
 }
 
 type hostFinalizeSigningInput struct {

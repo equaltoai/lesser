@@ -413,15 +413,19 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 
 		switch r.URL.Path {
 		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation":
-			require.Equal(t, "text/event-stream", r.Header.Get("Accept"))
+			require.Equal(t, "application/json", r.Header.Get("Accept"))
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&sawSendBody))
-			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("event: conversation_start\n"))
-			_, _ = w.Write([]byte("data: {\"conversation_id\":\"conv_123\",\"model\":\"claude\"}\n\n"))
-			_, _ = w.Write([]byte("event: delta\n"))
-			_, _ = w.Write([]byte("data: {\"text\":\"hello\"}\n\n"))
-			_, _ = w.Write([]byte("event: conversation_done\n"))
-			_, _ = w.Write([]byte("data: {\"conversation_id\":\"conv_123\",\"full_response\":\"complete response\"}\n\n"))
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"registration_id": "reg_123",
+				"agent_id":        agentID,
+				"conversation_id": "conv_123",
+				"model":           "claude",
+				"status":          "assistant_turn_ready",
+				"latest_turn_id":  "turn_assistant_001",
+				"message_count":   2,
+				"request_id":      "host-req-conversation-json",
+			}))
 		case "/api/v1/soul/instance/agents/register/reg_123/mint-conversation/conv_123/complete":
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
@@ -535,14 +539,16 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	require.Equal(t, "Review my declaration.", sawSendBody["message"])
 	require.Equal(t, "claude", sawSendBody["model"])
 	require.Equal(t, "conv_123", sent.ConversationID)
-	require.Equal(t, "complete response", sent.FullResponse)
+	require.Equal(t, agentID, sent.HostSoulAgentID)
+	require.Equal(t, "assistant_turn_ready", sent.Status)
+	require.Equal(t, "host-req-conversation-json", sent.HostRequestID)
 
 	completed, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
 		RegistrationID: "reg_123",
 		ConversationID: "conv_123",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "completed", completed.Status)
+	require.Equal(t, "declaration_ready", completed.Status)
 	require.Equal(t, agentID, completed.HostSoulAgentID)
 	require.NotNil(t, completed.CompletedAt)
 
@@ -579,6 +585,63 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	}
 }
 
+func TestProject49ServiceSendConversationAcceptsDurableJSONInProgress(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	var sawBody map[string]any
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation", r.URL.Path)
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.Equal(t, "application/json", r.Header.Get("Accept"))
+		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&sawBody))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"registration_id":        "reg_hosted",
+			"conversation_id":        "hconv_p49_001",
+			"agent_id":               agentID,
+			"status":                 "in_progress",
+			"latest_turn_id":         "turn_user_001",
+			"message_count":          1,
+			"request_id":             "host-req-p49-json",
+			"produced_declarations":  nil,
+			"declarations_completed": false,
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: "reg_hosted",
+		Message:        "start hosted genesis",
+		Model:          "claude",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "start hosted genesis", sawBody["message"])
+	require.Equal(t, "claude", sawBody["model"])
+	require.Equal(t, "reg_hosted", result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "hconv_p49_001", result.ConversationID)
+	require.Equal(t, "in_progress", result.Status)
+	require.Equal(t, 1, result.MessageCount)
+	require.Equal(t, "host-req-p49-json", result.HostRequestID)
+	require.Empty(t, result.ProducedDeclarations)
+}
+
 func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidence(t *testing.T) {
 	t.Parallel()
 
@@ -588,16 +651,17 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 	tests := []struct {
 		name         string
 		response     map[string]any
+		wantErr      bool
 		wantContains string
 	}{
 		{
-			name: "in progress is not terminal",
+			name: "in progress is progress",
 			response: map[string]any{
 				"conversation_id":       "conv_hosted",
 				"status":                "in_progress",
 				"produced_declarations": validDeclarations,
 			},
-			wantContains: "not terminal",
+			wantErr: false,
 		},
 		{
 			name: "empty declarations",
@@ -606,6 +670,7 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 				"status":                "completed",
 				"produced_declarations": "",
 			},
+			wantErr:      true,
 			wantContains: "produced declarations",
 		},
 		{
@@ -615,6 +680,7 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 				"status":                "completed",
 				"produced_declarations": validDeclarations,
 			},
+			wantErr:      true,
 			wantContains: "conversation id",
 		},
 		{
@@ -624,6 +690,7 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 				"status":                "completed",
 				"produced_declarations": `{"selfDescription":{"summary":"ready"}}`,
 			},
+			wantErr:      true,
 			wantContains: "capabilities",
 		},
 	}
@@ -648,10 +715,15 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 				zap.NewNop(),
 			).WithHTTPClient(host.Client())
 
-			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+			result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
 				RegistrationID: "reg_hosted",
 				ConversationID: "conv_hosted",
 			})
+			if !tt.wantErr {
+				require.NoError(t, err)
+				require.Equal(t, "in_progress", result.Status)
+				return
+			}
 			var hostErr *HostBootstrapError
 			require.ErrorAs(t, err, &hostErr)
 			require.ErrorIs(t, err, ErrHostUnavailable)
@@ -734,7 +806,7 @@ func TestService_CompleteBootstrapConversationRecoversCompletedConflictFromReadR
 	require.Equal(t, "reg_hosted", result.RegistrationID)
 	require.Equal(t, agentID, result.HostSoulAgentID)
 	require.Equal(t, "conv_hosted", result.ConversationID)
-	require.Equal(t, "completed", result.Status)
+	require.Equal(t, "declaration_ready", result.Status)
 	require.JSONEq(t, validDeclarations, result.ProducedDeclarations)
 	require.Equal(t, "host-req-read-completed", result.HostRequestID)
 	require.NotNil(t, result.CompletedAt)
@@ -750,18 +822,23 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 	tests := []struct {
 		name         string
 		conversation map[string]any
+		wantErr      bool
 		wantContains string
 	}{
 		{
 			name: "failed terminal conversation",
 			conversation: map[string]any{
-				"conversation_id":       "conv_hosted",
-				"model":                 "claude",
-				"status":                "failed",
-				"produced_declarations": validDeclarations,
-				"created_at":            "2026-06-17T14:00:00Z",
+				"conversation_id": "conv_hosted",
+				"model":           "claude",
+				"status":          "failed",
+				"failure": map[string]any{
+					"code":      "HOST_CONVERSATION_FAILED",
+					"message":   "assistant failed",
+					"retryable": true,
+				},
+				"created_at": "2026-06-17T14:00:00Z",
 			},
-			wantContains: "not terminal",
+			wantErr: false,
 		},
 		{
 			name: "completed without declarations",
@@ -772,6 +849,7 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				"produced_declarations": "",
 				"created_at":            "2026-06-17T14:00:00Z",
 			},
+			wantErr:      true,
 			wantContains: "produced declarations",
 		},
 		{
@@ -783,6 +861,7 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				"produced_declarations": validDeclarations,
 				"created_at":            "2026-06-17T14:00:00Z",
 			},
+			wantErr:      true,
 			wantContains: "conversation id",
 		},
 	}
@@ -828,10 +907,16 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				zap.NewNop(),
 			).WithHTTPClient(host.Client())
 
-			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+			result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
 				RegistrationID: "reg_hosted",
 				ConversationID: "conv_hosted",
 			})
+			if !tt.wantErr {
+				require.NoError(t, err)
+				require.Equal(t, "failed", result.Status)
+				require.Equal(t, "HOST_CONVERSATION_FAILED", result.FailureCode)
+				return
+			}
 			var hostErr *HostBootstrapError
 			require.ErrorAs(t, err, &hostErr)
 			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
@@ -889,7 +974,7 @@ func TestService_ReadBootstrapConversationUsesInstanceReadRoute(t *testing.T) {
 	require.Equal(t, "reg_hosted", result.RegistrationID)
 	require.Equal(t, agentID, result.HostSoulAgentID)
 	require.Equal(t, "conv_hosted", result.ConversationID)
-	require.Equal(t, "completed", result.Status)
+	require.Equal(t, "declaration_ready", result.Status)
 	require.Equal(t, "host-req-read-direct", result.HostRequestID)
 	require.NoError(t, ValidateHostedBootstrapCompletionEvidence(result, "conv_hosted"))
 }
@@ -1723,28 +1808,6 @@ func TestBootstrapHelperBranches(t *testing.T) {
 	require.Equal(t, `{"a":1}`, compactHostJSON(json.RawMessage(` { "a" : 1 } `)))
 	require.Empty(t, compactHostJSON(nil))
 	require.Equal(t, "{bad", compactHostJSON(json.RawMessage(` {bad `)))
-
-	var sseOut hostConversationSSECollectResult
-	require.NoError(t, parseHostConversationSSE([]byte("event: conversation_start\n"+
-		"data: {\"conversation_id\":\"conv_start\",\"model\":\"claude\"}\n\n"+
-		"event: conversation_done\n"+
-		"data: {\"full_response\":\"done\"}\n\n"), &sseOut))
-	require.Equal(t, "conv_start", sseOut.ConversationID)
-	require.Equal(t, "claude", sseOut.Model)
-	require.Equal(t, "done", sseOut.FullResponse)
-	require.Error(t, parseHostConversationSSE([]byte("data: {}\n\n"), nil))
-	require.ErrorContains(t, parseHostConversationSSE([]byte("event: delta\ndata: {}\n\n"), &hostConversationSSECollectResult{}), "terminal")
-	require.Error(t, parseHostConversationSSE([]byte("event: conversation_done\ndata: {bad}\n\n"), &hostConversationSSECollectResult{}))
-	err = parseHostConversationSSE([]byte("event: error\ndata: {\"error\":\"model unavailable\"}\n\n"), &hostConversationSSECollectResult{})
-	hostErr = nil
-	require.ErrorAs(t, err, &hostErr)
-	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
-	require.Equal(t, "model unavailable", hostErr.Message)
-	err = parseHostConversationSSE([]byte("event: error\ndata: {}\n\n"), &hostConversationSSECollectResult{})
-	hostErr = nil
-	require.ErrorAs(t, err, &hostErr)
-	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
-	require.NotEmpty(t, hostErr.Message)
 
 	require.NoError(t, validateHostPrincipalSigningPayload(hostPrincipalPreflightResponse{
 		Version:         "1",
