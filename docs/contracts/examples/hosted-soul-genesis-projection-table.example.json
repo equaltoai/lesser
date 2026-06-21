@@ -1,0 +1,850 @@
+{
+  "kind": "lesser.hosted_soul_genesis_projection_table",
+  "schema_version": 1,
+  "contract_version": "p49-m1.2",
+  "date": "2026-06-21",
+  "source_brief": "/home/aron/ai-workspace/codebases/equaltoai/agents/arch/projects/project49-async-hosted-genesis/contract-and-brief.md",
+  "issues": {
+    "lesser_milestone": "https://github.com/equaltoai/lesser/issues/1173",
+    "host_m11": "https://github.com/equaltoai/lesser-host/issues/730",
+    "parent_epic": "https://github.com/equaltoai/lesser-host/issues/737",
+    "org_project": "https://github.com/orgs/equaltoai/projects/49"
+  },
+  "host_m11_alignment": {
+    "status": "no_open_host_m11_pr_observed_on_2026-06-21",
+    "locked_to_shared_names": [
+      "in_progress",
+      "assistant_turn_ready",
+      "declaration_extraction_pending",
+      "declaration_ready",
+      "failed",
+      "published",
+      "bound"
+    ],
+    "reconciliation_required_if_host_changes_names": true
+  },
+  "graphql_operations": [
+    "startHostedSoulBootstrap",
+    "sendHostedSoulGenesisMessage",
+    "completeHostedSoulGenesis",
+    "publishHostedSoul",
+    "restartSoulBootstrap"
+  ],
+  "locked_projection_fields": [
+    {
+      "persisted_field": "host_registration_id",
+      "current_graphql_field": "hostRegistrationId",
+      "m3_compact_graphql_field": "hostRegistrationId",
+      "implemented_in_current_schema": true,
+      "rule": "persist when Host registration exists"
+    },
+    {
+      "persisted_field": "host_soul_agent_id",
+      "current_graphql_field": "hostSoulAgentId",
+      "m3_compact_graphql_field": "hostSoulAgentId",
+      "implemented_in_current_schema": true,
+      "rule": "persist with Host registration"
+    },
+    {
+      "persisted_field": "host_conversation_id",
+      "current_graphql_field": "hostConversationId",
+      "m3_compact_graphql_field": "hostConversationId",
+      "implemented_in_current_schema": true,
+      "rule": "persist early before returning any post-conversation next action"
+    },
+    {
+      "persisted_field": "phase",
+      "current_graphql_field": "phase",
+      "m3_compact_graphql_field": "phase",
+      "implemented_in_current_schema": true,
+      "rule": "canonical Lesser phase from this table"
+    },
+    {
+      "persisted_field": "status",
+      "current_graphql_field": "state",
+      "m3_compact_graphql_field": "hostConversationStatus",
+      "implemented_in_current_schema": true,
+      "rule": "GraphQL state remains string-compatible; compact Host status may be added additively in M3"
+    },
+    {
+      "persisted_field": "next_action",
+      "current_graphql_field": "typedNextAction",
+      "m3_compact_graphql_field": "typedNextAction",
+      "implemented_in_current_schema": true,
+      "rule": "server authors exactly one next action per response"
+    },
+    {
+      "persisted_field": "recovery_category",
+      "current_graphql_field": "recoveryCategory",
+      "m3_compact_graphql_field": "recoveryCategory",
+      "implemented_in_current_schema": true,
+      "rule": "typed bounded recovery only"
+    },
+    {
+      "persisted_field": "recovery_action",
+      "current_graphql_field": "recoveryAction",
+      "m3_compact_graphql_field": "recoveryAction",
+      "implemented_in_current_schema": true,
+      "rule": "typed bounded recovery only"
+    },
+    {
+      "persisted_field": "signing_checkpoints[hosted_conversation.completed].canonical_json",
+      "current_graphql_field": "signingCheckpoints",
+      "m3_compact_graphql_field": "terminalDeclarationEvidence",
+      "implemented_in_current_schema": true,
+      "rule": "terminal evidence must bind active conversation id before publish"
+    },
+    {
+      "persisted_field": "publication",
+      "current_graphql_field": "publication",
+      "m3_compact_graphql_field": "publicationEvidence",
+      "implemented_in_current_schema": true,
+      "rule": "only present after Host publication and Lesser binding"
+    },
+    {
+      "persisted_field": "correlation.*",
+      "current_graphql_field": "correlation",
+      "m3_compact_graphql_field": "correlation",
+      "implemented_in_current_schema": true,
+      "rule": "carry idempotency/correlation/restart supersession ids"
+    },
+    {
+      "persisted_field": "last_host_request_id",
+      "current_graphql_field": "lastHostRequestId",
+      "m3_compact_graphql_field": "lastHostRequestId",
+      "implemented_in_current_schema": true,
+      "rule": "latest Host request id is diagnostic only, never terminal evidence by itself"
+    }
+  ],
+  "canonical_host_statuses": [
+    "no_registration",
+    "registration_active_no_conversation",
+    "in_progress",
+    "assistant_turn_ready",
+    "declaration_extraction_pending",
+    "declaration_ready",
+    "failed",
+    "published_bound"
+  ],
+  "invariants": [
+    {
+      "id": "in_progress_is_progress",
+      "rule": "Host status in_progress projects to CONVERSATION progress and never HOST_RESPONSE_INVALID or error.host_unavailable."
+    },
+    {
+      "id": "persist_conversation_id_early",
+      "rule": "Whenever Host supplies conversation_id, Lesser persists host_conversation_id before returning a next action."
+    },
+    {
+      "id": "one_server_authored_next_action",
+      "rule": "Every projection response has exactly one typedNextAction selected by Lesser; clients do not infer hidden Host state."
+    },
+    {
+      "id": "publish_requires_terminal_declaration_evidence",
+      "rule": "PUBLISH_HOSTED_SOUL is impossible without active-conversation terminal declaration evidence."
+    },
+    {
+      "id": "typed_bounded_recovery",
+      "rule": "Recovery uses REFRESH_STATE, RETRY_SAME_STEP, RESTART_SOUL_BOOTSTRAP, or OPERATOR_ACTION_REQUIRED only."
+    },
+    {
+      "id": "restart_supersedes",
+      "rule": "Restart creates a new attempt and records supersededHostRegistrationId/supersededHostConversationId instead of mutating history."
+    }
+  ],
+  "rows": [
+    {
+      "host_status": "no_registration",
+      "label": "no registration",
+      "host_status_source": "lesser_local_projection",
+      "accepted_host_statuses": [],
+      "description": "No Lesser hosted bootstrap projection and no Host registration are present for the local body.",
+      "phase": "NOT_STARTED",
+      "status": "not_started",
+      "typed_next_action_options": [
+        "START_HOSTED_BOOTSTRAP"
+      ],
+      "example_typed_next_action": "START_HOSTED_BOOTSTRAP",
+      "recovery": null,
+      "host_ids": {
+        "host_registration_id": "absent",
+        "host_soul_agent_id": "absent",
+        "host_conversation_id": "absent"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:no_host_registration",
+      "example": {
+        "host": null,
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": null,
+            "hostSoulAgentId": null,
+            "hostConversationId": null,
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "NOT_STARTED",
+            "state": "not_started",
+            "typedNextAction": "START_HOSTED_BOOTSTRAP",
+            "recoveryCategory": null,
+            "recoveryAction": null,
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": null,
+              "conversationIdempotencyKey": null,
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": null
+            },
+            "lastHostRequestId": null
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:no_host_registration",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "registration_active_no_conversation",
+      "label": "registration active, no conversation",
+      "host_status_source": "lesser_projection_from_host_registration",
+      "accepted_host_statuses": [
+        "registration_active"
+      ],
+      "description": "Host registration and hosted soul agent id exist, but Host has not created a durable genesis conversation yet.",
+      "phase": "CONVERSATION",
+      "status": "conversation.registration_active",
+      "typed_next_action_options": [
+        "SEND_HOSTED_SOUL_GENESIS_MESSAGE"
+      ],
+      "example_typed_next_action": "SEND_HOSTED_SOUL_GENESIS_MESSAGE",
+      "recovery": null,
+      "host_ids": {
+        "host_registration_id": "required:persisted_after_startHostedSoulBootstrap",
+        "host_soul_agent_id": "required:persisted_after_startHostedSoulBootstrap",
+        "host_conversation_id": "absent_until_host_creates_conversation"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:no_host_conversation",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": null,
+          "status": "registration_active",
+          "request_id": "host-req-start-001"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": null,
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "CONVERSATION",
+            "state": "conversation.registration_active",
+            "typedNextAction": "SEND_HOSTED_SOUL_GENESIS_MESSAGE",
+            "recoveryCategory": null,
+            "recoveryAction": null,
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": null,
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-start-001"
+            },
+            "lastHostRequestId": "host-req-start-001"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:no_host_conversation",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "in_progress",
+      "label": "in_progress",
+      "host_status_source": "host_conversation_status",
+      "accepted_host_statuses": [
+        "in_progress"
+      ],
+      "description": "Host has durably created or resumed a conversation/turn, but terminal declaration evidence does not exist yet.",
+      "phase": "CONVERSATION",
+      "status": "conversation.in_progress",
+      "typed_next_action_options": [
+        "REFRESH_STATE",
+        "SEND_HOSTED_SOUL_GENESIS_MESSAGE"
+      ],
+      "example_typed_next_action": "REFRESH_STATE",
+      "recovery": {
+        "kind": "poll",
+        "category": "REFRESH_STATE",
+        "action": "REFRESH_STATE",
+        "boundedBy": "client backoff plus server-authored lastHostRequestId diagnostics"
+      },
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:conversation_in_progress",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "in_progress",
+          "latest_turn_id": "turn_user_001",
+          "message_count": 1,
+          "produced_declarations": null,
+          "request_id": "host-req-turn-001"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "CONVERSATION",
+            "state": "conversation.in_progress",
+            "typedNextAction": "REFRESH_STATE",
+            "recoveryCategory": "REFRESH_STATE",
+            "recoveryAction": "REFRESH_STATE",
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-turn-001"
+            },
+            "lastHostRequestId": "host-req-turn-001"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:conversation_in_progress",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "assistant_turn_ready",
+      "label": "assistant_turn_ready",
+      "host_status_source": "host_conversation_status",
+      "accepted_host_statuses": [
+        "assistant_turn_ready"
+      ],
+      "description": "Host has persisted an assistant response. Lesser must still wait for declaration completion before publish.",
+      "phase": "CONVERSATION",
+      "status": "conversation.assistant_turn_ready",
+      "typed_next_action_options": [
+        "SEND_HOSTED_SOUL_GENESIS_MESSAGE",
+        "COMPLETE_HOSTED_SOUL_GENESIS"
+      ],
+      "example_typed_next_action": "COMPLETE_HOSTED_SOUL_GENESIS",
+      "recovery": null,
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:terminal_declaration_evidence_absent",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "assistant_turn_ready",
+          "latest_turn_id": "turn_assistant_001",
+          "message_count": 2,
+          "produced_declarations": null,
+          "request_id": "host-req-turn-002"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "CONVERSATION",
+            "state": "conversation.assistant_turn_ready",
+            "typedNextAction": "COMPLETE_HOSTED_SOUL_GENESIS",
+            "recoveryCategory": null,
+            "recoveryAction": null,
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-turn-002"
+            },
+            "lastHostRequestId": "host-req-turn-002"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:terminal_declaration_evidence_absent",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "declaration_extraction_pending",
+      "label": "declaration_extraction_pending",
+      "host_status_source": "host_conversation_status",
+      "accepted_host_statuses": [
+        "declaration_extraction_pending"
+      ],
+      "description": "Host accepted completion/extraction but produced declarations are not durable and valid yet.",
+      "phase": "CONVERSATION",
+      "status": "conversation.declaration_extraction_pending",
+      "typed_next_action_options": [
+        "REFRESH_STATE"
+      ],
+      "example_typed_next_action": "REFRESH_STATE",
+      "recovery": {
+        "kind": "poll",
+        "category": "REFRESH_STATE",
+        "action": "REFRESH_STATE",
+        "boundedBy": "client backoff plus server-authored lastHostRequestId diagnostics"
+      },
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:declaration_extraction_pending",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "declaration_extraction_pending",
+          "latest_turn_id": "turn_assistant_001",
+          "message_count": 2,
+          "produced_declarations": null,
+          "request_id": "host-req-complete-001"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "CONVERSATION",
+            "state": "conversation.declaration_extraction_pending",
+            "typedNextAction": "REFRESH_STATE",
+            "recoveryCategory": "REFRESH_STATE",
+            "recoveryAction": "REFRESH_STATE",
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-complete-001"
+            },
+            "lastHostRequestId": "host-req-complete-001"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:declaration_extraction_pending",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "declaration_ready",
+      "label": "declaration_ready",
+      "host_status_source": "host_conversation_status",
+      "accepted_host_statuses": [
+        "declaration_ready",
+        "completed"
+      ],
+      "description": "Host has durable produced declarations for the active conversation. This is the first publish-eligible row.",
+      "phase": "FINALIZE",
+      "status": "conversation.declaration_ready",
+      "typed_next_action_options": [
+        "PUBLISH_HOSTED_SOUL"
+      ],
+      "example_typed_next_action": "PUBLISH_HOSTED_SOUL",
+      "recovery": null,
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "present:active_conversation",
+      "publication_evidence": "absent",
+      "publish_gate": "allowed:active_conversation_terminal_declaration_evidence",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "declaration_ready",
+          "latest_turn_id": "turn_assistant_001",
+          "message_count": 2,
+          "produced_declarations": {
+            "title": "Hosted soul declaration for drone-ada",
+            "declarations_hash": "sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001"
+          },
+          "request_id": "host-req-complete-002"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "FINALIZE",
+            "state": "conversation.declaration_ready",
+            "typedNextAction": "PUBLISH_HOSTED_SOUL",
+            "recoveryCategory": null,
+            "recoveryAction": null,
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [
+              {
+                "name": "hosted_conversation",
+                "status": "completed",
+                "canonicalJson": "{\"conversation_id\":\"hconv_example_001\",\"declarations_hash\":\"sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001\"}",
+                "hostRequestId": "host-req-complete-002",
+                "completedAt": "2026-06-21T12:00:00Z"
+              }
+            ],
+            "terminalDeclarationEvidence": {
+              "conversationId": "hconv_example_001",
+              "hostStatus": "declaration_ready",
+              "hostRequestId": "host-req-complete-002",
+              "declarationsHash": "sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001",
+              "producedDeclarationsPreview": {
+                "title": "Hosted soul declaration for drone-ada",
+                "declarationCount": 3
+              }
+            },
+            "publication": null,
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": "idem-finalize-example",
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-complete-002"
+            },
+            "lastHostRequestId": "host-req-complete-002"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": true,
+            "reason": "allowed:active_conversation_terminal_declaration_evidence",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "failed",
+      "label": "failed",
+      "host_status_source": "host_conversation_status",
+      "accepted_host_statuses": [
+        "failed"
+      ],
+      "description": "Host reports a typed terminal or recoverable failure. Lesser may retry or restart only through a bounded recovery action.",
+      "phase": "ERROR",
+      "status": "error.host_failed",
+      "typed_next_action_options": [
+        "RETRY_SAME_STEP",
+        "RESTART_SOUL_BOOTSTRAP"
+      ],
+      "example_typed_next_action": "RETRY_SAME_STEP",
+      "recovery": {
+        "kind": "typed",
+        "category": "RETRY_SAME_STEP",
+        "action": "RETRY_SAME_STEP",
+        "boundedBy": "Host failure retryability; restart requires a new recoveryAttemptId and supersedes ids",
+        "alternatives": [
+          "RESTART_SOUL_BOOTSTRAP",
+          "OPERATOR_ACTION_REQUIRED"
+        ]
+      },
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "absent",
+      "publication_evidence": "absent",
+      "publish_gate": "blocked:host_failure",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "failed",
+          "failure": {
+            "code": "HOST_CONVERSATION_FAILED",
+            "message": "assistant turn failed before declarations were produced",
+            "retryable": true
+          },
+          "request_id": "host-req-failed-001"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "ERROR",
+            "state": "error.host_failed",
+            "typedNextAction": "RETRY_SAME_STEP",
+            "recoveryCategory": "RETRY_SAME_STEP",
+            "recoveryAction": "RETRY_SAME_STEP",
+            "retryable": true,
+            "restartRequired": false,
+            "restartAvailable": true,
+            "signingCheckpoints": [],
+            "terminalDeclarationEvidence": null,
+            "publication": null,
+            "error": {
+              "code": "HOST_CONVERSATION_FAILED",
+              "message": "Host failed before producing declaration evidence.",
+              "source": "host",
+              "statusCode": 200,
+              "hostRequestId": "host-req-failed-001",
+              "recoveryCategory": "RETRY_SAME_STEP",
+              "recoveryAction": "RETRY_SAME_STEP",
+              "retryable": true,
+              "restartRequired": false
+            },
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": null,
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-failed-001"
+            },
+            "lastHostRequestId": "host-req-failed-001"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "blocked:host_failure",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    },
+    {
+      "host_status": "published_bound",
+      "label": "published/bound",
+      "host_status_source": "host_publication_plus_lesser_binding",
+      "accepted_host_statuses": [
+        "published",
+        "bound"
+      ],
+      "description": "Host publication evidence exists and Lesser has bound the local body to the hosted soul agent id.",
+      "phase": "COMPLETE",
+      "status": "complete.bound",
+      "typed_next_action_options": [
+        "COMPLETE"
+      ],
+      "example_typed_next_action": "COMPLETE",
+      "recovery": null,
+      "host_ids": {
+        "host_registration_id": "required:persisted",
+        "host_soul_agent_id": "required:persisted",
+        "host_conversation_id": "required:persist_early_before_returning_next_action"
+      },
+      "terminal_declaration_evidence": "present:active_conversation",
+      "publication_evidence": "present:host_publication_and_lesser_binding",
+      "publish_gate": "complete:already_published_bound",
+      "example": {
+        "host": {
+          "registration_id": "hreg_example_001",
+          "agent_id": "hsoul_example_001",
+          "conversation_id": "hconv_example_001",
+          "status": "published",
+          "produced_declarations": {
+            "title": "Hosted soul declaration for drone-ada",
+            "declarations_hash": "sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001"
+          },
+          "publication": {
+            "agentId": "hsoul_example_001",
+            "publishedVersion": 1,
+            "authorityModel": "INSTANCE_TRUST",
+            "registrationUri": "s3://lesser-hosted-souls/example/hreg_example_001/registration.json",
+            "versionedRegistrationUri": "s3://lesser-hosted-souls/example/hreg_example_001/v1/registration.json",
+            "anchorState": "hosted_offchain",
+            "publishedAt": "2026-06-21T12:05:00Z"
+          },
+          "request_id": "host-req-publish-001"
+        },
+        "lesserGraphql": {
+          "state": {
+            "username": "drone-ada",
+            "bodyId": "drone-ada",
+            "hostRegistrationId": "hreg_example_001",
+            "hostSoulAgentId": "hsoul_example_001",
+            "hostConversationId": "hconv_example_001",
+            "bootstrapMode": "HOSTED",
+            "authorityModel": "INSTANCE_TRUST",
+            "anchorState": "HOSTED_OFFCHAIN",
+            "phase": "COMPLETE",
+            "state": "complete.bound",
+            "typedNextAction": "COMPLETE",
+            "recoveryCategory": null,
+            "recoveryAction": null,
+            "retryable": false,
+            "restartRequired": false,
+            "restartAvailable": false,
+            "signingCheckpoints": [
+              {
+                "name": "hosted_conversation",
+                "status": "completed",
+                "canonicalJson": "{\"conversation_id\":\"hconv_example_001\",\"declarations_hash\":\"sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001\"}",
+                "hostRequestId": "host-req-complete-002",
+                "completedAt": "2026-06-21T12:00:00Z"
+              }
+            ],
+            "terminalDeclarationEvidence": {
+              "conversationId": "hconv_example_001",
+              "hostStatus": "declaration_ready",
+              "hostRequestId": "host-req-complete-002",
+              "declarationsHash": "sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001",
+              "producedDeclarationsPreview": {
+                "title": "Hosted soul declaration for drone-ada",
+                "declarationCount": 3
+              }
+            },
+            "publication": {
+              "agentId": "hsoul_example_001",
+              "publishedVersion": 1,
+              "authorityModel": "INSTANCE_TRUST",
+              "registrationUri": "s3://lesser-hosted-souls/example/hreg_example_001/registration.json",
+              "versionedRegistrationUri": "s3://lesser-hosted-souls/example/hreg_example_001/v1/registration.json",
+              "anchorState": "hosted_offchain",
+              "publishedAt": "2026-06-21T12:05:00Z"
+            },
+            "error": null,
+            "correlation": {
+              "correlationKey": "p49-example-correlation",
+              "beginIdempotencyKey": "idem-begin-example",
+              "conversationIdempotencyKey": "idem-conversation-example",
+              "finalizeIdempotencyKey": "idem-finalize-example",
+              "restartIdempotencyKey": null,
+              "recoveryAttemptId": null,
+              "supersededHostRegistrationId": null,
+              "supersededHostConversationId": null,
+              "lastHostRequestId": "host-req-publish-001"
+            },
+            "lastHostRequestId": "host-req-publish-001"
+          },
+          "publishGate": {
+            "canPublishHostedSoul": false,
+            "reason": "complete:already_published_bound",
+            "requiresActiveConversationTerminalDeclarationEvidence": true
+          }
+        }
+      }
+    }
+  ]
+}
