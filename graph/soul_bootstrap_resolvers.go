@@ -956,7 +956,7 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 		state.SigningCheckpoints = upsertSoulBootstrapCheckpoint(state.SigningCheckpoints, workflow.SoulBootstrapSigningCheckpoint{
 			Name:          soulBootstrapCheckpointHostedConversation,
 			Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
-			CanonicalJSON: strings.TrimSpace(result.ProducedDeclarations),
+			CanonicalJSON: hostedTerminalEvidenceCanonicalJSON(result.ConversationID, workflow.SoulBootstrapHostConversationStatusDeclarationReady, result.ProducedDeclarations),
 			HostRequestID: result.HostRequestID,
 			CompletedAt:   &completedAt,
 		})
@@ -1092,7 +1092,6 @@ func soulBootstrapStateAfterHostedPublish(
 		state.HostSoulAgentID = strings.TrimSpace(result.HostSoulAgentID)
 	}
 	state.Publication = soulBootstrapPublicationEvidence(result.Publication)
-	state.SigningCheckpoints = nil
 	state.Correlation = mergeSoulBootstrapCorrelation(state.Correlation, correlation)
 	if state.Correlation == nil {
 		state.Correlation = &workflow.SoulBootstrapCorrelationState{}
@@ -1117,7 +1116,6 @@ func soulBootstrapStateAfterHostedBinding(
 	state.AnchorState = workflow.SoulBootstrapAnchorStateHostedOffchain
 	state.AssuranceState = state.AnchorState
 	state.NextAction = workflow.SoulBootstrapNextActionComplete
-	state.SigningCheckpoints = nil
 	return workflow.NormalizeSoulBootstrap(state, state.Username)
 }
 
@@ -2018,27 +2016,112 @@ func graphSoulBootstrapTerminalDeclarationEvidence(state *workflow.SoulBootstrap
 		if !soulservice.IsHostedBootstrapTerminalDeclarationStatus(checkpoint.Status) {
 			continue
 		}
-		canonical := strings.TrimSpace(checkpoint.CanonicalJSON)
-		if canonical == "" {
-			continue
-		}
-		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
-			ConversationID:       conversationID,
-			Status:               checkpoint.Status,
-			ProducedDeclarations: canonical,
-			HostRequestID:        checkpoint.HostRequestID,
-		}, conversationID); err != nil {
+		evidence, ok := hostedTerminalEvidenceFromCheckpoint(checkpoint, conversationID)
+		if !ok {
 			continue
 		}
 		return &model.SoulBootstrapTerminalDeclarationEvidence{
 			ConversationID:              conversationID,
-			HostStatus:                  soulservice.NormalizeHostedBootstrapConversationStatus(checkpoint.Status),
+			HostStatus:                  evidence.HostStatus,
 			HostRequestID:               optionalString(checkpoint.HostRequestID),
-			DeclarationsHash:            optionalString(hostedDeclarationEvidenceHash(canonical)),
-			ProducedDeclarationsPreview: hostedDeclarationPreview(canonical),
+			DeclarationsHash:            optionalString(firstNonEmpty(evidence.DeclarationsHash, hostedDeclarationEvidenceHash(evidence.ProducedDeclarations))),
+			ProducedDeclarationsPreview: hostedDeclarationPreview(evidence.ProducedDeclarations),
 		}
 	}
 	return nil
+}
+
+type hostedTerminalEvidence struct {
+	ConversationID       string
+	HostStatus           string
+	DeclarationsHash     string
+	ProducedDeclarations string
+}
+
+type hostedTerminalEvidenceEnvelope struct {
+	ConversationID       string          `json:"conversation_id"`
+	HostStatus           string          `json:"host_status"`
+	DeclarationsHash     string          `json:"declarations_hash,omitempty"`
+	ProducedDeclarations json.RawMessage `json:"produced_declarations"`
+}
+
+func hostedTerminalEvidenceCanonicalJSON(conversationID string, hostStatus string, producedDeclarations string) string {
+	producedDeclarations = strings.TrimSpace(producedDeclarations)
+	if producedDeclarations == "" {
+		return ""
+	}
+	compactProduced := compactGraphJSON(producedDeclarations)
+	envelope := hostedTerminalEvidenceEnvelope{
+		ConversationID:       strings.TrimSpace(conversationID),
+		HostStatus:           soulservice.NormalizeHostedBootstrapConversationStatus(hostStatus),
+		DeclarationsHash:     hostedDeclarationEvidenceHash(compactProduced),
+		ProducedDeclarations: json.RawMessage(compactProduced),
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func hostedTerminalEvidenceFromCheckpoint(checkpoint workflow.SoulBootstrapSigningCheckpoint, expectedConversationID string) (hostedTerminalEvidence, bool) {
+	expectedConversationID = strings.TrimSpace(expectedConversationID)
+	canonical := strings.TrimSpace(checkpoint.CanonicalJSON)
+	if expectedConversationID == "" || canonical == "" {
+		return hostedTerminalEvidence{}, false
+	}
+	var envelope hostedTerminalEvidenceEnvelope
+	if err := json.Unmarshal([]byte(canonical), &envelope); err != nil {
+		return hostedTerminalEvidence{}, false
+	}
+	if strings.TrimSpace(envelope.ConversationID) == "" || strings.TrimSpace(envelope.ConversationID) != expectedConversationID {
+		return hostedTerminalEvidence{}, false
+	}
+	hostStatus := soulservice.NormalizeHostedBootstrapConversationStatus(firstNonEmpty(envelope.HostStatus, checkpoint.Status))
+	if !soulservice.IsHostedBootstrapTerminalDeclarationStatus(hostStatus) {
+		return hostedTerminalEvidence{}, false
+	}
+	producedDeclarations := graphRawJSONValue(envelope.ProducedDeclarations)
+	if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
+		ConversationID:       expectedConversationID,
+		Status:               hostStatus,
+		ProducedDeclarations: producedDeclarations,
+		HostRequestID:        checkpoint.HostRequestID,
+	}, expectedConversationID); err != nil {
+		return hostedTerminalEvidence{}, false
+	}
+	return hostedTerminalEvidence{
+		ConversationID:       expectedConversationID,
+		HostStatus:           hostStatus,
+		DeclarationsHash:     strings.TrimSpace(envelope.DeclarationsHash),
+		ProducedDeclarations: producedDeclarations,
+	}, true
+}
+
+func compactGraphJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(raw)); err != nil {
+		return raw
+	}
+	return compact.String()
+}
+
+func graphRawJSONValue(raw json.RawMessage) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return ""
+	}
+	if trimmed[0] == '"' {
+		var value string
+		if err := json.Unmarshal(trimmed, &value); err == nil {
+			return strings.TrimSpace(value)
+		}
+	}
+	return compactGraphJSON(string(trimmed))
 }
 
 func hostedDeclarationEvidenceHash(canonical string) string {
@@ -2046,11 +2129,8 @@ func hostedDeclarationEvidenceHash(canonical string) string {
 	if canonical == "" {
 		return ""
 	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, []byte(canonical)); err != nil {
-		compact.WriteString(canonical)
-	}
-	sum := sha256.Sum256(compact.Bytes())
+	compact := compactGraphJSON(canonical)
+	sum := sha256.Sum256([]byte(compact))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
@@ -2094,7 +2174,7 @@ func hostedDeclarationPreviewString(raw json.RawMessage) string {
 
 func graphSoulBootstrapPublishGate(state *workflow.SoulBootstrapState) *model.SoulBootstrapPublishGate {
 	state = workflow.NormalizeSoulBootstrap(state, "")
-	reason := "blocked:no_host_registration"
+	reason := ""
 	canPublish := false
 	switch {
 	case state == nil || strings.TrimSpace(state.HostRegistrationID) == "":
@@ -2626,12 +2706,7 @@ func soulBootstrapHasTerminalConversationDeclarationEvidence(checkpoints []workf
 		if !soulservice.IsHostedBootstrapTerminalDeclarationStatus(checkpoint.Status) {
 			continue
 		}
-		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
-			ConversationID:       conversationID,
-			Status:               checkpoint.Status,
-			ProducedDeclarations: checkpoint.CanonicalJSON,
-			HostRequestID:        checkpoint.HostRequestID,
-		}, conversationID); err == nil {
+		if _, ok := hostedTerminalEvidenceFromCheckpoint(checkpoint, conversationID); ok {
 			return true
 		}
 	}
@@ -2669,12 +2744,12 @@ func graphSoulBootstrapStateHasTerminalDeclarationEvidence(state *model.SoulBoot
 		if checkpoint.CanonicalJSON == nil {
 			continue
 		}
-		if err := soulservice.ValidateHostedBootstrapCompletionEvidence(&soulservice.BootstrapConversationCompleteResult{
-			ConversationID:       conversationID,
-			Status:               checkpoint.Status,
-			ProducedDeclarations: *checkpoint.CanonicalJSON,
-			HostRequestID:        derefString(checkpoint.HostRequestID),
-		}, conversationID); err == nil {
+		if _, ok := hostedTerminalEvidenceFromCheckpoint(workflow.SoulBootstrapSigningCheckpoint{
+			Name:          checkpoint.Name,
+			Status:        checkpoint.Status,
+			CanonicalJSON: *checkpoint.CanonicalJSON,
+			HostRequestID: derefString(checkpoint.HostRequestID),
+		}, conversationID); ok {
 			return true
 		}
 	}
@@ -2799,7 +2874,8 @@ func applySoulBootstrapWorkflowProjection(
 		workflowState.CurrentPhase = workflow.DroneWorkflowPhaseGraduation
 		workflowState.CurrentState = workflow.DroneWorkflowStateGraduationReady
 	case bootstrap.Phase == workflow.SoulBootstrapPhaseConversation:
-		if soulBootstrapStateHasActiveTerminalDeclarationEvidence(bootstrap) {
+		if soulBootstrapStateHasActiveTerminalDeclarationEvidence(bootstrap) ||
+			bootstrap.State == workflow.SoulBootstrapStateConversationCompleted {
 			workflowState.CurrentPhase = workflow.DroneWorkflowPhaseSigning
 			workflowState.CurrentState = workflow.DroneWorkflowStateSigningPending
 		} else {
@@ -2823,7 +2899,8 @@ func applySoulBootstrapWorkflowProjection(
 		return
 	}
 
-	if soulBootstrapStateHasActiveTerminalDeclarationEvidence(bootstrap) {
+	if soulBootstrapStateHasActiveTerminalDeclarationEvidence(bootstrap) ||
+		bootstrap.State == workflow.SoulBootstrapStateConversationCompleted {
 		workflowState.Declaration = &workflow.DroneDeclarationCard{
 			ID:            agentUser.Username + ":bootstrap-declaration",
 			Title:         "Soul bootstrap declaration",

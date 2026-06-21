@@ -822,18 +822,23 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 	tests := []struct {
 		name         string
 		conversation map[string]any
+		wantErr      bool
 		wantContains string
 	}{
 		{
 			name: "failed terminal conversation",
 			conversation: map[string]any{
-				"conversation_id":       "conv_hosted",
-				"model":                 "claude",
-				"status":                "failed",
-				"produced_declarations": validDeclarations,
-				"created_at":            "2026-06-17T14:00:00Z",
+				"conversation_id": "conv_hosted",
+				"model":           "claude",
+				"status":          "failed",
+				"failure": map[string]any{
+					"code":      "HOST_CONVERSATION_FAILED",
+					"message":   "assistant failed",
+					"retryable": true,
+				},
+				"created_at": "2026-06-17T14:00:00Z",
 			},
-			wantContains: "not terminal",
+			wantErr: false,
 		},
 		{
 			name: "completed without declarations",
@@ -844,6 +849,7 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				"produced_declarations": "",
 				"created_at":            "2026-06-17T14:00:00Z",
 			},
+			wantErr:      true,
 			wantContains: "produced declarations",
 		},
 		{
@@ -855,6 +861,7 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				"produced_declarations": validDeclarations,
 				"created_at":            "2026-06-17T14:00:00Z",
 			},
+			wantErr:      true,
 			wantContains: "conversation id",
 		},
 	}
@@ -900,10 +907,16 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 				zap.NewNop(),
 			).WithHTTPClient(host.Client())
 
-			_, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+			result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
 				RegistrationID: "reg_hosted",
 				ConversationID: "conv_hosted",
 			})
+			if !tt.wantErr {
+				require.NoError(t, err)
+				require.Equal(t, "failed", result.Status)
+				require.Equal(t, "HOST_CONVERSATION_FAILED", result.FailureCode)
+				return
+			}
 			var hostErr *HostBootstrapError
 			require.ErrorAs(t, err, &hostErr)
 			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
@@ -1795,28 +1808,6 @@ func TestBootstrapHelperBranches(t *testing.T) {
 	require.Equal(t, `{"a":1}`, compactHostJSON(json.RawMessage(` { "a" : 1 } `)))
 	require.Empty(t, compactHostJSON(nil))
 	require.Equal(t, "{bad", compactHostJSON(json.RawMessage(` {bad `)))
-
-	var sseOut hostConversationSSECollectResult
-	require.NoError(t, parseHostConversationSSE([]byte("event: conversation_start\n"+
-		"data: {\"conversation_id\":\"conv_start\",\"model\":\"claude\"}\n\n"+
-		"event: conversation_done\n"+
-		"data: {\"full_response\":\"done\"}\n\n"), &sseOut))
-	require.Equal(t, "conv_start", sseOut.ConversationID)
-	require.Equal(t, "claude", sseOut.Model)
-	require.Equal(t, "done", sseOut.FullResponse)
-	require.Error(t, parseHostConversationSSE([]byte("data: {}\n\n"), nil))
-	require.ErrorContains(t, parseHostConversationSSE([]byte("event: delta\ndata: {}\n\n"), &hostConversationSSECollectResult{}), "terminal")
-	require.Error(t, parseHostConversationSSE([]byte("event: conversation_done\ndata: {bad}\n\n"), &hostConversationSSECollectResult{}))
-	err = parseHostConversationSSE([]byte("event: error\ndata: {\"error\":\"model unavailable\"}\n\n"), &hostConversationSSECollectResult{})
-	hostErr = nil
-	require.ErrorAs(t, err, &hostErr)
-	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
-	require.Equal(t, "model unavailable", hostErr.Message)
-	err = parseHostConversationSSE([]byte("event: error\ndata: {}\n\n"), &hostConversationSSECollectResult{})
-	hostErr = nil
-	require.ErrorAs(t, err, &hostErr)
-	require.Equal(t, "HOST_CONVERSATION_FAILED", hostErr.Code)
-	require.NotEmpty(t, hostErr.Message)
 
 	require.NoError(t, validateHostPrincipalSigningPayload(hostPrincipalPreflightResponse{
 		Version:         "1",

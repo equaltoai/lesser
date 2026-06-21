@@ -1,7 +1,6 @@
 package souls
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,12 +17,12 @@ import (
 )
 
 const (
-	hostBootstrapMaxResponseBytes = 256 * 1024
-	hostBootstrapSSETimeout       = 90 * time.Second
-
+	hostBootstrapMaxResponseBytes    = 256 * 1024
 	hostBootstrapSigningMethodEIP191 = "eip191_personal_sign"
 	hostBootstrapEncodingHexBytes    = "hex_bytes"
 	hostBootstrapVersion1            = "1"
+
+	hostConversationStatusDeclarationReady = "declaration_ready"
 
 	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
 	SoulAuthorityModelWalletPrincipal = "wallet_principal"
@@ -613,11 +612,13 @@ func (s *Service) recoverCompletedBootstrapConversation(ctx context.Context, bas
 	if result.HostRequestID == "" {
 		result.HostRequestID = hostBootstrapRequestIDFromError(conflictErr)
 	}
-	if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
-		return nil, err
-	}
-	if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
-		result.ProducedDeclarations = compact
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
 	}
 	return result, nil
 }
@@ -981,65 +982,6 @@ func hostBootstrapStatusAllowed(status int, expected []int) bool {
 	return false
 }
 
-func (s *Service) doHostBootstrapSSE(ctx context.Context, baseURL string, path string, instanceKey string, payload any, out *hostConversationSSECollectResult) (string, error) {
-	endpoint, err := hostBootstrapURL(baseURL, path)
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+instanceKey)
-
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: hostBootstrapSSETimeout}
-	} else if client.Timeout > 0 && client.Timeout < hostBootstrapSSETimeout {
-		cloned := *client
-		cloned.Timeout = hostBootstrapSSETimeout
-		client = &cloned
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	defer resp.Body.Close()
-
-	responseBody, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, hostBootstrapMaxResponseBytes)
-	if err != nil {
-		return requestIDFromHeaders(resp.Header), &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	requestID := requestIDFromHeaders(resp.Header)
-
-	if resp.StatusCode != http.StatusOK {
-		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
-	}
-	if truncated {
-		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
-	}
-	if err := parseHostConversationSSE(responseBody, out); err != nil {
-		var hostErr *HostBootstrapError
-		if errors.As(err, &hostErr) {
-			hostErr.StatusCode = resp.StatusCode
-			if hostErr.HostRequestID == "" {
-				hostErr.HostRequestID = requestID
-			}
-			return requestID, hostErr
-		}
-		return requestID, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
-	}
-	return requestID, nil
-}
-
 func hostBootstrapHTTPError(status int, headers http.Header, body []byte, truncated bool, secrets ...string) error {
 	requestID := requestIDFromHeaders(headers)
 	envelope := hostBootstrapErrorEnvelope{}
@@ -1231,118 +1173,6 @@ func normalizeBootstrapSignatureMap(in map[string]string) map[string]string {
 	return out
 }
 
-func parseHostConversationSSE(body []byte, out *hostConversationSSECollectResult) error {
-	if out == nil {
-		return errors.New("nil SSE output")
-	}
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	scanner.Buffer(make([]byte, 0, 64*1024), hostBootstrapMaxResponseBytes)
-
-	eventName := ""
-	var dataLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
-				return err
-			}
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "event:"):
-			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		case strings.HasPrefix(line, "data:"):
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	if err := flushHostConversationSSEEvent(&eventName, &dataLines, out); err != nil {
-		return err
-	}
-	if !out.Done || strings.TrimSpace(out.ConversationID) == "" {
-		return errors.New("missing terminal conversation_done event")
-	}
-	return nil
-}
-
-func flushHostConversationSSEEvent(eventName *string, dataLines *[]string, out *hostConversationSSECollectResult) error {
-	if eventName == nil || dataLines == nil || out == nil {
-		return nil
-	}
-	if *eventName == "" && len(*dataLines) == 0 {
-		return nil
-	}
-	name := strings.TrimSpace(*eventName)
-	if name == "" {
-		name = "message"
-	}
-	rawData := strings.TrimSpace(strings.Join(*dataLines, "\n"))
-	*eventName = ""
-	*dataLines = nil
-	return applyHostConversationSSEEvent(name, rawData, out)
-}
-
-func applyHostConversationSSEEvent(name string, rawData string, out *hostConversationSSECollectResult) error {
-	switch strings.TrimSpace(name) {
-	case "conversation_start":
-		return applyHostConversationStartEvent(rawData, out)
-	case "conversation_done":
-		return applyHostConversationDoneEvent(rawData, out)
-	case "error":
-		return hostConversationSSEError(rawData)
-	default:
-		return nil
-	}
-}
-
-func applyHostConversationStartEvent(rawData string, out *hostConversationSSECollectResult) error {
-	var payload struct {
-		ConversationID string `json:"conversation_id"`
-		Model          string `json:"model"`
-	}
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		return err
-	}
-	if strings.TrimSpace(payload.ConversationID) != "" {
-		out.ConversationID = strings.TrimSpace(payload.ConversationID)
-	}
-	if strings.TrimSpace(payload.Model) != "" {
-		out.Model = strings.TrimSpace(payload.Model)
-	}
-	return nil
-}
-
-func applyHostConversationDoneEvent(rawData string, out *hostConversationSSECollectResult) error {
-	var payload struct {
-		ConversationID string `json:"conversation_id"`
-		FullResponse   string `json:"full_response"`
-	}
-	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
-		return err
-	}
-	if strings.TrimSpace(payload.ConversationID) != "" {
-		out.ConversationID = strings.TrimSpace(payload.ConversationID)
-	}
-	out.FullResponse = payload.FullResponse
-	out.Done = true
-	return nil
-}
-
-func hostConversationSSEError(rawData string) error {
-	var payload struct {
-		Error string `json:"error"`
-	}
-	_ = json.Unmarshal([]byte(rawData), &payload)
-	message := strings.TrimSpace(payload.Error)
-	if message == "" {
-		message = "Host mint conversation failed."
-	}
-	return &HostBootstrapError{Code: "HOST_CONVERSATION_FAILED", Message: message, Source: "host", Err: ErrHostUnavailable}
-}
-
 func parseHostConversationEnvelope(raw json.RawMessage, hostRequestID string) (hostMintConversationResponse, error) {
 	var out hostMintConversationResponse
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -1388,9 +1218,6 @@ func validateHostConversationSnapshot(out hostMintConversationResponse, fallback
 	if strings.TrimSpace(out.ConversationID) == "" && status != NormalizeHostedBootstrapConversationStatus("failed") {
 		return hostBootstrapInvalidResponse("Host conversation response did not include a conversation id.", requestID)
 	}
-	if status == NormalizeHostedBootstrapConversationStatus("failed") && strings.TrimSpace(out.Failure.Code) == "" {
-		return hostBootstrapInvalidResponse("Host failed conversation response did not include failure code.", requestID)
-	}
 	if isHostedBootstrapTerminalDeclarationStatus(status) {
 		return ValidateHostedBootstrapCompletionEvidence(bootstrapConversationCompleteResultFromHost(fallbackRegistrationID, out, requestID), out.ConversationID)
 	}
@@ -1416,8 +1243,8 @@ func NormalizeHostedBootstrapConversationStatus(status string) string {
 		return "assistant_turn_ready"
 	case "declaration_extraction_pending":
 		return "declaration_extraction_pending"
-	case "declaration_ready", "completed":
-		return "declaration_ready"
+	case hostConversationStatusDeclarationReady, "completed":
+		return hostConversationStatusDeclarationReady
 	case "failed":
 		return "failed"
 	case "published":
@@ -1430,7 +1257,7 @@ func NormalizeHostedBootstrapConversationStatus(status string) string {
 }
 
 func isHostedBootstrapTerminalDeclarationStatus(status string) bool {
-	return NormalizeHostedBootstrapConversationStatus(status) == "declaration_ready"
+	return NormalizeHostedBootstrapConversationStatus(status) == hostConversationStatusDeclarationReady
 }
 
 // IsHostedBootstrapTerminalDeclarationStatus reports whether a Host status is
@@ -1722,13 +1549,6 @@ type hostRegistrationVerifyResponse struct {
 	Registration hostRegistration      `json:"registration"`
 	Operation    hostOperation         `json:"operation"`
 	Promotion    hostPromotionResponse `json:"promotion,omitempty"`
-}
-
-type hostConversationSSECollectResult struct {
-	ConversationID string
-	Model          string
-	FullResponse   string
-	Done           bool
 }
 
 type hostMintConversationResponse struct {

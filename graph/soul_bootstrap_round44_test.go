@@ -464,6 +464,7 @@ func TestRound44HostedSoulBootstrapDrivesNoWalletDefinitionThroughPublish(t *tes
 	require.Equal(t, "hosted_conversation", completed.Bootstrap.State.SigningCheckpoints[0].Name)
 	require.Equal(t, "declaration_ready", completed.Bootstrap.State.SigningCheckpoints[0].Status)
 	require.Contains(t, derefString(completed.Bootstrap.State.SigningCheckpoints[0].CanonicalJSON), `"selfDescription"`)
+	require.Contains(t, derefString(completed.Bootstrap.State.SigningCheckpoints[0].CanonicalJSON), `"conversation_id":"conv_hosted"`)
 	require.Nil(t, completed.Bootstrap.Workflow.Checkpoint)
 	require.NotNil(t, completed.Bootstrap.Workflow.Declaration)
 
@@ -482,8 +483,10 @@ func TestRound44HostedSoulBootstrapDrivesNoWalletDefinitionThroughPublish(t *tes
 	require.Equal(t, model.SoulBootstrapPhaseComplete, published.Bootstrap.State.Phase)
 	require.Equal(t, model.SoulBootstrapNextActionComplete, published.Bootstrap.TypedNextAction)
 	require.Equal(t, agentID, derefString(published.Bootstrap.State.HostSoulAgentID))
-	require.Empty(t, published.Bootstrap.State.SigningCheckpoints)
+	require.NotEmpty(t, published.Bootstrap.State.SigningCheckpoints)
+	require.NotNil(t, published.Bootstrap.State.TerminalDeclarationEvidence)
 	require.NotNil(t, published.Bootstrap.State.Publication)
+	require.NotNil(t, published.Bootstrap.State.PublicationEvidence)
 	require.Equal(t, model.SoulBootstrapAuthorityModelInstanceTrust, *published.Bootstrap.State.Publication.AuthorityModel)
 	require.Equal(t, "hosted_offchain", derefString(published.Bootstrap.State.Publication.AnchorState))
 }
@@ -562,7 +565,8 @@ func TestRound44CompleteHostedSoulGenesisPersistsRecoveredTerminalConversationEv
 	checkpoint := payload.Bootstrap.State.SigningCheckpoints[0]
 	require.Equal(t, "hosted_conversation", checkpoint.Name)
 	require.Equal(t, "declaration_ready", checkpoint.Status)
-	require.JSONEq(t, validDeclaration, derefString(checkpoint.CanonicalJSON))
+	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"conversation_id":"conv_recovered"`)
+	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"selfDescription"`)
 	require.Equal(t, "host-req-read-after-conflict", derefString(checkpoint.HostRequestID))
 	require.NotNil(t, payload.Bootstrap.Workflow.Declaration)
 
@@ -665,7 +669,8 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 	checkpoint := surface.State.SigningCheckpoints[0]
 	require.Equal(t, soulBootstrapCheckpointHostedConversation, checkpoint.Name)
 	require.Equal(t, "declaration_ready", checkpoint.Status)
-	require.JSONEq(t, validDeclaration, derefString(checkpoint.CanonicalJSON))
+	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"conversation_id":"conv_stale"`)
+	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"selfDescription"`)
 	require.Equal(t, "host-req-read-repair", derefString(checkpoint.HostRequestID))
 	require.NotNil(t, surface.Workflow.Declaration)
 
@@ -938,14 +943,14 @@ func TestRound44HostedPublishEvidenceHelpersRequireTerminalDeclarations(t *testi
 	validDeclaration := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
 	validCheckpoint := workflow.SoulBootstrapSigningCheckpoint{
 		Name:          "hosted_conversation",
-		Status:        " completed ",
-		CanonicalJSON: validDeclaration,
+		Status:        " declaration_ready ",
+		CanonicalJSON: hostedTerminalEvidenceCanonicalJSON("conv_hosted", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration),
 		HostRequestID: "host-req-complete",
 	}
 	validState := &workflow.SoulBootstrapState{
 		BootstrapMode:      workflow.SoulBootstrapModeHosted,
-		Phase:              workflow.SoulBootstrapPhaseConversation,
-		State:              workflow.SoulBootstrapStateConversationCompleted,
+		Phase:              workflow.SoulBootstrapPhaseFinalize,
+		State:              workflow.SoulBootstrapStateConversationDeclarationReady,
 		HostConversationID: "conv_hosted",
 		SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{validCheckpoint},
 	}
@@ -973,7 +978,7 @@ func TestRound44HostedPublishEvidenceHelpersRequireTerminalDeclarations(t *testi
 
 	invalidCheckpointState := *validState
 	invalidCheckpoint := validCheckpoint
-	invalidCheckpoint.CanonicalJSON = `{"selfDescription":{"summary":"ready"},"capabilities":[]}`
+	invalidCheckpoint.CanonicalJSON = hostedTerminalEvidenceCanonicalJSON("conv_hosted", workflow.SoulBootstrapHostConversationStatusDeclarationReady, `{"selfDescription":{"summary":"ready"},"capabilities":[]}`)
 	invalidCheckpointState.SigningCheckpoints = []workflow.SoulBootstrapSigningCheckpoint{invalidCheckpoint}
 	err = soulBootstrapRequireHostedPublishEvidence(&invalidCheckpointState, "conv_hosted")
 	hostErr = nil
@@ -992,8 +997,8 @@ func TestRound44HostedPublishEvidenceHelpersRequireTerminalDeclarations(t *testi
 			nil,
 			{
 				Name:          "hosted_conversation",
-				Status:        "completed",
-				CanonicalJSON: round13StringPtr(validDeclaration),
+				Status:        "declaration_ready",
+				CanonicalJSON: round13StringPtr(hostedTerminalEvidenceCanonicalJSON("conv_hosted", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration)),
 				HostRequestID: round13StringPtr("host-req-complete"),
 			},
 		},

@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,7 +155,7 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 	terminalCheckpoint := workflow.SoulBootstrapSigningCheckpoint{
 		Name:          soulBootstrapCheckpointHostedConversation,
 		Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
-		CanonicalJSON: validDeclaration,
+		CanonicalJSON: hostedTerminalEvidenceCanonicalJSON("hconv_example_001", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration),
 		HostRequestID: "host-req-complete-002",
 		CompletedAt:   &now,
 	}
@@ -360,6 +361,182 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 				require.NotNil(t, projected.TerminalDeclarationEvidence.ProducedDeclarationsPreview)
 			}
 			require.Equal(t, tt.wantPublished, projected.PublicationEvidence != nil)
+		})
+	}
+}
+
+func TestProject49PublishHostedSoulFailsClosedWithoutActiveTerminalEvidence(t *testing.T) {
+	now := time.Date(2026, 6, 21, 13, 0, 0, 0, time.UTC)
+	validDeclaration := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+	validEvidence := hostedTerminalEvidenceCanonicalJSON("hconv_active", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration)
+	staleEvidence := hostedTerminalEvidenceCanonicalJSON("hconv_stale", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration)
+
+	tests := []struct {
+		name                string
+		state               workflow.SoulBootstrapState
+		inputConversationID string
+		wantGateReason      string
+	}{
+		{
+			name: "in_progress",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseConversation,
+				State:              workflow.SoulBootstrapStateConversationInProgress,
+				NextAction:         workflow.SoulBootstrapNextActionRefreshState,
+			},
+			inputConversationID: "hconv_active",
+			wantGateReason:      "blocked:conversation_in_progress",
+		},
+		{
+			name: "failed",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseError,
+				State:              workflow.SoulBootstrapStateHostFailed,
+				NextAction:         workflow.SoulBootstrapNextActionRetrySameStep,
+			},
+			inputConversationID: "hconv_active",
+			wantGateReason:      "blocked:host_failure",
+		},
+		{
+			name: "missing declarations",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseFinalize,
+				State:              workflow.SoulBootstrapStateConversationDeclarationReady,
+				NextAction:         workflow.SoulBootstrapNextActionPublishHostedSoul,
+			},
+			inputConversationID: "hconv_active",
+			wantGateReason:      "blocked:terminal_declaration_evidence_absent",
+		},
+		{
+			name: "mismatched conversation id",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseFinalize,
+				State:              workflow.SoulBootstrapStateConversationDeclarationReady,
+				NextAction:         workflow.SoulBootstrapNextActionPublishHostedSoul,
+				SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{{
+					Name:          soulBootstrapCheckpointHostedConversation,
+					Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+					CanonicalJSON: validEvidence,
+					HostRequestID: "host-req-terminal",
+				}},
+			},
+			inputConversationID: "hconv_other",
+			wantGateReason:      "allowed:active_conversation_terminal_declaration_evidence",
+		},
+		{
+			name: "stale evidence conversation id",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseFinalize,
+				State:              workflow.SoulBootstrapStateConversationDeclarationReady,
+				NextAction:         workflow.SoulBootstrapNextActionPublishHostedSoul,
+				SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{{
+					Name:          soulBootstrapCheckpointHostedConversation,
+					Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+					CanonicalJSON: staleEvidence,
+					HostRequestID: "host-req-stale",
+				}},
+			},
+			inputConversationID: "hconv_active",
+			wantGateReason:      "blocked:terminal_declaration_evidence_absent",
+		},
+		{
+			name: "declaration only stale evidence",
+			state: workflow.SoulBootstrapState{
+				HostRegistrationID: "hreg_active",
+				HostConversationID: "hconv_active",
+				Phase:              workflow.SoulBootstrapPhaseFinalize,
+				State:              workflow.SoulBootstrapStateConversationDeclarationReady,
+				NextAction:         workflow.SoulBootstrapNextActionPublishHostedSoul,
+				SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{{
+					Name:          soulBootstrapCheckpointHostedConversation,
+					Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+					CanonicalJSON: validDeclaration,
+					HostRequestID: "host-req-legacy-raw",
+				}},
+			},
+			inputConversationID: "hconv_active",
+			wantGateReason:      "blocked:terminal_declaration_evidence_absent",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storageRepo := newRound12GraphResolver(t)
+			publishCalls := 0
+			bindCalls := 0
+			resolver.soulsClient = &stubSoulService{
+				publishHostedBootstrapFunc: func(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+					publishCalls++
+					t.Fatalf("PublishHostedBootstrap must not be called for %s", tt.name)
+					return nil, nil
+				},
+				bindHostedBootstrapFunc: func(context.Context, string, *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+					bindCalls++
+					t.Fatalf("BindHostedBootstrap must not be called for %s", tt.name)
+					return nil, nil
+				},
+			}
+
+			username := "drone-p49-" + strings.ReplaceAll(tt.name, " ", "-")
+			state := tt.state
+			state.Username = username
+			state.BodyID = username
+			state.HostSoulAgentID = "hsoul_active"
+			state.BootstrapMode = workflow.SoulBootstrapModeHosted
+			state.AuthorityModel = workflow.SoulBootstrapAuthorityModelInstanceTrust
+			state.AnchorState = workflow.SoulBootstrapAnchorStateHostedOffchain
+			metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{SoulBootstrap: &state})
+			require.NoError(t, err)
+
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    "owner",
+				DisplayName: "Owner",
+				Approved:    true,
+				CreatedAt:   now.Add(-48 * time.Hour),
+				UpdatedAt:   now.Add(-24 * time.Hour),
+			}, nil)
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    username,
+				DisplayName: "Drone P49",
+				Approved:    true,
+				IsAgent:     true,
+				AgentOwner:  "@owner",
+				Metadata:    metadata,
+				CreatedAt:   now.Add(-24 * time.Hour),
+				UpdatedAt:   now,
+			}, &storage.AgentGovernanceState{
+				Username:        username,
+				DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+			})
+
+			surface, err := (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), username)
+			require.NoError(t, err)
+			require.NotNil(t, surface.State.PublishGate)
+			require.Equal(t, tt.wantGateReason, surface.State.PublishGate.Reason)
+
+			payload, err := (&mutationResolver{resolver}).PublishHostedSoul(
+				round13DroneAuthContext("owner", auth.ScopeWrite),
+				model.PublishHostedSoulInput{
+					Username:       username,
+					ConversationID: tt.inputConversationID,
+				},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, payload.Error)
+			require.Equal(t, workflow.SoulBootstrapErrorHostBootstrapReplayRejected, payload.Error.Code)
+			require.Equal(t, 0, publishCalls)
+			require.Equal(t, 0, bindCalls)
 		})
 	}
 }
