@@ -536,7 +536,11 @@ func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input Bo
 		return nil, err
 	}
 	if version != "" && version != hostBootstrapVersion1 {
-		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: hostConversationRequestID(requestID, out.RequestID), Err: ErrHostUnavailable}
+		return nil, unsupportedHostConversationVersionError(
+			"Host conversation response",
+			requestID,
+			out.RequestID,
+		)
 	}
 	if err := validateHostConversationSnapshot(out, registrationID, false, requestID); err != nil {
 		return nil, err
@@ -578,7 +582,11 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 		return nil, err
 	}
 	if version != "" && version != hostBootstrapVersion1 {
-		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: hostConversationRequestID(requestID, out.RequestID), Err: ErrHostUnavailable}
+		return nil, unsupportedHostConversationVersionError(
+			"Host conversation response",
+			requestID,
+			out.RequestID,
+		)
 	}
 	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
 		return nil, err
@@ -640,7 +648,11 @@ func (s *Service) readBootstrapConversation(ctx context.Context, baseURL string,
 		return nil, err
 	}
 	if version != "" && version != hostBootstrapVersion1 {
-		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation read response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: requestID, Err: ErrHostUnavailable}
+		return nil, unsupportedHostConversationVersionError(
+			"Host conversation read response",
+			requestID,
+			out.RequestID,
+		)
 	}
 	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
 		return nil, err
@@ -1204,7 +1216,13 @@ func parseHostConversationDurableEnvelope(raw json.RawMessage, hostRequestID str
 		return hostMintConversationResponse{}, "", hostBootstrapInvalidResponse(responseName+" is missing.", hostRequestID)
 	}
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return hostMintConversationResponse{}, "", &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: responseName + " is invalid.", Source: "host", HostRequestID: strings.TrimSpace(hostRequestID), Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return hostMintConversationResponse{}, "", &HostBootstrapError{
+			Code:          "HOST_RESPONSE_INVALID",
+			Message:       responseName + " is invalid.",
+			Source:        "host",
+			HostRequestID: strings.TrimSpace(hostRequestID),
+			Err:           fmt.Errorf("%w: %v", ErrHostUnavailable, err),
+		}
 	}
 	if len(bytes.TrimSpace(wrapper.ConversationRaw)) > 0 {
 		wrapperRequestID := hostConversationRequestID(hostRequestID, wrapper.RequestID)
@@ -1218,7 +1236,10 @@ func parseHostConversationDurableEnvelope(raw json.RawMessage, hostRequestID str
 		return conversation, strings.TrimSpace(wrapper.Version), nil
 	}
 	if strings.TrimSpace(wrapper.Version) != "" {
-		return hostMintConversationResponse{}, strings.TrimSpace(wrapper.Version), hostBootstrapInvalidResponse(responseName+" did not include a conversation.", hostConversationRequestID(hostRequestID, wrapper.RequestID))
+		return hostMintConversationResponse{}, strings.TrimSpace(wrapper.Version), hostBootstrapInvalidResponse(
+			responseName+" did not include a conversation.",
+			hostConversationRequestID(hostRequestID, wrapper.RequestID),
+		)
 	}
 	conversation, err := parseHostConversationEnvelope(raw, hostRequestID)
 	return conversation, "", err
@@ -1250,6 +1271,17 @@ func hostConversationRequestID(headerRequestID string, bodyRequestID string) str
 		return body
 	}
 	return strings.TrimSpace(headerRequestID)
+}
+
+func unsupportedHostConversationVersionError(responseName string, headerRequestID string, bodyRequestID string) *HostBootstrapError {
+	return &HostBootstrapError{
+		Code:          "HOST_RESPONSE_INVALID",
+		Message:       responseName + " used an unsupported version.",
+		Source:        "host",
+		StatusCode:    http.StatusOK,
+		HostRequestID: hostConversationRequestID(headerRequestID, bodyRequestID),
+		Err:           ErrHostUnavailable,
+	}
 }
 
 // NormalizeHostedBootstrapConversationStatus returns the canonical Host M1.1
