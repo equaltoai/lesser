@@ -585,7 +585,7 @@ func TestService_BootstrapConversationFinalizeRelaysInstanceRoutes(t *testing.T)
 	}
 }
 
-func TestProject49ServiceSendConversationAcceptsDurableJSONInProgress(t *testing.T) {
+func TestProject49ServiceSendConversationAcceptsHostWrapperInProgress(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -603,17 +603,21 @@ func TestProject49ServiceSendConversationAcceptsDurableJSONInProgress(t *testing
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&sawBody))
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-header-ignored")
 		w.WriteHeader(http.StatusOK)
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-			"registration_id":        "reg_hosted",
-			"conversation_id":        "hconv_p49_001",
-			"agent_id":               agentID,
-			"status":                 "in_progress",
-			"latest_turn_id":         "turn_user_001",
-			"message_count":          1,
-			"request_id":             "host-req-p49-json",
-			"produced_declarations":  nil,
-			"declarations_completed": false,
+			"version":    "1",
+			"request_id": "host-req-p49-wrapper",
+			"conversation": map[string]any{
+				"registration_id":        "reg_hosted",
+				"conversation_id":        "hconv_p49_001",
+				"agent_id":               agentID,
+				"status":                 "in_progress",
+				"latest_turn_id":         "turn_user_001",
+				"message_count":          1,
+				"produced_declarations":  nil,
+				"declarations_completed": false,
+			},
 		}))
 	}))
 	defer host.Close()
@@ -638,7 +642,61 @@ func TestProject49ServiceSendConversationAcceptsDurableJSONInProgress(t *testing
 	require.Equal(t, "hconv_p49_001", result.ConversationID)
 	require.Equal(t, "in_progress", result.Status)
 	require.Equal(t, 1, result.MessageCount)
-	require.Equal(t, "host-req-p49-json", result.HostRequestID)
+	require.Equal(t, "host-req-p49-wrapper", result.HostRequestID)
+	require.Empty(t, result.ProducedDeclarations)
+}
+
+func TestService_CompleteBootstrapConversationAcceptsHostWrapperAcceptedInProgress(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey = "host-instance-key"
+		agentID     = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/reg_hosted/mint-conversation/conv_hosted/complete", r.URL.Path)
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		require.Equal(t, "application/json", r.Header.Get("Accept"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-complete-header")
+		w.WriteHeader(http.StatusAccepted)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version":    "1",
+			"request_id": "host-req-complete-wrapper",
+			"conversation": map[string]any{
+				"registration_id":        "reg_hosted",
+				"conversation_id":        "conv_hosted",
+				"agent_id":               agentID,
+				"status":                 "in_progress",
+				"latest_turn_id":         "turn_user_002",
+				"message_count":          2,
+				"produced_declarations":  nil,
+				"declarations_completed": false,
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.CompleteBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: "reg_hosted",
+		ConversationID: "conv_hosted",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "reg_hosted", result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, "conv_hosted", result.ConversationID)
+	require.Equal(t, "in_progress", result.Status)
+	require.Equal(t, 2, result.MessageCount)
+	require.Equal(t, "host-req-complete-wrapper", result.HostRequestID)
 	require.Empty(t, result.ProducedDeclarations)
 }
 
@@ -664,10 +722,10 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 			wantErr: false,
 		},
 		{
-			name: "empty declarations",
+			name: "declaration ready wrapper with empty declarations",
 			response: map[string]any{
 				"conversation_id":       "conv_hosted",
-				"status":                "completed",
+				"status":                "declaration_ready",
 				"produced_declarations": "",
 			},
 			wantErr:      true,
@@ -704,7 +762,11 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 				require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("X-Request-Id", "host-req-complete-invalid")
-				require.NoError(t, json.NewEncoder(w).Encode(tt.response))
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"version":      "1",
+					"request_id":   "host-req-complete-wrapper-invalid",
+					"conversation": tt.response,
+				}))
 			}))
 			defer host.Close()
 
@@ -729,7 +791,7 @@ func TestService_CompleteBootstrapConversationRequiresTerminalDeclarationEvidenc
 			require.ErrorIs(t, err, ErrHostUnavailable)
 			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
 			require.Equal(t, "host", hostErr.Source)
-			require.Equal(t, "host-req-complete-invalid", hostErr.HostRequestID)
+			require.Equal(t, "host-req-complete-wrapper-invalid", hostErr.HostRequestID)
 			require.Contains(t, hostErr.Message, tt.wantContains)
 		})
 	}
