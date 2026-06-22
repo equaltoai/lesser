@@ -531,9 +531,12 @@ func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input Bo
 	if err != nil {
 		return nil, err
 	}
-	out, err := parseHostConversationEnvelope(raw, requestID)
+	out, version, err := parseHostConversationResponseEnvelope(raw, requestID)
 	if err != nil {
 		return nil, err
+	}
+	if version != "" && version != hostBootstrapVersion1 {
+		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: hostConversationRequestID(requestID, out.RequestID), Err: ErrHostUnavailable}
 	}
 	if err := validateHostConversationSnapshot(out, registrationID, false, requestID); err != nil {
 		return nil, err
@@ -570,9 +573,12 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 		}
 		return nil, err
 	}
-	out, err := parseHostConversationEnvelope(raw, requestID)
+	out, version, err := parseHostConversationResponseEnvelope(raw, requestID)
 	if err != nil {
 		return nil, err
+	}
+	if version != "" && version != hostBootstrapVersion1 {
+		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation response used an unsupported version.", Source: "host", StatusCode: http.StatusOK, HostRequestID: hostConversationRequestID(requestID, out.RequestID), Err: ErrHostUnavailable}
 	}
 	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
 		return nil, err
@@ -1184,23 +1190,38 @@ func parseHostConversationEnvelope(raw json.RawMessage, hostRequestID string) (h
 	return out, nil
 }
 
+func parseHostConversationResponseEnvelope(raw json.RawMessage, hostRequestID string) (hostMintConversationResponse, string, error) {
+	return parseHostConversationDurableEnvelope(raw, hostRequestID, "Host conversation response")
+}
+
 func parseHostConversationReadEnvelope(raw json.RawMessage, hostRequestID string) (hostMintConversationResponse, string, error) {
+	return parseHostConversationDurableEnvelope(raw, hostRequestID, "Host conversation read response")
+}
+
+func parseHostConversationDurableEnvelope(raw json.RawMessage, hostRequestID string, responseName string) (hostMintConversationResponse, string, error) {
 	var wrapper hostMintConversationReadResponse
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return hostMintConversationResponse{}, "", hostBootstrapInvalidResponse("Host conversation read response is missing.", hostRequestID)
+		return hostMintConversationResponse{}, "", hostBootstrapInvalidResponse(responseName+" is missing.", hostRequestID)
 	}
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return hostMintConversationResponse{}, "", &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation read response is invalid.", Source: "host", HostRequestID: strings.TrimSpace(hostRequestID), Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return hostMintConversationResponse{}, "", &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: responseName + " is invalid.", Source: "host", HostRequestID: strings.TrimSpace(hostRequestID), Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
 	if len(bytes.TrimSpace(wrapper.ConversationRaw)) > 0 {
-		conversation, err := parseHostConversationEnvelope(wrapper.ConversationRaw, hostRequestID)
+		wrapperRequestID := hostConversationRequestID(hostRequestID, wrapper.RequestID)
+		conversation, err := parseHostConversationEnvelope(wrapper.ConversationRaw, wrapperRequestID)
 		if err != nil {
 			return hostMintConversationResponse{}, strings.TrimSpace(wrapper.Version), err
 		}
+		if strings.TrimSpace(conversation.RequestID) == "" {
+			conversation.RequestID = strings.TrimSpace(wrapper.RequestID)
+		}
 		return conversation, strings.TrimSpace(wrapper.Version), nil
 	}
+	if strings.TrimSpace(wrapper.Version) != "" {
+		return hostMintConversationResponse{}, strings.TrimSpace(wrapper.Version), hostBootstrapInvalidResponse(responseName+" did not include a conversation.", hostConversationRequestID(hostRequestID, wrapper.RequestID))
+	}
 	conversation, err := parseHostConversationEnvelope(raw, hostRequestID)
-	return conversation, strings.TrimSpace(wrapper.Version), err
+	return conversation, "", err
 }
 
 func validateHostConversationSnapshot(out hostMintConversationResponse, fallbackRegistrationID string, requireConversationID bool, headerRequestID string) error {
@@ -1569,6 +1590,7 @@ type hostMintConversationResponse struct {
 
 type hostMintConversationReadResponse struct {
 	Version         string          `json:"version"`
+	RequestID       string          `json:"request_id"`
 	ConversationRaw json.RawMessage `json:"conversation"`
 }
 
