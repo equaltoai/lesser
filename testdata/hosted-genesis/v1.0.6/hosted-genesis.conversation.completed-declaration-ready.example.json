@@ -1,0 +1,58 @@
+{
+  "version": "1",
+  "request_id": "req_hosted_genesis_02",
+  "conversation": {
+    "registration_id": "reg_01jzhostedgenesis",
+    "conversation_id": "conv_01jzhostedgenesis",
+    "agent_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "status": "declaration_ready",
+    "latest_turn_id": "turn_01jzhostedgenesis_assistant",
+    "message_count": 2,
+    "produced_declarations": {
+      "declaration_id": "decl_01jzhostedgenesis",
+      "declaration_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "produced_at": "2026-06-18T13:12:30Z",
+      "declarations": {
+        "selfDescription": {
+          "summary": "Demo hosted soul for a managed Lesser drone.",
+          "version": "v2"
+        },
+        "capabilities": [
+          {
+            "id": "chat",
+            "statement": "Can answer operator questions using its configured Lesser tools."
+          }
+        ],
+        "boundaries": [
+          {
+            "id": "no-credential-disclosure",
+            "category": "security",
+            "statement": "Will not disclose raw credentials, seed phrases, or Instance API keys."
+          }
+        ],
+        "transparency": {
+          "authority_model": "instance_trust",
+          "anchor_state": "hosted_offchain"
+        }
+      },
+      "evidence": {
+        "source": "host_conversation",
+        "registration_id": "reg_01jzhostedgenesis",
+        "conversation_id": "conv_01jzhostedgenesis",
+        "agent_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "message_count": 2,
+        "model": "openai:gpt-5.4",
+        "request_id": "req_hosted_genesis_02"
+      }
+    },
+    "request_id": "req_hosted_genesis_02",
+    "trace_ids": {
+      "host_request_id": "req_hosted_genesis_02",
+      "correlation_id": "lesser-bootstrap-01",
+      "idempotency_key": "idem-hosted-genesis-01"
+    },
+    "created_at": "2026-06-18T13:10:00Z",
+    "updated_at": "2026-06-18T13:12:30Z",
+    "completed_at": "2026-06-18T13:12:30Z"
+  }
+}

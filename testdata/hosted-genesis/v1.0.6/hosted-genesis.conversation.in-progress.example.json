@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "request_id": "req_hosted_genesis_01",
+  "conversation": {
+    "registration_id": "reg_01jzhostedgenesis",
+    "conversation_id": "conv_01jzhostedgenesis",
+    "agent_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "status": "in_progress",
+    "latest_turn_id": "turn_01jzhostedgenesis_user",
+    "message_count": 1,
+    "request_id": "req_hosted_genesis_01",
+    "trace_ids": {
+      "host_request_id": "req_hosted_genesis_01",
+      "correlation_id": "lesser-bootstrap-01",
+      "idempotency_key": "idem-hosted-genesis-01"
+    },
+    "poll_after_seconds": 2,
+    "created_at": "2026-06-18T13:10:00Z",
+    "updated_at": "2026-06-18T13:10:01Z"
+  }
+}

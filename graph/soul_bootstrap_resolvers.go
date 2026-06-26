@@ -1043,12 +1043,16 @@ func resultHostRequestID(result *soulservice.BootstrapConversationCompleteResult
 	return strings.TrimSpace(result.HostRequestID)
 }
 
-func hostedFailureRecovery(action string, retryable bool) (string, string, string) {
+func hostedFailureRecovery(action string, _ bool) (string, string, string) {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "refresh_state":
 		return workflow.SoulBootstrapRecoveryCategoryRefreshState,
 			workflow.SoulBootstrapRecoveryActionRefreshState,
 			workflow.SoulBootstrapNextActionRefreshState
+	case "retry_same_step":
+		return workflow.SoulBootstrapRecoveryCategoryRetrySameStep,
+			workflow.SoulBootstrapRecoveryActionRetrySameStep,
+			workflow.SoulBootstrapNextActionRetrySameStep
 	case "restart_soul_bootstrap", "restart_bootstrap":
 		return workflow.SoulBootstrapRecoveryCategoryRestartRequired,
 			workflow.SoulBootstrapRecoveryActionRestartBootstrap,
@@ -1058,14 +1062,9 @@ func hostedFailureRecovery(action string, retryable bool) (string, string, strin
 			workflow.SoulBootstrapRecoveryActionContactOperator,
 			workflow.SoulBootstrapNextActionOperatorActionRequired
 	default:
-		if !retryable {
-			return workflow.SoulBootstrapRecoveryCategoryRestartRequired,
-				workflow.SoulBootstrapRecoveryActionRestartBootstrap,
-				workflow.SoulBootstrapNextActionRestartSoulBootstrap
-		}
-		return workflow.SoulBootstrapRecoveryCategoryRetrySameStep,
-			workflow.SoulBootstrapRecoveryActionRetrySameStep,
-			workflow.SoulBootstrapNextActionRetrySameStep
+		return workflow.SoulBootstrapRecoveryCategoryOperatorActionRequired,
+			workflow.SoulBootstrapRecoveryActionContactOperator,
+			workflow.SoulBootstrapNextActionOperatorActionRequired
 	}
 }
 

@@ -142,6 +142,97 @@ func TestProject49HostedInProgressPersistsConversationAndBlocksPublish(t *testin
 	require.Equal(t, 0, bindCalls)
 }
 
+func TestProject51HostedFailureRecoveryActionsProjectServerAuthoredNextOperation(t *testing.T) {
+	now := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	agent := &storage.User{Username: "drone-p51"}
+
+	tests := []struct {
+		name         string
+		hostAction   string
+		retryable    bool
+		wantCategory model.SoulBootstrapRecoveryCategory
+		wantAction   model.SoulBootstrapRecoveryAction
+		wantNext     model.SoulBootstrapNextAction
+		wantRestart  bool
+	}{
+		{
+			name:         "refresh_state",
+			hostAction:   "refresh_state",
+			retryable:    false,
+			wantCategory: model.SoulBootstrapRecoveryCategoryRefreshState,
+			wantAction:   model.SoulBootstrapRecoveryActionRefreshState,
+			wantNext:     model.SoulBootstrapNextActionRefreshState,
+		},
+		{
+			name:         "retry_same_step",
+			hostAction:   "retry_same_step",
+			retryable:    true,
+			wantCategory: model.SoulBootstrapRecoveryCategoryRetrySameStep,
+			wantAction:   model.SoulBootstrapRecoveryActionRetrySameStep,
+			wantNext:     model.SoulBootstrapNextActionRetrySameStep,
+		},
+		{
+			name:         "restart_soul_bootstrap",
+			hostAction:   "restart_soul_bootstrap",
+			retryable:    false,
+			wantCategory: model.SoulBootstrapRecoveryCategoryRestartRequired,
+			wantAction:   model.SoulBootstrapRecoveryActionRestartBootstrap,
+			wantNext:     model.SoulBootstrapNextActionRestartSoulBootstrap,
+			wantRestart:  true,
+		},
+		{
+			name:         "operator_action",
+			hostAction:   "operator_action",
+			retryable:    false,
+			wantCategory: model.SoulBootstrapRecoveryCategoryOperatorActionRequired,
+			wantAction:   model.SoulBootstrapRecoveryActionContactOperator,
+			wantNext:     model.SoulBootstrapNextActionOperatorActionRequired,
+		},
+		{
+			name:         "unknown_action_fails_closed_to_operator",
+			hostAction:   "resume_microvm",
+			retryable:    true,
+			wantCategory: model.SoulBootstrapRecoveryCategoryOperatorActionRequired,
+			wantAction:   model.SoulBootstrapRecoveryActionContactOperator,
+			wantNext:     model.SoulBootstrapNextActionOperatorActionRequired,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			state := soulBootstrapStateAfterHostedConversationSnapshot(agent, nil, nil, &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:        "reg_p51",
+				HostSoulAgentID:       "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				ConversationID:        "conv_p51",
+				Status:                workflow.SoulBootstrapHostConversationStatusFailed,
+				MessageCount:          1,
+				HostRequestID:         "host-req-" + tt.name,
+				FailureCode:           "llm_unavailable",
+				FailureMessage:        "Host authored " + tt.name,
+				FailureRetryable:      tt.retryable,
+				FailureRecoveryAction: tt.hostAction,
+			}, now)
+			projected := graphSoulBootstrapStoredStateModel(state)
+			require.NotNil(t, projected)
+			require.Equal(t, model.SoulBootstrapPhaseError, projected.Phase)
+			require.Equal(t, workflow.SoulBootstrapStateHostFailed, projected.State)
+			require.Equal(t, workflow.SoulBootstrapHostConversationStatusFailed, derefString(projected.HostConversationStatus))
+			require.Equal(t, tt.wantNext, projected.TypedNextAction)
+			require.Equal(t, tt.wantCategory, *projected.RecoveryCategory)
+			require.Equal(t, tt.wantAction, *projected.RecoveryAction)
+			require.Equal(t, tt.retryable, projected.Retryable)
+			require.Equal(t, tt.wantRestart, projected.RestartRequired)
+			require.Equal(t, "host-req-"+tt.name, derefString(projected.LastHostRequestID))
+			require.NotNil(t, projected.Error)
+			require.Equal(t, string(tt.wantCategory), string(*projected.Error.RecoveryCategory))
+			require.Equal(t, string(tt.wantAction), string(*projected.Error.RecoveryAction))
+			require.False(t, projected.PublishGate.CanPublishHostedSoul)
+			require.Equal(t, "blocked:host_failure", projected.PublishGate.Reason)
+		})
+	}
+}
+
 func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	validDeclaration := `{"selfDescription":{"summary":"Hosted soul declaration for drone-ada"},"capabilities":[],"boundaries":[],"transparency":{}}`
