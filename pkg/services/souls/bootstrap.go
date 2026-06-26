@@ -1044,11 +1044,99 @@ func sanitizeHostBootstrapDetails(raw json.RawMessage, secrets ...string) string
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return ""
 	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err == nil {
+		sanitized := sanitizeHostBootstrapDetailValue("", value, secrets...)
+		encoded, err := json.Marshal(sanitized)
+		if err == nil {
+			return string(encoded)
+		}
+	}
 	compact := compactHostJSON(raw)
 	if compact == "" {
 		return ""
 	}
 	return redactHostBootstrapSecret(compact, secrets...)
+}
+
+func sanitizeHostBootstrapDetailValue(key string, value any, secrets ...string) any {
+	if sensitiveHostBootstrapDetailKey(key) {
+		return "[redacted]"
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for childKey, childValue := range typed {
+			out[childKey] = sanitizeHostBootstrapDetailValue(childKey, childValue, secrets...)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, childValue := range typed {
+			out = append(out, sanitizeHostBootstrapDetailValue("", childValue, secrets...))
+		}
+		return out
+	case string:
+		redacted := redactHostBootstrapSecret(typed, secrets...)
+		if sensitiveHostBootstrapDetailString(redacted) {
+			return "[redacted]"
+		}
+		return redacted
+	default:
+		return value
+	}
+}
+
+func sensitiveHostBootstrapDetailKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"authorization",
+		"bearer",
+		"credential",
+		"endpoint",
+		"host_route",
+		"instance_key",
+		"microvm",
+		"private_key",
+		"prompt",
+		"provider_key",
+		"provider_response",
+		"raw_response",
+		"raw_transcript",
+		"route",
+		"secret",
+		"seed",
+		"shell_auth",
+		"ssm",
+		"token",
+		"transcript",
+		"url",
+		"wallet_signature",
+	} {
+		if strings.Contains(key, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sensitiveHostBootstrapDetailString(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "bearer ") ||
+		strings.Contains(lower, "http://") ||
+		strings.Contains(lower, "https://") ||
+		strings.Contains(lower, "microvm") ||
+		strings.Contains(lower, "provider response") ||
+		strings.Contains(lower, "raw transcript") {
+		return true
+	}
+	return false
 }
 
 func redactHostBootstrapSecret(value string, secrets ...string) string {
@@ -1257,13 +1345,38 @@ func validateHostConversationSnapshot(out hostMintConversationResponse, fallback
 	if requireConversationID && strings.TrimSpace(out.ConversationID) == "" {
 		return hostBootstrapInvalidResponse("Host conversation response did not include a conversation id.", requestID)
 	}
-	if strings.TrimSpace(out.ConversationID) == "" && status != NormalizeHostedBootstrapConversationStatus("failed") {
+	if strings.TrimSpace(out.ConversationID) == "" {
 		return hostBootstrapInvalidResponse("Host conversation response did not include a conversation id.", requestID)
+	}
+	if status == NormalizeHostedBootstrapConversationStatus("failed") {
+		return validateHostedFailedConversation(out, requestID)
 	}
 	if isHostedBootstrapTerminalDeclarationStatus(status) {
 		return ValidateHostedBootstrapCompletionEvidence(bootstrapConversationCompleteResultFromHost(fallbackRegistrationID, out, requestID), out.ConversationID)
 	}
 	return nil
+}
+
+func validateHostedFailedConversation(out hostMintConversationResponse, hostRequestID string) error {
+	if strings.TrimSpace(out.Failure.Code) == "" {
+		return hostBootstrapInvalidResponse("Host failed conversation response did not include a failure code.", hostRequestID)
+	}
+	if strings.TrimSpace(out.Failure.Message) == "" {
+		return hostBootstrapInvalidResponse("Host failed conversation response did not include a failure message.", hostRequestID)
+	}
+	if !validHostedFailureRecoveryAction(out.Failure.Recovery.Action) {
+		return hostBootstrapInvalidResponse("Host failed conversation response did not include a locked recovery action.", hostRequestID)
+	}
+	return nil
+}
+
+func validHostedFailureRecoveryAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "refresh_state", "retry_same_step", "restart_soul_bootstrap", "operator_action":
+		return true
+	default:
+		return false
+	}
 }
 
 func hostConversationRequestID(headerRequestID string, bodyRequestID string) string {
@@ -1350,17 +1463,128 @@ func ValidateHostedBootstrapCompletionEvidence(result *BootstrapConversationComp
 	if actual := strings.TrimSpace(result.ConversationID); actual == "" || actual != expectedConversationID {
 		return hostBootstrapInvalidResponse("Host complete response conversation id does not match the requested conversation.", result.HostRequestID)
 	}
-	_, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID)
+	_, err := compactHostedBootstrapProducedDeclarationsWithContext(result.ProducedDeclarations, result.HostRequestID, hostedProducedDeclarationsContext{
+		ExpectedConversationID: expectedConversationID,
+		RegistrationID:         result.RegistrationID,
+		AgentID:                result.HostSoulAgentID,
+		MessageCount:           result.MessageCount,
+		RequestID:              result.HostRequestID,
+	})
 	return err
 }
 
 func compactHostedBootstrapProducedDeclarations(raw string, hostRequestID string) (string, error) {
+	return compactHostedBootstrapProducedDeclarationsWithContext(raw, hostRequestID, hostedProducedDeclarationsContext{})
+}
+
+type hostedProducedDeclarationsContext struct {
+	ExpectedConversationID string
+	RegistrationID         string
+	AgentID                string
+	MessageCount           int
+	RequestID              string
+}
+
+type hostProducedDeclarationsEnvelope struct {
+	DeclarationID   string          `json:"declaration_id"`
+	DeclarationHash string          `json:"declaration_hash"`
+	ProducedAt      string          `json:"produced_at"`
+	DeclarationsRaw json.RawMessage `json:"declarations"`
+	Evidence        struct {
+		Source         string `json:"source"`
+		RegistrationID string `json:"registration_id"`
+		ConversationID string `json:"conversation_id"`
+		AgentID        string `json:"agent_id"`
+		MessageCount   int    `json:"message_count"`
+		Model          string `json:"model"`
+		RequestID      string `json:"request_id"`
+	} `json:"evidence"`
+}
+
+func compactHostedBootstrapProducedDeclarationsWithContext(raw string, hostRequestID string, context hostedProducedDeclarationsContext) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", hostBootstrapInvalidResponse("Host complete response did not include produced declarations.", hostRequestID)
 	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", hostBootstrapInvalidResponse("Host complete response produced declarations were not valid JSON.", hostRequestID)
+	}
+	if len(payload) == 0 {
+		return "", hostBootstrapInvalidResponse("Host complete response produced declarations were empty.", hostRequestID)
+	}
+	if declarationsRaw, ok := payload["declarations"]; ok {
+		var envelope hostProducedDeclarationsEnvelope
+		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+			return "", hostBootstrapInvalidResponse("Host complete response declaration evidence envelope was invalid.", hostRequestID)
+		}
+		if err := validateHostedProducedDeclarationsEnvelope(envelope, context, hostRequestID); err != nil {
+			return "", err
+		}
+		return compactHostedBootstrapDeclarationsObject(declarationsRaw, hostRequestID)
+	}
+	return compactHostedBootstrapDeclarationsObject(json.RawMessage(raw), hostRequestID)
+}
+
+func validateHostedProducedDeclarationsEnvelope(envelope hostProducedDeclarationsEnvelope, context hostedProducedDeclarationsContext, hostRequestID string) error {
+	if strings.TrimSpace(envelope.DeclarationID) == "" {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence did not include a declaration id.", hostRequestID)
+	}
+	if !validHostedDeclarationHash(envelope.DeclarationHash) {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence did not include a valid declaration hash.", hostRequestID)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(envelope.ProducedAt)); err != nil {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence did not include a valid produced_at timestamp.", hostRequestID)
+	}
+	if len(bytes.TrimSpace(envelope.DeclarationsRaw)) == 0 {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence did not include declarations.", hostRequestID)
+	}
+	if strings.TrimSpace(envelope.Evidence.Source) != "host_conversation" {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence source was invalid.", hostRequestID)
+	}
+	if expected := strings.TrimSpace(context.ExpectedConversationID); expected != "" && strings.TrimSpace(envelope.Evidence.ConversationID) != expected {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence conversation id does not match the requested conversation.", hostRequestID)
+	}
+	if expected := strings.TrimSpace(context.RegistrationID); expected != "" && strings.TrimSpace(envelope.Evidence.RegistrationID) != expected {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence registration id does not match the requested registration.", hostRequestID)
+	}
+	if expected := strings.ToLower(strings.TrimSpace(context.AgentID)); expected != "" && strings.ToLower(strings.TrimSpace(envelope.Evidence.AgentID)) != expected {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence agent id does not match the requested agent.", hostRequestID)
+	}
+	if context.MessageCount > 0 && envelope.Evidence.MessageCount != context.MessageCount {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence message count does not match the conversation snapshot.", hostRequestID)
+	}
+	if expected := strings.TrimSpace(context.RequestID); expected != "" && strings.TrimSpace(envelope.Evidence.RequestID) != expected {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence request id does not match the conversation snapshot.", hostRequestID)
+	}
+	if strings.TrimSpace(envelope.Evidence.RegistrationID) == "" ||
+		strings.TrimSpace(envelope.Evidence.ConversationID) == "" ||
+		strings.TrimSpace(envelope.Evidence.AgentID) == "" ||
+		strings.TrimSpace(envelope.Evidence.RequestID) == "" ||
+		envelope.Evidence.MessageCount < 1 {
+		return hostBootstrapInvalidResponse("Host complete response declaration evidence was incomplete.", hostRequestID)
+	}
+	return nil
+}
+
+func validHostedDeclarationHash(value string) bool {
+	value = strings.TrimSpace(value)
+	const prefix = "sha256:"
+	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	for _, r := range value[len(prefix):] {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func compactHostedBootstrapDeclarationsObject(raw json.RawMessage, hostRequestID string) (string, error) {
 	var declaration map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &declaration); err != nil {
+	if err := json.Unmarshal(raw, &declaration); err != nil {
 		return "", hostBootstrapInvalidResponse("Host complete response produced declarations were not valid JSON.", hostRequestID)
 	}
 	if len(declaration) == 0 {
@@ -1378,7 +1602,7 @@ func compactHostedBootstrapProducedDeclarations(raw string, hostRequestID string
 	if err := requireHostedDeclarationObject(declaration, "transparency", false, hostRequestID); err != nil {
 		return "", err
 	}
-	return compactHostJSON(json.RawMessage(raw)), nil
+	return compactHostJSON(raw), nil
 }
 
 func requireHostedDeclarationObject(declaration map[string]json.RawMessage, field string, requireNonEmpty bool, hostRequestID string) error {
