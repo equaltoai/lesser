@@ -33,6 +33,39 @@ therefore this Lesser table locks to the shared names from the Project 49 brief:
 If Host M1.1 lands different names, M3 must reconcile this table and fixture before implementing resolver behavior.
 No Lesser implementation should start against an unstated Host status.
 
+### Project 51 M5 Host v1.0.6 producer alignment
+
+Project 51 M5 updates the runtime producer contract against the public Host release `lesser-host@v1.0.6` and keeps
+Lesser consuming Host's AppTheory-backed `HostedGenesisSession` projection as the source of truth. AppTheory MicroVM
+registry/lifecycle state remains execution/cache state only; Lesser does not create browser-authored retry state, local
+MicroVM recovery substitutes, or LocalStorage/sessionStorage recovery authority.
+
+The Host `v1.0.6` sources inspected for this alignment are:
+
+- `docs/contracts/hosted-genesis-conversation.md`
+- `docs/spec/v3/schemas/hosted-genesis.conversation.response.schema.json`
+- `docs/spec/v3/fixtures/hosted-genesis.conversation.in-progress.example.json`
+- `docs/spec/v3/fixtures/hosted-genesis.conversation.completed-declaration-ready.example.json`
+- `docs/spec/v3/fixtures/hosted-genesis.conversation.failed.example.json`
+- `docs/runbooks/hosted-genesis-sqs-demotion.md`
+- `docs/adr/0009-app-theory-microvm-lab-gates.md`
+
+M5 locks these Lesser-side producer rules:
+
+1. `conversation.conversation_id` is persisted as soon as Host returns it, including `HTTP 202` / `status=in_progress`.
+2. Host `failure.recovery.action` is the only recovery-truth input. Lesser projects the locked actions
+   `refresh_state`, `retry_same_step`, `restart_soul_bootstrap`, and `operator_action` into bounded GraphQL
+   `typedNextAction` / `recoveryCategory` / `recoveryAction` values. Host `v1.0.6` does not expose a public
+   MicroVM resume/restart recovery action; Lesser must not invent one. Failed Host snapshots that omit a locked
+   recovery action are treated as invalid Host responses rather than deriving retry/restart behavior locally.
+3. Publish/finalize readiness requires `status=declaration_ready` plus active-conversation Host declaration evidence.
+   The Host `produced_declarations` envelope is validated for `source=host_conversation`, registration id,
+   conversation id, agent id, message count, request id, declaration id/hash, produced timestamp, and declaration
+   shape before Lesser stores a compact declaration checkpoint.
+4. Browser-visible GraphQL state remains sanitized: no Host bearer tokens, Instance API keys, raw Host routes,
+   MicroVM endpoints/tokens, provider keys/responses, wallet signatures, SSM values, raw transcripts, or raw provider
+   responses are exposed.
+
 ## Existing GraphQL operations in scope
 
 The hosted operations already exist in `docs/contracts/graphql-schema.graphql` and are the only operations this table

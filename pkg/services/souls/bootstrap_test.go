@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+func project51HostConversationFixture(t *testing.T, name string) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "hosted-genesis", "v1.0.6", name))
+	require.NoError(t, err)
+	return data
+}
 
 func TestService_BeginBootstrapRegistrationUsesInstanceKeyAndNotUserBearer(t *testing.T) {
 	t.Parallel()
@@ -226,8 +236,16 @@ func TestService_HostNon2xxIsBoundedTypedAndSanitized(t *testing.T) {
 				"message":     "do not leak " + instanceKey,
 				"status_code": 403,
 				"details": map[string]any{
-					"boundary": "instance_domain",
-					"reason":   "tenant_domain_mismatch",
+					"auth_token":        "microvm-token-value",
+					"boundary":          "instance_domain",
+					"host_route":        "https://host.internal/api/v1/soul/instance/agents/register/reg/mint-conversation",
+					"microvm_endpoint":  "https://microvm.internal/session/token",
+					"provider_response": "raw model response",
+					"reason":            "tenant_domain_mismatch",
+					"nested": map[string]any{
+						"safe_hint": "retry from GraphQL",
+						"ssm_value": "parameter-value",
+					},
 				},
 				"request_id": "host-req-body",
 			},
@@ -250,7 +268,76 @@ func TestService_HostNon2xxIsBoundedTypedAndSanitized(t *testing.T) {
 	require.Equal(t, "host-req-body", hostErr.HostRequestID)
 	require.NotContains(t, hostErr.Message, instanceKey)
 	require.Contains(t, hostErr.Message, "[redacted]")
-	require.JSONEq(t, `{"boundary":"instance_domain","reason":"tenant_domain_mismatch"}`, hostErr.DetailsJSON)
+	require.JSONEq(t, `{
+		"auth_token":"[redacted]",
+		"boundary":"instance_domain",
+		"host_route":"[redacted]",
+		"microvm_endpoint":"[redacted]",
+		"provider_response":"[redacted]",
+		"reason":"tenant_domain_mismatch",
+		"nested":{"safe_hint":"retry from GraphQL","ssm_value":"[redacted]"}
+	}`, hostErr.DetailsJSON)
+	require.NotContains(t, hostErr.DetailsJSON, "microvm-token-value")
+	require.NotContains(t, hostErr.DetailsJSON, "https://host.internal")
+	require.NotContains(t, hostErr.DetailsJSON, "parameter-value")
+}
+
+func TestProject51SanitizeHostBootstrapDetailsRedactsNestedCredentialSurfaces(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, sanitizeHostBootstrapDetails(nil, "instance-secret"))
+
+	sanitized := sanitizeHostBootstrapDetails(json.RawMessage(`{
+		"authorization":"Bearer instance-secret",
+		"safe":"keep me",
+		"nested":{
+			"host_route":"https://host.internal/path",
+			"safe_hint":"operator refreshes state"
+		},
+		"items":[
+			{"provider_key":"pk-live"},
+			"raw transcript fragment",
+			"plain value"
+		]
+	}`), "instance-secret")
+	require.JSONEq(t, `{
+		"authorization":"[redacted]",
+		"safe":"keep me",
+		"nested":{
+			"host_route":"[redacted]",
+			"safe_hint":"operator refreshes state"
+		},
+		"items":[
+			{"provider_key":"[redacted]"},
+			"[redacted]",
+			"plain value"
+		]
+	}`, sanitized)
+	require.NotContains(t, sanitized, "instance-secret")
+	require.NotContains(t, sanitized, "https://host.internal")
+	require.NotContains(t, sanitized, "raw transcript")
+
+	fallback := sanitizeHostBootstrapDetails(json.RawMessage(`not-json instance-secret`), "instance-secret")
+	require.Equal(t, `not-json [redacted]`, fallback)
+}
+
+func TestProject51HostedDeclarationHashValidation(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, validHostedDeclarationHash("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	require.False(t, validHostedDeclarationHash(""))
+	require.False(t, validHostedDeclarationHash("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"))
+	require.False(t, validHostedDeclarationHash("md5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	require.False(t, validHostedDeclarationHash("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+}
+
+func TestProject51HostRawJSONValueNormalizesStringsAndObjects(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, hostRawJSONValue(nil))
+	require.Empty(t, hostRawJSONValue(json.RawMessage(`null`)))
+	require.Equal(t, "ready", hostRawJSONValue(json.RawMessage(`" ready "`)))
+	require.Equal(t, `{"safe":true}`, hostRawJSONValue(json.RawMessage(`{ "safe": true }`)))
 }
 
 func TestService_BeginHostedBootstrapUsesInstanceTrustWithoutWallet(t *testing.T) {
@@ -703,6 +790,336 @@ func TestProject49ServiceSendConversationAcceptsHostWrapperInProgress(t *testing
 	require.Empty(t, result.ProducedDeclarations)
 }
 
+func TestProject51ServiceReplaysHostV106ConversationFixtures(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_01jzhostedgenesis"
+		conversationID = "conv_01jzhostedgenesis"
+		agentID        = "0x2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	expectedDeclarations := `{
+		"selfDescription": {
+			"summary": "Demo hosted soul for a managed Lesser drone.",
+			"version": "v2"
+		},
+		"capabilities": [
+			{
+				"id": "chat",
+				"statement": "Can answer operator questions using its configured Lesser tools."
+			}
+		],
+		"boundaries": [
+			{
+				"id": "no-credential-disclosure",
+				"category": "security",
+				"statement": "Will not disclose raw credentials, seed phrases, or Instance API keys."
+			}
+		],
+		"transparency": {
+			"authority_model": "instance_trust",
+			"anchor_state": "hosted_offchain"
+		}
+	}`
+
+	var sawPostAuth string
+	var sawGetAuth string
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/soul/instance/agents/register/" + registrationID + "/mint-conversation":
+			require.Equal(t, http.MethodPost, r.Method)
+			sawPostAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusAccepted)
+			_, err := w.Write(project51HostConversationFixture(t, "hosted-genesis.conversation.in-progress.example.json"))
+			require.NoError(t, err)
+		case "/api/v1/soul/instance/agents/register/" + registrationID + "/mint-conversation/" + conversationID:
+			require.Equal(t, http.MethodGet, r.Method)
+			sawGetAuth = r.Header.Get("Authorization")
+			_, err := w.Write(project51HostConversationFixture(t, "hosted-genesis.conversation.completed-declaration-ready.example.json"))
+			require.NoError(t, err)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	sent, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: registrationID,
+		Message:        "start hosted genesis",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Bearer "+instanceKey, sawPostAuth)
+	require.Equal(t, registrationID, sent.RegistrationID)
+	require.Equal(t, agentID, sent.HostSoulAgentID)
+	require.Equal(t, conversationID, sent.ConversationID)
+	require.Equal(t, "in_progress", sent.Status)
+	require.Equal(t, 1, sent.MessageCount)
+	require.Equal(t, "req_hosted_genesis_01", sent.HostRequestID)
+	require.Empty(t, sent.ProducedDeclarations)
+
+	completed, err := service.ReadBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Bearer "+instanceKey, sawGetAuth)
+	require.Equal(t, registrationID, completed.RegistrationID)
+	require.Equal(t, agentID, completed.HostSoulAgentID)
+	require.Equal(t, conversationID, completed.ConversationID)
+	require.Equal(t, "declaration_ready", completed.Status)
+	require.Equal(t, 2, completed.MessageCount)
+	require.Equal(t, "req_hosted_genesis_02", completed.HostRequestID)
+	require.JSONEq(t, expectedDeclarations, completed.ProducedDeclarations)
+	require.NoError(t, ValidateHostedBootstrapCompletionEvidence(completed, conversationID))
+	require.NotContains(t, completed.ProducedDeclarations, "declaration_id")
+	require.NotContains(t, completed.ProducedDeclarations, "raw_transcript")
+}
+
+func TestProject51ServiceFailedFixtureProjectsHostRecoveryTruth(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_01jzhostedgenesis"
+		conversationID = "conv_01jzhostedgenesis"
+		agentID        = "0x2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/"+registrationID+"/mint-conversation/"+conversationID, r.URL.Path)
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write(project51HostConversationFixture(t, "hosted-genesis.conversation.failed.example.json"))
+		require.NoError(t, err)
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.ReadBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, registrationID, result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, conversationID, result.ConversationID)
+	require.Equal(t, "failed", result.Status)
+	require.Equal(t, "llm_unavailable", result.FailureCode)
+	require.Equal(t, "Assistant turn failed before declaration extraction.", result.FailureMessage)
+	require.True(t, result.FailureRetryable)
+	require.Equal(t, "retry_same_step", result.FailureRecoveryAction)
+	require.Empty(t, result.ProducedDeclarations)
+}
+
+func TestProject51FailedConversationRequiresLockedRecoveryAction(t *testing.T) {
+	t.Parallel()
+
+	raw := project51HostConversationFixture(t, "hosted-genesis.conversation.failed.example.json")
+	makeSnapshot := func(t *testing.T, mutate func(map[string]any)) hostMintConversationResponse {
+		t.Helper()
+		var envelope map[string]any
+		require.NoError(t, json.Unmarshal(raw, &envelope))
+		conversation := envelope["conversation"].(map[string]any)
+		if mutate != nil {
+			mutate(conversation)
+		}
+		encoded, err := json.Marshal(envelope)
+		require.NoError(t, err)
+		out, version, err := parseHostConversationReadEnvelope(encoded, "host-req-failed")
+		require.NoError(t, err)
+		require.Equal(t, hostBootstrapVersion1, version)
+		return out
+	}
+
+	require.NoError(t, validateHostConversationSnapshot(makeSnapshot(t, nil), "reg_01jzhostedgenesis", true, "host-req-failed"))
+
+	tests := []struct {
+		name       string
+		mutate     func(map[string]any)
+		wantErrMsg string
+	}{
+		{
+			name: "missing failure code",
+			mutate: func(conversation map[string]any) {
+				failure := conversation["failure"].(map[string]any)
+				delete(failure, "code")
+			},
+			wantErrMsg: "failure code",
+		},
+		{
+			name: "missing failure message",
+			mutate: func(conversation map[string]any) {
+				failure := conversation["failure"].(map[string]any)
+				delete(failure, "message")
+			},
+			wantErrMsg: "failure message",
+		},
+		{
+			name: "missing recovery action",
+			mutate: func(conversation map[string]any) {
+				failure := conversation["failure"].(map[string]any)
+				recovery := failure["recovery"].(map[string]any)
+				delete(recovery, "action")
+			},
+			wantErrMsg: "locked recovery action",
+		},
+		{
+			name: "unknown recovery action",
+			mutate: func(conversation map[string]any) {
+				failure := conversation["failure"].(map[string]any)
+				recovery := failure["recovery"].(map[string]any)
+				recovery["action"] = "resume_microvm"
+			},
+			wantErrMsg: "locked recovery action",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateHostConversationSnapshot(makeSnapshot(t, tt.mutate), "reg_01jzhostedgenesis", true, "host-req-failed")
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+			require.Equal(t, "host", hostErr.Source)
+			require.Contains(t, hostErr.Message, tt.wantErrMsg)
+		})
+	}
+}
+
+func TestProject51CompleteResultFromMessageResultCarriesRecoveryTruth(t *testing.T) {
+	t.Parallel()
+
+	completedAt := time.Date(2026, 6, 26, 14, 30, 0, 0, time.UTC)
+	require.Nil(t, completeResultFromMessageResult(nil))
+
+	got := completeResultFromMessageResult(&BootstrapConversationMessageResult{
+		RegistrationID:        "reg_p51",
+		HostSoulAgentID:       "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		ConversationID:        "conv_p51",
+		Status:                "failed",
+		LatestTurnID:          "turn_p51",
+		MessageCount:          3,
+		ProducedDeclarations:  `{"safe":true}`,
+		CompletedAt:           &completedAt,
+		HostRequestID:         "req_p51",
+		FailureCode:           "operator_action_required",
+		FailureMessage:        "operator recovery required",
+		FailureRetryable:      false,
+		FailureRecoveryAction: "operator_action",
+	})
+
+	require.NotNil(t, got)
+	require.Equal(t, "reg_p51", got.RegistrationID)
+	require.Equal(t, "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", got.HostSoulAgentID)
+	require.Equal(t, "conv_p51", got.ConversationID)
+	require.Equal(t, "failed", got.Status)
+	require.Equal(t, "turn_p51", got.LatestTurnID)
+	require.Equal(t, 3, got.MessageCount)
+	require.Equal(t, `{"safe":true}`, got.ProducedDeclarations)
+	require.Equal(t, &completedAt, got.CompletedAt)
+	require.Equal(t, "req_p51", got.HostRequestID)
+	require.Equal(t, "operator_action_required", got.FailureCode)
+	require.Equal(t, "operator recovery required", got.FailureMessage)
+	require.False(t, got.FailureRetryable)
+	require.Equal(t, "operator_action", got.FailureRecoveryAction)
+}
+
+func TestProject51DeclarationEvidenceEnvelopeFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	const conversationID = "conv_01jzhostedgenesis"
+	raw := project51HostConversationFixture(t, "hosted-genesis.conversation.completed-declaration-ready.example.json")
+
+	makeResult := func(t *testing.T, mutate func(map[string]any)) *BootstrapConversationCompleteResult {
+		t.Helper()
+		var envelope map[string]any
+		require.NoError(t, json.Unmarshal(raw, &envelope))
+		conversation := envelope["conversation"].(map[string]any)
+		produced := conversation["produced_declarations"].(map[string]any)
+		if mutate != nil {
+			mutate(produced)
+		}
+		encoded, err := json.Marshal(envelope)
+		require.NoError(t, err)
+		out, version, err := parseHostConversationResponseEnvelope(encoded, "host-req-test")
+		require.NoError(t, err)
+		require.Equal(t, hostBootstrapVersion1, version)
+		return bootstrapConversationCompleteResultFromHost("reg_01jzhostedgenesis", out, hostConversationRequestID("host-req-test", out.RequestID))
+	}
+
+	require.NoError(t, ValidateHostedBootstrapCompletionEvidence(makeResult(t, nil), conversationID))
+
+	tests := []struct {
+		name       string
+		mutate     func(map[string]any)
+		wantErrMsg string
+	}{
+		{
+			name: "stale evidence conversation",
+			mutate: func(produced map[string]any) {
+				evidence := produced["evidence"].(map[string]any)
+				evidence["conversation_id"] = "conv_stale"
+			},
+			wantErrMsg: "conversation id",
+		},
+		{
+			name: "mismatched evidence request",
+			mutate: func(produced map[string]any) {
+				evidence := produced["evidence"].(map[string]any)
+				evidence["request_id"] = "req_stale"
+			},
+			wantErrMsg: "request id",
+		},
+		{
+			name: "invalid evidence source",
+			mutate: func(produced map[string]any) {
+				evidence := produced["evidence"].(map[string]any)
+				evidence["source"] = "raw_transcript"
+			},
+			wantErrMsg: "source",
+		},
+		{
+			name: "missing declarations",
+			mutate: func(produced map[string]any) {
+				delete(produced, "declarations")
+			},
+			wantErrMsg: "missing selfDescription",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateHostedBootstrapCompletionEvidence(makeResult(t, tt.mutate), conversationID)
+			var hostErr *HostBootstrapError
+			require.ErrorAs(t, err, &hostErr)
+			require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+			require.Equal(t, "host", hostErr.Source)
+			require.Contains(t, hostErr.Message, tt.wantErrMsg)
+		})
+	}
+}
+
 func TestService_SendBootstrapConversationRejectsUnsupportedHostWrapperVersion(t *testing.T) {
 	t.Parallel()
 
@@ -1017,6 +1434,9 @@ func TestService_CompleteBootstrapConversationConflictReadFailsClosedWithoutRefr
 					"code":      "HOST_CONVERSATION_FAILED",
 					"message":   "assistant failed",
 					"retryable": true,
+					"recovery": map[string]any{
+						"action": "retry_same_step",
+					},
 				},
 				"created_at": "2026-06-17T14:00:00Z",
 			},
