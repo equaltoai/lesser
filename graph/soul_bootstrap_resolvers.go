@@ -71,6 +71,9 @@ func (r *mutationResolver) StartHostedSoulBootstrap(ctx context.Context, input m
 		existing *workflow.SoulBootstrapState,
 		now time.Time,
 	) (*workflow.SoulBootstrapState, error) {
+		if recoveryState, handled := soulBootstrapHostedGenesisMessageRetryState(agentUser, existing, correlation, now); handled {
+			return recoveryState, nil
+		}
 		if replayState, handled := soulBootstrapHostedBeginReplayState(agentUser, existing, correlation, now); handled {
 			return replayState, nil
 		}
@@ -656,6 +659,15 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 	}
 	state := workflow.NormalizeSoulBootstrap(workflowState.SoulBootstrap, agentUser.Username)
 	if !soulBootstrapShouldReadRepairHostedState(state) {
+		now := time.Now().UTC()
+		if recoveryState, handled := soulBootstrapHostedGenesisMessageRetryState(agentUser, state, state.Correlation, now); handled {
+			workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(recoveryState, agentUser.Username)
+			applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
+			workflowState.UpdatedAt = &now
+			if err := r.persistDroneWorkflowState(ctx, agentUser, workflowState); err != nil {
+				return apperrors.InternalWithCause(err, "failed to persist recovered hosted soul bootstrap state")
+			}
+		}
 		return nil
 	}
 	service, err := r.soulBootstrapService()
@@ -847,6 +859,78 @@ func soulBootstrapHostedBeginReplayState(
 	state.Correlation = mergeSoulBootstrapCorrelation(state.Correlation, correlation)
 	state.UpdatedAt = &now
 	return workflow.NormalizeSoulBootstrap(state, username), true
+}
+
+func soulBootstrapHostedGenesisMessageRetryState(
+	agentUser *storage.User,
+	existing *workflow.SoulBootstrapState,
+	correlation *workflow.SoulBootstrapCorrelationState,
+	now time.Time,
+) (*workflow.SoulBootstrapState, bool) {
+	if existing == nil {
+		return nil, false
+	}
+	username := ""
+	bodyID := ""
+	if agentUser != nil {
+		username = agentUser.Username
+		bodyID = soulBootstrapBodyID(agentUser)
+	}
+	state := workflow.NormalizeSoulBootstrap(existing, username)
+	if !soulBootstrapHostedGenesisMessageRetryRequired(state) {
+		return nil, false
+	}
+	if username == "" {
+		username = state.Username
+	}
+	if bodyID == "" {
+		bodyID = state.BodyID
+	}
+	state.Username = username
+	state.BodyID = defaultString(state.BodyID, bodyID)
+	state.BootstrapMode = workflow.SoulBootstrapModeHosted
+	state.AuthorityModel = workflow.SoulBootstrapAuthorityModelInstanceTrust
+	state.AnchorState = firstNonEmpty(state.AnchorState, workflow.SoulBootstrapAnchorStateHostedOffchain)
+	state.AssuranceState = firstNonEmpty(state.AssuranceState, state.AnchorState)
+	state.Phase = workflow.SoulBootstrapPhaseConversation
+	state.State = workflow.SoulBootstrapStateConversationRegistrationActive
+	state.NextAction = workflow.SoulBootstrapNextActionSendHostedGenesisMessage
+	state.RecoveryCategory = ""
+	state.RecoveryAction = ""
+	state.Retryable = false
+	state.RestartRequired = false
+	state.SigningCheckpoints = nil
+	state.Error = nil
+	state.Correlation = mergeSoulBootstrapCorrelation(state.Correlation, correlation)
+	state.UpdatedAt = &now
+	return workflow.NormalizeSoulBootstrap(state, username), true
+}
+
+func soulBootstrapHostedGenesisMessageRetryRequired(state *workflow.SoulBootstrapState) bool {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil || state.BootstrapMode != workflow.SoulBootstrapModeHosted {
+		return false
+	}
+	if state.Phase != workflow.SoulBootstrapPhaseError || state.RestartRequired {
+		return false
+	}
+	if strings.TrimSpace(state.HostRegistrationID) == "" || strings.TrimSpace(state.HostConversationID) != "" {
+		return false
+	}
+	if soulBootstrapRetrySameStepAction(state.NextAction) ||
+		soulBootstrapRetrySameStepAction(state.RecoveryCategory) ||
+		soulBootstrapRetrySameStepAction(state.RecoveryAction) {
+		return true
+	}
+	if state.Error == nil {
+		return false
+	}
+	return soulBootstrapRetrySameStepAction(state.Error.RecoveryCategory) ||
+		soulBootstrapRetrySameStepAction(state.Error.RecoveryAction)
+}
+
+func soulBootstrapRetrySameStepAction(action string) bool {
+	return strings.EqualFold(strings.TrimSpace(action), workflow.SoulBootstrapRecoveryActionRetrySameStep)
 }
 
 func soulBootstrapStateAfterHostedConversationMessage(
