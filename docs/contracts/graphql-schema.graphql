@@ -4810,6 +4810,32 @@ type SoulBootstrapPublishGate {
   requiresActiveConversationTerminalDeclarationEvidence: Boolean!
 }
 
+enum SoulBootstrapHostedGenesisMessageRole {
+  USER
+  ASSISTANT
+}
+
+type SoulBootstrapHostedGenesisMessage {
+  id: ID!
+  role: SoulBootstrapHostedGenesisMessageRole!
+  content: String!
+  order: Int!
+  createdAt: Time
+  truncated: Boolean!
+}
+
+type SoulBootstrapHostedGenesisConversation {
+  registrationId: ID
+  conversationId: ID!
+  status: String!
+  latestTurnId: ID
+  messageCount: Int!
+  messages: [SoulBootstrapHostedGenesisMessage!]!
+  messagesTruncated: Boolean!
+  requestId: String
+  updatedAt: Time
+}
+
 type SoulBootstrapCorrelationState {
   correlationKey: String
   beginIdempotencyKey: String
@@ -4859,6 +4885,8 @@ type SoulBootstrapState {
   retryable: Boolean!
   restartRequired: Boolean!
   restartAvailable: Boolean!
+  availableActions: [SoulBootstrapNextAction!]!
+  hostedGenesisConversation: SoulBootstrapHostedGenesisConversation
   signingCheckpoints: [SoulBootstrapSigningCheckpoint!]!
   terminalDeclarationEvidence: SoulBootstrapTerminalDeclarationEvidence
   publication: SoulBootstrapPublicationEvidence
@@ -4884,6 +4912,7 @@ type SoulBootstrapSurface {
   executable: Boolean!
   nextAction: String
   typedNextAction: SoulBootstrapNextAction!
+  availableActions: [SoulBootstrapNextAction!]!
   recoveryCategory: SoulBootstrapRecoveryCategory
   recoveryAction: SoulBootstrapRecoveryAction
   retryable: Boolean!
