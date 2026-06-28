@@ -2975,6 +2975,27 @@ type ComplexityRoot struct {
 		StatusCode       func(childComplexity int) int
 	}
 
+	SoulBootstrapHostedGenesisConversation struct {
+		ConversationID    func(childComplexity int) int
+		LatestTurnID      func(childComplexity int) int
+		MessageCount      func(childComplexity int) int
+		Messages          func(childComplexity int) int
+		MessagesTruncated func(childComplexity int) int
+		RegistrationID    func(childComplexity int) int
+		RequestID         func(childComplexity int) int
+		Status            func(childComplexity int) int
+		UpdatedAt         func(childComplexity int) int
+	}
+
+	SoulBootstrapHostedGenesisMessage struct {
+		Content   func(childComplexity int) int
+		CreatedAt func(childComplexity int) int
+		ID        func(childComplexity int) int
+		Order     func(childComplexity int) int
+		Role      func(childComplexity int) int
+		Truncated func(childComplexity int) int
+	}
+
 	SoulBootstrapIdentityTarget struct {
 		BodyID      func(childComplexity int) int
 		DisplayName func(childComplexity int) int
@@ -3033,6 +3054,7 @@ type ComplexityRoot struct {
 		AnchorState                 func(childComplexity int) int
 		AssuranceState              func(childComplexity int) int
 		AuthorityModel              func(childComplexity int) int
+		AvailableActions            func(childComplexity int) int
 		BodyID                      func(childComplexity int) int
 		BootstrapMode               func(childComplexity int) int
 		Correlation                 func(childComplexity int) int
@@ -3041,6 +3063,7 @@ type ComplexityRoot struct {
 		HostConversationStatus      func(childComplexity int) int
 		HostRegistrationID          func(childComplexity int) int
 		HostSoulAgentID             func(childComplexity int) int
+		HostedGenesisConversation   func(childComplexity int) int
 		LastHostRequestID           func(childComplexity int) int
 		Phase                       func(childComplexity int) int
 		PrincipalAddress            func(childComplexity int) int
@@ -3065,6 +3088,7 @@ type ComplexityRoot struct {
 	}
 
 	SoulBootstrapSurface struct {
+		AvailableActions    func(childComplexity int) int
 		Body                func(childComplexity int) int
 		Error               func(childComplexity int) int
 		Executable          func(childComplexity int) int
@@ -19783,6 +19807,111 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulBootstrapErrorState.StatusCode(childComplexity), true
 
+	case "SoulBootstrapHostedGenesisConversation.conversationId":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.ConversationID == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.ConversationID(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.latestTurnId":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.LatestTurnID == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.LatestTurnID(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.messageCount":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.MessageCount == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.MessageCount(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.messages":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.Messages == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.Messages(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.messagesTruncated":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.MessagesTruncated == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.MessagesTruncated(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.registrationId":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.RegistrationID == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.RegistrationID(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.requestId":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.RequestID == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.RequestID(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.status":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.Status == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.Status(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisConversation.updatedAt":
+		if e.complexity.SoulBootstrapHostedGenesisConversation.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisConversation.UpdatedAt(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.content":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.Content == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.Content(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.createdAt":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.CreatedAt(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.id":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.ID == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.ID(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.order":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.Order == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.Order(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.role":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.Role == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.Role(childComplexity), true
+
+	case "SoulBootstrapHostedGenesisMessage.truncated":
+		if e.complexity.SoulBootstrapHostedGenesisMessage.Truncated == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapHostedGenesisMessage.Truncated(childComplexity), true
+
 	case "SoulBootstrapIdentityTarget.bodyId":
 		if e.complexity.SoulBootstrapIdentityTarget.BodyID == nil {
 			break
@@ -20077,6 +20206,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.SoulBootstrapState.AuthorityModel(childComplexity), true
 
+	case "SoulBootstrapState.availableActions":
+		if e.complexity.SoulBootstrapState.AvailableActions == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapState.AvailableActions(childComplexity), true
+
 	case "SoulBootstrapState.bodyId":
 		if e.complexity.SoulBootstrapState.BodyID == nil {
 			break
@@ -20132,6 +20268,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SoulBootstrapState.HostSoulAgentID(childComplexity), true
+
+	case "SoulBootstrapState.hostedGenesisConversation":
+		if e.complexity.SoulBootstrapState.HostedGenesisConversation == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapState.HostedGenesisConversation(childComplexity), true
 
 	case "SoulBootstrapState.lastHostRequestId":
 		if e.complexity.SoulBootstrapState.LastHostRequestID == nil {
@@ -20279,6 +20422,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SoulBootstrapState.WalletAddress(childComplexity), true
+
+	case "SoulBootstrapSurface.availableActions":
+		if e.complexity.SoulBootstrapSurface.AvailableActions == nil {
+			break
+		}
+
+		return e.complexity.SoulBootstrapSurface.AvailableActions(childComplexity), true
 
 	case "SoulBootstrapSurface.body":
 		if e.complexity.SoulBootstrapSurface.Body == nil {
@@ -50099,6 +50249,10 @@ func (ec *executionContext) fieldContext_AgentWorkflowSurface_soulBootstrap(_ co
 				return ec.fieldContext_SoulBootstrapState_restartRequired(ctx, field)
 			case "restartAvailable":
 				return ec.fieldContext_SoulBootstrapState_restartAvailable(ctx, field)
+			case "availableActions":
+				return ec.fieldContext_SoulBootstrapState_availableActions(ctx, field)
+			case "hostedGenesisConversation":
+				return ec.fieldContext_SoulBootstrapState_hostedGenesisConversation(ctx, field)
 			case "signingCheckpoints":
 				return ec.fieldContext_SoulBootstrapState_signingCheckpoints(ctx, field)
 			case "terminalDeclarationEvidence":
@@ -119984,6 +120138,8 @@ func (ec *executionContext) fieldContext_Query_soulBootstrap(ctx context.Context
 				return ec.fieldContext_SoulBootstrapSurface_nextAction(ctx, field)
 			case "typedNextAction":
 				return ec.fieldContext_SoulBootstrapSurface_typedNextAction(ctx, field)
+			case "availableActions":
+				return ec.fieldContext_SoulBootstrapSurface_availableActions(ctx, field)
 			case "recoveryCategory":
 				return ec.fieldContext_SoulBootstrapSurface_recoveryCategory(ctx, field)
 			case "recoveryAction":
@@ -132281,6 +132437,665 @@ func (ec *executionContext) fieldContext_SoulBootstrapErrorState_at(_ context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_registrationId(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_registrationId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RegistrationID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_registrationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_conversationId(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_conversationId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ConversationID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_conversationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_status(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_latestTurnId(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_latestTurnId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LatestTurnID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_latestTurnId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_messageCount(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_messageCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MessageCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_messageCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_messages(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_messages(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Messages, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.SoulBootstrapHostedGenesisMessage)
+	fc.Result = res
+	return ec.marshalNSoulBootstrapHostedGenesisMessage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_messages(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_id(ctx, field)
+			case "role":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_role(ctx, field)
+			case "content":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_content(ctx, field)
+			case "order":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_order(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_createdAt(ctx, field)
+			case "truncated":
+				return ec.fieldContext_SoulBootstrapHostedGenesisMessage_truncated(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SoulBootstrapHostedGenesisMessage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_messagesTruncated(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_messagesTruncated(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MessagesTruncated, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_messagesTruncated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_requestId(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_requestId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RequestID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_requestId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisConversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisConversation_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisConversation_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisConversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_id(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_role(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_role(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Role, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.SoulBootstrapHostedGenesisMessageRole)
+	fc.Result = res
+	return ec.marshalNSoulBootstrapHostedGenesisMessageRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessageRole(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SoulBootstrapHostedGenesisMessageRole does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_content(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_content(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Content, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_order(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_order(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Order, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_order(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage_truncated(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapHostedGenesisMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapHostedGenesisMessage_truncated(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Truncated, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapHostedGenesisMessage_truncated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapHostedGenesisMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SoulBootstrapIdentityTarget_username(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapIdentityTarget) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SoulBootstrapIdentityTarget_username(ctx, field)
 	if err != nil {
@@ -132524,6 +133339,8 @@ func (ec *executionContext) fieldContext_SoulBootstrapMutationPayload_bootstrap(
 				return ec.fieldContext_SoulBootstrapSurface_nextAction(ctx, field)
 			case "typedNextAction":
 				return ec.fieldContext_SoulBootstrapSurface_typedNextAction(ctx, field)
+			case "availableActions":
+				return ec.fieldContext_SoulBootstrapSurface_availableActions(ctx, field)
 			case "recoveryCategory":
 				return ec.fieldContext_SoulBootstrapSurface_recoveryCategory(ctx, field)
 			case "recoveryAction":
@@ -134827,6 +135644,111 @@ func (ec *executionContext) fieldContext_SoulBootstrapState_restartAvailable(_ c
 	return fc, nil
 }
 
+func (ec *executionContext) _SoulBootstrapState_availableActions(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapState) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapState_availableActions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AvailableActions, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]model.SoulBootstrapNextAction)
+	fc.Result = res
+	return ec.marshalNSoulBootstrapNextAction2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextActionᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapState_availableActions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapState",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SoulBootstrapNextAction does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapState_hostedGenesisConversation(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapState) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapState_hostedGenesisConversation(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HostedGenesisConversation, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.SoulBootstrapHostedGenesisConversation)
+	fc.Result = res
+	return ec.marshalOSoulBootstrapHostedGenesisConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisConversation(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapState_hostedGenesisConversation(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapState",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "registrationId":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_registrationId(ctx, field)
+			case "conversationId":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_conversationId(ctx, field)
+			case "status":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_status(ctx, field)
+			case "latestTurnId":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_latestTurnId(ctx, field)
+			case "messageCount":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_messageCount(ctx, field)
+			case "messages":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_messages(ctx, field)
+			case "messagesTruncated":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_messagesTruncated(ctx, field)
+			case "requestId":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_requestId(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_SoulBootstrapHostedGenesisConversation_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SoulBootstrapHostedGenesisConversation", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SoulBootstrapState_signingCheckpoints(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapState) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SoulBootstrapState_signingCheckpoints(ctx, field)
 	if err != nil {
@@ -135726,6 +136648,10 @@ func (ec *executionContext) fieldContext_SoulBootstrapSurface_state(_ context.Co
 				return ec.fieldContext_SoulBootstrapState_restartRequired(ctx, field)
 			case "restartAvailable":
 				return ec.fieldContext_SoulBootstrapState_restartAvailable(ctx, field)
+			case "availableActions":
+				return ec.fieldContext_SoulBootstrapState_availableActions(ctx, field)
+			case "hostedGenesisConversation":
+				return ec.fieldContext_SoulBootstrapState_hostedGenesisConversation(ctx, field)
 			case "signingCheckpoints":
 				return ec.fieldContext_SoulBootstrapState_signingCheckpoints(ctx, field)
 			case "terminalDeclarationEvidence":
@@ -136003,6 +136929,50 @@ func (ec *executionContext) _SoulBootstrapSurface_typedNextAction(ctx context.Co
 }
 
 func (ec *executionContext) fieldContext_SoulBootstrapSurface_typedNextAction(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SoulBootstrapSurface",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SoulBootstrapNextAction does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SoulBootstrapSurface_availableActions(ctx context.Context, field graphql.CollectedField, obj *model.SoulBootstrapSurface) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SoulBootstrapSurface_availableActions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AvailableActions, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]model.SoulBootstrapNextAction)
+	fc.Result = res
+	return ec.marshalNSoulBootstrapNextAction2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextActionᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SoulBootstrapSurface_availableActions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "SoulBootstrapSurface",
 		Field:      field,
@@ -179973,6 +180943,134 @@ func (ec *executionContext) _SoulBootstrapErrorState(ctx context.Context, sel as
 	return out
 }
 
+var soulBootstrapHostedGenesisConversationImplementors = []string{"SoulBootstrapHostedGenesisConversation"}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisConversation(ctx context.Context, sel ast.SelectionSet, obj *model.SoulBootstrapHostedGenesisConversation) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soulBootstrapHostedGenesisConversationImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoulBootstrapHostedGenesisConversation")
+		case "registrationId":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_registrationId(ctx, field, obj)
+		case "conversationId":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_conversationId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "latestTurnId":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_latestTurnId(ctx, field, obj)
+		case "messageCount":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_messageCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "messages":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_messages(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "messagesTruncated":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_messagesTruncated(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requestId":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_requestId(ctx, field, obj)
+		case "updatedAt":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisConversation_updatedAt(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var soulBootstrapHostedGenesisMessageImplementors = []string{"SoulBootstrapHostedGenesisMessage"}
+
+func (ec *executionContext) _SoulBootstrapHostedGenesisMessage(ctx context.Context, sel ast.SelectionSet, obj *model.SoulBootstrapHostedGenesisMessage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soulBootstrapHostedGenesisMessageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoulBootstrapHostedGenesisMessage")
+		case "id":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "role":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_role(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "content":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "order":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_order(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_createdAt(ctx, field, obj)
+		case "truncated":
+			out.Values[i] = ec._SoulBootstrapHostedGenesisMessage_truncated(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var soulBootstrapIdentityTargetImplementors = []string{"SoulBootstrapIdentityTarget"}
 
 func (ec *executionContext) _SoulBootstrapIdentityTarget(ctx context.Context, sel ast.SelectionSet, obj *model.SoulBootstrapIdentityTarget) graphql.Marshaler {
@@ -180329,6 +181427,13 @@ func (ec *executionContext) _SoulBootstrapState(ctx context.Context, sel ast.Sel
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "availableActions":
+			out.Values[i] = ec._SoulBootstrapState_availableActions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hostedGenesisConversation":
+			out.Values[i] = ec._SoulBootstrapState_hostedGenesisConversation(ctx, field, obj)
 		case "signingCheckpoints":
 			out.Values[i] = ec._SoulBootstrapState_signingCheckpoints(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -180434,6 +181539,11 @@ func (ec *executionContext) _SoulBootstrapSurface(ctx context.Context, sel ast.S
 			out.Values[i] = ec._SoulBootstrapSurface_nextAction(ctx, field, obj)
 		case "typedNextAction":
 			out.Values[i] = ec._SoulBootstrapSurface_typedNextAction(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "availableActions":
+			out.Values[i] = ec._SoulBootstrapSurface_availableActions(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -192408,6 +193518,70 @@ func (ec *executionContext) marshalNSoulBootstrapAuthorityModel2githubᚗcomᚋe
 	return v
 }
 
+func (ec *executionContext) marshalNSoulBootstrapHostedGenesisMessage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessageᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SoulBootstrapHostedGenesisMessage) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNSoulBootstrapHostedGenesisMessage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessage(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSoulBootstrapHostedGenesisMessage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessage(ctx context.Context, sel ast.SelectionSet, v *model.SoulBootstrapHostedGenesisMessage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SoulBootstrapHostedGenesisMessage(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSoulBootstrapHostedGenesisMessageRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessageRole(ctx context.Context, v any) (model.SoulBootstrapHostedGenesisMessageRole, error) {
+	var res model.SoulBootstrapHostedGenesisMessageRole
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNSoulBootstrapHostedGenesisMessageRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisMessageRole(ctx context.Context, sel ast.SelectionSet, v model.SoulBootstrapHostedGenesisMessageRole) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNSoulBootstrapIdentityTarget2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapIdentityTarget(ctx context.Context, sel ast.SelectionSet, v *model.SoulBootstrapIdentityTarget) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -192450,6 +193624,65 @@ func (ec *executionContext) unmarshalNSoulBootstrapNextAction2githubᚗcomᚋequ
 
 func (ec *executionContext) marshalNSoulBootstrapNextAction2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextAction(ctx context.Context, sel ast.SelectionSet, v model.SoulBootstrapNextAction) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) unmarshalNSoulBootstrapNextAction2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextActionᚄ(ctx context.Context, v any) ([]model.SoulBootstrapNextAction, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]model.SoulBootstrapNextAction, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNSoulBootstrapNextAction2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextAction(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNSoulBootstrapNextAction2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextActionᚄ(ctx context.Context, sel ast.SelectionSet, v []model.SoulBootstrapNextAction) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNSoulBootstrapNextAction2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapNextAction(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalNSoulBootstrapPhase2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapPhase(ctx context.Context, v any) (model.SoulBootstrapPhase, error) {
@@ -195903,6 +197136,13 @@ func (ec *executionContext) marshalOSoulBootstrapErrorState2ᚖgithubᚗcomᚋeq
 		return graphql.Null
 	}
 	return ec._SoulBootstrapErrorState(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOSoulBootstrapHostedGenesisConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapHostedGenesisConversation(ctx context.Context, sel ast.SelectionSet, v *model.SoulBootstrapHostedGenesisConversation) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._SoulBootstrapHostedGenesisConversation(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOSoulBootstrapPublicationEvidence2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapPublicationEvidence(ctx context.Context, sel ast.SelectionSet, v *model.SoulBootstrapPublicationEvidence) graphql.Marshaler {

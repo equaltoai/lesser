@@ -172,6 +172,9 @@ const (
 	SoulBootstrapHostConversationStatusPublished = "published"
 	// SoulBootstrapHostConversationStatusBound is a post-bind Host status.
 	SoulBootstrapHostConversationStatusBound = "bound"
+
+	soulBootstrapHostedTranscriptRoleUser      = "user"
+	soulBootstrapHostedTranscriptRoleAssistant = "assistant"
 )
 
 // SoulBootstrapState stores local correlation state for zero-state soul creation.
@@ -199,12 +202,40 @@ type SoulBootstrapState struct {
 	RecoveryAction     string                            `json:"recovery_action,omitempty"`
 	Retryable          bool                              `json:"retryable,omitempty"`
 	RestartRequired    bool                              `json:"restart_required,omitempty"`
+	HostedConversation *SoulBootstrapHostedConversation  `json:"hosted_conversation,omitempty"`
 	SigningCheckpoints []SoulBootstrapSigningCheckpoint  `json:"signing_checkpoints,omitempty"`
 	Publication        *SoulBootstrapPublicationEvidence `json:"publication,omitempty"`
 	Error              *SoulBootstrapErrorState          `json:"error,omitempty"`
 	Correlation        *SoulBootstrapCorrelationState    `json:"correlation,omitempty"`
 	RestartedAt        *time.Time                        `json:"restarted_at,omitempty"`
 	UpdatedAt          *time.Time                        `json:"updated_at,omitempty"`
+}
+
+// SoulBootstrapHostedConversation stores a bounded, client-safe projection of
+// Host's hosted genesis conversation. Host remains the source of truth; this
+// snapshot exists only so Lesser can relay the same-origin GraphQL UI state
+// without browser Host credentials.
+type SoulBootstrapHostedConversation struct {
+	RegistrationID    string                                   `json:"registration_id,omitempty"`
+	ConversationID    string                                   `json:"conversation_id,omitempty"`
+	Status            string                                   `json:"status,omitempty"`
+	LatestTurnID      string                                   `json:"latest_turn_id,omitempty"`
+	MessageCount      int                                      `json:"message_count,omitempty"`
+	Messages          []SoulBootstrapHostedConversationMessage `json:"messages,omitempty"`
+	MessagesTruncated bool                                     `json:"messages_truncated,omitempty"`
+	RequestID         string                                   `json:"request_id,omitempty"`
+	UpdatedAt         *time.Time                               `json:"updated_at,omitempty"`
+}
+
+// SoulBootstrapHostedConversationMessage is a bounded hosted genesis transcript
+// message. Only user/assistant text turns are stored here.
+type SoulBootstrapHostedConversationMessage struct {
+	ID        string     `json:"id,omitempty"`
+	Role      string     `json:"role,omitempty"`
+	Content   string     `json:"content,omitempty"`
+	Order     int        `json:"order,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Truncated bool       `json:"truncated,omitempty"`
 }
 
 // SoulBootstrapSigningCheckpoint records non-secret signing material metadata
@@ -317,6 +348,9 @@ func NormalizeSoulBootstrap(state *SoulBootstrapState, username string) *SoulBoo
 	if normalized.Publication != nil {
 		normalized.Publication.trim()
 	}
+	if normalized.HostedConversation != nil {
+		normalized.HostedConversation.trim()
+	}
 	for idx := range normalized.SigningCheckpoints {
 		normalized.SigningCheckpoints[idx].trim()
 	}
@@ -388,6 +422,7 @@ func (s *SoulBootstrapState) Clone() *SoulBootstrapState {
 	cloned.Error = cloneSoulBootstrapError(s.Error)
 	cloned.Correlation = cloneSoulBootstrapCorrelation(s.Correlation)
 	cloned.Publication = cloneSoulBootstrapPublication(s.Publication)
+	cloned.HostedConversation = cloneSoulBootstrapHostedConversation(s.HostedConversation)
 	cloned.RestartedAt = cloneDroneTime(s.RestartedAt)
 	cloned.UpdatedAt = cloneDroneTime(s.UpdatedAt)
 	return &cloned
@@ -408,6 +443,20 @@ func cloneSoulBootstrapPublication(in *SoulBootstrapPublicationEvidence) *SoulBo
 	}
 	cloned := *in
 	cloned.PublishedAt = cloneDroneTime(in.PublishedAt)
+	return &cloned
+}
+
+func cloneSoulBootstrapHostedConversation(in *SoulBootstrapHostedConversation) *SoulBootstrapHostedConversation {
+	if in == nil {
+		return nil
+	}
+	cloned := *in
+	cloned.Messages = make([]SoulBootstrapHostedConversationMessage, len(in.Messages))
+	copy(cloned.Messages, in.Messages)
+	for idx := range cloned.Messages {
+		cloned.Messages[idx].CreatedAt = cloneDroneTime(cloned.Messages[idx].CreatedAt)
+	}
+	cloned.UpdatedAt = cloneDroneTime(in.UpdatedAt)
 	return &cloned
 }
 
@@ -601,4 +650,43 @@ func (p *SoulBootstrapPublicationEvidence) trim() {
 	p.VersionedRegistrationURI = strings.TrimSpace(p.VersionedRegistrationURI)
 	p.VersionedRegistrationS3Key = strings.TrimSpace(p.VersionedRegistrationS3Key)
 	p.AnchorState = strings.TrimSpace(p.AnchorState)
+}
+
+func (c *SoulBootstrapHostedConversation) trim() {
+	if c == nil {
+		return
+	}
+	c.RegistrationID = strings.TrimSpace(c.RegistrationID)
+	c.ConversationID = strings.TrimSpace(c.ConversationID)
+	c.Status = strings.TrimSpace(c.Status)
+	c.LatestTurnID = strings.TrimSpace(c.LatestTurnID)
+	c.RequestID = strings.TrimSpace(c.RequestID)
+	if len(c.Messages) == 0 {
+		c.Messages = nil
+		return
+	}
+	out := make([]SoulBootstrapHostedConversationMessage, 0, len(c.Messages))
+	for _, message := range c.Messages {
+		message.trim()
+		if message.Role == "" || message.Content == "" {
+			continue
+		}
+		out = append(out, message)
+	}
+	c.Messages = out
+}
+
+func (m *SoulBootstrapHostedConversationMessage) trim() {
+	if m == nil {
+		return
+	}
+	m.ID = strings.TrimSpace(m.ID)
+	m.Role = strings.ToLower(strings.TrimSpace(m.Role))
+	if m.Role != soulBootstrapHostedTranscriptRoleUser && m.Role != soulBootstrapHostedTranscriptRoleAssistant {
+		m.Role = ""
+	}
+	m.Content = strings.TrimSpace(m.Content)
+	if m.Order < 0 {
+		m.Order = 0
+	}
 }

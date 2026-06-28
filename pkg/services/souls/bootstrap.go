@@ -23,6 +23,8 @@ const (
 	hostBootstrapVersion1            = "1"
 
 	hostConversationStatusDeclarationReady = "declaration_ready"
+	hostConversationMessageRoleUser        = "user"
+	hostConversationMessageRoleAssistant   = "assistant"
 
 	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
 	SoulAuthorityModelWalletPrincipal = "wallet_principal"
@@ -178,14 +180,29 @@ type BootstrapConversationMessageResult struct {
 	Model                 string
 	LatestTurnID          string
 	MessageCount          int
+	Messages              []BootstrapConversationMessage
+	MessagesTruncated     bool
 	FullResponse          string
 	ProducedDeclarations  string
+	UpdatedAt             *time.Time
 	CompletedAt           *time.Time
 	HostRequestID         string
 	FailureCode           string
 	FailureMessage        string
 	FailureRetryable      bool
 	FailureRecoveryAction string
+}
+
+// BootstrapConversationMessage is Host's bounded, client-safe hosted genesis
+// transcript turn projection. It intentionally carries no Host credentials,
+// provider secrets, signing material, or infrastructure state.
+type BootstrapConversationMessage struct {
+	ID        string
+	Role      string
+	Content   string
+	Order     int
+	CreatedAt *time.Time
+	Truncated bool
 }
 
 // BootstrapConversationCompleteInput is the Lesser-local request for completing
@@ -203,7 +220,10 @@ type BootstrapConversationCompleteResult struct {
 	Status                string
 	LatestTurnID          string
 	MessageCount          int
+	Messages              []BootstrapConversationMessage
+	MessagesTruncated     bool
 	ProducedDeclarations  string
+	UpdatedAt             *time.Time
 	CompletedAt           *time.Time
 	HostRequestID         string
 	FailureCode           string
@@ -677,7 +697,10 @@ func bootstrapConversationCompleteResultFromHost(registrationID string, out host
 		Status:                NormalizeHostedBootstrapConversationStatus(out.Status),
 		LatestTurnID:          strings.TrimSpace(out.LatestTurnID),
 		MessageCount:          out.MessageCount,
+		Messages:              bootstrapConversationMessagesFromHost(out.MessagesRaw),
+		MessagesTruncated:     out.MessagesTruncated,
 		ProducedDeclarations:  hostRawJSONValue(out.ProducedDeclarationsRaw),
+		UpdatedAt:             parseHostTimePtr(out.UpdatedAt),
 		CompletedAt:           parseHostTimePtr(out.CompletedAt),
 		HostRequestID:         strings.TrimSpace(requestID),
 		FailureCode:           strings.TrimSpace(out.Failure.Code),
@@ -696,8 +719,11 @@ func bootstrapConversationMessageResultFromHost(registrationID string, out hostM
 		Model:                 strings.TrimSpace(out.Model),
 		LatestTurnID:          strings.TrimSpace(out.LatestTurnID),
 		MessageCount:          out.MessageCount,
+		Messages:              bootstrapConversationMessagesFromHost(out.MessagesRaw),
+		MessagesTruncated:     out.MessagesTruncated,
 		FullResponse:          strings.TrimSpace(out.FullResponse),
 		ProducedDeclarations:  hostRawJSONValue(out.ProducedDeclarationsRaw),
+		UpdatedAt:             parseHostTimePtr(out.UpdatedAt),
 		CompletedAt:           parseHostTimePtr(out.CompletedAt),
 		HostRequestID:         strings.TrimSpace(requestID),
 		FailureCode:           strings.TrimSpace(out.Failure.Code),
@@ -718,7 +744,10 @@ func completeResultFromMessageResult(in *BootstrapConversationMessageResult) *Bo
 		Status:                in.Status,
 		LatestTurnID:          in.LatestTurnID,
 		MessageCount:          in.MessageCount,
+		Messages:              cloneBootstrapConversationMessages(in.Messages),
+		MessagesTruncated:     in.MessagesTruncated,
 		ProducedDeclarations:  in.ProducedDeclarations,
+		UpdatedAt:             in.UpdatedAt,
 		CompletedAt:           in.CompletedAt,
 		HostRequestID:         in.HostRequestID,
 		FailureCode:           in.FailureCode,
@@ -726,6 +755,15 @@ func completeResultFromMessageResult(in *BootstrapConversationMessageResult) *Bo
 		FailureRetryable:      in.FailureRetryable,
 		FailureRecoveryAction: in.FailureRecoveryAction,
 	}
+}
+
+func cloneBootstrapConversationMessages(in []BootstrapConversationMessage) []BootstrapConversationMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]BootstrapConversationMessage, len(in))
+	copy(out, in)
+	return out
 }
 
 // PrepareBootstrapFinalize calls Host finalize preflight and fails closed on
@@ -1447,6 +1485,110 @@ func hostRawJSONValue(raw json.RawMessage) string {
 	return compactHostJSON(trimmed)
 }
 
+func bootstrapConversationMessagesFromHost(raw json.RawMessage) []BootstrapConversationMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+	if trimmed[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(trimmed, &encoded); err != nil {
+			return nil
+		}
+		trimmed = bytes.TrimSpace([]byte(encoded))
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+			return nil
+		}
+	}
+
+	var messages []struct {
+		ID        string `json:"id"`
+		Role      string `json:"role"`
+		Content   string `json:"content"`
+		Order     int    `json:"order"`
+		CreatedAt string `json:"created_at"`
+		Truncated bool   `json:"truncated"`
+	}
+	if err := json.Unmarshal(trimmed, &messages); err != nil || len(messages) == 0 {
+		return nil
+	}
+
+	out := make([]BootstrapConversationMessage, 0, len(messages))
+	for idx, message := range messages {
+		role := normalizeHostConversationMessageRole(message.Role)
+		content := strings.TrimSpace(message.Content)
+		if role == "" || content == "" {
+			continue
+		}
+		if hostConversationMessageContentUnsafe(content) {
+			return nil
+		}
+		order := message.Order
+		if order <= 0 {
+			order = idx + 1
+		}
+		id := strings.TrimSpace(message.ID)
+		if id == "" {
+			id = fmt.Sprintf("msg_%06d", order)
+		}
+		out = append(out, BootstrapConversationMessage{
+			ID:        id,
+			Role:      role,
+			Content:   content,
+			Order:     order,
+			CreatedAt: parseHostTimePtr(message.CreatedAt),
+			Truncated: message.Truncated,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeHostConversationMessageRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case hostConversationMessageRoleUser, hostConversationMessageRoleAssistant:
+		return strings.ToLower(strings.TrimSpace(role))
+	default:
+		return ""
+	}
+}
+
+func hostConversationMessageContentUnsafe(content string) bool {
+	lower := strings.ToLower(content)
+	for _, marker := range []string{
+		"aws_secret_access_key",
+		"aws_access_key_id",
+		"aws_session_token",
+		"x-amz-security-token",
+		"secretaccesskey",
+		"organizationaccountaccessrole",
+		"arn:aws:iam",
+		"arn:aws:sts",
+		"microvm endpoint token",
+		"microvm_endpoint_token",
+		"instance api key",
+		"raw instance key",
+		"bearer ",
+		"ssm parameter",
+		"parameter store",
+		"/lesser-host/",
+		"mint-signer",
+		"governance-signer",
+		"seed phrase",
+		"private key",
+		"signing material",
+		"provider secret",
+		"host bearer",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateHostedBootstrapCompletionEvidence fails closed unless Host returned
 // terminal completion evidence for the requested hosted mint conversation.
 func ValidateHostedBootstrapCompletionEvidence(result *BootstrapConversationCompleteResult, expectedConversationID string) error {
@@ -1833,12 +1975,14 @@ type hostMintConversationResponse struct {
 	AgentID                 string                  `json:"agent_id"`
 	ConversationID          string                  `json:"conversation_id"`
 	Model                   string                  `json:"model"`
-	Messages                string                  `json:"messages"`
+	MessagesRaw             json.RawMessage         `json:"messages"`
+	MessagesTruncated       bool                    `json:"messages_truncated"`
 	FullResponse            string                  `json:"full_response"`
 	LatestTurnID            string                  `json:"latest_turn_id"`
 	MessageCount            int                     `json:"message_count"`
 	ProducedDeclarationsRaw json.RawMessage         `json:"produced_declarations"`
 	Status                  string                  `json:"status"`
+	UpdatedAt               string                  `json:"updated_at"`
 	CompletedAt             string                  `json:"completed_at"`
 	RequestID               string                  `json:"request_id"`
 	Failure                 hostConversationFailure `json:"failure"`

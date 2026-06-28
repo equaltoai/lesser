@@ -885,6 +885,89 @@ func TestProject51ServiceReplaysHostV106ConversationFixtures(t *testing.T) {
 	require.NotContains(t, completed.ProducedDeclarations, "raw_transcript")
 }
 
+func TestProject51ServiceAssistantTurnReadyFixtureIncludesTranscript(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_01jzhostedgenesis"
+		conversationID = "conv_01jzhostedgenesis"
+		agentID        = "0x2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/instance/agents/register/"+registrationID+"/mint-conversation/"+conversationID, r.URL.Path)
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write(project51HostConversationFixture(t, "hosted-genesis.conversation.assistant-turn-ready.example.json"))
+		require.NoError(t, err)
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	result, err := service.ReadBootstrapConversation(context.Background(), BootstrapConversationCompleteInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, registrationID, result.RegistrationID)
+	require.Equal(t, agentID, result.HostSoulAgentID)
+	require.Equal(t, conversationID, result.ConversationID)
+	require.Equal(t, "assistant_turn_ready", result.Status)
+	require.Equal(t, "turn_01jzhostedgenesis_user", result.LatestTurnID)
+	require.Equal(t, 2, result.MessageCount)
+	require.Equal(t, "req_hosted_genesis_04", result.HostRequestID)
+	require.NotNil(t, result.UpdatedAt)
+	require.Equal(t, "2026-06-18T13:10:30Z", result.UpdatedAt.Format(time.RFC3339))
+	require.False(t, result.MessagesTruncated)
+	require.Len(t, result.Messages, 2)
+	require.Equal(t, BootstrapConversationMessage{
+		ID:      "msg_000001",
+		Role:    "user",
+		Content: "Describe the managed Lesser agent you are becoming.",
+		Order:   1,
+		CreatedAt: func() *time.Time {
+			createdAt := time.Date(2026, 6, 18, 13, 10, 1, 0, time.UTC)
+			return &createdAt
+		}(),
+	}, result.Messages[0])
+	require.Equal(t, "msg_000002", result.Messages[1].ID)
+	require.Equal(t, "assistant", result.Messages[1].Role)
+	require.Contains(t, result.Messages[1].Content, "bounded tools")
+	require.Empty(t, result.ProducedDeclarations)
+}
+
+func TestBootstrapConversationMessagesFromHostHandlesLegacyStringAndUnsafeContent(t *testing.T) {
+	t.Parallel()
+
+	legacyTranscript := `[{"role":"USER","content":" hello lesser ","order":0},{"id":"tool_ignored","role":"tool","content":"internal"},{"role":"assistant","content":"reply","order":2,"truncated":true}]`
+	encodedLegacyTranscript, err := json.Marshal(legacyTranscript)
+	require.NoError(t, err)
+
+	messages := bootstrapConversationMessagesFromHost(json.RawMessage(encodedLegacyTranscript))
+	require.Len(t, messages, 2)
+	require.Equal(t, "msg_000001", messages[0].ID)
+	require.Equal(t, hostConversationMessageRoleUser, messages[0].Role)
+	require.Equal(t, "hello lesser", messages[0].Content)
+	require.Equal(t, 1, messages[0].Order)
+	require.Nil(t, messages[0].CreatedAt)
+	require.Equal(t, "msg_000002", messages[1].ID)
+	require.Equal(t, hostConversationMessageRoleAssistant, messages[1].Role)
+	require.True(t, messages[1].Truncated)
+
+	require.Nil(t, bootstrapConversationMessagesFromHost(json.RawMessage(``)))
+	require.Nil(t, bootstrapConversationMessagesFromHost(json.RawMessage(`null`)))
+	require.Nil(t, bootstrapConversationMessagesFromHost(json.RawMessage(`"not-json"`)))
+	require.Nil(t, bootstrapConversationMessagesFromHost(json.RawMessage(`[{"role":"assistant","content":"Bearer host-token"}]`)))
+}
+
 func TestProject51ServiceFailedFixtureProjectsHostRecoveryTruth(t *testing.T) {
 	t.Parallel()
 
