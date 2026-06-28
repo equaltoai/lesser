@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ const (
 	soulBootstrapErrorSourceLesser                 = "lesser"
 	soulBootstrapCheckpointConversation            = "conversation"
 	soulBootstrapCheckpointHostedConversation      = "hosted_conversation"
+	soulBootstrapHostedTranscriptRoleUser          = "user"
+	soulBootstrapHostedTranscriptRoleAssistant     = "assistant"
 )
 
 func (r *queryResolver) SoulBootstrap(ctx context.Context, username string) (*model.SoulBootstrapSurface, error) {
@@ -950,7 +953,10 @@ func soulBootstrapStateAfterHostedConversationMessage(
 		Status:                result.Status,
 		LatestTurnID:          result.LatestTurnID,
 		MessageCount:          result.MessageCount,
+		Messages:              cloneBootstrapConversationMessages(result.Messages),
+		MessagesTruncated:     result.MessagesTruncated,
 		ProducedDeclarations:  result.ProducedDeclarations,
+		UpdatedAt:             result.UpdatedAt,
 		CompletedAt:           result.CompletedAt,
 		HostRequestID:         result.HostRequestID,
 		FailureCode:           result.FailureCode,
@@ -993,6 +999,7 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 	if result != nil && strings.TrimSpace(result.ConversationID) != "" {
 		state.HostConversationID = strings.TrimSpace(result.ConversationID)
 	}
+	state.HostedConversation = soulBootstrapHostedConversationProjection(state, result, status, now)
 
 	switch status {
 	case workflow.SoulBootstrapHostConversationStatusInProgress:
@@ -1125,6 +1132,179 @@ func resultHostRequestID(result *soulservice.BootstrapConversationCompleteResult
 		return ""
 	}
 	return strings.TrimSpace(result.HostRequestID)
+}
+
+func cloneBootstrapConversationMessages(in []soulservice.BootstrapConversationMessage) []soulservice.BootstrapConversationMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]soulservice.BootstrapConversationMessage, len(in))
+	copy(out, in)
+	return out
+}
+
+func soulBootstrapHostedConversationProjection(
+	state *workflow.SoulBootstrapState,
+	result *soulservice.BootstrapConversationCompleteResult,
+	status string,
+	now time.Time,
+) *workflow.SoulBootstrapHostedConversation {
+	registrationID := ""
+	conversationID := ""
+	if state != nil {
+		registrationID = strings.TrimSpace(state.HostRegistrationID)
+		conversationID = strings.TrimSpace(state.HostConversationID)
+	}
+	if result != nil {
+		registrationID = firstNonEmpty(result.RegistrationID, registrationID)
+		conversationID = firstNonEmpty(result.ConversationID, conversationID)
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil
+	}
+	status = soulservice.NormalizeHostedBootstrapConversationStatus(status)
+	if status == "" && state != nil {
+		status = graphSoulBootstrapHostConversationStatus(state)
+	}
+	if status == "" {
+		status = workflow.SoulBootstrapHostConversationStatusInProgress
+	}
+
+	messages, unsafe := soulBootstrapHostedConversationMessages(resultMessages(result))
+	updatedAt := (*time.Time)(nil)
+	if result != nil {
+		updatedAt = result.UpdatedAt
+	}
+	if updatedAt == nil && state != nil && state.HostedConversation != nil {
+		updatedAt = state.HostedConversation.UpdatedAt
+	}
+	if updatedAt == nil && !now.IsZero() {
+		updated := now.UTC()
+		updatedAt = &updated
+	}
+
+	return &workflow.SoulBootstrapHostedConversation{
+		RegistrationID:    strings.TrimSpace(registrationID),
+		ConversationID:    conversationID,
+		Status:            status,
+		LatestTurnID:      strings.TrimSpace(resultLatestTurnID(result)),
+		MessageCount:      resultMessageCount(result),
+		Messages:          messages,
+		MessagesTruncated: resultMessagesTruncated(result) || unsafe,
+		RequestID:         resultHostRequestID(result),
+		UpdatedAt:         updatedAt,
+	}
+}
+
+func resultMessages(result *soulservice.BootstrapConversationCompleteResult) []soulservice.BootstrapConversationMessage {
+	if result == nil {
+		return nil
+	}
+	return result.Messages
+}
+
+func resultLatestTurnID(result *soulservice.BootstrapConversationCompleteResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.LatestTurnID
+}
+
+func resultMessageCount(result *soulservice.BootstrapConversationCompleteResult) int {
+	if result == nil {
+		return 0
+	}
+	return result.MessageCount
+}
+
+func resultMessagesTruncated(result *soulservice.BootstrapConversationCompleteResult) bool {
+	if result == nil {
+		return false
+	}
+	return result.MessagesTruncated
+}
+
+func soulBootstrapHostedConversationMessages(in []soulservice.BootstrapConversationMessage) ([]workflow.SoulBootstrapHostedConversationMessage, bool) {
+	if len(in) == 0 {
+		return nil, false
+	}
+	out := make([]workflow.SoulBootstrapHostedConversationMessage, 0, len(in))
+	for idx, message := range in {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		if role != soulBootstrapHostedTranscriptRoleUser && role != soulBootstrapHostedTranscriptRoleAssistant {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		if hostedGenesisTranscriptContentUnsafe(content) {
+			return nil, true
+		}
+		order := message.Order
+		if order <= 0 {
+			order = idx + 1
+		}
+		id := strings.TrimSpace(message.ID)
+		if id == "" {
+			id = "msg_" + leftPadInt(order, 6)
+		}
+		out = append(out, workflow.SoulBootstrapHostedConversationMessage{
+			ID:        id,
+			Role:      role,
+			Content:   content,
+			Order:     order,
+			CreatedAt: message.CreatedAt,
+			Truncated: message.Truncated,
+		})
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, false
+}
+
+func hostedGenesisTranscriptContentUnsafe(content string) bool {
+	lower := strings.ToLower(content)
+	for _, marker := range []string{
+		"aws_secret_access_key",
+		"aws_access_key_id",
+		"aws_session_token",
+		"x-amz-security-token",
+		"secretaccesskey",
+		"organizationaccountaccessrole",
+		"arn:aws:iam",
+		"arn:aws:sts",
+		"microvm endpoint token",
+		"microvm_endpoint_token",
+		"instance api key",
+		"raw instance key",
+		"bearer ",
+		"ssm parameter",
+		"parameter store",
+		"/lesser-host/",
+		"mint-signer",
+		"governance-signer",
+		"seed phrase",
+		"private key",
+		"signing material",
+		"provider secret",
+		"host bearer",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func leftPadInt(value int, width int) string {
+	raw := strconv.Itoa(value)
+	for len(raw) < width {
+		raw = "0" + raw
+	}
+	return raw
 }
 
 func hostedFailureRecovery(action string, _ bool) (string, string, string) {
@@ -1939,6 +2119,7 @@ func (r *Resolver) buildSoulBootstrapSurface(
 		Executable:          hostBridgeAvailable && soulBindingState != model.SoulBindingStateBound,
 		NextAction:          optionalString(strings.ToLower(string(typedNextAction))),
 		TypedNextAction:     typedNextAction,
+		AvailableActions:    graphSoulBootstrapAvailableActions(state, soulBindingState),
 		RecoveryCategory:    graphSoulBootstrapSurfaceRecoveryCategory(state),
 		RecoveryAction:      graphSoulBootstrapSurfaceRecoveryAction(state),
 		Retryable:           state != nil && state.Retryable,
@@ -2036,6 +2217,8 @@ func graphSoulBootstrapStoredStateModel(state *workflow.SoulBootstrapState) *mod
 		Retryable:                   state.Retryable,
 		RestartRequired:             state.RestartRequired,
 		RestartAvailable:            soulBootstrapRestartAvailable(state),
+		AvailableActions:            graphSoulBootstrapAvailableActionsFromStored(state),
+		HostedGenesisConversation:   graphSoulBootstrapHostedGenesisConversation(state.HostedConversation),
 		SigningCheckpoints:          graphSoulBootstrapSigningCheckpoints(state.SigningCheckpoints),
 		TerminalDeclarationEvidence: graphSoulBootstrapTerminalDeclarationEvidence(state),
 		Publication:                 graphSoulBootstrapPublication(state.Publication),
@@ -2079,6 +2262,74 @@ func graphSoulBootstrapHostConversationStatus(state *workflow.SoulBootstrapState
 			return workflow.SoulBootstrapHostConversationStatusPublished
 		}
 		return ""
+	}
+}
+
+func graphSoulBootstrapHostedGenesisConversation(in *workflow.SoulBootstrapHostedConversation) *model.SoulBootstrapHostedGenesisConversation {
+	if in == nil || strings.TrimSpace(in.ConversationID) == "" {
+		return nil
+	}
+	messages, unsafe := graphSoulBootstrapHostedGenesisMessages(in.Messages)
+	return &model.SoulBootstrapHostedGenesisConversation{
+		RegistrationID:    optionalString(in.RegistrationID),
+		ConversationID:    strings.TrimSpace(in.ConversationID),
+		Status:            defaultString(strings.TrimSpace(in.Status), workflow.SoulBootstrapHostConversationStatusInProgress),
+		LatestTurnID:      optionalString(in.LatestTurnID),
+		MessageCount:      in.MessageCount,
+		Messages:          messages,
+		MessagesTruncated: in.MessagesTruncated || unsafe,
+		RequestID:         optionalString(in.RequestID),
+		UpdatedAt:         graphTimePtr(in.UpdatedAt),
+	}
+}
+
+func graphSoulBootstrapHostedGenesisMessages(in []workflow.SoulBootstrapHostedConversationMessage) ([]*model.SoulBootstrapHostedGenesisMessage, bool) {
+	if len(in) == 0 {
+		return []*model.SoulBootstrapHostedGenesisMessage{}, false
+	}
+	out := make([]*model.SoulBootstrapHostedGenesisMessage, 0, len(in))
+	for idx, message := range in {
+		role := graphSoulBootstrapHostedGenesisMessageRole(message.Role)
+		if role == nil {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		if hostedGenesisTranscriptContentUnsafe(content) {
+			return []*model.SoulBootstrapHostedGenesisMessage{}, true
+		}
+		order := message.Order
+		if order <= 0 {
+			order = idx + 1
+		}
+		id := strings.TrimSpace(message.ID)
+		if id == "" {
+			id = "msg_" + leftPadInt(order, 6)
+		}
+		out = append(out, &model.SoulBootstrapHostedGenesisMessage{
+			ID:        id,
+			Role:      *role,
+			Content:   content,
+			Order:     order,
+			CreatedAt: graphTimePtr(message.CreatedAt),
+			Truncated: message.Truncated,
+		})
+	}
+	return out, false
+}
+
+func graphSoulBootstrapHostedGenesisMessageRole(role string) *model.SoulBootstrapHostedGenesisMessageRole {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case soulBootstrapHostedTranscriptRoleUser:
+		value := model.SoulBootstrapHostedGenesisMessageRole("USER")
+		return &value
+	case soulBootstrapHostedTranscriptRoleAssistant:
+		value := model.SoulBootstrapHostedGenesisMessageRole("ASSISTANT")
+		return &value
+	default:
+		return nil
 	}
 }
 
@@ -2385,6 +2636,50 @@ func graphSoulBootstrapNextActionFromStored(state *workflow.SoulBootstrapState) 
 		}
 	}
 	return graphSoulBootstrapNextActionEnum(graphSoulBootstrapStoredStateModelShallow(state), model.SoulBindingStateUnbound)
+}
+
+func graphSoulBootstrapAvailableActionsFromStored(state *workflow.SoulBootstrapState) []model.SoulBootstrapNextAction {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil {
+		return []model.SoulBootstrapNextAction{model.SoulBootstrapNextActionStartHostedBootstrap}
+	}
+	if state.BootstrapMode == workflow.SoulBootstrapModeHosted &&
+		state.State == workflow.SoulBootstrapStateConversationAssistantTurnReady {
+		return []model.SoulBootstrapNextAction{
+			model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
+		}
+	}
+	return []model.SoulBootstrapNextAction{graphSoulBootstrapNextActionFromStored(state)}
+}
+
+func graphSoulBootstrapAvailableActions(state *model.SoulBootstrapState, bindingState model.SoulBindingState) []model.SoulBootstrapNextAction {
+	if bindingState == model.SoulBindingStateBound {
+		return []model.SoulBootstrapNextAction{model.SoulBootstrapNextActionComplete}
+	}
+	if state != nil && len(state.AvailableActions) > 0 {
+		return dedupeSoulBootstrapActions(state.AvailableActions)
+	}
+	return []model.SoulBootstrapNextAction{graphSoulBootstrapNextActionEnum(state, bindingState)}
+}
+
+func dedupeSoulBootstrapActions(in []model.SoulBootstrapNextAction) []model.SoulBootstrapNextAction {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.SoulBootstrapNextAction, 0, len(in))
+	seen := map[model.SoulBootstrapNextAction]struct{}{}
+	for _, action := range in {
+		if action == "" {
+			continue
+		}
+		if _, ok := seen[action]; ok {
+			continue
+		}
+		seen[action] = struct{}{}
+		out = append(out, action)
+	}
+	return out
 }
 
 func graphSoulBootstrapStoredStateModelShallow(state *workflow.SoulBootstrapState) *model.SoulBootstrapState {

@@ -2778,6 +2778,27 @@ type SoulBootstrapErrorState struct {
 	At               *Time                          `json:"at,omitempty"`
 }
 
+type SoulBootstrapHostedGenesisConversation struct {
+	RegistrationID    *string                              `json:"registrationId,omitempty"`
+	ConversationID    string                               `json:"conversationId"`
+	Status            string                               `json:"status"`
+	LatestTurnID      *string                              `json:"latestTurnId,omitempty"`
+	MessageCount      int                                  `json:"messageCount"`
+	Messages          []*SoulBootstrapHostedGenesisMessage `json:"messages"`
+	MessagesTruncated bool                                 `json:"messagesTruncated"`
+	RequestID         *string                              `json:"requestId,omitempty"`
+	UpdatedAt         *Time                                `json:"updatedAt,omitempty"`
+}
+
+type SoulBootstrapHostedGenesisMessage struct {
+	ID        string                                `json:"id"`
+	Role      SoulBootstrapHostedGenesisMessageRole `json:"role"`
+	Content   string                                `json:"content"`
+	Order     int                                   `json:"order"`
+	CreatedAt *Time                                 `json:"createdAt,omitempty"`
+	Truncated bool                                  `json:"truncated"`
+}
+
 type SoulBootstrapIdentityTarget struct {
 	Username    string             `json:"username"`
 	BodyID      string             `json:"bodyId"`
@@ -2853,6 +2874,8 @@ type SoulBootstrapState struct {
 	Retryable                   bool                                      `json:"retryable"`
 	RestartRequired             bool                                      `json:"restartRequired"`
 	RestartAvailable            bool                                      `json:"restartAvailable"`
+	AvailableActions            []SoulBootstrapNextAction                 `json:"availableActions"`
+	HostedGenesisConversation   *SoulBootstrapHostedGenesisConversation   `json:"hostedGenesisConversation,omitempty"`
 	SigningCheckpoints          []*SoulBootstrapSigningCheckpoint         `json:"signingCheckpoints"`
 	TerminalDeclarationEvidence *SoulBootstrapTerminalDeclarationEvidence `json:"terminalDeclarationEvidence,omitempty"`
 	Publication                 *SoulBootstrapPublicationEvidence         `json:"publication,omitempty"`
@@ -2878,6 +2901,7 @@ type SoulBootstrapSurface struct {
 	Executable          bool                           `json:"executable"`
 	NextAction          *string                        `json:"nextAction,omitempty"`
 	TypedNextAction     SoulBootstrapNextAction        `json:"typedNextAction"`
+	AvailableActions    []SoulBootstrapNextAction      `json:"availableActions"`
 	RecoveryCategory    *SoulBootstrapRecoveryCategory `json:"recoveryCategory,omitempty"`
 	RecoveryAction      *SoulBootstrapRecoveryAction   `json:"recoveryAction,omitempty"`
 	Retryable           bool                           `json:"retryable"`
@@ -6318,6 +6342,61 @@ func (e *SoulBootstrapAuthorityModel) UnmarshalJSON(b []byte) error {
 }
 
 func (e SoulBootstrapAuthorityModel) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBootstrapHostedGenesisMessageRole string
+
+const (
+	SoulBootstrapHostedGenesisMessageRoleUser      SoulBootstrapHostedGenesisMessageRole = "USER"
+	SoulBootstrapHostedGenesisMessageRoleAssistant SoulBootstrapHostedGenesisMessageRole = "ASSISTANT"
+)
+
+var AllSoulBootstrapHostedGenesisMessageRole = []SoulBootstrapHostedGenesisMessageRole{
+	SoulBootstrapHostedGenesisMessageRoleUser,
+	SoulBootstrapHostedGenesisMessageRoleAssistant,
+}
+
+func (e SoulBootstrapHostedGenesisMessageRole) IsValid() bool {
+	switch e {
+	case SoulBootstrapHostedGenesisMessageRoleUser, SoulBootstrapHostedGenesisMessageRoleAssistant:
+		return true
+	}
+	return false
+}
+
+func (e SoulBootstrapHostedGenesisMessageRole) String() string {
+	return string(e)
+}
+
+func (e *SoulBootstrapHostedGenesisMessageRole) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBootstrapHostedGenesisMessageRole(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBootstrapHostedGenesisMessageRole", str)
+	}
+	return nil
+}
+
+func (e SoulBootstrapHostedGenesisMessageRole) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBootstrapHostedGenesisMessageRole) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBootstrapHostedGenesisMessageRole) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

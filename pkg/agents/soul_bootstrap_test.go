@@ -200,6 +200,72 @@ func TestSoulBootstrapM23PublicationStateCloneAndTrim(t *testing.T) {
 	require.Nil(t, cloneSoulBootstrapPublication(nil))
 }
 
+func TestSoulBootstrapHostedConversationStateCloneAndTrim(t *testing.T) {
+	createdAt := time.Date(2026, 6, 28, 13, 10, 1, 0, time.UTC)
+	updatedAt := createdAt.Add(30 * time.Second)
+
+	state := NormalizeSoulBootstrap(&SoulBootstrapState{
+		Username: "drone-hosted-transcript",
+		HostedConversation: &SoulBootstrapHostedConversation{
+			RegistrationID:    " reg_hosted ",
+			ConversationID:    " conv_hosted ",
+			Status:            " assistant_turn_ready ",
+			LatestTurnID:      " turn_hosted ",
+			MessageCount:      3,
+			MessagesTruncated: true,
+			RequestID:         " req-hosted ",
+			UpdatedAt:         &updatedAt,
+			Messages: []SoulBootstrapHostedConversationMessage{
+				{
+					ID:        " msg_000001 ",
+					Role:      " USER ",
+					Content:   " hello hosted ",
+					Order:     1,
+					CreatedAt: &createdAt,
+				},
+				{
+					ID:      "msg_000002",
+					Role:    "system",
+					Content: "internal",
+					Order:   2,
+				},
+				{
+					ID:      "msg_000003",
+					Role:    soulBootstrapHostedTranscriptRoleAssistant,
+					Content: " ",
+					Order:   -1,
+				},
+			},
+		},
+	}, "")
+
+	require.NotNil(t, state.HostedConversation)
+	require.Equal(t, "reg_hosted", state.HostedConversation.RegistrationID)
+	require.Equal(t, "conv_hosted", state.HostedConversation.ConversationID)
+	require.Equal(t, SoulBootstrapHostConversationStatusAssistantTurnReady, state.HostedConversation.Status)
+	require.Equal(t, "turn_hosted", state.HostedConversation.LatestTurnID)
+	require.Equal(t, "req-hosted", state.HostedConversation.RequestID)
+	require.True(t, state.HostedConversation.MessagesTruncated)
+	require.Len(t, state.HostedConversation.Messages, 1)
+	require.Equal(t, "msg_000001", state.HostedConversation.Messages[0].ID)
+	require.Equal(t, soulBootstrapHostedTranscriptRoleUser, state.HostedConversation.Messages[0].Role)
+	require.Equal(t, "hello hosted", state.HostedConversation.Messages[0].Content)
+	require.Equal(t, createdAt, *state.HostedConversation.Messages[0].CreatedAt)
+
+	cloned := state.Clone()
+	require.NotSame(t, state.HostedConversation, cloned.HostedConversation)
+	require.NotSame(t, state.HostedConversation.UpdatedAt, cloned.HostedConversation.UpdatedAt)
+	require.NotSame(t, state.HostedConversation.Messages[0].CreatedAt, cloned.HostedConversation.Messages[0].CreatedAt)
+	cloned.HostedConversation.Messages[0].Content = "changed"
+	require.Equal(t, "hello hosted", state.HostedConversation.Messages[0].Content)
+	require.Nil(t, cloneSoulBootstrapHostedConversation(nil))
+
+	var nilConversation *SoulBootstrapHostedConversation
+	nilConversation.trim()
+	var nilMessage *SoulBootstrapHostedConversationMessage
+	nilMessage.trim()
+}
+
 func TestSoulBootstrapM23PhaseAndErrorMappings(t *testing.T) {
 	require.Equal(t, SoulBootstrapPhaseConversation, normalizeBootstrapPhase("", SoulBootstrapStateConversationCompleted))
 	require.Equal(t, SoulBootstrapPhaseNotStarted, normalizeBootstrapPhase("", ""))

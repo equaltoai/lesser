@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -185,4 +186,308 @@ func TestProject51HostedBeginReplayRemainsIdempotentForActiveRegistration(t *tes
 	require.Equal(t, agentID, derefString(second.Bootstrap.State.HostSoulAgentID))
 	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, second.Bootstrap.TypedNextAction)
 	require.Equal(t, workflow.SoulBootstrapStateConversationRegistrationActive, second.Bootstrap.State.State)
+}
+
+func TestProject51SoulBootstrapQueryRelaysAssistantReadyTranscriptAndActions(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	updatedAt := now.Add(30 * time.Second)
+	createdAt := now.Add(1 * time.Second)
+
+	const (
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		registrationID = "reg_p51_transcript"
+		conversationID = "conv_p51_transcript"
+	)
+
+	readCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			readCalls++
+			require.Equal(t, registrationID, input.RegistrationID)
+			require.Equal(t, conversationID, input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:    registrationID,
+				HostSoulAgentID:   agentID,
+				ConversationID:    conversationID,
+				Status:            workflow.SoulBootstrapHostConversationStatusAssistantTurnReady,
+				LatestTurnID:      "turn_p51_assistant_001",
+				MessageCount:      2,
+				MessagesTruncated: false,
+				Messages: []soulservice.BootstrapConversationMessage{
+					{
+						ID:        "msg_000001",
+						Role:      "user",
+						Content:   "Describe the managed Lesser agent you are becoming.",
+						Order:     1,
+						CreatedAt: &createdAt,
+					},
+					{
+						ID:      "msg_000002",
+						Role:    "assistant",
+						Content: "I will be a managed Lesser agent with bounded same-origin GraphQL relay.",
+						Order:   2,
+					},
+				},
+				UpdatedAt:     &updatedAt,
+				HostRequestID: "host-req-p51-assistant-ready",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-p51-transcript",
+			BodyID:             "drone-p51-transcript",
+			HostRegistrationID: registrationID,
+			HostConversationID: conversationID,
+			HostSoulAgentID:    agentID,
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+			AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              workflow.SoulBootstrapStateConversationInProgress,
+			NextAction:         workflow.SoulBootstrapNextActionRefreshState,
+			RecoveryCategory:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
+			RecoveryAction:     workflow.SoulBootstrapRecoveryActionRefreshState,
+			UpdatedAt:          &now,
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-transcript",
+		DisplayName: "Drone P51 Transcript",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-transcript",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	surface, err := (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), "drone-p51-transcript")
+	require.NoError(t, err)
+	require.Equal(t, 1, readCalls)
+	require.NotNil(t, surface.State.HostedGenesisConversation)
+	conversation := surface.State.HostedGenesisConversation
+	require.Equal(t, conversationID, conversation.ConversationID)
+	require.Equal(t, registrationID, derefString(conversation.RegistrationID))
+	require.Equal(t, workflow.SoulBootstrapHostConversationStatusAssistantTurnReady, conversation.Status)
+	require.Equal(t, "turn_p51_assistant_001", derefString(conversation.LatestTurnID))
+	require.Equal(t, 2, conversation.MessageCount)
+	require.Equal(t, "host-req-p51-assistant-ready", derefString(conversation.RequestID))
+	require.NotNil(t, conversation.UpdatedAt)
+	require.Equal(t, updatedAt.UTC(), time.Time(*conversation.UpdatedAt))
+	require.False(t, conversation.MessagesTruncated)
+	require.Len(t, conversation.Messages, 2)
+	require.Equal(t, "msg_000001", conversation.Messages[0].ID)
+	require.Equal(t, model.SoulBootstrapHostedGenesisMessageRoleUser, conversation.Messages[0].Role)
+	require.Equal(t, "Describe the managed Lesser agent you are becoming.", conversation.Messages[0].Content)
+	require.NotNil(t, conversation.Messages[0].CreatedAt)
+	require.Equal(t, model.SoulBootstrapHostedGenesisMessageRoleAssistant, conversation.Messages[1].Role)
+	require.Contains(t, conversation.Messages[1].Content, "same-origin GraphQL relay")
+	require.Equal(t, model.SoulBootstrapNextActionCompleteHostedSoulGenesis, surface.TypedNextAction)
+	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+		model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
+	}, surface.AvailableActions)
+	require.ElementsMatch(t, surface.AvailableActions, surface.State.AvailableActions)
+	require.False(t, surface.State.PublishGate.CanPublishHostedSoul)
+	require.Equal(t, "blocked:terminal_declaration_evidence_absent", surface.State.PublishGate.Reason)
+}
+
+func TestProject51SendHostedSoulGenesisMessageContinuesAssistantReadyConversation(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
+	updatedAt := now.Add(time.Minute)
+
+	const (
+		agentID        = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		registrationID = "reg_p51_continue"
+		conversationID = "conv_p51_continue"
+	)
+
+	sendCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		sendBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+			sendCalls++
+			require.Equal(t, registrationID, input.RegistrationID)
+			require.Equal(t, conversationID, input.ConversationID)
+			require.Equal(t, "Add one more boundary.", input.Message)
+			return &soulservice.BootstrapConversationMessageResult{
+				RegistrationID:    registrationID,
+				HostSoulAgentID:   agentID,
+				ConversationID:    conversationID,
+				Status:            workflow.SoulBootstrapHostConversationStatusAssistantTurnReady,
+				LatestTurnID:      "turn_p51_assistant_002",
+				MessageCount:      4,
+				MessagesTruncated: false,
+				Messages: []soulservice.BootstrapConversationMessage{
+					{ID: "msg_000001", Role: "user", Content: "Describe yourself.", Order: 1},
+					{ID: "msg_000002", Role: "assistant", Content: "I am a hosted Lesser soul.", Order: 2},
+					{ID: "msg_000003", Role: "user", Content: "Add one more boundary.", Order: 3},
+					{ID: "msg_000004", Role: "assistant", Content: "I will keep operator credentials private.", Order: 4},
+				},
+				UpdatedAt:     &updatedAt,
+				HostRequestID: "host-req-p51-continue",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-p51-continue",
+			BodyID:             "drone-p51-continue",
+			HostRegistrationID: registrationID,
+			HostConversationID: conversationID,
+			HostSoulAgentID:    agentID,
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+			AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              workflow.SoulBootstrapStateConversationAssistantTurnReady,
+			NextAction:         workflow.SoulBootstrapNextActionCompleteHostedGenesis,
+			UpdatedAt:          &now,
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-continue",
+		DisplayName: "Drone P51 Continue",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-continue",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	payload, err := (&mutationResolver{resolver}).SendHostedSoulGenesisMessage(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.SendHostedSoulGenesisMessageInput{
+			Username: "drone-p51-continue",
+			Message:  "Add one more boundary.",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, sendCalls)
+	require.Nil(t, payload.Error)
+	require.NotNil(t, payload.Bootstrap.State.HostedGenesisConversation)
+	require.Equal(t, conversationID, payload.Bootstrap.State.HostedGenesisConversation.ConversationID)
+	require.Equal(t, 4, payload.Bootstrap.State.HostedGenesisConversation.MessageCount)
+	require.Equal(t, "turn_p51_assistant_002", derefString(payload.Bootstrap.State.HostedGenesisConversation.LatestTurnID))
+	require.Len(t, payload.Bootstrap.State.HostedGenesisConversation.Messages, 4)
+	require.Equal(t, model.SoulBootstrapNextActionCompleteHostedSoulGenesis, payload.Bootstrap.TypedNextAction)
+	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+		model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
+	}, payload.Bootstrap.AvailableActions)
+	require.False(t, payload.Bootstrap.State.PublishGate.CanPublishHostedSoul)
+}
+
+func TestProject51HostedTranscriptProjectionOmitsUnsafeHostCredentialMaterial(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 28, 14, 0, 0, 0, time.UTC)
+
+	const (
+		agentID        = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		registrationID = "reg_p51_secret"
+		conversationID = "conv_p51_secret"
+	)
+
+	resolver.soulsClient = &stubSoulService{
+		readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			require.Equal(t, registrationID, input.RegistrationID)
+			require.Equal(t, conversationID, input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:    registrationID,
+				HostSoulAgentID:   agentID,
+				ConversationID:    conversationID,
+				Status:            workflow.SoulBootstrapHostConversationStatusAssistantTurnReady,
+				LatestTurnID:      "turn_p51_secret",
+				MessageCount:      2,
+				MessagesTruncated: false,
+				Messages: []soulservice.BootstrapConversationMessage{
+					{ID: "msg_000001", Role: "user", Content: "safe prompt", Order: 1},
+					{ID: "msg_000002", Role: "assistant", Content: "AWS_SECRET_ACCESS_KEY=do-not-project", Order: 2},
+				},
+				HostRequestID: "host-req-p51-secret",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-p51-secret",
+			BodyID:             "drone-p51-secret",
+			HostRegistrationID: registrationID,
+			HostConversationID: conversationID,
+			HostSoulAgentID:    agentID,
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+			AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              workflow.SoulBootstrapStateConversationInProgress,
+			NextAction:         workflow.SoulBootstrapNextActionRefreshState,
+			UpdatedAt:          &now,
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-secret",
+		DisplayName: "Drone P51 Secret",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-secret",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	surface, err := (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), "drone-p51-secret")
+	require.NoError(t, err)
+	require.NotNil(t, surface.State.HostedGenesisConversation)
+	require.Empty(t, surface.State.HostedGenesisConversation.Messages)
+	require.True(t, surface.State.HostedGenesisConversation.MessagesTruncated)
+	encoded, err := json.Marshal(surface.State.HostedGenesisConversation)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "AWS_SECRET_ACCESS_KEY")
+	require.NotContains(t, string(encoded), "do-not-project")
+	require.NotContains(t, string(encoded), "Bearer ")
 }
