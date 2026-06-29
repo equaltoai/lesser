@@ -857,7 +857,7 @@ func TestRound44CompleteHostedSoulGenesisRequiresTerminalDeclarationEvidence(t *
 	require.NoError(t, err)
 	require.Nil(t, payload.Error)
 	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, payload.Bootstrap.State.State)
-	require.Equal(t, model.SoulBootstrapNextActionRefreshState, payload.Bootstrap.TypedNextAction)
+	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, payload.Bootstrap.TypedNextAction)
 	require.NotEqual(t, model.SoulBootstrapNextActionPublishHostedSoul, payload.Bootstrap.TypedNextAction)
 	require.Empty(t, payload.Bootstrap.State.SigningCheckpoints)
 	require.Nil(t, payload.Bootstrap.Workflow.Declaration)
