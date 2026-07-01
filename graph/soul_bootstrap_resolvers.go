@@ -1005,9 +1005,9 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 	case workflow.SoulBootstrapHostConversationStatusInProgress:
 		state.Phase = workflow.SoulBootstrapPhaseConversation
 		state.State = workflow.SoulBootstrapStateConversationInProgress
-		state.NextAction = workflow.SoulBootstrapNextActionRefreshState
-		state.RecoveryCategory = workflow.SoulBootstrapRecoveryCategoryRefreshState
-		state.RecoveryAction = workflow.SoulBootstrapRecoveryActionRefreshState
+		state.NextAction = workflow.SoulBootstrapNextActionSendHostedGenesisMessage
+		state.RecoveryCategory = ""
+		state.RecoveryAction = ""
 		state.Retryable = false
 		state.RestartRequired = false
 		state.SigningCheckpoints = nil
@@ -1025,9 +1025,9 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 	case workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending:
 		state.Phase = workflow.SoulBootstrapPhaseConversation
 		state.State = workflow.SoulBootstrapStateConversationDeclarationExtractionPending
-		state.NextAction = workflow.SoulBootstrapNextActionRefreshState
-		state.RecoveryCategory = workflow.SoulBootstrapRecoveryCategoryRefreshState
-		state.RecoveryAction = workflow.SoulBootstrapRecoveryActionRefreshState
+		state.NextAction = workflow.SoulBootstrapNextActionSendHostedGenesisMessage
+		state.RecoveryCategory = ""
+		state.RecoveryAction = ""
 		state.Retryable = false
 		state.RestartRequired = false
 		state.SigningCheckpoints = nil
@@ -2627,6 +2627,9 @@ func graphSoulBootstrapRecoveryActionPtr(action string) *model.SoulBootstrapReco
 }
 
 func graphSoulBootstrapNextActionFromStored(state *workflow.SoulBootstrapState) model.SoulBootstrapNextAction {
+	if action, ok := graphSoulBootstrapHostedConversationNextAction(state); ok {
+		return action
+	}
 	if state != nil {
 		if action := graphSoulBootstrapNextActionEnumString(state.NextAction); action != "" {
 			if action == "PUBLISH_HOSTED_SOUL" && !soulBootstrapHasTerminalConversationDeclarationEvidence(state.SigningCheckpoints, state.HostConversationID) {
@@ -2643,14 +2646,47 @@ func graphSoulBootstrapAvailableActionsFromStored(state *workflow.SoulBootstrapS
 	if state == nil {
 		return []model.SoulBootstrapNextAction{model.SoulBootstrapNextActionStartHostedBootstrap}
 	}
-	if state.BootstrapMode == workflow.SoulBootstrapModeHosted &&
-		state.State == workflow.SoulBootstrapStateConversationAssistantTurnReady {
+	if actions := graphSoulBootstrapHostedConversationAvailableActions(state); len(actions) > 0 {
+		return actions
+	}
+	return []model.SoulBootstrapNextAction{graphSoulBootstrapNextActionFromStored(state)}
+}
+
+func graphSoulBootstrapHostedConversationNextAction(state *workflow.SoulBootstrapState) (model.SoulBootstrapNextAction, bool) {
+	actions := graphSoulBootstrapHostedConversationAvailableActions(state)
+	if len(actions) == 0 {
+		return "", false
+	}
+	switch strings.TrimSpace(state.State) {
+	case workflow.SoulBootstrapStateConversationAssistantTurnReady:
+		return model.SoulBootstrapNextActionCompleteHostedSoulGenesis, true
+	default:
+		return actions[0], true
+	}
+}
+
+func graphSoulBootstrapHostedConversationAvailableActions(state *workflow.SoulBootstrapState) []model.SoulBootstrapNextAction {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil ||
+		state.BootstrapMode != workflow.SoulBootstrapModeHosted ||
+		state.Error != nil {
+		return nil
+	}
+	switch strings.TrimSpace(state.State) {
+	case workflow.SoulBootstrapStateConversationRegistrationActive,
+		workflow.SoulBootstrapStateConversationInProgress,
+		workflow.SoulBootstrapStateConversationDeclarationExtractionPending:
+		return []model.SoulBootstrapNextAction{
+			model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+		}
+	case workflow.SoulBootstrapStateConversationAssistantTurnReady:
 		return []model.SoulBootstrapNextAction{
 			model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 			model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
 		}
+	default:
+		return nil
 	}
-	return []model.SoulBootstrapNextAction{graphSoulBootstrapNextActionFromStored(state)}
 }
 
 func graphSoulBootstrapAvailableActions(state *model.SoulBootstrapState, bindingState model.SoulBindingState) []model.SoulBootstrapNextAction {

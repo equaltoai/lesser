@@ -106,9 +106,12 @@ func TestProject49HostedInProgressPersistsConversationAndBlocksPublish(t *testin
 	require.Equal(t, model.SoulBootstrapPhaseConversation, sent.Bootstrap.State.Phase)
 	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, sent.Bootstrap.State.State)
 	require.Equal(t, workflow.SoulBootstrapHostConversationStatusInProgress, derefString(sent.Bootstrap.State.HostConversationStatus))
-	require.Equal(t, model.SoulBootstrapNextActionRefreshState, sent.Bootstrap.TypedNextAction)
-	require.Equal(t, model.SoulBootstrapRecoveryCategoryRefreshState, *sent.Bootstrap.State.RecoveryCategory)
-	require.Equal(t, model.SoulBootstrapRecoveryActionRefreshState, *sent.Bootstrap.State.RecoveryAction)
+	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, sent.Bootstrap.TypedNextAction)
+	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+	}, sent.Bootstrap.AvailableActions)
+	require.Nil(t, sent.Bootstrap.State.RecoveryCategory)
+	require.Nil(t, sent.Bootstrap.State.RecoveryAction)
 	require.Equal(t, conversationID, derefString(sent.Bootstrap.State.HostConversationID))
 	require.Equal(t, "host-req-p49-turn-001", derefString(sent.Bootstrap.State.LastHostRequestID))
 	require.Empty(t, sent.Bootstrap.State.SigningCheckpoints)
@@ -309,7 +312,7 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 			},
 			wantPhase:  model.SoulBootstrapPhaseConversation,
 			wantState:  workflow.SoulBootstrapStateConversationInProgress,
-			wantAction: model.SoulBootstrapNextActionRefreshState,
+			wantAction: model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 			wantHost:   workflow.SoulBootstrapHostConversationStatusInProgress,
 			wantGate:   "blocked:conversation_in_progress",
 		},
@@ -353,7 +356,7 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 			},
 			wantPhase:  model.SoulBootstrapPhaseConversation,
 			wantState:  workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
-			wantAction: model.SoulBootstrapNextActionRefreshState,
+			wantAction: model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 			wantHost:   workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending,
 			wantGate:   "blocked:declaration_extraction_pending",
 		},

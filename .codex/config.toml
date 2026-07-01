@@ -1,4 +1,0 @@
-model_instructions_file = "steward.md"
-
-[mcp_servers.theorymcp]
-url = "https://theorymcp.ai/equaltoai/agents/lesser/mcp"

@@ -409,6 +409,218 @@ func TestProject51SendHostedSoulGenesisMessageContinuesAssistantReadyConversatio
 	require.False(t, payload.Bootstrap.State.PublishGate.CanPublishHostedSoul)
 }
 
+func TestProject51HostedInProgressReadAdvertisesSendAndRelaysTranscript(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	updatedAt := now.Add(2 * time.Minute)
+
+	const (
+		agentID        = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		registrationID = "reg_p51_in_progress"
+		conversationID = "conv_p51_in_progress"
+	)
+
+	readCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			readCalls++
+			require.Equal(t, registrationID, input.RegistrationID)
+			require.Equal(t, conversationID, input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:    registrationID,
+				HostSoulAgentID:   agentID,
+				ConversationID:    conversationID,
+				Status:            workflow.SoulBootstrapHostConversationStatusInProgress,
+				LatestTurnID:      "turn_p51_in_progress_002",
+				MessageCount:      3,
+				MessagesTruncated: false,
+				Messages: []soulservice.BootstrapConversationMessage{
+					{ID: "msg_000001", Role: "user", Content: "Describe the soul.", Order: 1},
+					{ID: "msg_000002", Role: "assistant", Content: "I need one more boundary.", Order: 2},
+					{ID: "msg_000003", Role: "user", Content: "Add the boundary.", Order: 3},
+				},
+				UpdatedAt:     &updatedAt,
+				HostRequestID: "host-req-p51-in-progress",
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-p51-in-progress",
+			BodyID:             "drone-p51-in-progress",
+			HostRegistrationID: registrationID,
+			HostConversationID: conversationID,
+			HostSoulAgentID:    agentID,
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+			AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+			Phase:              workflow.SoulBootstrapPhaseConversation,
+			State:              workflow.SoulBootstrapStateConversationInProgress,
+			NextAction:         workflow.SoulBootstrapNextActionRefreshState,
+			RecoveryCategory:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
+			RecoveryAction:     workflow.SoulBootstrapRecoveryActionRefreshState,
+			UpdatedAt:          &now,
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-in-progress",
+		DisplayName: "Drone P51 In Progress",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-in-progress",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	surface, err := (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), "drone-p51-in-progress")
+	require.NoError(t, err)
+	require.Equal(t, 1, readCalls)
+	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, surface.State.State)
+	require.Equal(t, workflow.SoulBootstrapHostConversationStatusInProgress, derefString(surface.State.HostConversationStatus))
+	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, surface.TypedNextAction)
+	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+	}, surface.AvailableActions)
+	require.ElementsMatch(t, surface.AvailableActions, surface.State.AvailableActions)
+	require.Nil(t, surface.State.RecoveryCategory)
+	require.Nil(t, surface.State.RecoveryAction)
+
+	require.NotNil(t, surface.State.HostedGenesisConversation)
+	conversation := surface.State.HostedGenesisConversation
+	require.Equal(t, conversationID, conversation.ConversationID)
+	require.Equal(t, workflow.SoulBootstrapHostConversationStatusInProgress, conversation.Status)
+	require.Equal(t, 3, conversation.MessageCount)
+	require.Equal(t, "turn_p51_in_progress_002", derefString(conversation.LatestTurnID))
+	require.False(t, conversation.MessagesTruncated)
+	require.Len(t, conversation.Messages, 3)
+	require.Equal(t, model.SoulBootstrapHostedGenesisMessageRoleUser, conversation.Messages[0].Role)
+	require.Equal(t, "Describe the soul.", conversation.Messages[0].Content)
+	require.Equal(t, model.SoulBootstrapHostedGenesisMessageRoleAssistant, conversation.Messages[1].Role)
+	require.Equal(t, "I need one more boundary.", conversation.Messages[1].Content)
+	require.Equal(t, model.SoulBootstrapHostedGenesisMessageRoleUser, conversation.Messages[2].Role)
+	require.Equal(t, "Add the boundary.", conversation.Messages[2].Content)
+}
+
+func TestProject51HostedConversationAvailableActionsByStatus(t *testing.T) {
+	now := time.Date(2026, 6, 29, 13, 0, 0, 0, time.UTC)
+	agent := &storage.User{Username: "drone-p51-actions"}
+	validDeclaration := `{"selfDescription":{"summary":"ready"},"capabilities":[],"boundaries":[],"transparency":{}}`
+
+	tests := []struct {
+		name             string
+		hostStatus       string
+		produced         string
+		failureRecovery  string
+		wantState        string
+		wantNext         model.SoulBootstrapNextAction
+		wantAvailable    []model.SoulBootstrapNextAction
+		wantRecoveryKind model.SoulBootstrapRecoveryCategory
+	}{
+		{
+			name:       "created",
+			hostStatus: workflow.SoulBootstrapHostConversationStatusCreated,
+			wantState:  workflow.SoulBootstrapStateConversationInProgress,
+			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			},
+		},
+		{
+			name:       "in_progress",
+			hostStatus: workflow.SoulBootstrapHostConversationStatusInProgress,
+			wantState:  workflow.SoulBootstrapStateConversationInProgress,
+			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			},
+		},
+		{
+			name:       "assistant_turn_ready",
+			hostStatus: workflow.SoulBootstrapHostConversationStatusAssistantTurnReady,
+			wantState:  workflow.SoulBootstrapStateConversationAssistantTurnReady,
+			wantNext:   model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+				model.SoulBootstrapNextActionCompleteHostedSoulGenesis,
+			},
+		},
+		{
+			name:       "declaration_extraction_pending",
+			hostStatus: workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending,
+			wantState:  workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
+			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			},
+		},
+		{
+			name:       "declaration_ready",
+			hostStatus: workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+			produced:   validDeclaration,
+			wantState:  workflow.SoulBootstrapStateConversationDeclarationReady,
+			wantNext:   model.SoulBootstrapNextActionPublishHostedSoul,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionPublishHostedSoul,
+			},
+		},
+		{
+			name:            "failed",
+			hostStatus:      workflow.SoulBootstrapHostConversationStatusFailed,
+			failureRecovery: workflow.SoulBootstrapRecoveryActionRetrySameStep,
+			wantState:       workflow.SoulBootstrapStateHostFailed,
+			wantNext:        model.SoulBootstrapNextActionRetrySameStep,
+			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionRetrySameStep,
+			},
+			wantRecoveryKind: model.SoulBootstrapRecoveryCategoryRetrySameStep,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			result := &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:        "reg_p51_actions",
+				HostSoulAgentID:       "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				ConversationID:        "conv_p51_actions",
+				Status:                tt.hostStatus,
+				ProducedDeclarations:  tt.produced,
+				FailureRetryable:      true,
+				FailureRecoveryAction: tt.failureRecovery,
+				HostRequestID:         "host-req-p51-actions",
+			}
+
+			stored := soulBootstrapStateAfterHostedConversationSnapshot(agent, nil, nil, result, now)
+			projected := graphSoulBootstrapStoredStateModel(stored)
+
+			require.Equal(t, tt.wantState, projected.State)
+			require.Equal(t, tt.wantNext, projected.TypedNextAction)
+			require.ElementsMatch(t, tt.wantAvailable, projected.AvailableActions)
+			if tt.wantRecoveryKind == "" {
+				require.Nil(t, projected.RecoveryCategory)
+				require.Nil(t, projected.RecoveryAction)
+			} else {
+				require.Equal(t, tt.wantRecoveryKind, *projected.RecoveryCategory)
+			}
+		})
+	}
+}
+
 func TestProject51HostedTranscriptProjectionOmitsUnsafeHostCredentialMaterial(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	now := time.Date(2026, 6, 28, 14, 0, 0, 0, time.UTC)

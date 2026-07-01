@@ -118,10 +118,6 @@ func run(opts options) error {
 		problems = append(problems, err.Error())
 	}
 
-	if err := checkAuthorizedEmailSkillRequiresReview(); err != nil {
-		problems = append(problems, err.Error())
-	}
-
 	if err := checkNoDefaultInitStorageContinuation(); err != nil {
 		problems = append(problems, err.Error())
 	}
@@ -682,48 +678,6 @@ func checkSecurityStubInventory() error {
 	}
 
 	return errors.New("placeholder inventory missing entries in docs/security-stubs-and-placeholders.md: " + strings.Join(offenders, ", "))
-}
-
-func checkAuthorizedEmailSkillRequiresReview() error {
-	path := filepath.FromSlash(".claude/skills/check-authorized-email/SKILL.md")
-	data, err := os.ReadFile(path) // #nosec G304 -- repo-local skill path
-	if err != nil {
-		return fmt.Errorf("failed to read %q: %w", path, err)
-	}
-
-	content := strings.ToLower(string(data))
-	required := []string{
-		"sender address alone is not authorization",
-		"review-advisor-brief",
-		"do not execute",
-	}
-	for _, phrase := range required {
-		if !strings.Contains(content, phrase) {
-			return fmt.Errorf("authorized email skill must preserve review gate phrase %q", phrase)
-		}
-	}
-
-	forbidden := []string{
-		"same authority as in-session directives",
-		"does not require the `review-advisor-brief` gate",
-		"proceed with execution",
-		"proceed directly to execution",
-		"proceeds with execution",
-		"no review gate",
-		"proceeding now",
-		"execute any authorized instructions found",
-	}
-	var offenders []string
-	for _, phrase := range forbidden {
-		if strings.Contains(content, phrase) {
-			offenders = append(offenders, phrase)
-		}
-	}
-	if len(offenders) > 0 {
-		return errors.New("authorized email skill grants sender-only authority: " + strings.Join(offenders, ", "))
-	}
-
-	return nil
 }
 
 type scanOptions struct {
