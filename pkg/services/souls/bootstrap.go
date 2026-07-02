@@ -707,11 +707,6 @@ func (s *Service) RecoverHostedGenesisTurn(ctx context.Context, input BootstrapC
 
 // ListHostedGenesisConversations calls Host's GET mint-conversations list
 // endpoint to return bounded conversation summaries for a given agent.
-//
-// TODO(host-dependency): Host's GET /api/v1/soul/instance/agents/{agentId}/
-// mint-conversations endpoint does not exist yet. It needs to be implemented on
-// lesser-host as a separate issue/PR. This Lesser service method is written to
-// call the expected endpoint shape and is tested with mocked Host responses.
 func (s *Service) ListHostedGenesisConversations(ctx context.Context, agentID string) ([]HostedGenesisConversationSummary, error) {
 	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
 	if err != nil {
