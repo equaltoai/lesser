@@ -280,3 +280,218 @@ func TestService_RecoverHostedGenesisTurnRequiresRegistrationAndConversationIDs(
 	require.ErrorAs(t, err, &hostErr)
 	require.Equal(t, "HOST_CONVERSATION_ID_REQUIRED", hostErr.Code)
 }
+
+func TestService_RecoverHostedGenesisTurnHostHTTPErrorReturnsTypedError(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_recover_http_err"
+		conversationID = "conv_recover_http_err"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-forbidden")
+		w.WriteHeader(http.StatusForbidden)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":        "soul_instance.boundary_violation",
+				"message":     "instance boundary violation",
+				"status_code": 403,
+				"request_id":  "host-req-forbidden",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "soul_instance.boundary_violation", hostErr.Code)
+	require.Equal(t, http.StatusForbidden, hostErr.StatusCode)
+	require.Equal(t, "host-req-forbidden", hostErr.HostRequestID)
+}
+
+func TestService_RecoverHostedGenesisTurnInvalidJSONResponseReturnsTypedError(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_recover_bad_json"
+		conversationID = "conv_recover_bad_json"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-bad-json")
+		w.WriteHeader(http.StatusOK)
+		// Valid JSON wrapper but conversation field is a string, not an object —
+		// parseHostConversationEnvelope will fail unmarshaling into hostMintConversationResponse.
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version":    "1",
+			"request_id": "host-req-bad-conv",
+			"conversation": "not-a-valid-conversation-object",
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+}
+
+func TestService_RecoverHostedGenesisTurnInvalidSnapshotReturnsTypedError(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_recover_bad_snapshot"
+		conversationID = "conv_recover_bad_snapshot"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-bad-snapshot")
+		w.WriteHeader(http.StatusOK)
+		// Missing status and conversation_id — validateHostConversationSnapshot will reject.
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"registration_id": registrationID,
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+}
+
+func TestService_RecoverHostedGenesisTurnWithLesserRequestIDIncludesItInBody(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_recover_req_id"
+		conversationID = "conv_recover_req_id"
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	var sawBody map[string]any
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&sawBody))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-req-id")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"registration_id": registrationID,
+			"agent_id":        agentID,
+			"conversation_id": conversationID,
+			"status":          "in_progress",
+			"message_count":   1,
+			"request_id":      "host-req-req-id",
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID:  registrationID,
+		ConversationID:  conversationID,
+		LesserRequestID: "lesser-req-001",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "lesser-req-001", sawBody["lesser_request_id"])
+}
+
+func TestService_RecoverHostedGenesisTurnMisconfiguredServiceReturnsError(t *testing.T) {
+	t.Parallel()
+
+	service := &Service{}
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID: "reg_001",
+		ConversationID: "conv_001",
+	})
+	require.Error(t, err)
+}
+
+func TestService_RecoverHostedGenesisTurnDeclarationReadyWithBadEvidenceReturnsError(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_recover_bad_evidence"
+		conversationID = "conv_recover_bad_evidence"
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-bad-evidence")
+		w.WriteHeader(http.StatusOK)
+		// declaration_ready status but produced_declarations is empty —
+		// ValidateHostedBootstrapCompletionEvidence will reject.
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"registration_id": registrationID,
+			"agent_id":        agentID,
+			"conversation_id": conversationID,
+			"status":          "declaration_ready",
+			"message_count":   2,
+			"request_id":      "host-req-bad-evidence",
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	_, err := service.RecoverHostedGenesisTurn(context.Background(), BootstrapConversationRecoverInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+	})
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
+	require.Contains(t, hostErr.Message, "produced declarations")
+}
