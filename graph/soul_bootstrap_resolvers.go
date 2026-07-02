@@ -145,6 +145,43 @@ func (r *mutationResolver) CompleteHostedSoulGenesis(ctx context.Context, input 
 	})
 }
 
+func (r *mutationResolver) RecoverHostedSoulGenesisTurn(ctx context.Context, input model.RecoverHostedSoulGenesisTurnInput) (*model.SoulBootstrapMutationPayload, error) {
+	correlation := graphHostedBootstrapCorrelation(
+		input.CorrelationKey,
+		input.IdempotencyKey,
+		soulBootstrapCorrelationOpConversation,
+		input.RecoveryAttemptID,
+	)
+	return r.executeSoulBootstrapReviewMutation(ctx, input.Username, func(
+		ctx context.Context,
+		agentUser *storage.User,
+		_ *storage.AgentGovernanceState,
+		service soulBootstrapHostService,
+		existing *workflow.SoulBootstrapState,
+		now time.Time,
+	) (*workflow.SoulBootstrapState, error) {
+		registrationID, err := soulBootstrapRegistrationID(existing, input.RegistrationID)
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		conversationID, err := soulBootstrapRequiredConversationID(existing, input.ConversationID)
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		result, err := service.RecoverHostedGenesisTurn(ctx, soulservice.BootstrapConversationRecoverInput{
+			RegistrationID:  registrationID,
+			ConversationID:  conversationID,
+			CorrelationID:   derefString(input.CorrelationKey),
+			IdempotencyKey:  derefString(input.IdempotencyKey),
+			LesserRequestID: "",
+		})
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		return soulBootstrapStateAfterHostedConversationSnapshot(agentUser, existing, correlation, result, now), nil
+	})
+}
+
 func (r *mutationResolver) PublishHostedSoul(ctx context.Context, input model.PublishHostedSoulInput) (*model.SoulBootstrapMutationPayload, error) {
 	correlation := graphHostedBootstrapCorrelation(
 		input.CorrelationKey,
@@ -495,6 +532,7 @@ type soulBootstrapHostService interface {
 	VerifyBootstrapPrincipalDeclaration(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 	SendBootstrapConversationMessage(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
 	CompleteBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	RecoverHostedGenesisTurn(context.Context, soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	ReadBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	PrepareBootstrapFinalize(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	FinalizeBootstrap(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)

@@ -703,3 +703,238 @@ func TestProject51HostedTranscriptProjectionOmitsUnsafeHostCredentialMaterial(t 
 	require.NotContains(t, string(encoded), "do-not-project")
 	require.NotContains(t, string(encoded), "Bearer ")
 }
+
+func TestProject51RecoverHostedSoulGenesisTurnCallsHostRecoverWithoutUserMessage(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC)
+
+	const (
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		registrationID = "hreg_p51_recover"
+		conversationID = "hconv_p51_recover"
+	)
+
+	var (
+		recoverCalls     int
+		sendMessageCalls int
+	)
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:     registrationID,
+				HostSoulAgentID:    agentID,
+				AuthorityModel:     soulservice.SoulAuthorityModelInstanceTrust,
+				AnchorState:        soulservice.SoulAnchorStateHostedOffchain,
+				RegistrationStatus: "pending",
+				HostRequestID:      "host-req-p51-begin",
+			}, nil
+		},
+		sendBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+			sendMessageCalls++
+			require.Equal(t, "start genesis", input.Message)
+			return &soulservice.BootstrapConversationMessageResult{
+				RegistrationID:  registrationID,
+				HostSoulAgentID: agentID,
+				ConversationID:  conversationID,
+				Status:          "in_progress",
+				MessageCount:    1,
+				HostRequestID:   "host-req-p51-send",
+			}, nil
+		},
+		recoverHostedGenesisTurnFunc: func(_ context.Context, input soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			recoverCalls++
+			require.Equal(t, registrationID, input.RegistrationID)
+			require.Equal(t, conversationID, input.ConversationID)
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:  registrationID,
+				HostSoulAgentID: agentID,
+				ConversationID:  conversationID,
+				Status:          "assistant_turn_ready",
+				LatestTurnID:    "turn_recovered",
+				MessageCount:    2,
+				HostRequestID:   "host-req-p51-recover",
+			}, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51",
+		DisplayName: "Drone P51",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	started, err := (&mutationResolver{resolver}).StartHostedSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.StartHostedSoulBootstrapInput{Username: "drone-p51"},
+	)
+	require.NoError(t, err)
+	require.Nil(t, started.Error)
+
+	sent, err := (&mutationResolver{resolver}).SendHostedSoulGenesisMessage(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.SendHostedSoulGenesisMessageInput{
+			Username: "drone-p51",
+			Message:  "start genesis",
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, sent.Error)
+	require.Equal(t, conversationID, derefString(sent.Bootstrap.State.HostConversationID))
+	require.Equal(t, 1, sendMessageCalls)
+
+	recovered, err := (&mutationResolver{resolver}).RecoverHostedSoulGenesisTurn(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.RecoverHostedSoulGenesisTurnInput{
+			Username:       "drone-p51",
+			ConversationID: conversationID,
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, recovered.Error)
+	require.Equal(t, 1, recoverCalls)
+	require.Equal(t, 1, sendMessageCalls, "recovery must not send a new user message")
+
+	require.Equal(t, model.SoulBootstrapPhaseConversation, recovered.Bootstrap.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateConversationAssistantTurnReady, recovered.Bootstrap.State.State)
+	require.Equal(t, model.SoulBootstrapNextActionCompleteHostedSoulGenesis, recovered.Bootstrap.TypedNextAction)
+	require.Equal(t, "assistant_turn_ready", derefString(recovered.Bootstrap.State.HostConversationStatus))
+	require.Equal(t, 2, recovered.Bootstrap.State.HostedGenesisConversation.MessageCount)
+	require.Equal(t, "host-req-p51-recover", derefString(recovered.Bootstrap.State.LastHostRequestID))
+}
+
+func TestProject51RecoverHostedSoulGenesisTurnIsIdempotentForNonStuckSession(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 7, 2, 11, 0, 0, 0, time.UTC)
+
+	const (
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		registrationID = "hreg_p51_idem"
+		conversationID = "hconv_p51_idem"
+	)
+
+	var recoverCalls int
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:     registrationID,
+				HostSoulAgentID:    agentID,
+				AuthorityModel:     soulservice.SoulAuthorityModelInstanceTrust,
+				AnchorState:        soulservice.SoulAnchorStateHostedOffchain,
+				RegistrationStatus: "pending",
+				HostRequestID:      "host-req-p51-idem-begin",
+			}, nil
+		},
+		sendBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error) {
+			return &soulservice.BootstrapConversationMessageResult{
+				RegistrationID:  registrationID,
+				HostSoulAgentID: agentID,
+				ConversationID:  conversationID,
+				Status:          "in_progress",
+				MessageCount:    1,
+				HostRequestID:   "host-req-p51-idem-send",
+			}, nil
+		},
+		recoverHostedGenesisTurnFunc: func(_ context.Context, input soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			recoverCalls++
+			return &soulservice.BootstrapConversationCompleteResult{
+				RegistrationID:  registrationID,
+				HostSoulAgentID: agentID,
+				ConversationID:  conversationID,
+				Status:          "in_progress",
+				LatestTurnID:    "turn_user_001",
+				MessageCount:    1,
+				HostRequestID:   "host-req-p51-idem-recover",
+			}, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-idem",
+		DisplayName: "Drone P51 Idem",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-idem",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	started, err := (&mutationResolver{resolver}).StartHostedSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.StartHostedSoulBootstrapInput{Username: "drone-p51-idem"},
+	)
+	require.NoError(t, err)
+	require.Nil(t, started.Error)
+
+	sent, err := (&mutationResolver{resolver}).SendHostedSoulGenesisMessage(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.SendHostedSoulGenesisMessageInput{
+			Username: "drone-p51-idem",
+			Message:  "start genesis",
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, sent.Error)
+
+	recovered, err := (&mutationResolver{resolver}).RecoverHostedSoulGenesisTurn(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.RecoverHostedSoulGenesisTurnInput{
+			Username:       "drone-p51-idem",
+			ConversationID: conversationID,
+		},
+	)
+	require.NoError(t, err)
+	require.Nil(t, recovered.Error)
+	require.Equal(t, 1, recoverCalls)
+	require.Equal(t, model.SoulBootstrapPhaseConversation, recovered.Bootstrap.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, recovered.Bootstrap.State.State)
+	require.Equal(t, "in_progress", derefString(recovered.Bootstrap.State.HostConversationStatus))
+	require.Equal(t, 1, recovered.Bootstrap.State.HostedGenesisConversation.MessageCount)
+}
+
+func TestProject51RecoverHostedSoulGenesisTurnRequiresWriteScope(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+
+	_, err := (&mutationResolver{resolver}).RecoverHostedSoulGenesisTurn(
+		round13DroneAuthContext("owner", auth.ScopeRead),
+		model.RecoverHostedSoulGenesisTurnInput{
+			Username:       "drone-p51",
+			ConversationID: "conv_001",
+		},
+	)
+	require.Error(t, err)
+}
+
+func TestProject51RecoverHostedSoulGenesisTurnRequiresAuth(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+
+	_, err := (&mutationResolver{resolver}).RecoverHostedSoulGenesisTurn(
+		context.Background(),
+		model.RecoverHostedSoulGenesisTurnInput{
+			Username:       "drone-p51",
+			ConversationID: "conv_001",
+		},
+	)
+	require.Error(t, err)
+}

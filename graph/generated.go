@@ -2084,6 +2084,7 @@ type ComplexityRoot struct {
 		PrepareSoulBootstrapPrincipalDeclaration  func(childComplexity int, input model.PrepareSoulBootstrapPrincipalDeclarationInput) int
 		PublishDraft                              func(childComplexity int, id string) int
 		PublishHostedSoul                         func(childComplexity int, input model.PublishHostedSoulInput) int
+		RecoverHostedSoulGenesisTurn              func(childComplexity int, input model.RecoverHostedSoulGenesisTurnInput) int
 		RegisterAccount                           func(childComplexity int, input model.RegisterAccountInput) int
 		RegisterAgent                             func(childComplexity int, input model.RegisterAgentInput) int
 		RegisterPushSubscription                  func(childComplexity int, input model.RegisterPushSubscriptionInput) int
@@ -3715,6 +3716,7 @@ type MutationResolver interface {
 	StartHostedSoulBootstrap(ctx context.Context, input model.StartHostedSoulBootstrapInput) (*model.SoulBootstrapMutationPayload, error)
 	SendHostedSoulGenesisMessage(ctx context.Context, input model.SendHostedSoulGenesisMessageInput) (*model.SoulBootstrapMutationPayload, error)
 	CompleteHostedSoulGenesis(ctx context.Context, input model.CompleteHostedSoulGenesisInput) (*model.SoulBootstrapMutationPayload, error)
+	RecoverHostedSoulGenesisTurn(ctx context.Context, input model.RecoverHostedSoulGenesisTurnInput) (*model.SoulBootstrapMutationPayload, error)
 	PublishHostedSoul(ctx context.Context, input model.PublishHostedSoulInput) (*model.SoulBootstrapMutationPayload, error)
 	RestartSoulBootstrap(ctx context.Context, input model.RestartSoulBootstrapInput) (*model.SoulBootstrapMutationPayload, error)
 	BeginSoulBootstrap(ctx context.Context, input model.BeginSoulBootstrapInput) (*model.SoulBootstrapMutationPayload, error)
@@ -14130,6 +14132,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.PublishHostedSoul(childComplexity, args["input"].(model.PublishHostedSoulInput)), true
 
+	case "Mutation.recoverHostedSoulGenesisTurn":
+		if e.complexity.Mutation.RecoverHostedSoulGenesisTurn == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_recoverHostedSoulGenesisTurn_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RecoverHostedSoulGenesisTurn(childComplexity, args["input"].(model.RecoverHostedSoulGenesisTurnInput)), true
+
 	case "Mutation.registerAccount":
 		if e.complexity.Mutation.RegisterAccount == nil {
 			break
@@ -22276,6 +22290,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputPushSubscriptionAlertsInput,
 		ec.unmarshalInputPushSubscriptionKeysInput,
 		ec.unmarshalInputReblogFilterInput,
+		ec.unmarshalInputRecoverHostedSoulGenesisTurnInput,
 		ec.unmarshalInputRegisterAccountInput,
 		ec.unmarshalInputRegisterAgentInput,
 		ec.unmarshalInputRegisterPushSubscriptionInput,
@@ -23786,6 +23801,17 @@ func (ec *executionContext) field_Mutation_publishHostedSoul_args(ctx context.Co
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNPublishHostedSoulInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPublishHostedSoulInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_recoverHostedSoulGenesisTurn_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNRecoverHostedSoulGenesisTurnInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRecoverHostedSoulGenesisTurnInput)
 	if err != nil {
 		return nil, err
 	}
@@ -100123,6 +100149,69 @@ func (ec *executionContext) fieldContext_Mutation_completeHostedSoulGenesis(ctx 
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_recoverHostedSoulGenesisTurn(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_recoverHostedSoulGenesisTurn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RecoverHostedSoulGenesisTurn(rctx, fc.Args["input"].(model.RecoverHostedSoulGenesisTurnInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.SoulBootstrapMutationPayload)
+	fc.Result = res
+	return ec.marshalNSoulBootstrapMutationPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSoulBootstrapMutationPayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_recoverHostedSoulGenesisTurn(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "bootstrap":
+				return ec.fieldContext_SoulBootstrapMutationPayload_bootstrap(ctx, field)
+			case "executable":
+				return ec.fieldContext_SoulBootstrapMutationPayload_executable(ctx, field)
+			case "error":
+				return ec.fieldContext_SoulBootstrapMutationPayload_error(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SoulBootstrapMutationPayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_recoverHostedSoulGenesisTurn_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_publishHostedSoul(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_publishHostedSoul(ctx, field)
 	if err != nil {
@@ -154789,6 +154878,68 @@ func (ec *executionContext) unmarshalInputReblogFilterInput(ctx context.Context,
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputRecoverHostedSoulGenesisTurnInput(ctx context.Context, obj any) (model.RecoverHostedSoulGenesisTurnInput, error) {
+	var it model.RecoverHostedSoulGenesisTurnInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"username", "conversationId", "registrationId", "correlationKey", "idempotencyKey", "recoveryAttemptId"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "username":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Username = data
+		case "conversationId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("conversationId"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ConversationID = data
+		case "registrationId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("registrationId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RegistrationID = data
+		case "correlationKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("correlationKey"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CorrelationKey = data
+		case "idempotencyKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("idempotencyKey"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.IdempotencyKey = data
+		case "recoveryAttemptId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("recoveryAttemptId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RecoveryAttemptID = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputRegisterAccountInput(ctx context.Context, obj any) (model.RegisterAccountInput, error) {
 	var it model.RegisterAccountInput
 	asMap := map[string]any{}
@@ -172970,6 +173121,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "completeHostedSoulGenesis":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_completeHostedSoulGenesis(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recoverHostedSoulGenesisTurn":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_recoverHostedSoulGenesisTurn(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -192646,6 +192804,11 @@ func (ec *executionContext) marshalNReconnectionPayload2ᚖgithubᚗcomᚋequalt
 		return graphql.Null
 	}
 	return ec._ReconnectionPayload(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNRecoverHostedSoulGenesisTurnInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRecoverHostedSoulGenesisTurnInput(ctx context.Context, v any) (model.RecoverHostedSoulGenesisTurnInput, error) {
+	res, err := ec.unmarshalInputRecoverHostedSoulGenesisTurnInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNRegisterAccountInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountInput(ctx context.Context, v any) (model.RegisterAccountInput, error) {

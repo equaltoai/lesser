@@ -2410,6 +2410,15 @@ type ReconnectionPayload struct {
 	Errors              []string             `json:"errors,omitempty"`
 }
 
+type RecoverHostedSoulGenesisTurnInput struct {
+	Username          string  `json:"username"`
+	ConversationID    string  `json:"conversationId"`
+	RegistrationID    *string `json:"registrationId,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string `json:"recoveryAttemptId,omitempty"`
+}
+
 type RegisterAccountInput struct {
 	Username                 string      `json:"username"`
 	Locale                   *string     `json:"locale,omitempty"`

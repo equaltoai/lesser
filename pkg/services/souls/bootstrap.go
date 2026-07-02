@@ -212,6 +212,16 @@ type BootstrapConversationCompleteInput struct {
 	ConversationID string
 }
 
+// BootstrapConversationRecoverInput is the Lesser-local request for recovering a
+// stuck Host mint conversation turn without sending a new user message.
+type BootstrapConversationRecoverInput struct {
+	RegistrationID  string
+	ConversationID  string
+	CorrelationID   string
+	IdempotencyKey  string
+	LesserRequestID string
+}
+
 // BootstrapConversationCompleteResult contains Host completion state.
 type BootstrapConversationCompleteResult struct {
 	RegistrationID        string
@@ -604,6 +614,63 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 	if version != "" && version != hostBootstrapVersion1 {
 		return nil, unsupportedHostConversationVersionError(
 			"Host conversation response",
+			requestID,
+			out.RequestID,
+		)
+	}
+	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
+		return nil, err
+	}
+	result := bootstrapConversationCompleteResultFromHost(registrationID, out, hostConversationRequestID(requestID, out.RequestID))
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
+	}
+	return result, nil
+}
+
+// RecoverHostedGenesisTurn calls Host's POST /recover endpoint to re-run the
+// assistant turn for a stuck mint conversation without sending a new user
+// message. If the session is not stuck, Host returns the current conversation
+// state (idempotent). The response uses the same hostedGenesisConversationResponse
+// envelope as the GET conversation read route.
+func (s *Service) RecoverHostedGenesisTurn(ctx context.Context, input BootstrapConversationRecoverInput) (*BootstrapConversationCompleteResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{}
+	if correlationID := strings.TrimSpace(input.CorrelationID); correlationID != "" {
+		payload["correlation_id"] = correlationID
+	}
+	if idempotencyKey := strings.TrimSpace(input.IdempotencyKey); idempotencyKey != "" {
+		payload["idempotency_key"] = idempotencyKey
+	}
+	if lesserRequestID := strings.TrimSpace(input.LesserRequestID); lesserRequestID != "" {
+		payload["lesser_request_id"] = lesserRequestID
+	}
+
+	var raw json.RawMessage
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/recover", instanceKey, payload, http.StatusOK, http.StatusAccepted, &raw)
+	if err != nil {
+		return nil, err
+	}
+	out, version, err := parseHostConversationResponseEnvelope(raw, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if version != "" && version != hostBootstrapVersion1 {
+		return nil, unsupportedHostConversationVersionError(
+			"Host conversation recovery response",
 			requestID,
 			out.RequestID,
 		)

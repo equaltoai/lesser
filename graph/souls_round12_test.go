@@ -25,6 +25,7 @@ type stubSoulService struct {
 	verifyBootstrapPrincipalFunc      func(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 	sendBootstrapConversationFunc     func(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
 	completeBootstrapConversationFunc func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	recoverHostedGenesisTurnFunc     func(context.Context, soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	readBootstrapConversationFunc     func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	prepareBootstrapFinalizeFunc      func(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	finalizeBootstrapFunc             func(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
@@ -99,6 +100,13 @@ func (s *stubSoulService) CompleteBootstrapConversation(ctx context.Context, inp
 		return nil, errors.New("complete bootstrap conversation not implemented")
 	}
 	return s.completeBootstrapConversationFunc(ctx, input)
+}
+
+func (s *stubSoulService) RecoverHostedGenesisTurn(ctx context.Context, input soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+	if s.recoverHostedGenesisTurnFunc == nil {
+		return nil, errors.New("recover hosted genesis turn not implemented")
+	}
+	return s.recoverHostedGenesisTurnFunc(ctx, input)
 }
 
 func (s *stubSoulService) ReadBootstrapConversation(ctx context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {

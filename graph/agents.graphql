@@ -865,6 +865,15 @@ input CompleteHostedSoulGenesisInput {
   correlationKey: String
 }
 
+input RecoverHostedSoulGenesisTurnInput {
+  username: String!
+  conversationId: String!
+  registrationId: String
+  correlationKey: String
+  idempotencyKey: String
+  recoveryAttemptId: String
+}
+
 input PublishHostedSoulInput {
   username: String!
   registrationId: ID
@@ -1009,6 +1018,7 @@ extend type Mutation {
   startHostedSoulBootstrap(input: StartHostedSoulBootstrapInput!): SoulBootstrapMutationPayload!
   sendHostedSoulGenesisMessage(input: SendHostedSoulGenesisMessageInput!): SoulBootstrapMutationPayload!
   completeHostedSoulGenesis(input: CompleteHostedSoulGenesisInput!): SoulBootstrapMutationPayload!
+  recoverHostedSoulGenesisTurn(input: RecoverHostedSoulGenesisTurnInput!): SoulBootstrapMutationPayload!
   publishHostedSoul(input: PublishHostedSoulInput!): SoulBootstrapMutationPayload!
   restartSoulBootstrap(input: RestartSoulBootstrapInput!): SoulBootstrapMutationPayload!
   beginSoulBootstrap(input: BeginSoulBootstrapInput!): SoulBootstrapMutationPayload!
