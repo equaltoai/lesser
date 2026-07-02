@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ const (
 	hostConversationStatusDeclarationReady = "declaration_ready"
 	hostConversationMessageRoleUser        = "user"
 	hostConversationMessageRoleAssistant   = "assistant"
+	hostedGenesisConversationListMaxResults = 50
 
 	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
 	SoulAuthorityModelWalletPrincipal = "wallet_principal"
@@ -205,11 +207,34 @@ type BootstrapConversationMessage struct {
 	Truncated bool
 }
 
+// HostedGenesisConversationSummary is a bounded summary of one Host mint
+// conversation for the genesis conversation list query. It carries no
+// transcript messages, signing material, or Host credentials.
+type HostedGenesisConversationSummary struct {
+	ConversationID  string
+	RegistrationID  string
+	Status          string
+	MessageCount    int
+	LatestTurnID    string
+	CreatedAt       *time.Time
+	UpdatedAt       *time.Time
+}
+
 // BootstrapConversationCompleteInput is the Lesser-local request for completing
 // a Host mint conversation.
 type BootstrapConversationCompleteInput struct {
 	RegistrationID string
 	ConversationID string
+}
+
+// BootstrapConversationRecoverInput is the Lesser-local request for recovering a
+// stuck Host mint conversation turn without sending a new user message.
+type BootstrapConversationRecoverInput struct {
+	RegistrationID  string
+	ConversationID  string
+	CorrelationID   string
+	IdempotencyKey  string
+	LesserRequestID string
 }
 
 // BootstrapConversationCompleteResult contains Host completion state.
@@ -621,6 +646,119 @@ func (s *Service) CompleteBootstrapConversation(ctx context.Context, input Boots
 		}
 	}
 	return result, nil
+}
+
+// RecoverHostedGenesisTurn calls Host's POST /recover endpoint to re-run the
+// assistant turn for a stuck mint conversation without sending a new user
+// message. If the session is not stuck, Host returns the current conversation
+// state (idempotent). The response uses the same hostedGenesisConversationResponse
+// envelope as the GET conversation read route.
+func (s *Service) RecoverHostedGenesisTurn(ctx context.Context, input BootstrapConversationRecoverInput) (*BootstrapConversationCompleteResult, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registrationID, conversationID, err := requireBootstrapRegistrationConversation(input.RegistrationID, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{}
+	if correlationID := strings.TrimSpace(input.CorrelationID); correlationID != "" {
+		payload["correlation_id"] = correlationID
+	}
+	if idempotencyKey := strings.TrimSpace(input.IdempotencyKey); idempotencyKey != "" {
+		payload["idempotency_key"] = idempotencyKey
+	}
+	if lesserRequestID := strings.TrimSpace(input.LesserRequestID); lesserRequestID != "" {
+		payload["lesser_request_id"] = lesserRequestID
+	}
+
+	var raw json.RawMessage
+	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation/"+url.PathEscape(conversationID)+"/recover", instanceKey, payload, http.StatusOK, http.StatusAccepted, &raw)
+	if err != nil {
+		return nil, err
+	}
+	out, version, err := parseHostConversationResponseEnvelope(raw, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if version != "" && version != hostBootstrapVersion1 {
+		return nil, unsupportedHostConversationVersionError(
+			"Host conversation recovery response",
+			requestID,
+			out.RequestID,
+		)
+	}
+	if err := validateHostConversationSnapshot(out, registrationID, true, requestID); err != nil {
+		return nil, err
+	}
+	result := bootstrapConversationCompleteResultFromHost(registrationID, out, hostConversationRequestID(requestID, out.RequestID))
+	if isHostedBootstrapTerminalDeclarationStatus(result.Status) {
+		if err := ValidateHostedBootstrapCompletionEvidence(result, conversationID); err != nil {
+			return nil, err
+		}
+		if compact, err := compactHostedBootstrapProducedDeclarations(result.ProducedDeclarations, result.HostRequestID); err == nil {
+			result.ProducedDeclarations = compact
+		}
+	}
+	return result, nil
+}
+
+// ListHostedGenesisConversations calls Host's GET mint-conversations list
+// endpoint to return bounded conversation summaries for a given agent.
+func (s *Service) ListHostedGenesisConversations(ctx context.Context, agentID string) ([]HostedGenesisConversationSummary, error) {
+	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, &HostBootstrapError{Code: "HOST_AGENT_ID_REQUIRED", Message: "agent id is required", Source: "lesser", Err: ErrHostSigningPayloadUnsupported}
+	}
+
+	var raw json.RawMessage
+	_, err = s.doHostBootstrapJSON(ctx, http.MethodGet, baseURL, "/api/v1/soul/instance/agents/"+url.PathEscape(agentID)+"/mint-conversations", instanceKey, nil, http.StatusOK, &raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var listResp hostMintConversationsListResponse
+	if err := json.Unmarshal(raw, &listResp); err != nil {
+		return nil, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host conversation list response is invalid.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+	}
+
+	summaries := make([]HostedGenesisConversationSummary, 0, len(listResp.Conversations))
+	for _, conv := range listResp.Conversations {
+		summaries = append(summaries, HostedGenesisConversationSummary{
+			ConversationID:  strings.TrimSpace(conv.ConversationID),
+			RegistrationID:  strings.TrimSpace(conv.RegistrationID),
+			Status:          NormalizeHostedBootstrapConversationStatus(conv.Status),
+			MessageCount:    conv.MessageCount,
+			LatestTurnID:    strings.TrimSpace(conv.LatestTurnID),
+			CreatedAt:       parseHostTimePtr(conv.CreatedAt),
+			UpdatedAt:       parseHostTimePtr(conv.UpdatedAt),
+		})
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].UpdatedAt == nil && summaries[j].UpdatedAt == nil {
+			return summaries[i].ConversationID < summaries[j].ConversationID
+		}
+		if summaries[i].UpdatedAt == nil {
+			return false
+		}
+		if summaries[j].UpdatedAt == nil {
+			return true
+		}
+		return summaries[i].UpdatedAt.After(*summaries[j].UpdatedAt)
+	})
+
+	if len(summaries) > hostedGenesisConversationListMaxResults {
+		summaries = summaries[:hostedGenesisConversationListMaxResults]
+	}
+
+	return summaries, nil
 }
 
 // ReadBootstrapConversation reads Host's private instance mint-conversation
@@ -1992,6 +2130,20 @@ type hostMintConversationReadResponse struct {
 	Version         string          `json:"version"`
 	RequestID       string          `json:"request_id"`
 	ConversationRaw json.RawMessage `json:"conversation"`
+}
+
+type hostMintConversationsListResponse struct {
+	Conversations []hostMintConversationSummary `json:"conversations"`
+}
+
+type hostMintConversationSummary struct {
+	ConversationID string `json:"conversation_id"`
+	RegistrationID string `json:"registration_id"`
+	Status         string `json:"status"`
+	MessageCount   int    `json:"message_count"`
+	LatestTurnID   string `json:"latest_turn_id"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type hostConversationFailure struct {

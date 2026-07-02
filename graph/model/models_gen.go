@@ -1542,6 +1542,16 @@ type HealthIssue struct {
 	Impact      string        `json:"impact"`
 }
 
+type HostedGenesisConversationSummary struct {
+	ConversationID string  `json:"conversationId"`
+	RegistrationID *string `json:"registrationId,omitempty"`
+	Status         string  `json:"status"`
+	MessageCount   int     `json:"messageCount"`
+	LatestTurnID   *string `json:"latestTurnId,omitempty"`
+	CreatedAt      *Time   `json:"createdAt,omitempty"`
+	UpdatedAt      *Time   `json:"updatedAt,omitempty"`
+}
+
 type HourlyBandwidth struct {
 	Hour     Time    `json:"hour"`
 	TotalGb  float64 `json:"totalGB"`
@@ -2408,6 +2418,15 @@ type ReconnectionPayload struct {
 	Reconnected         int                  `json:"reconnected"`
 	Failed              int                  `json:"failed"`
 	Errors              []string             `json:"errors,omitempty"`
+}
+
+type RecoverHostedSoulGenesisTurnInput struct {
+	Username          string  `json:"username"`
+	ConversationID    string  `json:"conversationId"`
+	RegistrationID    *string `json:"registrationId,omitempty"`
+	CorrelationKey    *string `json:"correlationKey,omitempty"`
+	IdempotencyKey    *string `json:"idempotencyKey,omitempty"`
+	RecoveryAttemptID *string `json:"recoveryAttemptId,omitempty"`
 }
 
 type RegisterAccountInput struct {

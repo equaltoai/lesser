@@ -4836,6 +4836,16 @@ type SoulBootstrapHostedGenesisConversation {
   updatedAt: Time
 }
 
+type HostedGenesisConversationSummary {
+  conversationId: String!
+  registrationId: String
+  status: String!
+  messageCount: Int!
+  latestTurnId: String
+  createdAt: Time
+  updatedAt: Time
+}
+
 type SoulBootstrapCorrelationState {
   correlationKey: String
   beginIdempotencyKey: String
@@ -5023,6 +5033,15 @@ input CompleteHostedSoulGenesisInput {
   correlationKey: String
 }
 
+input RecoverHostedSoulGenesisTurnInput {
+  username: String!
+  conversationId: String!
+  registrationId: String
+  correlationKey: String
+  idempotencyKey: String
+  recoveryAttemptId: String
+}
+
 input PublishHostedSoulInput {
   username: String!
   registrationId: ID
@@ -5137,6 +5156,7 @@ extend type Query {
   myDroneReviews: [ReviewDecisionCard!]!
   droneWorkflow(username: String!): AgentWorkflowSurface
   soulBootstrap(username: String!): SoulBootstrapSurface
+  listHostedGenesisConversations(username: String!): [HostedGenesisConversationSummary!]!
 }
 
 extend type Mutation {
@@ -5167,6 +5187,7 @@ extend type Mutation {
   startHostedSoulBootstrap(input: StartHostedSoulBootstrapInput!): SoulBootstrapMutationPayload!
   sendHostedSoulGenesisMessage(input: SendHostedSoulGenesisMessageInput!): SoulBootstrapMutationPayload!
   completeHostedSoulGenesis(input: CompleteHostedSoulGenesisInput!): SoulBootstrapMutationPayload!
+  recoverHostedSoulGenesisTurn(input: RecoverHostedSoulGenesisTurnInput!): SoulBootstrapMutationPayload!
   publishHostedSoul(input: PublishHostedSoulInput!): SoulBootstrapMutationPayload!
   restartSoulBootstrap(input: RestartSoulBootstrapInput!): SoulBootstrapMutationPayload!
   beginSoulBootstrap(input: BeginSoulBootstrapInput!): SoulBootstrapMutationPayload!
