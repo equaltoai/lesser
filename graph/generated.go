@@ -1474,6 +1474,16 @@ type ComplexityRoot struct {
 		Type        func(childComplexity int) int
 	}
 
+	HostedGenesisConversationSummary struct {
+		ConversationID func(childComplexity int) int
+		CreatedAt      func(childComplexity int) int
+		LatestTurnID   func(childComplexity int) int
+		MessageCount   func(childComplexity int) int
+		RegistrationID func(childComplexity int) int
+		Status         func(childComplexity int) int
+		UpdatedAt      func(childComplexity int) int
+	}
+
 	HourlyBandwidth struct {
 		Hour     func(childComplexity int) int
 		PeakMbps func(childComplexity int) int
@@ -2438,158 +2448,159 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		AccountQuotePermissions   func(childComplexity int, username string) int
-		Actor                     func(childComplexity int, id *string, username *string) int
-		AdminAccount              func(childComplexity int, id string) int
-		AdminAccounts             func(childComplexity int, first *int, after *model.Cursor) int
-		AdminAgentPolicy          func(childComplexity int) int
-		AdminDomainAllows         func(childComplexity int, first *int, after *model.Cursor) int
-		AdminDomainBlock          func(childComplexity int, id string) int
-		AdminDomainBlocks         func(childComplexity int, first *int, after *model.Cursor) int
-		AdminEmailDomainBlocks    func(childComplexity int, first *int, after *model.Cursor) int
-		AdminFederationInstance   func(childComplexity int, domain string) int
-		AdminFederationInstances  func(childComplexity int, first *int, after *model.Cursor) int
-		AdminFederationStatistics func(childComplexity int, start *model.Time, end *model.Time) int
-		AdminInstanceConfig       func(childComplexity int) int
-		AdminModerationEvents     func(childComplexity int, filter *model.AdminModerationEventFilter, first *int, after *model.Cursor) int
-		AdminModerationReviewers  func(childComplexity int) int
-		AdminReport               func(childComplexity int, id string) int
-		AdminReports              func(childComplexity int, status *model.AdminReportStatus, first *int, after *model.Cursor) int
-		AdminStatus               func(childComplexity int, id string) int
-		AdminStatuses             func(childComplexity int, filter *model.AdminStatusFilter, first *int, after *model.Cursor) int
-		AdminTrustGraph           func(childComplexity int, limit *int) int
-		AffectedRelationships     func(childComplexity int, severedRelationshipID string) int
-		Agent                     func(childComplexity int, username string) int
-		AgentAccessLeases         func(childComplexity int, username string) int
-		AgentActivity             func(childComplexity int, username string, first *int, after *model.Cursor) int
-		AgentMemorySearch         func(childComplexity int, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) int
-		AgentRuntimeSessions      func(childComplexity int, username string) int
-		Agents                    func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) int
-		AiAnalysis                func(childComplexity int, objectID string) int
-		AiCapabilities            func(childComplexity int) int
-		AiStats                   func(childComplexity int, period model.Period) int
-		AllSeries                 func(childComplexity int, authorID *string, first *int, after *model.Cursor) int
-		Announcements             func(childComplexity int) int
-		Article                   func(childComplexity int, id string) int
-		ArticleBySlug             func(childComplexity int, slug string) int
-		Articles                  func(childComplexity int, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) int
-		BandwidthUsage            func(childComplexity int, period model.TimePeriod) int
-		Blocks                    func(childComplexity int, first *int, after *model.Cursor) int
-		Bookmarks                 func(childComplexity int, first *int, after *model.Cursor) int
-		Categories                func(childComplexity int, parentID *string) int
-		Category                  func(childComplexity int, id string) int
-		CategoryBySlug            func(childComplexity int, slug string) int
-		CommunityNotesByAuthor    func(childComplexity int, username string, first *int, after *model.Cursor) int
-		Conversation              func(childComplexity int, id string) int
-		ConversationMessages      func(childComplexity int, conversationID string, first *int, after *model.Cursor) int
-		Conversations             func(childComplexity int, folder *model.ConversationFolder, first *int, after *model.Cursor) int
-		CostBreakdown             func(childComplexity int, period *model.Period) int
-		CostProjections           func(childComplexity int, period model.Period) int
-		CustomEmojis              func(childComplexity int) int
-		DomainBlocks              func(childComplexity int, first *int, after *model.Cursor) int
-		Draft                     func(childComplexity int, id string) int
-		DraftPreview              func(childComplexity int, id string) int
-		DroneWorkflow             func(childComplexity int, username string) int
-		Endorsements              func(childComplexity int) int
-		ExplainObject             func(childComplexity int, id string) int
-		Export                    func(childComplexity int, id string) int
-		Exports                   func(childComplexity int, first *int, after *model.Cursor) int
-		Favourites                func(childComplexity int, first *int, after *model.Cursor) int
-		FederationCosts           func(childComplexity int, first *int, after *string, orderBy *model.CostOrderBy) int
-		FederationFlow            func(childComplexity int, period model.TimePeriod) int
-		FederationHealth          func(childComplexity int, threshold *float64) int
-		FederationLimits          func(childComplexity int, active *bool, first *int, after *string) int
-		FederationMap             func(childComplexity int, depth *int) int
-		FederationStatus          func(childComplexity int, domain string) int
-		Filter                    func(childComplexity int, id string) int
-		Filters                   func(childComplexity int) int
-		FollowRequests            func(childComplexity int, first *int, after *model.Cursor) int
-		FollowedHashtags          func(childComplexity int, first *int, after *string) int
-		Followers                 func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
-		Following                 func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
-		GroupedNotifications      func(childComplexity int, input *model.GroupedNotificationsInput) int
-		Hashtag                   func(childComplexity int, name string) int
-		HashtagTimeline           func(childComplexity int, hashtag string, first *int, after *string, mediaOnly *bool) int
-		Import                    func(childComplexity int, id string) int
-		Imports                   func(childComplexity int, first *int, after *model.Cursor) int
-		InfrastructureHealth      func(childComplexity int) int
-		Instance                  func(childComplexity int) int
-		InstanceActivity          func(childComplexity int, limit *int) int
-		InstanceBudgets           func(childComplexity int, exceeded *bool) int
-		InstanceDomainBlocks      func(childComplexity int, limit *int) int
-		InstanceHealthReport      func(childComplexity int, domain string) int
-		InstanceMetrics           func(childComplexity int) int
-		InstancePeers             func(childComplexity int, limit *int) int
-		InstanceRelationships     func(childComplexity int, domain string) int
-		LinkTimeline              func(childComplexity int, url string, first *int, after *model.Cursor) int
-		List                      func(childComplexity int, id string) int
-		ListAccounts              func(childComplexity int, id string) int
-		Lists                     func(childComplexity int) int
-		Markers                   func(childComplexity int, timelines []model.MarkerTimeline) int
-		Media                     func(childComplexity int, id string) int
-		MediaLibrary              func(childComplexity int, filter *model.MediaFilterInput, first *int, after *model.Cursor) int
-		MediaStreamURL            func(childComplexity int, mediaID string) int
-		ModerationConsensus       func(childComplexity int, eventID string) int
-		ModerationDashboard       func(childComplexity int, filter *moderation.ModerationFilter) int
-		ModerationEffectiveness   func(childComplexity int, patternID string, period model.ModerationPeriod) int
-		ModerationHistory         func(childComplexity int, objectID string) int
-		ModerationPatterns        func(childComplexity int, active *bool, severity *model.ModerationSeverity, first *int, after *string) int
-		ModerationQueue           func(childComplexity int, first *int, after *model.Cursor) int
-		ModerationTrustScore      func(childComplexity int, actorID string) int
-		ModeratorActivity         func(childComplexity int, moderatorID string, period model.TimePeriod) int
-		MultiHashtagTimeline      func(childComplexity int, hashtags []string, mode model.HashtagMode, first *int, after *string) int
-		Mutes                     func(childComplexity int, first *int, after *model.Cursor) int
-		MyAgents                  func(childComplexity int) int
-		MyDrafts                  func(childComplexity int, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) int
-		MyDroneRequests           func(childComplexity int) int
-		MyDroneReviews            func(childComplexity int) int
-		MyPublications            func(childComplexity int) int
-		MySouls                   func(childComplexity int) int
-		Notification              func(childComplexity int, id string) int
-		Notifications             func(childComplexity int, types []string, excludeTypes []string, first *int, after *model.Cursor) int
-		Object                    func(childComplexity int, id string) int
-		PatternEffectiveness      func(childComplexity int, patternID string) int
-		PerformanceMetrics        func(childComplexity int, service model.ServiceCategory) int
-		PopularStreams            func(childComplexity int, first int, after *string) int
-		ProfileDirectory          func(childComplexity int, filters *model.DirectoryFiltersInput, first *int, after *model.Cursor) int
-		Publication               func(childComplexity int, id string) int
-		PublicationBySlug         func(childComplexity int, slug string) int
-		PushSubscription          func(childComplexity int) int
-		Relationship              func(childComplexity int, id string) int
-		Relationships             func(childComplexity int, ids []string) int
-		RemoveSuggestion          func(childComplexity int, accountID string) int
-		Reputation                func(childComplexity int, actorID string) int
-		Revision                  func(childComplexity int, objectID string, version int) int
-		Revisions                 func(childComplexity int, objectID string, first *int, after *model.Cursor) int
-		RootCategories            func(childComplexity int) int
-		ScheduledStatus           func(childComplexity int, id string) int
-		ScheduledStatuses         func(childComplexity int, first *int, after *model.Cursor) int
-		Search                    func(childComplexity int, query string, typeArg *string, first *int, after *model.Cursor) int
-		Series                    func(childComplexity int, id string) int
-		SeriesBySlug              func(childComplexity int, slug string) int
-		SeveredRelationships      func(childComplexity int, instance *string, first *int, after *string) int
-		SlowQueries               func(childComplexity int, threshold model.Duration) int
-		SoulBootstrap             func(childComplexity int, username string) int
-		StatusFavouritedBy        func(childComplexity int, id string, first *int, after *model.Cursor) int
-		StatusHistory             func(childComplexity int, id string, limit *int) int
-		StatusRebloggedBy         func(childComplexity int, id string, first *int, after *model.Cursor) int
-		StreamingAnalytics        func(childComplexity int, mediaID string) int
-		SuggestedHashtags         func(childComplexity int, limit *int) int
-		Suggestions               func(childComplexity int, limit *int) int
-		SupportedBitrates         func(childComplexity int, mediaID string) int
-		ThreadContext             func(childComplexity int, noteID string) int
-		Timeline                  func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) int
-		TranslateStatus           func(childComplexity int, id string, targetLanguage *string) int
-		TranslationLanguages      func(childComplexity int) int
-		TrendingLinks             func(childComplexity int, limit *int) int
-		TrendingStatuses          func(childComplexity int, limit *int) int
-		TrendingTags              func(childComplexity int, limit *int) int
-		Trends                    func(childComplexity int, limit *int) int
-		TrustGraph                func(childComplexity int, actorID string, category *models.TrustCategory) int
-		UserPreferences           func(childComplexity int) int
-		Viewer                    func(childComplexity int) int
-		ViewerRole                func(childComplexity int) int
-		Vouches                   func(childComplexity int, actorID string) int
+		AccountQuotePermissions        func(childComplexity int, username string) int
+		Actor                          func(childComplexity int, id *string, username *string) int
+		AdminAccount                   func(childComplexity int, id string) int
+		AdminAccounts                  func(childComplexity int, first *int, after *model.Cursor) int
+		AdminAgentPolicy               func(childComplexity int) int
+		AdminDomainAllows              func(childComplexity int, first *int, after *model.Cursor) int
+		AdminDomainBlock               func(childComplexity int, id string) int
+		AdminDomainBlocks              func(childComplexity int, first *int, after *model.Cursor) int
+		AdminEmailDomainBlocks         func(childComplexity int, first *int, after *model.Cursor) int
+		AdminFederationInstance        func(childComplexity int, domain string) int
+		AdminFederationInstances       func(childComplexity int, first *int, after *model.Cursor) int
+		AdminFederationStatistics      func(childComplexity int, start *model.Time, end *model.Time) int
+		AdminInstanceConfig            func(childComplexity int) int
+		AdminModerationEvents          func(childComplexity int, filter *model.AdminModerationEventFilter, first *int, after *model.Cursor) int
+		AdminModerationReviewers       func(childComplexity int) int
+		AdminReport                    func(childComplexity int, id string) int
+		AdminReports                   func(childComplexity int, status *model.AdminReportStatus, first *int, after *model.Cursor) int
+		AdminStatus                    func(childComplexity int, id string) int
+		AdminStatuses                  func(childComplexity int, filter *model.AdminStatusFilter, first *int, after *model.Cursor) int
+		AdminTrustGraph                func(childComplexity int, limit *int) int
+		AffectedRelationships          func(childComplexity int, severedRelationshipID string) int
+		Agent                          func(childComplexity int, username string) int
+		AgentAccessLeases              func(childComplexity int, username string) int
+		AgentActivity                  func(childComplexity int, username string, first *int, after *model.Cursor) int
+		AgentMemorySearch              func(childComplexity int, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) int
+		AgentRuntimeSessions           func(childComplexity int, username string) int
+		Agents                         func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) int
+		AiAnalysis                     func(childComplexity int, objectID string) int
+		AiCapabilities                 func(childComplexity int) int
+		AiStats                        func(childComplexity int, period model.Period) int
+		AllSeries                      func(childComplexity int, authorID *string, first *int, after *model.Cursor) int
+		Announcements                  func(childComplexity int) int
+		Article                        func(childComplexity int, id string) int
+		ArticleBySlug                  func(childComplexity int, slug string) int
+		Articles                       func(childComplexity int, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) int
+		BandwidthUsage                 func(childComplexity int, period model.TimePeriod) int
+		Blocks                         func(childComplexity int, first *int, after *model.Cursor) int
+		Bookmarks                      func(childComplexity int, first *int, after *model.Cursor) int
+		Categories                     func(childComplexity int, parentID *string) int
+		Category                       func(childComplexity int, id string) int
+		CategoryBySlug                 func(childComplexity int, slug string) int
+		CommunityNotesByAuthor         func(childComplexity int, username string, first *int, after *model.Cursor) int
+		Conversation                   func(childComplexity int, id string) int
+		ConversationMessages           func(childComplexity int, conversationID string, first *int, after *model.Cursor) int
+		Conversations                  func(childComplexity int, folder *model.ConversationFolder, first *int, after *model.Cursor) int
+		CostBreakdown                  func(childComplexity int, period *model.Period) int
+		CostProjections                func(childComplexity int, period model.Period) int
+		CustomEmojis                   func(childComplexity int) int
+		DomainBlocks                   func(childComplexity int, first *int, after *model.Cursor) int
+		Draft                          func(childComplexity int, id string) int
+		DraftPreview                   func(childComplexity int, id string) int
+		DroneWorkflow                  func(childComplexity int, username string) int
+		Endorsements                   func(childComplexity int) int
+		ExplainObject                  func(childComplexity int, id string) int
+		Export                         func(childComplexity int, id string) int
+		Exports                        func(childComplexity int, first *int, after *model.Cursor) int
+		Favourites                     func(childComplexity int, first *int, after *model.Cursor) int
+		FederationCosts                func(childComplexity int, first *int, after *string, orderBy *model.CostOrderBy) int
+		FederationFlow                 func(childComplexity int, period model.TimePeriod) int
+		FederationHealth               func(childComplexity int, threshold *float64) int
+		FederationLimits               func(childComplexity int, active *bool, first *int, after *string) int
+		FederationMap                  func(childComplexity int, depth *int) int
+		FederationStatus               func(childComplexity int, domain string) int
+		Filter                         func(childComplexity int, id string) int
+		Filters                        func(childComplexity int) int
+		FollowRequests                 func(childComplexity int, first *int, after *model.Cursor) int
+		FollowedHashtags               func(childComplexity int, first *int, after *string) int
+		Followers                      func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
+		Following                      func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
+		GroupedNotifications           func(childComplexity int, input *model.GroupedNotificationsInput) int
+		Hashtag                        func(childComplexity int, name string) int
+		HashtagTimeline                func(childComplexity int, hashtag string, first *int, after *string, mediaOnly *bool) int
+		Import                         func(childComplexity int, id string) int
+		Imports                        func(childComplexity int, first *int, after *model.Cursor) int
+		InfrastructureHealth           func(childComplexity int) int
+		Instance                       func(childComplexity int) int
+		InstanceActivity               func(childComplexity int, limit *int) int
+		InstanceBudgets                func(childComplexity int, exceeded *bool) int
+		InstanceDomainBlocks           func(childComplexity int, limit *int) int
+		InstanceHealthReport           func(childComplexity int, domain string) int
+		InstanceMetrics                func(childComplexity int) int
+		InstancePeers                  func(childComplexity int, limit *int) int
+		InstanceRelationships          func(childComplexity int, domain string) int
+		LinkTimeline                   func(childComplexity int, url string, first *int, after *model.Cursor) int
+		List                           func(childComplexity int, id string) int
+		ListAccounts                   func(childComplexity int, id string) int
+		ListHostedGenesisConversations func(childComplexity int, username string) int
+		Lists                          func(childComplexity int) int
+		Markers                        func(childComplexity int, timelines []model.MarkerTimeline) int
+		Media                          func(childComplexity int, id string) int
+		MediaLibrary                   func(childComplexity int, filter *model.MediaFilterInput, first *int, after *model.Cursor) int
+		MediaStreamURL                 func(childComplexity int, mediaID string) int
+		ModerationConsensus            func(childComplexity int, eventID string) int
+		ModerationDashboard            func(childComplexity int, filter *moderation.ModerationFilter) int
+		ModerationEffectiveness        func(childComplexity int, patternID string, period model.ModerationPeriod) int
+		ModerationHistory              func(childComplexity int, objectID string) int
+		ModerationPatterns             func(childComplexity int, active *bool, severity *model.ModerationSeverity, first *int, after *string) int
+		ModerationQueue                func(childComplexity int, first *int, after *model.Cursor) int
+		ModerationTrustScore           func(childComplexity int, actorID string) int
+		ModeratorActivity              func(childComplexity int, moderatorID string, period model.TimePeriod) int
+		MultiHashtagTimeline           func(childComplexity int, hashtags []string, mode model.HashtagMode, first *int, after *string) int
+		Mutes                          func(childComplexity int, first *int, after *model.Cursor) int
+		MyAgents                       func(childComplexity int) int
+		MyDrafts                       func(childComplexity int, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) int
+		MyDroneRequests                func(childComplexity int) int
+		MyDroneReviews                 func(childComplexity int) int
+		MyPublications                 func(childComplexity int) int
+		MySouls                        func(childComplexity int) int
+		Notification                   func(childComplexity int, id string) int
+		Notifications                  func(childComplexity int, types []string, excludeTypes []string, first *int, after *model.Cursor) int
+		Object                         func(childComplexity int, id string) int
+		PatternEffectiveness           func(childComplexity int, patternID string) int
+		PerformanceMetrics             func(childComplexity int, service model.ServiceCategory) int
+		PopularStreams                 func(childComplexity int, first int, after *string) int
+		ProfileDirectory               func(childComplexity int, filters *model.DirectoryFiltersInput, first *int, after *model.Cursor) int
+		Publication                    func(childComplexity int, id string) int
+		PublicationBySlug              func(childComplexity int, slug string) int
+		PushSubscription               func(childComplexity int) int
+		Relationship                   func(childComplexity int, id string) int
+		Relationships                  func(childComplexity int, ids []string) int
+		RemoveSuggestion               func(childComplexity int, accountID string) int
+		Reputation                     func(childComplexity int, actorID string) int
+		Revision                       func(childComplexity int, objectID string, version int) int
+		Revisions                      func(childComplexity int, objectID string, first *int, after *model.Cursor) int
+		RootCategories                 func(childComplexity int) int
+		ScheduledStatus                func(childComplexity int, id string) int
+		ScheduledStatuses              func(childComplexity int, first *int, after *model.Cursor) int
+		Search                         func(childComplexity int, query string, typeArg *string, first *int, after *model.Cursor) int
+		Series                         func(childComplexity int, id string) int
+		SeriesBySlug                   func(childComplexity int, slug string) int
+		SeveredRelationships           func(childComplexity int, instance *string, first *int, after *string) int
+		SlowQueries                    func(childComplexity int, threshold model.Duration) int
+		SoulBootstrap                  func(childComplexity int, username string) int
+		StatusFavouritedBy             func(childComplexity int, id string, first *int, after *model.Cursor) int
+		StatusHistory                  func(childComplexity int, id string, limit *int) int
+		StatusRebloggedBy              func(childComplexity int, id string, first *int, after *model.Cursor) int
+		StreamingAnalytics             func(childComplexity int, mediaID string) int
+		SuggestedHashtags              func(childComplexity int, limit *int) int
+		Suggestions                    func(childComplexity int, limit *int) int
+		SupportedBitrates              func(childComplexity int, mediaID string) int
+		ThreadContext                  func(childComplexity int, noteID string) int
+		Timeline                       func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) int
+		TranslateStatus                func(childComplexity int, id string, targetLanguage *string) int
+		TranslationLanguages           func(childComplexity int) int
+		TrendingLinks                  func(childComplexity int, limit *int) int
+		TrendingStatuses               func(childComplexity int, limit *int) int
+		TrendingTags                   func(childComplexity int, limit *int) int
+		Trends                         func(childComplexity int, limit *int) int
+		TrustGraph                     func(childComplexity int, actorID string, category *models.TrustCategory) int
+		UserPreferences                func(childComplexity int) int
+		Viewer                         func(childComplexity int) int
+		ViewerRole                     func(childComplexity int) int
+		Vouches                        func(childComplexity int, actorID string) int
 	}
 
 	QueryPerformance struct {
@@ -3886,6 +3897,7 @@ type QueryResolver interface {
 	MyDroneReviews(ctx context.Context) ([]*model.ReviewDecisionCard, error)
 	DroneWorkflow(ctx context.Context, username string) (*model.AgentWorkflowSurface, error)
 	SoulBootstrap(ctx context.Context, username string) (*model.SoulBootstrapSurface, error)
+	ListHostedGenesisConversations(ctx context.Context, username string) ([]*model.HostedGenesisConversationSummary, error)
 }
 type QuoteContextResolver interface {
 	OriginalAuthor(ctx context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error)
@@ -10456,6 +10468,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.HealthIssue.Type(childComplexity), true
+
+	case "HostedGenesisConversationSummary.conversationId":
+		if e.complexity.HostedGenesisConversationSummary.ConversationID == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.ConversationID(childComplexity), true
+
+	case "HostedGenesisConversationSummary.createdAt":
+		if e.complexity.HostedGenesisConversationSummary.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.CreatedAt(childComplexity), true
+
+	case "HostedGenesisConversationSummary.latestTurnId":
+		if e.complexity.HostedGenesisConversationSummary.LatestTurnID == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.LatestTurnID(childComplexity), true
+
+	case "HostedGenesisConversationSummary.messageCount":
+		if e.complexity.HostedGenesisConversationSummary.MessageCount == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.MessageCount(childComplexity), true
+
+	case "HostedGenesisConversationSummary.registrationId":
+		if e.complexity.HostedGenesisConversationSummary.RegistrationID == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.RegistrationID(childComplexity), true
+
+	case "HostedGenesisConversationSummary.status":
+		if e.complexity.HostedGenesisConversationSummary.Status == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.Status(childComplexity), true
+
+	case "HostedGenesisConversationSummary.updatedAt":
+		if e.complexity.HostedGenesisConversationSummary.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.HostedGenesisConversationSummary.UpdatedAt(childComplexity), true
 
 	case "HourlyBandwidth.hour":
 		if e.complexity.HourlyBandwidth.Hour == nil {
@@ -17324,6 +17385,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.ListAccounts(childComplexity, args["id"].(string)), true
+
+	case "Query.listHostedGenesisConversations":
+		if e.complexity.Query.ListHostedGenesisConversations == nil {
+			break
+		}
+
+		args, err := ec.field_Query_listHostedGenesisConversations_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ListHostedGenesisConversations(childComplexity, args["username"].(string)), true
 
 	case "Query.lists":
 		if e.complexity.Query.Lists == nil {
@@ -26092,6 +26165,17 @@ func (ec *executionContext) field_Query_listAccounts_args(ctx context.Context, r
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_listHostedGenesisConversations_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
 	return args, nil
 }
 
@@ -71184,6 +71268,302 @@ func (ec *executionContext) fieldContext_HealthIssue_impact(_ context.Context, f
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_conversationId(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_conversationId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ConversationID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_conversationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_registrationId(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_registrationId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RegistrationID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_registrationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_status(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_messageCount(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_messageCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MessageCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_messageCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_latestTurnId(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_latestTurnId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LatestTurnID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_latestTurnId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HostedGenesisConversationSummary_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.HostedGenesisConversationSummary) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_HostedGenesisConversationSummary_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_HostedGenesisConversationSummary_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HostedGenesisConversationSummary",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
 		},
 	}
 	return fc, nil
@@ -120257,6 +120637,77 @@ func (ec *executionContext) fieldContext_Query_soulBootstrap(ctx context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_listHostedGenesisConversations(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_listHostedGenesisConversations(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().ListHostedGenesisConversations(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.HostedGenesisConversationSummary)
+	fc.Result = res
+	return ec.marshalNHostedGenesisConversationSummary2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHostedGenesisConversationSummaryᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_listHostedGenesisConversations(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "conversationId":
+				return ec.fieldContext_HostedGenesisConversationSummary_conversationId(ctx, field)
+			case "registrationId":
+				return ec.fieldContext_HostedGenesisConversationSummary_registrationId(ctx, field)
+			case "status":
+				return ec.fieldContext_HostedGenesisConversationSummary_status(ctx, field)
+			case "messageCount":
+				return ec.fieldContext_HostedGenesisConversationSummary_messageCount(ctx, field)
+			case "latestTurnId":
+				return ec.fieldContext_HostedGenesisConversationSummary_latestTurnId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_HostedGenesisConversationSummary_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_HostedGenesisConversationSummary_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type HostedGenesisConversationSummary", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_listHostedGenesisConversations_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query___type(ctx, field)
 	if err != nil {
@@ -167826,6 +168277,63 @@ func (ec *executionContext) _HealthIssue(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var hostedGenesisConversationSummaryImplementors = []string{"HostedGenesisConversationSummary"}
+
+func (ec *executionContext) _HostedGenesisConversationSummary(ctx context.Context, sel ast.SelectionSet, obj *model.HostedGenesisConversationSummary) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, hostedGenesisConversationSummaryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("HostedGenesisConversationSummary")
+		case "conversationId":
+			out.Values[i] = ec._HostedGenesisConversationSummary_conversationId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationId":
+			out.Values[i] = ec._HostedGenesisConversationSummary_registrationId(ctx, field, obj)
+		case "status":
+			out.Values[i] = ec._HostedGenesisConversationSummary_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "messageCount":
+			out.Values[i] = ec._HostedGenesisConversationSummary_messageCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "latestTurnId":
+			out.Values[i] = ec._HostedGenesisConversationSummary_latestTurnId(ctx, field, obj)
+		case "createdAt":
+			out.Values[i] = ec._HostedGenesisConversationSummary_createdAt(ctx, field, obj)
+		case "updatedAt":
+			out.Values[i] = ec._HostedGenesisConversationSummary_updatedAt(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var hourlyBandwidthImplementors = []string{"HourlyBandwidth"}
 
 func (ec *executionContext) _HourlyBandwidth(ctx context.Context, sel ast.SelectionSet, obj *model.HourlyBandwidth) graphql.Marshaler {
@@ -178434,6 +178942,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_soulBootstrap(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "listHostedGenesisConversations":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_listHostedGenesisConversations(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -189500,6 +190030,60 @@ func (ec *executionContext) unmarshalNHealthStatus2githubᚗcomᚋequaltoaiᚋle
 
 func (ec *executionContext) marshalNHealthStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHealthStatus(ctx context.Context, sel ast.SelectionSet, v model.HealthStatus) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNHostedGenesisConversationSummary2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHostedGenesisConversationSummaryᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.HostedGenesisConversationSummary) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNHostedGenesisConversationSummary2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHostedGenesisConversationSummary(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNHostedGenesisConversationSummary2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHostedGenesisConversationSummary(ctx context.Context, sel ast.SelectionSet, v *model.HostedGenesisConversationSummary) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._HostedGenesisConversationSummary(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNHourlyBandwidth2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐHourlyBandwidthᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.HourlyBandwidth) graphql.Marshaler {

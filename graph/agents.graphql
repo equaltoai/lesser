@@ -678,6 +678,16 @@ type SoulBootstrapHostedGenesisConversation {
   updatedAt: Time
 }
 
+type HostedGenesisConversationSummary {
+  conversationId: String!
+  registrationId: String
+  status: String!
+  messageCount: Int!
+  latestTurnId: String
+  createdAt: Time
+  updatedAt: Time
+}
+
 type SoulBootstrapCorrelationState {
   correlationKey: String
   beginIdempotencyKey: String
@@ -988,6 +998,7 @@ extend type Query {
   myDroneReviews: [ReviewDecisionCard!]!
   droneWorkflow(username: String!): AgentWorkflowSurface
   soulBootstrap(username: String!): SoulBootstrapSurface
+  listHostedGenesisConversations(username: String!): [HostedGenesisConversationSummary!]!
 }
 
 extend type Mutation {

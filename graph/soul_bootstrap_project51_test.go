@@ -938,3 +938,141 @@ func TestProject51RecoverHostedSoulGenesisTurnRequiresAuth(t *testing.T) {
 	)
 	require.Error(t, err)
 }
+
+func TestProject51ListHostedGenesisConversationsReturnsSummaries(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+
+	const (
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		registrationID = "hreg_p51_list"
+	)
+
+	var listCalls int
+	resolver.soulsClient = &stubSoulService{
+		beginHostedBootstrapFunc: func(_ context.Context, input soulservice.BootstrapBeginInput) (*soulservice.BootstrapBeginResult, error) {
+			return &soulservice.BootstrapBeginResult{
+				RegistrationID:     registrationID,
+				HostSoulAgentID:    agentID,
+				AuthorityModel:     soulservice.SoulAuthorityModelInstanceTrust,
+				AnchorState:        soulservice.SoulAnchorStateHostedOffchain,
+				RegistrationStatus: "pending",
+				HostRequestID:      "host-req-p51-list-begin",
+			}, nil
+		},
+		listHostedGenesisConversationsFunc: func(_ context.Context, agentIDArg string) ([]soulservice.HostedGenesisConversationSummary, error) {
+			listCalls++
+			require.Equal(t, agentID, agentIDArg)
+			return []soulservice.HostedGenesisConversationSummary{
+				{
+					ConversationID: "conv_list_001",
+					RegistrationID: registrationID,
+					Status:         "in_progress",
+					MessageCount:   2,
+					LatestTurnID:   "turn_001",
+					CreatedAt:      &now,
+					UpdatedAt:      &now,
+				},
+				{
+					ConversationID: "conv_list_002",
+					RegistrationID: registrationID,
+					Status:         "declaration_ready",
+					MessageCount:   4,
+					LatestTurnID:   "turn_004",
+				},
+			}, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-list",
+		DisplayName: "Drone P51 List",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-list",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	started, err := (&mutationResolver{resolver}).StartHostedSoulBootstrap(
+		round13DroneAuthContext("owner", auth.ScopeWrite),
+		model.StartHostedSoulBootstrapInput{Username: "drone-p51-list"},
+	)
+	require.NoError(t, err)
+	require.Nil(t, started.Error)
+
+	summaries, err := (&queryResolver{resolver}).ListHostedGenesisConversations(
+		round13DroneAuthContext("owner", auth.ScopeRead),
+		"drone-p51-list",
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, listCalls)
+	require.Len(t, summaries, 2)
+
+	require.Equal(t, "conv_list_001", summaries[0].ConversationID)
+	require.Equal(t, "in_progress", summaries[0].Status)
+	require.Equal(t, 2, summaries[0].MessageCount)
+	require.NotNil(t, summaries[0].CreatedAt)
+	require.NotNil(t, summaries[0].UpdatedAt)
+
+	require.Equal(t, "conv_list_002", summaries[1].ConversationID)
+	require.Equal(t, "declaration_ready", summaries[1].Status)
+	require.Equal(t, 4, summaries[1].MessageCount)
+}
+
+func TestProject51ListHostedGenesisConversationsReturnsEmptyForNoAgentID(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 7, 2, 13, 0, 0, 0, time.UTC)
+
+	var listCalls int
+	resolver.soulsClient = &stubSoulService{
+		listHostedGenesisConversationsFunc: func(context.Context, string) ([]soulservice.HostedGenesisConversationSummary, error) {
+			listCalls++
+			return nil, nil
+		},
+	}
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-p51-noagent",
+		DisplayName: "Drone NoAgent",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-p51-noagent",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	summaries, err := (&queryResolver{resolver}).ListHostedGenesisConversations(
+		round13DroneAuthContext("owner", auth.ScopeRead),
+		"drone-p51-noagent",
+	)
+	require.NoError(t, err)
+	require.Empty(t, summaries)
+	require.Equal(t, 0, listCalls, "service must not be called when there is no agent ID")
+}
+
+func TestProject51ListHostedGenesisConversationsRequiresAuth(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+
+	_, err := (&queryResolver{resolver}).ListHostedGenesisConversations(
+		context.Background(),
+		"drone-p51",
+	)
+	require.Error(t, err)
+}

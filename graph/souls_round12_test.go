@@ -27,6 +27,7 @@ type stubSoulService struct {
 	completeBootstrapConversationFunc func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	recoverHostedGenesisTurnFunc     func(context.Context, soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	readBootstrapConversationFunc     func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	listHostedGenesisConversationsFunc func(context.Context, string) ([]soulservice.HostedGenesisConversationSummary, error)
 	prepareBootstrapFinalizeFunc      func(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	finalizeBootstrapFunc             func(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
 	publishHostedBootstrapFunc        func(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error)
@@ -114,6 +115,13 @@ func (s *stubSoulService) ReadBootstrapConversation(ctx context.Context, input s
 		return nil, errors.New("read bootstrap conversation not implemented")
 	}
 	return s.readBootstrapConversationFunc(ctx, input)
+}
+
+func (s *stubSoulService) ListHostedGenesisConversations(ctx context.Context, agentID string) ([]soulservice.HostedGenesisConversationSummary, error) {
+	if s.listHostedGenesisConversationsFunc == nil {
+		return nil, errors.New("list hosted genesis conversations not implemented")
+	}
+	return s.listHostedGenesisConversationsFunc(ctx, agentID)
 }
 
 func (s *stubSoulService) PrepareBootstrapFinalize(ctx context.Context, input soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error) {
