@@ -59,6 +59,60 @@ func (r *queryResolver) SoulBootstrap(ctx context.Context, username string) (*mo
 	return r.buildSoulBootstrapSurface(ctx, claims.Username, agentUser, governance, nil)
 }
 
+func (r *queryResolver) ListHostedGenesisConversations(ctx context.Context, username string) ([]*model.HostedGenesisConversationSummary, error) {
+	claims, err := r.requireAuthClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireDroneReadScope(claims); err != nil {
+		return nil, err
+	}
+
+	agentUser, _, err := r.loadDroneAgent(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	workflowState, err := r.loadDroneWorkflowState(agentUser)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to decode drone workflow metadata")
+	}
+	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
+		return nil, apperrors.Forbidden("not authorized to view soul bootstrap")
+	}
+
+	agentID := ""
+	if workflowState != nil && workflowState.SoulBootstrap != nil {
+		agentID = strings.TrimSpace(workflowState.SoulBootstrap.HostSoulAgentID)
+	}
+	if agentID == "" {
+		return []*model.HostedGenesisConversationSummary{}, nil
+	}
+
+	service, err := r.soulBootstrapService()
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to initialize soul bootstrap service")
+	}
+
+	summaries, err := service.ListHostedGenesisConversations(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*model.HostedGenesisConversationSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		out = append(out, &model.HostedGenesisConversationSummary{
+			ConversationID: summary.ConversationID,
+			RegistrationID: optionalString(summary.RegistrationID),
+			Status:         summary.Status,
+			MessageCount:   summary.MessageCount,
+			LatestTurnID:   optionalString(summary.LatestTurnID),
+			CreatedAt:      graphTimePtr(summary.CreatedAt),
+			UpdatedAt:      graphTimePtr(summary.UpdatedAt),
+		})
+	}
+	return out, nil
+}
+
 func (r *mutationResolver) StartHostedSoulBootstrap(ctx context.Context, input model.StartHostedSoulBootstrapInput) (*model.SoulBootstrapMutationPayload, error) {
 	correlation := graphHostedBootstrapCorrelation(
 		input.CorrelationKey,
@@ -142,6 +196,43 @@ func (r *mutationResolver) CompleteHostedSoulGenesis(ctx context.Context, input 
 			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
 		}
 		return soulBootstrapStateAfterHostedConversationComplete(agentUser, existing, correlation, result, now), nil
+	})
+}
+
+func (r *mutationResolver) RecoverHostedSoulGenesisTurn(ctx context.Context, input model.RecoverHostedSoulGenesisTurnInput) (*model.SoulBootstrapMutationPayload, error) {
+	correlation := graphHostedBootstrapCorrelation(
+		input.CorrelationKey,
+		input.IdempotencyKey,
+		soulBootstrapCorrelationOpConversation,
+		input.RecoveryAttemptID,
+	)
+	return r.executeSoulBootstrapReviewMutation(ctx, input.Username, func(
+		ctx context.Context,
+		agentUser *storage.User,
+		_ *storage.AgentGovernanceState,
+		service soulBootstrapHostService,
+		existing *workflow.SoulBootstrapState,
+		now time.Time,
+	) (*workflow.SoulBootstrapState, error) {
+		registrationID, err := soulBootstrapRegistrationID(existing, input.RegistrationID)
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		conversationID, err := soulBootstrapRequiredConversationID(existing, input.ConversationID)
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		result, err := service.RecoverHostedGenesisTurn(ctx, soulservice.BootstrapConversationRecoverInput{
+			RegistrationID:  registrationID,
+			ConversationID:  conversationID,
+			CorrelationID:   derefString(input.CorrelationKey),
+			IdempotencyKey:  derefString(input.IdempotencyKey),
+			LesserRequestID: "",
+		})
+		if err != nil {
+			return soulBootstrapErrorState(agentUser, existing, correlation, err, now), nil
+		}
+		return soulBootstrapStateAfterHostedConversationSnapshot(agentUser, existing, correlation, result, now), nil
 	})
 }
 
@@ -495,7 +586,9 @@ type soulBootstrapHostService interface {
 	VerifyBootstrapPrincipalDeclaration(context.Context, soulservice.BootstrapPrincipalVerifyInput) (*soulservice.BootstrapPrincipalVerifyResult, error)
 	SendBootstrapConversationMessage(context.Context, soulservice.BootstrapConversationMessageInput) (*soulservice.BootstrapConversationMessageResult, error)
 	CompleteBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	RecoverHostedGenesisTurn(context.Context, soulservice.BootstrapConversationRecoverInput) (*soulservice.BootstrapConversationCompleteResult, error)
 	ReadBootstrapConversation(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error)
+	ListHostedGenesisConversations(context.Context, string) ([]soulservice.HostedGenesisConversationSummary, error)
 	PrepareBootstrapFinalize(context.Context, soulservice.BootstrapFinalizePreflightInput) (*soulservice.BootstrapFinalizePreflightResult, error)
 	FinalizeBootstrap(context.Context, soulservice.BootstrapFinalizeInput) (*soulservice.BootstrapFinalizeResult, error)
 	PublishHostedBootstrap(context.Context, soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error)
