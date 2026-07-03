@@ -276,3 +276,80 @@ correlation/request ids, evidence payloads, and publication evidence.
 - ActivityPub / federation: no actor, inbox/outbox, signing, WebFinger, object, collection, or delivery changes.
 - DynamoDB schema: no PK/SK/GSI/TableTheory-tag changes in M1.2.
 - Sibling consumers: Greater M1.3 and Sim must be able to represent every row before M3 resolver work ships.
+
+## P52 — MicroVM-only genesis: accept-then-poll transport + turn-state surface
+
+Project 52 (parent `equaltoai/lesser#1213`; host dependency `lesser-host#867` H1.2) makes the genesis
+turn a MicroVM-dispatched async operation. Host returns `202 Accepted-Pending` and processes the turn
+asynchronously; Lesser's transport and state machine honor a 202-then-poll contract. This section is the
+contract snapshot Greater consumes to sync soul-bootstrap adapters for the turn-state surface and accept
+semantics. It is additive to the M1.2 projection table above — no GraphQL schema change, no status-vocabulary
+change, no DynamoDB schema change.
+
+The machine-readable fixture for this section is checked in at
+`docs/contracts/examples/hosted-soul-genesis-accept-semantics.example.json`.
+
+### Accept semantics (transport)
+
+`sendHostedSoulGenesisMessage` relays one mint-conversation turn to Host's durable instance-key route.
+The HTTP status is transport state only:
+
+| Host HTTP status | Lesser transport behavior | Lesser result status | Inline assistant messages | Conversation id |
+| --- | --- | --- | --- | --- |
+| `202 Accepted` | Accepted-pending. The body is **not** parsed as a full conversation snapshot. | `in_progress` (canonical pending status) | None — `messages` is empty, `messageCount` is 0. | Persisted early: extracted best-effort from a minimal body (top-level or nested `conversation`), else the caller's existing id. |
+| `200 OK` | Synchronous snapshot (legacy / non-MicroVM path). Parsed and validated as a full snapshot. | Host-authored status from the snapshot. | Projected from the snapshot when Host supplies them. | From the snapshot. |
+
+The send POST is bounded by a short **accept timeout** (`defaultSoulBootstrapAcceptTimeout`, <2s), sized for
+Host's 202 accept — not for the turn to complete. Discovery and read/poll HTTP calls keep the longer
+`defaultSoulHTTPTimeout` (10s). A send that does not receive Host's accept in time surfaces `HOST_UNAVAILABLE`.
+
+### Turn-state surface (state machine)
+
+Pending turn statuses route the client to **poll** (`REFRESH_STATE`), not to re-send. This realigns the
+resolver with the M1.2 projection table; the code had drifted to `SEND` for pending statuses.
+
+| Lesser `state` | Host status | `typedNextAction` | `availableActions` | Notes |
+| --- | --- | --- | --- | --- |
+| `conversation.in_progress` | `in_progress` / `created` | `REFRESH_STATE` | `[REFRESH_STATE, SEND_HOSTED_SOUL_GENESIS_MESSAGE]` | Pending turn. Poll is primary; SEND remains an allowed alternative. |
+| `conversation.declaration_extraction_pending` | `declaration_extraction_pending` | `REFRESH_STATE` | `[REFRESH_STATE]` | Declaration extraction pending. Poll only — do not send again. |
+| `conversation.assistant_turn_ready` | `assistant_turn_ready` | `COMPLETE_HOSTED_SOUL_GENESIS` | `[SEND_HOSTED_SOUL_GENESIS_MESSAGE, COMPLETE_HOSTED_SOUL_GENESIS]` | Unchanged. |
+| `conversation.registration_active` | registration active, no conversation | `SEND_HOSTED_SOUL_GENESIS_MESSAGE` | `[SEND_HOSTED_SOUL_GENESIS_MESSAGE]` | Unchanged — no conversation yet. |
+
+### Error routing (accept timeout)
+
+An accept timeout (`HOST_UNAVAILABLE`) on the send POST routes the client to **poll** (`REFRESH_STATE`), never
+to `RETRY_SAME_STEP`. `RETRY_SAME_STEP` would instruct the client to re-issue the same blocking send — the
+binding constraint this project removes. Host may have accepted the turn and be processing it asynchronously;
+the safe forward motion is to poll, which reconciles via the read path and recovers the conversation id. A
+genuine Host-authored `failed` conversation with a `retry_same_step` recovery action still routes to
+`RETRY_SAME_STEP` (the `failed` row of the M1.2 table) — the timeout→poll change is scoped to
+`HOST_UNAVAILABLE`.
+
+### Observability (no silent rewrites)
+
+- An empty/unknown Host status is not silently coerced to `in_progress`; the existing state's status is
+  preserved, falling back to `in_progress` only for a brand-new conversation.
+- Reconcile logs Host read errors and service-resolution errors (best-effort, non-fatal) instead of silently
+  swallowing them.
+- The errored→send retry repair is logged at both call sites; it is only reachable for a genuine
+  Host-authored `retry_same_step`, not for accept timeouts.
+
+### Greater sync notes
+
+- No GraphQL schema change in P52; Greater adapters consume the existing `SoulBootstrapState` and
+  `SoulBootstrapHostedGenesisConversation` surfaces. The turn-state routing changes are observable through
+  `typedNextAction` / `availableActions` values, which are already in the `SoulBootstrapNextAction` enum.
+- Greater's step (G4) is to update soul-bootstrap adapters so a pending turn (`in_progress`,
+  `declaration_extraction_pending`) drives a poll/refresh UX rather than an immediate re-send, and so an
+  accept-timeout error surfaces as "polling state" rather than "re-send". Lesser only produces this snapshot.
+- Integration proof (send returns accepted in <2s while a >30s turn completes via poll) is BLOCKED on
+  `lesser-host#867` H1.2 lab evidence; the unit proof ships with this snapshot.
+
+## P52 contract audit (additive)
+
+- Mastodon REST: no impact; no `/api/v1/*` shape changes.
+- GraphQL: no schema change; `SoulBootstrapNextAction` already includes `REFRESH_STATE`. No regeneration.
+- ActivityPub / federation: no actor, inbox/outbox, signing, WebFinger, object, collection, or delivery changes.
+- DynamoDB schema: no PK/SK/GSI/TableTheory-tag changes.
+- Sibling consumers: Greater consumes this accept-semantics snapshot to sync soul-bootstrap adapters (G4).
+
