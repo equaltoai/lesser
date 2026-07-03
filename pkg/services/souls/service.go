@@ -41,7 +41,21 @@ var (
 	ErrTargetAgentAlreadyHasSoul = errors.New("target agent already has soul")
 )
 
+// defaultSoulHTTPTimeout bounds soul discovery (search/identity) and Host
+// bootstrap *read* (poll) HTTP calls — operations that return a complete
+// response body. It is deliberately longer than the accept timeout because a
+// poll reads a fully-formed snapshot.
 const defaultSoulHTTPTimeout = 10 * time.Second
+
+// defaultSoulBootstrapAcceptTimeout bounds the Host bootstrap *send* POST
+// (mint-conversation turn). Under the MicroVM-only genesis contract (P52 /
+// lesser-host#867) Host returns 202 Accepted-Pending and dispatches the turn
+// to a MicroVM asynchronously; Lesser must not block this call for the whole
+// turn. This timeout is sized for Host's 202 *accept*, not for the turn to
+// complete — it stays well under 2s. A timeout here means "Host did not
+// acknowledge the turn in time", which routes the client to poll (REFRESH_STATE),
+// never to re-issue the same blocking send (see G15).
+const defaultSoulBootstrapAcceptTimeout = 1500 * time.Millisecond
 
 const (
 	defaultSoulSearchPageLimit = 100
