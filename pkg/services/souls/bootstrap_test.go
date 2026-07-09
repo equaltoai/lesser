@@ -859,11 +859,17 @@ func TestProject51ServiceReplaysHostV106ConversationFixtures(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "Bearer "+instanceKey, sawPostAuth)
+	// P52 L3.1: a 202 Accepted-Pending is transport success. The 202 body is
+	// NOT parsed as a full snapshot (G12) and never carries inline assistant
+	// messages (G13): MessageCount is 0 and Messages is empty. Host's
+	// conversation/agent ids are extracted best-effort so Lesser persists
+	// host_conversation_id early; status is the canonical pending status.
 	require.Equal(t, registrationID, sent.RegistrationID)
 	require.Equal(t, agentID, sent.HostSoulAgentID)
 	require.Equal(t, conversationID, sent.ConversationID)
 	require.Equal(t, "in_progress", sent.Status)
-	require.Equal(t, 1, sent.MessageCount)
+	require.Equal(t, 0, sent.MessageCount)
+	require.Empty(t, sent.Messages)
 	require.Equal(t, "req_hosted_genesis_01", sent.HostRequestID)
 	require.Empty(t, sent.ProducedDeclarations)
 
@@ -2598,4 +2604,204 @@ func TestService_BootstrapInvalidHostResponseIsTyped(t *testing.T) {
 	require.ErrorIs(t, err, ErrHostUnavailable)
 	require.Equal(t, "HOST_RESPONSE_INVALID", hostErr.Code)
 	require.Equal(t, "host-req-invalid-json", hostErr.HostRequestID)
+}
+
+// TestP52_SendBootstrapConversation202AcceptedPendingNotParsedAsSnapshot proves
+// L3.1 G12: a 202 Accepted-Pending response is never parsed as a full
+// conversation snapshot, and G13: it never surfaces inline assistant messages.
+// Host may carry transcript fields in the 202 body; Lesser must ignore them for
+// a pending accept and project MessageCount=0 / Messages=nil while still
+// persisting the conversation id early.
+func TestP52_SendBootstrapConversation202AcceptedPendingNotParsedAsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_p52_accept"
+		conversationID = "conv_p52_accept"
+		agentID        = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-Id", "host-req-accept-header")
+		w.WriteHeader(http.StatusAccepted)
+		// Host nests ids under a durable conversation envelope and — crucially
+		// — includes transcript fields Lesser must NOT project from a 202.
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version":    "1",
+			"request_id": "host-req-accept-body",
+			"conversation": map[string]any{
+				"registration_id": registrationID,
+				"conversation_id": conversationID,
+				"agent_id":        agentID,
+				"status":          "in_progress",
+				"latest_turn_id":  "turn_should_not_project",
+				"message_count":   3,
+				"messages": []map[string]any{
+					{"role": "assistant", "content": "assistant message that must NOT be projected from a 202", "order": 1},
+					{"role": "user", "content": "user message that must NOT be projected from a 202", "order": 2},
+				},
+				"produced_declarations": map[string]any{"selfDescription": "must not appear"},
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	sent, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: registrationID,
+		Message:        "start hosted genesis",
+	})
+	require.NoError(t, err, "202 Accepted-Pending is transport success")
+	// G12: 202 is not a snapshot. G13: no inline assistant messages.
+	require.Equal(t, "in_progress", sent.Status)
+	require.Equal(t, 0, sent.MessageCount, "202 must not project a snapshot message_count")
+	require.Empty(t, sent.Messages, "202 must not project inline assistant messages")
+	require.Empty(t, sent.LatestTurnID, "202 must not project a latest turn id")
+	require.Empty(t, sent.ProducedDeclarations, "202 must not project produced declarations")
+	// Ids are extracted best-effort so host_conversation_id persists early.
+	require.Equal(t, registrationID, sent.RegistrationID)
+	require.Equal(t, conversationID, sent.ConversationID)
+	require.Equal(t, agentID, sent.HostSoulAgentID)
+	require.Equal(t, "host-req-accept-body", sent.HostRequestID)
+}
+
+// TestP52_SendBootstrapConversation202EmptyBodyAcceptedPending proves a 202
+// with no body is still a valid accepted-pending: Lesser falls back to the
+// caller's existing conversation id and never errors with HOST_RESPONSE_INVALID.
+func TestP52_SendBootstrapConversation202EmptyBodyAcceptedPending(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_p52_empty"
+		conversationID = "conv_p52_existing"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Request-Id", "host-req-empty-202")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	sent, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+		Message:        "start hosted genesis",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "in_progress", sent.Status)
+	require.Equal(t, 0, sent.MessageCount)
+	require.Empty(t, sent.Messages)
+	require.Equal(t, registrationID, sent.RegistrationID)
+	require.Equal(t, conversationID, sent.ConversationID, "empty 202 body preserves the caller conversation id")
+	require.Equal(t, "host-req-empty-202", sent.HostRequestID)
+}
+
+// TestP52_SendBootstrapConversation200ParsesFullSnapshot proves the legacy
+// synchronous 200 path still parses a complete snapshot with inline messages —
+// the 202-not-a-snapshot change is scoped to 202 only.
+func TestP52_SendBootstrapConversation200ParsesFullSnapshot(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_p52_200"
+		conversationID = "conv_p52_200"
+		agentID        = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version": "1",
+			"conversation": map[string]any{
+				"registration_id": registrationID,
+				"conversation_id": conversationID,
+				"agent_id":        agentID,
+				"status":          "assistant_turn_ready",
+				"latest_turn_id":  "turn_200",
+				"message_count":   2,
+				"messages": []map[string]any{
+					{"role": "user", "content": "hello", "order": 1},
+					{"role": "assistant", "content": "ready", "order": 2},
+				},
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	sent, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: registrationID,
+		Message:        "start hosted genesis",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "assistant_turn_ready", sent.Status)
+	require.Equal(t, 2, sent.MessageCount, "200 full snapshot still carries message_count")
+	require.Len(t, sent.Messages, 2, "200 full snapshot still carries inline messages")
+	require.Equal(t, conversationID, sent.ConversationID)
+}
+
+// TestP52_SendBootstrapConversationAcceptTimeoutRoutesHostUnavailable proves
+// L3.1 G11 + L3.2 G15 setup: the send POST is bounded by the short accept
+// timeout (not the 10s turn wait). When Host does not acknowledge the turn in
+// time, Lesser surfaces HOST_UNAVAILABLE — which L3.2 routes to REFRESH_STATE
+// (poll), never to RETRY_SAME_STEP (re-issue the blocking call).
+func TestP52_SendBootstrapConversationAcceptTimeoutRoutesHostUnavailable(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instanceKey    = "host-instance-key"
+		registrationID = "reg_p52_timeout"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sleep past the accept timeout. Host never acknowledges the turn.
+		time.Sleep(defaultSoulBootstrapAcceptTimeout + 500*time.Millisecond)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer host.Close()
+
+	service := NewService(
+		&fakeAccountRepo{},
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+		&config.Config{Domain: "example.com", LesserHostInstanceKey: instanceKey},
+		zap.NewNop(),
+	).WithHTTPClient(&http.Client{Transport: http.DefaultTransport})
+
+	start := time.Now()
+	_, err := service.SendBootstrapConversationMessage(context.Background(), BootstrapConversationMessageInput{
+		RegistrationID: registrationID,
+		Message:        "start hosted genesis",
+	})
+	elapsed := time.Since(start)
+	require.Error(t, err)
+	var hostErr *HostBootstrapError
+	require.ErrorAs(t, err, &hostErr)
+	require.Equal(t, "HOST_UNAVAILABLE", hostErr.Code)
+	// The call must be bounded by the accept timeout, not the 10s turn wait.
+	require.Less(t, elapsed, defaultSoulHTTPTimeout, "send must use the short accept timeout, not the 10s turn wait")
 }
