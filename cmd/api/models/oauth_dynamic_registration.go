@@ -8,6 +8,7 @@ type OAuthDynamicClientRegistrationRequest struct {
 	GrantTypes              []string `json:"grant_types,omitempty"`
 	ResponseTypes           []string `json:"response_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	ApplicationType         string   `json:"application_type,omitempty"`
 	ClientURI               string   `json:"client_uri,omitempty"`
 	LogoURI                 string   `json:"logo_uri,omitempty"`
 	Contacts                []string `json:"contacts,omitempty"`

@@ -226,6 +226,42 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, "cli-software", normalized.softwareID)
 		require.Equal(t, "1.2.3", normalized.softwareVersion)
 	})
+
+	t.Run("accepts rmcp application_type metadata", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
+
+		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Codex MCP Client",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			GrantTypes:              []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken},
+			ResponseTypes:           []string{"code"},
+			Scope:                   "read write follow push",
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+			ApplicationType:         "native",
+		})
+		require.NoError(t, err)
+		require.Nil(t, resp)
+		require.NotNil(t, normalized)
+		require.Equal(t, auth.ClientClassCLI, normalized.clientClass)
+		require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, normalized.grantTypes)
+		require.Equal(t, []string{"code"}, normalized.responseTypes)
+	})
+
+	t.Run("rejects invalid application_type metadata", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
+
+		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:      "Unknown Native Client",
+			RedirectURIs:    []string{"http://127.0.0.1:8787/callback"},
+			ApplicationType: "desktop",
+		})
+		require.Nil(t, normalized)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+	})
 }
 
 func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {

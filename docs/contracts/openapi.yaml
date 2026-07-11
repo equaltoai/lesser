@@ -4112,6 +4112,9 @@ components:
         OAuthDynamicClientRegistrationRequest:
             additionalProperties: false
             properties:
+                application_type:
+                    description: Optional OIDC/SEP-837 client application type accepted for dynamic-registration compatibility. Lesser accepts `native` or `web` and does not persist this as the Lesser client_class.
+                    type: string
                 client_class:
                     description: Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.
                     type: string
