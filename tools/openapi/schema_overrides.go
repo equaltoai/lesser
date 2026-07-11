@@ -48,6 +48,7 @@ func overrideCreateStatusRequest(schemas map[string]any) {
 func overrideOAuthClientSchemas(schemas map[string]any) {
 	overrideSchemaProperty(schemas, "AppRegistrationRequest", "client_class", "Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.", false)
 	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "client_class", "Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces.", false)
+	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationRequest", "application_type", "Optional OIDC/SEP-837 client application type accepted for dynamic-registration compatibility. Lesser accepts `native` or `web` and does not persist this as the Lesser client_class.", false)
 	overrideSchemaProperty(schemas, "OAuthDynamicClientRegistrationResponse", "client_class", "Lesser client classification persisted for the registered public client.", false)
 	overrideSchemaProperty(schemas, "OAuthTokenRequest", "resource", "Canonical target resource URI. For remote MCP authorization, this must match the actor-scoped MCP URL used during the authorize request.", false)
 }

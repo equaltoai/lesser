@@ -27,6 +27,7 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
 			Scope:                   "read write",
 			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+			ApplicationType:         "native",
 			ClientURI:               "https://claude.example/client",
 			SoftwareID:              "claude-code",
 			SoftwareVersion:         "1.0.0",
