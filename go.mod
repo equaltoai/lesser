@@ -1,6 +1,6 @@
 module github.com/equaltoai/lesser
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/99designs/gqlgen v0.17.88
@@ -53,7 +53,7 @@ require (
 	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.32
-	github.com/yuin/goldmark v1.7.13
+	github.com/yuin/goldmark v1.7.17
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.43.0
