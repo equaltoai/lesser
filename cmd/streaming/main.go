@@ -25,7 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"

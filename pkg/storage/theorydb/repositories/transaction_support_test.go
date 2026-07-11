@@ -10,9 +10,7 @@ import (
 	repoTesting "github.com/equaltoai/lesser/pkg/storage/theorydb/repositories/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	tableErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	githubMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	githubMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -95,11 +93,7 @@ func TestTransactionManager_ExecuteTransaction_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil).Run(func(args mock.Arguments) {
-		fn := args.Get(0).(func(*core.Tx) error)
-		mockTx := &core.Tx{}
-		_ = fn(mockTx)
-	})
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
 
 	executed := false
 	err := tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
@@ -126,7 +120,7 @@ func TestTransactionManager_ExecuteTransaction_Error(t *testing.T) {
 	expectedError := errors.New("transaction failed")
 
 	// Mock failed transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(expectedError)
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(expectedError)
 
 	err := tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
 		return errors.New("user error")
@@ -139,7 +133,7 @@ func TestTransactionManager_ExecuteTransaction_Error(t *testing.T) {
 
 // Removed ExecuteWithRetry tests - they were testing mock behavior rather than business logic
 // These tests didn't provide value as unit tests since they only verified
-// that when db.Transaction() fails, the transaction function doesn't run
+// that when db.TransactWrite() fails, the transaction function doesn't run
 
 func TestDefaultTransactionConfig(t *testing.T) {
 	config := DefaultTransactionConfig()
@@ -161,7 +155,7 @@ func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
 	resourceIDs := []string{"resource1", "resource2", "resource3"}
 
 	// Mock transaction execution - simulate successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil)
 
 	err := repo.TransferOwnershipTransactional(ctx, "fromUser", "toUser", resourceIDs)
 
@@ -171,13 +165,7 @@ func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
 }
 
 func newTransactionContextWithMocks() *TransactionContext {
-	mockDB := new(repoTesting.MockDB)
-	mockQuery := newNoopQuery()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-
-	tx := &core.Tx{}
-	tx.SetDB(mockDB)
+	tx := new(githubMocks.MockTransactionBuilder)
 
 	return &TransactionContext{
 		tx:            tx,
@@ -188,14 +176,7 @@ func newTransactionContextWithMocks() *TransactionContext {
 }
 
 func TestConditionalCreate(t *testing.T) {
-	mockDB := new(repoTesting.MockDB)
-	mockQuery := new(githubMocks.MockQuery)
-	mockQuery.On("First", mock.Anything).Return(tableErrors.ErrItemNotFound).Once()
-	mockQuery.On("Create").Return(nil).Once()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-
-	tx := &core.Tx{}
-	tx.SetDB(mockDB)
+	tx := new(githubMocks.MockTransactionBuilder)
 	txCtx := &TransactionContext{
 		tx:            tx,
 		operationsCnt: 0,
@@ -215,7 +196,11 @@ func TestConditionalCreate(t *testing.T) {
 func TestConditionalUpdate(t *testing.T) {
 	txCtx := newTransactionContextWithMocks()
 
-	item := map[string]any{"key": "value"}
+	item := struct {
+		PK    string
+		SK    string
+		Value string
+	}{PK: "test", SK: "test", Value: "value"}
 	key := map[string]any{"PK": "test"}
 
 	err := ConditionalUpdate(txCtx, item, key, "attribute_exists(PK)")
@@ -282,7 +267,7 @@ func BenchmarkTransactionManager_ExecuteTransaction(b *testing.B) {
 	ctx := context.Background()
 
 	// Mock successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

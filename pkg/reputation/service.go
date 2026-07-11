@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 type userRepository interface {

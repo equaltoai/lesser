@@ -13,8 +13,8 @@ import (
 	storagemocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	theorydbmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	theorydbmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -74,7 +74,7 @@ func TestRound08_AuthRefreshTokenRepository_CoverageSweep(t *testing.T) {
 
 				mockInner.On("WithContext", mock.Anything).Return(mockInner).Maybe()
 				mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
-				mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
+				mockInner.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("update failed")).Once()
 
 				mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 					old := args.Get(0).(*models.AuthRefreshToken)
@@ -87,8 +87,6 @@ func TestRound08_AuthRefreshTokenRepository_CoverageSweep(t *testing.T) {
 					old.Revoked = false
 					_ = old.UpdateKeys()
 				}).Return(nil).Once()
-
-				mockQuery.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
 
 				setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 
@@ -104,7 +102,7 @@ func TestRound08_AuthRefreshTokenRepository_CoverageSweep(t *testing.T) {
 
 				mockInner.On("WithContext", mock.Anything).Return(mockInner).Maybe()
 				mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
-				mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
+				mockInner.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("create failed")).Once()
 
 				mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 					old := args.Get(0).(*models.AuthRefreshToken)
@@ -117,9 +115,6 @@ func TestRound08_AuthRefreshTokenRepository_CoverageSweep(t *testing.T) {
 					old.Revoked = false
 					_ = old.UpdateKeys()
 				}).Return(nil).Once()
-
-				mockQuery.On("Update", mock.Anything).Return(nil).Once()
-				mockQuery.On("Create").Return(errors.New("create failed")).Once()
 
 				setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 

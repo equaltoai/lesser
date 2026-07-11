@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 )
 
 type transactionTestDB struct {
@@ -21,12 +21,6 @@ func (db *transactionTestDB) Model(_ any) core.Query {
 	return db.query
 }
 
-func (db *transactionTestDB) Transaction(fn func(tx *core.Tx) error) error {
-	tx := &core.Tx{}
-	tx.SetDB(db)
-	return fn(tx)
-}
-
 func (db *transactionTestDB) Migrate() error { return nil }
 
 func (db *transactionTestDB) AutoMigrate(_ ...any) error { return nil }
@@ -34,6 +28,17 @@ func (db *transactionTestDB) AutoMigrate(_ ...any) error { return nil }
 func (db *transactionTestDB) Close() error { return nil }
 
 func (db *transactionTestDB) WithContext(_ context.Context) core.DB { return db }
+
+func (db *transactionTestDB) Transact() core.TransactionBuilder {
+	return new(dynamormMocks.MockTransactionBuilder)
+}
+
+func (db *transactionTestDB) TransactWrite(_ context.Context, fn func(core.TransactionBuilder) error) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(new(dynamormMocks.MockTransactionBuilder))
+}
 
 func TestExampleCreateUserWithPosts_UsesInjectedClient_Round23(t *testing.T) {
 	originalClient := client

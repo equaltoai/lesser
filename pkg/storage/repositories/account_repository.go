@@ -21,8 +21,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )

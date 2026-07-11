@@ -29,7 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
@@ -518,7 +518,7 @@ func appError(code, message string) error {
 	if message == "" {
 		message = "internal error"
 	}
-	return &apptheory.AppError{Code: code, Message: message}
+	return apptheory.NewAppTheoryError(code, message)
 }
 
 func okWebSocketResponse() *apptheory.Response {

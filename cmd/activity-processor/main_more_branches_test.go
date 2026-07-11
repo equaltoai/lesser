@@ -13,7 +13,7 @@ import (
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamock "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

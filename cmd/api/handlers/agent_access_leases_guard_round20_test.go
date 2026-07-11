@@ -16,7 +16,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 )
 
 func TestAgentAccessLeaseHandlersRound20_GuardBranches(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
-	tablesession "github.com/theory-cloud/tabletheory/pkg/session"
+	tablesession "github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 func TestDefaultRepositoryDynamoClient_UsesConfiguredEndpoint(t *testing.T) {

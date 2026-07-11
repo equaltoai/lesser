@@ -19,7 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
+	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -481,12 +481,9 @@ type lambdaTimeoutRecorderDB struct {
 }
 
 func (db *lambdaTimeoutRecorderDB) Model(any) tablecore.Query { return nil }
-func (db *lambdaTimeoutRecorderDB) Transaction(fn func(tx *tablecore.Tx) error) error {
-	return fn(&tablecore.Tx{})
-}
-func (db *lambdaTimeoutRecorderDB) Migrate() error           { return nil }
-func (db *lambdaTimeoutRecorderDB) AutoMigrate(...any) error { return nil }
-func (db *lambdaTimeoutRecorderDB) Close() error             { return nil }
+func (db *lambdaTimeoutRecorderDB) Migrate() error            { return nil }
+func (db *lambdaTimeoutRecorderDB) AutoMigrate(...any) error  { return nil }
+func (db *lambdaTimeoutRecorderDB) Close() error              { return nil }
 func (db *lambdaTimeoutRecorderDB) WithContext(context.Context) tablecore.DB {
 	return db
 }

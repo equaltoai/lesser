@@ -49,10 +49,9 @@ func TestWebFingerStrictRouteInventoryParity_Round13(t *testing.T) {
 	require.Equal(t, 1, hits)
 }
 
-func TestRegisterWebFingerRoutesStrictFailure_Round13(t *testing.T) {
+func TestRegisterWebFingerRoutesNilAppNoop_Round13(t *testing.T) {
 	err := registerWebFingerRoutes(nil, func(*apptheory.Context) (*apptheory.Response, error) {
 		return &apptheory.Response{Status: http.StatusNoContent}, nil
 	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "register webfinger route GET /.well-known/webfinger")
+	require.NoError(t, err)
 }

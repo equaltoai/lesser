@@ -13,7 +13,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	theoryMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -645,16 +646,58 @@ type MockDB struct {
 	mock.Mock
 }
 
+func (m *MockDB) hasExpectedCall(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 // Model mocks the Model method of the core.DB interface
 func (m *MockDB) Model(model any) core.Query {
 	args := m.Called(model)
 	return args.Get(0).(core.Query)
 }
 
-// Transaction mocks the Transaction method of the core.DB interface
-func (m *MockDB) Transaction(fn func(*core.Tx) error) error {
-	args := m.Called(fn)
-	return args.Error(0)
+// Transact returns a transaction builder for tests that exercise TableTheory v2
+// transaction APIs.
+func (m *MockDB) Transact() core.TransactionBuilder {
+	if m.hasExpectedCall("Transact") {
+		args := m.Called()
+		if builder, ok := args.Get(0).(core.TransactionBuilder); ok {
+			return builder
+		}
+	}
+	return new(theoryMocks.MockTransactionBuilder)
+}
+
+// TransactWrite executes a function with a TableTheory v2 transaction builder.
+func (m *MockDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	builder := new(theoryMocks.MockTransactionBuilder)
+	if m.hasExpectedCall("TransactWrite") {
+		callbackInvoked := false
+		wrapped := func(tx core.TransactionBuilder) error {
+			callbackInvoked = true
+			if fn == nil {
+				return nil
+			}
+			return fn(tx)
+		}
+		args := m.Called(ctx, wrapped)
+		if err := args.Error(0); err != nil {
+			return err
+		}
+		if callbackInvoked || fn == nil {
+			return nil
+		}
+		return fn(builder)
+	}
+	if fn == nil {
+		return nil
+	}
+	return fn(builder)
 }
 
 // WithContext mocks the WithContext method of the core.DB interface

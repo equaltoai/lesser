@@ -10,9 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
-	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	theorydb "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 )
 
 func TestDetermineBootstrapWallet_ExistingAddress(t *testing.T) {

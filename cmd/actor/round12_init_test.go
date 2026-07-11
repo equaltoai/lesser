@@ -9,20 +9,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
 type noopCoreDB struct{}
 
 func (noopCoreDB) Model(any) dynamormCore.Query { return nil }
-
-func (noopCoreDB) Transaction(fn func(tx *dynamormCore.Tx) error) error {
-	if fn == nil {
-		return nil
-	}
-	return fn(nil)
-}
 
 func (noopCoreDB) Migrate() error { return nil }
 

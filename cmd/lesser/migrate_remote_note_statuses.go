@@ -21,9 +21,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	lessertheorydb "github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 	"go.uber.org/zap"
 )
 

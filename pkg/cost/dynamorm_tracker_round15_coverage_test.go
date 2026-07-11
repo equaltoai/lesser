@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -23,19 +23,6 @@ func (db *fakeDB) Model(model any) core.Query {
 	return db.query
 }
 
-func (db *fakeDB) Transaction(fn func(tx *core.Tx) error) error {
-	if db.transactionErr != nil {
-		return db.transactionErr
-	}
-	if fn == nil {
-		return nil
-	}
-	db.transactionFnCalled = true
-	tx := &core.Tx{}
-	tx.SetDB(db)
-	return fn(tx)
-}
-
 func (db *fakeDB) Migrate() error { return nil }
 
 func (db *fakeDB) AutoMigrate(models ...any) error { return nil }
@@ -43,6 +30,19 @@ func (db *fakeDB) AutoMigrate(models ...any) error { return nil }
 func (db *fakeDB) Close() error { return nil }
 
 func (db *fakeDB) WithContext(ctx context.Context) core.DB { return db }
+
+func (db *fakeDB) Transact() core.TransactionBuilder { return nil }
+
+func (db *fakeDB) TransactWrite(_ context.Context, fn func(core.TransactionBuilder) error) error {
+	if db.transactionErr != nil {
+		return db.transactionErr
+	}
+	if fn == nil {
+		return nil
+	}
+	db.transactionFnCalled = true
+	return fn(nil)
+}
 
 type fakeQuery struct {
 	fillAllCount int
@@ -381,7 +381,7 @@ func TestTrackingDB_TransactionTrackingAndWarnings_Round15Coverage(t *testing.T)
 
 	ctdb := NewTrackingDB(db, tracker, logger)
 
-	require.NoError(t, ctdb.Transaction(func(tx *core.Tx) error { return nil }))
+	require.NoError(t, ctdb.TransactWrite(context.Background(), func(tx core.TransactionBuilder) error { return nil }))
 	require.True(t, db.transactionFnCalled)
 	require.Equal(t, int64(1), tracker.dynamoReads.Load())
 	require.Equal(t, int64(3), tracker.dynamoWrites.Load())
@@ -396,11 +396,11 @@ func TestTrackingDB_TransactionTrackingAndWarnings_Round15Coverage(t *testing.T)
 		RecoveryTimeout:   time.Millisecond,
 	})
 
-	require.NoError(t, NewTrackingDB(db, errTracker, logger).Transaction(func(tx *core.Tx) error { return nil }))
-	require.NoError(t, NewTrackingDB(db, tracker, nil).Transaction(func(tx *core.Tx) error { return nil }))
+	require.NoError(t, NewTrackingDB(db, errTracker, logger).TransactWrite(context.Background(), func(tx core.TransactionBuilder) error { return nil }))
+	require.NoError(t, NewTrackingDB(db, tracker, nil).TransactWrite(context.Background(), func(tx core.TransactionBuilder) error { return nil }))
 
 	db.transactionErr = errors.New("tx failed")
-	require.Error(t, NewTrackingDB(db, tracker, logger).Transaction(func(tx *core.Tx) error { return nil }))
+	require.Error(t, NewTrackingDB(db, tracker, logger).TransactWrite(context.Background(), func(tx core.TransactionBuilder) error { return nil }))
 }
 
 func TestEnhancedOperationTrackerAndHelpers_Round15Coverage(t *testing.T) {

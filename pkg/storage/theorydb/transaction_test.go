@@ -10,8 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -23,21 +22,12 @@ type TestUser struct {
 
 func TestTransaction_Execute(t *testing.T) {
 	// Create mock DB
-	mockDB := new(mocks.MockDB)
+	mockDB := new(mocks.MockExtendedDB)
+	builder := new(mocks.MockTransactionBuilder)
+	mockDB.TransactWriteBuilder = builder
 
 	// Setup transaction mock behavior
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
-		Run(func(args mock.Arguments) {
-			// Extract the transaction function
-			txFunc := args.Get(0).(func(*core.Tx) error)
-
-			// Create a mock transaction
-			mockTx := &core.Tx{}
-
-			// Execute the transaction function with the mock transaction
-			_ = txFunc(mockTx)
-		}).
-		Return(nil)
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil)
 
 	// Create transaction wrapper
 	tx := NewTransaction(mockDB)
@@ -55,24 +45,15 @@ func TestTransaction_Execute(t *testing.T) {
 
 func TestTransaction_ExecuteWithError(t *testing.T) {
 	// Create mock DB
-	mockDB := new(mocks.MockDB)
+	mockDB := new(mocks.MockExtendedDB)
+	builder := new(mocks.MockTransactionBuilder)
+	mockDB.TransactWriteBuilder = builder
 
 	// Expected error
 	expectedErr := errors.New("transaction error")
 
 	// Setup transaction mock behavior
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
-		Run(func(args mock.Arguments) {
-			// Extract the transaction function
-			txFunc := args.Get(0).(func(*core.Tx) error)
-
-			// Create a mock transaction
-			mockTx := &core.Tx{}
-
-			// Execute the transaction function with the mock transaction
-			_ = txFunc(mockTx)
-		}).
-		Return(expectedErr)
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(expectedErr)
 
 	// Create transaction wrapper
 	tx := NewTransaction(mockDB)
@@ -89,9 +70,10 @@ func TestTransaction_ExecuteWithError(t *testing.T) {
 	mockDB.AssertExpectations(t)
 }
 
-func TestTransaction_ExecuteLegacyTxRunsWriteOperations(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
+func TestTransaction_ExecuteRunsBuilderWriteOperations(t *testing.T) {
+	mockDB := new(mocks.MockExtendedDB)
+	builder := new(mocks.MockTransactionBuilder)
+	mockDB.TransactWriteBuilder = builder
 
 	user := &TestUser{
 		StandardModel: StandardModel{
@@ -101,19 +83,10 @@ func TestTransaction_ExecuteLegacyTxRunsWriteOperations(t *testing.T) {
 		Name: "John Doe",
 	}
 
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
-		Run(func(args mock.Arguments) {
-			txFunc := args.Get(0).(func(*core.Tx) error)
-			mockTx := &core.Tx{}
-			mockTx.SetDB(mockDB)
-			_ = txFunc(mockTx)
-		}).
-		Return(nil).
-		Once()
-	mockDB.On("Model", user).Return(mockQuery).Times(3)
-	mockQuery.On("Create").Return(nil).Once()
-	mockQuery.On("Update", []string{"Name"}).Return(nil).Once()
-	mockQuery.On("Delete").Return(nil).Once()
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
+	builder.On("Put", user, mock.Anything).Return(builder).Once()
+	builder.On("Update", user, []string{"Name"}, mock.Anything).Return(builder).Once()
+	builder.On("Delete", user, mock.Anything).Return(builder).Once()
 
 	tx := NewTransaction(mockDB)
 	err := tx.Execute(context.Background(), func(tx *Transaction) error {
@@ -128,7 +101,7 @@ func TestTransaction_ExecuteLegacyTxRunsWriteOperations(t *testing.T) {
 
 	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
-	mockQuery.AssertExpectations(t)
+	builder.AssertExpectations(t)
 }
 
 func TestTransaction_M10_ExecuteUsesTableTheoryTransactionBuilder(t *testing.T) {
@@ -338,12 +311,12 @@ func TestTransactionManager_ExecuteWrite_WithRetry(t *testing.T) {
 
 func TestTransactionManager_ExecuteWrite_NonRetryableError(t *testing.T) {
 	// Create mock DB
-	mockDB := new(mocks.MockDB)
+	mockDB := new(mocks.MockExtendedDB)
 	logger := zap.NewNop()
 
 	// Setup transaction to fail with non-retryable error
 	nonRetryableErr := errors.New("validation failed")
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).
 		Return(nonRetryableErr).Once()
 
 	// Create transaction manager
@@ -374,12 +347,12 @@ func TestTransactionManager_ExecuteWrite_NonRetryableError(t *testing.T) {
 
 func TestTransactionManager_ExecuteWrite_MaxRetriesExceeded(t *testing.T) {
 	// Create mock DB
-	mockDB := new(mocks.MockDB)
+	mockDB := new(mocks.MockExtendedDB)
 	logger := zap.NewNop()
 
 	// Setup transaction to always fail with retryable error
 	retryableErr := errors.New("throttling")
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).
 		Return(retryableErr)
 
 	// Create transaction manager
@@ -413,7 +386,7 @@ func TestTransactionManager_ExecuteWrite_MaxRetriesExceeded(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed after")
 	// Should have been called 3 times (initial + 2 retries)
-	mockDB.AssertNumberOfCalls(t, "Transaction", 3)
+	mockDB.AssertNumberOfCalls(t, "TransactWrite", 3)
 }
 
 func TestTransactionManager_ExecuteWrite_WithCostTracking(t *testing.T) {
@@ -735,24 +708,19 @@ func TestTransactionManager_M10_AdditionalTransactionCoverage(t *testing.T) {
 	assert.Equal(t, "ok", values[":v0"])
 	assert.Equal(t, 3, values[":v1"])
 
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil).Once()
-	mockQuery.On("Update", []string{"Name"}).Return(nil).Once()
-	mockQuery.On("Delete").Return(nil).Twice()
-	mockQuery.On("First", mock.Anything).Return(nil).Once()
-	tx := &core.Tx{}
-	tx.SetDB(mockDB)
+	builder := new(mocks.MockTransactionBuilder)
+	builder.On("Put", user, mock.Anything).Return(builder).Once()
+	builder.On("Update", user, []string{"Name"}, mock.Anything).Return(builder).Once()
+	builder.On("Delete", mock.Anything, mock.Anything).Return(builder).Twice()
+	builder.On("ConditionCheck", mock.Anything, mock.Anything).Return(builder).Once()
 
-	manager := NewTransactionManager(mockDB, zap.NewNop())
-	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationPut, Item: user}))
-	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationUpdate, Item: user}))
-	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationDelete, Item: user}))
-	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationDelete, TableName: "users", Key: map[string]any{"PK": "user#123"}}))
-	assert.NoError(t, manager.executeOperation(tx, TransactionOperation{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}, Condition: "attribute_exists(PK)"}))
-	mockDB.AssertExpectations(t)
-	mockQuery.AssertExpectations(t)
+	manager := NewTransactionManager(nil, zap.NewNop())
+	assert.NoError(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationPut, Item: user}))
+	assert.NoError(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationUpdate, Item: user}))
+	assert.NoError(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationDelete, Item: user}))
+	assert.NoError(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationDelete, TableName: "users", Key: map[string]any{"PK": "user#123"}}))
+	assert.NoError(t, manager.executeBuilderOperation(builder, TransactionOperation{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}, Condition: "attribute_exists(PK)"}))
+	builder.AssertExpectations(t)
 }
 
 func TestTransactionManager_M10_BuilderValidationErrors(t *testing.T) {

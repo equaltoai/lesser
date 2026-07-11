@@ -2,66 +2,66 @@ package theorydb
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	errors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
-// MockTx is a mock implementation of the core.Tx interface for testing
+// MockTx adapts Lesser's transaction helper surface to the TableTheory v2
+// transaction builder. TableTheory v2 removed the legacy core.Tx callback API;
+// this shim exists only inside Lesser's storage helpers and does not recreate
+// or fork TableTheory's removed transaction implementation.
 type MockTx struct {
-	core.Tx
 	Builder core.TransactionBuilder
 }
 
-// Put adds a Put operation to the transaction
+// Put adds a Put operation to the transaction.
 func (m *MockTx) Put(item any) error {
-	if m.Builder != nil {
-		m.Builder.Put(item)
-		return nil
+	if m == nil || m.Builder == nil {
+		return fmt.Errorf("transaction builder not initialized")
 	}
-	return runTxOperation(func() error {
-		return m.Create(item)
-	})
+	m.Builder.Put(item)
+	return nil
 }
 
-// Delete adds a Delete operation to the transaction
+// Create adds a Create operation to the transaction.
+func (m *MockTx) Create(item any) error {
+	if m == nil || m.Builder == nil {
+		return fmt.Errorf("transaction builder not initialized")
+	}
+	m.Builder.Create(item)
+	return nil
+}
+
+// Delete adds a Delete operation to the transaction.
 func (m *MockTx) Delete(item any) error {
-	if m.Builder != nil {
-		m.Builder.Delete(item)
-		return nil
+	if m == nil || m.Builder == nil {
+		return fmt.Errorf("transaction builder not initialized")
 	}
-	return runTxOperation(func() error {
-		return m.Tx.Delete(item)
-	})
+	m.Builder.Delete(item)
+	return nil
 }
 
-// Update adds an Update operation to the transaction
+// Update adds an Update operation to the transaction.
 func (m *MockTx) Update(item any) error {
+	if m == nil || m.Builder == nil {
+		return fmt.Errorf("transaction builder not initialized")
+	}
 	fields := inferTransactionUpdateFields(item)
 	if len(fields) == 0 {
 		return fmt.Errorf("transaction update requires fields")
 	}
-	if m.Builder != nil {
-		m.Builder.Update(item, fields)
-		return nil
-	}
-	return runTxOperation(func() error {
-		return m.Tx.Update(item, fields...)
-	})
+	m.Builder.Update(item, fields)
+	return nil
 }
 
-// UpdateWithExpression adds an Update operation with expression to the transaction
+// UpdateWithExpression adds an Update operation with expression to the transaction.
+// Lesser's legacy helper accepted a raw expression; TableTheory v2 transactions
+// use typed update builders, so this falls back to the field-inference update path.
 func (m *MockTx) UpdateWithExpression(item any, _ string, _ ...any) error {
-	if m.Builder != nil || len(inferTransactionUpdateFields(item)) > 0 {
-		return m.Update(item)
-	}
-	return runTxOperation(func() error {
-		return m.Tx.Model(item).Update()
-	})
+	return m.Update(item)
 }
 
-// DeleteByKey adds a Delete operation by key to the transaction
+// DeleteByKey adds a Delete operation by key to the transaction.
 func (m *MockTx) DeleteByKey(tableName string, key map[string]any) error {
 	item, err := newTransactionKeyItem(tableName, key)
 	if err != nil {
@@ -70,8 +70,11 @@ func (m *MockTx) DeleteByKey(tableName string, key map[string]any) error {
 	return m.Delete(item)
 }
 
-// ConditionCheck adds a condition check to the transaction
+// ConditionCheck adds a condition check to the transaction.
 func (m *MockTx) ConditionCheck(tableName string, key map[string]any, condition string, values ...any) error {
+	if m == nil || m.Builder == nil {
+		return fmt.Errorf("transaction builder not initialized")
+	}
 	item, err := newTransactionKeyItem(tableName, key)
 	if err != nil {
 		return err
@@ -83,35 +86,6 @@ func (m *MockTx) ConditionCheck(tableName string, key map[string]any, condition 
 	if len(conditions) == 0 {
 		return fmt.Errorf("condition check requires condition")
 	}
-	if m.Builder != nil {
-		m.Builder.ConditionCheck(item, conditions...)
-		return nil
-	}
-	return m.conditionCheckWithLegacyTx(item, condition)
-}
-
-func (m *MockTx) conditionCheckWithLegacyTx(item any, condition string) error {
-	normalized := strings.ToLower(strings.TrimSpace(condition))
-	return runTxOperation(func() error {
-		err := m.Tx.Model(item).First(item)
-		if strings.Contains(normalized, "attribute_not_exists") {
-			if err == nil {
-				return fmt.Errorf("transaction condition check failed")
-			}
-			if errors.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-		return err
-	})
-}
-
-func runTxOperation(fn func() error) (err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("transaction operation failed: %v", recovered)
-		}
-	}()
-	return fn()
+	m.Builder.ConditionCheck(item, conditions...)
+	return nil
 }

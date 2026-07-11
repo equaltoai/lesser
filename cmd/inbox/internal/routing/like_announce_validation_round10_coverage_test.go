@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

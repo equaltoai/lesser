@@ -25,7 +25,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 

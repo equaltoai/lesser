@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 )
 
 const (

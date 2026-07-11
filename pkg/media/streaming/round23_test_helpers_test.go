@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 type fakeDynamormDB struct {
@@ -48,12 +48,6 @@ func (db *fakeDynamormDB) Model(model any) dynamormCore.Query {
 		model:  model,
 		wheres: make(map[string]any),
 	}
-}
-
-func (db *fakeDynamormDB) Transaction(fn func(tx *dynamormCore.Tx) error) error {
-	tx := &dynamormCore.Tx{}
-	tx.SetDB(db)
-	return fn(tx)
 }
 
 func (db *fakeDynamormDB) Migrate() error                  { return nil }

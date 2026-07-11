@@ -49,7 +49,7 @@ func TestGraphQLWSHelpers_Round14(t *testing.T) {
 
 	t.Run("appError defaults code and message", func(t *testing.T) {
 		err := appError("   ", " ")
-		appErr, ok := err.(*apptheory.AppError)
+		appErr, ok := err.(*apptheory.AppTheoryError)
 		require.True(t, ok)
 		require.Equal(t, "app.internal", appErr.Code)
 		require.Equal(t, "internal error", appErr.Message)

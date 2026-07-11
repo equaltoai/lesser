@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -30,12 +30,11 @@ import (
 
 type fakeDB struct{}
 
-func (f *fakeDB) Model(_ any) dynamormCore.Query                      { return nil }
-func (f *fakeDB) Transaction(_ func(tx *dynamormCore.Tx) error) error { return nil }
-func (f *fakeDB) Migrate() error                                      { return nil }
-func (f *fakeDB) AutoMigrate(_ ...any) error                          { return nil }
-func (f *fakeDB) Close() error                                        { return nil }
-func (f *fakeDB) WithContext(_ context.Context) dynamormCore.DB       { return f }
+func (f *fakeDB) Model(_ any) dynamormCore.Query                { return nil }
+func (f *fakeDB) Migrate() error                                { return nil }
+func (f *fakeDB) AutoMigrate(_ ...any) error                    { return nil }
+func (f *fakeDB) Close() error                                  { return nil }
+func (f *fakeDB) WithContext(_ context.Context) dynamormCore.DB { return f }
 
 type fakeBedrockClient struct {
 	output    *bedrock.GetModelCustomizationJobOutput

@@ -19,8 +19,8 @@ import (
 	lessertesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

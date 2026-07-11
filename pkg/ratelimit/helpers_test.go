@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
+	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -41,8 +41,6 @@ func (t *trackingLimiter) CheckAndIncrement(_ context.Context, key apptheoryLimi
 type noopDB struct{}
 
 func (noopDB) Model(any) tablecore.Query { return nil }
-
-func (noopDB) Transaction(func(*tablecore.Tx) error) error { return nil }
 
 func (noopDB) Migrate() error { return nil }
 

@@ -11,7 +11,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 

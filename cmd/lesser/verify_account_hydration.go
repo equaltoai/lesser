@@ -15,8 +15,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	lessertheorydb "github.com/equaltoai/lesser/pkg/storage/theorydb"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 	"go.uber.org/zap"
 )
 

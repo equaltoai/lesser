@@ -20,9 +20,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
-	"github.com/theory-cloud/tabletheory"
-	ttErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2"
+	ttErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 	"go.uber.org/zap"
 )
 

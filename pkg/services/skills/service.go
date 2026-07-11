@@ -17,7 +17,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	tableerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	tableerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 )
 
 var (

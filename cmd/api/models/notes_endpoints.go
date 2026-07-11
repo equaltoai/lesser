@@ -8,22 +8,22 @@ import (
 
 // CommunityNoteSource represents a note source entry (request-side).
 type CommunityNoteSource struct {
-	URL string `json:"url" validate:"required,url"`
+	URL string `json:"url" validate:"required"`
 }
 
 // CreateCommunityNoteRequest represents POST /api/v1/notes.
 type CreateCommunityNoteRequest struct {
 	ObjectID   string                `json:"object_id" validate:"required"`
 	ObjectType string                `json:"object_type" validate:"required"`
-	Content    string                `json:"content" validate:"required,min=10,max=500"`
-	Language   string                `json:"language" validate:"required,len=2"`
-	Sources    []CommunityNoteSource `json:"sources,omitempty" validate:"max=5,dive"`
+	Content    string                `json:"content" validate:"required,min_length=10,max_length=500"`
+	Language   string                `json:"language" validate:"required,min_length=2,max_length=2"`
+	Sources    []CommunityNoteSource `json:"sources,omitempty" validate:"max_length=5"`
 }
 
 // VoteCommunityNoteRequest represents POST /api/v1/notes/{id}/vote.
 type VoteCommunityNoteRequest struct {
-	VoteType string `json:"vote_type" validate:"required,oneof=helpful not_helpful neutral"`
-	Reason   string `json:"reason,omitempty" validate:"max=200"`
+	VoteType string `json:"vote_type" validate:"required,enum=helpful|not_helpful|neutral"`
+	Reason   string `json:"reason,omitempty" validate:"max_length=200"`
 }
 
 // CommunityNoteRateLimit represents rate limit details for note creation.

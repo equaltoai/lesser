@@ -36,7 +36,7 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 // Push notification delivery status constants

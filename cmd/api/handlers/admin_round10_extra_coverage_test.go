@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 )
 
 func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {

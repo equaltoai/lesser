@@ -18,8 +18,8 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

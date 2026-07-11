@@ -9,7 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 

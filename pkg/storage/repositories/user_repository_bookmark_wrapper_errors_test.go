@@ -6,7 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 

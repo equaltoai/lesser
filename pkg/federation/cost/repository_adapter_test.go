@@ -9,8 +9,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -18,12 +18,11 @@ type adapterFakeDB struct {
 	query core.Query
 }
 
-func (db *adapterFakeDB) Model(_ any) core.Query                      { return db.query }
-func (db *adapterFakeDB) Transaction(_ func(tx *core.Tx) error) error { return nil }
-func (db *adapterFakeDB) Migrate() error                              { return nil }
-func (db *adapterFakeDB) AutoMigrate(_ ...any) error                  { return nil }
-func (db *adapterFakeDB) Close() error                                { return nil }
-func (db *adapterFakeDB) WithContext(_ context.Context) core.DB       { return db }
+func (db *adapterFakeDB) Model(_ any) core.Query                { return db.query }
+func (db *adapterFakeDB) Migrate() error                        { return nil }
+func (db *adapterFakeDB) AutoMigrate(_ ...any) error            { return nil }
+func (db *adapterFakeDB) Close() error                          { return nil }
+func (db *adapterFakeDB) WithContext(_ context.Context) core.DB { return db }
 
 type adapterFakeQuery struct {
 	firstErr   error

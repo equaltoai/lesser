@@ -16,22 +16,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
 type fakeDB struct{}
 
 func (f *fakeDB) Model(_ any) core.Query { return nil }
-
-func (f *fakeDB) Transaction(fn func(tx *core.Tx) error) error {
-	if fn == nil {
-		return nil
-	}
-	tx := &core.Tx{}
-	tx.SetDB(f)
-	return fn(tx)
-}
 
 func (f *fakeDB) Migrate() error                        { return nil }
 func (f *fakeDB) AutoMigrate(_ ...any) error            { return nil }
@@ -159,6 +150,7 @@ func TestMain_InvokesLambdaStart(t *testing.T) {
 				EventSource:    "aws:dynamodb",
 				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
 				Change: events.DynamoDBStreamRecord{
+					SequenceNumber: "evt-1",
 					NewImage: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("NOTE#n1"),
 						"SK": events.NewStringAttribute("METADATA"),

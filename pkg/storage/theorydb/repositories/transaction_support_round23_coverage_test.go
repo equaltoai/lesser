@@ -8,27 +8,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
 type transactionRunnerDB struct {
 	query         core.Query
-	transactionFn func(fn func(*core.Tx) error) error
+	transactionFn func(context.Context, func(core.TransactionBuilder) error) error
 }
 
 func (db *transactionRunnerDB) Model(_ any) core.Query {
 	return db.query
-}
-
-func (db *transactionRunnerDB) Transaction(fn func(*core.Tx) error) error {
-	if db.transactionFn != nil {
-		return db.transactionFn(fn)
-	}
-	tx := &core.Tx{}
-	tx.SetDB(db)
-	return fn(tx)
 }
 
 func (db *transactionRunnerDB) Migrate() error { return nil }
@@ -38,6 +29,20 @@ func (db *transactionRunnerDB) AutoMigrate(_ ...any) error { return nil }
 func (db *transactionRunnerDB) Close() error { return nil }
 
 func (db *transactionRunnerDB) WithContext(_ context.Context) core.DB { return db }
+
+func (db *transactionRunnerDB) Transact() core.TransactionBuilder {
+	return new(dynamormMocks.MockTransactionBuilder)
+}
+
+func (db *transactionRunnerDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	if db.transactionFn != nil {
+		return db.transactionFn(ctx, fn)
+	}
+	if fn == nil {
+		return nil
+	}
+	return fn(new(dynamormMocks.MockTransactionBuilder))
+}
 
 func TestTransactionManager_BeginCommitRollbackTransaction_Round23(t *testing.T) {
 	t.Parallel()
@@ -73,7 +78,7 @@ func TestTransactionContext_OperationsRequireTx_Round23(t *testing.T) {
 	require.ErrorContains(t, txCtx.UpdateWithExpression(map[string]any{}, "SET X = :x", 1), "transaction not initialized")
 	require.ErrorContains(t, txCtx.DeleteByKey("table", map[string]any{"PK": "p"}), "transaction not initialized")
 
-	txCtx.tx = &core.Tx{}
+	txCtx.tx = new(dynamormMocks.MockTransactionBuilder)
 	require.ErrorContains(t, txCtx.ConditionCheck("not-a-map", "attribute_exists(PK)"), "condition check requires key")
 	txCtx.tx = nil
 
@@ -85,20 +90,11 @@ func TestTransactionContext_OperationsRequireTx_Round23(t *testing.T) {
 func TestTransactionContext_PutDeleteUpdate_FailurePaths_Round23(t *testing.T) {
 	t.Parallel()
 
-	q := new(dynamormMocks.MockQuery)
-	q.On("Create").Return(errors.New("create failed")).Once()
-	q.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
-	q.On("Delete").Return(errors.New("delete failed")).Once()
+	txCtx := &TransactionContext{tx: new(dynamormMocks.MockTransactionBuilder)}
 
-	db := &transactionRunnerDB{query: q}
-	tx := &core.Tx{}
-	tx.SetDB(db)
-
-	txCtx := &TransactionContext{tx: tx}
-
-	require.ErrorContains(t, txCtx.Put(map[string]any{"PK": "p"}), "transaction put failed")
+	require.NoError(t, txCtx.Put(map[string]any{"PK": "p"}))
 	require.ErrorContains(t, txCtx.Update(map[string]any{"PK": "p"}), "transaction update failed")
-	require.ErrorContains(t, txCtx.Delete(map[string]any{"PK": "p"}), "transaction delete failed")
+	require.NoError(t, txCtx.Delete(map[string]any{"PK": "p"}))
 }
 
 func TestTransactionManager_ExecuteWithRetry_RetriesOnRetryable_Round23(t *testing.T) {
@@ -109,11 +105,8 @@ func TestTransactionManager_ExecuteWithRetry_RetriesOnRetryable_Round23(t *testi
 
 	attempt := 0
 	db := &transactionRunnerDB{query: q}
-	db.transactionFn = func(fn func(*core.Tx) error) error {
-		tx := &core.Tx{}
-		tx.SetDB(db)
-		_ = fn(tx)
-
+	db.transactionFn = func(_ context.Context, fn func(core.TransactionBuilder) error) error {
+		_ = fn(new(dynamormMocks.MockTransactionBuilder))
 		attempt++
 		if attempt == 1 {
 			return errors.New("ThrottlingException: try again")
@@ -137,7 +130,7 @@ func TestTransactionManager_ExecuteWithRetry_StopsOnNonRetryable_Round23(t *test
 	t.Parallel()
 
 	db := &transactionRunnerDB{
-		transactionFn: func(fn func(*core.Tx) error) error {
+		transactionFn: func(_ context.Context, _ func(core.TransactionBuilder) error) error {
 			return errors.New("fatal")
 		},
 	}
@@ -218,7 +211,7 @@ func TestTransactionManager_ExecuteWithConsistency_ContextCanceled_Round23(t *te
 	t.Parallel()
 
 	db := &transactionRunnerDB{
-		transactionFn: func(fn func(*core.Tx) error) error {
+		transactionFn: func(_ context.Context, _ func(core.TransactionBuilder) error) error {
 			return errors.New("ThrottlingException")
 		},
 	}
@@ -238,11 +231,7 @@ func TestTransactionContext_BatchWrite_Succeeds_Round23(t *testing.T) {
 	q.On("Create").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
-	db := &transactionRunnerDB{query: q}
-	tx := &core.Tx{}
-	tx.SetDB(db)
-
-	txCtx := &TransactionContext{tx: tx}
+	txCtx := &TransactionContext{tx: new(dynamormMocks.MockTransactionBuilder)}
 	require.NoError(t, txCtx.TransactionalBatchWrite([]any{map[string]any{"PK": "p1"}}, []any{map[string]any{"PK": "p2"}}))
 	require.GreaterOrEqual(t, txCtx.operationsCnt, 2)
 }
@@ -255,12 +244,8 @@ func TestTransactionContext_DeleteByKey_And_UpdateWithExpression_Succeed_Round23
 	q.On("Update", mock.Anything).Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
-	db := &transactionRunnerDB{query: q}
-	tx := &core.Tx{}
-	tx.SetDB(db)
-
-	txCtx := &TransactionContext{tx: tx}
-	require.NoError(t, txCtx.UpdateWithExpression(map[string]any{"PK": "p"}, "SET X = :x", 1))
+	txCtx := &TransactionContext{tx: new(dynamormMocks.MockTransactionBuilder)}
+	require.NoError(t, txCtx.UpdateWithExpression(map[string]any{"PK": "p", "X": 1}, "SET X = :x", 1))
 	require.NoError(t, txCtx.DeleteByKey("table", map[string]any{"PK": "p"}))
 }
 

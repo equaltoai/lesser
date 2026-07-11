@@ -20,8 +20,8 @@ import (
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
