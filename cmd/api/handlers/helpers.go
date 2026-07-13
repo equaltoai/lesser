@@ -293,6 +293,7 @@ type statusAuthorAccountLoader func(context.Context, *storageModels.Status) *sto
 type statusAccountRenderOptions struct {
 	hydrateLocalAuthorStats bool
 	lastStatusAtFromStatus  bool
+	minStatusesCount        int
 }
 
 func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
@@ -303,6 +304,7 @@ func (h *Handler) convertCreatedStorageStatusToAPI(ctx context.Context, storageS
 	return h.convertStorageStatusToAPIWithAuthorLoaderOptions(ctx, storageStatus, currentUsername, h.loadStatusAuthorAccount, statusAccountRenderOptions{
 		hydrateLocalAuthorStats: true,
 		lastStatusAtFromStatus:  true,
+		minStatusesCount:        1,
 	})
 }
 
@@ -1045,7 +1047,7 @@ func (h *Handler) statusAccountWithOptions(ctx context.Context, storageStatus *s
 
 	local := h.publicAccountFromStorageAccount(account)
 	if opts.hydrateLocalAuthorStats {
-		h.hydrateStatusAuthorAccountStats(ctx, storageStatus, account, &local)
+		h.hydrateStatusAuthorAccountStats(ctx, storageStatus, account, &local, opts.minStatusesCount)
 	} else {
 		local = withZeroAccountCounts(local)
 	}
@@ -1055,7 +1057,13 @@ func (h *Handler) statusAccountWithOptions(ctx context.Context, storageStatus *s
 	return local
 }
 
-func (h *Handler) hydrateStatusAuthorAccountStats(ctx context.Context, storageStatus *storageModels.Status, account *storage.Account, out *models.Account) {
+func (h *Handler) hydrateStatusAuthorAccountStats(
+	ctx context.Context,
+	storageStatus *storageModels.Status,
+	account *storage.Account,
+	out *models.Account,
+	minStatusesCount int,
+) {
 	if out == nil {
 		return
 	}
@@ -1071,7 +1079,11 @@ func (h *Handler) hydrateStatusAuthorAccountStats(ctx context.Context, storageSt
 		return
 	}
 
-	out.StatusesCount = h.localAccountStatusesCount(ctx, authorID)
+	statusesCount := h.localAccountStatusesCount(ctx, authorID)
+	if statusesCount < minStatusesCount {
+		statusesCount = minStatusesCount
+	}
+	out.StatusesCount = statusesCount
 }
 
 func (h *Handler) statusLinks(storageStatus *storageModels.Status) (string, string) {

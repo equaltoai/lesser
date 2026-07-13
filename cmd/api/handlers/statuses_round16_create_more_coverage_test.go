@@ -128,9 +128,11 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.Equal(t, VisibilityPublic, gotCmd.Visibility)
 	})
 
-	t.Run("success hydrates immediate create account without changing private visibility", func(t *testing.T) {
+	t.Run("success floors immediate create account count without changing private visibility", func(t *testing.T) {
 		now := time.Date(2026, 7, 13, 15, 4, 5, 0, time.UTC)
 		actorID := cfg.BaseURL() + "/users/alice"
+
+		countCalled := false
 
 		state := &round10QueryState{
 			usersByUsername: map[string]storagemodels.User{
@@ -189,8 +191,9 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 					}, nil
 				},
 				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					countCalled = true
 					require.Equal(t, actorID, authorID)
-					return 2, nil
+					return 0, nil
 				},
 			},
 		})
@@ -207,9 +210,10 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		var got models.Status
 		require.NoError(t, json.Unmarshal(resp.Body, &got))
 		require.Equal(t, VisibilityPrivate, got.Visibility)
+		require.True(t, countCalled)
 		require.Equal(t, "Della Marlowe", got.Account.DisplayName)
 		require.False(t, got.Account.Discoverable)
-		require.Equal(t, 2, got.Account.StatusesCount)
+		require.Equal(t, 1, got.Account.StatusesCount)
 		require.Equal(t, "2026-07-13", got.Account.LastStatusAt)
 	})
 
