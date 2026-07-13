@@ -145,7 +145,7 @@ func buildFrontendStaticCSP(domainName *string) string {
 func authUIInlineScriptHashes() []string {
 	return []string{
 		// Astro/Svelte island runtime snippets generated into auth-ui/dist/*.html.
-		// Refreshed 2026-05-31 after the ws 8.21.0 dependency refresh;
+		// Refreshed 2026-07-13 after the auth UI dependency remediation;
 		// hashes verified unchanged against a fresh auth-ui production build.
 		// CI verifies these hashes are refreshed at least as recently as auth-ui source:
 		//   bash scripts/verify_auth_ui_csp.sh
