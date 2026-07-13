@@ -210,7 +210,7 @@ func TestActorRepository_branch_sweep_more_lines(t *testing.T) {
 			m.SK = "PROFILE"
 			m.Actor = &activitypub.Actor{}
 		}).Once()
-		mockQuery.On("Update", mock.Anything).Return(nil).Once()
+		expectActorLastStatusUpdateBuilder(mockQuery, nil)
 		assert.NoError(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 	})
 

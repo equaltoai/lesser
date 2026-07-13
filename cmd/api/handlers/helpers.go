@@ -290,8 +290,20 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 
 type statusAuthorAccountLoader func(context.Context, *storageModels.Status) *storage.Account
 
+type statusAccountRenderOptions struct {
+	hydrateLocalAuthorStats bool
+	lastStatusAtFromStatus  bool
+}
+
 func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
 	return h.convertStorageStatusToAPIWithAuthorLoader(ctx, storageStatus, currentUsername, h.loadStatusAuthorAccount)
+}
+
+func (h *Handler) convertCreatedStorageStatusToAPI(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
+	return h.convertStorageStatusToAPIWithAuthorLoaderOptions(ctx, storageStatus, currentUsername, h.loadStatusAuthorAccount, statusAccountRenderOptions{
+		hydrateLocalAuthorStats: true,
+		lastStatusAtFromStatus:  true,
+	})
 }
 
 func (h *Handler) convertStorageStatusToAPIWithStoredAuthorContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
@@ -299,6 +311,10 @@ func (h *Handler) convertStorageStatusToAPIWithStoredAuthorContext(ctx context.C
 }
 
 func (h *Handler) convertStorageStatusToAPIWithAuthorLoader(ctx context.Context, storageStatus *storageModels.Status, currentUsername string, loadAuthor statusAuthorAccountLoader) (*models.Status, error) {
+	return h.convertStorageStatusToAPIWithAuthorLoaderOptions(ctx, storageStatus, currentUsername, loadAuthor, statusAccountRenderOptions{})
+}
+
+func (h *Handler) convertStorageStatusToAPIWithAuthorLoaderOptions(ctx context.Context, storageStatus *storageModels.Status, currentUsername string, loadAuthor statusAuthorAccountLoader, accountOptions statusAccountRenderOptions) (*models.Status, error) {
 	if ctx == nil {
 		ctx = h.statusConversionContext()
 	}
@@ -312,6 +328,10 @@ func (h *Handler) convertStorageStatusToAPIWithAuthorLoader(ctx context.Context,
 	reblogStatus := h.loadReblogStatus(ctx, storageStatus, currentUsername)
 	baseStatus := h.transformStatusBase(ctx, storageStatus)
 	statusURI, statusURL := h.statusLinks(storageStatus)
+	account := h.statusAccount(storageStatus, authorAccount)
+	if accountOptions.hydrateLocalAuthorStats || accountOptions.lastStatusAtFromStatus {
+		account = h.statusAccountWithOptions(ctx, storageStatus, authorAccount, accountOptions)
+	}
 
 	apiStatus := &models.Status{
 		ID:                 baseStatus.ID,
@@ -323,7 +343,7 @@ func (h *Handler) convertStorageStatusToAPIWithAuthorLoader(ctx context.Context,
 		CreatedAt:          baseStatus.CreatedAt,
 		InReplyToID:        inReplyToID,
 		InReplyToAccountID: inReplyToAccountID,
-		Account:            h.statusAccount(storageStatus, authorAccount),
+		Account:            account,
 		MediaAttachments:   h.statusMediaAttachments(storageStatus),
 		Mentions:           h.statusMentions(storageStatus),
 		Tags:               h.statusTags(storageStatus),
@@ -979,6 +999,10 @@ func (h *Handler) statusMediaAttachments(storageStatus *storageModels.Status) []
 }
 
 func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccount *storage.Account) models.Account {
+	return h.statusAccountWithOptions(context.Background(), storageStatus, authorAccount, statusAccountRenderOptions{})
+}
+
+func (h *Handler) statusAccountWithOptions(ctx context.Context, storageStatus *storageModels.Status, authorAccount *storage.Account, opts statusAccountRenderOptions) models.Account {
 	if storageStatus == nil {
 		return models.Account{}
 	}
@@ -1019,7 +1043,35 @@ func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccou
 		return withZeroAccountCounts(remote)
 	}
 
-	return withZeroAccountCounts(h.publicAccountFromStorageAccount(account))
+	local := h.publicAccountFromStorageAccount(account)
+	if opts.hydrateLocalAuthorStats {
+		h.hydrateStatusAuthorAccountStats(ctx, storageStatus, account, &local)
+	} else {
+		local = withZeroAccountCounts(local)
+	}
+	if opts.lastStatusAtFromStatus && local.LastStatusAt == "" && !storageStatus.PublishedAt.IsZero() {
+		local.LastStatusAt = storageStatus.PublishedAt.UTC().Format("2006-01-02")
+	}
+	return local
+}
+
+func (h *Handler) hydrateStatusAuthorAccountStats(ctx context.Context, storageStatus *storageModels.Status, account *storage.Account, out *models.Account) {
+	if out == nil {
+		return
+	}
+
+	authorID := ""
+	if storageStatus != nil {
+		authorID = strings.TrimSpace(storageStatus.AuthorID)
+	}
+	if authorID == "" {
+		authorID = h.localStatusCountActorIDForStorageAccount(account)
+	}
+	if authorID == "" {
+		return
+	}
+
+	out.StatusesCount = h.localAccountStatusesCount(ctx, authorID)
 }
 
 func (h *Handler) statusLinks(storageStatus *storageModels.Status) (string, string) {
