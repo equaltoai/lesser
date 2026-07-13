@@ -16,6 +16,11 @@ const (
 	defaultIgnoreDepth = 0
 )
 
+var transparentConnectionFields = map[string]struct{}{
+	"edges": {},
+	"node":  {},
+}
+
 // DepthLimit enforces a maximum selection depth for a GraphQL operation.
 //
 // Depth is defined as the maximum number of nested field selections from the operation root.
@@ -139,6 +144,10 @@ func selectionDepth(doc *ast.QueryDocument, selection ast.Selection, currentDept
 func fieldSelectionDepth(doc *ast.QueryDocument, field *ast.Field, currentDepth int, stack map[string]bool) int {
 	if field == nil {
 		return currentDepth
+	}
+
+	if _, transparent := transparentConnectionFields[field.Name]; transparent && len(field.SelectionSet) > 0 {
+		return selectionSetDepth(doc, field.SelectionSet, currentDepth, stack)
 	}
 
 	nextDepth := currentDepth + 1

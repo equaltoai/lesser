@@ -222,6 +222,12 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 					return account, nil
 				},
 			},
+			NotesSvc: &NotesServiceStub{
+				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					require.Equal(t, "alice", authorID)
+					return 5, nil
+				},
+			},
 		})
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", authHeaders, nil, nil)
@@ -234,6 +240,7 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		require.Equal(t, "alice", got.Username)
 		require.Equal(t, "alice", got.Acct)
 		require.NotEmpty(t, got.ID)
+		require.Equal(t, 5, got.StatusesCount)
 	})
 
 	t.Run("long_lived_agent_token_older_than_24h_still_returns_200", func(t *testing.T) {
@@ -319,6 +326,12 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	t.Run("service_error_returns_500", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return &storage.Account{
+						User:  &storage.User{Username: "alice"},
+						Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+					}, nil
+				},
 				UpdateProfileFunc: func(context.Context, *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 					return nil, errors.New("boom")
 				},
@@ -333,35 +346,79 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateCredentialsLift(ctx))
 	})
 
-	t.Run("success_returns_200", func(t *testing.T) {
-		account := &storage.Account{
-			User:  &storage.User{Username: "alice"},
-			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+	t.Run("success_preserves_omitted_booleans_and_returns_mastodon_account", func(t *testing.T) {
+		existingAccount := &storage.Account{
+			User: &storage.User{
+				Username:     "alice",
+				DisplayName:  "Della",
+				Note:         "old bio",
+				Locked:       true,
+				Discoverable: true,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+				PreferredUsername:         "alice",
+				Name:                      "Della",
+				Summary:                   "old bio",
+				ManuallyApprovesFollowers: true,
+				Discoverable:              true,
+			},
+		}
+		updatedAccount := &storage.Account{
+			User: &storage.User{
+				Username:     "alice",
+				DisplayName:  "ok",
+				Note:         "new bio",
+				Locked:       true,
+				Discoverable: true,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+				PreferredUsername:         "alice",
+				Name:                      "ok",
+				Summary:                   "new bio",
+				ManuallyApprovesFollowers: true,
+				Discoverable:              true,
+			},
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return existingAccount, nil
+				},
 				UpdateProfileFunc: func(_ context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 					require.Equal(t, "alice", cmd.Username)
 					require.Equal(t, "alice", cmd.UpdaterID)
-					return &accounts.AccountResult{Account: account}, nil
+					require.Equal(t, "ok", cmd.DisplayName)
+					require.Equal(t, "new bio", cmd.Bio)
+					require.True(t, cmd.Locked)
+					require.True(t, cmd.Discoverable)
+					require.True(t, cmd.Bot)
+					return &accounts.AccountResult{Account: updatedAccount}, nil
+				},
+			},
+			NotesSvc: &NotesServiceStub{
+				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					require.Equal(t, "alice", authorID)
+					return 7, nil
 				},
 			},
 		})
 
-		ctx, err := round10NewLiftContext(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, apimodels.UpdateCredentialsRequest{
-			DisplayName: "ok",
-		})
-		require.NoError(t, err)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, []byte(`{"display_name":"ok","note":"new bio"}`))
 
 		resp := requireStatus(t, http.StatusOK)(h.HandleUpdateCredentialsLift(ctx))
-		var got storage.Account
+		var got apimodels.Account
 		require.NoError(t, json.Unmarshal(resp.Body, &got))
-		require.NotNil(t, got.User)
-		require.Equal(t, "alice", got.User.Username)
-		require.NotNil(t, got.Actor)
-		require.Equal(t, cfg.BaseURL()+"/users/alice", got.Actor.ID)
-		require.Equal(t, "alice", got.Actor.PreferredUsername)
+		require.Equal(t, "alice", got.Username)
+		require.Equal(t, "ok", got.DisplayName)
+		require.Equal(t, "new bio", got.Note)
+		require.True(t, got.Locked)
+		require.True(t, got.Discoverable)
+		require.True(t, got.Bot)
+		require.Equal(t, 7, got.StatusesCount)
 	})
 }
 

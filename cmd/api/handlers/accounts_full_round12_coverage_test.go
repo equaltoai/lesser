@@ -483,6 +483,12 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 	handler.registry = &RegistryStub{
 		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(ctx context.Context, username string) (*storage.Account, error) {
+				return &storage.Account{
+					User:  &storage.User{Username: username},
+					Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + username}, PreferredUsername: username},
+				}, nil
+			},
 			UpdateProfileFunc: func(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 				return nil, stdErrors.New("boom")
 			},

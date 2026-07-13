@@ -1963,26 +1963,43 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 		zap.Int("previous_version", currentVersion),
 		zap.Int("new_version", newVersion))
 
-	// Persist ActivityPub actor changes if provided
-	if account.Actor != nil && r.actorRepo != nil {
-		var existingActor *activitypub.Actor
-		if storedActor, err := r.actorRepo.GetActor(ctx, username); err == nil {
-			existingActor = storedActor
-		} else if err != nil && !isAccountNotFound(err) {
-			r.logger.Error("failed to load existing actor profile record",
-				zap.String("username", username),
-				zap.Error(err))
-			return ErrorHandler.HandleUpdateError(err, EntityActor, username)
-		}
+	if err := r.updateAccountActorProfile(ctx, username, account); err != nil {
+		return err
+	}
 
-		account.Actor = r.mergeActorDataForUpdate(username, existingActor, account.Actor)
+	return nil
+}
 
-		if err := r.actorRepo.UpdateActor(ctx, account.Actor); err != nil {
-			r.logger.Error("failed to update actor profile record",
-				zap.String("username", username),
-				zap.Error(err))
-			return ErrorHandler.HandleUpdateError(err, EntityActor, username)
-		}
+func (r *AccountRepository) updateAccountActorProfile(ctx context.Context, username string, account *storage.Account) error {
+	if account.Actor == nil || r.actorRepo == nil {
+		return nil
+	}
+
+	var existingActor *activitypub.Actor
+	actorMissing := false
+	if storedActor, err := r.actorRepo.GetActor(ctx, username); err == nil {
+		existingActor = storedActor
+	} else if isAccountNotFound(err) {
+		actorMissing = true
+	} else {
+		r.logger.Error("failed to load existing actor profile record",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
+	}
+
+	account.Actor = r.mergeActorDataForUpdate(username, existingActor, account.Actor)
+	if actorMissing {
+		r.logger.Warn("actor profile record missing during account update; updated user profile only",
+			zap.String("username", username))
+		return nil
+	}
+
+	if err := r.actorRepo.UpdateActor(ctx, account.Actor); err != nil {
+		r.logger.Error("failed to update actor profile record",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	return nil

@@ -55,6 +55,59 @@ func TestDepthLimit_CountsFragments(t *testing.T) {
 	require.Nil(t, dlOK.MutateOperationContext(context.Background(), opCtx))
 }
 
+func TestDepthLimit_ConnectionWrappersAreTransparent(t *testing.T) {
+	query := `
+		query BodyArticles {
+			articles {
+				edges {
+					node {
+						id
+						title
+					}
+					cursor
+				}
+				pageInfo {
+					hasNextPage
+				}
+			}
+		}
+	`
+	opCtx := mustNamedOpCtx(t, query, "BodyArticles")
+
+	dl := FixedDepthLimit(3)
+	require.NoError(t, dl.Validate(nil))
+	require.Nil(t, dl.MutateOperationContext(context.Background(), opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 3, stats.Depth)
+}
+
+func TestDepthLimit_ConnectionWrappersStillBlockDeepSelections(t *testing.T) {
+	query := `
+		query BodyArticles {
+			articles {
+				edges {
+					node {
+						author {
+							publicKey {
+								id
+							}
+						}
+					}
+				}
+			}
+		}
+	`
+	opCtx := mustNamedOpCtx(t, query, "BodyArticles")
+
+	dl := FixedDepthLimit(3)
+	require.NoError(t, dl.Validate(nil))
+	require.NotNil(t, dl.MutateOperationContext(context.Background(), opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 4, stats.Depth)
+}
+
 func TestDepthLimit_FragmentCyclesDoNotPanic(t *testing.T) {
 	query := `
 		query GetMe {
