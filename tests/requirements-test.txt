@@ -4,7 +4,7 @@ requests>=2.31.0
 python-dotenv==1.2.2
 pytest==9.0.3
 Pillow==12.2.0
-cryptography==46.0.7
+cryptography==48.0.1
 # New dependencies for test data generation and federation testing
 faker>=20.0.0
 aiohttp>=3.9.0
