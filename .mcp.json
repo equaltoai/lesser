@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "theorymcp": {
-      "type": "http",
-      "url": "https://theorymcp.ai/equaltoai/agents/lesser/mcp"
-    }
-  }
-}

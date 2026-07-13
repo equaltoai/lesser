@@ -304,6 +304,36 @@ func TestHelpersRound18_StatusAccountUsesActorData(t *testing.T) {
 	require.Equal(t, createdAt.Format(time.RFC3339), account.CreatedAt)
 }
 
+func TestHelpersRound18_StatusAccountDoesNotHydrateDiscardedStatusCount(t *testing.T) {
+	cfg := round11TestConfig()
+	h := &Handler{
+		cfg: cfg,
+		registry: &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+					t.Fatalf("status account rendering must not hydrate statuses_count before zeroing it")
+					return 0, nil
+				},
+			},
+		},
+	}
+
+	account := h.statusAccount(&storagemodels.Status{
+		StatusID:       "status-1",
+		AuthorUsername: "alice",
+		AuthorID:       cfg.ActorURL("alice"),
+	}, &storage.Account{
+		User: &storage.User{Username: "alice", DisplayName: "Alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	})
+
+	require.Equal(t, "alice", account.Username)
+	require.Zero(t, account.StatusesCount)
+}
+
 func TestHelpersRound18_StatusAccountFallbackBranches(t *testing.T) {
 	cfg := round11TestConfig()
 	h := &Handler{cfg: cfg}

@@ -2347,6 +2347,7 @@ type TOCEntry {
 type Article {
   id: ID!
   slug: String!
+  authorId: ID!
   author: Actor!
 
   title: String!
@@ -2396,6 +2397,7 @@ type ArticleConnection {
 
 type Draft {
   id: ID!
+  authorId: ID!
   author: Actor!
 
   contentType: ObjectType!

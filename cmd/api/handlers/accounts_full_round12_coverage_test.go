@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"testing"
@@ -47,7 +48,10 @@ func TestAccountsFull_Round12_HandleGetAccountFull_Errors(t *testing.T) {
 			},
 		},
 		NotesSvc: &NotesServiceStub{
-			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) { return 3, nil },
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, actor.ID, authorID)
+				return 3, nil
+			},
 		},
 		RelationshipsSvc: &RelationshipsServiceStub{
 			CountFollowersFunc: func(ctx context.Context, username string) (int64, error) { return 5, nil },
@@ -342,6 +346,57 @@ func TestAccountsFull_Round12_ConvertStatusToMastodonAPI_HelperBranches(t *testi
 	})
 }
 
+func TestAccountsFull_Round12_ConvertStatusToMastodonAPIDoesNotHydrateAccountStatusCount(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now().UTC()
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+		PreferredUsername: "alice",
+		Name:              "Alice",
+		URL:               cfg.BaseURL() + "/@alice",
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+				return &storage.Account{
+					User:  &storage.User{Username: "alice", DisplayName: "Alice"},
+					Actor: actor,
+				}, nil
+			},
+		},
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("status rendering must not hydrate embedded account statuses_count")
+				return 0, nil
+			},
+			CountRepliesFunc:  func(context.Context, string) (int, error) { return 0, nil },
+			GetBoostCountFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetLikeCountFunc:  func(context.Context, string) (int64, error) { return 0, nil },
+		},
+		RelationshipsSvc: &RelationshipsServiceStub{
+			CountFollowersFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetFollowingFunc: func(context.Context, string, int, string) ([]*storage.Account, string, error) {
+				return nil, "", nil
+			},
+		},
+	}
+
+	out := handler.convertStatusToMastodonAPI(&storagemodels.Status{
+		StatusID:       "status-1",
+		AuthorUsername: "alice",
+		AuthorID:       cfg.ActorURL("alice"),
+		Content:        "hello",
+		Visibility:     "public",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}, "")
+
+	account := out["account"].(map[string]interface{})
+	require.Equal(t, int64(0), account["statuses_count"])
+}
+
 func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 	cfg := round11TestConfig()
 	now := time.Now().UTC()
@@ -361,7 +416,12 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 			},
 		},
 		NotesSvc: &NotesServiceStub{
-			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) { return 1, nil },
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				if authorID != actor.ID {
+					return 0, nil
+				}
+				return 1, nil
+			},
 		},
 		RelationshipsSvc: &RelationshipsServiceStub{
 			GetFollowersFunc: func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
@@ -410,7 +470,36 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 		require.Equal(t, "https://example.com/avatar.png", account["avatar"])
 		require.Equal(t, "https://example.com/header.png", account["header"])
 		require.NotNil(t, account["last_status_at"])
+		require.Equal(t, int64(1), account["statuses_count"])
 	})
+}
+
+func TestAccountsFull_Round12_BuildAccountResponseFullSkipsRemoteStatusCounts(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("remote actor must not inherit same-named local user's statuses_count")
+				return 0, nil
+			},
+		},
+		RelationshipsSvc: &RelationshipsServiceStub{
+			CountFollowersFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetFollowingFunc: func(context.Context, string, int, string) ([]*storage.Account, string, error) {
+				return nil, "", nil
+			},
+		},
+	}
+
+	account := handler.buildAccountResponseFull(context.Background(), &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
+		PreferredUsername: "alice",
+		Name:              "Remote Alice",
+		URL:               "https://remote.example/@alice",
+	})
+
+	require.Equal(t, int64(0), account["statuses_count"])
 }
 
 func TestAccountsFull_Round12_VerifyCredentialsAuthError(t *testing.T) {
@@ -483,6 +572,12 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 	handler.registry = &RegistryStub{
 		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(ctx context.Context, username string) (*storage.Account, error) {
+				return &storage.Account{
+					User:  &storage.User{Username: username},
+					Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + username}, PreferredUsername: username},
+				}, nil
+			},
 			UpdateProfileFunc: func(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 				return nil, stdErrors.New("boom")
 			},
@@ -495,6 +590,135 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	require.NoError(t, err)
 
 	requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+}
+
+func TestAccountsFull_Round12_UpdateCredentials_CommandAndTransformErrors(t *testing.T) {
+	cfg := round11TestConfig()
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	t.Run("account_load_error_returns_500", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, stdErrors.New("missing account row")
+				},
+			},
+		}
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+	})
+
+	t.Run("untransformable_update_result_returns_500", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return &storage.Account{
+						User: &storage.User{Username: "alice"},
+						Actor: &activitypub.Actor{
+							BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+							PreferredUsername: "alice",
+						},
+					}, nil
+				},
+				UpdateProfileFunc: func(context.Context, *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+					return &accounts.AccountResult{Account: nil}, nil
+				},
+			},
+		}
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+	})
+}
+
+func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t *testing.T) {
+	cfg := round11TestConfig()
+	expectedActorID := cfg.BaseURL() + "/users/alice"
+
+	existingAccount := &storage.Account{
+		User: &storage.User{
+			Username:     "alice",
+			DisplayName:  "Della",
+			Note:         "old bio",
+			Locked:       true,
+			Discoverable: true,
+			IsAgent:      true,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
+			PreferredUsername:         "alice",
+			Name:                      "Della",
+			Summary:                   "old bio",
+			ManuallyApprovesFollowers: true,
+			Discoverable:              true,
+		},
+	}
+	updatedAccount := &storage.Account{
+		User: &storage.User{
+			Username:     "alice",
+			DisplayName:  "Della",
+			Note:         "same bio",
+			Locked:       true,
+			Discoverable: true,
+			IsAgent:      true,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
+			PreferredUsername:         "alice",
+			Name:                      "Della",
+			Summary:                   "same bio",
+			ManuallyApprovesFollowers: true,
+			Discoverable:              true,
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(ctx context.Context, username string) (*storage.Account, error) {
+				require.Equal(t, "alice", username)
+				return existingAccount, nil
+			},
+			UpdateProfileFunc: func(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+				require.Equal(t, "alice", cmd.Username)
+				require.Equal(t, "alice", cmd.UpdaterID)
+				require.Equal(t, "Della", cmd.DisplayName)
+				require.Equal(t, "same bio", cmd.Bio)
+				require.True(t, cmd.Locked)
+				require.True(t, cmd.Discoverable)
+				require.True(t, cmd.Bot)
+				return &accounts.AccountResult{Account: updatedAccount}, nil
+			},
+		},
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, expectedActorID, authorID)
+				return 9, nil
+			},
+		},
+	}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della","note":"same bio"}`))
+
+	resp := requireStatus(t, http.StatusOK)(handler.HandleUpdateCredentialsFull(ctx))
+
+	var got apiModels.Account
+	require.NoError(t, json.Unmarshal(resp.Body, &got))
+	require.Equal(t, "alice", got.Username)
+	require.Equal(t, "Della", got.DisplayName)
+	require.Equal(t, "same bio", got.Note)
+	require.True(t, got.Locked)
+	require.True(t, got.Discoverable)
+	require.True(t, got.Bot)
+	require.Equal(t, 9, got.StatusesCount)
 }
 
 func TestAccountsFull_Round12_HasUserMutedStatus_IsMutedError(t *testing.T) {

@@ -117,3 +117,13 @@ lint-report.json
 # Generated status reports
 INCOMPLETE_IMPLEMENTATIONS.md
 .implementation_status_last
+
+# Local TheoryMCP agent materializations (generated from the EqualToAI namespace)
+# Keep these untracked; re-materialize from the active install manifest.
+.agents/
+.claude/
+.codex/
+.mcp/
+.mcp.json
+GEMINI.md
+opencode.json

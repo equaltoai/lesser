@@ -210,9 +210,10 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 	})
 
 	t.Run("success_returns_200", func(t *testing.T) {
+		expectedActorID := cfg.BaseURL() + "/users/alice"
 		account := &storage.Account{
 			User:  &storage.User{Username: "alice"},
-			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: expectedActorID}, PreferredUsername: "alice"},
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
@@ -220,6 +221,14 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
 					require.Equal(t, "alice", username)
 					return account, nil
+				},
+			},
+			NotesSvc: &NotesServiceStub{
+				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					if authorID != expectedActorID {
+						return 0, nil
+					}
+					return 5, nil
 				},
 			},
 		})
@@ -234,6 +243,7 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		require.Equal(t, "alice", got.Username)
 		require.Equal(t, "alice", got.Acct)
 		require.NotEmpty(t, got.ID)
+		require.Equal(t, 5, got.StatusesCount)
 	})
 
 	t.Run("long_lived_agent_token_older_than_24h_still_returns_200", func(t *testing.T) {
@@ -281,6 +291,123 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 	})
 }
 
+func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContextual(t *testing.T) {
+	cfg := round10TestConfig()
+	type ctxKey struct{}
+	requestCtx := context.WithValue(context.Background(), ctxKey{}, "request")
+	expectedActorID := cfg.BaseURL() + "/users/alice"
+	pathActorID := cfg.BaseURL() + "/users/pathuser"
+	synthActorID := cfg.BaseURL() + "/users/synth"
+	account := &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: expectedActorID, Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, "request", ctx.Value(ctxKey{}))
+				switch authorID {
+				case expectedActorID:
+					return 11, nil
+				case pathActorID:
+					return 12, nil
+				case synthActorID:
+					return 13, nil
+				default:
+					t.Fatalf("unexpected count author ID %q", authorID)
+					return 0, nil
+				}
+			},
+		},
+	})
+
+	base, err := h.mastodonAccountFromStorageAccount(account)
+	require.NoError(t, err)
+	require.Zero(t, base.StatusesCount)
+
+	hydrated, err := h.mastodonAccountFromStorageAccountWithStatusCount(requestCtx, account)
+	require.NoError(t, err)
+	require.Equal(t, 11, hydrated.StatusesCount)
+
+	require.Zero(t, h.localAccountStatusesCount(nil, expectedActorID))
+
+	fallbackHydrated := h.publicAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: pathActorID, Type: "Person"}},
+	})
+	require.Equal(t, 12, fallbackHydrated.StatusesCount)
+
+	synthHydrated, err := h.mastodonAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		User:  &storage.User{Username: "synth"},
+		Actor: &activitypub.Actor{PreferredUsername: "synth"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 13, synthHydrated.StatusesCount)
+	require.Equal(t, synthActorID, h.localStatusCountActorIDForStorageAccount(&storage.Account{
+		User: &storage.User{Username: "synth"},
+	}))
+	require.Empty(t, h.localStatusCountActorIDForStorageAccount(&storage.Account{
+		User: &storage.User{Username: "same@remote.example"},
+	}))
+
+	remoteHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("remote account must not hydrate local statuses_count")
+				return 0, nil
+			},
+		},
+	})
+	remote := remoteHandler.publicAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	})
+	require.Zero(t, remote.StatusesCount)
+}
+
+func TestAccountsRound12_StatusCountHydrationFailureModesReturnZero(t *testing.T) {
+	cfg := round10TestConfig()
+	actorID := cfg.BaseURL() + "/users/alice"
+	account := &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: actorID, Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	}
+
+	var nilHandler *Handler
+	require.Zero(t, nilHandler.localAccountStatusesCount(context.Background(), actorID))
+
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
+
+	h.registry = &RegistryStub{}
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
+
+	h.registry = &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				return 0, errors.New("count unavailable")
+			},
+		},
+	}
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
+
+	out := apimodels.Account{}
+	h.hydrateMastodonAccountStatusCount(context.Background(), account, &out)
+	require.Zero(t, out.StatusesCount)
+
+	h.hydrateMastodonAccountStatusCount(context.Background(), account, nil)
+	require.Empty(t, h.localStatusCountActorIDForStorageAccount(nil))
+}
+
 func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	cfg := round10TestConfig()
 	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
@@ -319,6 +446,12 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	t.Run("service_error_returns_500", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return &storage.Account{
+						User:  &storage.User{Username: "alice"},
+						Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+					}, nil
+				},
 				UpdateProfileFunc: func(context.Context, *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 					return nil, errors.New("boom")
 				},
@@ -333,35 +466,225 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateCredentialsLift(ctx))
 	})
 
-	t.Run("success_returns_200", func(t *testing.T) {
-		account := &storage.Account{
-			User:  &storage.User{Username: "alice"},
-			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+	t.Run("success_preserves_omitted_booleans_and_returns_mastodon_account", func(t *testing.T) {
+		expectedActorID := cfg.BaseURL() + "/users/alice"
+		existingAccount := &storage.Account{
+			User: &storage.User{
+				Username:     "alice",
+				DisplayName:  "Della",
+				Note:         "old bio",
+				Locked:       true,
+				Discoverable: true,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
+				PreferredUsername:         "alice",
+				Name:                      "Della",
+				Summary:                   "old bio",
+				ManuallyApprovesFollowers: true,
+				Discoverable:              true,
+			},
+		}
+		updatedAccount := &storage.Account{
+			User: &storage.User{
+				Username:     "alice",
+				DisplayName:  "ok",
+				Note:         "new bio",
+				Locked:       true,
+				Discoverable: true,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
+				PreferredUsername:         "alice",
+				Name:                      "ok",
+				Summary:                   "new bio",
+				ManuallyApprovesFollowers: true,
+				Discoverable:              true,
+			},
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return existingAccount, nil
+				},
 				UpdateProfileFunc: func(_ context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
 					require.Equal(t, "alice", cmd.Username)
 					require.Equal(t, "alice", cmd.UpdaterID)
-					return &accounts.AccountResult{Account: account}, nil
+					require.Equal(t, "ok", cmd.DisplayName)
+					require.Equal(t, "new bio", cmd.Bio)
+					require.True(t, cmd.Locked)
+					require.True(t, cmd.Discoverable)
+					require.True(t, cmd.Bot)
+					return &accounts.AccountResult{Account: updatedAccount}, nil
+				},
+			},
+			NotesSvc: &NotesServiceStub{
+				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					require.Equal(t, expectedActorID, authorID)
+					return 7, nil
 				},
 			},
 		})
 
-		ctx, err := round10NewLiftContext(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, apimodels.UpdateCredentialsRequest{
-			DisplayName: "ok",
-		})
-		require.NoError(t, err)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, []byte(`{"display_name":"ok","note":"new bio"}`))
 
 		resp := requireStatus(t, http.StatusOK)(h.HandleUpdateCredentialsLift(ctx))
-		var got storage.Account
+		var got apimodels.Account
 		require.NoError(t, json.Unmarshal(resp.Body, &got))
-		require.NotNil(t, got.User)
-		require.Equal(t, "alice", got.User.Username)
-		require.NotNil(t, got.Actor)
-		require.Equal(t, cfg.BaseURL()+"/users/alice", got.Actor.ID)
-		require.Equal(t, "alice", got.Actor.PreferredUsername)
+		require.Equal(t, "alice", got.Username)
+		require.Equal(t, "ok", got.DisplayName)
+		require.Equal(t, "new bio", got.Note)
+		require.True(t, got.Locked)
+		require.True(t, got.Discoverable)
+		require.True(t, got.Bot)
+		require.Equal(t, 7, got.StatusesCount)
+	})
+}
+
+func TestAccountsRound12_BuildUpdateCredentialsCommandFallbacks(t *testing.T) {
+	cfg := round10TestConfig()
+
+	t.Run("omitted_booleans_fall_back_to_actor_profile", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return &storage.Account{
+						Actor: &activitypub.Actor{
+							BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+							PreferredUsername:         "alice",
+							ManuallyApprovesFollowers: true,
+							Discoverable:              true,
+						},
+					}, nil
+				},
+			},
+		})
+
+		cmd, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", updateCredentialsPatchRequest{
+			DisplayName: "Della",
+			Note:        "same bio",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "alice", cmd.Username)
+		require.Equal(t, "alice", cmd.UpdaterID)
+		require.Equal(t, "Della", cmd.DisplayName)
+		require.Equal(t, "same bio", cmd.Bio)
+		require.True(t, cmd.Locked)
+		require.True(t, cmd.Discoverable)
+		require.True(t, cmd.Bot)
+	})
+
+	t.Run("explicit_false_booleans_override_existing_profile", func(t *testing.T) {
+		locked := false
+		discoverable := false
+		bot := false
+		req := updateCredentialsPatchRequest{
+			DisplayName:  "Della",
+			Note:         "same bio",
+			Locked:       &locked,
+			Discoverable: &discoverable,
+			Bot:          &bot,
+		}
+		params := req.accountParams()
+		require.Contains(t, params, "locked")
+		require.Contains(t, params, "discoverable")
+		require.Contains(t, params, "bot")
+		require.False(t, params["locked"].(bool))
+		require.False(t, params["discoverable"].(bool))
+		require.False(t, params["bot"].(bool))
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return &storage.Account{
+						User: &storage.User{
+							Username:     "alice",
+							Locked:       true,
+							Discoverable: true,
+							IsAgent:      true,
+						},
+						Actor: &activitypub.Actor{
+							BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+							PreferredUsername:         "alice",
+							ManuallyApprovesFollowers: true,
+							Discoverable:              true,
+						},
+					}, nil
+				},
+			},
+		})
+
+		cmd, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", req)
+		require.NoError(t, err)
+		require.False(t, cmd.Locked)
+		require.False(t, cmd.Discoverable)
+		require.False(t, cmd.Bot)
+	})
+
+	t.Run("account_lookup_error_is_returned", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		})
+
+		_, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", updateCredentialsPatchRequest{DisplayName: "Della"})
+		require.Error(t, err)
+	})
+
+	t.Run("nil_account_fallbacks_are_false", func(t *testing.T) {
+		require.False(t, existingAccountLocked(nil))
+		require.False(t, existingAccountDiscoverable(nil))
+		require.False(t, existingAccountBot(nil))
+	})
+}
+
+func TestAccountsRound12_HandleUpdateCredentialsLiftCommandAndTransformErrors(t *testing.T) {
+	cfg := round10TestConfig()
+	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
+	authHeaders := map[string]string{"Authorization": "Bearer " + token}
+
+	t.Run("account_load_error_returns_500", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, errors.New("missing account row")
+				},
+			},
+		})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateCredentialsLift(ctx))
+	})
+
+	t.Run("untransformable_update_result_returns_500", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return &storage.Account{
+						User: &storage.User{Username: "alice"},
+						Actor: &activitypub.Actor{
+							BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+							PreferredUsername: "alice",
+						},
+					}, nil
+				},
+				UpdateProfileFunc: func(context.Context, *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+					return &accounts.AccountResult{Account: nil}, nil
+				},
+			},
+		})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", authHeaders, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateCredentialsLift(ctx))
 	})
 }
 

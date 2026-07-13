@@ -229,13 +229,13 @@ type Context struct {
 
 // UpdateCredentialsRequest represents a request to update user credentials
 type UpdateCredentialsRequest struct {
-	DisplayName  string `json:"display_name"`
-	Note         string `json:"note"`
-	Avatar       string `json:"avatar"`
-	Header       string `json:"header"`
-	Locked       bool   `json:"locked"`
-	Discoverable bool   `json:"discoverable"`
-	Bot          bool   `json:"bot"`
+	DisplayName  string `json:"display_name,omitempty"`
+	Note         string `json:"note,omitempty"`
+	Avatar       string `json:"avatar,omitempty"`
+	Header       string `json:"header,omitempty"`
+	Locked       bool   `json:"locked,omitempty"`
+	Discoverable bool   `json:"discoverable,omitempty"`
+	Bot          bool   `json:"bot,omitempty"`
 }
 
 // FollowRequest represents a follow request with options

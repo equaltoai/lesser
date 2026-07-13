@@ -69,9 +69,10 @@ type TOCEntry struct {
 
 // Article is a published piece of CMS content.
 type Article struct {
-	ID     string             `json:"id"`
-	Slug   string             `json:"slug"`
-	Author *activitypub.Actor `json:"author"`
+	ID       string             `json:"id"`
+	Slug     string             `json:"slug"`
+	AuthorID string             `json:"authorId"`
+	Author   *activitypub.Actor `json:"author"`
 
 	Title    string  `json:"title"`
 	Subtitle *string `json:"subtitle"`
@@ -122,8 +123,9 @@ type ArticleConnection struct {
 
 // Draft represents an editable piece of content prior to publication.
 type Draft struct {
-	ID     string             `json:"id"`
-	Author *activitypub.Actor `json:"author"`
+	ID       string             `json:"id"`
+	AuthorID string             `json:"authorId"`
+	Author   *activitypub.Actor `json:"author"`
 
 	ContentType   ObjectType    `json:"contentType"`
 	Title         *string       `json:"title"`
