@@ -583,6 +583,51 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
 }
 
+func TestAccountsFull_Round12_UpdateCredentials_CommandAndTransformErrors(t *testing.T) {
+	cfg := round11TestConfig()
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	t.Run("account_load_error_returns_500", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, stdErrors.New("missing account row")
+				},
+			},
+		}
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+	})
+
+	t.Run("untransformable_update_result_returns_500", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		handler.registry = &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return &storage.Account{
+						User: &storage.User{Username: "alice"},
+						Actor: &activitypub.Actor{
+							BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+							PreferredUsername: "alice",
+						},
+					}, nil
+				},
+				UpdateProfileFunc: func(context.Context, *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+					return &accounts.AccountResult{Account: nil}, nil
+				},
+			},
+		}
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della"}`))
+
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+	})
+}
+
 func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t *testing.T) {
 	cfg := round11TestConfig()
 
