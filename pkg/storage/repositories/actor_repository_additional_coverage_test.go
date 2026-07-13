@@ -27,6 +27,15 @@ type stubActorRepoDeps struct {
 	setPrefErr      error
 }
 
+func expectActorLastStatusUpdateBuilder(mockQuery *mocks.MockQuery, executeErr error) *mocks.MockUpdateBuilder {
+	updateBuilder := new(mocks.MockUpdateBuilder)
+	mockQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+	updateBuilder.On("Set", mock.Anything, mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("ConditionVersion", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Execute").Return(executeErr).Once()
+	return updateBuilder
+}
+
 func (s *stubActorRepoDeps) GetFollowing(ctx context.Context, username string, _ int, _ string) ([]string, string, error) {
 	if s.getFollowingErr != nil {
 		return nil, "", s.getFollowingErr
@@ -669,7 +678,8 @@ func TestActorRepository_misc_methods(t *testing.T) {
 		m.Username = "alice"
 		m.Actor = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice"}
 	}).Times(2)
-	mockQuery.On("Update", mock.Anything).Return(nil).Twice()
+	expectActorLastStatusUpdateBuilder(mockQuery, nil)
+	mockQuery.On("Update", mock.Anything).Return(nil).Once()
 
 	assert.NoError(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 	assert.NoError(t, repo.SetActorFields(ctx, "alice", []storage.ActorField{{Name: "n", Value: "v"}}))

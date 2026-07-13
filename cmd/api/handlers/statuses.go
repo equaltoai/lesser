@@ -86,8 +86,11 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		h.recordAgentMemoryEvent(ctx, claims.Username, result.Note.StatusID, &req)
 	}
 
-	// Convert to Mastodon API format with storage-aware helper
-	apiStatus, err := h.convertStorageStatusToAPI(result.Note, claims.Username)
+	// Convert to Mastodon API format with storage-aware helper. Status creation
+	// responses are the one status-embedded account path where clients expect
+	// the author payload to reflect the write that just succeeded; timeline and
+	// status-read conversions keep their compact zero-count account payloads.
+	apiStatus, err := h.convertCreatedStorageStatusToAPI(ctx.Context(), result.Note, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to convert created status", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create status")
@@ -140,7 +143,7 @@ func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.
 		h.recordAgentMemoryEvent(ctx, claims.Username, result.Message.StatusID, req)
 	}
 
-	apiStatus, err := h.convertStorageStatusToAPI(result.Message, claims.Username)
+	apiStatus, err := h.convertCreatedStorageStatusToAPI(ctx.Context(), result.Message, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to convert created direct status", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create status")

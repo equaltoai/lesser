@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	neturl "net/url"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
@@ -37,6 +40,56 @@ type ActorRepository struct {
 	deps         ActorRepositoryDeps
 	localDomain  string
 	localBaseURL string
+}
+
+// actorProfileUpdateProjection is a write-only TableTheory projection for
+// actor profile updates. It intentionally leaves the actor attribute off the
+// theorydb:"json" path: ActivityPub actors contain JSON-LD keys such as
+// "@context", "@id", and "@type", and TableTheory v2.0.3's json-field update
+// normalization validates the decoded map keys as expression field names before
+// generic DynamoDB conversion. The plain attr projection keeps the update on
+// TableTheory's supported UpdateBuilder path while preserving the same native
+// DynamoDB document shape used by create/read paths.
+type actorProfileUpdateProjection struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK           string             `theorydb:"pk,attr:PK" json:"pk"`
+	SK           string             `theorydb:"sk,attr:SK" json:"sk"`
+	Actor        *activitypub.Actor `theorydb:"attr:actor" json:"actor"`
+	UpdatedAt    time.Time          `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastStatusAt *time.Time         `theorydb:"attr:lastStatusAt,omitempty" json:"last_status_at,omitempty"`
+	Version      int                `theorydb:"version,attr:version" json:"version"`
+}
+
+func (actorProfileUpdateProjection) TableName() string {
+	return models.MainTableName
+}
+
+type activityPubActorUpdateValue struct {
+	Actor *activitypub.Actor
+}
+
+func (v activityPubActorUpdateValue) MarshalDynamoDBAttributeValue() (dynamodbtypes.AttributeValue, error) {
+	if v.Actor == nil {
+		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}, nil
+	}
+
+	data, err := json.Marshal(v.Actor)
+	if err != nil {
+		return nil, fmt.Errorf("marshal activitypub actor: %w", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("decode activitypub actor document: %w", err)
+	}
+
+	attr, err := attributevalue.MarshalMap(raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshal activitypub actor attribute: %w", err)
+	}
+
+	return &dynamodbtypes.AttributeValueMemberM{Value: attr}, nil
 }
 
 // NewActorRepository creates a new actor repository with enhanced functionality
@@ -310,6 +363,10 @@ func (r *ActorRepository) canonicalLocalActorFromModel(ctx context.Context, user
 		return nil, err
 	}
 
+	if actor != nil && actor.LastStatusAt == nil && model != nil && model.LastStatusAt != nil {
+		lastStatusAt := model.LastStatusAt.UTC()
+		actor.LastStatusAt = &lastStatusAt
+	}
 	hydrateActivityPubActorTimestamps(actor, model.CreatedAt, model.UpdatedAt)
 	return actor, nil
 }
@@ -420,7 +477,7 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 
 	if actorModel.Version == 0 {
 		seedBuilder := r.db.WithContext(ctx).
-			Model(&models.Actor{}).
+			Model(&actorProfileUpdateProjection{}).
 			Where("PK", "=", actorModel.PK).
 			Where("SK", "=", actorModel.SK).
 			UpdateBuilder()
@@ -437,12 +494,12 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 	actorModel.UpdatedAt = now
 
 	updateBuilder := r.db.WithContext(ctx).
-		Model(&models.Actor{}).
+		Model(&actorProfileUpdateProjection{}).
 		Where("PK", "=", actorModel.PK).
 		Where("SK", "=", actorModel.SK).
 		UpdateBuilder()
 
-	updateBuilder.Set("Actor", actor)
+	updateBuilder.Set("Actor", activityPubActorUpdateValue{Actor: actor})
 	updateBuilder.Set("UpdatedAt", now)
 
 	gsi1PK, gsi1SK := buildActorGSI1Keys(username)
@@ -510,9 +567,22 @@ func (r *ActorRepository) UpdateActorLastStatusTime(ctx context.Context, usernam
 	now := time.Now()
 	actorModel.LastStatusAt = &now
 
-	// Update using BaseRepository
-	err = r.Update(ctx, actorModel)
-	if err != nil {
+	updateBuilder := r.db.WithContext(ctx).
+		Model(&actorProfileUpdateProjection{}).
+		Where("PK", "=", actorModel.PK).
+		Where("SK", "=", actorModel.SK).
+		UpdateBuilder()
+
+	updateBuilder.Set("LastStatusAt", now)
+	updateBuilder.Set("UpdatedAt", now)
+	if actorModel.Version > 0 {
+		updateBuilder.ConditionVersion(int64(actorModel.Version))
+		updateBuilder.Set("Version", actorModel.Version+1)
+	} else {
+		updateBuilder.Set("Version", 1)
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 

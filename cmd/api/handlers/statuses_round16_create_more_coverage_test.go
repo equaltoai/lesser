@@ -128,6 +128,95 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.Equal(t, VisibilityPublic, gotCmd.Visibility)
 	})
 
+	t.Run("success floors immediate create account count without changing private visibility", func(t *testing.T) {
+		now := time.Date(2026, 7, 13, 15, 4, 5, 0, time.UTC)
+		actorID := cfg.BaseURL() + "/users/alice"
+
+		countCalled := false
+
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:     "alice",
+					DisplayName:  "Della Marlowe",
+					Note:         "current bio",
+					Discoverable: false,
+					Approved:     true,
+					Role:         "user",
+					Version:      1,
+					CreatedAt:    now.Add(-time.Hour),
+					UpdatedAt:    now.Add(-time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {
+					Username: "alice",
+					Actor: &activitypub.Actor{
+						BaseObject:        activitypub.BaseObject{ID: actorID, Type: activitypub.PersonType},
+						PreferredUsername: "alice",
+						Name:              "Della Marlowe",
+						Summary:           "current bio",
+						URL:               cfg.BaseURL() + "/@alice",
+						Inbox:             actorID + "/inbox",
+						Outbox:            actorID + "/outbox",
+					},
+					CreatedAt: now.Add(-time.Hour),
+					UpdatedAt: now.Add(-time.Minute),
+					Version:   1,
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				CreateNoteFunc: func(_ context.Context, cmd *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					require.Equal(t, VisibilityPrivate, cmd.Visibility)
+					return &notes.NoteResult{
+						Note: &storagemodels.Status{
+							StatusID:       "private-smoke-1",
+							AuthorUsername: cmd.AuthorID,
+							AuthorID:       actorID,
+							Visibility:     cmd.Visibility,
+							PublishedAt:    now,
+							CreatedAt:      now,
+							UpdatedAt:      now,
+							ModifiedAt:     now,
+							Version:        1,
+							Note: &activitypub.Note{
+								BaseObject:   activitypub.BaseObject{ID: cfg.BaseURL() + "/objects/private-smoke-1"},
+								Content:      cmd.Content,
+								AttributedTo: actorID,
+							},
+						},
+					}, nil
+				},
+				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
+					countCalled = true
+					require.Equal(t, actorID, authorID)
+					return 0, nil
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead, auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "private smoke test",
+			Visibility: VisibilityPrivate,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
+		var got models.Status
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.Equal(t, VisibilityPrivate, got.Visibility)
+		require.True(t, countCalled)
+		require.Equal(t, "Della Marlowe", got.Account.DisplayName)
+		require.False(t, got.Account.Discoverable)
+		require.Equal(t, 1, got.Account.StatusesCount)
+		require.Equal(t, "2026-07-13", got.Account.LastStatusAt)
+	})
+
 	t.Run("direct visibility uses conversations service", func(t *testing.T) {
 		now := time.Now().UTC()
 
