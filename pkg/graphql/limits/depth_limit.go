@@ -3,6 +3,7 @@ package limits
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
@@ -15,18 +16,6 @@ const (
 	errDepthLimitCode  = "DEPTH_LIMIT_EXCEEDED"
 	defaultIgnoreDepth = 0
 )
-
-// transparentConnectionFields contains the Relay connection wrapper field names
-// used by the current Lesser GraphQL schema. This exemption is intentionally
-// narrow and schema-assumption based: object-valued business fields named
-// "edges" or "node" would also be transparent until this depth walker is
-// upgraded to inspect parent/return types from the executable schema. Keep the
-// companion tests updated if the schema introduces non-Relay fields with these
-// names.
-var transparentConnectionFields = map[string]struct{}{
-	"edges": {},
-	"node":  {},
-}
 
 // DepthLimit enforces a maximum selection depth for a GraphQL operation.
 //
@@ -153,7 +142,7 @@ func fieldSelectionDepth(doc *ast.QueryDocument, field *ast.Field, currentDepth 
 		return currentDepth
 	}
 
-	if _, transparent := transparentConnectionFields[field.Name]; transparent && len(field.SelectionSet) > 0 {
+	if isTransparentConnectionWrapper(field) {
 		return selectionSetDepth(doc, field.SelectionSet, currentDepth, stack)
 	}
 
@@ -163,6 +152,29 @@ func fieldSelectionDepth(doc *ast.QueryDocument, field *ast.Field, currentDepth 
 	}
 
 	return selectionSetDepth(doc, field.SelectionSet, nextDepth, stack)
+}
+
+func isTransparentConnectionWrapper(field *ast.Field) bool {
+	if field == nil || len(field.SelectionSet) == 0 || field.ObjectDefinition == nil {
+		return false
+	}
+
+	parentName := field.ObjectDefinition.Name
+	switch field.Name {
+	case "edges":
+		return strings.HasSuffix(parentName, "Connection") && astDefinitionHasField(field.ObjectDefinition, "pageInfo")
+	case "node":
+		return strings.HasSuffix(parentName, "Edge") && astDefinitionHasField(field.ObjectDefinition, "cursor")
+	default:
+		return false
+	}
+}
+
+func astDefinitionHasField(def *ast.Definition, name string) bool {
+	if def == nil {
+		return false
+	}
+	return def.Fields.ForName(name) != nil
 }
 
 func fragmentSpreadDepth(doc *ast.QueryDocument, spread *ast.FragmentSpread, currentDepth int, stack map[string]bool) int {

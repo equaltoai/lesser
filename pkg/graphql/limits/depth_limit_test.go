@@ -6,9 +6,75 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )
+
+var depthLimitTestSchema = gqlparser.MustLoadSchema(&ast.Source{
+	Name: "depth_limit_test.graphql",
+	Input: `
+		schema { query: Query }
+
+		type Query {
+			me: User
+			articles: ArticleConnection!
+			federationMap: FederationGraph!
+		}
+
+		type User {
+			id: ID!
+			profile: Profile
+		}
+
+		type Profile {
+			avatar: String
+		}
+
+		type ArticleConnection {
+			edges: [ArticleEdge!]!
+			pageInfo: PageInfo!
+			totalCount: Int!
+		}
+
+		type ArticleEdge {
+			node: Article!
+			cursor: String!
+		}
+
+		type Article {
+			id: ID!
+			title: String!
+			author: Actor!
+		}
+
+		type Actor {
+			publicKey: PublicKey
+		}
+
+		type PublicKey {
+			id: ID!
+		}
+
+		type PageInfo {
+			hasNextPage: Boolean!
+		}
+
+		type FederationGraph {
+			nodes: [InstanceNode!]!
+			edges: [FederationEdge!]!
+		}
+
+		type FederationEdge {
+			source: String!
+			target: String!
+		}
+
+		type InstanceNode {
+			domain: String!
+		}
+	`,
+})
 
 func TestDepthLimit_DisabledWhenLimitNonPositive(t *testing.T) {
 	dl := FixedDepthLimit(0)
@@ -43,7 +109,7 @@ func TestDepthLimit_CountsFragments(t *testing.T) {
 			profile { avatar }
 		}
 	`
-	opCtx := mustNamedOpCtx(t, query, "GetMe")
+	opCtx := mustNamedOpCtxUnvalidated(t, query, "GetMe")
 
 	// Depth: me (1) -> id/profile (2) -> avatar (3)
 	dl := FixedDepthLimit(2)
@@ -108,6 +174,26 @@ func TestDepthLimit_ConnectionWrappersStillBlockDeepSelections(t *testing.T) {
 	require.Equal(t, 4, stats.Depth)
 }
 
+func TestDepthLimit_NonRelayEdgesCountTowardDepth(t *testing.T) {
+	query := `
+		query FederationMap {
+			federationMap {
+				edges {
+					target
+				}
+			}
+		}
+	`
+	opCtx := mustNamedOpCtx(t, query, "FederationMap")
+
+	dl := FixedDepthLimit(2)
+	require.NoError(t, dl.Validate(nil))
+	require.NotNil(t, dl.MutateOperationContext(context.Background(), opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 3, stats.Depth)
+}
+
 func TestDepthLimit_FragmentCyclesDoNotPanic(t *testing.T) {
 	query := `
 		query GetMe {
@@ -118,7 +204,7 @@ func TestDepthLimit_FragmentCyclesDoNotPanic(t *testing.T) {
 		fragment A on User { ...B }
 		fragment B on User { ...A }
 	`
-	opCtx := mustNamedOpCtx(t, query, "GetMe")
+	opCtx := mustNamedOpCtxUnvalidated(t, query, "GetMe")
 
 	dl := FixedDepthLimit(1)
 	require.NoError(t, dl.Validate(nil))
@@ -201,7 +287,26 @@ func mustNamedOpCtx(t *testing.T, query, opName string) *graphql.OperationContex
 
 func mustParseDoc(t *testing.T, query string) *ast.QueryDocument {
 	t.Helper()
+	doc, errs := gqlparser.LoadQuery(depthLimitTestSchema, query)
+	require.Empty(t, errs)
+	return doc
+}
+
+func mustParseDocUnvalidated(t *testing.T, query string) *ast.QueryDocument {
+	t.Helper()
 	doc, err := parser.ParseQuery(&ast.Source{Input: query})
 	require.NoError(t, err)
 	return doc
+}
+
+func mustNamedOpCtxUnvalidated(t *testing.T, query, opName string) *graphql.OperationContext {
+	t.Helper()
+	doc := mustParseDocUnvalidated(t, query)
+	op := doc.Operations.ForName(opName)
+	require.NotNil(t, op)
+	return &graphql.OperationContext{
+		Doc:           doc,
+		OperationName: opName,
+		Operation:     op,
+	}
 }
