@@ -8343,14 +8343,6 @@ components:
                     type: boolean
                 note:
                     type: string
-            required:
-                - avatar
-                - bot
-                - discoverable
-                - display_name
-                - header
-                - locked
-                - note
             type: object
         UpdateCustomEmojiRequest:
             additionalProperties: false
@@ -10005,7 +9997,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/StorageAccount'
+                                $ref: '#/components/schemas/Account'
                     headers:
                         X-RateLimit-Limit:
                             description: Request limit per window.

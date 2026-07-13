@@ -37,6 +37,7 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, draft)
 	require.NotEmpty(t, draft.ID)
+	require.Equal(t, "alice", draft.AuthorID)
 
 	updatedTitle := "Updated Draft"
 	slug := "updated-draft"
@@ -61,6 +62,14 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.NotNil(t, draftsBeforePublish)
 	require.NotNil(t, draftsBeforePublish.PageInfo)
 	require.GreaterOrEqual(t, draftsBeforePublish.TotalCount, 1)
+	foundDraftAuthorID := ""
+	for _, edge := range draftsBeforePublish.Edges {
+		if edge.Node != nil && edge.Node.ID == draft.ID {
+			foundDraftAuthorID = edge.Node.AuthorID
+			break
+		}
+	}
+	require.Equal(t, "alice", foundDraftAuthorID)
 
 	when := model.Time(time.Now().Add(15 * time.Minute))
 	draft, err = mut.ScheduleDraft(ctx, draft.ID, when)
@@ -102,6 +111,7 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, article)
 	require.Equal(t, "https://localhost/articles/updated-draft", article.ID)
+	require.Equal(t, cmsLocalActorID(resolver.getDomain(), "alice"), article.AuthorID)
 	require.NotEmpty(t, article.ID)
 }
 
@@ -147,6 +157,7 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	require.Equal(t, newSeriesTitle, series.Title)
 
 	// Articles.
+	domain := resolver.getDomain()
 	articleSlug := "hello-world"
 	featuredID := "media-1"
 	seoTitle := "SEO Title"
@@ -165,6 +176,7 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, article)
+	require.Equal(t, cmsLocalActorID(domain, "alice"), article.AuthorID)
 
 	blankSlug := "   "
 	_, err = mut.UpdateArticle(ctx, article.ID, model.UpdateArticleInput{Slug: &blankSlug})
@@ -231,18 +243,21 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	byID, err := qry.Article(ctx, article.ID)
 	require.NoError(t, err)
 	require.NotNil(t, byID)
+	require.Equal(t, cmsLocalActorID(domain, "alice"), byID.AuthorID)
 
 	author := "alice"
 	seriesFilter := series.ID
 	categoryFilter := category.ID
-	_, err = qry.Articles(ctx, &author, &seriesFilter, &categoryFilter, &first, nil)
+	articlesByAuthor, err := qry.Articles(ctx, &author, &seriesFilter, &categoryFilter, &first, nil)
 	require.NoError(t, err)
+	if len(articlesByAuthor.Edges) > 0 {
+		require.NotEmpty(t, articlesByAuthor.Edges[0].Node.AuthorID)
+	}
 
 	_, err = qry.Articles(ctx, nil, nil, nil, &first, nil)
 	require.NoError(t, err)
 
 	// Slug-based helpers: seed legacy rows so the fallback path is exercised.
-	domain := resolver.getDomain()
 	legacyArticle := &models.Article{
 		Object: models.Object{
 			ID:           cmsArticleID(domain, "legacy-article"),

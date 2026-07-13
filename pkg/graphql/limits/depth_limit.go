@@ -3,6 +3,7 @@ package limits
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
@@ -141,12 +142,39 @@ func fieldSelectionDepth(doc *ast.QueryDocument, field *ast.Field, currentDepth 
 		return currentDepth
 	}
 
+	if isTransparentConnectionWrapper(field) {
+		return selectionSetDepth(doc, field.SelectionSet, currentDepth, stack)
+	}
+
 	nextDepth := currentDepth + 1
 	if len(field.SelectionSet) == 0 {
 		return nextDepth
 	}
 
 	return selectionSetDepth(doc, field.SelectionSet, nextDepth, stack)
+}
+
+func isTransparentConnectionWrapper(field *ast.Field) bool {
+	if field == nil || len(field.SelectionSet) == 0 || field.ObjectDefinition == nil {
+		return false
+	}
+
+	parentName := field.ObjectDefinition.Name
+	switch field.Name {
+	case "edges":
+		return strings.HasSuffix(parentName, "Connection") && astDefinitionHasField(field.ObjectDefinition, "pageInfo")
+	case "node":
+		return strings.HasSuffix(parentName, "Edge") && astDefinitionHasField(field.ObjectDefinition, "cursor")
+	default:
+		return false
+	}
+}
+
+func astDefinitionHasField(def *ast.Definition, name string) bool {
+	if def == nil {
+		return false
+	}
+	return def.Fields.ForName(name) != nil
 }
 
 func fragmentSpreadDepth(doc *ast.QueryDocument, spread *ast.FragmentSpread, currentDepth int, stack map[string]bool) int {

@@ -53,6 +53,7 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 
 	return &model.Draft{
 		ID:              draft.ID,
+		AuthorID:        strings.TrimSpace(draft.AuthorID),
 		Author:          author,
 		ContentType:     contentType,
 		Title:           cmsOptionalString(strings.TrimSpace(draft.Title)),
@@ -251,9 +252,10 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 	}
 
 	result := &model.Article{
-		ID:     article.ID,
-		Slug:   slug,
-		Author: r.resolveActorByID(ctx, article.AttributedTo),
+		ID:       article.ID,
+		Slug:     slug,
+		AuthorID: strings.TrimSpace(article.AttributedTo),
+		Author:   r.resolveActorByID(ctx, article.AttributedTo),
 
 		Title:    article.Name,
 		Subtitle: cmsOptionalString(strings.TrimSpace(article.Subtitle)),

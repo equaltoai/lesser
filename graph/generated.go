@@ -822,6 +822,7 @@ type ComplexityRoot struct {
 
 	Article struct {
 		Author             func(childComplexity int) int
+		AuthorID           func(childComplexity int) int
 		CanonicalURL       func(childComplexity int) int
 		Categories         func(childComplexity int) int
 		Content            func(childComplexity int) int
@@ -1138,6 +1139,7 @@ type ComplexityRoot struct {
 
 	Draft struct {
 		Author          func(childComplexity int) int
+		AuthorID        func(childComplexity int) int
 		AutosaveVersion func(childComplexity int) int
 		Content         func(childComplexity int) int
 		ContentFormat   func(childComplexity int) int
@@ -7531,6 +7533,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Article.Author(childComplexity), true
 
+	case "Article.authorId":
+		if e.complexity.Article.AuthorID == nil {
+			break
+		}
+
+		return e.complexity.Article.AuthorID(childComplexity), true
+
 	case "Article.canonicalUrl":
 		if e.complexity.Article.CanonicalURL == nil {
 			break
@@ -8965,6 +8974,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Draft.Author(childComplexity), true
+
+	case "Draft.authorId":
+		if e.complexity.Draft.AuthorID == nil {
+			break
+		}
+
+		return e.complexity.Draft.AuthorID(childComplexity), true
 
 	case "Draft.autosaveVersion":
 		if e.complexity.Draft.AutosaveVersion == nil {
@@ -51212,6 +51228,50 @@ func (ec *executionContext) fieldContext_Article_slug(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Article_authorId(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Article_authorId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AuthorID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Article_authorId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Article",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Article_author(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Article_author(ctx, field)
 	if err != nil {
@@ -52733,6 +52793,8 @@ func (ec *executionContext) fieldContext_ArticleEdge_node(_ context.Context, fie
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -61034,6 +61096,50 @@ func (ec *executionContext) fieldContext_Draft_id(_ context.Context, field graph
 	return fc, nil
 }
 
+func (ec *executionContext) _Draft_authorId(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_authorId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AuthorID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_authorId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Draft_author(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Draft_author(ctx, field)
 	if err != nil {
@@ -62003,6 +62109,8 @@ func (ec *executionContext) fieldContext_DraftEdge_node(_ context.Context, field
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94006,6 +94114,8 @@ func (ec *executionContext) fieldContext_Mutation_createDraft(ctx context.Contex
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94095,6 +94205,8 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94184,6 +94296,8 @@ func (ec *executionContext) fieldContext_Mutation_autosaveDraft(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94330,6 +94444,8 @@ func (ec *executionContext) fieldContext_Mutation_publishDraft(ctx context.Conte
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -94439,6 +94555,8 @@ func (ec *executionContext) fieldContext_Mutation_scheduleDraft(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94528,6 +94646,8 @@ func (ec *executionContext) fieldContext_Mutation_cancelScheduledDraft(ctx conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -94619,6 +94739,8 @@ func (ec *executionContext) fieldContext_Mutation_createArticle(ctx context.Cont
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -94730,6 +94852,8 @@ func (ec *executionContext) fieldContext_Mutation_updateArticle(ctx context.Cont
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -94896,6 +95020,8 @@ func (ec *executionContext) fieldContext_Mutation_restoreRevision(ctx context.Co
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -95660,6 +95786,8 @@ func (ec *executionContext) fieldContext_Mutation_addArticleToCategory(ctx conte
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -95771,6 +95899,8 @@ func (ec *executionContext) fieldContext_Mutation_removeArticleFromCategory(ctx 
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -115628,6 +115758,8 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Draft_author(ctx, field)
 			case "contentType":
@@ -115991,6 +116123,8 @@ func (ec *executionContext) fieldContext_Query_article(ctx context.Context, fiel
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -116099,6 +116233,8 @@ func (ec *executionContext) fieldContext_Query_articleBySlug(ctx context.Context
 				return ec.fieldContext_Article_id(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Article_authorId(ctx, field)
 			case "author":
 				return ec.fieldContext_Article_author(ctx, field)
 			case "title":
@@ -163482,6 +163618,11 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "authorId":
+			out.Values[i] = ec._Article_authorId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "author":
 			out.Values[i] = ec._Article_author(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -165780,6 +165921,11 @@ func (ec *executionContext) _Draft(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = graphql.MarshalString("Draft")
 		case "id":
 			out.Values[i] = ec._Draft_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "authorId":
+			out.Values[i] = ec._Draft_authorId(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

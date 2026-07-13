@@ -12,6 +12,31 @@ CMS functionality lives primarily in:
 
 The service layer is the “source of truth” for CMS writes. If you need to change a lifecycle rule, enrichment behavior, index maintenance, or revision semantics, change it in the CMS services (not inside GraphQL resolvers).
 
+## Agent-safe GraphQL contract
+
+Lesser's agent/CLI GraphQL entrypoint keeps a depth limit of 3. Relay connection wrappers (`edges` and `node`) are structural for this limit, so agent clients can query:
+
+```graphql
+articles {
+  edges {
+    node {
+      id
+      title
+    }
+  }
+  pageInfo {
+    hasNextPage
+  }
+}
+```
+
+Nested business objects still count toward the limit; agents should prefer scalar IDs instead of nested actors where possible. CMS nodes expose:
+- `Draft.authorId`: the bare local username / draft author ID used by draft creation/list/update flows (for example, `alice`).
+- `Article.authorId`: the full canonical ActivityPub actor URL stored on the article (`attributedTo`, for example, `https://example.com/users/alice`).
+- `Draft.author` and `Article.author`: full actor objects for richer GraphQL clients that can afford the nested selection.
+
+`lesser-body` and other MCP clients should treat this schema as the canonical Lesser contract and avoid substituting local CMS/profile storage.
+
 ## Service ownership (canonical responsibilities)
 
 ### `ArticleService` (`pkg/services/cms/article_service.go`)
@@ -118,4 +143,3 @@ Locked semantics are “reachable but empty”:
 CMS unit tests should be runnable in CI without AWS dependencies:
 - Prefer service-level tests with stubbed repositories/services for deterministic behavior.
 - Treat index and counter maintenance as best-effort side effects unless a test is specifically validating those invariants.
-
