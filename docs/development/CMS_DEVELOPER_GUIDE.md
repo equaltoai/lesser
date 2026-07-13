@@ -31,8 +31,8 @@ articles {
 ```
 
 Nested business objects still count toward the limit; agents should prefer scalar IDs instead of nested actors where possible. CMS nodes expose:
-- `Draft.authorId`: the local draft author ID used by draft creation/list/update flows.
-- `Article.authorId`: the canonical ActivityPub actor ID stored on the article (`attributedTo`).
+- `Draft.authorId`: the bare local username / draft author ID used by draft creation/list/update flows (for example, `alice`).
+- `Article.authorId`: the full canonical ActivityPub actor URL stored on the article (`attributedTo`, for example, `https://example.com/users/alice`).
 - `Draft.author` and `Article.author`: full actor objects for richer GraphQL clients that can afford the nested selection.
 
 `lesser-body` and other MCP clients should treat this schema as the canonical Lesser contract and avoid substituting local CMS/profile storage.

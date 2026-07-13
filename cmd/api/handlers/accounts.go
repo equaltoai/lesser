@@ -169,7 +169,7 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 
 	h.ensureLocalNumericIDMapping(ctx.Context(), claims.Username)
 
-	mastodonAccount, err := h.mastodonAccountFromStorageAccount(account)
+	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), account)
 	if err != nil {
 		h.logger.Error("handle verify_credentials: failed to transform account response",
 			zap.String("username", claims.Username),
@@ -205,12 +205,74 @@ func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (m
 	applyMastodonProfile(&out, account.User, baseURL, username)
 	ensureMastodonAccountCollections(&out)
 	applyMastodonProfileFields(&out, account.User.Fields)
-	out.StatusesCount = h.localAccountStatusesCount(username)
 
 	return out, nil
 }
 
-func (h *Handler) localAccountStatusesCount(username string) int {
+func (h *Handler) mastodonAccountFromStorageAccountWithStatusCount(ctx context.Context, account *storage.Account) (models.Account, error) {
+	out, err := h.mastodonAccountFromStorageAccount(account)
+	if err != nil {
+		return models.Account{}, err
+	}
+
+	h.hydrateMastodonAccountStatusCount(ctx, account, &out)
+	return out, nil
+}
+
+func (h *Handler) publicAccountFromStorageAccountWithStatusCount(ctx context.Context, account *storage.Account) models.Account {
+	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx, account)
+	if err == nil {
+		return mastodonAccount
+	}
+
+	if account != nil && account.Actor != nil {
+		out := transformations.ActorToAccountBase(account.Actor, handlerBaseURL(h))
+		ensureMastodonAccountCollections(&out)
+		h.hydrateMastodonAccountStatusCount(ctx, account, &out)
+		return out
+	}
+
+	return models.Account{}
+}
+
+func (h *Handler) hydrateMastodonAccountStatusCount(ctx context.Context, account *storage.Account, out *models.Account) {
+	if out == nil {
+		return
+	}
+
+	username := h.localStatusCountUsernameForStorageAccount(account)
+	if username == "" {
+		return
+	}
+
+	out.StatusesCount = h.localAccountStatusesCount(ctx, username)
+}
+
+func (h *Handler) localStatusCountUsernameForStorageAccount(account *storage.Account) string {
+	if account == nil {
+		return ""
+	}
+
+	if account.Actor != nil && !h.actorAppearsLocal(account.Actor) {
+		return ""
+	}
+
+	username := canonicalStorageAccountUsername(account)
+	if username != "" {
+		return username
+	}
+
+	if account.Actor != nil && h.actorAppearsLocal(account.Actor) {
+		return localActorPathUsername(account.Actor)
+	}
+
+	return ""
+}
+
+func (h *Handler) localAccountStatusesCount(ctx context.Context, username string) int {
+	if ctx == nil {
+		return 0
+	}
 	if h == nil || h.registry == nil {
 		return 0
 	}
@@ -218,7 +280,7 @@ func (h *Handler) localAccountStatusesCount(username string) int {
 	if notesService == nil {
 		return 0
 	}
-	count, err := notesService.CountNotesByAuthor(context.Background(), username)
+	count, err := notesService.CountNotesByAuthor(ctx, username)
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Debug("failed to count account statuses", zap.String("username", username), zap.Error(err))
@@ -782,7 +844,7 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *apptheory.Context) (*apptheor
 		return common.RespondFailedToUpdate(ctx, "profile")
 	}
 
-	mastodonAccount, err := h.mastodonAccountFromStorageAccount(result.Account)
+	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), result.Account)
 	if err != nil {
 		h.logger.Error("failed to transform updated profile response", zap.Error(err))
 		return common.RespondFailedToUpdate(ctx, "profile")
@@ -873,7 +935,7 @@ func (h *Handler) HandleGetAccountLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(h.publicAccountFromStorageAccount(account))
+	return okJSON(h.publicAccountFromStorageAccountWithStatusCount(ctx.Context(), account))
 }
 
 // HandleAccountLookupLift looks up an account by username@domain
@@ -897,7 +959,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *apptheory.Context) (*apptheory.Re
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(h.publicAccountFromStorageAccount(account))
+	return okJSON(h.publicAccountFromStorageAccountWithStatusCount(ctx.Context(), account))
 }
 
 // relationshipType represents the type of relationship being queried
@@ -957,7 +1019,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType
 			continue
 		}
 
-		accounts = append(accounts, h.publicAccountFromStorageAccount(relatedAccount))
+		accounts = append(accounts, h.publicAccountFromStorageAccountWithStatusCount(ctx.Context(), relatedAccount))
 	}
 
 	resp, err := okJSON(accounts)
@@ -1044,7 +1106,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *apptheory.Context) (*appth
 		apiAccounts := make([]models.Account, 0, len(familiarResult.Accounts))
 		for _, storageAccount := range familiarResult.Accounts {
 			if storageAccount.Actor != nil {
-				apiAccount := h.publicAccountFromStorageAccount(storageAccount)
+				apiAccount := h.publicAccountFromStorageAccountWithStatusCount(ctx.Context(), storageAccount)
 				apiAccounts = append(apiAccounts, apiAccount)
 			}
 		}

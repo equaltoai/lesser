@@ -343,6 +343,57 @@ func TestAccountsFull_Round12_ConvertStatusToMastodonAPI_HelperBranches(t *testi
 	})
 }
 
+func TestAccountsFull_Round12_ConvertStatusToMastodonAPIDoesNotHydrateAccountStatusCount(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now().UTC()
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+		PreferredUsername: "alice",
+		Name:              "Alice",
+		URL:               cfg.BaseURL() + "/@alice",
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+				return &storage.Account{
+					User:  &storage.User{Username: "alice", DisplayName: "Alice"},
+					Actor: actor,
+				}, nil
+			},
+		},
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("status rendering must not hydrate embedded account statuses_count")
+				return 0, nil
+			},
+			CountRepliesFunc:  func(context.Context, string) (int, error) { return 0, nil },
+			GetBoostCountFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetLikeCountFunc:  func(context.Context, string) (int64, error) { return 0, nil },
+		},
+		RelationshipsSvc: &RelationshipsServiceStub{
+			CountFollowersFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetFollowingFunc: func(context.Context, string, int, string) ([]*storage.Account, string, error) {
+				return nil, "", nil
+			},
+		},
+	}
+
+	out := handler.convertStatusToMastodonAPI(&storagemodels.Status{
+		StatusID:       "status-1",
+		AuthorUsername: "alice",
+		AuthorID:       cfg.ActorURL("alice"),
+		Content:        "hello",
+		Visibility:     "public",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}, "")
+
+	account := out["account"].(map[string]interface{})
+	require.Equal(t, int64(0), account["statuses_count"])
+}
+
 func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 	cfg := round11TestConfig()
 	now := time.Now().UTC()
@@ -412,6 +463,34 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 		require.Equal(t, "https://example.com/header.png", account["header"])
 		require.NotNil(t, account["last_status_at"])
 	})
+}
+
+func TestAccountsFull_Round12_BuildAccountResponseFullSkipsRemoteStatusCounts(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("remote actor must not inherit same-named local user's statuses_count")
+				return 0, nil
+			},
+		},
+		RelationshipsSvc: &RelationshipsServiceStub{
+			CountFollowersFunc: func(context.Context, string) (int64, error) { return 0, nil },
+			GetFollowingFunc: func(context.Context, string, int, string) ([]*storage.Account, string, error) {
+				return nil, "", nil
+			},
+		},
+	}
+
+	account := handler.buildAccountResponseFull(context.Background(), &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
+		PreferredUsername: "alice",
+		Name:              "Remote Alice",
+		URL:               "https://remote.example/@alice",
+	})
+
+	require.Equal(t, int64(0), account["statuses_count"])
 }
 
 func TestAccountsFull_Round12_VerifyCredentialsAuthError(t *testing.T) {

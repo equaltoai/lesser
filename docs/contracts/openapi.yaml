@@ -61,6 +61,7 @@ components:
                 created_at:
                     type: string
                 discoverable:
+                    description: Profile-directory visibility from the stored account/actor profile; independent of individual post visibility.
                     type: boolean
                 display_name:
                     type: string
@@ -83,6 +84,7 @@ components:
                 id:
                     type: string
                 last_status_at:
+                    description: Date of the last status timestamp materialized on the actor/account row; empty or null when no posting path has materialized one.
                     type: string
                 locked:
                     type: boolean
@@ -8334,6 +8336,7 @@ components:
                 bot:
                     type: boolean
                 discoverable:
+                    description: Optional profile-directory visibility override; omit to preserve the existing profile value.
                     type: boolean
                 display_name:
                     type: string
@@ -8570,6 +8573,7 @@ components:
                 created_at:
                     type: string
                 discoverable:
+                    description: Profile-directory visibility from the stored account/actor profile; independent of individual post visibility.
                     type: boolean
                 display_name:
                     type: string
@@ -8592,6 +8596,7 @@ components:
                 id:
                     type: string
                 last_status_at:
+                    description: Date of the last status timestamp materialized on the actor/account row; empty or null when no posting path has materialized one.
                     type: string
                 locked:
                     type: boolean
@@ -21785,4 +21790,3 @@ paths:
             x-lesser-lambda: objects
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:objects
-

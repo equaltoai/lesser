@@ -288,6 +288,68 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 	})
 }
 
+func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContextual(t *testing.T) {
+	cfg := round10TestConfig()
+	type ctxKey struct{}
+	requestCtx := context.WithValue(context.Background(), ctxKey{}, "request")
+	account := &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, "request", ctx.Value(ctxKey{}))
+				switch authorID {
+				case "alice":
+					return 11, nil
+				case "pathuser":
+					return 12, nil
+				default:
+					t.Fatalf("unexpected count author ID %q", authorID)
+					return 0, nil
+				}
+			},
+		},
+	})
+
+	base, err := h.mastodonAccountFromStorageAccount(account)
+	require.NoError(t, err)
+	require.Zero(t, base.StatusesCount)
+
+	hydrated, err := h.mastodonAccountFromStorageAccountWithStatusCount(requestCtx, account)
+	require.NoError(t, err)
+	require.Equal(t, 11, hydrated.StatusesCount)
+
+	require.Zero(t, h.localAccountStatusesCount(nil, "alice"))
+
+	fallbackHydrated := h.publicAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/pathuser", Type: "Person"}},
+	})
+	require.Equal(t, 12, fallbackHydrated.StatusesCount)
+
+	remoteHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(context.Context, string) (int64, error) {
+				t.Fatalf("remote account must not hydrate local statuses_count")
+				return 0, nil
+			},
+		},
+	})
+	remote := remoteHandler.publicAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/alice", Type: "Person"},
+			PreferredUsername: "alice",
+		},
+	})
+	require.Zero(t, remote.StatusesCount)
+}
+
 func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	cfg := round10TestConfig()
 	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")

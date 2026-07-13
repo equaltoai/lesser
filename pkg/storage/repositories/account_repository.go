@@ -1990,9 +1990,7 @@ func (r *AccountRepository) updateAccountActorProfile(ctx context.Context, usern
 
 	account.Actor = r.mergeActorDataForUpdate(username, existingActor, account.Actor)
 	if actorMissing {
-		r.logger.Warn("actor profile record missing during account update; updated user profile only",
-			zap.String("username", username))
-		return nil
+		return r.createRecoveredActorProfile(ctx, username, account.Actor)
 	}
 
 	if err := r.actorRepo.UpdateActor(ctx, account.Actor); err != nil {
@@ -2001,6 +1999,48 @@ func (r *AccountRepository) updateAccountActorProfile(ctx context.Context, usern
 			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
+
+	return nil
+}
+
+func (r *AccountRepository) createRecoveredActorProfile(ctx context.Context, username string, actor *activitypub.Actor) error {
+	if actor == nil || r.actorRepo == nil {
+		return nil
+	}
+
+	username = r.canonicalUsername(username)
+	actor = r.normalizeLocalActorIdentity(username, actor)
+	now := time.Now().UTC()
+	actorModel := &models.Actor{
+		Username:       username,
+		Actor:          actor,
+		NumericID:      common.GenerateNumericID(username),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		FollowerCount:  0,
+		FollowingCount: 0,
+		StatusCount:    0,
+		Version:        1,
+	}
+	if domain := r.actorRepo.localActorDomain(); domain != "" {
+		actorModel.GSI3PK = "DOMAIN#" + domain
+		actorModel.GSI3SK = username
+	}
+
+	r.logger.Warn("actor profile record missing during account update; repairing public actor profile row without private key material",
+		zap.String("username", username),
+		zap.String("actor_id", actor.ID))
+
+	if err := r.actorRepo.Create(ctx, actorModel); err != nil {
+		r.logger.Error("failed to repair missing actor profile record",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityActor, username)
+	}
+
+	r.logger.Info("repaired missing actor profile record during account update",
+		zap.String("username", username),
+		zap.String("actor_id", actor.ID))
 
 	return nil
 }

@@ -96,7 +96,7 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *apptheory.Context) (*apptheor
 		return common.RespondInternalServerError(ctx, "failed to update profile")
 	}
 
-	mastodonAccount, err := h.mastodonAccountFromStorageAccount(result.Account)
+	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), result.Account)
 	if err != nil {
 		h.logger.Error("failed to transform updated profile response", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to update profile")
@@ -342,12 +342,21 @@ func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*
 }
 
 func (h *Handler) buildAccountResponseFull(ctx context.Context, actor *activitypub.Actor) map[string]interface{} {
+	return h.buildAccountResponseFullWithOptions(ctx, actor, true)
+}
+
+func (h *Handler) buildAccountResponseFullWithOptions(ctx context.Context, actor *activitypub.Actor, hydrateStatusCount bool) map[string]interface{} {
 	// Get counts
-	countAuthorID := strings.TrimSpace(actor.PreferredUsername)
-	if countAuthorID == "" {
-		countAuthorID = actor.ID
+	statusesCount := int64(0)
+	if hydrateStatusCount && h.actorAppearsLocal(actor) {
+		countAuthorID := strings.TrimSpace(actor.PreferredUsername)
+		if countAuthorID == "" {
+			countAuthorID = localActorPathUsername(actor)
+		}
+		if countAuthorID != "" {
+			statusesCount, _ = h.registry.Notes().CountNotesByAuthor(ctx, countAuthorID)
+		}
 	}
-	statusesCount, _ := h.registry.Notes().CountNotesByAuthor(ctx, countAuthorID)
 	followersCount, _ := h.registry.Relationships().CountFollowers(ctx, actor.ID)
 	followingIDs, _, _ := h.registry.Relationships().GetFollowing(ctx, actor.PreferredUsername, 1, "")
 	followingCount := len(followingIDs)
@@ -447,7 +456,7 @@ func (h *Handler) convertStatusToMastodonAPI(status *storageModels.Status, viewe
 	// Get account info if available
 	var account map[string]interface{}
 	if accountData, err := h.registry.Accounts().GetAccount(context.Background(), status.AuthorUsername); err == nil && accountData.Actor != nil {
-		account = h.buildAccountResponseFull(context.Background(), accountData.Actor)
+		account = h.buildAccountResponseFullWithOptions(context.Background(), accountData.Actor, false)
 	} else {
 		// Minimal account if actor lookup fails
 		account = map[string]interface{}{

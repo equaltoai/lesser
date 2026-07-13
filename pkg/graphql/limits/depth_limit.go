@@ -16,6 +16,13 @@ const (
 	defaultIgnoreDepth = 0
 )
 
+// transparentConnectionFields contains the Relay connection wrapper field names
+// used by the current Lesser GraphQL schema. This exemption is intentionally
+// narrow and schema-assumption based: object-valued business fields named
+// "edges" or "node" would also be transparent until this depth walker is
+// upgraded to inspect parent/return types from the executable schema. Keep the
+// companion tests updated if the schema introduces non-Relay fields with these
+// names.
 var transparentConnectionFields = map[string]struct{}{
 	"edges": {},
 	"node":  {},

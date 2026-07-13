@@ -1,9 +1,15 @@
 package repositories
 
 import (
+	"context"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -69,4 +75,46 @@ func TestMergeActorDataForUpdate_DerivesIdentifiersWhenMissing(t *testing.T) {
 	require.Equal(t, "https://dev.lesser.host/users/tester/liked", merged.Liked)
 	require.Equal(t, "tester", merged.PreferredUsername)
 	require.Equal(t, "Test User", merged.Name)
+}
+
+func TestUpdateAccountActorProfile_RepairsMissingActorProfileRow(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormMocks.MockDB)
+	mockQuery := new(dynamormMocks.MockQuery)
+	var created *models.Actor
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+		if actorModel, ok := args.Get(0).(*models.Actor); ok && actorModel.Actor != nil {
+			created = actorModel
+		}
+	}).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+	err := repo.updateAccountActorProfile(ctx, "alice", &storage.Account{
+		Actor: &activitypub.Actor{
+			Name:                      "Della Updated",
+			Summary:                   "same bio",
+			Discoverable:              true,
+			ManuallyApprovesFollowers: true,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.Equal(t, "alice", created.Username)
+	require.Empty(t, created.PrivateKey)
+	require.Equal(t, commonActorURL("example.com", "alice"), created.Actor.ID)
+	require.Equal(t, "Della Updated", created.Actor.Name)
+	require.Equal(t, "same bio", created.Actor.Summary)
+	require.True(t, created.Actor.Discoverable)
+	require.True(t, created.Actor.ManuallyApprovesFollowers)
+	mockQuery.AssertExpectations(t)
+}
+
+func commonActorURL(domain, username string) string {
+	return "https://" + domain + "/users/" + username
 }
