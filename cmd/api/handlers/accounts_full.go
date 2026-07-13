@@ -349,13 +349,7 @@ func (h *Handler) buildAccountResponseFullWithOptions(ctx context.Context, actor
 	// Get counts
 	statusesCount := int64(0)
 	if hydrateStatusCount && h.actorAppearsLocal(actor) {
-		countAuthorID := strings.TrimSpace(actor.PreferredUsername)
-		if countAuthorID == "" {
-			countAuthorID = localActorPathUsername(actor)
-		}
-		if countAuthorID != "" {
-			statusesCount, _ = h.registry.Notes().CountNotesByAuthor(ctx, countAuthorID)
-		}
+		statusesCount, _ = h.registry.Notes().CountNotesByAuthor(ctx, actor.ID)
 	}
 	followersCount, _ := h.registry.Relationships().CountFollowers(ctx, actor.ID)
 	followingIDs, _, _ := h.registry.Relationships().GetFollowing(ctx, actor.PreferredUsername, 1, "")

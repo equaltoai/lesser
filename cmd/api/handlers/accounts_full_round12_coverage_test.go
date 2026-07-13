@@ -48,7 +48,10 @@ func TestAccountsFull_Round12_HandleGetAccountFull_Errors(t *testing.T) {
 			},
 		},
 		NotesSvc: &NotesServiceStub{
-			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) { return 3, nil },
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, actor.ID, authorID)
+				return 3, nil
+			},
 		},
 		RelationshipsSvc: &RelationshipsServiceStub{
 			CountFollowersFunc: func(ctx context.Context, username string) (int64, error) { return 5, nil },
@@ -413,7 +416,12 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 			},
 		},
 		NotesSvc: &NotesServiceStub{
-			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) { return 1, nil },
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				if authorID != actor.ID {
+					return 0, nil
+				}
+				return 1, nil
+			},
 		},
 		RelationshipsSvc: &RelationshipsServiceStub{
 			GetFollowersFunc: func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
@@ -462,6 +470,7 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 		require.Equal(t, "https://example.com/avatar.png", account["avatar"])
 		require.Equal(t, "https://example.com/header.png", account["header"])
 		require.NotNil(t, account["last_status_at"])
+		require.Equal(t, int64(1), account["statuses_count"])
 	})
 }
 
@@ -630,6 +639,7 @@ func TestAccountsFull_Round12_UpdateCredentials_CommandAndTransformErrors(t *tes
 
 func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t *testing.T) {
 	cfg := round11TestConfig()
+	expectedActorID := cfg.BaseURL() + "/users/alice"
 
 	existingAccount := &storage.Account{
 		User: &storage.User{
@@ -641,7 +651,7 @@ func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t 
 			IsAgent:      true,
 		},
 		Actor: &activitypub.Actor{
-			BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+			BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
 			PreferredUsername:         "alice",
 			Name:                      "Della",
 			Summary:                   "old bio",
@@ -659,7 +669,7 @@ func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t 
 			IsAgent:      true,
 		},
 		Actor: &activitypub.Actor{
-			BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+			BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
 			PreferredUsername:         "alice",
 			Name:                      "Della",
 			Summary:                   "same bio",
@@ -688,7 +698,7 @@ func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t 
 		},
 		NotesSvc: &NotesServiceStub{
 			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
-				require.Equal(t, "alice", authorID)
+				require.Equal(t, expectedActorID, authorID)
 				return 9, nil
 			},
 		},

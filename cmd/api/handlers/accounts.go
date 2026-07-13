@@ -240,36 +240,52 @@ func (h *Handler) hydrateMastodonAccountStatusCount(ctx context.Context, account
 		return
 	}
 
-	username := h.localStatusCountUsernameForStorageAccount(account)
-	if username == "" {
+	actorID := h.localStatusCountActorIDForStorageAccount(account)
+	if actorID == "" {
 		return
 	}
 
-	out.StatusesCount = h.localAccountStatusesCount(ctx, username)
+	out.StatusesCount = h.localAccountStatusesCount(ctx, actorID)
 }
 
-func (h *Handler) localStatusCountUsernameForStorageAccount(account *storage.Account) string {
+func (h *Handler) localStatusCountActorIDForStorageAccount(account *storage.Account) string {
 	if account == nil {
 		return ""
 	}
 
-	if account.Actor != nil && !h.actorAppearsLocal(account.Actor) {
-		return ""
+	if account.Actor != nil {
+		actorID := strings.TrimSpace(account.Actor.ID)
+		if actorID != "" {
+			if !h.actorAppearsLocal(account.Actor) {
+				return ""
+			}
+			return actorID
+		}
 	}
 
 	username := canonicalStorageAccountUsername(account)
-	if username != "" {
-		return username
+	if username == "" || common.ValidateUsername(username) != nil {
+		return ""
 	}
 
-	if account.Actor != nil && h.actorAppearsLocal(account.Actor) {
-		return localActorPathUsername(account.Actor)
-	}
-
-	return ""
+	return h.localActorIDForUsername(username)
 }
 
-func (h *Handler) localAccountStatusesCount(ctx context.Context, username string) int {
+func (h *Handler) localActorIDForUsername(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ""
+	}
+
+	baseURL := handlerBaseURL(h)
+	if baseURL == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s/users/%s", baseURL, username)
+}
+
+func (h *Handler) localAccountStatusesCount(ctx context.Context, authorID string) int {
 	if ctx == nil {
 		return 0
 	}
@@ -280,10 +296,10 @@ func (h *Handler) localAccountStatusesCount(ctx context.Context, username string
 	if notesService == nil {
 		return 0
 	}
-	count, err := notesService.CountNotesByAuthor(ctx, username)
+	count, err := notesService.CountNotesByAuthor(ctx, authorID)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Debug("failed to count account statuses", zap.String("username", username), zap.Error(err))
+			h.logger.Debug("failed to count account statuses", zap.String("author_id", authorID), zap.Error(err))
 		}
 		return 0
 	}

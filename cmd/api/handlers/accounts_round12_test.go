@@ -210,9 +210,10 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 	})
 
 	t.Run("success_returns_200", func(t *testing.T) {
+		expectedActorID := cfg.BaseURL() + "/users/alice"
 		account := &storage.Account{
 			User:  &storage.User{Username: "alice"},
-			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: expectedActorID}, PreferredUsername: "alice"},
 		}
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
@@ -224,7 +225,9 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 			},
 			NotesSvc: &NotesServiceStub{
 				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
-					require.Equal(t, "alice", authorID)
+					if authorID != expectedActorID {
+						return 0, nil
+					}
 					return 5, nil
 				},
 			},
@@ -292,10 +295,13 @@ func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContext
 	cfg := round10TestConfig()
 	type ctxKey struct{}
 	requestCtx := context.WithValue(context.Background(), ctxKey{}, "request")
+	expectedActorID := cfg.BaseURL() + "/users/alice"
+	pathActorID := cfg.BaseURL() + "/users/pathuser"
+	synthActorID := cfg.BaseURL() + "/users/synth"
 	account := &storage.Account{
 		User: &storage.User{Username: "alice"},
 		Actor: &activitypub.Actor{
-			BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+			BaseObject:        activitypub.BaseObject{ID: expectedActorID, Type: "Person"},
 			PreferredUsername: "alice",
 		},
 	}
@@ -305,10 +311,12 @@ func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContext
 			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
 				require.Equal(t, "request", ctx.Value(ctxKey{}))
 				switch authorID {
-				case "alice":
+				case expectedActorID:
 					return 11, nil
-				case "pathuser":
+				case pathActorID:
 					return 12, nil
+				case synthActorID:
+					return 13, nil
 				default:
 					t.Fatalf("unexpected count author ID %q", authorID)
 					return 0, nil
@@ -325,12 +333,25 @@ func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContext
 	require.NoError(t, err)
 	require.Equal(t, 11, hydrated.StatusesCount)
 
-	require.Zero(t, h.localAccountStatusesCount(nil, "alice"))
+	require.Zero(t, h.localAccountStatusesCount(nil, expectedActorID))
 
 	fallbackHydrated := h.publicAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
-		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/pathuser", Type: "Person"}},
+		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: pathActorID, Type: "Person"}},
 	})
 	require.Equal(t, 12, fallbackHydrated.StatusesCount)
+
+	synthHydrated, err := h.mastodonAccountFromStorageAccountWithStatusCount(requestCtx, &storage.Account{
+		User:  &storage.User{Username: "synth"},
+		Actor: &activitypub.Actor{PreferredUsername: "synth"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 13, synthHydrated.StatusesCount)
+	require.Equal(t, synthActorID, h.localStatusCountActorIDForStorageAccount(&storage.Account{
+		User: &storage.User{Username: "synth"},
+	}))
+	require.Empty(t, h.localStatusCountActorIDForStorageAccount(&storage.Account{
+		User: &storage.User{Username: "same@remote.example"},
+	}))
 
 	remoteHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 		NotesSvc: &NotesServiceStub{
@@ -352,22 +373,23 @@ func TestAccountsRound12_MastodonAccountStatusCountHydrationIsExplicitAndContext
 
 func TestAccountsRound12_StatusCountHydrationFailureModesReturnZero(t *testing.T) {
 	cfg := round10TestConfig()
+	actorID := cfg.BaseURL() + "/users/alice"
 	account := &storage.Account{
 		User: &storage.User{Username: "alice"},
 		Actor: &activitypub.Actor{
-			BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+			BaseObject:        activitypub.BaseObject{ID: actorID, Type: "Person"},
 			PreferredUsername: "alice",
 		},
 	}
 
 	var nilHandler *Handler
-	require.Zero(t, nilHandler.localAccountStatusesCount(context.Background(), "alice"))
+	require.Zero(t, nilHandler.localAccountStatusesCount(context.Background(), actorID))
 
 	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
-	require.Zero(t, h.localAccountStatusesCount(context.Background(), "alice"))
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
 
 	h.registry = &RegistryStub{}
-	require.Zero(t, h.localAccountStatusesCount(context.Background(), "alice"))
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
 
 	h.registry = &RegistryStub{
 		NotesSvc: &NotesServiceStub{
@@ -376,14 +398,14 @@ func TestAccountsRound12_StatusCountHydrationFailureModesReturnZero(t *testing.T
 			},
 		},
 	}
-	require.Zero(t, h.localAccountStatusesCount(context.Background(), "alice"))
+	require.Zero(t, h.localAccountStatusesCount(context.Background(), actorID))
 
 	out := apimodels.Account{}
 	h.hydrateMastodonAccountStatusCount(context.Background(), account, &out)
 	require.Zero(t, out.StatusesCount)
 
 	h.hydrateMastodonAccountStatusCount(context.Background(), account, nil)
-	require.Empty(t, h.localStatusCountUsernameForStorageAccount(nil))
+	require.Empty(t, h.localStatusCountActorIDForStorageAccount(nil))
 }
 
 func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
@@ -445,6 +467,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	})
 
 	t.Run("success_preserves_omitted_booleans_and_returns_mastodon_account", func(t *testing.T) {
+		expectedActorID := cfg.BaseURL() + "/users/alice"
 		existingAccount := &storage.Account{
 			User: &storage.User{
 				Username:     "alice",
@@ -454,7 +477,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 				Discoverable: true,
 			},
 			Actor: &activitypub.Actor{
-				BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+				BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
 				PreferredUsername:         "alice",
 				Name:                      "Della",
 				Summary:                   "old bio",
@@ -471,7 +494,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 				Discoverable: true,
 			},
 			Actor: &activitypub.Actor{
-				BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+				BaseObject:                activitypub.BaseObject{ID: expectedActorID, Type: activitypub.ServiceType},
 				PreferredUsername:         "alice",
 				Name:                      "ok",
 				Summary:                   "new bio",
@@ -499,7 +522,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 			},
 			NotesSvc: &NotesServiceStub{
 				CountNotesByAuthorFunc: func(_ context.Context, authorID string) (int64, error) {
-					require.Equal(t, "alice", authorID)
+					require.Equal(t, expectedActorID, authorID)
 					return 7, nil
 				},
 			},
