@@ -232,6 +232,11 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		return nil, resp, respErr
 	}
 
+	if err := validateDynamicRegistrationApplicationType(req.ApplicationType); err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
+	}
+
 	ownerID := h.getOptionalAuthenticatedUser(ctx)
 
 	return &dynamicRegistrationNormalizedRequest{
@@ -442,6 +447,14 @@ func dynamicRegistrationDefaultGrantTypes(clientClass, _ string, allowDeviceFlow
 			auth.GrantTypeRefreshToken,
 		}
 	}
+}
+
+func validateDynamicRegistrationApplicationType(value string) error {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || value == "native" || value == "web" {
+		return nil
+	}
+	return errors.New("application_type must be native or web")
 }
 
 func normalizeDynamicRegistrationResponseTypes(requested []string) ([]string, error) {

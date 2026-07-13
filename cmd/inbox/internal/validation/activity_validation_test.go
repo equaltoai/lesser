@@ -25,8 +25,8 @@ func TestValidateRequestBody(t *testing.T) {
 
 	err = ValidateRequestBody(logger, make([]byte, common.MaxActivitySize+1))
 	require.Error(t, err)
-	require.IsType(t, &apptheory.AppError{}, err)
-	require.Equal(t, "app.too_large", err.(*apptheory.AppError).Code)
+	require.IsType(t, &apptheory.AppTheoryError{}, err)
+	require.Equal(t, "app.too_large", err.(*apptheory.AppTheoryError).Code)
 }
 
 func TestValidateRequestBody_Round24_AcceptsValidBody(t *testing.T) {

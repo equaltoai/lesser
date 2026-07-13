@@ -19,19 +19,18 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
 type fakeDB struct{}
 
-func (fakeDB) Model(any) dynamormCore.Query                      { return nil }
-func (fakeDB) Transaction(func(tx *dynamormCore.Tx) error) error { return nil }
-func (fakeDB) Migrate() error                                    { return nil }
-func (fakeDB) AutoMigrate(...any) error                          { return nil }
-func (fakeDB) Close() error                                      { return nil }
-func (fakeDB) WithContext(context.Context) dynamormCore.DB       { return fakeDB{} }
+func (fakeDB) Model(any) dynamormCore.Query                { return nil }
+func (fakeDB) Migrate() error                              { return nil }
+func (fakeDB) AutoMigrate(...any) error                    { return nil }
+func (fakeDB) Close() error                                { return nil }
+func (fakeDB) WithContext(context.Context) dynamormCore.DB { return fakeDB{} }
 
 type fakeStreamRepo struct {
 	connectionsByID   map[string]*models.WebSocketConnection

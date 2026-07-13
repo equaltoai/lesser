@@ -19,7 +19,7 @@ import (
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
@@ -157,12 +157,11 @@ func (f *fakeInstanceRepo) GetInstanceState(_ context.Context) (*models.Instance
 
 type fakeDynamoDB struct{}
 
-func (fakeDynamoDB) Model(any) dynamormCore.Query                      { return nil }
-func (fakeDynamoDB) Transaction(func(tx *dynamormCore.Tx) error) error { return nil }
-func (fakeDynamoDB) Migrate() error                                    { return nil }
-func (fakeDynamoDB) AutoMigrate(...any) error                          { return nil }
-func (fakeDynamoDB) Close() error                                      { return nil }
-func (fakeDynamoDB) WithContext(context.Context) dynamormCore.DB       { return fakeDynamoDB{} }
+func (fakeDynamoDB) Model(any) dynamormCore.Query                { return nil }
+func (fakeDynamoDB) Migrate() error                              { return nil }
+func (fakeDynamoDB) AutoMigrate(...any) error                    { return nil }
+func (fakeDynamoDB) Close() error                                { return nil }
+func (fakeDynamoDB) WithContext(context.Context) dynamormCore.DB { return fakeDynamoDB{} }
 
 func setDummyAWSEnv(t *testing.T) {
 	t.Helper()

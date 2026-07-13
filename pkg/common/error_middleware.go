@@ -4,6 +4,7 @@ import (
 	"context"
 	stdErrors "errors"
 	"net"
+	"reflect"
 	"runtime"
 	"time"
 
@@ -92,12 +93,12 @@ func handleRequestError(ctx *apptheory.Context, err error, config ErrorMiddlewar
 		})
 	}
 
-	// AppTheory runtime errors (timeouts, rate limits, etc.) should be preserved.
-	var atErr *apptheory.AppError
-	if stdErrors.As(err, &atErr) {
-		status := appTheoryStatusForErrorCode(atErr.Code)
+	// Legacy AppTheory runtime errors (timeouts, rate limits, etc.) should be
+	// preserved without directly depending on the deprecated AppError type.
+	if code, message, ok := legacyAppTheoryError(err); ok {
+		status := appTheoryStatusForErrorCode(code)
 		return apptheory.JSON(status, StandardErrorResponse{
-			Error: atErr.Message,
+			Error: message,
 			Code:  errorCodeForHTTPStatus(status),
 		})
 	}
@@ -128,6 +129,30 @@ func handleRequestError(ctx *apptheory.Context, err error, config ErrorMiddlewar
 	}
 
 	return handleAppError(ctx, appErr, config)
+}
+
+func legacyAppTheoryError(err error) (code string, message string, ok bool) {
+	for current := err; current != nil; current = stdErrors.Unwrap(current) {
+		value := reflect.ValueOf(current)
+		if !value.IsValid() || value.Kind() != reflect.Pointer || value.IsNil() {
+			continue
+		}
+		elem := value.Elem()
+		if !elem.IsValid() || elem.Kind() != reflect.Struct {
+			continue
+		}
+		typ := elem.Type()
+		if typ.PkgPath() != "github.com/theory-cloud/apptheory/runtime" || typ.Name() != "AppError" {
+			continue
+		}
+		codeField := elem.FieldByName("Code")
+		messageField := elem.FieldByName("Message")
+		if codeField.Kind() != reflect.String || messageField.Kind() != reflect.String {
+			continue
+		}
+		return codeField.String(), messageField.String(), true
+	}
+	return "", "", false
 }
 
 func appTheoryStatusForErrorCode(code string) int {

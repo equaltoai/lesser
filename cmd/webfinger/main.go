@@ -27,7 +27,7 @@ import (
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -87,9 +87,7 @@ func registerWebFingerRoutes(app *apptheory.App, handler apptheory.Handler) erro
 	for _, route := range webfingerRouteInventory() {
 		switch route.Method {
 		case http.MethodGet:
-			if _, err := app.GetStrict(route.Path, handler); err != nil {
-				return fmt.Errorf("register webfinger route %s %s: %w", route.Method, route.Path, err)
-			}
+			app.Get(route.Path, handler)
 		default:
 			return fmt.Errorf("unsupported webfinger route method %q for %s", route.Method, route.Path)
 		}

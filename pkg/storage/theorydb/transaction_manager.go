@@ -10,7 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -201,22 +201,16 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, operations .
 
 // executeTransaction executes the actual transaction
 func (tm *TransactionManager) executeTransaction(ctx context.Context, operations []TransactionOperation) error {
-	if client, ok := tm.client.(interface {
+	client, ok := tm.client.(interface {
 		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
-	}); ok {
-		return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
-			for i, op := range operations {
-				if err := tm.executeBuilderOperation(tx, op); err != nil {
-					return fmt.Errorf("operation %d (%s) failed: %w", i, op.Type.String(), err)
-				}
-			}
-			return nil
-		})
+	})
+	if !ok {
+		return fmt.Errorf("tabletheory transaction support requires core.ExtendedDB")
 	}
 
-	return tm.client.Transaction(func(tx *core.Tx) error {
+	return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
 		for i, op := range operations {
-			if err := tm.executeOperation(tx, op); err != nil {
+			if err := tm.executeBuilderOperation(tx, op); err != nil {
 				return fmt.Errorf("operation %d (%s) failed: %w", i, op.Type.String(), err)
 			}
 		}
@@ -277,38 +271,6 @@ func (tm *TransactionManager) executeBuilderOperation(tx core.TransactionBuilder
 	}
 }
 
-// executeOperation executes a single operation within a transaction
-func (tm *TransactionManager) executeOperation(tx *core.Tx, op TransactionOperation) error {
-	// Create a wrapper that implements TxOperations
-	txOps := &MockTx{Tx: *tx}
-
-	switch op.Type {
-	case OperationPut:
-		return txOps.Put(op.Item)
-	case OperationUpdate:
-		if op.UpdateExpression != "" {
-			// Use update expression if provided
-			return txOps.UpdateWithExpression(op.Item, op.UpdateExpression, op.Values...)
-		}
-		return txOps.Update(op.Item)
-	case OperationDelete:
-		if op.Item != nil {
-			return txOps.Delete(op.Item)
-		}
-		if op.Key != nil && op.TableName != "" {
-			return txOps.DeleteByKey(op.TableName, op.Key)
-		}
-		return fmt.Errorf("delete operation requires either item or key+tableName")
-	case OperationConditionCheck:
-		if op.Key == nil || op.TableName == "" || op.Condition == "" {
-			return fmt.Errorf("condition check requires key, tableName, and condition")
-		}
-		return txOps.ConditionCheck(op.TableName, op.Key, op.Condition, op.Values...)
-	default:
-		return fmt.Errorf("unsupported operation type: %v", op.Type)
-	}
-}
-
 func transactionConditions(op TransactionOperation) []core.TransactCondition {
 	conditions := append([]core.TransactCondition(nil), op.Conditions...)
 	if strings.TrimSpace(op.Condition) != "" {
@@ -338,7 +300,24 @@ func inferTransactionUpdateFields(item any) []string {
 	if value.Kind() == reflect.Pointer {
 		value = value.Elem()
 	}
-	if !value.IsValid() || value.Kind() != reflect.Struct {
+	if !value.IsValid() {
+		return nil
+	}
+
+	if value.Kind() == reflect.Map && value.Type().Key().Kind() == reflect.String {
+		fields := make([]string, 0, value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			field := iter.Key().String()
+			if skipTransactionUpdateFieldName(field) {
+				continue
+			}
+			fields = append(fields, field)
+		}
+		return fields
+	}
+
+	if value.Kind() != reflect.Struct {
 		return nil
 	}
 
@@ -358,7 +337,7 @@ func inferTransactionUpdateFields(item any) []string {
 }
 
 func skipTransactionUpdateField(field reflect.StructField) bool {
-	if field.Name == "PK" || field.Name == "SK" || field.Name == "Version" || strings.HasPrefix(field.Name, "GSI") {
+	if skipTransactionUpdateFieldName(field.Name) {
 		return true
 	}
 	for _, part := range strings.Split(field.Tag.Get("theorydb"), ",") {
@@ -370,6 +349,10 @@ func skipTransactionUpdateField(field reflect.StructField) bool {
 		}
 	}
 	return false
+}
+
+func skipTransactionUpdateFieldName(name string) bool {
+	return name == "PK" || name == "SK" || name == "Version" || strings.HasPrefix(name, "GSI")
 }
 
 // validateOperations validates the provided operations

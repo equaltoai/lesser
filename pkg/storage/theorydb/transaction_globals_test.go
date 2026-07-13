@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 type stubDB struct {
@@ -20,17 +20,21 @@ type stubDB struct {
 	query            core.Query
 }
 
-func (s *stubDB) Model(any) core.Query { return s.query }
-func (s *stubDB) Transaction(fn func(tx *core.Tx) error) error {
-	s.transactionCalls++
-	tx := &core.Tx{}
-	tx.SetDB(s)
-	return fn(tx)
-}
+func (s *stubDB) Model(any) core.Query                { return s.query }
 func (s *stubDB) Migrate() error                      { return nil }
 func (s *stubDB) AutoMigrate(...any) error            { return nil }
 func (s *stubDB) Close() error                        { return nil }
 func (s *stubDB) WithContext(context.Context) core.DB { return s }
+func (s *stubDB) Transact() core.TransactionBuilder {
+	return new(dynamormMocks.MockTransactionBuilder)
+}
+func (s *stubDB) TransactWrite(_ context.Context, fn func(core.TransactionBuilder) error) error {
+	s.transactionCalls++
+	if fn == nil {
+		return nil
+	}
+	return fn(new(dynamormMocks.MockTransactionBuilder))
+}
 
 func TestExecuteTransaction_RunsFnWithClient(t *testing.T) {
 	resetClientState()

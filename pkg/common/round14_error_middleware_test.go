@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	stdErrors "errors"
 	"testing"
 
@@ -69,6 +70,18 @@ func TestErrorHandlingMiddleware_ConvertsReturnedErrors(t *testing.T) {
 			wantCode:       errors.CodeForbidden,
 		},
 		{
+			name:           "apptheory error uses explicit status",
+			err:            apptheory.NewAppTheoryError("app.custom", "limited").WithStatusCode(429),
+			wantStatusCode: 429,
+			wantCode:       errors.CodeRateLimited,
+		},
+		{
+			name:           "apptheory error derives status from code",
+			err:            apptheory.NewAppTheoryError("app.too_large", "too large"),
+			wantStatusCode: 413,
+			wantCode:       errors.CodeContentTooLarge,
+		},
+		{
 			name:           "not found converts",
 			err:            ActorNotFoundError{Username: "alice"},
 			wantStatusCode: 404,
@@ -126,4 +139,36 @@ func TestErrorHandlingMiddleware_ConvertsReturnedErrors(t *testing.T) {
 			assert.Equal(t, string(tt.wantCode), parsed.Code)
 		})
 	}
+}
+
+func TestErrorHandlingMiddleware_PreservesOpaqueLegacyAppTheoryError(t *testing.T) {
+	_, legacyErr := (&apptheory.Context{}).JSONValue()
+	require.Error(t, legacyErr)
+
+	code, message, ok := legacyAppTheoryError(legacyErr)
+	require.True(t, ok)
+	require.Equal(t, "app.bad_request", code)
+	require.NotEmpty(t, message)
+
+	mw := ErrorHandlingMiddleware(ErrorMiddlewareConfig{
+		Logger:              zap.NewNop(),
+		ServiceName:         "svc",
+		EnablePanicRecovery: false,
+	})
+	h := mw(func(_ *apptheory.Context) (*apptheory.Response, error) { return nil, legacyErr })
+
+	resp, err := h(newTestContext("POST", "/test"))
+	require.NoError(t, err)
+
+	status, parsed := parseResponse(t, resp)
+	assert.Equal(t, 400, status)
+	assert.Equal(t, string(errors.CodeBadRequest), parsed.Code)
+}
+
+func TestErrorMiddlewareTimeoutHelpers_Round26(t *testing.T) {
+	assert.False(t, isTimeoutError(nil))
+	assert.False(t, isTimeoutError(stdErrors.New("plain")))
+	assert.True(t, isTimeoutError(context.DeadlineExceeded))
+	assert.True(t, isTimeoutError(errors.TimeoutError("slow")))
+	assert.Equal(t, "", sanitizedRequestLogPath(nil))
 }

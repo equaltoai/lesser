@@ -30,7 +30,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 )
 
 type fakeS3Client struct {

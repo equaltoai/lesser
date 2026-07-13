@@ -22,8 +22,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -54,10 +54,7 @@ func newMemDB() *memDB {
 	}
 }
 
-func (db *memDB) Model(model any) dynamormcore.Query { return newMemQuery(db, model) }
-func (db *memDB) Transaction(_ func(tx *dynamormcore.Tx) error) error {
-	return nil
-}
+func (db *memDB) Model(model any) dynamormcore.Query            { return newMemQuery(db, model) }
 func (db *memDB) Migrate() error                                { return nil }
 func (db *memDB) AutoMigrate(_ ...any) error                    { return nil }
 func (db *memDB) Close() error                                  { return nil }

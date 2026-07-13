@@ -12,8 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydberrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	theorydberrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 

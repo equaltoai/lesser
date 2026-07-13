@@ -497,7 +497,7 @@ func checkBudgetIfRequired(ctx context.Context, costTracker *WebSocketCostTracke
 	}
 
 	if !budgetStatus.AllowConnection {
-		return &apptheory.AppError{Code: "app.rate_limited", Message: "websocket budget exceeded"}
+		return apptheory.NewAppTheoryError("app.rate_limited", "websocket budget exceeded")
 	}
 
 	return nil

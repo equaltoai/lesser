@@ -11,8 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
-	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
+	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormSchema "github.com/theory-cloud/tabletheory/v2/pkg/schema"
+	pkgtypes "github.com/theory-cloud/tabletheory/v2/pkg/types"
 )
 
 func TestAgentCapabilitiesConverter_FromAttributeValue_SnakeCase(t *testing.T) {
@@ -246,22 +247,23 @@ type recordingExtendedDB struct {
 
 var _ dynamormcore.ExtendedDB = (*recordingExtendedDB)(nil)
 
-func (db *recordingExtendedDB) AutoMigrateWithOptions(any, ...any) error { return nil }
+func (db *recordingExtendedDB) AutoMigrateWithOptions(any, ...dynamormSchema.AutoMigrateOption) error {
+	return nil
+}
 func (db *recordingExtendedDB) RegisterTypeConverter(typ reflect.Type, _ pkgtypes.CustomConverter) error {
 	db.registered = append(db.registered, typ)
 	return nil
 }
-func (db *recordingExtendedDB) CreateTable(any, ...any) error  { return nil }
-func (db *recordingExtendedDB) EnsureTable(any) error          { return nil }
-func (db *recordingExtendedDB) DeleteTable(any) error          { return nil }
-func (db *recordingExtendedDB) DescribeTable(any) (any, error) { return nil, nil }
+func (db *recordingExtendedDB) CreateTable(any, ...dynamormSchema.TableOption) error { return nil }
+func (db *recordingExtendedDB) EnsureTable(any) error                                { return nil }
+func (db *recordingExtendedDB) DeleteTable(any) error                                { return nil }
+func (db *recordingExtendedDB) DescribeTable(any) (any, error)                       { return nil, nil }
 func (db *recordingExtendedDB) WithLambdaTimeout(context.Context) dynamormcore.DB {
 	return db
 }
 func (db *recordingExtendedDB) WithLambdaTimeoutBuffer(time.Duration) dynamormcore.DB {
 	return db
 }
-func (db *recordingExtendedDB) TransactionFunc(func(any) error) error { return nil }
 func (db *recordingExtendedDB) Transact() dynamormcore.TransactionBuilder {
 	return nil
 }

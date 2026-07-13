@@ -6,7 +6,7 @@ import (
 
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
-	theorytypes "github.com/theory-cloud/tabletheory/pkg/types"
+	theorytypes "github.com/theory-cloud/tabletheory/v2/pkg/types"
 )
 
 func TestBookmarkUpdateKeysTimeRecord(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
+	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -36,13 +36,6 @@ type stubDB struct{}
 
 func (stubDB) Model(any) tablecore.Query {
 	return nil
-}
-
-func (stubDB) Transaction(fn func(tx *tablecore.Tx) error) error {
-	if fn == nil {
-		return nil
-	}
-	return fn(&tablecore.Tx{})
 }
 
 func (stubDB) Migrate() error {

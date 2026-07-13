@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -217,22 +217,43 @@ func (ctdb *TrackingDB) Model(model any) core.Query {
 	}
 }
 
-// Transaction wraps the Transaction method with enhanced operation estimation
-func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
-	err := ctdb.DB.Transaction(fn)
+// TransactWrite wraps the TableTheory v2 transaction method with enhanced operation estimation.
+func (ctdb *TrackingDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	client, ok := ctdb.DB.(interface {
+		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
+	})
+	if !ok {
+		return fmt.Errorf("tabletheory transaction support requires core.ExtendedDB")
+	}
 
+	err := client.TransactWrite(ctx, fn)
+	ctdb.trackEstimatedTransaction(err)
+	return err
+}
+
+// Transact returns the underlying TableTheory v2 transaction builder.
+func (ctdb *TrackingDB) Transact() core.TransactionBuilder {
+	client, ok := ctdb.DB.(interface {
+		Transact() core.TransactionBuilder
+	})
+	if !ok {
+		return nil
+	}
+	return client.Transact()
+}
+
+func (ctdb *TrackingDB) trackEstimatedTransaction(err error) {
 	// For transactions, we'll use a conservative estimate since precise counting
-	// would require implementing the full core.Tx interface wrapper
-	// Most transactions contain 2-5 operations on average
+	// would require wrapping the full TableTheory transaction builder.
+	// Most transactions contain 2-5 operations on average.
 	estimatedOperations := 3 // Conservative baseline
 
 	if err == nil && ctdb.tracker != nil {
-		// Track estimated transaction cost
-		// Transactions typically have both read and write operations
-		if trackErr := ctdb.tracker.TrackDynamoRead(1); trackErr != nil {
+		// Track estimated transaction cost. Transactions typically have both read and write operations.
+		if trackErr := ctdb.tracker.TrackDynamoRead(1); trackErr != nil && ctdb.logger != nil {
 			ctdb.logger.Warn("failed to track transaction read cost", zap.Error(trackErr))
 		}
-		if trackErr := ctdb.tracker.TrackDynamoWrite(estimatedOperations); trackErr != nil {
+		if trackErr := ctdb.tracker.TrackDynamoWrite(estimatedOperations); trackErr != nil && ctdb.logger != nil {
 			ctdb.logger.Warn("failed to track transaction write cost", zap.Error(trackErr))
 		}
 	}
@@ -244,8 +265,6 @@ func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
 			zap.Error(err),
 		)
 	}
-
-	return err
 }
 
 // GetTracker returns the cost tracker
@@ -732,7 +751,7 @@ func WithDynamORMCostTracking(ctx context.Context, requestID, operationType stri
 }
 
 // Note: Complex transaction operation tracking has been simplified for maintainability.
-// Future enhancement: Implement full core.Tx interface wrapper for precise transaction tracking.
+// Future enhancement: Implement full TableTheory transaction builder wrapper for precise transaction tracking.
 
 // countResultItems counts the number of items in a query result using reflection
 func countResultItems(dest any) int {

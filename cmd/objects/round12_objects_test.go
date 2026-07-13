@@ -17,9 +17,10 @@ import (
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
-	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormSchema "github.com/theory-cloud/tabletheory/v2/pkg/schema"
+	pkgtypes "github.com/theory-cloud/tabletheory/v2/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -898,11 +899,6 @@ func (db *extendedMockDB) Model(model any) dynamormCore.Query {
 	return db.inner.Model(model)
 }
 
-func (db *extendedMockDB) Transaction(fn func(tx *dynamormCore.Tx) error) error {
-	// Transaction behavior isn't relevant for these tests.
-	return fn(nil)
-}
-
 func (db *extendedMockDB) Migrate() error { return nil }
 
 func (db *extendedMockDB) AutoMigrate(models ...any) error { return nil }
@@ -911,13 +907,15 @@ func (db *extendedMockDB) Close() error { return nil }
 
 func (db *extendedMockDB) WithContext(_ context.Context) dynamormCore.DB { return db }
 
-func (db *extendedMockDB) AutoMigrateWithOptions(_ any, _ ...any) error { return nil }
+func (db *extendedMockDB) AutoMigrateWithOptions(_ any, _ ...dynamormSchema.AutoMigrateOption) error {
+	return nil
+}
 
 func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error {
 	return nil
 }
 
-func (db *extendedMockDB) CreateTable(_ any, _ ...any) error { return nil }
+func (db *extendedMockDB) CreateTable(_ any, _ ...dynamormSchema.TableOption) error { return nil }
 
 func (db *extendedMockDB) EnsureTable(_ any) error { return nil }
 
@@ -928,8 +926,6 @@ func (db *extendedMockDB) DescribeTable(_ any) (any, error) { return nil, nil }
 func (db *extendedMockDB) WithLambdaTimeout(_ context.Context) dynamormCore.DB { return db }
 
 func (db *extendedMockDB) WithLambdaTimeoutBuffer(_ time.Duration) dynamormCore.DB { return db }
-
-func (db *extendedMockDB) TransactionFunc(fn func(tx any) error) error { return fn(nil) }
 
 func (db *extendedMockDB) Transact() dynamormCore.TransactionBuilder { return nil }
 

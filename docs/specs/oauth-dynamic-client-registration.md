@@ -27,6 +27,7 @@ Lesser currently accepts this RFC 7591 subset:
 - `scope`
 - `grant_types`
 - `token_endpoint_auth_method`
+- `application_type` (accepted for OIDC/SEP-837 client compatibility; `native` or `web`, not persisted as Lesser client class)
 - `client_uri`
 - `software_id`
 - `software_version`
@@ -35,7 +36,7 @@ Lesser extensions:
 
 - `client_class` (optional Lesser client classification for generic public clients; accepts `cli` or `web`)
 
-Unsupported metadata is rejected with `invalid_client_metadata` rather than silently ignored.
+Unsupported metadata is rejected with `invalid_client_metadata` rather than silently ignored. `application_type` is accepted so discovery clients such as Codex/rmcp can send their standard native-client metadata without requiring a Lesser-specific registration profile.
 
 `agent_username` and public `client_class=agent` registration semantics are not part of the public RFC 7591 contract.
 Internal agent-runtime specialization is handled outside public dynamic registration.
