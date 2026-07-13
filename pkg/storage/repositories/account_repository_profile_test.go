@@ -3,7 +3,9 @@ package repositories
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -11,8 +13,6 @@ import (
 	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap/zaptest"
-
-	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 func TestMergeActorDataForUpdate_PreservesIdentifiersAndAppliesUpdates(t *testing.T) {
@@ -91,6 +91,7 @@ func TestUpdateAccountActorProfile_RepairsMissingActorProfileRow(t *testing.T) {
 	}).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+	mockQuery.On("IfNotExists").Return(mockQuery).Once()
 	mockQuery.On("Create").Return(nil).Once()
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -115,6 +116,148 @@ func TestUpdateAccountActorProfile_RepairsMissingActorProfileRow(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestCreateRecoveredActorProfile_ConditionalConflictPreservesExistingKeyMaterial(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormMocks.MockDB)
+	mockQuery := new(dynamormMocks.MockQuery)
+	mockUpdate := new(dynamormMocks.MockUpdateBuilder)
+	lastStatusAt := time.Date(2026, 7, 13, 12, 30, 0, 0, time.UTC)
+	actorID := commonActorURL("example.com", "alice")
+	existing := &models.Actor{
+		Username:   "alice",
+		Actor:      fullLocalActor("example.com", "alice", "Original Alice"),
+		PrivateKey: "encrypted-private-key",
+		KeyType:    "RSA",
+		NumericID:  "123456",
+		Fields: []models.ActorField{{
+			Name:  "site",
+			Value: "https://example.com/about",
+		}},
+		LastStatusAt:   &lastStatusAt,
+		FollowerCount:  11,
+		FollowingCount: 12,
+		StatusCount:    13,
+		Version:        7,
+	}
+	require.NoError(t, existing.UpdateKeys())
+
+	var attemptedRepair *models.Actor
+	populateExisting := func(args mock.Arguments) {
+		dest, ok := args.Get(0).(*models.Actor)
+		if !ok {
+			return
+		}
+		*dest = *cloneActorModel(existing)
+	}
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+		if actorModel, ok := args.Get(0).(*models.Actor); ok && actorModel.Actor != nil && actorModel.PrivateKey == "" {
+			attemptedRepair = actorModel
+		}
+	}).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("IfNotExists").Return(mockQuery).Once()
+	mockQuery.On("Create").Return(dynamormErrors.ErrConditionFailed).Once()
+	mockQuery.On("ConsistentRead").Return(mockQuery).Once()
+	mockQuery.On("First", mock.Anything).Run(populateExisting).Return(nil).Twice()
+	mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Remove", mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionVersion", int64(7)).Return(mockUpdate).Once()
+	mockUpdate.On("Execute").Return(nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+	err := repo.createRecoveredActorProfile(ctx, "alice", &activitypub.Actor{
+		Name:    "Updated Alice",
+		Summary: "updated profile summary",
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, attemptedRepair)
+	require.Empty(t, attemptedRepair.PrivateKey)
+	require.Empty(t, attemptedRepair.KeyType)
+	require.Equal(t, 0, attemptedRepair.FollowerCount)
+	require.Equal(t, 0, attemptedRepair.FollowingCount)
+	require.Equal(t, 0, attemptedRepair.StatusCount)
+	mockQuery.AssertCalled(t, "IfNotExists")
+
+	mockUpdate.AssertCalled(t, "ConditionVersion", int64(7))
+	mockUpdate.AssertCalled(t, "Set", "Version", 8)
+	mockUpdate.AssertNotCalled(t, "Set", "PrivateKey", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "privateKey", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "KeyType", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "keyType", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "FollowerCount", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "FollowingCount", mock.Anything)
+	mockUpdate.AssertNotCalled(t, "Set", "StatusCount", mock.Anything)
+
+	require.Equal(t, "encrypted-private-key", existing.PrivateKey)
+	require.Equal(t, "RSA", existing.KeyType)
+	require.Equal(t, "123456", existing.NumericID)
+	require.Equal(t, 11, existing.FollowerCount)
+	require.Equal(t, 12, existing.FollowingCount)
+	require.Equal(t, 13, existing.StatusCount)
+	require.NotNil(t, existing.LastStatusAt)
+	require.True(t, existing.LastStatusAt.Equal(lastStatusAt))
+	require.Equal(t, []models.ActorField{{Name: "site", Value: "https://example.com/about"}}, existing.Fields)
+	require.Equal(t, 7, existing.Version)
+	require.NotNil(t, existing.Actor)
+	require.Equal(t, actorID, existing.Actor.ID)
+	require.NotNil(t, existing.Actor.PublicKey)
+	require.Equal(t, actorID+"#main-key", existing.Actor.PublicKey.ID)
+	require.Equal(t, "public-key-pem", existing.Actor.PublicKey.PublicKeyPem)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+	mockUpdate.AssertExpectations(t)
+}
+
 func commonActorURL(domain, username string) string {
 	return "https://" + domain + "/users/" + username
+}
+
+func fullLocalActor(domain, username, name string) *activitypub.Actor {
+	actorID := commonActorURL(domain, username)
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   actorID,
+			Type: "Person",
+		},
+		PreferredUsername: username,
+		Name:              name,
+		URL:               "https://" + domain + "/@" + username,
+		Inbox:             actorID + "/inbox",
+		Outbox:            actorID + "/outbox",
+		Followers:         actorID + "/followers",
+		Following:         actorID + "/following",
+		Liked:             actorID + "/liked",
+		PublicKey: &activitypub.PublicKey{
+			ID:           actorID + "#main-key",
+			Owner:        actorID,
+			PublicKeyPem: "public-key-pem",
+		},
+	}
+}
+
+func cloneActorModel(src *models.Actor) *models.Actor {
+	if src == nil {
+		return nil
+	}
+
+	clone := *src
+	if src.Actor != nil {
+		actorClone := *src.Actor
+		if src.Actor.PublicKey != nil {
+			publicKeyClone := *src.Actor.PublicKey
+			actorClone.PublicKey = &publicKeyClone
+		}
+		clone.Actor = &actorClone
+	}
+	if src.LastStatusAt != nil {
+		lastStatusAt := *src.LastStatusAt
+		clone.LastStatusAt = &lastStatusAt
+	}
+	clone.Fields = append([]models.ActorField(nil), src.Fields...)
+
+	return &clone
 }

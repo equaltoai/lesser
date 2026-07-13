@@ -2031,7 +2031,14 @@ func (r *AccountRepository) createRecoveredActorProfile(ctx context.Context, use
 		zap.String("username", username),
 		zap.String("actor_id", actor.ID))
 
-	if err := r.actorRepo.Create(ctx, actorModel); err != nil {
+	if err := r.actorRepo.CreateIfNotExists(ctx, actorModel); err != nil {
+		if isActorCreateConflict(err) {
+			r.logger.Info("actor profile repair detected concurrent actor row; merging update into existing actor record",
+				zap.String("username", username),
+				zap.String("actor_id", actor.ID))
+			return r.updateRecoveredActorAfterCreateConflict(ctx, username, actor)
+		}
+
 		r.logger.Error("failed to repair missing actor profile record",
 			zap.String("username", username),
 			zap.Error(err))
@@ -2043,6 +2050,47 @@ func (r *AccountRepository) createRecoveredActorProfile(ctx context.Context, use
 		zap.String("actor_id", actor.ID))
 
 	return nil
+}
+
+func (r *AccountRepository) updateRecoveredActorAfterCreateConflict(ctx context.Context, username string, incoming *activitypub.Actor) error {
+	existing, err := r.getActorForRepairMerge(ctx, username)
+	if err != nil {
+		r.logger.Error("failed to load actor profile record after conditional repair conflict",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
+	}
+
+	merged := r.mergeActorDataForUpdate(username, existing, incoming)
+	if err := r.actorRepo.UpdateActor(ctx, merged); err != nil {
+		r.logger.Error("failed to update actor profile record after conditional repair conflict",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
+	}
+
+	return nil
+}
+
+func (r *AccountRepository) getActorForRepairMerge(ctx context.Context, username string) (*activitypub.Actor, error) {
+	actorModel := &models.Actor{}
+	err := r.actorRepo.db.WithContext(ctx).Model(actorModel).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", models.SKProfile).
+		ConsistentRead().
+		First(actorModel)
+	if err != nil {
+		if dynamormErrors.IsNotFound(err) {
+			return nil, common.ActorNotFoundError{Username: username}
+		}
+		return nil, err
+	}
+
+	return r.actorRepo.canonicalLocalActorFromModel(ctx, username, actorModel)
+}
+
+func isActorCreateConflict(err error) bool {
+	return dynamormErrors.IsConditionFailed(err) || errors.Is(err, storage.ErrAlreadyExists)
 }
 
 func (r *AccountRepository) mergeActorDataForUpdate(username string, existing, incoming *activitypub.Actor) *activitypub.Actor {
