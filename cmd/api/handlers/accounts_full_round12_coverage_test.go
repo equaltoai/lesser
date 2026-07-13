@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"testing"
@@ -501,6 +502,89 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	require.NoError(t, err)
 
 	requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
+}
+
+func TestAccountsFull_Round12_UpdateCredentials_SuccessReturnsMastodonAccount(t *testing.T) {
+	cfg := round11TestConfig()
+
+	existingAccount := &storage.Account{
+		User: &storage.User{
+			Username:     "alice",
+			DisplayName:  "Della",
+			Note:         "old bio",
+			Locked:       true,
+			Discoverable: true,
+			IsAgent:      true,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+			PreferredUsername:         "alice",
+			Name:                      "Della",
+			Summary:                   "old bio",
+			ManuallyApprovesFollowers: true,
+			Discoverable:              true,
+		},
+	}
+	updatedAccount := &storage.Account{
+		User: &storage.User{
+			Username:     "alice",
+			DisplayName:  "Della",
+			Note:         "same bio",
+			Locked:       true,
+			Discoverable: true,
+			IsAgent:      true,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+			PreferredUsername:         "alice",
+			Name:                      "Della",
+			Summary:                   "same bio",
+			ManuallyApprovesFollowers: true,
+			Discoverable:              true,
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	handler.registry = &RegistryStub{
+		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(ctx context.Context, username string) (*storage.Account, error) {
+				require.Equal(t, "alice", username)
+				return existingAccount, nil
+			},
+			UpdateProfileFunc: func(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+				require.Equal(t, "alice", cmd.Username)
+				require.Equal(t, "alice", cmd.UpdaterID)
+				require.Equal(t, "Della", cmd.DisplayName)
+				require.Equal(t, "same bio", cmd.Bio)
+				require.True(t, cmd.Locked)
+				require.True(t, cmd.Discoverable)
+				require.True(t, cmd.Bot)
+				return &accounts.AccountResult{Account: updatedAccount}, nil
+			},
+		},
+		NotesSvc: &NotesServiceStub{
+			CountNotesByAuthorFunc: func(ctx context.Context, authorID string) (int64, error) {
+				require.Equal(t, "alice", authorID)
+				return 9, nil
+			},
+		},
+	}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{"display_name":"Della","note":"same bio"}`))
+
+	resp := requireStatus(t, http.StatusOK)(handler.HandleUpdateCredentialsFull(ctx))
+
+	var got apiModels.Account
+	require.NoError(t, json.Unmarshal(resp.Body, &got))
+	require.Equal(t, "alice", got.Username)
+	require.Equal(t, "Della", got.DisplayName)
+	require.Equal(t, "same bio", got.Note)
+	require.True(t, got.Locked)
+	require.True(t, got.Discoverable)
+	require.True(t, got.Bot)
+	require.Equal(t, 9, got.StatusesCount)
 }
 
 func TestAccountsFull_Round12_HasUserMutedStatus_IsMutedError(t *testing.T) {

@@ -422,6 +422,108 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 	})
 }
 
+func TestAccountsRound12_BuildUpdateCredentialsCommandFallbacks(t *testing.T) {
+	cfg := round10TestConfig()
+
+	t.Run("omitted_booleans_fall_back_to_actor_profile", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return &storage.Account{
+						Actor: &activitypub.Actor{
+							BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+							PreferredUsername:         "alice",
+							ManuallyApprovesFollowers: true,
+							Discoverable:              true,
+						},
+					}, nil
+				},
+			},
+		})
+
+		cmd, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", updateCredentialsPatchRequest{
+			DisplayName: "Della",
+			Note:        "same bio",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "alice", cmd.Username)
+		require.Equal(t, "alice", cmd.UpdaterID)
+		require.Equal(t, "Della", cmd.DisplayName)
+		require.Equal(t, "same bio", cmd.Bio)
+		require.True(t, cmd.Locked)
+		require.True(t, cmd.Discoverable)
+		require.True(t, cmd.Bot)
+	})
+
+	t.Run("explicit_false_booleans_override_existing_profile", func(t *testing.T) {
+		locked := false
+		discoverable := false
+		bot := false
+		req := updateCredentialsPatchRequest{
+			DisplayName:  "Della",
+			Note:         "same bio",
+			Locked:       &locked,
+			Discoverable: &discoverable,
+			Bot:          &bot,
+		}
+		params := req.accountParams()
+		require.Contains(t, params, "locked")
+		require.Contains(t, params, "discoverable")
+		require.Contains(t, params, "bot")
+		require.False(t, params["locked"].(bool))
+		require.False(t, params["discoverable"].(bool))
+		require.False(t, params["bot"].(bool))
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return &storage.Account{
+						User: &storage.User{
+							Username:     "alice",
+							Locked:       true,
+							Discoverable: true,
+							IsAgent:      true,
+						},
+						Actor: &activitypub.Actor{
+							BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: activitypub.ServiceType},
+							PreferredUsername:         "alice",
+							ManuallyApprovesFollowers: true,
+							Discoverable:              true,
+						},
+					}, nil
+				},
+			},
+		})
+
+		cmd, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", req)
+		require.NoError(t, err)
+		require.False(t, cmd.Locked)
+		require.False(t, cmd.Discoverable)
+		require.False(t, cmd.Bot)
+	})
+
+	t.Run("account_lookup_error_is_returned", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		})
+
+		_, err := h.buildUpdateCredentialsCommand(context.Background(), "alice", updateCredentialsPatchRequest{DisplayName: "Della"})
+		require.Error(t, err)
+	})
+
+	t.Run("nil_account_fallbacks_are_false", func(t *testing.T) {
+		require.False(t, existingAccountLocked(nil))
+		require.False(t, existingAccountDiscoverable(nil))
+		require.False(t, existingAccountBot(nil))
+	})
+}
+
 func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 	cfg := round10TestConfig()
 
