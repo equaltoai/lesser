@@ -22,8 +22,8 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	"github.com/theory-cloud/tabletheory"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 type fakeCostRepo struct {

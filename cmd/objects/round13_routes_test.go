@@ -71,10 +71,9 @@ func TestObjectsStrictRouteInventoryParity_Round13(t *testing.T) {
 	require.Len(t, params, 3)
 }
 
-func TestRegisterObjectsRoutesStrictFailure_Round13(t *testing.T) {
+func TestRegisterObjectsRoutesNilAppNoop_Round13(t *testing.T) {
 	err := registerObjectsRoutes(nil, func(*apptheory.Context) (*apptheory.Response, error) {
 		return &apptheory.Response{Status: http.StatusNoContent}, nil
 	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "register objects route GET /objects/:id")
+	require.NoError(t, err)
 }

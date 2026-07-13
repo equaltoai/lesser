@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/theory-cloud/tabletheory"
+	"github.com/theory-cloud/tabletheory/v2"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"

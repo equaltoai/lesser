@@ -1,7 +1,9 @@
 package cost
 
 import (
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"context"
+
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -139,7 +141,7 @@ func TransactionExample(trackingDB *TrackingDB) {
 	// Transaction tracking uses conservative estimates since implementing
 	// full transaction operation counting would require complex interface wrapping
 
-	_ = trackingDB.Transaction(func(_ *core.Tx) error {
+	_ = trackingDB.TransactWrite(context.Background(), func(_ core.TransactionBuilder) error {
 		// Operations within this transaction are estimated
 		// Future enhancement: Implement precise transaction operation counting
 		return nil

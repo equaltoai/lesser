@@ -20,8 +20,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -1246,6 +1246,7 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 				EventID:        "bad-review",
 				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
 				Change: events.DynamoDBStreamRecord{
+					SequenceNumber: "bad-review",
 					Keys: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("REVIEW#evt-1"),
 						"SK": events.NewStringAttribute("REVIEWER"),

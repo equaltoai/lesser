@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 // CategoryRepository defines the interface for category operations.

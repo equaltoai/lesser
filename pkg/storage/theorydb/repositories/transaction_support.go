@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +32,7 @@ func NewTransactionManager(db core.DB, logger *zap.Logger, tracker *cost.Tracker
 
 // TransactionContext holds context for a transaction
 type TransactionContext struct {
-	tx            *core.Tx
+	tx            core.TransactionBuilder
 	operationsCnt int
 	startTime     time.Time
 	logger        *zap.Logger
@@ -40,7 +40,7 @@ type TransactionContext struct {
 }
 
 // ExecuteTransaction executes a function within a transaction
-func (tm *TransactionManager) ExecuteTransaction(_ context.Context, fn func(*TransactionContext) error) error {
+func (tm *TransactionManager) ExecuteTransaction(ctx context.Context, fn func(*TransactionContext) error) error {
 	startTime := time.Now()
 
 	// Track initial costs
@@ -49,18 +49,7 @@ func (tm *TransactionManager) ExecuteTransaction(_ context.Context, fn func(*Tra
 		initialCost = tm.tracker.CalculateCost()
 	}
 
-	err := tm.db.Transaction(func(tx *core.Tx) error {
-		txCtx := &TransactionContext{
-			tx:            tx,
-			operationsCnt: 0,
-			startTime:     startTime,
-			logger:        tm.logger,
-			tracker:       tm.tracker,
-		}
-
-		// Execute the transaction function
-		return fn(txCtx)
-	})
+	err := tm.executeWithBuilder(ctx, startTime, fn)
 
 	// Track transaction cost
 	if tm.tracker != nil && err == nil {
@@ -80,6 +69,26 @@ func (tm *TransactionManager) ExecuteTransaction(_ context.Context, fn func(*Tra
 	}
 
 	return err
+}
+
+func (tm *TransactionManager) executeWithBuilder(ctx context.Context, startTime time.Time, fn func(*TransactionContext) error) error {
+	client, ok := tm.db.(interface {
+		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
+	})
+	if !ok {
+		return fmt.Errorf("tabletheory transaction support requires core.ExtendedDB")
+	}
+
+	return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
+		txCtx := &TransactionContext{
+			tx:            tx,
+			operationsCnt: 0,
+			startTime:     startTime,
+			logger:        tm.logger,
+			tracker:       tm.tracker,
+		}
+		return fn(txCtx)
+	})
 }
 
 // TransactionalRepository wraps a base repository with transaction support
@@ -181,8 +190,8 @@ func (tc *TransactionContext) Put(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Use DynamORM transaction directly
-	if err := tc.tx.Model(item).Create(); err != nil {
+	txOps := &theorydb.MockTx{Builder: tc.tx}
+	if err := txOps.Create(item); err != nil {
 		return fmt.Errorf("transaction put failed: %w", err)
 	}
 
@@ -198,8 +207,8 @@ func (tc *TransactionContext) Delete(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Use DynamORM transaction directly
-	if err := tc.tx.Model(item).Delete(); err != nil {
+	txOps := &theorydb.MockTx{Builder: tc.tx}
+	if err := txOps.Delete(item); err != nil {
 		return fmt.Errorf("transaction delete failed: %w", err)
 	}
 
@@ -215,8 +224,8 @@ func (tc *TransactionContext) Update(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Use DynamORM transaction directly
-	if err := tc.tx.Model(item).Update(); err != nil {
+	txOps := &theorydb.MockTx{Builder: tc.tx}
+	if err := txOps.Update(item); err != nil {
 		return fmt.Errorf("transaction update failed: %w", err)
 	}
 
@@ -232,8 +241,7 @@ func (tc *TransactionContext) ConditionCheck(key any, condition string, values .
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &theorydb.MockTx{Tx: *tc.tx}
+	txOps := &theorydb.MockTx{Builder: tc.tx}
 
 	// For condition checks, we need the table name. Since this is a generic method,
 	// we'll assume the key contains the table information or use a default
@@ -258,8 +266,7 @@ func (tc *TransactionContext) UpdateWithExpression(item any, expression string, 
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &theorydb.MockTx{Tx: *tc.tx}
+	txOps := &theorydb.MockTx{Builder: tc.tx}
 
 	if err := txOps.UpdateWithExpression(item, expression, values...); err != nil {
 		return fmt.Errorf("transaction update with expression failed: %w", err)
@@ -277,8 +284,7 @@ func (tc *TransactionContext) DeleteByKey(tableName string, key map[string]any) 
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &theorydb.MockTx{Tx: *tc.tx}
+	txOps := &theorydb.MockTx{Builder: tc.tx}
 
 	if err := txOps.DeleteByKey(tableName, key); err != nil {
 		return fmt.Errorf("transaction delete by key failed: %w", err)
@@ -442,8 +448,10 @@ func (r *TransactionalRepository) CreateStatusWithChecksTransactional(ctx contex
 
 		// 4. Update rate limit
 		rateLimitUpdate := map[string]any{
-			"PK": fmt.Sprintf("RATE_LIMIT#%s", userID),
-			"SK": fmt.Sprintf("POSTS#%s", time.Now().Format(common.DateFormat)),
+			"PK":        fmt.Sprintf("RATE_LIMIT#%s", userID),
+			"SK":        fmt.Sprintf("POSTS#%s", time.Now().Format(common.DateFormat)),
+			"PostCount": 1,
+			"UpdatedAt": time.Now(),
 		}
 		if err := txCtx.Update(rateLimitUpdate); err != nil {
 			return fmt.Errorf("failed to update rate limit: %w", err)
@@ -676,7 +684,7 @@ func isRetryableError(err error) bool {
 // Advanced transaction support methods
 
 // ExecuteIsolated executes a transaction with full isolation guarantees
-func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel string, fn func(*TransactionContext) error) error {
+func (tm *TransactionManager) ExecuteIsolated(ctx context.Context, isolationLevel string, fn func(*TransactionContext) error) error {
 	startTime := time.Now()
 
 	if tm.logger != nil {
@@ -692,18 +700,7 @@ func (tm *TransactionManager) ExecuteIsolated(_ context.Context, isolationLevel 
 		initialCost = tm.tracker.CalculateCost()
 	}
 
-	err := tm.db.Transaction(func(tx *core.Tx) error {
-		txCtx := &TransactionContext{
-			tx:            tx,
-			operationsCnt: 0,
-			startTime:     startTime,
-			logger:        tm.logger,
-			tracker:       tm.tracker,
-		}
-
-		// Execute the transaction function with isolation
-		return fn(txCtx)
-	})
+	err := tm.executeWithBuilder(ctx, startTime, fn)
 
 	// Track transaction cost with isolation overhead
 	if tm.tracker != nil && err == nil {

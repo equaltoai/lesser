@@ -20,7 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 
 	awsInit "github.com/equaltoai/lesser/pkg/aws"

@@ -10,9 +10,9 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	appConfig "github.com/equaltoai/lesser/pkg/config"
-	"github.com/theory-cloud/tabletheory"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 	"go.uber.org/zap"
 )
 

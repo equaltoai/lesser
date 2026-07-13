@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 )
 
 // MockUserRepository mocks the UserRepository interface

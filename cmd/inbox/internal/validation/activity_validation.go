@@ -24,7 +24,7 @@ func ValidateRequestBody(logger *zap.Logger, body []byte) error {
 		if logger != nil {
 			logger.Warn("request body too large", zap.Int("size", len(body)))
 		}
-		return &apptheory.AppError{Code: "app.too_large", Message: "request body too large"}
+		return apptheory.NewAppTheoryError("app.too_large", "request body too large")
 	}
 
 	return nil

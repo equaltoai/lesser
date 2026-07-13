@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 )
 
 func TestAgentSelfSovereignRound16_HandleAgentAuthTokenLift_ErrorBranches(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/oklog/ulid/v2"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 const (

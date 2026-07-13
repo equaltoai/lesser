@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 // TransactionFunc is a function that executes within a transaction
@@ -35,31 +35,20 @@ func NewTransaction(client core.DB) *Transaction {
 // If the function returns an error, the transaction is aborted
 // Otherwise, the transaction is committed
 func (t *Transaction) Execute(ctx context.Context, fn TransactionFunc) error {
-	if client, ok := t.client.(interface {
+	client, ok := t.client.(interface {
 		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
-	}); ok {
-		return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
-			txWrapper := &Transaction{
-				tx:     &MockTx{Builder: tx},
-				client: t.client,
-			}
-			return fn(txWrapper)
-		})
+	})
+	if !ok {
+		return fmt.Errorf("tabletheory transaction support requires core.ExtendedDB")
 	}
 
-	// Create a new transaction
-	err := t.client.Transaction(func(tx *core.Tx) error {
-		// Create a transaction wrapper with a mock tx that implements TxOperations
+	return client.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
 		txWrapper := &Transaction{
-			tx:     &MockTx{Tx: *tx},
+			tx:     &MockTx{Builder: tx},
 			client: t.client,
 		}
-
-		// Execute the transaction function
 		return fn(txWrapper)
 	})
-
-	return err
 }
 
 // Put adds a Put operation to the transaction

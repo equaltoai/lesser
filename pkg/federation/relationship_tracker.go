@@ -20,8 +20,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/batch"
 	"github.com/google/uuid"
-	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 

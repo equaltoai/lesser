@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
-	tablesession "github.com/theory-cloud/tabletheory/pkg/session"
+	tablesession "github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 type dynamoGetItemClient interface {

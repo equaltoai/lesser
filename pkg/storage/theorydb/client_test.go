@@ -13,10 +13,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/session"
-	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
+	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
+	pkgtypes "github.com/theory-cloud/tabletheory/v2/pkg/types"
 )
 
 func resetClientState() {

@@ -27,7 +27,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -155,9 +155,7 @@ func registerObjectsRoutes(app *apptheory.App, handleGetObject apptheory.Handler
 	for _, route := range objectsRouteInventory() {
 		switch route.Method {
 		case http.MethodGet:
-			if _, err := app.GetStrict(route.Path, handleGetObject); err != nil {
-				return fmt.Errorf("register objects route %s %s: %w", route.Method, route.Path, err)
-			}
+			app.Get(route.Path, handleGetObject)
 		default:
 			return fmt.Errorf("unsupported objects route method %q for %s", route.Method, route.Path)
 		}

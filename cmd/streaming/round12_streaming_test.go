@@ -26,8 +26,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	"github.com/theory-cloud/tabletheory"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 

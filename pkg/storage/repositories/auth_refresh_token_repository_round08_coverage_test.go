@@ -9,9 +9,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -28,13 +28,6 @@ func (d *round08TxDB) WithContext(ctx context.Context) core.DB {
 	return d
 }
 
-func (d *round08TxDB) Transaction(fn func(tx *core.Tx) error) error {
-	_ = d.inner.Called(fn)
-	tx := &core.Tx{}
-	tx.SetDB(d)
-	return fn(tx)
-}
-
 func (d *round08TxDB) Migrate() error {
 	return d.inner.Migrate()
 }
@@ -45,6 +38,45 @@ func (d *round08TxDB) AutoMigrate(models ...any) error {
 
 func (d *round08TxDB) Close() error {
 	return d.inner.Close()
+}
+
+func (d *round08TxDB) hasExpectedCall(method string) bool {
+	for _, call := range d.inner.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *round08TxDB) Transact() core.TransactionBuilder {
+	return new(mocks.MockTransactionBuilder)
+}
+
+func (d *round08TxDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	builder := new(mocks.MockTransactionBuilder)
+	if d.hasExpectedCall("TransactWrite") {
+		callbackInvoked := false
+		wrapped := func(tx core.TransactionBuilder) error {
+			callbackInvoked = true
+			if fn == nil {
+				return nil
+			}
+			return fn(tx)
+		}
+		args := d.inner.Called(ctx, wrapped)
+		if err := args.Error(0); err != nil {
+			return err
+		}
+		if callbackInvoked || fn == nil {
+			return nil
+		}
+		return fn(builder)
+	}
+	if fn == nil {
+		return nil
+	}
+	return fn(builder)
 }
 
 func TestRound08_AuthRefreshTokenRepository_CreateAndGet(t *testing.T) {
@@ -186,15 +218,13 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 
 			mockInner.On("WithContext", mock.Anything).Return(mockInner).Maybe()
 			mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
-			mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
+			mockInner.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("update failed")).Once()
 			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 				tokens := args.Get(0).(*[]models.AuthRefreshToken)
 				*tokens = append(*tokens,
 					models.AuthRefreshToken{Token: "t1", UserID: "user-1", Family: "family-1", CreatedAt: baseTime.Unix(), ExpiresAt: baseTime.Add(time.Hour).Unix()},
 				)
 			}).Return(nil).Once()
-
-			mockQuery.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
 
 			setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 

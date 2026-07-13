@@ -9,7 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 )
 
 type round24BatchGetBuilder struct{}
@@ -127,14 +127,14 @@ func TestMockDBAndQueryMethods_Round24(t *testing.T) {
 
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
-	mockDB.On("Transaction", mock.Anything).Return(nil).Once()
+	mockDB.On("TransactWrite", mock.Anything, mock.Anything).Return(nil).Once()
 	mockDB.On("AutoMigrate", mock.Anything).Return(nil).Once()
 	mockDB.On("Close").Return(nil).Once()
 	mockDB.On("Migrate").Return(nil).Once()
 
 	require.Same(t, mockQuery, mockDB.Model(&models.User{}))
 	require.Same(t, mockDB, mockDB.WithContext(ctx))
-	require.NoError(t, mockDB.Transaction(func(_ *core.Tx) error { return nil }))
+	require.NoError(t, mockDB.TransactWrite(ctx, func(_ core.TransactionBuilder) error { return nil }))
 	require.NoError(t, mockDB.AutoMigrate(&models.User{}))
 	require.NoError(t, mockDB.Close())
 	require.NoError(t, mockDB.Migrate())

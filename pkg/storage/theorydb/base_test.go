@@ -9,19 +9,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 type fakeDB struct{}
 
-func (f fakeDB) Model(any) core.Query                      { return nil }
-func (f fakeDB) Transaction(func(tx *core.Tx) error) error { return nil }
-func (f fakeDB) Migrate() error                            { return nil }
-func (f fakeDB) AutoMigrate(...any) error                  { return nil }
-func (f fakeDB) Close() error                              { return nil }
-func (f fakeDB) WithContext(context.Context) core.DB       { return f }
+func (f fakeDB) Model(any) core.Query                { return nil }
+func (f fakeDB) Migrate() error                      { return nil }
+func (f fakeDB) AutoMigrate(...any) error            { return nil }
+func (f fakeDB) Close() error                        { return nil }
+func (f fakeDB) WithContext(context.Context) core.DB { return f }
 
 func TestBaseRepository_Getters(t *testing.T) {
 	db := fakeDB{}

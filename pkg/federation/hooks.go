@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 

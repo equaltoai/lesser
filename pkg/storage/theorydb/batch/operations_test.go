@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -44,11 +44,6 @@ type MockDB struct {
 func (m *MockDB) Model(model any) core.Query {
 	args := m.Called(model)
 	return args.Get(0).(core.Query)
-}
-
-func (m *MockDB) Transaction(fn func(*core.Tx) error) error {
-	args := m.Called(fn)
-	return args.Error(0)
 }
 
 func (m *MockDB) AutoMigrate(models ...any) error {

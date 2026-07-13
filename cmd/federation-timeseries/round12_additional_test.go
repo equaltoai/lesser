@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -92,10 +92,7 @@ type fakeDynamoDB struct {
 	wheres                []fakeWhereCall
 }
 
-func (f *fakeDynamoDB) Model(any) dynamormCore.Query { return &fakeQuery{db: f} }
-func (f *fakeDynamoDB) Transaction(fn func(tx *dynamormCore.Tx) error) error {
-	return fn(&dynamormCore.Tx{})
-}
+func (f *fakeDynamoDB) Model(any) dynamormCore.Query                { return &fakeQuery{db: f} }
 func (f *fakeDynamoDB) Migrate() error                              { return nil }
 func (f *fakeDynamoDB) AutoMigrate(...any) error                    { return nil }
 func (f *fakeDynamoDB) Close() error                                { return nil }

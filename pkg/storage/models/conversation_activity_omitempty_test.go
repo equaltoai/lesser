@@ -8,9 +8,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ttcore "github.com/theory-cloud/tabletheory/pkg/core"
-	ttmodel "github.com/theory-cloud/tabletheory/pkg/model"
-	ttquery "github.com/theory-cloud/tabletheory/pkg/query"
+	ttcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	ttmodel "github.com/theory-cloud/tabletheory/v2/pkg/model"
+	ttquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
 )
 
 type theorydbPutCapture struct {

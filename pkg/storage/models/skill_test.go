@@ -330,3 +330,189 @@ func TestSkillRevisionApprovedStateRequiresCurrentApprovalDigest(t *testing.T) {
 	revision.DefaultExposure = SkillExposurePublic
 	require.ErrorContains(t, revision.UpdateKeys(), "approval digest does not match")
 }
+
+func TestSkillAuthorityLifecycleHooksAndNilAccessors(t *testing.T) {
+	t.Parallel()
+
+	skill := &Skill{ID: " Skill-A "}
+	require.NoError(t, skill.BeforeCreate())
+	require.Equal(t, "SKILL#skill-a", skill.GetPK())
+	require.Equal(t, SKSkill, skill.GetSK())
+	require.False(t, skill.CreatedAt.IsZero())
+	require.False(t, skill.UpdatedAt.IsZero())
+	require.NoError(t, skill.BeforeUpdate())
+
+	revision := &SkillRevision{SkillID: " Skill-A ", RevisionNumber: 1}
+	require.NoError(t, revision.BeforeCreate())
+	require.Equal(t, "SKILL#skill-a", revision.GetPK())
+	require.Equal(t, "REVISION#00000001", revision.GetSK())
+	require.NoError(t, revision.BeforeUpdate())
+
+	proposal := &SkillProposal{ID: " Proposal-1 ", SkillID: " Skill-A "}
+	require.NoError(t, proposal.BeforeCreate())
+	require.Equal(t, "SKILL_PROPOSAL#proposal-1", proposal.GetPK())
+	require.Equal(t, SKSkillProposal, proposal.GetSK())
+	require.NoError(t, proposal.BeforeUpdate())
+
+	assignment := &SkillAssignment{
+		ID:          " Assignment-1 ",
+		SkillID:     " Skill-A ",
+		SubjectType: SkillAssignmentSubjectInstance,
+		SubjectID:   " Local ",
+	}
+	require.NoError(t, assignment.BeforeCreate())
+	require.Equal(t, "SKILL_ASSIGNMENT#instance#local", assignment.GetPK())
+	require.Equal(t, "SKILL#skill-a#ASSIGNMENT#assignment-1", assignment.GetSK())
+	require.False(t, assignment.AssignedAt.IsZero())
+	require.NoError(t, assignment.BeforeUpdate())
+
+	var nilSkill *Skill
+	require.Empty(t, nilSkill.GetPK())
+	require.Empty(t, nilSkill.GetSK())
+	var nilRevision *SkillRevision
+	require.Empty(t, nilRevision.GetPK())
+	require.Empty(t, nilRevision.GetSK())
+	var nilProposal *SkillProposal
+	require.Empty(t, nilProposal.GetPK())
+	require.Empty(t, nilProposal.GetSK())
+	var nilAssignment *SkillAssignment
+	require.Empty(t, nilAssignment.GetPK())
+	require.Empty(t, nilAssignment.GetSK())
+}
+
+func TestSkillAuthorityDigestValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	validRevision := &SkillRevision{
+		ID:              "skill-a-r1",
+		SkillID:         "skill-a",
+		RevisionNumber:  1,
+		ManifestDigest:  "sha256:manifest",
+		ContentDigest:   "sha256:content",
+		BundleDigest:    "sha256:bundle",
+		DefaultExposure: SkillExposurePrivate,
+	}
+
+	_, err := SkillRevisionApprovalDigest(nil, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.ErrorContains(t, err, "skill revision is required")
+	_, err = SkillRevisionApprovalDigest(&SkillRevision{RevisionNumber: 1}, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.Error(t, err)
+	_, err = SkillRevisionApprovalDigest(&SkillRevision{SkillID: "skill-a"}, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.ErrorContains(t, err, "revision number is required")
+	_, err = SkillRevisionApprovalDigest(validRevision, "principal-1", SkillApprovalAuthorityAdmin, " ")
+	require.Error(t, err)
+	badExposure := *validRevision
+	badExposure.DefaultExposure = "friends"
+	_, err = SkillRevisionApprovalDigest(&badExposure, "principal-1", SkillApprovalAuthorityAdmin, "ops")
+	require.Error(t, err)
+
+	proposal := &SkillProposal{ID: "proposal-1", SkillID: "skill-a", ProposedManifestDigest: "sha256:manifest"}
+	revision := &SkillRevision{ID: "skill-a-r1", SkillID: "skill-a", RevisionNumber: 1, ManifestDigest: "sha256:manifest", ApprovalDigest: "sha256:approval"}
+	_, err = SkillPromotionDigest(nil, revision)
+	require.ErrorContains(t, err, "skill proposal is required")
+	_, err = SkillPromotionDigest(proposal, nil)
+	require.ErrorContains(t, err, "skill revision is required")
+	_, err = SkillPromotionDigest(&SkillProposal{SkillID: "skill-a"}, revision)
+	require.Error(t, err)
+	_, err = SkillPromotionDigest(&SkillProposal{ID: "proposal-1"}, revision)
+	require.Error(t, err)
+	_, err = SkillPromotionDigest(proposal, &SkillRevision{ID: "skill-a-r1", RevisionNumber: 1})
+	require.Error(t, err)
+	_, err = SkillPromotionDigest(proposal, &SkillRevision{ID: "skill-a-r1", SkillID: "skill-a"})
+	require.ErrorContains(t, err, "revision number is required")
+	_, err = SkillPromotionDigest(proposal, &SkillRevision{SkillID: "skill-a", RevisionNumber: 1, ManifestDigest: "sha256:manifest", ApprovalDigest: "sha256:approval"})
+	require.ErrorContains(t, err, "revision id is required")
+	_, err = SkillPromotionDigest(proposal, &SkillRevision{ID: "skill-a-r1", SkillID: "skill-a", RevisionNumber: 1, ApprovalDigest: "sha256:approval"})
+	require.ErrorContains(t, err, "manifest digest is required")
+	_, err = SkillPromotionDigest(proposal, &SkillRevision{ID: "skill-a-r1", SkillID: "skill-a", RevisionNumber: 1, ManifestDigest: "sha256:manifest"})
+	require.ErrorContains(t, err, "approval digest is required")
+}
+
+func TestSkillProposalPromotionStateRequiresCompleteAcceptedPromotion(t *testing.T) {
+	t.Parallel()
+
+	promotedAt := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	base := SkillProposal{
+		ID:                "proposal-1",
+		SkillID:           "skill-a",
+		Status:            SkillProposalStatusAccepted,
+		RequestedExposure: SkillExposurePrivate,
+	}
+
+	proposal := base
+	proposal.PromotedRevisionNumber = 1
+	require.ErrorContains(t, proposal.UpdateKeys(), "promotedRevisionID is required")
+
+	proposal = base
+	proposal.PromotedRevisionID = "skill-a-r1"
+	proposal.PromotedBy = "ops"
+	proposal.PromotedAt = &promotedAt
+	require.ErrorContains(t, proposal.UpdateKeys(), "promotionDigest is required")
+
+	proposal = base
+	proposal.PromotedRevisionID = "skill-a-r1"
+	proposal.PromotionDigest = "sha256:promotion"
+	proposal.PromotedAt = &promotedAt
+	require.ErrorContains(t, proposal.UpdateKeys(), "promotedBy is required")
+
+	proposal = base
+	proposal.PromotedRevisionID = "skill-a-r1"
+	proposal.PromotionDigest = "sha256:promotion"
+	proposal.PromotedBy = "ops"
+	proposal.PromotedAt = &promotedAt
+	require.ErrorContains(t, proposal.UpdateKeys(), "promoted revision number is required")
+
+	proposal = base
+	proposal.PromotedRevisionID = "skill-a-r1"
+	proposal.PromotedRevisionNumber = 1
+	proposal.PromotionDigest = "sha256:promotion"
+	proposal.PromotedBy = "ops"
+	require.ErrorContains(t, proposal.UpdateKeys(), "promoted at is required")
+}
+
+func TestSkillRevisionApprovalStateRejectsIncompleteApprovedAndRevoked(t *testing.T) {
+	t.Parallel()
+
+	revision := &SkillRevision{
+		SkillID:           "skill-a",
+		RevisionNumber:    1,
+		ApprovalSignature: "sig",
+	}
+	require.ErrorContains(t, revision.UpdateKeys(), "approval digest is required when approval signature is present")
+
+	revision = &SkillRevision{
+		SkillID:               "skill-a",
+		RevisionNumber:        1,
+		ApprovalAuthorityType: "unknown",
+	}
+	require.Error(t, revision.UpdateKeys())
+
+	revision = &SkillRevision{SkillID: "skill-a", RevisionNumber: 1, Status: SkillRevisionStatusRevoked}
+	require.ErrorContains(t, revision.UpdateKeys(), "revoked by is required")
+
+	revision.RevokedBy = "ops"
+	require.ErrorContains(t, revision.UpdateKeys(), "revoked at is required")
+
+	revision = &SkillRevision{SkillID: "skill-a", RevisionNumber: 1, Status: SkillRevisionStatusApproved}
+	require.ErrorContains(t, revision.UpdateKeys(), "approvalID is required")
+
+	approvedAt := time.Date(2026, 7, 12, 13, 0, 0, 0, time.UTC)
+	revision = &SkillRevision{
+		ID:                    "skill-a-r1",
+		SkillID:               "skill-a",
+		RevisionNumber:        1,
+		Status:                SkillRevisionStatusApproved,
+		DefaultExposure:       SkillExposurePrivate,
+		ApprovalID:            "approval-1",
+		ApprovalAuthorityType: SkillApprovalAuthorityAdmin,
+		ApprovalAuthorityID:   "ops",
+		ApprovedBy:            "ops",
+		PrincipalID:           "principal-1",
+		ApprovedAt:            &approvedAt,
+	}
+	digest, err := SkillRevisionApprovalDigest(revision, revision.PrincipalID, revision.ApprovalAuthorityType, revision.ApprovalAuthorityID)
+	require.NoError(t, err)
+	revision.ApprovalDigest = digest
+	revision.ApprovedAt = nil
+	require.ErrorContains(t, revision.UpdateKeys(), "approved at is required")
+}

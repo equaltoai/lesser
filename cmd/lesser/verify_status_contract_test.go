@@ -21,9 +21,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/notecontract"
 	"github.com/stretchr/testify/require"
-	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	theorydb "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 type fakeStatusContractAccountWriter struct {

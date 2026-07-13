@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"

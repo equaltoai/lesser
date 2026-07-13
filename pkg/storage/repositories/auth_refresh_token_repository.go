@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -34,6 +35,16 @@ func NewAuthRefreshTokenRepository(db core.DB, tableName string, logger *zap.Log
 	return &AuthRefreshTokenRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
+}
+
+func (r *AuthRefreshTokenRepository) transactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	client, ok := r.GetDB().(interface {
+		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
+	})
+	if !ok {
+		return fmt.Errorf("tabletheory transaction support requires core.ExtendedDB")
+	}
+	return client.TransactWrite(ctx, fn)
 }
 
 // CreateRefreshToken generates and stores a new refresh token
@@ -145,21 +156,17 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 		IPAddress:  ipAddress,
 	}
 
-	// Use DynamORM transaction to ensure atomicity
-	err = r.db.Transaction(func(tx *core.Tx) error {
+	// Use a TableTheory transaction to ensure atomicity.
+	err = r.transactWrite(ctx, func(tx core.TransactionBuilder) error {
 		// Step 1: Revoke old token
 		oldToken.Revoked = true
 		oldToken.RevokedReason = "Rotated"
 		oldToken.LastUsedAt = now.Unix()
 
-		if err := tx.Model(oldToken).Update(); err != nil {
-			return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, oldToken.Token)
-		}
+		tx.Update(oldToken, []string{"Revoked", "RevokedReason", "LastUsedAt"})
 
 		// Step 2: Create new token
-		if err := tx.Model(newToken).Create(); err != nil {
-			return ErrorHandler.HandleCreateError(err, EntityRefreshToken, newToken.Token)
-		}
+		tx.Create(newToken)
 
 		return nil
 	})
@@ -194,18 +201,15 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 	}
 
 	// Use transaction to revoke all tokens atomically
-	err = r.db.Transaction(func(tx *core.Tx) error {
+	err = r.transactWrite(ctx, func(tx core.TransactionBuilder) error {
 		now := time.Now().Unix()
 
-		for _, token := range tokens {
-			if !token.Revoked {
-				token.Revoked = true
-				token.RevokedReason = reason
-				token.LastUsedAt = now
-
-				if err := tx.Model(&token).Update(); err != nil {
-					return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, token.Token)
-				}
+		for i := range tokens {
+			if !tokens[i].Revoked {
+				tokens[i].Revoked = true
+				tokens[i].RevokedReason = reason
+				tokens[i].LastUsedAt = now
+				tx.Update(&tokens[i], []string{"Revoked", "RevokedReason", "LastUsedAt"})
 			}
 		}
 
@@ -258,19 +262,16 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 
 	// Use transaction to revoke all tokens atomically
 	tokensToRevoke := 0
-	err = r.db.Transaction(func(tx *core.Tx) error {
+	err = r.transactWrite(ctx, func(tx core.TransactionBuilder) error {
 		now := time.Now().Unix()
 
-		for _, token := range tokens {
-			if !token.Revoked {
+		for i := range tokens {
+			if !tokens[i].Revoked {
 				tokensToRevoke++
-				token.Revoked = true
-				token.RevokedReason = reason
-				token.LastUsedAt = now
-
-				if err := tx.Model(&token).Update(); err != nil {
-					return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, token.Token)
-				}
+				tokens[i].Revoked = true
+				tokens[i].RevokedReason = reason
+				tokens[i].LastUsedAt = now
+				tx.Update(&tokens[i], []string{"Revoked", "RevokedReason", "LastUsedAt"})
 			}
 		}
 

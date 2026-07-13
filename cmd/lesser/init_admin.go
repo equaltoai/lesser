@@ -28,10 +28,10 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/theory-cloud/tabletheory"
-	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
-	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
-	"github.com/theory-cloud/tabletheory/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2"
+	theorydb "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 )
 
 type initAdminArgs struct {

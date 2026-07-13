@@ -14,8 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/pkg/core"
-	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 )
 
 // RepositoryTestCase defines a test case for repository testing
@@ -325,17 +325,17 @@ func TestQuery(t *testing.T, queryFunc func(context.Context, string, int, string
 }
 
 // TestTransaction tests repository transaction operations
-func TestTransaction(t *testing.T, txFunc func(context.Context, func(core.Tx) error) error) {
+func TestTransaction(t *testing.T, txFunc func(context.Context, func(core.TransactionBuilder) error) error) {
 	suite := NewRepositoryTestSuite(t)
 
 	testCases := []RepositoryTestCase{
 		{
 			Name: "Successful transaction",
 			SetupFunc: func(db *mocks.MockDB) {
-				db.On("Transaction", mock.Anything).Return(nil)
+				db.On("TransactWrite", mock.Anything, mock.Anything).Return(nil)
 			},
 			TestFunc: func(ctx context.Context) error {
-				return txFunc(ctx, func(_ core.Tx) error {
+				return txFunc(ctx, func(_ core.TransactionBuilder) error {
 					return nil // Simplified for test
 				})
 			},
@@ -344,10 +344,10 @@ func TestTransaction(t *testing.T, txFunc func(context.Context, func(core.Tx) er
 		{
 			Name: "Transaction rollback on error",
 			SetupFunc: func(db *mocks.MockDB) {
-				db.On("Transaction", mock.Anything).Return(fmt.Errorf("transaction failed"))
+				db.On("TransactWrite", mock.Anything, mock.Anything).Return(fmt.Errorf("transaction failed"))
 			},
 			TestFunc: func(ctx context.Context) error {
-				return txFunc(ctx, func(_ core.Tx) error {
+				return txFunc(ctx, func(_ core.TransactionBuilder) error {
 					return fmt.Errorf("put error")
 				})
 			},
