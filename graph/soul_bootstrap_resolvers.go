@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -2080,7 +2081,7 @@ func upsertSoulBootstrapCheckpoint(existing []workflow.SoulBootstrapSigningCheck
 	if name == "" {
 		return existing
 	}
-	out := make([]workflow.SoulBootstrapSigningCheckpoint, 0, len(existing)+1)
+	out := make([]workflow.SoulBootstrapSigningCheckpoint, 0, soulBootstrapCheckpointUpsertCapacity(existing))
 	replaced := false
 	for _, checkpoint := range existing {
 		if strings.EqualFold(strings.TrimSpace(checkpoint.Name), name) {
@@ -2094,6 +2095,14 @@ func upsertSoulBootstrapCheckpoint(existing []workflow.SoulBootstrapSigningCheck
 		out = append(out, next)
 	}
 	return out
+}
+
+func soulBootstrapCheckpointUpsertCapacity(existing []workflow.SoulBootstrapSigningCheckpoint) int {
+	capacity := len(existing)
+	if capacity < math.MaxInt {
+		capacity++
+	}
+	return capacity
 }
 
 func mergeSoulBootstrapCheckpoint(existing workflow.SoulBootstrapSigningCheckpoint, next workflow.SoulBootstrapSigningCheckpoint) workflow.SoulBootstrapSigningCheckpoint {
