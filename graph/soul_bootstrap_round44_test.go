@@ -685,6 +685,131 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 	require.Equal(t, soulBootstrapCheckpointHostedConversation, storedWorkflow.SoulBootstrap.SigningCheckpoints[0].Name)
 }
 
+func TestRound44DroneWorkflowSurfacesRepairHostedRefreshStateFromHost(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(context.Context, *Resolver, string) (*model.AgentWorkflowSurface, error)
+	}{
+		{
+			name: "query droneWorkflow",
+			call: func(ctx context.Context, resolver *Resolver, username string) (*model.AgentWorkflowSurface, error) {
+				return (&queryResolver{resolver}).DroneWorkflow(ctx, username)
+			},
+		},
+		{
+			name: "agent workflow field",
+			call: func(ctx context.Context, resolver *Resolver, username string) (*model.AgentWorkflowSurface, error) {
+				return (&agentResolver{resolver}).Workflow(ctx, &model.Agent{Username: username})
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			resolver, storageRepo := newRound12GraphResolver(t)
+			now := time.Date(2026, 7, 14, 5, 30, 0, 0, time.UTC)
+			completedAt := now.Add(-30 * time.Second)
+			validDeclaration := `{"selfDescription":{"summary":"accepted by host"},"capabilities":[],"boundaries":[],"transparency":{"source":"host_read"}}`
+			readCalls := 0
+
+			resolver.soulsClient = &stubSoulService{
+				readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+					readCalls++
+					require.Equal(t, "reg_pending", input.RegistrationID)
+					require.Equal(t, "conv_pending", input.ConversationID)
+					return &soulservice.BootstrapConversationCompleteResult{
+						RegistrationID:       "reg_pending",
+						HostSoulAgentID:      "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+						ConversationID:       "conv_pending",
+						Status:               "declaration_ready",
+						ProducedDeclarations: validDeclaration,
+						CompletedAt:          &completedAt,
+						HostRequestID:        "host-req-accepted-declarations",
+						MessageCount:         18,
+						MessagesTruncated:    false,
+						LatestTurnID:         "turn-final",
+					}, nil
+				},
+			}
+
+			metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+				SoulBootstrap: &workflow.SoulBootstrapState{
+					Username:           "drone-pending",
+					BodyID:             "drone-pending",
+					HostRegistrationID: "reg_pending",
+					HostConversationID: "conv_pending",
+					HostSoulAgentID:    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					BootstrapMode:      workflow.SoulBootstrapModeHosted,
+					AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+					AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+					AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+					Phase:              workflow.SoulBootstrapPhaseConversation,
+					State:              workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
+					NextAction:         workflow.SoulBootstrapNextActionRefreshState,
+					RecoveryCategory:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
+					RecoveryAction:     workflow.SoulBootstrapRecoveryActionRefreshState,
+					HostedConversation: &workflow.SoulBootstrapHostedConversation{
+						RegistrationID: "reg_pending",
+						ConversationID: "conv_pending",
+						Status:         workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending,
+						MessageCount:   18,
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    "owner",
+				DisplayName: "Owner",
+				Approved:    true,
+				CreatedAt:   now.Add(-48 * time.Hour),
+				UpdatedAt:   now.Add(-24 * time.Hour),
+			}, nil)
+			round13SeedGraphUser(t, storageRepo, &storage.User{
+				Username:    "drone-pending",
+				DisplayName: "Drone Pending",
+				Approved:    true,
+				IsAgent:     true,
+				AgentOwner:  "@owner",
+				Metadata:    metadata,
+				CreatedAt:   now.Add(-24 * time.Hour),
+				UpdatedAt:   now,
+			}, &storage.AgentGovernanceState{
+				Username:        "drone-pending",
+				DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+			})
+
+			surface, err := tc.call(round13DroneAuthContext("owner", auth.ScopeRead), resolver, "drone-pending")
+			require.NoError(t, err)
+			require.Equal(t, 1, readCalls)
+			require.NotNil(t, surface)
+			require.NotNil(t, surface.SoulBootstrap)
+			require.Nil(t, surface.SoulBootstrap.Error)
+			require.Equal(t, model.SoulBootstrapPhaseFinalize, surface.SoulBootstrap.Phase)
+			require.Equal(t, workflow.SoulBootstrapStateConversationDeclarationReady, surface.SoulBootstrap.State)
+			require.Equal(t, model.SoulBootstrapNextActionPublishHostedSoul, surface.SoulBootstrap.TypedNextAction)
+			require.NotNil(t, surface.SoulBootstrap.HostedGenesisConversation)
+			require.Equal(t, workflow.SoulBootstrapHostConversationStatusDeclarationReady, surface.SoulBootstrap.HostedGenesisConversation.Status)
+			require.Len(t, surface.SoulBootstrap.SigningCheckpoints, 1)
+			checkpoint := surface.SoulBootstrap.SigningCheckpoints[0]
+			require.Equal(t, soulBootstrapCheckpointHostedConversation, checkpoint.Name)
+			require.Equal(t, "declaration_ready", checkpoint.Status)
+			require.Contains(t, derefString(checkpoint.CanonicalJSON), `"conversation_id":"conv_pending"`)
+			require.Equal(t, "host-req-accepted-declarations", derefString(checkpoint.HostRequestID))
+
+			storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-pending")
+			require.NoError(t, err)
+			storedWorkflow, err := workflow.ParseDroneWorkflowMetadata(storedUser.Metadata)
+			require.NoError(t, err)
+			require.NotNil(t, storedWorkflow.SoulBootstrap)
+			require.Equal(t, workflow.SoulBootstrapPhaseFinalize, storedWorkflow.SoulBootstrap.Phase)
+			require.Equal(t, workflow.SoulBootstrapNextActionPublishHostedSoul, storedWorkflow.SoulBootstrap.NextAction)
+			require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 1)
+		})
+	}
+}
+
 func TestRound44CompleteHostedSoulGenesisConflictRecoveryFailuresDoNotRefreshLoop(t *testing.T) {
 	tests := []struct {
 		name             string

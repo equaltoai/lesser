@@ -106,7 +106,7 @@ func TestResolveContractAuthModeUsesPublicSurfaceFailClosed(t *testing.T) {
 		{
 			name:   "guardless api route outside public surface is bearer required",
 			method: methodGET,
-			path:   "/api/v1/agents",
+			path:   "/api/v1/notifications",
 			lambda: lambdaAPI,
 			want:   authModeBearerRequired,
 		},

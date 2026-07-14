@@ -9279,6 +9279,34 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /api/v1/accounts/{id}:
+        get:
+            operationId: get_api_v1_accounts_by_id
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAccountLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/block:
         post:
             operationId: post_api_v1_accounts_by_id_block
@@ -9837,6 +9865,26 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write
+    /api/v1/accounts/lookup:
+        get:
+            operationId: get_api_v1_accounts_lookup
+            tags:
+                - accounts
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAccountLookupLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/accounts/quote_permissions:
         put:
             operationId: put_api_v1_accounts_quote_permissions
@@ -12353,8 +12401,6 @@ paths:
             operationId: get_api_v1_agents
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             responses:
                 "200":
                     description: OK
@@ -12374,17 +12420,11 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - admin
-                - admin:all
-                - admin:write
     /api/v1/agents/{username}:
         get:
             operationId: get_api_v1_agents_by_username
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -12412,10 +12452,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - admin
-                - admin:all
-                - admin:write
         patch:
             operationId: patch_api_v1_agents_by_username
             tags:
@@ -12589,8 +12625,6 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_renew_challenge
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12625,8 +12659,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/revoke:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_revoke
@@ -12684,8 +12716,6 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12725,15 +12755,11 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key_challenge
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12773,15 +12799,11 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/{username}/access-leases/{leaseID}/token:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_token
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: leaseID
                   in: path
@@ -12821,8 +12843,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/{username}/access-leases/challenge/agent:
         post:
             operationId: post_api_v1_agents_by_username_access_leases_challenge_agent
@@ -13166,8 +13186,6 @@ paths:
             operationId: post_api_v1_agents_auth_challenge
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13194,15 +13212,11 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/auth/token:
         post:
             operationId: post_api_v1_agents_auth_token
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13229,8 +13243,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/delegate:
         post:
             operationId: post_api_v1_agents_delegate
@@ -13339,8 +13351,6 @@ paths:
             description: Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13368,16 +13378,12 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/register/challenge:
         post:
             operationId: post_api_v1_agents_register_challenge
             description: Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -13405,8 +13411,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements

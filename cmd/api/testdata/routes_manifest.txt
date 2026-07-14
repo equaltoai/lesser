@@ -27,10 +27,12 @@ GET /.well-known/nodeinfo
 GET /.well-known/oauth-authorization-server
 GET /.well-known/reputation-keys
 GET /api/oembed
+GET /api/v1/accounts/lookup
 GET /api/v1/accounts/relationships
 GET /api/v1/accounts/search
 GET /api/v1/accounts/search/suggestions
 GET /api/v1/accounts/verify_credentials
+GET /api/v1/accounts/{id}
 GET /api/v1/accounts/{id}/followers
 GET /api/v1/accounts/{id}/following
 GET /api/v1/accounts/{id}/notes

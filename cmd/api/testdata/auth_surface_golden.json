@@ -63,6 +63,13 @@
     "verdict": "agree"
   },
   {
+    "method": "GET",
+    "path": "/api/v1/accounts/lookup",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
     "method": "PUT",
     "path": "/api/v1/accounts/quote_permissions",
     "runtimePosture": "auth-required",
@@ -102,6 +109,13 @@
     "path": "/api/v1/accounts/verify_credentials",
     "runtimePosture": "auth-required",
     "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{id}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
@@ -611,22 +625,22 @@
   {
     "method": "GET",
     "path": "/api/v1/agents",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/auth/challenge",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/auth/token",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
@@ -653,15 +667,15 @@
   {
     "method": "POST",
     "path": "/api/v1/agents/register",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/register/challenge",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
@@ -674,8 +688,8 @@
   {
     "method": "GET",
     "path": "/api/v1/agents/{username}",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
@@ -716,8 +730,8 @@
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
@@ -730,22 +744,22 @@
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/access-leases/{leaseID}/token",
-    "runtimePosture": "auth-required",
-    "openapiSecurity": "required",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
     "verdict": "agree"
   },
   {
