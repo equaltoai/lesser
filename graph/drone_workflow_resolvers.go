@@ -57,6 +57,9 @@ func (r *agentResolver) Workflow(ctx context.Context, obj *model.Agent) (*model.
 	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
 		return nil, nil
 	}
+	if err := r.reconcileHostedSoulBootstrapState(ctx, claims.Username, agentUser, workflowState); err != nil {
+		return nil, err
+	}
 	surface, _, err := r.buildDroneWorkflowSurface(ctx, claims.Username, agentUser, governance)
 	return surface, err
 }
@@ -145,6 +148,9 @@ func (r *queryResolver) DroneWorkflow(ctx context.Context, username string) (*mo
 	}
 	if !r.canAccessDroneReviewWorkflow(ctx, claims, agentUser, workflowState) {
 		return nil, apperrors.Forbidden("not authorized to view drone workflow")
+	}
+	if err := r.reconcileHostedSoulBootstrapState(ctx, claims.Username, agentUser, workflowState); err != nil {
+		return nil, err
 	}
 	surface, _, err := r.buildDroneWorkflowSurface(ctx, claims.Username, agentUser, governance)
 	return surface, err

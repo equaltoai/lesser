@@ -21,6 +21,14 @@ const (
 	RuleMatchStatusRead RuleMatch = "status_read"
 	// RuleMatchAccountContent matches public account statuses/notes reads.
 	RuleMatchAccountContent RuleMatch = "account_content"
+	// RuleMatchSingleSegment matches a prefix followed by exactly one path
+	// segment. It is used for public profile/detail routes without opening
+	// sibling collection or credential-management routes under the same prefix.
+	RuleMatchSingleSegment RuleMatch = "single_segment"
+	// RuleMatchAgentAccessLeaseProof matches the agent access-lease proof
+	// exchange routes that are intentionally reachable without an OAuth bearer;
+	// those handlers enforce lease/challenge/signature proof in the request body.
+	RuleMatchAgentAccessLeaseProof RuleMatch = "agent_access_lease_proof"
 	// RuleMatchSkills matches the public skills catalog with one exact exclusion.
 	RuleMatchSkills RuleMatch = "skills_catalog"
 )
@@ -288,6 +296,26 @@ var publicRules = []PublicRule{
 		RequiredContains: []string{"/statuses", "/notes"},
 	},
 	{
+		Methods: []string{http.MethodGet, http.MethodHead},
+		Path:    "/api/v1/accounts/",
+		Match:   RuleMatchSingleSegment,
+		Description: "public account profile lookup by Mastodon id, username, or actor URL; " +
+			"credential/relationship siblings remain private",
+		ExceptExactPaths: []string{
+			"/api/v1/accounts/lookup",
+			"/api/v1/accounts/relationships",
+			"/api/v1/accounts/search",
+			"/api/v1/accounts/verify_credentials",
+			"/api/v1/accounts/quote_permissions",
+		},
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/accounts/lookup",
+		Match:       RuleMatchExact,
+		Description: "Mastodon account lookup by acct handle",
+	},
+	{
 		Methods:     []string{http.MethodGet, http.MethodHead},
 		Path:        "/api/v1/accounts/search",
 		Match:       RuleMatchPrefix,
@@ -329,6 +357,52 @@ var publicRules = []PublicRule{
 		Path:        "/api/v1/accounts",
 		Match:       RuleMatchExact,
 		Description: "account registration with wallet/WebAuthn proof",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/agents",
+		Match:       RuleMatchExact,
+		Description: "public agent directory; private fields are handler-redacted for anonymous viewers",
+	},
+	{
+		Methods: []string{http.MethodGet, http.MethodHead},
+		Path:    "/api/v1/agents/",
+		Match:   RuleMatchSingleSegment,
+		Description: "public agent profile lookup; private fields are handler-redacted for anonymous viewers, " +
+			"management subresources remain private",
+		ExceptExactPaths: []string{
+			"/api/v1/agents/memory",
+		},
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/agents/register/challenge",
+		Match:       RuleMatchExact,
+		Description: "self-sovereign agent registration challenge",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/agents/register",
+		Match:       RuleMatchExact,
+		Description: "self-sovereign agent registration using signed challenge proof",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/agents/auth/challenge",
+		Match:       RuleMatchExact,
+		Description: "self-sovereign agent auth challenge",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/agents/auth/token",
+		Match:       RuleMatchExact,
+		Description: "self-sovereign agent token exchange using signed challenge proof",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/agents/",
+		Match:       RuleMatchAgentAccessLeaseProof,
+		Description: "agent access-lease session and renewal proof exchanges; handlers enforce lease/challenge signatures",
 	},
 	{
 		Methods:     []string{http.MethodPost},
@@ -568,6 +642,13 @@ func (rule PublicRule) matches(method, path string) bool {
 			}
 		}
 		return false
+	case RuleMatchSingleSegment:
+		if rule.excludes(path) {
+			return false
+		}
+		return hasExactlyOneSegmentAfterPrefix(path, rule.Path)
+	case RuleMatchAgentAccessLeaseProof:
+		return matchesAgentAccessLeaseProofPath(path)
 	case RuleMatchSkills:
 		if path != rule.Path && !strings.HasPrefix(path, rule.Path+"/") {
 			return false
@@ -581,6 +662,15 @@ func (rule PublicRule) matches(method, path string) bool {
 	default:
 		return false
 	}
+}
+
+func (rule PublicRule) excludes(path string) bool {
+	for _, excluded := range rule.ExceptExactPaths {
+		if path == excluded {
+			return true
+		}
+	}
+	return false
 }
 
 func (rule PublicRule) matchesMethod(method string) bool {
@@ -607,4 +697,49 @@ func normalizeContractPath(path string) string {
 		path = strings.TrimSuffix(path, "/")
 	}
 	return path
+}
+
+func hasExactlyOneSegmentAfterPrefix(path, prefix string) bool {
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	return rest != "" && !strings.Contains(rest, "/")
+}
+
+func matchesAgentAccessLeaseProofPath(path string) bool {
+	const prefix = "/api/v1/agents/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+
+	segments := splitNonEmpty(strings.TrimPrefix(path, prefix))
+	if len(segments) < 4 || segments[1] != "access-leases" {
+		return false
+	}
+
+	switch {
+	case len(segments) == 4 && segments[3] == "session-key":
+		return true
+	case len(segments) == 4 && segments[3] == "token":
+		return true
+	case len(segments) == 5 && segments[3] == "session-key" && segments[4] == "challenge":
+		return true
+	case len(segments) == 5 && segments[3] == "renew" && segments[4] == "challenge":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitNonEmpty(path string) []string {
+	raw := strings.Split(path, "/")
+	out := make([]string, 0, len(raw))
+	for _, segment := range raw {
+		segment = strings.TrimSpace(segment)
+		if segment != "" {
+			out = append(out, segment)
+		}
+	}
+	return out
 }
