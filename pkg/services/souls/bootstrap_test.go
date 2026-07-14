@@ -1132,6 +1132,31 @@ func TestProject51CompleteResultFromMessageResultCarriesRecoveryTruth(t *testing
 	require.Equal(t, "operator_action", got.FailureRecoveryAction)
 }
 
+func TestProject51DeclarationEvidenceEnvelopeAcceptsHostMessageCountDrift(t *testing.T) {
+	t.Parallel()
+
+	const conversationID = "conv_01jzhostedgenesis"
+	raw := project51HostConversationFixture(t, "hosted-genesis.conversation.completed-declaration-ready.example.json")
+
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(raw, &envelope))
+	conversation := envelope["conversation"].(map[string]any)
+	produced := conversation["produced_declarations"].(map[string]any)
+	evidence := produced["evidence"].(map[string]any)
+
+	conversation["message_count"] = float64(10)
+	evidence["message_count"] = float64(11)
+
+	encoded, err := json.Marshal(envelope)
+	require.NoError(t, err)
+	out, version, err := parseHostConversationResponseEnvelope(encoded, "host-req-test")
+	require.NoError(t, err)
+	require.Equal(t, hostBootstrapVersion1, version)
+	result := bootstrapConversationCompleteResultFromHost("reg_01jzhostedgenesis", out, hostConversationRequestID("host-req-test", out.RequestID))
+
+	require.NoError(t, ValidateHostedBootstrapCompletionEvidence(result, conversationID))
+}
+
 func TestProject51DeclarationEvidenceEnvelopeFailsClosed(t *testing.T) {
 	t.Parallel()
 

@@ -23,9 +23,9 @@ const (
 	hostBootstrapEncodingHexBytes    = "hex_bytes"
 	hostBootstrapVersion1            = "1"
 
-	hostConversationStatusDeclarationReady = "declaration_ready"
-	hostConversationMessageRoleUser        = "user"
-	hostConversationMessageRoleAssistant   = "assistant"
+	hostConversationStatusDeclarationReady  = "declaration_ready"
+	hostConversationMessageRoleUser         = "user"
+	hostConversationMessageRoleAssistant    = "assistant"
 	hostedGenesisConversationListMaxResults = 50
 
 	// SoulAuthorityModelWalletPrincipal is Host's wallet/principal authority model.
@@ -211,13 +211,13 @@ type BootstrapConversationMessage struct {
 // conversation for the genesis conversation list query. It carries no
 // transcript messages, signing material, or Host credentials.
 type HostedGenesisConversationSummary struct {
-	ConversationID  string
-	RegistrationID  string
-	Status          string
-	MessageCount    int
-	LatestTurnID    string
-	CreatedAt       *time.Time
-	UpdatedAt       *time.Time
+	ConversationID string
+	RegistrationID string
+	Status         string
+	MessageCount   int
+	LatestTurnID   string
+	CreatedAt      *time.Time
+	UpdatedAt      *time.Time
 }
 
 // BootstrapConversationCompleteInput is the Lesser-local request for completing
@@ -815,13 +815,13 @@ func (s *Service) ListHostedGenesisConversations(ctx context.Context, agentID st
 	summaries := make([]HostedGenesisConversationSummary, 0, len(listResp.Conversations))
 	for _, conv := range listResp.Conversations {
 		summaries = append(summaries, HostedGenesisConversationSummary{
-			ConversationID:  strings.TrimSpace(conv.ConversationID),
-			RegistrationID:  strings.TrimSpace(conv.RegistrationID),
-			Status:          NormalizeHostedBootstrapConversationStatus(conv.Status),
-			MessageCount:    conv.MessageCount,
-			LatestTurnID:    strings.TrimSpace(conv.LatestTurnID),
-			CreatedAt:       parseHostTimePtr(conv.CreatedAt),
-			UpdatedAt:       parseHostTimePtr(conv.UpdatedAt),
+			ConversationID: strings.TrimSpace(conv.ConversationID),
+			RegistrationID: strings.TrimSpace(conv.RegistrationID),
+			Status:         NormalizeHostedBootstrapConversationStatus(conv.Status),
+			MessageCount:   conv.MessageCount,
+			LatestTurnID:   strings.TrimSpace(conv.LatestTurnID),
+			CreatedAt:      parseHostTimePtr(conv.CreatedAt),
+			UpdatedAt:      parseHostTimePtr(conv.UpdatedAt),
 		})
 	}
 
@@ -1951,9 +1951,11 @@ func validateHostedProducedDeclarationsEnvelope(envelope hostProducedDeclaration
 	if expected := strings.ToLower(strings.TrimSpace(context.AgentID)); expected != "" && strings.ToLower(strings.TrimSpace(envelope.Evidence.AgentID)) != expected {
 		return hostBootstrapInvalidResponse("Host complete response declaration evidence agent id does not match the requested agent.", hostRequestID)
 	}
-	if context.MessageCount > 0 && envelope.Evidence.MessageCount != context.MessageCount {
-		return hostBootstrapInvalidResponse("Host complete response declaration evidence message count does not match the conversation snapshot.", hostRequestID)
-	}
+	// Host's declaration evidence is the terminal authority for the produced
+	// declaration, while conversation message_count is snapshot bookkeeping. The
+	// binding-critical fields above (registration, conversation, agent, request)
+	// must match exactly; do not strand a completed hosted genesis because Host's
+	// transcript count and declaration-evidence count drift by an internal turn.
 	if expected := strings.TrimSpace(context.RequestID); expected != "" && strings.TrimSpace(envelope.Evidence.RequestID) != expected {
 		return hostBootstrapInvalidResponse("Host complete response declaration evidence request id does not match the conversation snapshot.", hostRequestID)
 	}
