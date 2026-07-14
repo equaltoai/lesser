@@ -127,6 +127,12 @@ routes:
       graphql:
         - Mutation.updateAccountQuotePermissions
     - method: GET
+      path: /api/v1/accounts/lookup
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.actor
+    - method: GET
       path: /api/v1/accounts/relationships
       policy: graphql_required
       status: covered
@@ -156,6 +162,12 @@ routes:
       status: covered
       graphql:
         - Query.viewer
+    - method: GET
+      path: /api/v1/accounts/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.actor
     - method: POST
       path: /api/v1/accounts/{id}/block
       policy: graphql_required
