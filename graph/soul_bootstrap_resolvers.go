@@ -757,6 +757,15 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 	state := workflow.NormalizeSoulBootstrap(workflowState.SoulBootstrap, agentUser.Username)
 	if !soulBootstrapShouldReadRepairHostedState(state) {
 		now := time.Now().UTC()
+		if publishedState, handled := r.autoPublishHostedSoulBootstrap(ctx, agentUser, state, state.Correlation, now); handled {
+			workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(publishedState, agentUser.Username)
+			applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
+			workflowState.UpdatedAt = &now
+			if err := r.persistDroneWorkflowState(ctx, agentUser, workflowState); err != nil {
+				return apperrors.InternalWithCause(err, "failed to persist hosted soul publication state")
+			}
+			return nil
+		}
 		if recoveryState, handled := soulBootstrapHostedGenesisMessageRetryState(agentUser, state, state.Correlation, now); handled {
 			workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(recoveryState, agentUser.Username)
 			applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
@@ -781,6 +790,9 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 
 	now := time.Now().UTC()
 	next := soulBootstrapStateAfterHostedConversationComplete(agentUser, state, state.Correlation, result, now)
+	if publishedState := autoPublishHostedSoulBootstrapWithService(ctx, agentUser, service, next, next.Correlation, now); publishedState != nil {
+		next = publishedState
+	}
 	workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(next, agentUser.Username)
 	applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
 	workflowState.UpdatedAt = &now
@@ -788,6 +800,78 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 		return apperrors.InternalWithCause(err, "failed to persist reconciled hosted soul bootstrap state")
 	}
 	return nil
+}
+
+func (r *Resolver) autoPublishHostedSoulBootstrap(
+	ctx context.Context,
+	agentUser *storage.User,
+	state *workflow.SoulBootstrapState,
+	correlation *workflow.SoulBootstrapCorrelationState,
+	now time.Time,
+) (*workflow.SoulBootstrapState, bool) {
+	if !soulBootstrapShouldAutoPublishHostedSoul(state) {
+		return nil, false
+	}
+	service, err := r.soulBootstrapService()
+	if err != nil {
+		return nil, false
+	}
+	return autoPublishHostedSoulBootstrapWithService(ctx, agentUser, service, state, correlation, now), true
+}
+
+func autoPublishHostedSoulBootstrapWithService(
+	ctx context.Context,
+	agentUser *storage.User,
+	service soulBootstrapHostService,
+	state *workflow.SoulBootstrapState,
+	correlation *workflow.SoulBootstrapCorrelationState,
+	now time.Time,
+) *workflow.SoulBootstrapState {
+	if !soulBootstrapShouldAutoPublishHostedSoul(state) {
+		return nil
+	}
+	registrationID, err := soulBootstrapRegistrationID(state, nil)
+	if err != nil {
+		return soulBootstrapErrorState(agentUser, state, correlation, err, now)
+	}
+	conversationID, err := soulBootstrapRequiredConversationID(state, "")
+	if err != nil {
+		return soulBootstrapErrorState(agentUser, state, correlation, err, now)
+	}
+	if err := soulBootstrapRequireHostedPublishEvidence(state, conversationID); err != nil {
+		return soulBootstrapErrorState(agentUser, state, correlation, err, now)
+	}
+	result, err := service.PublishHostedBootstrap(ctx, soulservice.HostedBootstrapPublishInput{
+		RegistrationID: registrationID,
+		ConversationID: conversationID,
+		LocalID:        soulBootstrapHostLocalID(agentUser),
+	})
+	if err != nil {
+		return soulBootstrapErrorState(agentUser, state, correlation, err, now)
+	}
+	published := soulBootstrapStateAfterHostedPublish(agentUser, state, correlation, result, now)
+	soul, err := service.BindHostedBootstrap(ctx, agentUser.Username, result)
+	if err != nil {
+		return soulBootstrapErrorState(agentUser, published, correlation, err, now)
+	}
+	return soulBootstrapStateAfterHostedBinding(agentUser, published, correlation, soul, result, now)
+}
+
+func soulBootstrapShouldAutoPublishHostedSoul(state *workflow.SoulBootstrapState) bool {
+	state = workflow.NormalizeSoulBootstrap(state, "")
+	if state == nil || state.BootstrapMode != workflow.SoulBootstrapModeHosted {
+		return false
+	}
+	if state.Error != nil || state.Phase == workflow.SoulBootstrapPhaseComplete || state.State == workflow.SoulBootstrapStateCompleteBound {
+		return false
+	}
+	if strings.TrimSpace(state.HostRegistrationID) == "" || strings.TrimSpace(state.HostConversationID) == "" {
+		return false
+	}
+	if state.Publication != nil && state.Publication.PublishedVersion > 0 {
+		return false
+	}
+	return soulBootstrapStateHasActiveTerminalDeclarationEvidence(state)
 }
 
 func soulBootstrapShouldReadRepairHostedState(state *workflow.SoulBootstrapState) bool {
