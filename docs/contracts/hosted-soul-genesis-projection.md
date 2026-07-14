@@ -61,7 +61,9 @@ M5 locks these Lesser-side producer rules:
 3. Publish/finalize readiness requires `status=declaration_ready` plus active-conversation Host declaration evidence.
    The Host `produced_declarations` envelope is validated for `source=host_conversation`, registration id,
    conversation id, agent id, message count, request id, declaration id/hash, produced timestamp, and declaration
-   shape before Lesser stores a compact declaration checkpoint.
+   shape before Lesser stores a compact declaration checkpoint. For hosted instance-trust genesis, Lesser then drives
+   the guarded Host publish + local soul/body bind path from that terminal evidence; it must not strand a valid
+   declaration at `PUBLISH_HOSTED_SOUL` when no extra user proof is required.
 4. Browser-visible GraphQL state remains sanitized: no Host bearer tokens, Instance API keys, raw Host routes,
    MicroVM endpoints/tokens, provider keys/responses, wallet signatures, SSM values, raw transcripts, or raw provider
    responses are exposed.
@@ -105,7 +107,9 @@ M1.2 also locks the compact M3 names that client adapters can prepare for withou
 1. `in_progress` is progress: it never maps to `HOST_RESPONSE_INVALID`, `error.host_unavailable`, or `ERROR`.
 2. Whenever Host supplies `conversation_id`, Lesser persists `host_conversation_id` before returning any next action.
 3. Every response has exactly one server-authored `typedNextAction`; UI clients do not infer hidden Host state.
-4. `PUBLISH_HOSTED_SOUL` is impossible without active-conversation terminal declaration evidence.
+4. `PUBLISH_HOSTED_SOUL` is impossible without active-conversation terminal declaration evidence. Hosted instance-trust
+   refresh/complete paths should immediately consume that evidence to publish and bind; the explicit action remains a
+   guarded retry/compatibility entry point, not the normal terminal state.
 5. Recovery is typed and bounded: refresh/poll, retry same step, restart with supersession ids, or operator action.
 6. Restart creates a new attempt and records superseded Host ids; it does not mutate historical Host state.
 7. HTTP status is transport state only. `200`/`202` is not terminal success without explicit Host status + evidence.
@@ -122,7 +126,7 @@ The machine-readable fixture with full examples for every row is checked in at
 | `in_progress` | `CONVERSATION` | `conversation.in_progress` | `REFRESH_STATE` or `SEND_HOSTED_SOUL_GENESIS_MESSAGE` | `REFRESH_STATE` | poll via `REFRESH_STATE` | registration id, soul agent id, and conversation id required; conversation id persists early | absent | blocked: conversation in progress |
 | `assistant_turn_ready` | `CONVERSATION` | `conversation.assistant_turn_ready` | `SEND_HOSTED_SOUL_GENESIS_MESSAGE` or `COMPLETE_HOSTED_SOUL_GENESIS` | `COMPLETE_HOSTED_SOUL_GENESIS` | - | registration id, soul agent id, and conversation id required | absent | blocked: terminal declaration evidence absent |
 | `declaration_extraction_pending` | `CONVERSATION` | `conversation.declaration_extraction_pending` | `REFRESH_STATE` | `REFRESH_STATE` | poll via `REFRESH_STATE` | registration id, soul agent id, and conversation id required | absent | blocked: extraction pending |
-| `declaration_ready` | `FINALIZE` (or `CONVERSATION` while rendering review) | `conversation.declaration_ready` | `PUBLISH_HOSTED_SOUL` | `PUBLISH_HOSTED_SOUL` | - | registration id, soul agent id, and conversation id required | present and bound to active conversation | allowed |
+| `declaration_ready` | `COMPLETE` after guarded auto publish/bind; `FINALIZE` only transiently before publish | `complete.bound` after publish/bind; `conversation.declaration_ready` only transiently before publish | `COMPLETE` after auto publish/bind; explicit `PUBLISH_HOSTED_SOUL` remains a guarded retry/compat action | `COMPLETE` | - | registration id, soul agent id, and conversation id required | present and bound to active conversation | complete after publish/bind |
 | `failed` | `ERROR` | `error.host_failed` | `RETRY_SAME_STEP` or `RESTART_SOUL_BOOTSTRAP` | `RETRY_SAME_STEP` | typed/bounded | ids preserved if Host supplied them; restart records superseded ids | absent | blocked: Host failure |
 | `published` / `bound` (published/bound) | `COMPLETE` | `complete.bound` | `COMPLETE` | `COMPLETE` | - | active ids retained for diagnosis | terminal evidence retained | complete: already published and bound |
 
@@ -216,21 +220,26 @@ correlation/request ids, evidence payloads, and publication evidence.
 
 ### declaration_ready
 
+For hosted instance-trust genesis, `declaration_ready` is terminal evidence that Lesser immediately consumes through the
+Host publish route and local soul/body binding. A `PUBLISH_HOSTED_SOUL` state may exist only transiently or as an explicit
+retry/compatibility path; the normal refreshed projection is complete and bound.
+
 ```json
 {
   "hostRegistrationId": "hreg_example_001",
   "hostSoulAgentId": "hsoul_example_001",
   "hostConversationId": "hconv_example_001",
-  "phase": "FINALIZE",
-  "state": "conversation.declaration_ready",
-  "typedNextAction": "PUBLISH_HOSTED_SOUL",
+  "phase": "COMPLETE",
+  "state": "complete.bound",
+  "typedNextAction": "COMPLETE",
   "terminalDeclarationEvidence": {
     "conversationId": "hconv_example_001",
     "hostStatus": "declaration_ready",
     "hostRequestId": "host-req-complete-002",
     "declarationsHash": "sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001"
   },
-  "publishGate": { "canPublishHostedSoul": true, "reason": "allowed:active_conversation_terminal_declaration_evidence" }
+  "publication": { "agentId": "hsoul_example_001", "publishedVersion": 1, "authorityModel": "INSTANCE_TRUST" },
+  "publishGate": { "canPublishHostedSoul": false, "reason": "complete:already_published_bound" }
 }
 ```
 
