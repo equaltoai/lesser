@@ -65,7 +65,7 @@ func TestActorRepository_more_error_branches(t *testing.T) {
 		m.SK = "PROFILE"
 		m.Actor = &activitypub.Actor{}
 	}).Once()
-	mockQuery.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
+	expectActorLastStatusUpdateBuilder(mockQuery, errors.New("update failed"))
 	assert.Error(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 
 	// SetActorFields update failure path
