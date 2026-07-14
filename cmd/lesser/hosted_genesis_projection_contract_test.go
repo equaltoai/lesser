@@ -210,7 +210,7 @@ func validateHostedGenesisProjectionInvariants(t *testing.T, row hostedGenesisPr
 		require.Equal(t, "present:active_conversation", row.TerminalDeclarationEvidence)
 		require.NotNil(t, state.TerminalDeclarationEvidence)
 		require.Equal(t, derefHostedGenesisString(state.HostConversationID), state.TerminalDeclarationEvidence["conversationId"])
-	} else if row.HostStatus != "published_bound" {
+	} else if row.HostStatus != "published_bound" && row.HostStatus != "declaration_ready" {
 		require.NotContains(t, row.TypedNextActionOptions, "PUBLISH_HOSTED_SOUL")
 		require.False(t, row.Example.LesserGraphQL.PublishGate.CanPublishHostedSoul)
 		require.True(t, strings.HasPrefix(row.PublishGate, "blocked:"), "non-terminal rows must fail closed")
@@ -224,7 +224,7 @@ func validateHostedGenesisProjectionInvariants(t *testing.T, row hostedGenesisPr
 		require.NotContains(t, row.Status, "host_unavailable")
 	}
 
-	if row.HostStatus == "published_bound" {
+	if row.HostStatus == "published_bound" || row.HostStatus == "declaration_ready" {
 		require.Equal(t, "COMPLETE", row.Phase)
 		require.Equal(t, "COMPLETE", row.ExampleTypedNextAction)
 		require.NotNil(t, state.TerminalDeclarationEvidence)
