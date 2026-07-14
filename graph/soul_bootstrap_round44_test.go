@@ -585,8 +585,11 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 	now := time.Date(2026, 6, 18, 1, 30, 0, 0, time.UTC)
 	errorAt := now.Add(-11 * time.Hour)
 	completedAt := now.Add(-3 * time.Hour)
+	publishedAt := now.Add(-2 * time.Hour)
 	validDeclaration := `{"selfDescription":{"summary":"repaired"},"capabilities":[],"boundaries":[],"transparency":{"source":"host_read"}}`
 	readCalls := 0
+	publishCalls := 0
+	bindCalls := 0
 
 	resolver.soulsClient = &stubSoulService{
 		readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
@@ -601,6 +604,53 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 				ProducedDeclarations: validDeclaration,
 				CompletedAt:          &completedAt,
 				HostRequestID:        "host-req-read-repair",
+			}, nil
+		},
+		publishHostedBootstrapFunc: func(_ context.Context, input soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+			publishCalls++
+			require.Equal(t, "reg_stale", input.RegistrationID)
+			require.Equal(t, "conv_stale", input.ConversationID)
+			require.Equal(t, "drone-refresh", input.LocalID)
+			return &soulservice.BootstrapFinalizeResult{
+				Version:                 "1",
+				HostSoulAgentID:         "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				PublishedVersion:        1,
+				AgentDomain:             "example.com",
+				AgentLocalID:            "drone-refresh",
+				AgentAuthorityModel:     "instance_trust",
+				AgentAnchorState:        "hosted_offchain",
+				AgentOperationalBinding: "hosted_bound_soul",
+				AgentStatus:             "active",
+				AgentLifecycleStatus:    "active",
+				Publication: soulservice.BootstrapPublicationEvidence{
+					AgentID:          "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					PublishedVersion: 1,
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedAt:      &publishedAt,
+				},
+				Promotion: soulservice.BootstrapPromotionEvidence{
+					AgentID:          "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					RegistrationID:   "reg_stale",
+					Stage:            "graduated",
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedVersion: 1,
+					GraduatedAt:      &publishedAt,
+				},
+				HostRequestID: "host-req-publish-read-repair",
+			}, nil
+		},
+		bindHostedBootstrapFunc: func(_ context.Context, targetAgentUsername string, result *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+			bindCalls++
+			require.Equal(t, "drone-refresh", targetAgentUsername)
+			require.Equal(t, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", result.HostSoulAgentID)
+			return &soulservice.Soul{
+				AgentID:            result.HostSoulAgentID,
+				Bound:              true,
+				BoundAgentUsername: targetAgentUsername,
+				BoundAt:            publishedAt,
+				BoundUpdatedAt:     publishedAt,
 			}, nil
 		},
 	}
@@ -659,19 +709,23 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 	surface, err := (&queryResolver{resolver}).SoulBootstrap(round13DroneAuthContext("owner", auth.ScopeRead), "drone-refresh")
 	require.NoError(t, err)
 	require.Equal(t, 1, readCalls)
+	require.Equal(t, 1, publishCalls)
+	require.Equal(t, 1, bindCalls)
 	require.NotNil(t, surface)
 	require.Nil(t, surface.Error)
 	require.Nil(t, surface.State.Error)
-	require.Equal(t, model.SoulBootstrapPhaseFinalize, surface.State.Phase)
-	require.Equal(t, workflow.SoulBootstrapStateConversationDeclarationReady, surface.State.State)
-	require.Equal(t, model.SoulBootstrapNextActionPublishHostedSoul, surface.TypedNextAction)
-	require.Len(t, surface.State.SigningCheckpoints, 1)
+	require.Equal(t, model.SoulBootstrapPhaseComplete, surface.State.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateCompleteBound, surface.State.State)
+	require.Equal(t, model.SoulBootstrapNextActionComplete, surface.TypedNextAction)
+	require.NotNil(t, surface.State.Publication)
+	require.Len(t, surface.State.SigningCheckpoints, 2)
 	checkpoint := surface.State.SigningCheckpoints[0]
 	require.Equal(t, soulBootstrapCheckpointHostedConversation, checkpoint.Name)
 	require.Equal(t, "declaration_ready", checkpoint.Status)
 	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"conversation_id":"conv_stale"`)
 	require.Contains(t, derefString(checkpoint.CanonicalJSON), `"selfDescription"`)
 	require.Equal(t, "host-req-read-repair", derefString(checkpoint.HostRequestID))
+	require.Equal(t, "binding", surface.State.SigningCheckpoints[1].Name)
 	require.NotNil(t, surface.Workflow.Declaration)
 
 	storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-refresh")
@@ -680,8 +734,11 @@ func TestRound44SoulBootstrapQueryRepairsHostedRefreshStateFromHost(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, storedWorkflow.SoulBootstrap)
 	require.Nil(t, storedWorkflow.SoulBootstrap.Error)
-	require.Equal(t, workflow.SoulBootstrapNextActionPublishHostedSoul, storedWorkflow.SoulBootstrap.NextAction)
-	require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 1)
+	require.Equal(t, workflow.SoulBootstrapPhaseComplete, storedWorkflow.SoulBootstrap.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateCompleteBound, storedWorkflow.SoulBootstrap.State)
+	require.Equal(t, workflow.SoulBootstrapNextActionComplete, storedWorkflow.SoulBootstrap.NextAction)
+	require.NotNil(t, storedWorkflow.SoulBootstrap.Publication)
+	require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 2)
 	require.Equal(t, soulBootstrapCheckpointHostedConversation, storedWorkflow.SoulBootstrap.SigningCheckpoints[0].Name)
 }
 
@@ -711,7 +768,10 @@ func TestRound44DroneWorkflowSurfacesRepairHostedRefreshStateFromHost(t *testing
 			now := time.Date(2026, 7, 14, 5, 30, 0, 0, time.UTC)
 			completedAt := now.Add(-30 * time.Second)
 			validDeclaration := `{"selfDescription":{"summary":"accepted by host"},"capabilities":[],"boundaries":[],"transparency":{"source":"host_read"}}`
+			publishedAt := now.Add(30 * time.Second)
 			readCalls := 0
+			publishCalls := 0
+			bindCalls := 0
 
 			resolver.soulsClient = &stubSoulService{
 				readBootstrapConversationFunc: func(_ context.Context, input soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
@@ -729,6 +789,53 @@ func TestRound44DroneWorkflowSurfacesRepairHostedRefreshStateFromHost(t *testing
 						MessageCount:         18,
 						MessagesTruncated:    false,
 						LatestTurnID:         "turn-final",
+					}, nil
+				},
+				publishHostedBootstrapFunc: func(_ context.Context, input soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+					publishCalls++
+					require.Equal(t, "reg_pending", input.RegistrationID)
+					require.Equal(t, "conv_pending", input.ConversationID)
+					require.Equal(t, "drone-pending", input.LocalID)
+					return &soulservice.BootstrapFinalizeResult{
+						Version:                 "1",
+						HostSoulAgentID:         "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+						PublishedVersion:        1,
+						AgentDomain:             "example.com",
+						AgentLocalID:            "drone-pending",
+						AgentAuthorityModel:     "instance_trust",
+						AgentAnchorState:        "hosted_offchain",
+						AgentOperationalBinding: "hosted_bound_soul",
+						AgentStatus:             "active",
+						AgentLifecycleStatus:    "active",
+						Publication: soulservice.BootstrapPublicationEvidence{
+							AgentID:          "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+							PublishedVersion: 1,
+							AuthorityModel:   "instance_trust",
+							AnchorState:      "hosted_offchain",
+							PublishedAt:      &publishedAt,
+						},
+						Promotion: soulservice.BootstrapPromotionEvidence{
+							AgentID:          "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+							RegistrationID:   "reg_pending",
+							Stage:            "graduated",
+							AuthorityModel:   "instance_trust",
+							AnchorState:      "hosted_offchain",
+							PublishedVersion: 1,
+							GraduatedAt:      &publishedAt,
+						},
+						HostRequestID: "host-req-hosted-publish",
+					}, nil
+				},
+				bindHostedBootstrapFunc: func(_ context.Context, targetAgentUsername string, result *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+					bindCalls++
+					require.Equal(t, "drone-pending", targetAgentUsername)
+					require.Equal(t, "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", result.HostSoulAgentID)
+					return &soulservice.Soul{
+						AgentID:            result.HostSoulAgentID,
+						Bound:              true,
+						BoundAgentUsername: targetAgentUsername,
+						BoundAt:            publishedAt,
+						BoundUpdatedAt:     publishedAt,
 					}, nil
 				},
 			}
@@ -783,31 +890,177 @@ func TestRound44DroneWorkflowSurfacesRepairHostedRefreshStateFromHost(t *testing
 			surface, err := tc.call(round13DroneAuthContext("owner", auth.ScopeRead), resolver, "drone-pending")
 			require.NoError(t, err)
 			require.Equal(t, 1, readCalls)
+			require.Equal(t, 1, publishCalls)
+			require.Equal(t, 1, bindCalls)
 			require.NotNil(t, surface)
 			require.NotNil(t, surface.SoulBootstrap)
 			require.Nil(t, surface.SoulBootstrap.Error)
-			require.Equal(t, model.SoulBootstrapPhaseFinalize, surface.SoulBootstrap.Phase)
-			require.Equal(t, workflow.SoulBootstrapStateConversationDeclarationReady, surface.SoulBootstrap.State)
-			require.Equal(t, model.SoulBootstrapNextActionPublishHostedSoul, surface.SoulBootstrap.TypedNextAction)
+			require.Equal(t, model.SoulBootstrapPhaseComplete, surface.SoulBootstrap.Phase)
+			require.Equal(t, workflow.SoulBootstrapStateCompleteBound, surface.SoulBootstrap.State)
+			require.Equal(t, model.SoulBootstrapNextActionComplete, surface.SoulBootstrap.TypedNextAction)
 			require.NotNil(t, surface.SoulBootstrap.HostedGenesisConversation)
 			require.Equal(t, workflow.SoulBootstrapHostConversationStatusDeclarationReady, surface.SoulBootstrap.HostedGenesisConversation.Status)
-			require.Len(t, surface.SoulBootstrap.SigningCheckpoints, 1)
+			require.NotNil(t, surface.SoulBootstrap.Publication)
+			require.Len(t, surface.SoulBootstrap.SigningCheckpoints, 2)
 			checkpoint := surface.SoulBootstrap.SigningCheckpoints[0]
 			require.Equal(t, soulBootstrapCheckpointHostedConversation, checkpoint.Name)
 			require.Equal(t, "declaration_ready", checkpoint.Status)
 			require.Contains(t, derefString(checkpoint.CanonicalJSON), `"conversation_id":"conv_pending"`)
 			require.Equal(t, "host-req-accepted-declarations", derefString(checkpoint.HostRequestID))
+			require.Equal(t, "binding", surface.SoulBootstrap.SigningCheckpoints[1].Name)
 
 			storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-pending")
 			require.NoError(t, err)
 			storedWorkflow, err := workflow.ParseDroneWorkflowMetadata(storedUser.Metadata)
 			require.NoError(t, err)
 			require.NotNil(t, storedWorkflow.SoulBootstrap)
-			require.Equal(t, workflow.SoulBootstrapPhaseFinalize, storedWorkflow.SoulBootstrap.Phase)
-			require.Equal(t, workflow.SoulBootstrapNextActionPublishHostedSoul, storedWorkflow.SoulBootstrap.NextAction)
-			require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 1)
+			require.Equal(t, workflow.SoulBootstrapPhaseComplete, storedWorkflow.SoulBootstrap.Phase)
+			require.Equal(t, workflow.SoulBootstrapNextActionComplete, storedWorkflow.SoulBootstrap.NextAction)
+			require.NotNil(t, storedWorkflow.SoulBootstrap.Publication)
+			require.Len(t, storedWorkflow.SoulBootstrap.SigningCheckpoints, 2)
 		})
 	}
+}
+
+func TestRound44DroneWorkflowPublishesExistingHostedDeclarationEvidence(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 7, 14, 6, 10, 0, 0, time.UTC)
+	completedAt := now.Add(-2 * time.Minute)
+	publishedAt := now.Add(15 * time.Second)
+	const agentID = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	validDeclaration := `{"selfDescription":{"summary":"already accepted"},"capabilities":[],"boundaries":[],"transparency":{"source":"stored_checkpoint"}}`
+
+	publishCalls := 0
+	bindCalls := 0
+	resolver.soulsClient = &stubSoulService{
+		readBootstrapConversationFunc: func(context.Context, soulservice.BootstrapConversationCompleteInput) (*soulservice.BootstrapConversationCompleteResult, error) {
+			t.Fatalf("terminal hosted declaration evidence must publish without re-reading Host conversation")
+			return nil, nil
+		},
+		publishHostedBootstrapFunc: func(_ context.Context, input soulservice.HostedBootstrapPublishInput) (*soulservice.BootstrapFinalizeResult, error) {
+			publishCalls++
+			require.Equal(t, "reg_ready", input.RegistrationID)
+			require.Equal(t, "conv_ready", input.ConversationID)
+			require.Equal(t, "drone-ready", input.LocalID)
+			return &soulservice.BootstrapFinalizeResult{
+				Version:                 "1",
+				HostSoulAgentID:         agentID,
+				PublishedVersion:        1,
+				AgentDomain:             "example.com",
+				AgentLocalID:            "drone-ready",
+				AgentAuthorityModel:     "instance_trust",
+				AgentAnchorState:        "hosted_offchain",
+				AgentOperationalBinding: "hosted_bound_soul",
+				AgentStatus:             "active",
+				AgentLifecycleStatus:    "active",
+				Publication: soulservice.BootstrapPublicationEvidence{
+					AgentID:          agentID,
+					PublishedVersion: 1,
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedAt:      &publishedAt,
+				},
+				Promotion: soulservice.BootstrapPromotionEvidence{
+					AgentID:          agentID,
+					RegistrationID:   "reg_ready",
+					Stage:            "graduated",
+					AuthorityModel:   "instance_trust",
+					AnchorState:      "hosted_offchain",
+					PublishedVersion: 1,
+					GraduatedAt:      &publishedAt,
+				},
+				HostRequestID: "host-req-publish-ready",
+			}, nil
+		},
+		bindHostedBootstrapFunc: func(_ context.Context, targetAgentUsername string, result *soulservice.BootstrapFinalizeResult) (*soulservice.Soul, error) {
+			bindCalls++
+			require.Equal(t, "drone-ready", targetAgentUsername)
+			require.Equal(t, agentID, result.HostSoulAgentID)
+			return &soulservice.Soul{
+				AgentID:            agentID,
+				Bound:              true,
+				BoundAgentUsername: targetAgentUsername,
+				BoundAt:            publishedAt,
+				BoundUpdatedAt:     publishedAt,
+			}, nil
+		},
+	}
+
+	metadata, err := workflow.SetDroneWorkflowMetadata(nil, &workflow.DroneWorkflowState{
+		SoulBootstrap: &workflow.SoulBootstrapState{
+			Username:           "drone-ready",
+			BodyID:             "drone-ready",
+			HostRegistrationID: "reg_ready",
+			HostConversationID: "conv_ready",
+			HostSoulAgentID:    agentID,
+			BootstrapMode:      workflow.SoulBootstrapModeHosted,
+			AuthorityModel:     workflow.SoulBootstrapAuthorityModelInstanceTrust,
+			AnchorState:        workflow.SoulBootstrapAnchorStateHostedOffchain,
+			AssuranceState:     workflow.SoulBootstrapAnchorStateHostedOffchain,
+			Phase:              workflow.SoulBootstrapPhaseFinalize,
+			State:              workflow.SoulBootstrapStateConversationDeclarationReady,
+			NextAction:         workflow.SoulBootstrapNextActionPublishHostedSoul,
+			SigningCheckpoints: []workflow.SoulBootstrapSigningCheckpoint{
+				{
+					Name:          soulBootstrapCheckpointHostedConversation,
+					Status:        workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+					CanonicalJSON: hostedTerminalEvidenceCanonicalJSON("conv_ready", workflow.SoulBootstrapHostConversationStatusDeclarationReady, validDeclaration),
+					HostRequestID: "host-req-declaration-ready",
+					CompletedAt:   &completedAt,
+				},
+			},
+			HostedConversation: &workflow.SoulBootstrapHostedConversation{
+				RegistrationID: "reg_ready",
+				ConversationID: "conv_ready",
+				Status:         workflow.SoulBootstrapHostConversationStatusDeclarationReady,
+				MessageCount:   18,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "owner",
+		DisplayName: "Owner",
+		Approved:    true,
+		CreatedAt:   now.Add(-48 * time.Hour),
+		UpdatedAt:   now.Add(-24 * time.Hour),
+	}, nil)
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-ready",
+		DisplayName: "Drone Ready",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		Metadata:    metadata,
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-ready",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	surface, err := (&queryResolver{resolver}).DroneWorkflow(round13DroneAuthContext("owner", auth.ScopeRead), "drone-ready")
+	require.NoError(t, err)
+	require.Equal(t, 1, publishCalls)
+	require.Equal(t, 1, bindCalls)
+	require.NotNil(t, surface)
+	require.NotNil(t, surface.SoulBootstrap)
+	require.Nil(t, surface.SoulBootstrap.Error)
+	require.Equal(t, model.SoulBootstrapPhaseComplete, surface.SoulBootstrap.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateCompleteBound, surface.SoulBootstrap.State)
+	require.Equal(t, model.SoulBootstrapNextActionComplete, surface.SoulBootstrap.TypedNextAction)
+	require.NotNil(t, surface.SoulBootstrap.Publication)
+
+	storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-ready")
+	require.NoError(t, err)
+	storedWorkflow, err := workflow.ParseDroneWorkflowMetadata(storedUser.Metadata)
+	require.NoError(t, err)
+	require.NotNil(t, storedWorkflow.SoulBootstrap)
+	require.Equal(t, workflow.SoulBootstrapPhaseComplete, storedWorkflow.SoulBootstrap.Phase)
+	require.Equal(t, workflow.SoulBootstrapStateCompleteBound, storedWorkflow.SoulBootstrap.State)
+	require.Equal(t, workflow.SoulBootstrapNextActionComplete, storedWorkflow.SoulBootstrap.NextAction)
+	require.NotNil(t, storedWorkflow.SoulBootstrap.Publication)
 }
 
 func TestRound44CompleteHostedSoulGenesisConflictRecoveryFailuresDoNotRefreshLoop(t *testing.T) {

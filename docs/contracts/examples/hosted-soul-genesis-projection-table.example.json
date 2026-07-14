@@ -544,13 +544,13 @@
         "declaration_ready",
         "completed"
       ],
-      "description": "Host has durable produced declarations for the active conversation. This is the first publish-eligible row.",
-      "phase": "FINALIZE",
-      "status": "conversation.declaration_ready",
+      "description": "Host has durable produced declarations for the active conversation; Lesser consumes that evidence through guarded hosted publish and local soul/body binding.",
+      "phase": "COMPLETE",
+      "status": "complete.bound",
       "typed_next_action_options": [
-        "PUBLISH_HOSTED_SOUL"
+        "COMPLETE"
       ],
-      "example_typed_next_action": "PUBLISH_HOSTED_SOUL",
+      "example_typed_next_action": "COMPLETE",
       "recovery": null,
       "host_ids": {
         "host_registration_id": "required:persisted",
@@ -558,8 +558,8 @@
         "host_conversation_id": "required:persist_early_before_returning_next_action"
       },
       "terminal_declaration_evidence": "present:active_conversation",
-      "publication_evidence": "absent",
-      "publish_gate": "allowed:active_conversation_terminal_declaration_evidence",
+      "publication_evidence": "present:hosted_publication",
+      "publish_gate": "complete:already_published_bound",
       "example": {
         "host": {
           "registration_id": "hreg_example_001",
@@ -584,9 +584,9 @@
             "bootstrapMode": "HOSTED",
             "authorityModel": "INSTANCE_TRUST",
             "anchorState": "HOSTED_OFFCHAIN",
-            "phase": "FINALIZE",
-            "state": "conversation.declaration_ready",
-            "typedNextAction": "PUBLISH_HOSTED_SOUL",
+            "phase": "COMPLETE",
+            "state": "complete.bound",
+            "typedNextAction": "COMPLETE",
             "recoveryCategory": null,
             "recoveryAction": null,
             "retryable": false,
@@ -599,6 +599,11 @@
                 "canonicalJson": "{\"conversation_id\":\"hconv_example_001\",\"declarations_hash\":\"sha256:7af7a1c0f7c74c872a3a8a0a3e0af49a4a7c7f1f9b59f6827b1849d5f3f3a001\"}",
                 "hostRequestId": "host-req-complete-002",
                 "completedAt": "2026-06-21T12:00:00Z"
+              },
+              {
+                "name": "binding",
+                "status": "bound",
+                "completedAt": "2026-06-21T12:00:05Z"
               }
             ],
             "terminalDeclarationEvidence": {
@@ -611,7 +616,13 @@
                 "declarationCount": 3
               }
             },
-            "publication": null,
+            "publication": {
+              "agentId": "hsoul_example_001",
+              "publishedVersion": 1,
+              "authorityModel": "INSTANCE_TRUST",
+              "anchorState": "HOSTED_OFFCHAIN",
+              "publishedAt": "2026-06-21T12:00:05Z"
+            },
             "error": null,
             "correlation": {
               "correlationKey": "p49-example-correlation",
@@ -627,8 +638,8 @@
             "lastHostRequestId": "host-req-complete-002"
           },
           "publishGate": {
-            "canPublishHostedSoul": true,
-            "reason": "allowed:active_conversation_terminal_declaration_evidence",
+            "canPublishHostedSoul": false,
+            "reason": "complete:already_published_bound",
             "requiresActiveConversationTerminalDeclarationEvidence": true
           }
         }
