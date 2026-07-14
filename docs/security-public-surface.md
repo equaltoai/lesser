@@ -105,6 +105,8 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | GET/HEAD | prefix | `/api/v1/trust/attestations/` | lesser.host trust-proxy attestation reads |
 | GET/HEAD | status_read | `/api/v1/statuses/` | public status reads; visibility remains handler/service enforced; excludes suffix `/source`, `/favourited_by`, `/reblogged_by` |
 | GET/HEAD | account_content | `/api/v1/accounts/` | public account statuses/notes reads; requires path segment `/statuses`, `/notes` |
+| GET/HEAD | single_segment | `/api/v1/accounts/` | public account profile lookup by Mastodon id, username, or actor URL; credential/relationship siblings remain private; excludes exact `/api/v1/accounts/lookup`, `/api/v1/accounts/relationships`, `/api/v1/accounts/search`, `/api/v1/accounts/verify_credentials`, `/api/v1/accounts/quote_permissions` |
+| GET/HEAD | exact | `/api/v1/accounts/lookup` | Mastodon account lookup by acct handle |
 | GET/HEAD | prefix | `/api/v1/accounts/search` | public account search and suggestions |
 | GET/HEAD | skills_catalog | `/api/v1/skills` | public skills catalog; exact resolver remains private; excludes exact `/api/v1/skills/resolve` |
 | GET/HEAD | prefix | `/api/v1/search/statuses` | public status-search read path; route-level guard may still require OAuth |
@@ -112,6 +114,13 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | POST | exact | `/api/v1/apps` | OAuth app registration |
 | POST | exact | `/oauth/register` | legacy OAuth app registration |
 | POST | exact | `/api/v1/accounts` | account registration with wallet/WebAuthn proof |
+| GET/HEAD | exact | `/api/v1/agents` | public agent directory; private fields are handler-redacted for anonymous viewers |
+| GET/HEAD | single_segment | `/api/v1/agents/` | public agent profile lookup; private fields are handler-redacted for anonymous viewers, management subresources remain private; excludes exact `/api/v1/agents/memory` |
+| POST | exact | `/api/v1/agents/register/challenge` | self-sovereign agent registration challenge |
+| POST | exact | `/api/v1/agents/register` | self-sovereign agent registration using signed challenge proof |
+| POST | exact | `/api/v1/agents/auth/challenge` | self-sovereign agent auth challenge |
+| POST | exact | `/api/v1/agents/auth/token` | self-sovereign agent token exchange using signed challenge proof |
+| POST | agent_access_lease_proof | `/api/v1/agents/` | agent access-lease session and renewal proof exchanges; handlers enforce lease/challenge signatures |
 | POST | exact | `/api/v1/notifications/deliver` | gate-reachable notification delivery; handler enforces internal instance key |
 | POST | exact | `/oauth/token` | OAuth token exchange |
 | POST | exact | `/oauth/revoke` | OAuth token revocation |

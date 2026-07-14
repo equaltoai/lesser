@@ -633,6 +633,12 @@ func configureRoutes(app *apptheory.App) {
 	app.Delete("/api/v1/statuses/{id}/quote/{quote_id}", apiHandler.HandleDeleteQuotePostLift, requireStatusWrite)
 	app.Get("/api/v1/accounts/{id}/quote_permissions", apiHandler.HandleGetQuotePermissionsLift)
 	app.Put("/api/v1/accounts/quote_permissions", apiHandler.HandleUpdateQuotePermissionsLift, requireAccountWrite)
+
+	// Public Mastodon-compatible account lookup endpoints. Keep static routes
+	// before the generic /accounts/{id} route so lookup/search-style paths do
+	// not resolve as account IDs.
+	app.Get("/api/v1/accounts/lookup", apiHandler.HandleAccountLookupLift)
+	app.Get("/api/v1/accounts/{id}", apiHandler.HandleGetAccountLift)
 }
 
 func redirectResponse(url string, permanent bool) *apptheory.Response {
