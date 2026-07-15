@@ -19,6 +19,7 @@ import (
 	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	theoryMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -325,6 +326,7 @@ func TestBuildOAuthClientModel_HashesSecretAndSetsDefaults(t *testing.T) {
 	require.Equal(t, []string{"https://example.com/callback"}, model.RedirectURIs)
 	require.Equal(t, []string{"authorization_code", "refresh_token"}, model.GrantTypes)
 	require.Equal(t, []string{"read", "write", "admin"}, model.Scopes)
+	require.Equal(t, auth.ClientClassOperator, model.ClientClass)
 	require.Equal(t, "owner-1", model.OwnerID)
 	require.True(t, model.Confidential)
 	require.NotEmpty(t, model.PK)

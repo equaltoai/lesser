@@ -24,6 +24,9 @@ func TestNormalizeOAuthClientClass(t *testing.T) {
 	_, err = normalizeOAuthClientClass("agent")
 	require.ErrorContains(t, err, "client_class=agent is not supported for public registration")
 
+	_, err = normalizeOAuthClientClass("operator")
+	require.ErrorContains(t, err, "client_class=operator is not supported for public registration")
+
 	_, err = normalizeOAuthClientClass("nope")
 	require.Error(t, err)
 }
@@ -43,6 +46,9 @@ func TestNormalizePublicOAuthClientClass(t *testing.T) {
 
 	_, err = normalizePublicOAuthClientClass(auth.ClientClassAgent)
 	require.ErrorContains(t, err, "client_class=agent is not supported for public registration")
+
+	_, err = normalizePublicOAuthClientClass(auth.ClientClassOperator)
+	require.ErrorContains(t, err, "client_class=operator is not supported for public registration")
 }
 
 func TestNormalizeOAuthClientGrantTypes(t *testing.T) {

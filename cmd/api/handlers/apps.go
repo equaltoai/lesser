@@ -491,6 +491,8 @@ func normalizeOAuthClientClass(value string) (string, error) {
 		return value, nil
 	case auth.ClientClassAgent:
 		return "", errors.New("client_class=agent is not supported for public registration")
+	case auth.ClientClassOperator:
+		return "", errors.New("client_class=operator is not supported for public registration")
 	default:
 		return "", errors.New("invalid client_class")
 	}

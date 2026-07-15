@@ -1052,6 +1052,73 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, claims.SessionID)
 	})
 
+	t.Run("authorization_code operator client preserves operator marker through refresh", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"operator-client": {
+					ClientID:     "operator-client",
+					ClientSecret: "secret",
+					Name:         "Owner Console",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+					ClientClass:  auth.ClientClassOperator,
+					Confidential: true,
+					OwnerID:      "admin",
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+				"operator-code": {
+					Code:        "operator-code",
+					ClientID:    "operator-client",
+					RedirectURI: "https://example.com/callback",
+					Username:    "admin",
+					ExpiresAt:   time.Now().Add(10 * time.Minute),
+					Scopes:      []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=operator-code&client_id=operator-client&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read write admin", body.Scope)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, "admin", claims.Username)
+		require.Equal(t, "operator-client", claims.ClientID)
+		require.Equal(t, auth.ClientClassOperator, claims.ClientClass)
+		require.Contains(t, claims.Scopes, auth.ScopeAdmin)
+		require.False(t, claims.IsAgent)
+
+		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassOperator, storedRefresh.ClientClass)
+		require.Contains(t, storedRefresh.Scopes, auth.ScopeAdmin)
+
+		ctxRefresh := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(body.RefreshToken)+"&client_id=operator-client&client_secret=secret"))
+		respRefresh := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctxRefresh))
+		var refreshBody apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(respRefresh.Body, &refreshBody))
+		require.NotEmpty(t, refreshBody.AccessToken)
+		require.NotEmpty(t, refreshBody.RefreshToken)
+		require.Equal(t, "read write admin", refreshBody.Scope)
+
+		refreshClaims := round12DecodeJWTClaims(t, refreshBody.AccessToken)
+		require.Equal(t, auth.ClientClassOperator, refreshClaims.ClientClass)
+		require.Contains(t, refreshClaims.Scopes, auth.ScopeAdmin)
+
+		require.NotContains(t, state.refreshTokensByToken, body.RefreshToken)
+		newStoredRefresh, ok := state.refreshTokensByToken[refreshBody.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassOperator, newStoredRefresh.ClientClass)
+		require.Contains(t, newStoredRefresh.Scopes, auth.ScopeAdmin)
+	})
+
 	t.Run("authorization_code public agent client issues standard resource-bound refresh session", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{

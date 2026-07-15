@@ -45,6 +45,10 @@ Lesser's public OAuth and MCP-facing surfaces advertise exactly these requestabl
   `read write`
 - `/oauth/authorize`
   Must reject internal-only scopes such as `admin` even if an existing consent record contains them.
+- Operator client class
+  `client_class=operator` is an internal/operator-owned OAuth client marker, not an externally advertised requestable
+  class or scope. Public OAuth registration may accept only generic `cli` and `web` client classes; `agent` and
+  `operator` are minted only by internal Lesser-owned paths.
 - Broad-scope implication
   `write` satisfies requests for `follow` and `write:*`.
   `read` satisfies requests for `read:*`.
