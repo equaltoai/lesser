@@ -469,6 +469,18 @@ func (s *LesserApiStack) bodyEnabled() bool {
 	return isTruthyConfigValue(s.Node().TryGetContext(jsii.String("soulEnabled")))
 }
 
+func (s *LesserApiStack) instancePlaneEnabled() bool {
+	if !s.bodyEnabled() {
+		return false
+	}
+	if s.Configuration != nil {
+		if v, ok := s.Configuration["instancePlaneEnabled"]; ok && isTruthyConfigValue(v) {
+			return true
+		}
+	}
+	return isTruthyConfigValue(s.Node().TryGetContext(jsii.String("instancePlaneEnabled")))
+}
+
 func isTruthyConfigValue(value interface{}) bool {
 	switch v := value.(type) {
 	case bool:
@@ -989,6 +1001,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		Functions:             s.Functions,
 		HostedZone:            s.HostedZone,
 		BodyEnabled:           s.bodyEnabled(),
+		InstancePlaneEnabled:  s.instancePlaneEnabled(),
 		APICORSAllowedOrigins: s.configString("apiCorsAllowedOrigins"),
 	})
 

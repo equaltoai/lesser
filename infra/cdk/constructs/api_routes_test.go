@@ -343,6 +343,125 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	}
 }
 
+func TestInstancePlaneDisabledDoesNotAddRoutes(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:          "development",
+		BodyEnabled:          true,
+		InstancePlaneEnabled: false,
+	})
+
+	requireNoInstancePlaneRoutes(t, tpl)
+	requireNoSSMParameterDefault(t, tpl, "/lesser/dev/lesser-body/exports/v1/instance_mcp_lambda_arn")
+}
+
+func TestInstancePlaneRequiresBodyEnabled(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:          "development",
+		BodyEnabled:          false,
+		InstancePlaneEnabled: true,
+	})
+
+	requireNoInstancePlaneRoutes(t, tpl)
+	requireNoSSMParameterDefault(t, tpl, "/lesser/dev/lesser-body/exports/v1/instance_mcp_lambda_arn")
+}
+
+func TestInstancePlaneEnabledAddsRoutes(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:          "development",
+		BodyEnabled:          true,
+		InstancePlaneEnabled: true,
+	})
+
+	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
+	wantParamName := "/lesser/dev/lesser-body/exports/v1/instance_mcp_lambda_arn"
+	for _, routeKey := range instancePlaneRouteKeys() {
+		uri, ok := gotRoutes[routeKey]
+		if !ok {
+			t.Fatalf("expected %s route to exist when instancePlaneEnabled=true and bodyEnabled=true", routeKey)
+		}
+		if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
+			uriJSON, err := json.Marshal(uri)
+			if err != nil {
+				t.Fatalf("marshal integration uri: %v", err)
+			}
+			t.Fatalf("expected %s integration to reference SSM param %q (got %s)", routeKey, wantParamName, string(uriJSON))
+		}
+	}
+
+	for _, routeKey := range []string{
+		"POST /instance/ptah/mcp",
+		"GET /instance/ptah/mcp",
+		"POST /instance/ba/mcp",
+		"GET /instance/ba/mcp",
+	} {
+		props, ok := findMethodPropertiesByRouteKey(t, tpl, routeKey)
+		if !ok {
+			t.Fatalf("expected %s route to exist", routeKey)
+		}
+		integration := requireIntegrationProps(t, props, routeKey)
+		if !valueContainsString(integration["Uri"], "response-streaming-invocations") {
+			t.Fatalf("expected %s to use the AppTheory streaming Lambda proxy URI", routeKey)
+		}
+	}
+
+	for _, routeKey := range []string{
+		"DELETE /instance/ptah/mcp",
+		"DELETE /instance/ba/mcp",
+		"GET /.well-known/oauth-protected-resource/instance/ptah/mcp",
+		"GET /.well-known/oauth-protected-resource/instance/ba/mcp",
+		"GET /instance/downloads/installer-grants/{grantId}",
+	} {
+		props, ok := findMethodPropertiesByRouteKey(t, tpl, routeKey)
+		if !ok {
+			t.Fatalf("expected %s route to exist", routeKey)
+		}
+		integration := requireIntegrationProps(t, props, routeKey)
+		if valueContainsString(integration["Uri"], "response-streaming-invocations") {
+			t.Fatalf("expected %s to use the non-streaming Lambda proxy URI", routeKey)
+		}
+	}
+
+	if !templateHasMcpInvokePermission(t, tpl, wantParamName) {
+		t.Fatalf("expected API Gateway invoke permission for the instance MCP Lambda (param %q)", wantParamName)
+	}
+}
+
+func TestInstallerGrantDownloadRoutePreservesQueryCapabilityURLs(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:          "development",
+		BodyEnabled:          true,
+		InstancePlaneEnabled: true,
+	})
+
+	const routeKey = "GET /instance/downloads/installer-grants/{grantId}"
+	props, ok := findMethodPropertiesByRouteKey(t, tpl, routeKey)
+	if !ok {
+		t.Fatalf("expected %s route to exist", routeKey)
+	}
+
+	integration := requireIntegrationProps(t, props, routeKey)
+	if got, _ := integration["Type"].(string); got != "AWS_PROXY" {
+		t.Fatalf("expected %s to use Lambda proxy integration, got %q", routeKey, got)
+	}
+	if _, ok := integration["CacheKeyParameters"]; ok {
+		t.Fatalf("%s integration must not configure cache key parameters that could omit the one-time token query string", routeKey)
+	}
+	if _, ok := integration["RequestParameters"]; ok {
+		t.Fatalf("%s integration must not configure request-parameter mappings that could strip query strings", routeKey)
+	}
+	if _, ok := integration["RequestTemplates"]; ok {
+		t.Fatalf("%s integration must not configure request templates; Lambda proxy preserves query strings", routeKey)
+	}
+	if requestParams, ok := props["RequestParameters"].(map[string]any); ok {
+		for key := range requestParams {
+			if strings.Contains(strings.ToLower(key), "querystring") {
+				t.Fatalf("%s method must not configure query-string request parameter mapping %q", routeKey, key)
+			}
+		}
+	}
+	requireNoApiGatewayCaching(t, tpl, routeKey)
+}
+
 func TestRestAPIPreflightDefaultsToInstanceOrigin(t *testing.T) {
 	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
 		Environment: "development",
@@ -413,6 +532,60 @@ func expectedFederationHttpRoutes(t *testing.T, environment string) map[string]s
 		}
 	}
 	return want
+}
+
+func instancePlaneRouteKeys() []string {
+	return []string{
+		"POST /instance/ptah/mcp",
+		"GET /instance/ptah/mcp",
+		"DELETE /instance/ptah/mcp",
+		"POST /instance/ba/mcp",
+		"GET /instance/ba/mcp",
+		"DELETE /instance/ba/mcp",
+		"GET /.well-known/oauth-protected-resource/instance/ptah/mcp",
+		"GET /.well-known/oauth-protected-resource/instance/ba/mcp",
+		"GET /instance/downloads/installer-grants/{grantId}",
+	}
+}
+
+func requireNoInstancePlaneRoutes(t *testing.T, tpl map[string]any) {
+	t.Helper()
+
+	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
+	for _, routeKey := range append(instancePlaneRouteKeys(),
+		"OPTIONS /instance/ptah/mcp",
+		"OPTIONS /instance/ba/mcp",
+		"OPTIONS /.well-known/oauth-protected-resource/instance/ptah/mcp",
+		"OPTIONS /.well-known/oauth-protected-resource/instance/ba/mcp",
+		"OPTIONS /instance/downloads/installer-grants/{grantId}",
+	) {
+		if _, ok := gotRoutes[routeKey]; ok {
+			t.Fatalf("unexpected %s route present while instance plane is disabled", routeKey)
+		}
+	}
+}
+
+func requireNoSSMParameterDefault(t *testing.T, tpl map[string]any, wantDefault string) {
+	t.Helper()
+
+	rawParameters, ok := tpl["Parameters"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	for _, raw := range rawParameters {
+		param, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		paramType, _ := param["Type"].(string)
+		if !strings.HasPrefix(paramType, "AWS::SSM::Parameter::Value") {
+			continue
+		}
+		if gotDefault, _ := param["Default"].(string); gotDefault == wantDefault {
+			t.Fatalf("unexpected SSM parameter default %q in template", wantDefault)
+		}
+	}
 }
 
 func extractHttpRouteToIntegrationURI(t *testing.T, tpl map[string]any) map[string]any {
@@ -628,6 +801,63 @@ func preflightIntegrationForRoute(t *testing.T, tpl map[string]any, route string
 		t.Fatalf("expected %s integration properties to exist", route)
 	}
 	return integration
+}
+
+func requireIntegrationProps(t *testing.T, methodProps map[string]any, routeKey string) map[string]any {
+	t.Helper()
+
+	integration, ok := methodProps["Integration"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected %s integration properties to exist", routeKey)
+	}
+	return integration
+}
+
+func valueContainsString(v any, needle string) bool {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), needle)
+}
+
+func requireNoApiGatewayCaching(t *testing.T, tpl map[string]any, routeKey string) {
+	t.Helper()
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("template Resources missing or wrong type")
+	}
+
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Stage" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if enabled, _ := props["CacheClusterEnabled"].(bool); enabled {
+			t.Fatalf("%s must not enable API Gateway stage cache on %s", routeKey, logicalID)
+		}
+		methodSettings, _ := props["MethodSettings"].([]any)
+		for _, rawSetting := range methodSettings {
+			setting, ok := rawSetting.(map[string]any)
+			if !ok {
+				continue
+			}
+			if enabled, _ := setting["CachingEnabled"].(bool); !enabled {
+				continue
+			}
+			methodPath, _ := setting["ResourcePath"].(string)
+			httpMethod, _ := setting["HttpMethod"].(string)
+			t.Fatalf("%s must not enable API Gateway method cache (stage %s setting %s %s)", routeKey, logicalID, httpMethod, methodPath)
+		}
+	}
 }
 
 func templateHasMcpInvokePermission(t *testing.T, tpl map[string]any, wantParamName string) bool {
