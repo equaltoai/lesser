@@ -68,14 +68,16 @@ corepack pnpm build
 cd "${ROOT_DIR}"
 
 echo "Building canonical Lambda zip artifacts"
-go run ./cmd/lesser build lambdas --rebuild
+LESSER_BUILD_VERSION="${VERSION}" go run ./cmd/lesser build lambdas --rebuild
+
+LESSER_RELEASE_LDFLAGS="-s -w -X github.com/equaltoai/lesser/pkg/version.Version=${VERSION}"
 
 for target in "${TARGETS[@]}"; do
   read -r GOOS GOARCH <<< "${target}"
   OUTPUT_PATH="${OUT_DIR}/lesser-${GOOS}-${GOARCH}"
   echo "Building ${OUTPUT_PATH}"
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
-    go build -trimpath -ldflags="-s -w" -o "${OUTPUT_PATH}" ./cmd/lesser
+    go build -trimpath -ldflags="${LESSER_RELEASE_LDFLAGS}" -o "${OUTPUT_PATH}" ./cmd/lesser
 done
 
 go run ./tools/release_assets \
