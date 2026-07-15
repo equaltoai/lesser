@@ -324,6 +324,7 @@ Binding-specific codes:
 | 409 | `SOUL_BINDING_IDEMPOTENCY_MISMATCH` | Same idempotency key was reused for a different payload. |
 | 409 | `SOUL_BINDING_SOUL_CONFLICT` | Soul agent ID is already bound to a different local actor. |
 | 409 | `SOUL_BINDING_BODY_CONFLICT` | Local actor is already bound to a different soul agent ID. |
+| 409 | `SOUL_BINDING_ACTOR_MISMATCH` | Status lookup supplied an `actor_username` that does not match the existing Lesser-local binding. |
 | 422 | `SOUL_BINDING_ACTOR_INVALID` | Target local actor exists but is not eligible for binding. |
 | 422 | `SOUL_BINDING_HOST_REGISTRY_REJECTED` | Host source truth does not prove the requested identity/binding. |
 | 503 | `SOUL_BINDING_HOST_REGISTRY_UNAVAILABLE` | Host registry could not be reached or returned a retryable failure. |
@@ -380,6 +381,16 @@ least:
 Lesser will use this Host projection as validation source truth before writing
 `SOUL_BODY_BINDING`. Body/Ptah-provided evidence can help find or correlate the
 Host record, but it cannot replace Host source truth.
+
+Implementation note for lesser#1153: Lesser uses Host's existing
+`GET /api/v1/soul/agents/{agentId}` projection under instance trust as the
+response `agent` block source truth and as the validation source before any local
+binding write. That projection is sufficient for lesser-host#696 when it returns
+the fields listed above; remaining Host-side work is limited to preserving that
+field set, active lifecycle semantics, publication evidence, and redacted
+machine-readable errors in every hosted deployment. Lesser fails closed with
+`SOUL_BINDING_HOST_REGISTRY_UNAVAILABLE` when the local binding row exists but
+Host source truth cannot currently be fetched.
 
 Later extension point: Host may add a callback, reservation, or richer registry
 attestation for ceremonies. Such extensions must still preserve the same

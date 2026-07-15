@@ -195,6 +195,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	if v := getConfigString("lesserHostAttestationsUrl"); v != "" {
 		commonEnv["LESSER_HOST_ATTESTATIONS_URL"] = jsii.String(v)
 	}
+	// NOTE: Dedicated body/Ptah -> Lesser binding credential ARN; the ARN is non-secret,
+	// but the resolved value must remain server-side only.
+	if v := getConfigString("soulBindingIntegrationKeyArn"); v != "" {
+		commonEnv["SOUL_BINDING_INTEGRATION_KEY_ARN"] = jsii.String(v)
+	}
 
 	// Optional tables
 	if props.StreamEventsTable != nil {

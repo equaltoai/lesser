@@ -105,17 +105,18 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	// Optional deployment configuration from environment variables.
 	// This keeps `lesser up` ergonomic while allowing one-off instance config without editing CDK code.
 	envContexts := map[string]string{
-		"lesserHostUrl":             strings.TrimSpace(os.Getenv("LESSER_HOST_URL")),
-		"lesserHostInstanceKeyArn":  strings.TrimSpace(os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")),
-		"lesserHostAttestationsUrl": strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
-		"bodyEnabled":               strings.TrimSpace(os.Getenv("BODY_ENABLED")),
-		"translationEnabled":        strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")),
-		"allowAgents":               strings.TrimSpace(os.Getenv("ALLOW_AGENTS")),
-		"allowAgentRegistration":    strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")),
-		"tipEnabled":                strings.TrimSpace(os.Getenv("TIP_ENABLED")),
-		"tipChainId":                strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
-		"tipContractAddress":        strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
-		"apiCorsAllowedOrigins":     firstNonEmpty(os.Getenv("API_CORS_ALLOWED_ORIGINS"), os.Getenv("CORS_ALLOWED_ORIGINS")),
+		"lesserHostUrl":                strings.TrimSpace(os.Getenv("LESSER_HOST_URL")),
+		"lesserHostInstanceKeyArn":     strings.TrimSpace(os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")),
+		"lesserHostAttestationsUrl":    strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
+		"soulBindingIntegrationKeyArn": strings.TrimSpace(os.Getenv("SOUL_BINDING_INTEGRATION_KEY_ARN")),
+		"bodyEnabled":                  strings.TrimSpace(os.Getenv("BODY_ENABLED")),
+		"translationEnabled":           strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")),
+		"allowAgents":                  strings.TrimSpace(os.Getenv("ALLOW_AGENTS")),
+		"allowAgentRegistration":       strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")),
+		"tipEnabled":                   strings.TrimSpace(os.Getenv("TIP_ENABLED")),
+		"tipChainId":                   strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
+		"tipContractAddress":           strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
+		"apiCorsAllowedOrigins":        firstNonEmpty(os.Getenv("API_CORS_ALLOWED_ORIGINS"), os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 	normalizeContext := func(key, value string) string {
 		value = strings.TrimSpace(value)

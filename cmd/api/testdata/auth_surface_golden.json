@@ -1491,6 +1491,20 @@
     "verdict": "agree"
   },
   {
+    "method": "POST",
+    "path": "/api/v1/souls/bindings",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "required",
+    "verdict": "failOpen"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/bindings/{agentId}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "required",
+    "verdict": "overMark"
+  },
+  {
     "method": "GET",
     "path": "/api/v1/souls/bound/me",
     "runtimePosture": "auth-required",

@@ -66,6 +66,9 @@ type Soul struct {
 	LocalID                string
 	ENSName                *string
 	Wallet                 string
+	AuthorityModel         string
+	AnchorState            string
+	OperationalBinding     string
 	TokenID                string
 	MetaURI                string
 	Avatar                 *SoulAvatar
@@ -83,6 +86,7 @@ type Soul struct {
 	MintTxHash             string
 	MintedAt               *time.Time
 	UpdatedAt              *time.Time
+	PublishedVersion       int
 	Bound                  bool
 	BoundAgentUsername     string
 	BoundPrincipalAddress  string
@@ -263,6 +267,7 @@ func (s *Service) BindHostedBootstrap(ctx context.Context, targetAgentUsername s
 		AnchorState:        result.AgentAnchorState,
 		OperationalBinding: result.AgentOperationalBinding,
 		UpdatedAt:          result.Publication.PublishedAt,
+		PublishedVersion:   firstPositiveInt(result.PublishedVersion, result.Publication.PublishedVersion),
 	}
 	soul := soulFromIdentity(identity, binding)
 	return &soul, nil
@@ -689,6 +694,9 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 		LocalID:                strings.TrimSpace(identity.LocalID),
 		ENSName:                normalizedOptionalString(identity.ENSName),
 		Wallet:                 strings.ToLower(strings.TrimSpace(identity.Wallet)),
+		AuthorityModel:         strings.TrimSpace(identity.AuthorityModel),
+		AnchorState:            strings.TrimSpace(identity.AnchorState),
+		OperationalBinding:     strings.TrimSpace(identity.OperationalBinding),
 		TokenID:                strings.TrimSpace(identity.TokenID),
 		MetaURI:                strings.TrimSpace(identity.MetaURI),
 		Avatar:                 cloneSoulAvatar(identity.Avatar),
@@ -706,6 +714,7 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 		MintTxHash:             strings.TrimSpace(identity.MintTxHash),
 		MintedAt:               identity.MintedAt,
 		UpdatedAt:              identity.UpdatedAt,
+		PublishedVersion:       identity.PublishedVersion,
 	}
 	if binding != nil {
 		soul.Bound = true
@@ -777,6 +786,7 @@ type hostSoulIdentity struct {
 	AuthorityModel         string          `json:"authority_model"`
 	AnchorState            string          `json:"anchor_state"`
 	OperationalBinding     string          `json:"operational_binding"`
+	PublishedVersion       int             `json:"published_version"`
 	TokenID                string          `json:"token_id"`
 	MetaURI                string          `json:"meta_uri"`
 	Avatar                 *hostSoulAvatar `json:"avatar"`
@@ -823,4 +833,7 @@ type instanceRepository interface {
 	GetSoulBodyBinding(ctx context.Context, agentID string) (*storageModels.InstanceSoulBodyBinding, error)
 	GetSoulBodyBindingByUsername(ctx context.Context, username string) (*storageModels.InstanceSoulBodyBinding, error)
 	BindSoulBody(ctx context.Context, agentID string, username string, principalAddress string) (*storageModels.InstanceSoulBodyBinding, error)
+	GetSoulBindingIdempotencyReceipt(ctx context.Context, callerID string, idempotencyKey string) (*storageModels.InstanceSoulBindingIdempotencyReceipt, error)
+	CreateSoulBindingIdempotencyReceipt(ctx context.Context, receipt *storageModels.InstanceSoulBindingIdempotencyReceipt) error
+	UpdateSoulBindingIdempotencyReceipt(ctx context.Context, receipt *storageModels.InstanceSoulBindingIdempotencyReceipt) error
 }

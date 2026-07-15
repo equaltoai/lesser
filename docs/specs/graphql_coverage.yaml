@@ -67,9 +67,11 @@ exemptions:
             - /api/v1/admin/soul/well-known
             - /api/v1/notifications/deliver
     - id: lesser_body_mcp
-      reason: lesser-body MCP runtime-agent self-verification endpoints are REST-only support APIs.
+      reason: lesser-body/Ptah integration and MCP runtime-agent self-verification endpoints are REST-only support APIs.
       match:
         exact:
+            - /api/v1/souls/bindings
+            - /api/v1/souls/bindings/{agentId}
             - /api/v1/souls/bound/me
             - /api/v1/souls/bound/me/mint-conversations
             - /api/v1/souls/bound/me/mint-conversations/{conversationId}
@@ -1271,6 +1273,14 @@ routes:
       path: /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle
       policy: rest_only
       exemptedBy: canonical_skill_authority
+    - method: GET
+      path: /api/v1/souls/bindings/{agentId}
+      policy: rest_only
+      exemptedBy: lesser_body_mcp
+    - method: POST
+      path: /api/v1/souls/bindings
+      policy: rest_only
+      exemptedBy: lesser_body_mcp
     - method: GET
       path: /api/v1/souls/bound/me
       policy: rest_only

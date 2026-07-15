@@ -77,12 +77,15 @@ func TestPublicSurfacePackageMatchesLegacyGateDecision(t *testing.T) {
 		{"get skills resolve child remains prefix-public", http.MethodGet, "/api/v1/skills/resolve/child", true},
 		{"get search statuses prefix", http.MethodGet, "/api/v1/search/statuses/abc", true},
 		{"get notes prefix", http.MethodGet, "/api/v1/notes/abc", true},
+		{"get soul binding status", http.MethodGet, "/api/v1/souls/bindings/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
+		{"get soul binding child private", http.MethodGet, "/api/v1/souls/bindings/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/audit", false},
 
 		// Exact POST allowlist.
 		{"post apps", http.MethodPost, "/api/v1/apps", true},
 		{"post oauth register", http.MethodPost, "/oauth/register", true},
 		{"post accounts", http.MethodPost, "/api/v1/accounts", true},
 		{"post notifications deliver", http.MethodPost, "/api/v1/notifications/deliver", true},
+		{"post soul bindings", http.MethodPost, "/api/v1/souls/bindings", true},
 		{"post oauth token", http.MethodPost, "/oauth/token", true},
 		{"post oauth revoke", http.MethodPost, "/oauth/revoke", true},
 		{"post oauth consent", http.MethodPost, "/oauth/consent", true},
@@ -119,6 +122,7 @@ func TestPublicSurfacePackageMatchesLegacyGateDecision(t *testing.T) {
 		{"get account pinned statuses private", http.MethodGet, "/api/v1/accounts/123/pinned_statuses", false},
 		{"get trust preview private", http.MethodGet, "/api/v1/trust/previews/abc", false},
 		{"post notifications private", http.MethodPost, "/api/v1/notifications", false},
+		{"post soul binding member private", http.MethodPost, "/api/v1/souls/bindings/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
 		{"post apps child private", http.MethodPost, "/api/v1/apps/123", false},
 		{"put oauth token private", http.MethodPut, "/oauth/token", false},
 		{"delete status private", http.MethodDelete, "/api/v1/statuses/123", false},

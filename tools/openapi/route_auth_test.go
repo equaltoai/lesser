@@ -171,6 +171,20 @@ func TestResolveContractAuthModeUsesPublicSurfaceFailClosed(t *testing.T) {
 			want:   authModeBearerRequired,
 		},
 		{
+			name:   "soul binding write uses dedicated integration bearer",
+			method: methodPOST,
+			path:   "/api/v1/souls/bindings",
+			lambda: lambdaAPI,
+			want:   authModeSoulBinding,
+		},
+		{
+			name:   "soul binding read uses dedicated integration bearer",
+			method: methodGET,
+			path:   "/api/v1/souls/bindings/{agentId}",
+			lambda: lambdaAPI,
+			want:   authModeSoulBinding,
+		},
+		{
 			name:   "streaming health remains public",
 			method: methodGET,
 			path:   "/api/v1/streaming/health",

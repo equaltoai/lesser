@@ -34,6 +34,7 @@ type InstanceRepository struct {
 	soulENSChannelRepo           *BaseRepository[*models.InstanceSoulENSChannel]
 	soulBodyBindingRepo          *BaseRepository[*models.InstanceSoulBodyBinding]
 	soulBodyBindingUsernameRepo  *BaseRepository[*models.InstanceSoulBodyBindingUsername]
+	soulBindingReceiptRepo       *BaseRepository[*models.InstanceSoulBindingIdempotencyReceipt]
 	transactWriteFn              func(ctx context.Context, fn func(core.TransactionBuilder) error) error
 	logger                       *zap.Logger
 
@@ -122,6 +123,7 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		soulENSChannelRepo:           NewBaseRepository[*models.InstanceSoulENSChannel](db, tableName, logger),
 		soulBodyBindingRepo:          NewBaseRepository[*models.InstanceSoulBodyBinding](db, tableName, logger),
 		soulBodyBindingUsernameRepo:  NewBaseRepository[*models.InstanceSoulBodyBindingUsername](db, tableName, logger),
+		soulBindingReceiptRepo:       NewBaseRepository[*models.InstanceSoulBindingIdempotencyReceipt](db, tableName, logger),
 		transactWriteFn:              newInstanceTransactWriteFn(db),
 		logger:                       logger,
 	}
@@ -153,6 +155,7 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		soulENSChannelRepo:           NewBaseRepositoryWithCostTracking[*models.InstanceSoulENSChannel](db, tableName, logger, costService, "instance_soul_ens_channel"),
 		soulBodyBindingRepo:          NewBaseRepositoryWithCostTracking[*models.InstanceSoulBodyBinding](db, tableName, logger, costService, "instance_soul_body_binding"),
 		soulBodyBindingUsernameRepo:  NewBaseRepositoryWithCostTracking[*models.InstanceSoulBodyBindingUsername](db, tableName, logger, costService, "instance_soul_body_binding_username"),
+		soulBindingReceiptRepo:       NewBaseRepositoryWithCostTracking[*models.InstanceSoulBindingIdempotencyReceipt](db, tableName, logger, costService, "instance_soul_binding_idempotency_receipt"),
 		transactWriteFn:              newInstanceTransactWriteFn(db),
 		logger:                       logger,
 	}

@@ -26,11 +26,17 @@ type stubSoulHandlerService struct {
 	listMineErr     error
 	incorporateOut  *soulservice.Soul
 	incorporateErr  error
+	bindOut         *soulservice.SoulBindingProjection
+	bindErr         error
+	getBindingOut   *soulservice.SoulBindingProjection
+	getBindingErr   error
 	resolveBoundOut *soulservice.Soul
 	resolveBoundErr error
 	lastUsername    string
 	lastSoulAgentID string
 	lastTargetAgent string
+	lastBindInput   soulservice.BindSoulBodyInput
+	lastGetAgentID  string
 }
 
 func (s *stubSoulHandlerService) ListMine(_ context.Context, username string) ([]soulservice.Soul, error) {
@@ -48,6 +54,17 @@ func (s *stubSoulHandlerService) Incorporate(_ context.Context, username string,
 func (s *stubSoulHandlerService) ResolveBoundAgent(_ context.Context, agentUsername string) (*soulservice.Soul, error) {
 	s.lastTargetAgent = agentUsername
 	return s.resolveBoundOut, s.resolveBoundErr
+}
+
+func (s *stubSoulHandlerService) BindSoulBody(_ context.Context, input soulservice.BindSoulBodyInput) (*soulservice.SoulBindingProjection, error) {
+	s.lastBindInput = input
+	return s.bindOut, s.bindErr
+}
+
+func (s *stubSoulHandlerService) GetSoulBinding(_ context.Context, agentID string, actorUsername string) (*soulservice.SoulBindingProjection, error) {
+	s.lastGetAgentID = agentID
+	s.lastTargetAgent = actorUsername
+	return s.getBindingOut, s.getBindingErr
 }
 
 type soulPrivateHostReadClientFunc func(*http.Request) (*http.Response, error)
@@ -1436,6 +1453,291 @@ func TestHandleIncorporateSoulLift_ReturnsInternalWhenServiceUnavailable(t *test
 	ctx.Params["agentId"] = agentID
 
 	requireStatus(t, http.StatusInternalServerError)(h.HandleIncorporateSoulLift(ctx))
+}
+
+func TestHandleCreateSoulBindingLift_BindsWithDedicatedIntegrationCredential(t *testing.T) {
+	t.Parallel()
+
+	const (
+		integrationKey = "body-to-lesser-binding-key"
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	cfg := round10TestConfig()
+	cfg.SoulBindingIntegrationKey = integrationKey
+	service := &stubSoulHandlerService{bindOut: soulBindingHandlerProjection(agentID, "drone-ada", false)}
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/bindings", map[string]string{
+		"Authorization":   "Bearer " + integrationKey,
+		"Idempotency-Key": "bind-key-1",
+	}, nil, apimodels.SoulBindingRequest{
+		ActorUsername:      "drone-ada",
+		SoulAgentID:        agentID,
+		BodyActorID:        "body://ptah/drone-ada",
+		HostRegistrationID: "hreg_01JZPTHOSTREG",
+		HostConversationID: "hconv_01JZPTHOSTCONV",
+		AuthorityModel:     soulservice.SoulAuthorityModelInstanceTrust,
+		AnchorState:        soulservice.SoulAnchorStateHostedOffchain,
+		OperationalBinding: soulservice.SoulOperationalBindingHostedBound,
+		PrincipalAddress:   "0x2222222222222222222222222222222222222222",
+		Evidence: apimodels.SoulBindingEvidence{
+			Source:          "ptah",
+			HostRequestID:   "hreq_01JZPTHOSTREQ",
+			DeclarationHash: "sha256:4c5835f5c2c84bcaadc17af3c5a5700fdd7f39fb7f61305b02d1a02a0e6c7c56",
+			IssuedAt:        "2026-07-14T16:20:00Z",
+		},
+	})
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleCreateSoulBindingLift(ctx))
+
+	var body apimodels.SoulBindingResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "1", body.Version)
+	require.Equal(t, "bound", body.Status)
+	require.Equal(t, "bound", body.BindingState)
+	require.Equal(t, agentID, body.Agent.AgentID)
+	require.Equal(t, "example.com", body.Agent.Domain)
+	require.Equal(t, "drone-ada", body.Agent.LocalID)
+	require.Equal(t, soulservice.SoulAuthorityModelInstanceTrust, body.Agent.AuthorityModel)
+	require.Equal(t, soulservice.SoulAnchorStateHostedOffchain, body.Agent.AnchorState)
+	require.Equal(t, soulservice.SoulOperationalBindingHostedBound, body.Agent.OperationalBinding)
+	require.Equal(t, "active", body.Agent.LifecycleStatus)
+	require.Equal(t, 3, body.Agent.PublishedVersion)
+	require.Equal(t, "drone-ada", body.Binding.AgentUsername)
+	require.Equal(t, "0x1111111111111111111111111111111111111111", body.Binding.PrincipalAddress)
+	require.NotNil(t, body.Idempotency)
+	require.Equal(t, "bind-key-1", body.Idempotency.Key)
+	require.False(t, body.Idempotency.Replayed)
+	require.Equal(t, "sha256:handler-payload", body.Idempotency.PayloadHash)
+	require.NotNil(t, body.Links)
+	require.Equal(t, "/api/v1/souls/bindings/"+agentID, body.Links.Status)
+
+	require.Equal(t, soulBindingIntegrationCallerID, service.lastBindInput.CallerID)
+	require.Equal(t, "bind-key-1", service.lastBindInput.IdempotencyKey)
+	require.Equal(t, "drone-ada", service.lastBindInput.ActorUsername)
+	require.Equal(t, agentID, service.lastBindInput.SoulAgentID)
+	require.Equal(t, "body://ptah/drone-ada", service.lastBindInput.BodyActorID)
+	require.Equal(t, "hreg_01JZPTHOSTREG", service.lastBindInput.HostRegistrationID)
+	require.Equal(t, "hconv_01JZPTHOSTCONV", service.lastBindInput.HostConversationID)
+	require.Equal(t, soulservice.SoulAuthorityModelInstanceTrust, service.lastBindInput.AuthorityModel)
+	require.Equal(t, "0x2222222222222222222222222222222222222222", service.lastBindInput.PrincipalAddressHint)
+	require.Equal(t, "ptah", service.lastBindInput.Evidence.Source)
+}
+
+func TestHandleCreateSoulBindingLift_RejectsOrdinaryOAuthAndBadInputs(t *testing.T) {
+	t.Parallel()
+
+	const (
+		integrationKey = "body-to-lesser-binding-key"
+		agentID        = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+
+	cfg := round10TestConfig()
+	cfg.SoulBindingIntegrationKey = integrationKey
+	oauthToken := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "ordinary-user")
+
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		body       any
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "missing credential",
+			headers:    nil,
+			body:       apimodels.SoulBindingRequest{ActorUsername: "drone-ada", SoulAgentID: agentID},
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "SOUL_BINDING_AUTH_REQUIRED",
+		},
+		{
+			name: "ordinary oauth token is not accepted",
+			headers: map[string]string{
+				"Authorization":   "Bearer " + oauthToken,
+				"Idempotency-Key": "bind-key-ordinary",
+			},
+			body:       apimodels.SoulBindingRequest{ActorUsername: "drone-ada", SoulAgentID: agentID},
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "SOUL_BINDING_AUTH_REQUIRED",
+		},
+		{
+			name: "missing idempotency key",
+			headers: map[string]string{
+				"Authorization": "Bearer " + integrationKey,
+			},
+			body:       apimodels.SoulBindingRequest{ActorUsername: "drone-ada", SoulAgentID: agentID},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "SOUL_BINDING_IDEMPOTENCY_KEY_REQUIRED",
+		},
+		{
+			name: "service is not reached without dedicated credential",
+			headers: map[string]string{
+				"Authorization":   "Bearer wrong-key",
+				"Idempotency-Key": "bind-key-wrong",
+			},
+			body:       apimodels.SoulBindingRequest{ActorUsername: "drone-ada", SoulAgentID: agentID},
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "SOUL_BINDING_AUTH_REQUIRED",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := &stubSoulHandlerService{bindOut: soulBindingHandlerProjection(agentID, "drone-ada", false)}
+			h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/bindings", tc.headers, nil, tc.body)
+			require.NoError(t, err)
+
+			resp := requireStatus(t, tc.wantStatus)(h.HandleCreateSoulBindingLift(ctx))
+			require.Equal(t, tc.wantCode, decodeStandardErrorResponse(t, resp).Code)
+			require.Empty(t, service.lastBindInput.CallerID, "handler must not call service after auth/input rejection")
+		})
+	}
+
+	t.Run("invalid body", func(t *testing.T) {
+		t.Parallel()
+
+		service := &stubSoulHandlerService{bindOut: soulBindingHandlerProjection(agentID, "drone-ada", false)}
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/souls/bindings", map[string]string{
+			"Authorization":   "Bearer " + integrationKey,
+			"Idempotency-Key": "bind-key-invalid",
+		}, nil, []byte("{"))
+
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleCreateSoulBindingLift(ctx))
+		require.Equal(t, "SOUL_BINDING_INVALID_REQUEST", decodeStandardErrorResponse(t, resp).Code)
+		require.Empty(t, service.lastBindInput.CallerID)
+	})
+}
+
+func TestHandleSoulBindingLift_MapsServiceProjectionAndErrors(t *testing.T) {
+	t.Parallel()
+
+	const (
+		integrationKey = "body-to-lesser-binding-key"
+		agentID        = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+
+	cfg := round10TestConfig()
+	cfg.SoulBindingIntegrationKey = integrationKey
+
+	t.Run("get returns status projection without idempotency block", func(t *testing.T) {
+		t.Parallel()
+
+		service := &stubSoulHandlerService{getBindingOut: soulBindingHandlerProjection(agentID, "drone-ada", false)}
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bindings/"+agentID, map[string]string{
+			"Authorization": "Bearer " + integrationKey,
+		}, map[string]string{"actor_username": "drone-ada"}, nil)
+		require.NoError(t, err)
+		ctx.Params["agentId"] = agentID
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetSoulBindingLift(ctx))
+
+		var body apimodels.SoulBindingResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "bound", body.Status)
+		require.Equal(t, agentID, body.Agent.AgentID)
+		require.Nil(t, body.Idempotency)
+		require.Nil(t, body.Links)
+		require.Equal(t, agentID, service.lastGetAgentID)
+		require.Equal(t, "drone-ada", service.lastTargetAgent)
+	})
+
+	t.Run("actor mismatch maps to stable conflict code", func(t *testing.T) {
+		t.Parallel()
+
+		service := &stubSoulHandlerService{getBindingErr: soulservice.ErrSoulBindingActorMismatch}
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bindings/"+agentID, map[string]string{
+			"Authorization": "Bearer " + integrationKey,
+		}, map[string]string{"actor_username": "wrong-agent"}, nil)
+		require.NoError(t, err)
+		ctx.Params["agentId"] = agentID
+
+		resp := requireStatus(t, http.StatusConflict)(h.HandleGetSoulBindingLift(ctx))
+		require.Equal(t, "SOUL_BINDING_ACTOR_MISMATCH", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("host unavailable fails closed", func(t *testing.T) {
+		t.Parallel()
+
+		service := &stubSoulHandlerService{getBindingErr: soulservice.ErrSoulBindingHostRegistryUnavailable}
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/bindings/"+agentID, map[string]string{
+			"Authorization": "Bearer " + integrationKey,
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["agentId"] = agentID
+
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleGetSoulBindingLift(ctx))
+		require.Equal(t, "SOUL_BINDING_HOST_REGISTRY_UNAVAILABLE", decodeStandardErrorResponse(t, resp).Code)
+	})
+
+	t.Run("write conflict maps body conflict code", func(t *testing.T) {
+		t.Parallel()
+
+		service := &stubSoulHandlerService{bindErr: soulservice.ErrTargetAgentAlreadyHasSoul}
+		h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: service}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/bindings", map[string]string{
+			"Authorization":   "Bearer " + integrationKey,
+			"Idempotency-Key": "bind-key-conflict",
+		}, nil, apimodels.SoulBindingRequest{ActorUsername: "drone-ada", SoulAgentID: agentID})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusConflict)(h.HandleCreateSoulBindingLift(ctx))
+		require.Equal(t, "SOUL_BINDING_BODY_CONFLICT", decodeStandardErrorResponse(t, resp).Code)
+	})
+}
+
+func TestHandleSoulBindingLift_FailsClosedWhenIntegrationCredentialMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	cfg.SoulBindingIntegrationKey = ""
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}}
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/bindings", map[string]string{
+		"Authorization":   "Bearer any-key",
+		"Idempotency-Key": "bind-key",
+	}, nil, apimodels.SoulBindingRequest{
+		ActorUsername: "drone-ada",
+		SoulAgentID:   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	})
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleCreateSoulBindingLift(ctx))
+	require.Equal(t, "SOUL_BINDING_INTERNAL", decodeStandardErrorResponse(t, resp).Code)
+}
+
+func soulBindingHandlerProjection(agentID string, username string, replayed bool) *soulservice.SoulBindingProjection {
+	now := time.Date(2026, 7, 14, 16, 20, 2, 0, time.UTC)
+	return &soulservice.SoulBindingProjection{
+		Soul: soulservice.Soul{
+			AgentID:               agentID,
+			Domain:                "example.com",
+			LocalID:               username,
+			AuthorityModel:        soulservice.SoulAuthorityModelInstanceTrust,
+			AnchorState:           soulservice.SoulAnchorStateHostedOffchain,
+			OperationalBinding:    soulservice.SoulOperationalBindingHostedBound,
+			Status:                "active",
+			LifecycleStatus:       "active",
+			PublishedVersion:      3,
+			Bound:                 true,
+			BoundAgentUsername:    username,
+			BoundPrincipalAddress: "0x1111111111111111111111111111111111111111",
+			BoundAt:               now,
+			BoundUpdatedAt:        now,
+		},
+		IdempotencyKey: "bind-key-1",
+		PayloadHash:    "sha256:handler-payload",
+		Replayed:       replayed,
+	}
 }
 
 func TestSoulHandlerHelpers_ServiceResolutionAndErrorMapping(t *testing.T) {
