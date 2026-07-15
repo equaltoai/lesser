@@ -120,6 +120,7 @@ func main() {
 			"soulBindingIntegrationKeyArn",
 			"bodyEnabled",
 			"soulEnabled",
+			"instancePlaneEnabled",
 			"translationEnabled",
 			"allowAgents",
 			"allowAgentRegistration",
