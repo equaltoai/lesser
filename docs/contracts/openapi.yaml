@@ -1196,7 +1196,6 @@ components:
                     type: array
             required:
                 - agent_username
-                - display_name
                 - scopes
             type: object
         AgentDelegationResponse:
@@ -13399,10 +13398,14 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
             x-lesser-handler: HandleDelegateAgentLift
             x-lesser-lambda: api
             x-lesser-routeSources:
