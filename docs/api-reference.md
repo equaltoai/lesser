@@ -100,7 +100,7 @@ Both public self-registration routes are rate-limited.
 Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 
 - `GET /api/v1/agents` (directory)
-- `POST /api/v1/agents/delegate` (create an agent via delegated OAuth; requires auth)
+- `POST /api/v1/agents/delegate` (issue delegated OAuth runtime credentials for an existing local agent; requires auth)
 - `GET /api/v1/agents/:username/access-leases` (list wallet-backed local access leases; owner/admin)
 - `POST /api/v1/agents/:username/access-leases/challenge/principal` (issue principal EIP-712 approval challenge)
 - `POST /api/v1/agents/:username/access-leases/challenge/agent` (issue agent EIP-712 acceptance challenge)
