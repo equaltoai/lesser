@@ -87,7 +87,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 		buildTags = append(buildTags, "lambda.norpc")
 	}
 
-	args := []string{"build", "-ldflags=-s -w", "-o", outPath}
+	args := []string{"build", "-ldflags=" + releaseBuildLdflags(), "-o", outPath}
 	if len(buildTags) > 0 {
 		args = append(args, "-tags", strings.Join(buildTags, ","))
 	}
@@ -109,6 +109,14 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 		return fmt.Errorf("go build %s: %w", lambdaName, err)
 	}
 	return nil
+}
+
+func releaseBuildLdflags() string {
+	parts := []string{"-s", "-w"}
+	if v := strings.TrimSpace(os.Getenv("LESSER_BUILD_VERSION")); v != "" {
+		parts = append(parts, "-X", "github.com/equaltoai/lesser/pkg/version.Version="+v)
+	}
+	return strings.Join(parts, " ")
 }
 
 func zipSingleFile(zipPath string, entryName string, filePath string) error {

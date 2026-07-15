@@ -532,7 +532,7 @@ func loadConfig() *Config {
 		ModerationMode:         getEnvOrDefault("MODERATION_MODE", ""),
 
 		Stage:   stageForFields,
-		Version: getEnvOrDefault("VERSION", "v1.0.0"),
+		Version: getEnvOrDefault("VERSION", "dev"),
 
 		// Service identification
 		Environment:         envForFields,

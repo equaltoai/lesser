@@ -105,6 +105,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	// Optional deployment configuration from environment variables.
 	// This keeps `lesser up` ergonomic while allowing one-off instance config without editing CDK code.
 	envContexts := map[string]string{
+		"lesserVersion":                firstNonEmpty(os.Getenv("LESSER_VERSION"), os.Getenv("VERSION")),
 		"lesserHostUrl":                strings.TrimSpace(os.Getenv("LESSER_HOST_URL")),
 		"lesserHostInstanceKeyArn":     strings.TrimSpace(os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")),
 		"lesserHostAttestationsUrl":    strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),

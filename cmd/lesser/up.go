@@ -515,6 +515,9 @@ func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	}
 
 	contexts := map[string]string{}
+	if v := strings.TrimSpace(e.releaseVersion); v != "" {
+		contexts["lesserVersion"] = v
+	}
 	if receipt.Integration != nil && receipt.Integration.BodyEnabled != nil {
 		contexts["bodyEnabled"] = strconv.FormatBool(*receipt.Integration.BodyEnabled)
 	}

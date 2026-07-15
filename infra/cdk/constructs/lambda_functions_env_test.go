@@ -70,6 +70,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 			"vapidPublicKey": "test-public-key",
 			"vapidSubject":   "mailto:test@example.com",
 			"vapidSecretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
+			"lesserVersion":  "v1.5.20",
 		},
 		EncryptionRole: encRole,
 		BasicRole:      basicRole,
@@ -84,6 +85,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 
 	baselineKeys := []string{
 		"ENVIRONMENT", "STAGE", "APP_NAME",
+		"VERSION",
 		"DOMAIN_NAME",
 		"DYNAMODB_TABLE",
 		"RATE_LIMIT_TABLE_NAME", "LIMITED_TABLE_NAME",

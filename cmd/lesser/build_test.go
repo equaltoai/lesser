@@ -328,6 +328,14 @@ func TestBuildLambdaBinary_WiresGoBuildCommand(t *testing.T) {
 		return nil
 	}
 	require.NoError(t, buildLambdaBinary(repoRoot, cacheDir, "inbox", outPath))
+
+	t.Setenv("LESSER_BUILD_VERSION", "v1.2.3")
+	runExecCmdFn = func(cmd *exec.Cmd) error {
+		args := strings.Join(cmd.Args, "\n")
+		require.Contains(t, args, "github.com/equaltoai/lesser/pkg/version.Version=v1.2.3")
+		return nil
+	}
+	require.NoError(t, buildLambdaBinary(repoRoot, cacheDir, "api", outPath))
 }
 
 func TestBuildLambdaBinary_WrapsErrors(t *testing.T) {
