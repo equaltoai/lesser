@@ -116,6 +116,7 @@ GET /api/v1/skills/{skillId}
 GET /api/v1/skills/{skillId}/revisions
 GET /api/v1/skills/{skillId}/revisions/{revisionNumber}
 GET /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle
+GET /api/v1/souls/bindings/{agentId}
 GET /api/v1/souls/bound/me
 GET /api/v1/souls/bound/me/mint-conversations
 GET /api/v1/souls/bound/me/mint-conversations/{conversationId}
@@ -257,6 +258,7 @@ POST /api/v1/reputation/export
 POST /api/v1/reputation/import
 POST /api/v1/reputation/verify
 POST /api/v1/search/statuses
+POST /api/v1/souls/bindings
 POST /api/v1/souls/{agentId}/incorporate
 POST /api/v1/statuses
 POST /api/v1/statuses/{id}/bookmark

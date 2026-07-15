@@ -22,5 +22,21 @@
     "owner": "lesser-auth-surface-ssot",
     "expiry": "2026-09-01",
     "note": "Gate-reachable, handler-enforced (verified fail-closed) by internal instance-key bearer validation; gate-level backstop deferred as optional defense-in-depth."
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/souls/bindings",
+    "verdict": "failOpen",
+    "owner": "lesser-soul-binding-api",
+    "expiry": "2026-10-15",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by dedicated body/Ptah soul-binding integration bearer; ordinary user OAuth is rejected."
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/souls/bindings/{agentId}",
+    "verdict": "overMark",
+    "owner": "lesser-soul-binding-api",
+    "expiry": "2026-10-15",
+    "note": "Gate-reachable, handler-enforced (verified fail-closed) by dedicated body/Ptah soul-binding integration bearer; OpenAPI advertises required integration security."
   }
 ]

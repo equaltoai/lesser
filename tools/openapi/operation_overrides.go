@@ -79,17 +79,27 @@ func applySoulOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	if route.Method != methodGET {
-		return
-	}
-
 	switch route.Path {
 	case "/api/v1/souls/bound/me":
-		applyBoundSoulMeOverride(op)
+		if route.Method == methodGET {
+			applyBoundSoulMeOverride(op)
+		}
 	case "/api/v1/souls/bound/me/mint-conversations":
-		applyBoundSoulMintConversationsOverride(op)
+		if route.Method == methodGET {
+			applyBoundSoulMintConversationsOverride(op)
+		}
 	case "/api/v1/souls/bound/me/mint-conversations/{conversationId}":
-		applyBoundSoulMintConversationOverride(op)
+		if route.Method == methodGET {
+			applyBoundSoulMintConversationOverride(op)
+		}
+	case "/api/v1/souls/bindings":
+		if route.Method == methodPOST {
+			applySoulBindingCreateOverride(op)
+		}
+	case "/api/v1/souls/bindings/{agentId}":
+		if route.Method == methodGET {
+			applySoulBindingGetOverride(op)
+		}
 	}
 }
 
@@ -153,6 +163,50 @@ func ensureSoulMintConversationErrorResponses(op *operation) {
 			},
 		}
 	}
+}
+
+func applySoulBindingCreateOverride(op *operation) {
+	op.Description = "Create or confirm a Lesser-local hosted soul/body binding for body/Ptah. The endpoint is server-to-server only: it requires the dedicated soul-binding integration bearer, rejects user OAuth tokens, refetches Host source truth, and writes only through Lesser's SOUL_BODY_BINDING repository path."
+	ensureQueryParam(op, parameter{
+		Name:        "Idempotency-Key",
+		In:          "header",
+		Required:    true,
+		Description: "Caller-scoped idempotency key for this binding attempt. Reusing the same key with a different canonical payload returns SOUL_BINDING_IDEMPOTENCY_MISMATCH.",
+		Schema: schemaRef{
+			Type:      "string",
+			MinLength: intPtr(1),
+			MaxLength: intPtr(200),
+		},
+	})
+	ensureSoulBindingErrorResponses(op)
+	ensureJSONResponseSchema(op, "200", "SoulBindingResponse")
+}
+
+func applySoulBindingGetOverride(op *operation) {
+	op.Description = "Return the authenticated body/Ptah status projection for a Lesser-local hosted soul/body binding. Lesser fails closed if the local binding exists but Host source truth cannot currently prove the hosted active identity."
+	ensureQueryParam(op, parameter{
+		Name:        "actor_username",
+		In:          "query",
+		Required:    false,
+		Description: "Optional local actor username assertion. A mismatch with the stored binding returns SOUL_BINDING_ACTOR_MISMATCH.",
+		Schema: schemaRef{
+			Type:      "string",
+			MinLength: intPtr(1),
+			MaxLength: intPtr(64),
+		},
+	})
+	ensureSoulBindingErrorResponses(op)
+	ensureJSONResponseSchema(op, "200", "SoulBindingResponse")
+}
+
+func ensureSoulBindingErrorResponses(op *operation) {
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+	ensureResponseRef(op.Responses, "404", "NotFound")
+	ensureResponseRef(op.Responses, "409", "Conflict")
+	ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+	ensureResponseRef(op.Responses, "503", "ServiceUnavailable")
 }
 
 func applyGraphQLOverrides(op *operation, route routeDef) {

@@ -31,6 +31,7 @@ var secretEnvVarNames = map[string]bool{
 	"PRIVACY_MASTER_KEY":           true,
 	"INSTANCE_API_KEY":             true,
 	"LESSER_HOST_INSTANCE_KEY":     true,
+	"SOUL_BINDING_INTEGRATION_KEY": true,
 	"CLOUDFRONT_PRIVATE_KEY_PATH":  true,
 	"DYNAMODB_ENCRYPTION_KEY":      true,
 	"ACTOR_PRIVATE_KEY_ENCRYPTION": true,

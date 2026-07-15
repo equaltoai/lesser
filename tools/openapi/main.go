@@ -158,6 +158,7 @@ const (
 	authModeBearerRequired authMode = "bearer_required"
 	authModeBearerOptional authMode = "bearer_optional"
 	authModeSetupBearer    authMode = "setup_bearer"
+	authModeSoulBinding    authMode = "soul_binding_bearer"
 )
 
 const (
@@ -336,6 +337,15 @@ func ensureFoundationComponents(spec *openAPISpec) {
 			Scheme:       "bearer",
 			BearerFormat: "opaque",
 			Description:  "Temporary setup session token: `Authorization: Bearer <setup_token>` (issued by `/setup/bootstrap/verify`).",
+		}
+	}
+
+	if _, ok := spec.Components.SecuritySchemes["soulBindingBearer"]; !ok {
+		spec.Components.SecuritySchemes["soulBindingBearer"] = securityScheme{
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "opaque",
+			Description:  "Dedicated body/Ptah to Lesser soul-binding integration credential. User OAuth tokens are not accepted.",
 		}
 	}
 
@@ -1287,6 +1297,8 @@ func lambdaPriority(lambda string) int {
 
 func authPriority(mode authMode) int {
 	switch mode {
+	case authModeSoulBinding:
+		return 40
 	case authModeSetupBearer:
 		return 40
 	case authModeBearerRequired:
@@ -1355,6 +1367,8 @@ func applyAuthDefaults(op *operation, route routeDef) {
 		op.Security = []map[string][]string{{}, {"bearerAuth": {}}}
 	case authModeSetupBearer:
 		op.Security = []map[string][]string{{"setupBearer": {}}}
+	case authModeSoulBinding:
+		op.Security = []map[string][]string{{"soulBindingBearer": {}}}
 	case authModePublic:
 		op.Security = nil
 	default:
@@ -1376,7 +1390,7 @@ func ensureStandardResponses(op *operation, route routeDef) {
 		ensureResponseRef(op.Responses, "429", "TooManyRequests")
 	}
 
-	if route.Auth == authModeBearerRequired || route.Auth == authModeBearerOptional || route.Auth == authModeSetupBearer {
+	if route.Auth == authModeBearerRequired || route.Auth == authModeBearerOptional || route.Auth == authModeSetupBearer || route.Auth == authModeSoulBinding {
 		ensureResponseRef(op.Responses, "401", "Unauthorized")
 		ensureResponseRef(op.Responses, "403", "Forbidden")
 	}
@@ -2159,6 +2173,8 @@ func authModeFromPublicSurfaceContract(class publicsurface.ContractAuthClass) au
 	switch class {
 	case publicsurface.ContractAuthSetupBearer:
 		return authModeSetupBearer
+	case publicsurface.ContractAuthSoulBindingIntegration:
+		return authModeSoulBinding
 	case publicsurface.ContractAuthBearerRequired, publicsurface.ContractAuthInternalOnly:
 		return authModeBearerRequired
 	default:

@@ -82,6 +82,10 @@ type Config struct {
 	LesserHostInstanceKeyARN  string // ARN pointing to stored instance key (optional)
 	LesserHostAttestationsURL string // Optional override for public attestations/JWKS base URL
 
+	// Dedicated body/Ptah -> Lesser integration credential for server-side soul-binding.
+	SoulBindingIntegrationKey    string // Optional value or Secrets Manager resolved secret
+	SoulBindingIntegrationKeyARN string // ARN pointing to stored binding integration key (optional)
+
 	// Privacy Configuration
 	PrivacyMasterKey     string // Master key for privacy hashing (required for audit privacy)
 	EnablePrivacyHashing bool   // Enable privacy-preserving hashing in audit logs
@@ -305,6 +309,7 @@ func (c *Config) Redacted() *Config {
 	cp.PrivacyMasterKey = RedactedSecretSentinel
 	cp.InstanceAPIKey = RedactedSecretSentinel
 	cp.LesserHostInstanceKey = RedactedSecretSentinel
+	cp.SoulBindingIntegrationKey = RedactedSecretSentinel
 	cp.CloudFrontPrivateKeyPath = RedactedSecretSentinel
 	cp.DynamoDBEncryptionKey = RedactedSecretSentinel
 	cp.ActorPrivateKeyEncryption = RedactedSecretSentinel
@@ -360,21 +365,23 @@ func loadConfig() *Config {
 		ReputationTableName:     getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 		AWSAccountID:            getEnvOrDefault("AWS_ACCOUNT_ID", ""),
 
-		JWTSecret:                 strings.TrimSpace(getEnvOrDefault("JWT_SECRET", "")),
-		JWTSecretARN:              strings.TrimSpace(getEnvOrDefault("JWT_SECRET_ARN", "")),
-		KMSKeyID:                  getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
-		ReputationPrivateKey:      getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
-		VAPIDPublicKey:            getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
-		VAPIDSecretARN:            getEnvOrDefault("VAPID_SECRET_ARN", ""),
-		VAPIDSubject:              getEnvOrDefault("VAPID_SUBJECT", ""),
-		AdminUsername:             getEnvOrDefault("ADMIN_USERNAME", ""),
-		SystemActorPublicKey:      getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
-		InstanceAPIKey:            strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY", "")),
-		InstanceAPIKeyARN:         strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY_ARN", "")),
-		LesserHostURL:             strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
-		LesserHostInstanceKey:     strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY", "")),
-		LesserHostInstanceKeyARN:  strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY_ARN", "")),
-		LesserHostAttestationsURL: strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_ATTESTATIONS_URL", "")), "/"),
+		JWTSecret:                    strings.TrimSpace(getEnvOrDefault("JWT_SECRET", "")),
+		JWTSecretARN:                 strings.TrimSpace(getEnvOrDefault("JWT_SECRET_ARN", "")),
+		KMSKeyID:                     getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
+		ReputationPrivateKey:         getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
+		VAPIDPublicKey:               getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
+		VAPIDSecretARN:               getEnvOrDefault("VAPID_SECRET_ARN", ""),
+		VAPIDSubject:                 getEnvOrDefault("VAPID_SUBJECT", ""),
+		AdminUsername:                getEnvOrDefault("ADMIN_USERNAME", ""),
+		SystemActorPublicKey:         getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
+		InstanceAPIKey:               strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY", "")),
+		InstanceAPIKeyARN:            strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY_ARN", "")),
+		LesserHostURL:                strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
+		LesserHostInstanceKey:        strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY", "")),
+		LesserHostInstanceKeyARN:     strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY_ARN", "")),
+		LesserHostAttestationsURL:    strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_ATTESTATIONS_URL", "")), "/"),
+		SoulBindingIntegrationKey:    strings.TrimSpace(getEnvOrDefault("SOUL_BINDING_INTEGRATION_KEY", "")),
+		SoulBindingIntegrationKeyARN: strings.TrimSpace(getEnvOrDefault("SOUL_BINDING_INTEGRATION_KEY_ARN", "")),
 
 		// Privacy configuration
 		PrivacyMasterKey:     getEnvOrDefault("PRIVACY_MASTER_KEY", ""),
@@ -655,6 +662,16 @@ func (c *Config) ResolveLesserHostInstanceKey() (string, error) {
 		return "", nil
 	}
 	return resolveOptionalSecretValue(c.LesserHostInstanceKey, c.LesserHostInstanceKeyARN)
+}
+
+// ResolveSoulBindingIntegrationKey returns the configured dedicated body/Ptah
+// -> Lesser soul-binding integration credential, resolving the optional Secrets
+// Manager ARN lazily when needed.
+func (c *Config) ResolveSoulBindingIntegrationKey() (string, error) {
+	if c == nil {
+		return "", nil
+	}
+	return resolveOptionalSecretValue(c.SoulBindingIntegrationKey, c.SoulBindingIntegrationKeyARN)
 }
 
 // ResolveOptionalSecretValue returns value when set, otherwise resolves arn
