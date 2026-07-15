@@ -67,9 +67,10 @@ const (
 // Client classes identify the client category that minted an access token.
 // These are used for server-side policy decisions (e.g., automation safety rails) without relying on spoofable headers.
 const (
-	ClientClassWeb   = "web"
-	ClientClassCLI   = "cli"
-	ClientClassAgent = "agent"
+	ClientClassWeb      = "web"
+	ClientClassCLI      = "cli"
+	ClientClassAgent    = "agent"
+	ClientClassOperator = "operator"
 )
 
 // AgentAccessTokenTTL returns the configured default lifetime for agent access tokens.

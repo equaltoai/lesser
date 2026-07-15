@@ -88,6 +88,33 @@ func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContextAndAudienc
 	require.Equal(t, []string{"https://mcp.example/resource"}, []string(claims.Audience))
 }
 
+func TestOAuthService_GenerateOperatorTokensCarryOperatorClaims(t *testing.T) {
+	t.Parallel()
+
+	svc := &OAuthService{jwtSecret: []byte("test-secret")}
+
+	access, refresh, err := svc.GenerateTokensWithAccessTokenTTLAndClientContext(
+		context.Background(),
+		"admin",
+		"operator-client",
+		"192.0.2.10",
+		[]string{ScopeRead, ScopeWrite, ScopeAdmin},
+		time.Hour,
+		ClientClassOperator,
+		"",
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, access)
+	require.NotEmpty(t, refresh)
+
+	claims, err := svc.ValidateAccessToken(access)
+	require.NoError(t, err)
+	require.Equal(t, "admin", claims.Username)
+	require.Equal(t, "operator-client", claims.ClientID)
+	require.Equal(t, ClientClassOperator, claims.ClientClass)
+	require.Equal(t, []string{ScopeRead, ScopeWrite, ScopeAdmin}, claims.Scopes)
+}
+
 func TestResolveAgentClaims_Branches(t *testing.T) {
 	t.Parallel()
 

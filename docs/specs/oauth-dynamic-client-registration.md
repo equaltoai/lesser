@@ -38,8 +38,9 @@ Lesser extensions:
 
 Unsupported metadata is rejected with `invalid_client_metadata` rather than silently ignored. `application_type` is accepted so discovery clients such as Codex/rmcp can send their standard native-client metadata without requiring a Lesser-specific registration profile.
 
-`agent_username` and public `client_class=agent` registration semantics are not part of the public RFC 7591 contract.
-Internal agent-runtime specialization is handled outside public dynamic registration.
+`agent_username`, public `client_class=agent`, and public `client_class=operator` registration semantics are not part of
+the public RFC 7591 contract. Internal agent-runtime and operator-client specialization are handled outside public
+dynamic registration.
 
 ## Redirect URI policy
 
@@ -78,6 +79,8 @@ Lesser assigns or constrains grants server-side:
 - requested `grant_types` must be a subset of Lesser's allowed default set for that client shape
 
 This keeps public dynamic registration aligned with the actor-scoped MCP contract and prevents arbitrary clients from self-assigning `client_credentials`.
+Confidential dynamic registration also does not make a client an operator client; `client_class=operator` is reserved for
+internal/operator-owned provisioning paths documented in `docs/contracts/hosted-bound-souls-x402-boundary.md`.
 
 ## Provenance and management
 

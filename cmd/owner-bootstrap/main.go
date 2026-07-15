@@ -32,6 +32,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -691,6 +692,7 @@ func buildOAuthClientModel(ownerID, clientID, clientSecret string, redirectURIs 
 		RedirectURIs: redirectURIs,
 		GrantTypes:   []string{"authorization_code", "refresh_token"},
 		Scopes:       []string{"read", "write", "admin"},
+		ClientClass:  auth.ClientClassOperator,
 		OwnerID:      ownerID,
 		Confidential: true,
 		CreatedAt:    now,

@@ -5,6 +5,9 @@ Repo: `lesser`
 Tracking issue: `equaltoai/lesser#985`  
 Parent milestone: `equaltoai/lesser-host#308`
 
+M2/L3 update: 2026-07-15
+Tracking issue: `equaltoai/lesser#1150`
+
 This document freezes the Lesser-owned boundary constraints for Project 32 M1.
 It is intentionally a contract document, not an implementation plan for public x402 invocation.
 
@@ -47,6 +50,64 @@ M1 does **not**:
    unauthenticated, and public reads never imply write, admin, operator, or tool authority.
 6. Lesser-owned logs and public responses must not expose private communications reachability, raw payment evidence,
    tenant data, wallet material, signing keys, bearer tokens, or unresolved security details.
+
+## M2/L3 operator identification decision
+
+For instance x402 exemption and hosted-bound-body caller classification, Lesser chooses **claim-based operator
+identification**.
+
+The source of truth is a Lesser-issued OAuth access token, not `lesser-body` deployment configuration. Body may evaluate
+the claims that Lesser emits, but a Body-local deployment allowlist is rejected as the authority source for deciding that
+a caller is an instance operator.
+
+### Lesser emission contract
+
+When an OAuth token is minted from an internally provisioned operator OAuth client, Lesser emits:
+
+- `client_id`: the auditable OAuth client identifier
+- `client_class: "operator"`: the machine-readable operator marker
+- `scopes`: the OAuth scopes carried by the stored authorization or refresh grant
+
+Refresh-token records persist `client_class`, and refresh-token exchange re-emits the stored marker on the next access
+token. Existing generic clients continue to emit `client_class` as `cli`, `web`, or `agent` according to their existing
+paths.
+
+The initial internal provisioner for this model is the owner-bootstrap admin OAuth client: it is confidential,
+owner-bound, has internal `admin` authority on its client record, and is now stamped `client_class=operator`. Future Host
+or operator provisioning may create or rotate dedicated operator OAuth clients in Lesser, but it must do so through an
+operator-owned/internal path, never through public dynamic registration.
+
+### Public-surface exclusions
+
+Public OAuth registration remains generic-client only:
+
+- `POST /oauth/register` and `POST /api/v1/apps` must not accept `client_class=operator`.
+- `POST /oauth/register` and `POST /api/v1/apps` must not accept public `admin` scopes.
+- Public OAuth metadata and MCP discovery must not advertise `operator`, `admin`, `admin:*`, or `client_credentials`.
+- `client_credentials` remains unsupported on the public token endpoint.
+
+x402/payment evidence is never converted into OAuth principal, admin, or operator authority. Public paid callers remain
+grant-scoped callers and stay separate from OAuth bearer callers.
+
+### Body and Host consumer contract
+
+`lesser-body` may classify a valid Lesser OAuth bearer token with `client_class=operator` as the
+`principal_operator` caller class for hosted-bound-soul operation policy. It must not use a deployment allowlist as the
+source of truth for that classification, and it must continue to require independently validated scoped x402 grants for
+`public_paid` callers.
+
+`lesser-host` may orchestrate creation, rotation, or delivery of a dedicated operator OAuth client as managed
+provisioning evolves. Host-provided payment or x402 state remains payment evidence only; it does not cause Lesser to mint
+operator claims unless an operator-owned/internal OAuth client path created the underlying Lesser OAuth client or grant.
+
+### Explicit non-goals for this decision
+
+- no Body-side deployment allowlist as the source of truth
+- no public `operator` client-class registration
+- no public `admin` scope registration or authorization
+- no x402-to-OAuth privilege upgrade
+- no new operator UI or broad OAuth redesign
+- no change to ActivityPub, GraphQL, WebFinger, NodeInfo, DynamoDB schema, signing keys, or deployment state
 
 ## Lesser-owned entrypoint constraints
 
