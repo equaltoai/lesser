@@ -474,11 +474,14 @@ func (s *LesserApiStack) instancePlaneEnabled() bool {
 		return false
 	}
 	if s.Configuration != nil {
-		if v, ok := s.Configuration["instancePlaneEnabled"]; ok && isTruthyConfigValue(v) {
-			return true
+		if v, ok := s.Configuration["instancePlaneEnabled"]; ok {
+			return isTruthyConfigValue(v)
 		}
 	}
-	return isTruthyConfigValue(s.Node().TryGetContext(jsii.String("instancePlaneEnabled")))
+	if v := s.Node().TryGetContext(jsii.String("instancePlaneEnabled")); v != nil {
+		return isTruthyConfigValue(v)
+	}
+	return true
 }
 
 func isTruthyConfigValue(value interface{}) bool {
