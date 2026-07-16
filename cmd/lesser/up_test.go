@@ -106,6 +106,7 @@ func TestParseUpArgs(t *testing.T) {
   "admin_username": "app",
   "lesser_host_url": "https://lab.lesser.host",
   "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "instance_plane_enabled": true,
   "api_cors_allowed_origins": "https://app.example.com",
   "translation_enabled": true,
   "tip_enabled": true,
@@ -126,6 +127,8 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
 		require.Equal(t, "https://lab.lesser.host", args.LesserHostURL)
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", args.LesserHostInstanceKeyARN)
+		require.NotNil(t, args.InstancePlaneEnabled)
+		require.True(t, *args.InstancePlaneEnabled)
 		require.Equal(t, "https://app.example.com", args.APICORSAllowedOrigins)
 		require.NotNil(t, args.TranslationEnabled)
 		require.True(t, *args.TranslationEnabled)
@@ -635,6 +638,92 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	require.NotNil(t, wroteReceipt)
 	require.Contains(t, wrotePath, filepath.Join(".lesser", "app", "example.com", "state.json"))
 	require.Contains(t, wroteReceipt.Stages, "dev")
+}
+
+func TestUpEnvDeployFromSource_PassesInstancePlaneContext(t *testing.T) {
+	previousCdkBootstrap := cdkBootstrapFn
+	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
+	previousCdkDeploy := cdkDeployWithOutputsFn
+	t.Cleanup(func() {
+		cdkBootstrapFn = previousCdkBootstrap
+		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
+		cdkDeployWithOutputsFn = previousCdkDeploy
+	})
+
+	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
+	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
+
+	boolValue := func(v bool) *bool { return &v }
+	stringValue := func(v string) *string { return &v }
+
+	for _, tc := range []struct {
+		name string
+		args upArgs
+		env  string
+		want *string
+	}{
+		{
+			name: "omits when not explicitly set",
+			env:  "",
+			want: nil,
+		},
+		{
+			name: "passes true from managed args",
+			args: upArgs{InstancePlaneEnabled: boolValue(true)},
+			env:  "",
+			want: stringValue("true"),
+		},
+		{
+			name: "passes false from managed args",
+			args: upArgs{InstancePlaneEnabled: boolValue(false)},
+			env:  "",
+			want: stringValue("false"),
+		},
+		{
+			name: "passes true from environment",
+			env:  "yes",
+			want: stringValue("true"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("INSTANCE_PLANE_ENABLED", tc.env)
+
+			var requests []cdkDeployRequest
+			cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+				requests = append(requests, req)
+				return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+			}
+
+			env := &upEnv{
+				args:            tc.args,
+				repoRoot:        t.TempDir(),
+				lambdaAssetRoot: filepath.Join(t.TempDir(), "lambda-assets"),
+				app:             "app",
+				baseDomain:      "example.com",
+				awsProfile:      "profile",
+				accountID:       "123456789012",
+				awsCfg:          aws.Config{Region: "us-east-1"},
+				hostedZone:      hostedZone{ID: "Z1", Name: "example.com"},
+				stages:          []naming.Stage{naming.StageDev},
+				stateDir:        t.TempDir(),
+			}
+
+			_, err := env.deployFromSource(context.Background())
+			require.NoError(t, err)
+			require.Len(t, requests, 2)
+
+			for _, req := range requests {
+				require.Equal(t, "true", req.Contexts["bodyEnabled"])
+				got, ok := req.Contexts["instancePlaneEnabled"]
+				if tc.want == nil {
+					require.False(t, ok)
+					continue
+				}
+				require.True(t, ok)
+				require.Equal(t, *tc.want, got)
+			}
+		})
+	}
 }
 
 func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {

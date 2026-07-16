@@ -11,6 +11,7 @@ func TestResolveIntegrationReceipt_DefaultsBodyEnabledWhenOtherwiseEmpty(t *test
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", "")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "")
 	t.Setenv("BODY_ENABLED", "")
+	t.Setenv("INSTANCE_PLANE_ENABLED", "")
 	t.Setenv("TRANSLATION_ENABLED", "")
 	t.Setenv("TIP_ENABLED", "")
 	t.Setenv("TIP_CHAIN_ID", "")
@@ -20,6 +21,7 @@ func TestResolveIntegrationReceipt_DefaultsBodyEnabledWhenOtherwiseEmpty(t *test
 	require.NotNil(t, out)
 	require.NotNil(t, out.BodyEnabled)
 	require.True(t, *out.BodyEnabled)
+	require.Nil(t, out.InstancePlaneEnabled)
 }
 
 func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
@@ -27,6 +29,7 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", " https://env-attest.example/ ")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", " arn:aws:secretsmanager:us-east-1:123:secret:abc ")
 	t.Setenv("BODY_ENABLED", "false")
+	t.Setenv("INSTANCE_PLANE_ENABLED", "yes")
 	t.Setenv("TRANSLATION_ENABLED", "yes")
 	t.Setenv("TIP_ENABLED", "1")
 	t.Setenv("TIP_CHAIN_ID", "10")
@@ -47,6 +50,8 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	require.Equal(t, "arn:aws:secretsmanager:us-east-1:123:secret:abc", out.LesserHostInstanceKeyARN)
 	require.NotNil(t, out.BodyEnabled)
 	require.False(t, *out.BodyEnabled)
+	require.NotNil(t, out.InstancePlaneEnabled)
+	require.True(t, *out.InstancePlaneEnabled)
 
 	require.NotNil(t, out.TranslationEnabled)
 	require.False(t, *out.TranslationEnabled)
@@ -61,6 +66,7 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 }
 
 func TestResolveIntegrationReceipt_IgnoresBadChainID(t *testing.T) {
+	t.Setenv("INSTANCE_PLANE_ENABLED", "")
 	t.Setenv("TIP_ENABLED", "true")
 	t.Setenv("TIP_CHAIN_ID", "bad")
 
@@ -71,17 +77,22 @@ func TestResolveIntegrationReceipt_IgnoresBadChainID(t *testing.T) {
 }
 
 func TestResolveIntegrationReceipt_UsesArgsPointersAndEnvParsing(t *testing.T) {
+	t.Setenv("INSTANCE_PLANE_ENABLED", "true")
 	t.Setenv("TRANSLATION_ENABLED", "1")
 	t.Setenv("TIP_ENABLED", "true")
 
 	tipEnabled := false
 	chainID := 1
+	instancePlaneEnabled := false
 	out := resolveIntegrationReceipt(upArgs{
-		TipEnabled:         &tipEnabled,
-		TipChainID:         &chainID,
-		TipContractAddress: "",
+		InstancePlaneEnabled: &instancePlaneEnabled,
+		TipEnabled:           &tipEnabled,
+		TipChainID:           &chainID,
+		TipContractAddress:   "",
 	})
 	require.NotNil(t, out)
+	require.NotNil(t, out.InstancePlaneEnabled)
+	require.False(t, *out.InstancePlaneEnabled)
 	require.NotNil(t, out.TranslationEnabled)
 	require.True(t, *out.TranslationEnabled)
 	require.NotNil(t, out.TipEnabled)

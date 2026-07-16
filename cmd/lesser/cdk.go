@@ -111,6 +111,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		"lesserHostAttestationsUrl":    strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
 		"soulBindingIntegrationKeyArn": strings.TrimSpace(os.Getenv("SOUL_BINDING_INTEGRATION_KEY_ARN")),
 		"bodyEnabled":                  strings.TrimSpace(os.Getenv("BODY_ENABLED")),
+		"instancePlaneEnabled":         strings.TrimSpace(os.Getenv("INSTANCE_PLANE_ENABLED")),
 		"translationEnabled":           strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")),
 		"allowAgents":                  strings.TrimSpace(os.Getenv("ALLOW_AGENTS")),
 		"allowAgentRegistration":       strings.TrimSpace(os.Getenv("ALLOW_AGENT_REGISTRATION")),
