@@ -1260,10 +1260,11 @@ func (s *Service) doHostBootstrapJSONWithStatus(ctx context.Context, timeout tim
 		// leave the out target zero in that case rather than failing on
 		// "unexpected end of JSON input". For any other status an empty body
 		// is a Host regression and must surface as HOST_RESPONSE_INVALID.
-		if resp.StatusCode == http.StatusAccepted && len(bytes.TrimSpace(responseBody)) == 0 {
-			// leave out zero
-		} else if err := json.Unmarshal(responseBody, out); err != nil {
-			return requestID, resp.StatusCode, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		acceptedEmpty := resp.StatusCode == http.StatusAccepted && len(bytes.TrimSpace(responseBody)) == 0
+		if !acceptedEmpty {
+			if err := json.Unmarshal(responseBody, out); err != nil {
+				return requestID, resp.StatusCode, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+			}
 		}
 	}
 
