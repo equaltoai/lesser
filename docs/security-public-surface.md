@@ -122,6 +122,8 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | POST | exact | `/api/v1/agents/auth/token` | self-sovereign agent token exchange using signed challenge proof |
 | POST | agent_access_lease_proof | `/api/v1/agents/` | agent access-lease session and renewal proof exchanges; handlers enforce lease/challenge signatures |
 | POST | exact | `/api/v1/notifications/deliver` | gate-reachable notification delivery; handler enforces internal instance key |
+| POST | exact | `/api/v1/souls/bindings` | gate-reachable soul-binding write; handler enforces body/Ptah integration credential |
+| GET/HEAD | single_segment | `/api/v1/souls/bindings/` | gate-reachable soul-binding status read; handler enforces body/Ptah integration credential |
 | POST | exact | `/oauth/token` | OAuth token exchange |
 | POST | exact | `/oauth/revoke` | OAuth token revocation |
 | POST | exact | `/oauth/consent` | OAuth consent submission |
@@ -148,6 +150,8 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
 | POST | `/setup/admin` | `setup_bearer` | setup-session bearer token enforced in handler |
 | POST | `/setup/finalize` | `bearer_required` | OAuth bearer/admin setup finalization enforced in handler |
 | POST | `/api/v1/notifications/deliver` | `internal_only` | internal instance-key bearer validation enforced in handler |
+| POST | `/api/v1/souls/bindings` | `soul_binding_integration` | body/Ptah soul-binding integration bearer validation enforced in handler |
+| GET | `/api/v1/souls/bindings/{agentId}` | `soul_binding_integration` | body/Ptah soul-binding integration bearer validation enforced in handler |
 <!-- END GENERATED PUBLICSURFACE -->
 
 ### Auth (user-scoped)

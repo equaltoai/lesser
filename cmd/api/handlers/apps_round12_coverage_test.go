@@ -205,6 +205,22 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
+	t.Run("public_registration_rejects_operator_client_class", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:   "Operator Console",
+			RedirectURIs: "https://example.com/callback",
+			Scopes:       "read write",
+			ClientClass:  auth.ClientClassOperator,
+		}
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		require.Contains(t, string(resp.Body), "client_class=operator is not supported for public registration")
+	})
+
 	t.Run("confidential_public_web_client_does_not_require_authenticated_owner", func(t *testing.T) {
 		state := &round10QueryState{}
 		handler, _, _ := round11NewHandler(t, cfg, state)

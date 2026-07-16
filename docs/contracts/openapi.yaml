@@ -46,6 +46,11 @@ components:
             scheme: bearer
             bearerFormat: opaque
             description: 'Temporary setup session token: `Authorization: Bearer <setup_token>` (issued by `/setup/bootstrap/verify`).'
+        soulBindingBearer:
+            type: http
+            scheme: bearer
+            bearerFormat: opaque
+            description: Dedicated body/Ptah to Lesser soul-binding integration credential. User OAuth tokens are not accepted.
     schemas:
         Account:
             additionalProperties: false
@@ -1191,7 +1196,6 @@ components:
                     type: array
             required:
                 - agent_username
-                - display_name
                 - scopes
             type: object
         AgentDelegationResponse:
@@ -6113,6 +6117,10 @@ components:
             properties:
                 agent_id:
                     type: string
+                anchor_state:
+                    type: string
+                authority_model:
+                    type: string
                 avatar:
                     anyOf:
                         - $ref: '#/components/schemas/SoulAgentAvatar'
@@ -6141,6 +6149,8 @@ components:
                     anyOf:
                         - $ref: '#/components/schemas/RFC3339DateTime'
                         - type: "null"
+                operational_binding:
+                    type: string
                 predecessor_agent_id:
                     type: string
                 principal_address:
@@ -6151,6 +6161,8 @@ components:
                     type: string
                 principal_signature:
                     type: string
+                published_version:
+                    type: integer
                 self_description_version:
                     anyOf:
                         - type: integer
@@ -6173,6 +6185,123 @@ components:
                 - local_id
                 - status
                 - wallet
+            type: object
+        SoulBindingAgent:
+            additionalProperties: false
+            properties:
+                agent_id:
+                    type: string
+                anchor_state:
+                    type: string
+                authority_model:
+                    type: string
+                domain:
+                    type: string
+                lifecycle_status:
+                    type: string
+                local_id:
+                    type: string
+                operational_binding:
+                    type: string
+                published_version:
+                    type: integer
+            required:
+                - agent_id
+                - anchor_state
+                - authority_model
+                - domain
+                - lifecycle_status
+                - local_id
+                - operational_binding
+            type: object
+        SoulBindingEvidence:
+            additionalProperties: false
+            properties:
+                declaration_hash:
+                    type: string
+                host_request_id:
+                    type: string
+                issued_at:
+                    type: string
+                source:
+                    type: string
+            type: object
+        SoulBindingIdempotency:
+            additionalProperties: false
+            properties:
+                key:
+                    type: string
+                payload_hash:
+                    type: string
+                replayed:
+                    type: boolean
+            required:
+                - key
+                - payload_hash
+                - replayed
+            type: object
+        SoulBindingLinks:
+            additionalProperties: false
+            properties:
+                status:
+                    type: string
+            required:
+                - status
+            type: object
+        SoulBindingRequest:
+            additionalProperties: false
+            properties:
+                actor_username:
+                    type: string
+                anchor_state:
+                    type: string
+                authority_model:
+                    type: string
+                body_actor_id:
+                    type: string
+                evidence:
+                    $ref: '#/components/schemas/SoulBindingEvidence'
+                host_conversation_id:
+                    type: string
+                host_registration_id:
+                    type: string
+                operational_binding:
+                    type: string
+                principal_address:
+                    type: string
+                soul_agent_id:
+                    type: string
+            required:
+                - actor_username
+                - soul_agent_id
+            type: object
+        SoulBindingResponse:
+            additionalProperties: false
+            properties:
+                agent:
+                    $ref: '#/components/schemas/SoulBindingAgent'
+                binding:
+                    $ref: '#/components/schemas/SoulAgentBinding'
+                binding_state:
+                    type: string
+                idempotency:
+                    anyOf:
+                        - $ref: '#/components/schemas/SoulBindingIdempotency'
+                        - type: "null"
+                links:
+                    anyOf:
+                        - $ref: '#/components/schemas/SoulBindingLinks'
+                        - type: "null"
+                status:
+                    type: string
+                version:
+                    type: string
+            required:
+                - agent
+                - binding
+                - binding_state
+                - status
+                - version
             type: object
         SoulBodyBinding:
             additionalProperties: false
@@ -13269,10 +13398,14 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
             x-lesser-handler: HandleDelegateAgentLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -17246,6 +17379,98 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write
+    /api/v1/souls/bindings:
+        post:
+            operationId: post_api_v1_souls_bindings
+            description: 'Create or confirm a Lesser-local hosted soul/body binding for body/Ptah. The endpoint is server-to-server only: it requires the dedicated soul-binding integration bearer, rejects user OAuth tokens, refetches Host source truth, and writes only through Lesser''s SOUL_BODY_BINDING repository path.'
+            tags:
+                - souls
+            security:
+                - soulBindingBearer: []
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  required: true
+                  description: Caller-scoped idempotency key for this binding attempt. Reusing the same key with a different canonical payload returns SOUL_BINDING_IDEMPOTENCY_MISMATCH.
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 200
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulBindingResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-handler: HandleCreateSoulBindingLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/souls/bindings/{agentId}:
+        get:
+            operationId: get_api_v1_souls_bindings_by_agentId
+            description: Return the authenticated body/Ptah status projection for a Lesser-local hosted soul/body binding. Lesser fails closed if the local binding exists but Host source truth cannot currently prove the hosted active identity.
+            tags:
+                - souls
+            security:
+                - soulBindingBearer: []
+            parameters:
+                - name: agentId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: actor_username
+                  in: query
+                  description: Optional local actor username assertion. A mismatch with the stored binding returns SOUL_BINDING_ACTOR_MISMATCH.
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulBindingResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-handler: HandleGetSoulBindingLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/souls/bound/me:
         get:
             operationId: get_api_v1_souls_bound_me

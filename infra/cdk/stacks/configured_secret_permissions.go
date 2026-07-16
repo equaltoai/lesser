@@ -12,6 +12,7 @@ import (
 
 var configuredSecretARNContextKeys = []string{
 	"lesserHostInstanceKeyArn",
+	"soulBindingIntegrationKeyArn",
 	"vapidSecretArn",
 }
 

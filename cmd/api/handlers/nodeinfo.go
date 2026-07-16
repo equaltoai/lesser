@@ -36,13 +36,15 @@ func (h *Handler) HandleNodeInfoLift(ctx *apptheory.Context) (*apptheory.Respons
 	var instanceConfig *config.InstanceConfig
 	if h.cfg.Domain == "example.com" {
 		// Test environment - use defaults
+		softwareVersion := config.NormalizeLesserVersion(h.cfg.Version)
 		instanceConfig = &config.InstanceConfig{
 			Title:             "Test Instance",
 			ShortDescription:  "A test instance",
 			Description:       "Test instance description",
 			Email:             "admin@example.com",
-			Version:           "4.0.0 (compatible; Lesser 0.1.0)",
+			Version:           config.MastodonCompatibleVersion(softwareVersion),
 			Software:          "lesser",
+			SoftwareVersion:   softwareVersion,
 			Languages:         []string{"en"},
 			MaxStatusChars:    500,
 			MaxMediaSize:      10485760,  // 10MB
@@ -73,7 +75,7 @@ func (h *Handler) HandleNodeInfoLift(ctx *apptheory.Context) (*apptheory.Respons
 		Version: "2.0",
 		Software: apimodels.NodeInfoSoftware{
 			Name:       "lesser",
-			Version:    instanceConfig.Version,
+			Version:    config.NormalizeLesserVersion(instanceConfig.SoftwareVersion),
 			Repository: "https://github.com/equaltoai/lesser",
 			Homepage:   "https://github.com/equaltoai/lesser",
 		},

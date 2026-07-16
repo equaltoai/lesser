@@ -31,6 +31,7 @@ type APIGatewayProps struct {
 	Functions             *LambdaFunctions
 	HostedZone            awsroute53.IHostedZone
 	BodyEnabled           bool
+	InstancePlaneEnabled  bool
 	APICORSAllowedOrigins string
 }
 
@@ -92,6 +93,9 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds, preflight)
 	if props.BodyEnabled {
 		addMcpRoute(scope, gateway.RestApi, appName, apiStage, preflight)
+	}
+	if props.BodyEnabled && props.InstancePlaneEnabled {
+		addInstancePlaneRoute(scope, gateway.RestApi, appName, apiStage, preflight)
 	}
 
 	// Shared custom domain for all WebSocket APIs.
@@ -209,6 +213,38 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 	addLambdaIntegrationWithPreflight(api, "/mcp/{actor}", &[]*string{jsii.String("DELETE")}, mcpLambda, nil, preflight)
 	addLambdaIntegrationWithPreflight(api, "/.well-known/mcp.json", &[]*string{jsii.String("GET")}, mcpLambda, nil, preflight)
 	addLambdaIntegrationWithPreflight(api, "/.well-known/oauth-protected-resource/mcp/{actor}", &[]*string{jsii.String("GET")}, mcpLambda, nil, preflight)
+}
+
+func addInstancePlaneRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRouter, appName string, stage naming.Stage, preflight restAPIPreflightConfig) {
+	if scope == nil || api == nil || strings.TrimSpace(appName) == "" || strings.TrimSpace(string(stage)) == "" {
+		return
+	}
+
+	paramName := fmt.Sprintf("/%s/%s/lesser-body/exports/v1/instance_mcp_lambda_arn", appName, stage)
+	lambdaArnParam := awsssm.StringParameter_FromStringParameterName(
+		scope,
+		jsii.String("LesserBodyInstanceMcpLambdaArnParamLookup"),
+		jsii.String(paramName),
+	)
+
+	instanceMcpLambda := awslambda.Function_FromFunctionArn(scope, jsii.String("ImportedLesserBodyInstanceMcpLambda"), lambdaArnParam.StringValue())
+	awslambda.NewCfnPermission(scope, jsii.String("InstanceMcpLambdaInvokeFromApiGateway"), &awslambda.CfnPermissionProps{
+		Action:       jsii.String("lambda:InvokeFunction"),
+		FunctionName: instanceMcpLambda.FunctionArn(),
+		Principal:    jsii.String("apigateway.amazonaws.com"),
+		SourceArn:    api.Api().ArnForExecuteApi(jsii.String("*"), jsii.String("/*"), jsii.String(string(stage))),
+	})
+	options := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
+		Streaming: jsii.Bool(true),
+	}
+	for _, actor := range []string{"ptah", "ba"} {
+		mcpPath := fmt.Sprintf("/instance/%s/mcp", actor)
+		addLambdaIntegrationWithPreflight(api, mcpPath, &[]*string{jsii.String("POST")}, instanceMcpLambda, options, preflight)
+		addLambdaIntegrationWithPreflight(api, mcpPath, &[]*string{jsii.String("GET")}, instanceMcpLambda, options, preflight)
+		addLambdaIntegrationWithPreflight(api, mcpPath, &[]*string{jsii.String("DELETE")}, instanceMcpLambda, nil, preflight)
+		addLambdaIntegrationWithPreflight(api, fmt.Sprintf("/.well-known/oauth-protected-resource/instance/%s/mcp", actor), &[]*string{jsii.String("GET")}, instanceMcpLambda, nil, preflight)
+	}
+	addLambdaIntegrationWithPreflight(api, "/instance/downloads/installer-grants/{grantId}", &[]*string{jsii.String("GET")}, instanceMcpLambda, nil, preflight)
 }
 
 func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi, preflight restAPIPreflightConfig) {

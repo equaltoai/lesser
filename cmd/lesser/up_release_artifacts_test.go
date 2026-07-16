@@ -147,12 +147,14 @@ func TestRunUp_ReleaseDirDeploysSharedAndStageStacksViaCDK(t *testing.T) {
 	require.NotEmpty(t, requests[0].LambdaAssetRoot)
 	require.Equal(t, string(naming.StageShared), requests[0].StageFilter)
 	require.False(t, requests[0].WithStaging)
+	require.Equal(t, "v1.2.3", requests[0].Contexts["lesserVersion"])
 
 	for _, req := range requests[1:] {
 		require.Equal(t, "app", req.App)
 		require.Equal(t, "example.com", req.BaseDomain)
 		require.Equal(t, "Z1", req.HostedZoneID)
 		require.Equal(t, requests[0].LambdaAssetRoot, req.LambdaAssetRoot)
+		require.Equal(t, "v1.2.3", req.Contexts["lesserVersion"])
 		require.NotEqual(t, string(naming.StageShared), req.StageFilter)
 	}
 }

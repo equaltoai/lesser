@@ -327,6 +327,9 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 
 		_, err = normalizeDynamicRegistrationClientClass(auth.ClientClassAgent, oauthTokenEndpointAuthMethodClientSecretPost)
 		require.ErrorContains(t, err, "client_class=agent is not supported for public registration")
+
+		_, err = normalizeDynamicRegistrationClientClass(auth.ClientClassOperator, oauthTokenEndpointAuthMethodClientSecretPost)
+		require.ErrorContains(t, err, "client_class=operator is not supported for public registration")
 	})
 
 	t.Run("grant type normalization enforces dynamic policy", func(t *testing.T) {

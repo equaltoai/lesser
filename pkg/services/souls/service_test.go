@@ -52,7 +52,9 @@ type fakeInstanceRepo struct {
 	trustErr        error
 	bindingsByAgent map[string]*storageModels.InstanceSoulBodyBinding
 	bindingsByUser  map[string]*storageModels.InstanceSoulBodyBinding
+	receipts        map[string]*storageModels.InstanceSoulBindingIdempotencyReceipt
 	bindErr         error
+	bindCalls       int
 }
 
 func (f *fakeInstanceRepo) EffectiveTrustConfig(_ context.Context) (*storageModels.EffectiveTrustConfig, error) {
@@ -77,6 +79,7 @@ func (f *fakeInstanceRepo) GetSoulBodyBindingByUsername(_ context.Context, usern
 }
 
 func (f *fakeInstanceRepo) BindSoulBody(_ context.Context, agentID string, username string, principalAddress string) (*storageModels.InstanceSoulBodyBinding, error) {
+	f.bindCalls++
 	if f.bindErr != nil {
 		return nil, f.bindErr
 	}
@@ -119,6 +122,43 @@ func (f *fakeInstanceRepo) BindSoulBody(_ context.Context, agentID string, usern
 	f.bindingsByAgent[normalizedAgentID] = binding
 	f.bindingsByUser[normalizedUsername] = binding
 	return binding, nil
+}
+
+func (f *fakeInstanceRepo) GetSoulBindingIdempotencyReceipt(_ context.Context, callerID string, idempotencyKey string) (*storageModels.InstanceSoulBindingIdempotencyReceipt, error) {
+	if f == nil || f.receipts == nil {
+		return nil, nil
+	}
+	return f.receipts[f.receiptKey(callerID, idempotencyKey)], nil
+}
+
+func (f *fakeInstanceRepo) CreateSoulBindingIdempotencyReceipt(_ context.Context, receipt *storageModels.InstanceSoulBindingIdempotencyReceipt) error {
+	if f.receipts == nil {
+		f.receipts = map[string]*storageModels.InstanceSoulBindingIdempotencyReceipt{}
+	}
+	key := f.receiptKey(receipt.CallerID, receipt.IdempotencyKeyHash)
+	if _, ok := f.receipts[key]; ok {
+		return storageRepos.ErrSoulBodyBindingAlreadyExists
+	}
+	cp := *receipt
+	f.receipts[key] = &cp
+	return nil
+}
+
+func (f *fakeInstanceRepo) UpdateSoulBindingIdempotencyReceipt(_ context.Context, receipt *storageModels.InstanceSoulBindingIdempotencyReceipt) error {
+	if f.receipts == nil {
+		f.receipts = map[string]*storageModels.InstanceSoulBindingIdempotencyReceipt{}
+	}
+	cp := *receipt
+	f.receipts[f.receiptKey(receipt.CallerID, receipt.IdempotencyKeyHash)] = &cp
+	return nil
+}
+
+func (f *fakeInstanceRepo) receiptKey(callerID string, idempotencyKeyOrHash string) string {
+	key := strings.TrimSpace(idempotencyKeyOrHash)
+	if len(key) != 64 {
+		key = storageModels.SoulBindingIdempotencyKeyHash(key)
+	}
+	return strings.ToLower(strings.TrimSpace(callerID)) + "|" + strings.ToLower(key)
 }
 
 type errorRoundTripper struct {

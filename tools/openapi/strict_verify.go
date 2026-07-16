@@ -207,6 +207,16 @@ func validateStrictOperationSecurity(op *operation, route routeDef) error {
 		if _, ok := op.Responses["403"]; !ok {
 			return errors.New("missing 403 response for authenticated operation")
 		}
+	case authModeSoulBinding:
+		if !isSoulBindingBearerSecurity(op.Security) {
+			return errors.New("expected soulBindingBearer required security")
+		}
+		if _, ok := op.Responses["401"]; !ok {
+			return errors.New("missing 401 response for authenticated operation")
+		}
+		if _, ok := op.Responses["403"]; !ok {
+			return errors.New("missing 403 response for authenticated operation")
+		}
 	default:
 		return fmt.Errorf("unknown auth mode %q", route.Auth)
 	}
@@ -383,6 +393,14 @@ func isSetupBearerSecurity(security []map[string][]string) bool {
 		return false
 	}
 	_, ok := security[0]["setupBearer"]
+	return ok
+}
+
+func isSoulBindingBearerSecurity(security []map[string][]string) bool {
+	if len(security) != 1 {
+		return false
+	}
+	_, ok := security[0]["soulBindingBearer"]
 	return ok
 }
 

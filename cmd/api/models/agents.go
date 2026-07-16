@@ -71,7 +71,7 @@ type Agent struct {
 // Lesser is email-free. This endpoint does not accept email.
 type AgentDelegationRequest struct {
 	AgentUsername string   `json:"agent_username"`
-	DisplayName   string   `json:"display_name"`
+	DisplayName   string   `json:"display_name,omitempty"`
 	Bio           string   `json:"bio,omitempty"`
 	Scopes        []string `json:"scopes"`
 	ExpiresIn     int      `json:"expires_in,omitempty"`

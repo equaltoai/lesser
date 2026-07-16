@@ -58,6 +58,9 @@ const (
 	ContractAuthBearerRequired ContractAuthClass = "bearer_required"
 	// ContractAuthInternalOnly is handler-enforced with internal instance keys.
 	ContractAuthInternalOnly ContractAuthClass = "internal_only"
+	// ContractAuthSoulBindingIntegration is handler-enforced with the dedicated
+	// body/Ptah -> Lesser soul-binding integration bearer credential.
+	ContractAuthSoulBindingIntegration ContractAuthClass = "soul_binding_integration"
 )
 
 // ContractAuthRule is one handler-enforced contract-auth override for a route
@@ -412,6 +415,18 @@ var publicRules = []PublicRule{
 	},
 	{
 		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/souls/bindings",
+		Match:       RuleMatchExact,
+		Description: "gate-reachable soul-binding write; handler enforces body/Ptah integration credential",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/souls/bindings/",
+		Match:       RuleMatchSingleSegment,
+		Description: "gate-reachable soul-binding status read; handler enforces body/Ptah integration credential",
+	},
+	{
+		Methods:     []string{http.MethodPost},
 		Path:        "/oauth/token",
 		Match:       RuleMatchExact,
 		Description: "OAuth token exchange",
@@ -526,6 +541,18 @@ var contractAuthRules = []ContractAuthRule{
 		Path:        "/api/v1/notifications/deliver",
 		Class:       ContractAuthInternalOnly,
 		Description: "internal instance-key bearer validation enforced in handler",
+	},
+	{
+		Method:      http.MethodPost,
+		Path:        "/api/v1/souls/bindings",
+		Class:       ContractAuthSoulBindingIntegration,
+		Description: "body/Ptah soul-binding integration bearer validation enforced in handler",
+	},
+	{
+		Method:      http.MethodGet,
+		Path:        "/api/v1/souls/bindings/{agentId}",
+		Class:       ContractAuthSoulBindingIntegration,
+		Description: "body/Ptah soul-binding integration bearer validation enforced in handler",
 	},
 }
 

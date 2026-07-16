@@ -173,6 +173,10 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
 	}
 
+	if v := getConfigString("lesserVersion"); v != "" {
+		commonEnv["VERSION"] = jsii.String(v)
+	}
+
 	// Tips (TipSplitter integration). These are public, non-secret values and are only set when configured.
 	if v := getConfigString("tipEnabled"); v != "" {
 		commonEnv["TIP_ENABLED"] = jsii.String(v)
@@ -194,6 +198,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	}
 	if v := getConfigString("lesserHostAttestationsUrl"); v != "" {
 		commonEnv["LESSER_HOST_ATTESTATIONS_URL"] = jsii.String(v)
+	}
+	// NOTE: Dedicated body/Ptah -> Lesser binding credential ARN; the ARN is non-secret,
+	// but the resolved value must remain server-side only.
+	if v := getConfigString("soulBindingIntegrationKeyArn"); v != "" {
+		commonEnv["SOUL_BINDING_INTEGRATION_KEY_ARN"] = jsii.String(v)
 	}
 
 	// Optional tables

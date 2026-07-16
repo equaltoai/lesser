@@ -188,6 +188,23 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Contains(t, string(resp.Body), "client_class=agent is not supported for public registration")
 	})
 
+	t.Run("rejects public operator client class", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:   "Operator Console",
+			RedirectURIs: []string{"https://example.com/callback"},
+			ClientClass:  auth.ClientClassOperator,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		require.Contains(t, string(resp.Body), "\"error\":\"invalid_client_metadata\"")
+		require.Contains(t, string(resp.Body), "client_class=operator is not supported for public registration")
+	})
+
 	t.Run("rejects invalid redirect policy", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 

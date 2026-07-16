@@ -28,6 +28,9 @@ type SoulAgentIdentity struct {
 	LocalID                string           `json:"local_id"`
 	ENSName                *string          `json:"ens_name"`
 	Wallet                 string           `json:"wallet"`
+	AuthorityModel         string           `json:"authority_model,omitempty"`
+	AnchorState            string           `json:"anchor_state,omitempty"`
+	OperationalBinding     string           `json:"operational_binding,omitempty"`
 	TokenID                string           `json:"token_id,omitempty"`
 	MetaURI                string           `json:"meta_uri,omitempty"`
 	Avatar                 *SoulAgentAvatar `json:"avatar,omitempty"`
@@ -45,6 +48,7 @@ type SoulAgentIdentity struct {
 	MintTxHash             string           `json:"mint_tx_hash,omitempty"`
 	MintedAt               *time.Time       `json:"minted_at,omitempty"`
 	UpdatedAt              *time.Time       `json:"updated_at,omitempty"`
+	PublishedVersion       int              `json:"published_version,omitempty"`
 }
 
 // SoulAgentBinding represents a local soul -> agent incorporation binding.
@@ -74,6 +78,64 @@ type BoundSoulResponse struct {
 	Agent        SoulAgentIdentity `json:"agent"`
 	BindingState string            `json:"binding_state"`
 	Binding      SoulAgentBinding  `json:"binding"`
+}
+
+// SoulBindingEvidence carries body/Ptah correlation evidence. Lesser treats it
+// as a hint only; Host source truth remains authoritative.
+type SoulBindingEvidence struct {
+	Source          string `json:"source,omitempty"`
+	HostRequestID   string `json:"host_request_id,omitempty"`
+	DeclarationHash string `json:"declaration_hash,omitempty"`
+	IssuedAt        string `json:"issued_at,omitempty"`
+}
+
+// SoulBindingRequest represents POST /api/v1/souls/bindings.
+type SoulBindingRequest struct {
+	ActorUsername      string              `json:"actor_username"`
+	SoulAgentID        string              `json:"soul_agent_id"`
+	BodyActorID        string              `json:"body_actor_id,omitempty"`
+	HostRegistrationID string              `json:"host_registration_id,omitempty"`
+	HostConversationID string              `json:"host_conversation_id,omitempty"`
+	AuthorityModel     string              `json:"authority_model,omitempty"`
+	AnchorState        string              `json:"anchor_state,omitempty"`
+	OperationalBinding string              `json:"operational_binding,omitempty"`
+	PrincipalAddress   string              `json:"principal_address,omitempty"`
+	Evidence           SoulBindingEvidence `json:"evidence,omitempty"`
+}
+
+// SoulBindingAgent is the Host-refetched identity block used for binding responses.
+type SoulBindingAgent struct {
+	AgentID            string `json:"agent_id"`
+	Domain             string `json:"domain"`
+	LocalID            string `json:"local_id"`
+	AuthorityModel     string `json:"authority_model"`
+	AnchorState        string `json:"anchor_state"`
+	OperationalBinding string `json:"operational_binding"`
+	LifecycleStatus    string `json:"lifecycle_status"`
+	PublishedVersion   int    `json:"published_version,omitempty"`
+}
+
+// SoulBindingIdempotency describes the POST replay scope and canonical payload hash.
+type SoulBindingIdempotency struct {
+	Key         string `json:"key"`
+	Replayed    bool   `json:"replayed"`
+	PayloadHash string `json:"payload_hash"`
+}
+
+// SoulBindingLinks contains binding follow-up links.
+type SoulBindingLinks struct {
+	Status string `json:"status"`
+}
+
+// SoulBindingResponse represents POST/GET /api/v1/souls/bindings*.
+type SoulBindingResponse struct {
+	Version      string                  `json:"version"`
+	Status       string                  `json:"status"`
+	BindingState string                  `json:"binding_state"`
+	Agent        SoulBindingAgent        `json:"agent"`
+	Binding      SoulAgentBinding        `json:"binding"`
+	Idempotency  *SoulBindingIdempotency `json:"idempotency,omitempty"`
+	Links        *SoulBindingLinks       `json:"links,omitempty"`
 }
 
 // SoulMintConversationSummary represents compact mint-conversation metadata for self-scoped private reads.
