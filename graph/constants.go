@@ -12,6 +12,9 @@ const (
 	ContentTypeVideo   = "video"
 )
 
+// Generic fallback constants
+const unknownValue = "unknown"
+
 // Health status constants
 const (
 	HealthStatusHealthy  = "healthy"

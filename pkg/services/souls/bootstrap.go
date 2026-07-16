@@ -545,8 +545,25 @@ func (s *Service) VerifyBootstrapPrincipalDeclaration(ctx context.Context, input
 }
 
 // SendBootstrapConversationMessage relays one mint-conversation turn to Host's
-// durable JSON instance-key route. HTTP 200/202 is transport success only; the
-// returned Host status drives Lesser's local projection.
+// durable JSON instance-key route. Under the MicroVM-only genesis contract
+// (P52 / lesser-host#867) Host returns 202 Accepted-Pending and dispatches the
+// turn to a MicroVM asynchronously; Lesser therefore bounds this call with
+// defaultSoulBootstrapAcceptTimeout (sized for the 202 accept, not the turn).
+//
+// HTTP status is transport state only (G12):
+//   - 202 Accepted: the turn was accepted and is pending. The response body is
+//     NOT a full conversation snapshot — Lesser never parses it as one (G12)
+//     and never projects inline assistant messages from it (G13). Host may
+//     optionally supply conversation/agent ids in a minimal body; otherwise the
+//     caller's existing conversation id is preserved. The returned status is
+//     the canonical pending status "in_progress" so the state machine routes
+//     the client to poll (REFRESH_STATE), not to re-send.
+//   - 200 OK: Host returned a complete synchronous snapshot (the legacy /
+//     non-MicroVM path). It is parsed and validated as a full snapshot, as
+//     before.
+//
+// A timeout maps to HOST_UNAVAILABLE; the resolver routes that to REFRESH_STATE
+// (poll), never to RETRY_SAME_STEP (G15).
 func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input BootstrapConversationMessageInput) (*BootstrapConversationMessageResult, error) {
 	baseURL, _, instanceKey, err := s.hostBootstrapInputs(ctx)
 	if err != nil {
@@ -571,11 +588,19 @@ func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input Bo
 		payload["model"] = model
 	}
 
+	// Read the body as raw bytes so 202 can be handled as accepted-pending
+	// without unmarshaling it into a full snapshot. The accept timeout bounds
+	// the call; reads/poll use the longer default timeout.
 	var raw json.RawMessage
-	requestID, err := s.doHostBootstrapJSON(ctx, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation", instanceKey, payload, http.StatusOK, http.StatusAccepted, &raw)
+	requestID, statusCode, err := s.doHostBootstrapJSONWithStatus(ctx, defaultSoulBootstrapAcceptTimeout, http.MethodPost, baseURL, "/api/v1/soul/instance/agents/register/"+url.PathEscape(registrationID)+"/mint-conversation", instanceKey, payload, http.StatusOK, http.StatusAccepted, &raw)
 	if err != nil {
 		return nil, err
 	}
+
+	if statusCode == http.StatusAccepted {
+		return s.bootstrapConversationMessageAcceptedPending(registrationID, input.ConversationID, raw, requestID), nil
+	}
+
 	out, version, err := parseHostConversationResponseEnvelope(raw, requestID)
 	if err != nil {
 		return nil, err
@@ -600,6 +625,65 @@ func (s *Service) SendBootstrapConversationMessage(ctx context.Context, input Bo
 		}
 	}
 	return result, nil
+}
+
+// bootstrapConversationMessageAcceptedPending projects a 202 Accepted-Pending
+// response into a pending turn result. It never treats the 202 body as a full
+// conversation snapshot (G12) and never surfaces inline assistant messages
+// (G13): Messages is nil and MessageCount is 0. Host may optionally carry
+// conversation/agent/registration ids — either at the top level or nested
+// under a durable `conversation` envelope — and those are extracted
+// best-effort so Lesser can persist host_conversation_id early (projection
+// invariant #2); they fall back to the caller's existing conversation id. The
+// status is the canonical pending status "in_progress" so the state machine
+// routes the client to poll.
+func (s *Service) bootstrapConversationMessageAcceptedPending(registrationID, inputConversationID string, raw json.RawMessage, requestID string) *BootstrapConversationMessageResult {
+	result := &BootstrapConversationMessageResult{
+		RegistrationID: registrationID,
+		ConversationID: strings.TrimSpace(inputConversationID),
+		Status:         NormalizeHostedBootstrapConversationStatus("in_progress"),
+		HostRequestID:  strings.TrimSpace(requestID),
+	}
+	// Best-effort id extraction only. A missing/empty body is valid for
+	// accepted-pending; any parse failure is ignored so a pending accept is
+	// never turned into a HOST_RESPONSE_INVALID. Messages, status validation,
+	// and produced-declaration evidence are intentionally NOT read here — the
+	// 202 is not a snapshot.
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return result
+	}
+	var envelope struct {
+		RegistrationID string `json:"registration_id"`
+		AgentID        string `json:"agent_id"`
+		ConversationID string `json:"conversation_id"`
+		RequestID      string `json:"request_id"`
+		Conversation   struct {
+			RegistrationID string `json:"registration_id"`
+			AgentID        string `json:"agent_id"`
+			ConversationID string `json:"conversation_id"`
+			RequestID      string `json:"request_id"`
+		} `json:"conversation"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return result
+	}
+	regID := firstNonEmpty(strings.TrimSpace(envelope.RegistrationID), strings.TrimSpace(envelope.Conversation.RegistrationID))
+	if regID != "" {
+		result.RegistrationID = regID
+	}
+	agentID := firstNonEmpty(strings.TrimSpace(envelope.AgentID), strings.TrimSpace(envelope.Conversation.AgentID))
+	if agentID != "" {
+		result.HostSoulAgentID = strings.ToLower(agentID)
+	}
+	convID := firstNonEmpty(strings.TrimSpace(envelope.ConversationID), strings.TrimSpace(envelope.Conversation.ConversationID))
+	if convID != "" {
+		result.ConversationID = convID
+	}
+	bodyRequestID := firstNonEmpty(strings.TrimSpace(envelope.RequestID), strings.TrimSpace(envelope.Conversation.RequestID))
+	if bodyRequestID != "" {
+		result.HostRequestID = hostConversationRequestID(requestID, bodyRequestID)
+	}
+	return result
 }
 
 // CompleteBootstrapConversation completes a Host mint conversation and returns
@@ -1093,10 +1177,26 @@ func (s *Service) hostBootstrapInputs(ctx context.Context) (string, string, stri
 	return baseURL, instanceDomain, strings.TrimSpace(instanceKey), nil
 }
 
+// doHostBootstrapJSON issues a Host bootstrap JSON request, validates the
+// response status against expectedStatuses, and unmarshals the body into the
+// trailing pointer argument when one is supplied. It uses the default
+// discovery/read timeout and discards the HTTP status code. Callers that need
+// the propagated status (the send POST, to distinguish 200 from 202) or a
+// per-call timeout (the send POST accept timeout) must use
+// doHostBootstrapJSONWithStatus.
 func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseURL string, path string, instanceKey string, payload any, expectedStatuses ...any) (string, error) {
+	requestID, _, err := s.doHostBootstrapJSONWithStatus(ctx, defaultSoulHTTPTimeout, method, baseURL, path, instanceKey, payload, expectedStatuses...)
+	return requestID, err
+}
+
+// doHostBootstrapJSONWithStatus is the status-propagating, timeout-aware core
+// of doHostBootstrapJSON. It returns the Host request id, the HTTP status code
+// of the response (propagated so callers can distinguish 200 from 202 — see
+// G12), and any error. A timeout <= 0 falls back to defaultSoulHTTPTimeout.
+func (s *Service) doHostBootstrapJSONWithStatus(ctx context.Context, timeout time.Duration, method string, baseURL string, path string, instanceKey string, payload any, expectedStatuses ...any) (string, int, error) {
 	endpoint, err := hostBootstrapURL(baseURL, path)
 	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return "", 0, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
 	expected, out := splitHostBootstrapJSONExpectedStatuses(expectedStatuses...)
 
@@ -1104,14 +1204,14 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
 		body = bytes.NewReader(encoded)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return "", 0, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
@@ -1119,35 +1219,56 @@ func (s *Service) doHostBootstrapJSON(ctx context.Context, method string, baseUR
 	}
 	req.Header.Set("Authorization", "Bearer "+instanceKey)
 
+	// A per-call timeout > 0 bounds this request without disturbing a
+	// test-configured client's transport (see WithHTTPClient). The send POST
+	// passes defaultSoulBootstrapAcceptTimeout so it does not block on a full
+	// MicroVM turn; reads/discovery pass defaultSoulHTTPTimeout. We honor an
+	// already-shorter caller context deadline.
+	if timeout > 0 {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > timeout {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+			req = req.WithContext(ctx)
+		}
+	}
+
 	client := s.httpClient
 	if client == nil {
 		client = &http.Client{Timeout: defaultSoulHTTPTimeout}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return "", 0, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap endpoint is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
 	defer resp.Body.Close()
 
 	responseBody, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, hostBootstrapMaxResponseBytes)
 	if err != nil {
-		return requestIDFromHeaders(resp.Header), &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		return requestIDFromHeaders(resp.Header), resp.StatusCode, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is unavailable.", Source: "host", Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
 	}
 	requestID := requestIDFromHeaders(resp.Header)
 
 	if !hostBootstrapStatusAllowed(resp.StatusCode, expected) {
-		return requestID, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
+		return requestID, resp.StatusCode, hostBootstrapHTTPError(resp.StatusCode, resp.Header, responseBody, truncated, instanceKey)
 	}
 	if truncated {
-		return requestID, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
+		return requestID, resp.StatusCode, &HostBootstrapError{Code: "HOST_UNAVAILABLE", Message: "Host bootstrap response is too large.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: ErrHostUnavailable}
 	}
 	if out != nil {
-		if err := json.Unmarshal(responseBody, out); err != nil {
-			return requestID, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+		// An empty body is valid only for an accepted-pending (202) response;
+		// leave the out target zero in that case rather than failing on
+		// "unexpected end of JSON input". For any other status an empty body
+		// is a Host regression and must surface as HOST_RESPONSE_INVALID.
+		acceptedEmpty := resp.StatusCode == http.StatusAccepted && len(bytes.TrimSpace(responseBody)) == 0
+		if !acceptedEmpty {
+			if err := json.Unmarshal(responseBody, out); err != nil {
+				return requestID, resp.StatusCode, &HostBootstrapError{Code: "HOST_RESPONSE_INVALID", Message: "Host bootstrap response is invalid.", Source: "host", StatusCode: resp.StatusCode, HostRequestID: requestID, Err: fmt.Errorf("%w: %v", ErrHostUnavailable, err)}
+			}
 		}
 	}
 
-	return requestID, nil
+	return requestID, resp.StatusCode, nil
 }
 
 func splitHostBootstrapJSONExpectedStatuses(values ...any) ([]int, any) {

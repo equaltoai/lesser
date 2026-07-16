@@ -667,6 +667,17 @@ func TestWriteDeployAssembly(t *testing.T) {
 	require.Contains(t, devTemplate, `"ApiCorsAllowedOrigins"`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${ReleaseAssetBucketName}"`)
 
+	for stage, templatePath := range stageTemplateFileNames {
+		templateJSON := string(archiveEntries[templatePath])
+		require.Contains(t, templateJSON, `/instance/ptah/mcp`, "stage %s", stage)
+		require.Contains(t, templateJSON, `/instance/ba/mcp`, "stage %s", stage)
+		require.Contains(t, templateJSON, `/.well-known/oauth-protected-resource/instance/ptah/mcp`, "stage %s", stage)
+		require.Contains(t, templateJSON, `/.well-known/oauth-protected-resource/instance/ba/mcp`, "stage %s", stage)
+		require.Contains(t, templateJSON, `/instance/downloads/installer-grants/{grantId}`, "stage %s", stage)
+		require.Contains(t, templateJSON, fmt.Sprintf(`{{resolve:ssm:/${AppSlug}/%s/lesser-body/exports/v1/instance_mcp_lambda_arn}}`, stage), "stage %s", stage)
+		require.NotContains(t, templateJSON, `LesserBodyInstanceMcpLambdaArnParamLookupParameter`, "stage %s", stage)
+	}
+
 	zipEntries := readZipEntries(t, archiveEntries["assets/site.zip"])
 	require.Equal(t, map[string]string{
 		"nested/index.js": "console.log('stage')",
@@ -890,6 +901,8 @@ set -euo pipefail
 stack="$2"
 shift 2
 output=""
+body_enabled=""
+instance_plane_enabled=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output)
@@ -897,6 +910,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --context)
+      case "$2" in
+        bodyEnabled=*) body_enabled="${2#*=}" ;;
+        instancePlaneEnabled=*) instance_plane_enabled="${2#*=}" ;;
+      esac
       shift 2
       ;;
     *)
@@ -968,6 +985,60 @@ JSON
       stage_domain="base.example.com"
       body_path="live"
     fi
+    instance_parameter=""
+    instance_resources=""
+    if [[ "$body_enabled" == "true" && "$instance_plane_enabled" == "true" ]]; then
+      instance_parameter=',
+    "LesserBodyInstanceMcpLambdaArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" }'
+      instance_resources=',
+    "ImportedLesserBodyInstanceMcpLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstanceMcpLambdaInvokeFromApiGateway": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstancePtahMcpRoute": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RoutePath": "/instance/ptah/mcp",
+        "Target": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstanceBaMcpRoute": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RoutePath": "/instance/ba/mcp",
+        "Target": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstancePtahProtectedResourceRoute": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RoutePath": "/.well-known/oauth-protected-resource/instance/ptah/mcp",
+        "Target": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstanceBaProtectedResourceRoute": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RoutePath": "/.well-known/oauth-protected-resource/instance/ba/mcp",
+        "Target": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    },
+    "InstanceInstallerGrantDownloadRoute": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RoutePath": "/instance/downloads/installer-grants/{grantId}",
+        "Target": { "Ref": "LesserBodyInstanceMcpLambdaArnParamLookupParameter" }
+      }
+    }'
+    fi
     cat <<JSON
 {
   "Parameters": {
@@ -976,7 +1047,7 @@ JSON
     "BasicRoleArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
     "JWTSecretArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
     "ActorKeyArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" },
-    "LesserBodyMcpLambdaArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" }
+    "LesserBodyMcpLambdaArnParamLookupParameter": { "Type": "String", "Default": "appslugplaceholder" }$instance_parameter
   },
   "Rules": {
     "CheckBootstrapVersion": {
@@ -1033,7 +1104,7 @@ JSON
     "EmptyDependsOnExample": {
       "DependsOn": [],
       "Type": "Custom::Example"
-    }
+    }$instance_resources
   }
 }
 JSON

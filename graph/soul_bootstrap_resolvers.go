@@ -18,6 +18,7 @@ import (
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"go.uber.org/zap"
 )
 
 const (
@@ -130,6 +131,18 @@ func (r *mutationResolver) StartHostedSoulBootstrap(ctx context.Context, input m
 		now time.Time,
 	) (*workflow.SoulBootstrapState, error) {
 		if recoveryState, handled := soulBootstrapHostedGenesisMessageRetryState(agentUser, existing, correlation, now); handled {
+			// G16 (P52 L3.2): the retry repair rewrites an errored
+			// retry_same_step state back to conversation.registration_active /
+			// send_hosted_soul_genesis_message. This is intentional for a
+			// genuine Host-authored retry_same_step (the failed row of the
+			// projection table), not for accept-timeouts (which L3.2 G15 routes
+			// to REFRESH_STATE). Log the rewrite so it is observable rather
+			// than silent.
+			soulBootstrapReconcileLog(r.Resolver, "hosted soul bootstrap retry repair rewrote errored state to send",
+				errors.New("retry_same_step repair applied"),
+				zap.String("username", agentUser.Username),
+				zap.String("prior_state", soulBootstrapPriorStateName(existing)),
+			)
 			return recoveryState, nil
 		}
 		if replayState, handled := soulBootstrapHostedBeginReplayState(agentUser, existing, correlation, now); handled {
@@ -745,6 +758,34 @@ func (r *Resolver) soulBootstrapService() (soulBootstrapHostService, error) {
 	return bootstrap, nil
 }
 
+// soulBootstrapReconcileLog emits a best-effort reconcile diagnostic when a
+// non-nil resolver logger is configured. It never panics on a nil resolver or
+// logger so reconcile/read paths stay best-effort. Used by G16 (P52 L3.2) to
+// surface previously-swallowed errors and silent state rewrites.
+func soulBootstrapReconcileLog(r *Resolver, msg string, cause error, fields ...zap.Field) {
+	if r == nil || r.Logger == nil {
+		return
+	}
+	fields = append(fields, zap.Error(cause))
+	r.Logger.Warn(msg, fields...)
+}
+
+// soulBootstrapPriorStateName returns a non-empty label for the state being
+// rewritten by a retry repair, for diagnostic logging. Falls back to "unknown"
+// so a log line is always emitted with context.
+func soulBootstrapPriorStateName(state *workflow.SoulBootstrapState) string {
+	if state == nil {
+		return unknownValue
+	}
+	if v := strings.TrimSpace(state.State); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(state.Phase); v != "" {
+		return v
+	}
+	return unknownValue
+}
+
 func (r *Resolver) reconcileHostedSoulBootstrapState(
 	ctx context.Context,
 	viewerUsername string,
@@ -767,6 +808,14 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 			return nil
 		}
 		if recoveryState, handled := soulBootstrapHostedGenesisMessageRetryState(agentUser, state, state.Correlation, now); handled {
+			// G16 (P52 L3.2): log the silent errored→send retry rewrite so it is
+			// observable. Only reachable for a genuine Host-authored
+			// retry_same_step (accept-timeouts route to REFRESH_STATE via G15).
+			soulBootstrapReconcileLog(r, "hosted soul bootstrap reconcile retry repair rewrote errored state to send",
+				errors.New("retry_same_step repair applied"),
+				zap.String("username", agentUser.Username),
+				zap.String("prior_state", soulBootstrapPriorStateName(state)),
+			)
 			workflowState.SoulBootstrap = workflow.NormalizeSoulBootstrap(recoveryState, agentUser.Username)
 			applySoulBootstrapWorkflowProjection(ctx, r, viewerUsername, agentUser, workflowState, workflowState.SoulBootstrap, now)
 			workflowState.UpdatedAt = &now
@@ -778,6 +827,10 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 	}
 	service, err := r.soulBootstrapService()
 	if err != nil {
+		// G16 (P52 L3.2): surface the swallowed read-repair setup error instead
+		// of silently dropping it. Reconcile is best-effort, so we still return
+		// nil to avoid failing the read, but the error is logged for operators.
+		soulBootstrapReconcileLog(r, "hosted soul bootstrap reconcile could not resolve service", err, zap.String("username", agentUser.Username))
 		return nil
 	}
 	result, err := service.ReadBootstrapConversation(ctx, soulservice.BootstrapConversationCompleteInput{
@@ -785,6 +838,15 @@ func (r *Resolver) reconcileHostedSoulBootstrapState(
 		ConversationID: state.HostConversationID,
 	})
 	if err != nil {
+		// G16 (P52 L3.2): surface the swallowed Host read error instead of
+		// silently dropping it. Reconcile is best-effort (a transient Host read
+		// failure must not fail the GraphQL read), but the error is logged so a
+		// persistent Host bridge failure is observable rather than invisible.
+		soulBootstrapReconcileLog(r, "hosted soul bootstrap reconcile Host read failed", err,
+			zap.String("username", agentUser.Username),
+			zap.String("host_registration_id", state.HostRegistrationID),
+			zap.String("host_conversation_id", state.HostConversationID),
+		)
 		return nil
 	}
 
@@ -1166,7 +1228,19 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 		status = soulservice.NormalizeHostedBootstrapConversationStatus(result.Status)
 	}
 	if status == "" {
-		status = workflow.SoulBootstrapHostConversationStatusInProgress
+		// G16 (P52 L3.2): do not silently coerce an empty/unknown Host status
+		// to in_progress — that would mask a Host regression as progress.
+		// Prefer the existing state's status; only fall back to in_progress
+		// when there is no prior status (an honest default for a brand-new
+		// conversation). The transport guarantees in_progress for a 202
+		// (L3.1) and validateHostConversationSnapshot rejects empty status for
+		// a 200/recover/complete, so reaching here with result != nil and no
+		// prior status signals an unexpected caller, not silent progress.
+		if prior := graphSoulBootstrapHostConversationStatus(state); prior != "" {
+			status = prior
+		} else {
+			status = workflow.SoulBootstrapHostConversationStatusInProgress
+		}
 	}
 	if result != nil && strings.TrimSpace(result.RegistrationID) != "" {
 		state.HostRegistrationID = strings.TrimSpace(result.RegistrationID)
@@ -1181,11 +1255,19 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 
 	switch status {
 	case workflow.SoulBootstrapHostConversationStatusInProgress:
+		// G14 (P52 L3.2): in_progress is a pending turn — Host has accepted
+		// the message (202) and is processing it. The client must poll via
+		// REFRESH_STATE rather than immediately re-sending (which would
+		// re-issue a blocking turn Host is already running). The locked
+		// projection table permits SEND as an alternative action for in_progress,
+		// so availableActions keeps SEND; the authored typedNextAction is
+		// REFRESH_STATE. This realigns the resolver with the contract and with
+		// the 202-accepted-pending transport (L3.1).
 		state.Phase = workflow.SoulBootstrapPhaseConversation
 		state.State = workflow.SoulBootstrapStateConversationInProgress
-		state.NextAction = workflow.SoulBootstrapNextActionSendHostedGenesisMessage
-		state.RecoveryCategory = ""
-		state.RecoveryAction = ""
+		state.NextAction = workflow.SoulBootstrapNextActionRefreshState
+		state.RecoveryCategory = workflow.SoulBootstrapRecoveryCategoryRefreshState
+		state.RecoveryAction = workflow.SoulBootstrapRecoveryActionRefreshState
 		state.Retryable = false
 		state.RestartRequired = false
 		state.SigningCheckpoints = nil
@@ -1201,11 +1283,17 @@ func soulBootstrapStateAfterHostedConversationSnapshot(
 		state.SigningCheckpoints = nil
 		state.Error = nil
 	case workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending:
+		// G14 (P52 L3.2): while Host is still extracting the declaration, the
+		// turn is pending — the client must poll (REFRESH_STATE), not send
+		// another message. Sending again would re-issue a blocking turn Host
+		// is already processing. This realigns the resolver with the locked
+		// projection table (docs/contracts/hosted-soul-genesis-projection.md),
+		// which routes declaration_extraction_pending to REFRESH_STATE.
 		state.Phase = workflow.SoulBootstrapPhaseConversation
 		state.State = workflow.SoulBootstrapStateConversationDeclarationExtractionPending
-		state.NextAction = workflow.SoulBootstrapNextActionSendHostedGenesisMessage
-		state.RecoveryCategory = ""
-		state.RecoveryAction = ""
+		state.NextAction = workflow.SoulBootstrapNextActionRefreshState
+		state.RecoveryCategory = workflow.SoulBootstrapRecoveryCategoryRefreshState
+		state.RecoveryAction = workflow.SoulBootstrapRecoveryActionRefreshState
 		state.Retryable = false
 		state.RestartRequired = false
 		state.SigningCheckpoints = nil
@@ -2060,6 +2148,20 @@ func soulBootstrapRecoveryForError(code string, statusCode int, message string) 
 		}
 	}
 	switch strings.TrimSpace(code) {
+	case workflow.SoulBootstrapErrorHostUnavailable:
+		// G15 (P52 L3.2): a Host unavailable / accept-timeout on the send POST
+		// must NOT map to RETRY_SAME_STEP. RETRY_SAME_STEP would instruct the
+		// client to re-issue the same blocking send — the binding constraint
+		// this project removes. Under the MicroVM-only contract, Host may have
+		// accepted the turn and be processing it asynchronously; the safe
+		// forward motion is to poll state (REFRESH_STATE), which reconciles via
+		// the read path and recovers the conversation id. Not Retryable as a
+		// blocking re-issue; RestartRequired stays false.
+		return soulBootstrapRecoveryPlan{
+			Category:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
+			Action:     workflow.SoulBootstrapRecoveryActionRefreshState,
+			NextAction: workflow.SoulBootstrapNextActionRefreshState,
+		}
 	case workflow.SoulBootstrapErrorHostTrustNotConfigured,
 		workflow.SoulBootstrapErrorHostInstanceKeyMissing,
 		workflow.SoulBootstrapErrorHostInstanceKeyUnavailable,
@@ -2859,11 +2961,23 @@ func graphSoulBootstrapHostedConversationAvailableActions(state *workflow.SoulBo
 		return nil
 	}
 	switch strings.TrimSpace(state.State) {
-	case workflow.SoulBootstrapStateConversationRegistrationActive,
-		workflow.SoulBootstrapStateConversationInProgress,
-		workflow.SoulBootstrapStateConversationDeclarationExtractionPending:
+	case workflow.SoulBootstrapStateConversationRegistrationActive:
 		return []model.SoulBootstrapNextAction{
 			model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+		}
+	case workflow.SoulBootstrapStateConversationInProgress:
+		// G14 (P52 L3.2): in_progress is a pending turn. Poll (REFRESH_STATE)
+		// is primary; the locked projection table permits SEND as an
+		// alternative, so both are advertised with REFRESH_STATE first.
+		return []model.SoulBootstrapNextAction{
+			model.SoulBootstrapNextActionRefreshState,
+			model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+		}
+	case workflow.SoulBootstrapStateConversationDeclarationExtractionPending:
+		// G14 (P52 L3.2): declaration extraction is pending — poll only.
+		// The locked projection table allows REFRESH_STATE only here.
+		return []model.SoulBootstrapNextAction{
+			model.SoulBootstrapNextActionRefreshState,
 		}
 	case workflow.SoulBootstrapStateConversationAssistantTurnReady:
 		return []model.SoulBootstrapNextAction{

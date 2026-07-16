@@ -492,13 +492,19 @@ func TestProject51HostedInProgressReadAdvertisesSendAndRelaysTranscript(t *testi
 	require.Equal(t, 1, readCalls)
 	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, surface.State.State)
 	require.Equal(t, workflow.SoulBootstrapHostConversationStatusInProgress, derefString(surface.State.HostConversationStatus))
-	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, surface.TypedNextAction)
+	// P52 L3.2 G14: in_progress is a pending turn — poll (REFRESH_STATE) is
+	// primary; SEND remains an allowed alternative. The read still relays the
+	// transcript (below); only the next-action routing changes.
+	require.Equal(t, model.SoulBootstrapNextActionRefreshState, surface.TypedNextAction)
 	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionRefreshState,
 		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 	}, surface.AvailableActions)
 	require.ElementsMatch(t, surface.AvailableActions, surface.State.AvailableActions)
-	require.Nil(t, surface.State.RecoveryCategory)
-	require.Nil(t, surface.State.RecoveryAction)
+	require.NotNil(t, surface.State.RecoveryCategory)
+	require.Equal(t, model.SoulBootstrapRecoveryCategoryRefreshState, *surface.State.RecoveryCategory)
+	require.NotNil(t, surface.State.RecoveryAction)
+	require.Equal(t, model.SoulBootstrapRecoveryActionRefreshState, *surface.State.RecoveryAction)
 
 	require.NotNil(t, surface.State.HostedGenesisConversation)
 	conversation := surface.State.HostedGenesisConversation
@@ -535,19 +541,28 @@ func TestProject51HostedConversationAvailableActionsByStatus(t *testing.T) {
 			name:       "created",
 			hostStatus: workflow.SoulBootstrapHostConversationStatusCreated,
 			wantState:  workflow.SoulBootstrapStateConversationInProgress,
-			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			// P52 L3.2 G14: created normalizes to in_progress — a pending turn.
+			// Poll (REFRESH_STATE) is primary; SEND remains an allowed alternative.
+			wantNext: model.SoulBootstrapNextActionRefreshState,
 			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionRefreshState,
 				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 			},
+			wantRecoveryKind: model.SoulBootstrapRecoveryCategoryRefreshState,
 		},
 		{
 			name:       "in_progress",
 			hostStatus: workflow.SoulBootstrapHostConversationStatusInProgress,
 			wantState:  workflow.SoulBootstrapStateConversationInProgress,
-			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			// P52 L3.2 G14: in_progress is a pending turn — poll via REFRESH_STATE
+			// is primary; SEND remains an allowed alternative per the projection
+			// table.
+			wantNext: model.SoulBootstrapNextActionRefreshState,
 			wantAvailable: []model.SoulBootstrapNextAction{
+				model.SoulBootstrapNextActionRefreshState,
 				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 			},
+			wantRecoveryKind: model.SoulBootstrapRecoveryCategoryRefreshState,
 		},
 		{
 			name:       "assistant_turn_ready",
@@ -563,10 +578,13 @@ func TestProject51HostedConversationAvailableActionsByStatus(t *testing.T) {
 			name:       "declaration_extraction_pending",
 			hostStatus: workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending,
 			wantState:  workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
-			wantNext:   model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			// P52 L3.2 G14: declaration extraction is pending — poll only. The
+			// projection table allows REFRESH_STATE only here.
+			wantNext: model.SoulBootstrapNextActionRefreshState,
 			wantAvailable: []model.SoulBootstrapNextAction{
-				model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+				model.SoulBootstrapNextActionRefreshState,
 			},
+			wantRecoveryKind: model.SoulBootstrapRecoveryCategoryRefreshState,
 		},
 		{
 			name:       "declaration_ready",

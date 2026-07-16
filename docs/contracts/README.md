@@ -29,6 +29,7 @@ running environment.
 
 - Hosted bound souls + x402 boundary contract: `docs/contracts/hosted-bound-souls-x402-boundary.md`
 - Hosted soul genesis GraphQL projection table: `docs/contracts/hosted-soul-genesis-projection.md`
+- Hosted soul genesis accept-then-poll transport + turn-state (P52): `docs/contracts/examples/hosted-soul-genesis-accept-semantics.example.json`
 
 ## Deploy And Release Contracts
 

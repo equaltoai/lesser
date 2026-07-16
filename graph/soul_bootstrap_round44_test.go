@@ -1235,7 +1235,11 @@ func TestRound44CompleteHostedSoulGenesisRequiresTerminalDeclarationEvidence(t *
 	require.NoError(t, err)
 	require.Nil(t, payload.Error)
 	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, payload.Bootstrap.State.State)
-	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, payload.Bootstrap.TypedNextAction)
+	// P52 L3.2 G14: in_progress is a pending turn. The client must poll
+	// (REFRESH_STATE), not re-send. This realigns with the locked projection
+	// table (hosted-soul-genesis-projection.md), which routes in_progress to
+	// REFRESH_STATE as the example action.
+	require.Equal(t, model.SoulBootstrapNextActionRefreshState, payload.Bootstrap.TypedNextAction)
 	require.NotEqual(t, model.SoulBootstrapNextActionPublishHostedSoul, payload.Bootstrap.TypedNextAction)
 	require.Empty(t, payload.Bootstrap.State.SigningCheckpoints)
 	require.Nil(t, payload.Bootstrap.Workflow.Declaration)

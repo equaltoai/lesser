@@ -5861,7 +5861,7 @@ func (r *actorResolver) extractInstance(actorID string) string {
 			return u.Host
 		}
 	}
-	return "unknown"
+	return unknownValue
 }
 
 // maxFloat returns the maximum of two float64 values

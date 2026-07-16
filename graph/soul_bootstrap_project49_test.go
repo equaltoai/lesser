@@ -106,12 +106,17 @@ func TestProject49HostedInProgressPersistsConversationAndBlocksPublish(t *testin
 	require.Equal(t, model.SoulBootstrapPhaseConversation, sent.Bootstrap.State.Phase)
 	require.Equal(t, workflow.SoulBootstrapStateConversationInProgress, sent.Bootstrap.State.State)
 	require.Equal(t, workflow.SoulBootstrapHostConversationStatusInProgress, derefString(sent.Bootstrap.State.HostConversationStatus))
-	require.Equal(t, model.SoulBootstrapNextActionSendHostedSoulGenesisMessage, sent.Bootstrap.TypedNextAction)
+	// P52 L3.2 G14: in_progress is a pending turn — poll (REFRESH_STATE) is
+	// primary; SEND remains an allowed alternative.
+	require.Equal(t, model.SoulBootstrapNextActionRefreshState, sent.Bootstrap.TypedNextAction)
 	require.ElementsMatch(t, []model.SoulBootstrapNextAction{
+		model.SoulBootstrapNextActionRefreshState,
 		model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
 	}, sent.Bootstrap.AvailableActions)
-	require.Nil(t, sent.Bootstrap.State.RecoveryCategory)
-	require.Nil(t, sent.Bootstrap.State.RecoveryAction)
+	require.NotNil(t, sent.Bootstrap.State.RecoveryCategory)
+	require.Equal(t, model.SoulBootstrapRecoveryCategoryRefreshState, *sent.Bootstrap.State.RecoveryCategory)
+	require.NotNil(t, sent.Bootstrap.State.RecoveryAction)
+	require.Equal(t, model.SoulBootstrapRecoveryActionRefreshState, *sent.Bootstrap.State.RecoveryAction)
 	require.Equal(t, conversationID, derefString(sent.Bootstrap.State.HostConversationID))
 	require.Equal(t, "host-req-p49-turn-001", derefString(sent.Bootstrap.State.LastHostRequestID))
 	require.Empty(t, sent.Bootstrap.State.SigningCheckpoints)
@@ -312,7 +317,10 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 			},
 			wantPhase:  model.SoulBootstrapPhaseConversation,
 			wantState:  workflow.SoulBootstrapStateConversationInProgress,
-			wantAction: model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			// P52 L3.2 G14: in_progress is a pending turn — poll via REFRESH_STATE
+			// is primary, matching the locked projection table and the seeded
+			// NextAction.
+			wantAction: model.SoulBootstrapNextActionRefreshState,
 			wantHost:   workflow.SoulBootstrapHostConversationStatusInProgress,
 			wantGate:   "blocked:conversation_in_progress",
 		},
@@ -356,7 +364,10 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 			},
 			wantPhase:  model.SoulBootstrapPhaseConversation,
 			wantState:  workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
-			wantAction: model.SoulBootstrapNextActionSendHostedSoulGenesisMessage,
+			// P52 L3.2 G14: declaration extraction is pending — poll only
+			// (REFRESH_STATE), matching the locked projection table and the
+			// seeded NextAction.
+			wantAction: model.SoulBootstrapNextActionRefreshState,
 			wantHost:   workflow.SoulBootstrapHostConversationStatusDeclarationExtractionPending,
 			wantGate:   "blocked:declaration_extraction_pending",
 		},

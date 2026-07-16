@@ -1,0 +1,103 @@
+{
+  "kind": "lesser.hosted_soul_genesis_accept_semantics",
+  "schema_version": 1,
+  "contract_version": "p52-l3",
+  "date": "2026-07-03",
+  "project": "P52 — MicroVM-only hosted genesis conversations",
+  "parent_issue": "https://github.com/equaltoai/lesser/issues/1213",
+  "host_dependency": "https://github.com/equaltoai/lesser-host/issues/867",
+  "factory_tracker": "https://github.com/equaltoai/factory/issues/8",
+  "depends_on": "lesser-host#867 H1.2 lab evidence for the integration proof",
+  "summary": "Lesser transport + state machine honor a 202-accepted-pending then poll contract for the MicroVM-dispatched genesis turn. Additive to the M1.2 projection table; no GraphQL schema, status-vocabulary, or DynamoDB schema change.",
+  "accept_semantics": {
+    "operation": "sendHostedSoulGenesisMessage",
+    "send_http_timeout": "defaultSoulBootstrapAcceptTimeout (<2s, sized for Host's 202 accept, not the turn)",
+    "read_poll_http_timeout": "defaultSoulHTTPTimeout (10s)",
+    "rows": [
+      {
+        "host_http_status": 202,
+        "lesser_transport_behavior": "accepted-pending; body is NOT parsed as a full conversation snapshot",
+        "lesser_result_status": "in_progress",
+        "inline_assistant_messages": false,
+        "message_count": 0,
+        "conversation_id": "persisted early: best-effort from minimal body (top-level or nested conversation), else caller's existing id",
+        "client_next_action": "REFRESH_STATE (poll)"
+      },
+      {
+        "host_http_status": 200,
+        "lesser_transport_behavior": "synchronous snapshot (legacy/non-MicroVM); parsed and validated as a full snapshot",
+        "lesser_result_status": "host-authored status from snapshot",
+        "inline_assistant_messages": true,
+        "message_count": "from snapshot",
+        "conversation_id": "from snapshot",
+        "client_next_action": "per M1.2 projection table for the snapshot status"
+      }
+    ]
+  },
+  "turn_state_surface": {
+    "notes": "Pending turn statuses route the client to poll (REFRESH_STATE), not re-send. Realigns the resolver with the M1.2 projection table.",
+    "rows": [
+      {
+        "lesser_state": "conversation.in_progress",
+        "host_status": ["in_progress", "created"],
+        "typed_next_action": "REFRESH_STATE",
+        "available_actions": ["REFRESH_STATE", "SEND_HOSTED_SOUL_GENESIS_MESSAGE"],
+        "poll_primary": true
+      },
+      {
+        "lesser_state": "conversation.declaration_extraction_pending",
+        "host_status": ["declaration_extraction_pending"],
+        "typed_next_action": "REFRESH_STATE",
+        "available_actions": ["REFRESH_STATE"],
+        "poll_primary": true
+      },
+      {
+        "lesser_state": "conversation.assistant_turn_ready",
+        "host_status": ["assistant_turn_ready"],
+        "typed_next_action": "COMPLETE_HOSTED_SOUL_GENESIS",
+        "available_actions": ["SEND_HOSTED_SOUL_GENESIS_MESSAGE", "COMPLETE_HOSTED_SOUL_GENESIS"],
+        "poll_primary": false
+      },
+      {
+        "lesser_state": "conversation.registration_active",
+        "host_status": ["registration_active_no_conversation"],
+        "typed_next_action": "SEND_HOSTED_SOUL_GENESIS_MESSAGE",
+        "available_actions": ["SEND_HOSTED_SOUL_GENESIS_MESSAGE"],
+        "poll_primary": false
+      }
+    ]
+  },
+  "error_routing": {
+    "accept_timeout": {
+      "host_error_code": "HOST_UNAVAILABLE",
+      "typed_next_action": "REFRESH_STATE",
+      "recovery_category": "REFRESH_STATE",
+      "recovery_action": "REFRESH_STATE",
+      "retryable": false,
+      "restart_required": false,
+      "retry_same_step": false,
+      "rationale": "An accept timeout must not instruct the client to re-issue the same blocking send. Host may have accepted the turn and be processing it asynchronously; poll reconciles via the read path."
+    },
+    "host_authored_failed": {
+      "host_error_code": "HOST_CONVERSATION_FAILED",
+      "host_recovery_action": "retry_same_step",
+      "typed_next_action": "RETRY_SAME_STEP",
+      "retry_same_step": true,
+      "rationale": "Genuine Host-authored failed conversations with a locked retry_same_step recovery action still route to RETRY_SAME_STEP (the failed row of the M1.2 table). The timeout->poll change is scoped to HOST_UNAVAILABLE."
+    }
+  },
+  "observability_no_silent_rewrites": {
+    "empty_host_status": "preserve existing state's status; fall back to in_progress only for a brand-new conversation",
+    "reconcile_host_read_error": "logged via resolver logger (best-effort, non-fatal); no longer silently swallowed",
+    "reconcile_service_resolution_error": "logged via resolver logger (best-effort, non-fatal); no longer silently swallowed",
+    "errored_to_send_retry_repair": "logged at both call sites; only reachable for genuine Host-authored retry_same_step"
+  },
+  "greater_sync": {
+    "greater_step": "G4",
+    "graphql_schema_change": false,
+    "surfaces": ["SoulBootstrapState", "SoulBootstrapHostedGenesisConversation", "SoulBootstrapNextAction enum"],
+    "adapter_work": "Pending turn (in_progress, declaration_extraction_pending) drives a poll/refresh UX rather than immediate re-send; accept-timeout error surfaces as polling state rather than re-send.",
+    "lesser_role": "produces this snapshot only"
+  },
+  "integration_proof_status": "BLOCKED on lesser-host#867 H1.2 lab evidence; unit proof ships with the L3.1/L3.2 commits"
+}

@@ -79,11 +79,12 @@ var stageContextPlaceholders = map[string]string{
 }
 
 var stageLookupParameterNames = map[string]struct{}{
-	"EncryptionRoleArnParamLookupParameter":      {},
-	"BasicRoleArnParamLookupParameter":           {},
-	"JWTSecretArnParamLookupParameter":           {},
-	"ActorKeyArnParamLookupParameter":            {},
-	"LesserBodyMcpLambdaArnParamLookupParameter": {},
+	"EncryptionRoleArnParamLookupParameter":              {},
+	"BasicRoleArnParamLookupParameter":                   {},
+	"JWTSecretArnParamLookupParameter":                   {},
+	"ActorKeyArnParamLookupParameter":                    {},
+	"LesserBodyMcpLambdaArnParamLookupParameter":         {},
+	"LesserBodyInstanceMcpLambdaArnParamLookupParameter": {},
 }
 
 var cloudFormationLogicalIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
@@ -423,11 +424,12 @@ func synthesizeSharedTemplate(repoRoot string) ([]byte, error) {
 func synthesizeStageTemplate(repoRoot string, stage naming.Stage) ([]byte, []deployAsset, error) {
 	stackName := naming.StageStackName(placeholderAppSlug, stage)
 	contexts := map[string]string{
-		"app":          placeholderAppSlug,
-		"baseDomain":   placeholderBaseDomain,
-		"hostedZoneId": placeholderHostedZoneID,
-		"stage":        string(stage),
-		"bodyEnabled":  "true",
+		"app":                  placeholderAppSlug,
+		"baseDomain":           placeholderBaseDomain,
+		"hostedZoneId":         placeholderHostedZoneID,
+		"stage":                string(stage),
+		"bodyEnabled":          "true",
+		"instancePlaneEnabled": "true",
 	}
 	for key, value := range stageContextPlaceholders {
 		contexts[key] = value
@@ -1108,6 +1110,9 @@ func replaceStageLookupRefs(template map[string]any, stage naming.Stage) {
 		},
 		"LesserBodyMcpLambdaArnParamLookupParameter": map[string]any{
 			"Fn::Sub": fmt.Sprintf("{{resolve:ssm:/${AppSlug}/%s/lesser-body/exports/v1/mcp_lambda_arn}}", stage),
+		},
+		"LesserBodyInstanceMcpLambdaArnParamLookupParameter": map[string]any{
+			"Fn::Sub": fmt.Sprintf("{{resolve:ssm:/${AppSlug}/%s/lesser-body/exports/v1/instance_mcp_lambda_arn}}", stage),
 		},
 	}
 	replaceLookupRefValues(template, replacements)
