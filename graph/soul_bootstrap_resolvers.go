@@ -775,7 +775,7 @@ func soulBootstrapReconcileLog(r *Resolver, msg string, cause error, fields ...z
 // so a log line is always emitted with context.
 func soulBootstrapPriorStateName(state *workflow.SoulBootstrapState) string {
 	if state == nil {
-		return "unknown"
+		return unknownValue
 	}
 	if v := strings.TrimSpace(state.State); v != "" {
 		return v
@@ -783,7 +783,7 @@ func soulBootstrapPriorStateName(state *workflow.SoulBootstrapState) string {
 	if v := strings.TrimSpace(state.Phase); v != "" {
 		return v
 	}
-	return "unknown"
+	return unknownValue
 }
 
 func (r *Resolver) reconcileHostedSoulBootstrapState(
