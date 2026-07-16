@@ -394,7 +394,7 @@ func (r *queryResolver) resolveStatusAuthorActor(ctx context.Context, status *st
 
 	fallback := username
 	if fallback == "" {
-		fallback = "unknown"
+		fallback = unknownValue
 	}
 	return activitypubutil.BuildLocalActor(fallback, baseURL, nil, nil)
 }

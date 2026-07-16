@@ -11,7 +11,7 @@ import (
 var (
 	// Authentication and authorization errors
 	ErrAuthenticationRequired      = errors.NewAuthError(errors.CodeUnauthorized, "authentication required")
-	ErrAccessDenied                = errors.AccessDeniedForResource("resource", "unknown")
+	ErrAccessDenied                = errors.AccessDeniedForResource("resource", unknownValue)
 	ErrAdminPrivilegesRequired     = errors.InsufficientPermissions("admin operation")
 	ErrModeratorPrivilegesRequired = errors.InsufficientPermissions("admin or moderator operation")
 
@@ -36,7 +36,7 @@ var (
 	ErrCommunityNoteRateLimited = errors.RateLimitExceededGeneric("community note")
 
 	// Timeline type errors
-	ErrUnsupportedTimelineType = errors.UnsupportedTimelineType("unknown")
+	ErrUnsupportedTimelineType = errors.UnsupportedTimelineType(unknownValue)
 	ErrAuthRequiredForHome     = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for home timeline")
 	ErrAuthRequiredForDirect   = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for direct timeline")
 
