@@ -13,6 +13,7 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 	out.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(firstNonEmpty(args.LesserHostAttestationsURL, os.Getenv("LESSER_HOST_ATTESTATIONS_URL"))), "/")
 	out.LesserHostInstanceKeyARN = strings.TrimSpace(firstNonEmpty(args.LesserHostInstanceKeyARN, os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")))
 	out.BodyEnabled = resolveOptionalBoolEnv("BODY_ENABLED", true)
+	out.InstancePlaneEnabled = resolveOptionalBoolFromArgsOrEnv(args.InstancePlaneEnabled, "INSTANCE_PLANE_ENABLED")
 
 	out.TranslationEnabled = resolveOptionalBoolFromArgsOrEnv(args.TranslationEnabled, "TRANSLATION_ENABLED")
 	out.AllowAgents = resolveOptionalBoolFromArgsOrEnv(args.AllowAgents, "ALLOW_AGENTS")
@@ -40,6 +41,7 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		out.LesserHostAttestationsURL == "" &&
 		out.LesserHostInstanceKeyARN == "" &&
 		out.BodyEnabled == nil &&
+		out.InstancePlaneEnabled == nil &&
 		out.TranslationEnabled == nil &&
 		out.AllowAgents == nil &&
 		out.AllowAgentRegistration == nil &&

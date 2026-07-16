@@ -216,6 +216,36 @@ func TestCdkDeployWithOutputs_UsesLesserVersionEnvFallback(t *testing.T) {
 	require.NotContains(t, gotArgs, "lesserVersion=v0.0.1")
 }
 
+func TestCdkDeployWithOutputs_UsesInstancePlaneEnvContext(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+	t.Setenv("INSTANCE_PLANE_ENABLED", "false")
+
+	repoRoot := t.TempDir()
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "instancePlaneEnabled=false")
+}
+
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousResolveOutputs := resolveStackOutputsFn

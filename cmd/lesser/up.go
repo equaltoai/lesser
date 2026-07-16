@@ -35,6 +35,7 @@ type upArgs struct {
 	LesserHostAttestationsURL string
 	LesserHostInstanceKeyARN  string
 	APICORSAllowedOrigins     string
+	InstancePlaneEnabled      *bool
 	TranslationEnabled        *bool
 	AllowAgents               *bool
 	AllowAgentRegistration    *bool
@@ -521,6 +522,9 @@ func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	if receipt.Integration != nil && receipt.Integration.BodyEnabled != nil {
 		contexts["bodyEnabled"] = strconv.FormatBool(*receipt.Integration.BodyEnabled)
 	}
+	if receipt.Integration != nil && receipt.Integration.InstancePlaneEnabled != nil {
+		contexts["instancePlaneEnabled"] = strconv.FormatBool(*receipt.Integration.InstancePlaneEnabled)
+	}
 	if v := strings.TrimSpace(e.args.LesserHostURL); v != "" {
 		contexts["lesserHostUrl"] = v
 	}
@@ -766,6 +770,9 @@ func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput)
 	}
 	if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
 		args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
+	}
+	if args.InstancePlaneEnabled == nil {
+		args.InstancePlaneEnabled = in.InstancePlaneEnabled
 	}
 	if strings.TrimSpace(args.APICORSAllowedOrigins) == "" {
 		args.APICORSAllowedOrigins = in.APICORSAllowedOrigins

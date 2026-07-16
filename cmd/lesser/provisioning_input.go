@@ -23,6 +23,7 @@ type managedProvisioningInput struct {
 	LesserHostURL             string `json:"lesser_host_url,omitempty"`
 	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
+	InstancePlaneEnabled      *bool  `json:"instance_plane_enabled,omitempty"`
 	APICORSAllowedOrigins     string `json:"api_cors_allowed_origins,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
 	AllowAgents               *bool  `json:"allow_agents,omitempty"`
