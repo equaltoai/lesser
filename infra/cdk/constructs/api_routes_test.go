@@ -426,6 +426,32 @@ func TestInstancePlaneEnabledAddsRoutes(t *testing.T) {
 	}
 }
 
+func TestAPIGatewaySuppressesConsoleTestInvokePermissions(t *testing.T) {
+	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
+		Environment:          "development",
+		BodyEnabled:          true,
+		InstancePlaneEnabled: true,
+	})
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("template Resources missing or wrong type")
+	}
+	for logicalID, raw := range resources {
+		resource, ok := raw.(map[string]any)
+		if !ok || resource["Type"] != "AWS::Lambda::Permission" {
+			continue
+		}
+		props, ok := resource["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if valueContainsString(props["SourceArn"], "test-invoke-stage") {
+			t.Fatalf("unexpected API Gateway console test invoke permission %s", logicalID)
+		}
+	}
+}
+
 func TestInstallerGrantDownloadRoutePreservesQueryCapabilityURLs(t *testing.T) {
 	tpl := synthesizeAPIGatewayTemplate(t, &APIGatewayProps{
 		Environment:          "development",

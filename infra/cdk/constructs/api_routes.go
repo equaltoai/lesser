@@ -60,8 +60,9 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 
 	apiName := naming.ResourceNameWithApp(appName, "api", props.Environment)
 	restProps := &apptheorycdk.AppTheoryRestApiRouterProps{
-		ApiName:     jsii.String(apiName),
-		Description: jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
+		ApiName:         jsii.String(apiName),
+		Description:     jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
+		AllowTestInvoke: jsii.Bool(false),
 		Stage: &apptheorycdk.AppTheoryRestApiRouterStageOptions{
 			StageName:          jsii.String(string(apiStage)),
 			AccessLogging:      logGroup,
