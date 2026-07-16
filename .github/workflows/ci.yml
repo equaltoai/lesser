@@ -14,7 +14,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  LESSER_GOCACHE_CACHE_SALT: v1
 
 jobs:
   verify:
@@ -44,6 +43,10 @@ jobs:
 
       - name: Configure Go build cache
         run: |
+          # Keep GOCACHE inside the workspace for this job, but do not restore
+          # it from actions/cache. The cross-run Go build cache has grown large
+          # enough to expand to tens of GiB and exhaust some GitHub-hosted
+          # runners before the verify gate starts.
           echo "GOCACHE=$GITHUB_WORKSPACE/tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}" >> "$GITHUB_ENV"
           mkdir -p "$GITHUB_WORKSPACE/tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}"
 
@@ -59,17 +62,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-lesser-xdg-go${{ steps.setup-go.outputs.go-version }}-
 
-      - name: Cache Go build cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            tmp/go-cache/go${{ steps.setup-go.outputs.go-version }}
-          key: ${{ runner.os }}-gocache-${{ env.LESSER_GOCACHE_CACHE_SALT }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-gocache-${{ env.LESSER_GOCACHE_CACHE_SALT }}-go${{ steps.setup-go.outputs.go-version }}-
-
-      - name: Disk usage (post cache restore)
-        run: bash scripts/ci_disk_usage.sh "post cache restore"
+      - name: Disk usage (post XDG cache restore)
+        run: bash scripts/ci_disk_usage.sh "post XDG cache restore"
 
       - name: Install Go tools
         run: bash scripts/install_ci_tools.sh
