@@ -421,3 +421,88 @@ func TestOAuthInstanceOperatorHelpersRejectMissingState(t *testing.T) {
 	_, err := h.oauthAuthorizationCodeClientClass(context.Background(), nil, nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }
+
+func TestOAuthInstancePlaneRefreshRejectsStaleOperatorPrincipal(t *testing.T) {
+	resource := oauthInstanceTestResource(oauthInstanceSurfacePtah)
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"admin": {
+				Username:  "admin",
+				Approved:  true,
+				Role:      "admin",
+				Suspended: true,
+			},
+		},
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"public-client": {
+				ClientID:     "public-client",
+				RedirectURIs: []string{"https://client.example/callback"},
+				Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+				ClientClass:  auth.ClientClassCLI,
+			},
+		},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			"stale-operator-refresh": {
+				Token:       "stale-operator-refresh",
+				ClientID:    "public-client",
+				Username:    "admin",
+				Resource:    resource,
+				ClientClass: auth.ClientClassOperator,
+				Scopes:      []string{auth.ScopeRead, auth.ScopeWrite},
+				ExpiresAt:   time.Now().Add(time.Hour),
+			},
+		},
+	}
+	h, _, _ := round11NewHandler(t, round11TestConfig(), state)
+
+	params := url.Values{
+		"grant_type":    {auth.GrantTypeRefreshToken},
+		"refresh_token": {"stale-operator-refresh"},
+		"client_id":     {"public-client"},
+	}
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "invalid_grant", body["error"])
+	require.Contains(t, state.refreshTokensByToken, "stale-operator-refresh")
+}
+
+func TestOAuthInstancePlaneAuthorizationCodeUsesLegacyUsernameWhenPrincipalMissing(t *testing.T) {
+	resource := oauthInstanceTestResource(oauthInstanceSurfaceBa)
+	h, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"admin": {Username: "admin", Approved: true, Role: "admin"},
+		},
+	})
+
+	client := &storage.OAuthClient{
+		ClientID:    "owner-operator",
+		ClientClass: auth.ClientClassOperator,
+		OwnerID:     "admin",
+	}
+	clientClass, err := h.oauthAuthorizationCodeClientClass(context.Background(), client, &storage.AuthorizationCode{
+		ClientID: client.ClientID,
+		Resource: resource,
+		Username: "admin",
+		Scopes:   []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+	require.NoError(t, err)
+	require.Equal(t, auth.ClientClassOperator, clientClass)
+}
+
+func TestOAuthInstancePlaneResourceAndScopeGuardsCoverNegativeBranches(t *testing.T) {
+	_, err := normalizeOAuthResourceIndicator("https://api.example.com/mcp/agent1?")
+	require.Error(t, err)
+
+	h, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+		},
+	})
+	_, _, err = h.resolveAuthorizeTargetActorFromResource(context.Background(), "https://api.example.com/mcp/agent1?", "owner")
+	require.Error(t, err)
+
+	require.True(t, oauthScopesContainAdmin([]string{"read", " admin:read "}))
+	require.True(t, oauthScopesContainAdmin([]string{"ADMIN"}))
+	require.False(t, oauthScopesContainAdmin([]string{auth.ScopeRead, auth.ScopeWrite}))
+}
