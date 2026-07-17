@@ -192,6 +192,203 @@ func TestOAuthInstancePlaneTokenAudienceBinding(t *testing.T) {
 	}
 }
 
+func TestOAuthInstancePlaneOperatorAuthorizeAndTokenClaims(t *testing.T) {
+	for _, surface := range []string{oauthInstanceSurfacePtah, oauthInstanceSurfaceBa} {
+		t.Run(surface, func(t *testing.T) {
+			cfg := round11TestConfig()
+			resource := oauthInstanceTestResource(surface)
+			var issuedAuthCode *storage.AuthorizationCode
+
+			accountsSvc := &AccountsServiceStub{
+				GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+					return &accounts.GetUserAppConsentResult{
+						Consent: &storage.UserAppConsent{Scopes: []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin}},
+					}, nil
+				},
+				CreateAuthorizationCodeFunc: func(_ context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error) {
+					issuedAuthCode = cmd.AuthCode
+					return &accounts.CreateAuthorizationCodeResult{}, nil
+				},
+			}
+			state := &round10QueryState{
+				oauthClientsByID: map[string]storagemodels.OAuthClient{
+					"owner-operator": {
+						ClientID:     "owner-operator",
+						ClientSecret: "secret",
+						Name:         "Owner Console",
+						OwnerID:      "admin",
+						RedirectURIs: []string{"https://client.example/callback"},
+						Scopes:       []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+						ClientClass:  auth.ClientClassOperator,
+						Confidential: true,
+						CreatedAt:    time.Now().Add(-24 * time.Hour),
+					},
+				},
+				usersByUsername: map[string]storagemodels.User{
+					"admin": {Username: "admin", Approved: true, Role: "admin"},
+				},
+			}
+			h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountsSvc})
+
+			authorizeCtx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, map[string]string{
+				"response_type": "code",
+				"client_id":     "owner-operator",
+				"redirect_uri":  "https://client.example/callback",
+				"resource":      resource,
+				"scope":         "read write admin",
+				"state":         "operator-" + surface,
+			}, nil)
+			require.NoError(t, err)
+			authorizeCtx.Set("username", "admin")
+
+			authorizeResp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(authorizeCtx))
+			authorizeURL, err := url.Parse(firstStringValue(authorizeResp.Headers, "location"))
+			require.NoError(t, err)
+			require.NotEmpty(t, authorizeURL.Query().Get("code"))
+			require.NotNil(t, issuedAuthCode)
+			require.Equal(t, resource, issuedAuthCode.Resource)
+			require.Equal(t, "admin", issuedAuthCode.Username)
+			require.Equal(t, "admin", issuedAuthCode.PrincipalUsername)
+			require.ElementsMatch(t, []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin}, issuedAuthCode.Scopes)
+
+			state.authorizationCodesByCode = map[string]storagemodels.AuthorizationCode{
+				issuedAuthCode.Code: {
+					Code:              issuedAuthCode.Code,
+					ClientID:          issuedAuthCode.ClientID,
+					RedirectURI:       issuedAuthCode.RedirectURI,
+					Resource:          issuedAuthCode.Resource,
+					Username:          issuedAuthCode.Username,
+					PrincipalUsername: issuedAuthCode.PrincipalUsername,
+					CodeChallenge:     issuedAuthCode.CodeChallenge,
+					ExpiresAt:         issuedAuthCode.ExpiresAt,
+					Scopes:            issuedAuthCode.Scopes,
+				},
+			}
+
+			tokenParams := url.Values{
+				"grant_type":    {oauthGrantTypeAuthorizationCode},
+				"code":          {issuedAuthCode.Code},
+				"client_id":     {"owner-operator"},
+				"client_secret": {"secret"},
+				"redirect_uri":  {"https://client.example/callback"},
+				"resource":      {resource},
+			}
+			tokenResp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(tokenParams.Encode()))))
+			var tokenBody apimodels.OAuthTokenResponse
+			require.NoError(t, json.Unmarshal(tokenResp.Body, &tokenBody))
+			require.NotEmpty(t, tokenBody.AccessToken)
+			require.NotEmpty(t, tokenBody.RefreshToken)
+
+			claims := round12DecodeJWTClaims(t, tokenBody.AccessToken)
+			require.Equal(t, []string{resource}, []string(claims.Audience))
+			require.Equal(t, "admin", claims.Username)
+			require.Equal(t, "owner-operator", claims.ClientID)
+			require.Equal(t, auth.ClientClassOperator, claims.ClientClass)
+			require.True(t, claims.HasScope(auth.ScopeAdmin))
+			require.False(t, claims.IsAgent)
+			require.Equal(t, auth.ClientClassOperator, state.refreshTokensByToken[tokenBody.RefreshToken].ClientClass)
+			require.Equal(t, resource, state.refreshTokensByToken[tokenBody.RefreshToken].Resource)
+
+			refreshParams := url.Values{
+				"grant_type":    {oauthGrantTypeRefreshToken},
+				"refresh_token": {tokenBody.RefreshToken},
+				"client_id":     {"owner-operator"},
+				"client_secret": {"secret"},
+			}
+			refreshResp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(refreshParams.Encode()))))
+			var refreshBody apimodels.OAuthTokenResponse
+			require.NoError(t, json.Unmarshal(refreshResp.Body, &refreshBody))
+			refreshClaims := round12DecodeJWTClaims(t, refreshBody.AccessToken)
+			require.Equal(t, []string{resource}, []string(refreshClaims.Audience))
+			require.Equal(t, auth.ClientClassOperator, refreshClaims.ClientClass)
+			require.True(t, refreshClaims.HasScope(auth.ScopeAdmin))
+		})
+	}
+}
+
+func TestOAuthInstancePlaneOperatorRejectsNonOwner(t *testing.T) {
+	resource := oauthInstanceTestResource(oauthInstanceSurfacePtah)
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"owner-operator": {
+				ClientID:     "owner-operator",
+				ClientSecret: "secret",
+				OwnerID:      "admin",
+				RedirectURIs: []string{"https://client.example/callback"},
+				Scopes:       []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+				ClientClass:  auth.ClientClassOperator,
+				Confidential: true,
+				CreatedAt:    time.Now().Add(-24 * time.Hour),
+			},
+		},
+		usersByUsername: map[string]storagemodels.User{
+			"intruder": {Username: "intruder", Approved: true, Role: "admin"},
+		},
+		authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+			"operator-non-owner-code": {
+				Code:              "operator-non-owner-code",
+				ClientID:          "owner-operator",
+				RedirectURI:       "https://client.example/callback",
+				Resource:          resource,
+				Username:          "intruder",
+				PrincipalUsername: "intruder",
+				ExpiresAt:         time.Now().Add(10 * time.Minute),
+				Scopes:            []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+			},
+		},
+	}
+	h, _, _ := round11NewHandler(t, round11TestConfig(), state)
+
+	params := url.Values{
+		"grant_type":    {oauthGrantTypeAuthorizationCode},
+		"code":          {"operator-non-owner-code"},
+		"client_id":     {"owner-operator"},
+		"client_secret": {"secret"},
+		"redirect_uri":  {"https://client.example/callback"},
+		"resource":      {resource},
+	}
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "invalid_target", body["error"])
+}
+
+func TestOAuthInstancePlanePublicClientCannotRequestAdminScope(t *testing.T) {
+	resource := oauthInstanceTestResource(oauthInstanceSurfaceBa)
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"public-client": {
+				ClientID:     "public-client",
+				RedirectURIs: []string{"https://client.example/callback"},
+				Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+				ClientClass:  auth.ClientClassCLI,
+				CreatedAt:    time.Now().Add(-24 * time.Hour),
+			},
+		},
+		usersByUsername: map[string]storagemodels.User{
+			"admin": {Username: "admin", Approved: true, Role: "admin"},
+		},
+	}
+	h, _, _ := round11NewHandler(t, round11TestConfig(), state)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, map[string]string{
+		"response_type":         "code",
+		"client_id":             "public-client",
+		"redirect_uri":          "https://client.example/callback",
+		"resource":              resource,
+		"scope":                 "read write admin",
+		"state":                 "public-admin-scope",
+		"code_challenge":        "public-code-challenge",
+		"code_challenge_method": "S256",
+	}, nil)
+	require.NoError(t, err)
+	ctx.Set("username", "admin")
+
+	resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+	redirectURL, err := url.Parse(firstStringValue(resp.Headers, "location"))
+	require.NoError(t, err)
+	require.Equal(t, "invalid_scope", redirectURL.Query().Get("error"))
+}
+
 func TestOAuthInstancePlaneDoesNotReuseActorScopedAuthorization(t *testing.T) {
 	cfg := round11TestConfig()
 	instanceResource := oauthInstanceTestResource(oauthInstanceSurfacePtah)
