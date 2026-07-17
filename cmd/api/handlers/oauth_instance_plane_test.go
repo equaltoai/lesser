@@ -634,6 +634,7 @@ func TestOAuthInstancePlaneRejectsUnknownResourceAndAgentPrincipal(t *testing.T)
 		{name: "unknown surface", resource: "https://api.example.com/instance/unknown/mcp"},
 		{name: "wrong host", resource: "https://api.other.example/instance/ptah/mcp"},
 		{name: "trailing slash", resource: "https://api.example.com/instance/ptah/mcp/"},
+		{name: "empty query", resource: "https://api.example.com/instance/ptah/mcp?"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := round11TestConfig()

@@ -89,72 +89,38 @@ Use the exact resource URL, including its `api.` host and path, as the OAuth `re
 reused for Ba. The authorization-server URL remains `https://{domain}/oauth/authorize` and the token endpoint remains
 `https://{domain}/oauth/token`.
 
-The owner-bootstrap command provisions a confidential internal OAuth client and writes its `client_id` and plaintext
-`client_secret` to the operator-controlled `lesser/<environment>/admin-oauth` Secrets Manager secret. The persisted
-client is owner-bound (`OwnerID`), `client_class=operator`, and granted `read write admin`. Do not try to recreate it
-through public `/oauth/register` or `/api/v1/apps`; public registration must remain generic and must not issue
-`admin` or `operator` authority.
+The supported owner path is the normal MCP OAuth flow. A separate owner-bootstrap secret, manual authorization-code
+exchange, or pasted bearer-token workaround is not required.
 
-### Obtain an owner token
+### Standard owner/admin OAuth flow
 
-1. Read the bootstrap client ID, secret, owner username, and registered callback from the protected operator secret. Do
-   not print the secret or token to logs, shell transcripts, tickets, or chat.
-2. Open the authorization URL below in the authenticated instance-owner browser session. Replace the placeholders and
-   URL-encode the query values:
+1. Dynamically register a public MCP client with `POST /oauth/register`. Use `token_endpoint_auth_method=none`, PKCE,
+   and the ordinary `read write` scopes. The stored client remains generic (`client_class=cli` or `web`); it does not
+   request or receive an operator marker during registration.
+2. Open `/oauth/authorize` in the authenticated browser session of the active local instance owner/admin. Use the
+   exact resource for the surface being connected and request only `read write`:
 
    ```text
-   https://{domain}/oauth/authorize?response_type=code&client_id={owner_client_id}&redirect_uri=https%3A%2F%2F{domain}%2Fauth%2Fcallback&resource=https%3A%2F%2F{canonical-api-host}%2Finstance%2Fptah%2Fmcp&scope=read%20write%20admin&state={fresh_random_state}
+   https://{domain}/oauth/authorize?response_type=code&client_id={public_client_id}&redirect_uri={callback}&resource=https%3A%2F%2F{canonical-api-host}%2Finstance%2Fptah%2Fmcp&scope=read%20write&code_challenge={pkce_challenge}&code_challenge_method=S256&state={fresh_random_state}
    ```
 
-   The owner must be the local active admin bound to the client. Approve the requested scopes if the consent screen is
-   shown. Repeat with the Ba resource when connecting Ba.
-3. Exchange the callback code at `/oauth/token` with the same redirect URI, exact resource, client ID, and client
-   secret using the authorization-code grant. Keep the returned bearer token in a protected environment variable or
-   secret store; never put it in a URL.
+   Use `/instance/ba/mcp` for Ba. The resource must retain the canonical `api.` host and exact path.
+3. Exchange the authorization code at `/oauth/token` with the same client ID, redirect URI, exact resource, and PKCE
+   verifier. A public client does not send a client secret. Standard MCP clients, including Codex, can perform this
+   flow without the operator manually handling a bootstrap credential.
 
-The authorization server rejects the request for a non-owner/non-admin principal, rejects public clients requesting
-`admin`, and rejects a token exchange whose resource or owner binding does not match. The resulting access token must
-carry `client_class=operator`, `admin` in `scopes`, and the exact Ptah or Ba resource in `aud`.
+For an active local admin, Lesser derives operator authority only at token issuance when the resource is exactly the
+Ptah or Ba instance resource. The access and refresh token claims are:
 
-### Connect Codex without exposing the client secret
+- `aud`: exactly the requested instance resource;
+- `client_class`: `operator`;
+- `scopes`: the requested `read write` set, without silently adding `admin`; and
+- `is_agent`: absent or false.
 
-The installed Codex MCP CLI supports `--bearer-token-env-var` but does not expose an OAuth client-secret option for
-`codex mcp add`. Use the owner authorization-code exchange above outside Codex, then supply the resource-bound bearer
-token through the environment:
-
-```bash
-export LESSER_PTAH_OWNER_TOKEN='(operator-issued token; do not echo it)'
-export PTAH_RESOURCE='https://{canonical-api-host}/instance/ptah/mcp'
-
-codex mcp add lesser-ptah-owner \
-  --url "$PTAH_RESOURCE" \
-  --oauth-resource "$PTAH_RESOURCE" \
-  --bearer-token-env-var LESSER_PTAH_OWNER_TOKEN
-```
-
-Use a separate `LESSER_BA_OWNER_TOKEN` and the exact Ba resource for Ba. Do not substitute a public `read`/`write`
-token, make `write` equivalent to owner authority, or bypass Body's x402 policy for ordinary callers. Once connected,
-run the Ptah genesis conversation and verify that the owner/operator token is accepted without an `x402_grant_required`
-challenge; Body's independent enforcement and the genesis flow remain Body-owned (see Body issue `#423`).
-
-For a local claim check that does not print the token, set `LESSER_PTAH_OWNER_TOKEN` and `PTAH_RESOURCE`, then run:
-
-```bash
-python3 - <<'PY'
-import base64, json, os
-
-payload = os.environ["LESSER_PTAH_OWNER_TOKEN"].split(".")[1]
-payload += "=" * (-len(payload) % 4)
-claims = json.loads(base64.urlsafe_b64decode(payload))
-assert claims["aud"] == [os.environ["PTAH_RESOURCE"]]
-assert claims["client_class"] == "operator"
-assert "admin" in claims["scopes"]
-assert claims.get("is_agent") is not True
-print("owner/operator claims and resource audience verified")
-PY
-```
-
-This verifies Lesser's issuance contract locally; it is not a substitute for Body's integration verification.
+Refresh rotation preserves that same operator marker, exact audience, and scope set. Body recognizes the explicit
+operator marker, so Ptah/Ba genesis does not require an x402 payment challenge. Ordinary users, non-admins, agent
+clients or tokens, actor-scoped resources, non-instance resources, and wrong hosts do not receive operator authority.
+Body's independent enforcement and the genesis flow remain Body-owned (see Body issue `#423`).
 
 ## Related docs
 
