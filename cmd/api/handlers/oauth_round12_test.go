@@ -1054,6 +1054,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 	t.Run("authorization_code operator client preserves operator marker through refresh", func(t *testing.T) {
 		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"admin": {Username: "admin", Approved: true, Role: "admin"},
+			},
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"operator-client": {
 					ClientID:     "operator-client",
@@ -1069,18 +1072,20 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			},
 			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
 				"operator-code": {
-					Code:        "operator-code",
-					ClientID:    "operator-client",
-					RedirectURI: "https://example.com/callback",
-					Username:    "admin",
-					ExpiresAt:   time.Now().Add(10 * time.Minute),
-					Scopes:      []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
+					Code:              "operator-code",
+					ClientID:          "operator-client",
+					RedirectURI:       "https://example.com/callback",
+					Resource:          "https://api.example.com/instance/ptah/mcp",
+					Username:          "admin",
+					PrincipalUsername: "admin",
+					ExpiresAt:         time.Now().Add(10 * time.Minute),
+					Scopes:            []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeAdmin},
 				},
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
-		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=operator-code&client_id=operator-client&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=operator-code&client_id=operator-client&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&resource=https%3A%2F%2Fapi.example.com%2Finstance%2Fptah%2Fmcp"))
 		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
 		var body apimodels.OAuthTokenResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
