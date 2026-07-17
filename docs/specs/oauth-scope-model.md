@@ -27,7 +27,10 @@ Lesser's public OAuth and MCP-facing surfaces advertise exactly these requestabl
 ## Non-canonical scope disposition
 
 - `admin`
-  Internal-only. Lesser may still issue or recognize `admin` and `admin:*` on internal/operator tokens, but public OAuth client registration and public authorization requests must reject them.
+  Internal-only. Lesser may still issue or recognize `admin` and `admin:*` on internal/operator tokens, but public
+  OAuth client registration and public authorization requests must reject them. The only authorization-endpoint
+  exception is an internally provisioned, owner-bound `client_class=operator` client requesting an exact instance-plane
+  resource (`/instance/ptah/mcp` or `/instance/ba/mcp`) while its owning active local admin is authenticated.
 - `write:follows`
   Compatibility alias for the canonical `follow` capability. Accepted for backward compatibility and delegated-capability checks, but not advertised in discovery or metadata.
 - `read:*` and `write:*`
@@ -44,11 +47,18 @@ Lesser's public OAuth and MCP-facing surfaces advertise exactly these requestabl
 - Default registration scopes
   `read write`
 - `/oauth/authorize`
-  Must reject internal-only scopes such as `admin` even if an existing consent record contains them.
+  Must reject internal-only scopes such as `admin` for public clients, actor-scoped resources, and any principal that
+  is not the owning active local admin of the internal operator client, even if an existing consent record contains
+  them. The owner/operator exception is limited to the exact Ptah/Ba instance resources and the client's registered
+  scope grant.
 - Operator client class
   `client_class=operator` is an internal/operator-owned OAuth client marker, not an externally advertised requestable
   class or scope. Public OAuth registration may accept only generic `cli` and `web` client classes; `agent` and
   `operator` are minted only by internal Lesser-owned paths.
+
+The owner-bootstrap client is the current internal operator path. It is confidential, bound to the bootstrapped owner
+through `OwnerID`, and registered with `read`, `write`, and `admin`. Authorization-code and refresh-token exchanges
+preserve `client_class=operator`, the granted scopes, and the exact instance resource as the access-token audience.
 - Broad-scope implication
   `write` satisfies requests for `follow` and `write:*`.
   `read` satisfies requests for `read:*`.
