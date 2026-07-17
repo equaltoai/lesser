@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/security/authz"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -164,7 +165,7 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 		return nil, resp, err
 	}
 
-	scopes, err := h.normalizeAuthorizeScopes(req.scope)
+	scopes, err := h.normalizeAuthorizeScopesForFlow(ctx.Context(), flow)
 	if err != nil {
 		resp, respErr := h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
 		return nil, resp, respErr
@@ -268,6 +269,19 @@ func (h *Handler) redirectUserToLogin(ctx *apptheory.Context, req *authorizeRequ
 }
 
 func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
+	scopes, err := parseAuthorizeScopes(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := auth.ValidatePublicOAuthScopes(scopes); err != nil {
+		return nil, errors.New("one or more requested scopes are invalid")
+	}
+
+	return scopes, nil
+}
+
+func parseAuthorizeScopes(scope string) ([]string, error) {
 	scopes := auth.DefaultScopes()
 	if strings.TrimSpace(scope) != "" {
 		scopes = splitOAuthSpaceDelimited(scope)
@@ -278,7 +292,31 @@ func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
 		return nil, fmt.Errorf("invalid scopes: %v", err)
 	}
 
-	if err := auth.ValidatePublicOAuthScopes(scopes); err != nil {
+	return scopes, nil
+}
+
+// normalizeAuthorizeScopesForFlow preserves the public scope policy while allowing the
+// owner-bound internal operator client to request admin authority for the instance plane.
+// The exception is deliberately tied to the exact instance resource and the checks in
+// oauthOperatorClientCanAuthorizeInstanceResource; public clients never enter this path.
+func (h *Handler) normalizeAuthorizeScopesForFlow(ctx context.Context, flow *authorizeFlow) ([]string, error) {
+	if flow == nil || flow.request == nil || flow.client == nil {
+		return nil, errors.New("one or more requested scopes are invalid")
+	}
+
+	scopes, err := parseAuthorizeScopes(flow.request.scope)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.ValidatePublicOAuthScopes(scopes); err == nil {
+		return scopes, nil
+	}
+
+	if !oauthResourceTargetsInstancePlane(flow.request.resource) ||
+		!strings.EqualFold(strings.TrimSpace(flow.client.ClientClass), auth.ClientClassOperator) ||
+		!h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, flow.client, flow.principalUsername) ||
+		auth.ValidateScopes(scopes) != nil ||
+		!auth.ScopeSetAllows(flow.client.Scopes, scopes) {
 		return nil, errors.New("one or more requested scopes are invalid")
 	}
 
@@ -334,6 +372,9 @@ func (h *Handler) bindAuthorizeTarget(ctx *apptheory.Context, flow *authorizeFlo
 		}
 		if !oauthClientCanAuthorizeInstanceResource(flow.client) {
 			return h.oauthErrorLift(ctx, "access_denied", "instance-plane MCP requires an account-holder OAuth client", req.redirectURI, req.state)
+		}
+		if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx.Context(), flow.client, flow.principalUsername) {
+			return h.oauthErrorLift(ctx, "access_denied", "instance-plane MCP operator access requires the owning local admin", req.redirectURI, req.state)
 		}
 
 		// Instance-plane resources belong to the account holder, not to an actor.
@@ -443,6 +484,28 @@ func oauthClientCanAuthorizeInstanceResource(client *storage.OAuthClient) bool {
 		strings.TrimSpace(client.AgentUsername) == ""
 }
 
+// oauthOperatorClientCanAuthorizeInstanceResource applies the owner/admin boundary
+// for Lesser's internally provisioned operator client. Public client classes remain
+// governed by the existing account-holder check above and do not receive admin scope.
+func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResource(ctx context.Context, client *storage.OAuthClient, principalUsername string) bool {
+	if client == nil || !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassOperator) {
+		return true
+	}
+
+	ownerID := strings.TrimSpace(client.OwnerID)
+	principalUsername = strings.TrimSpace(principalUsername)
+	if ownerID == "" || principalUsername == "" || !strings.EqualFold(ownerID, principalUsername) || h == nil || h.repos == nil || h.repos.Account() == nil {
+		return false
+	}
+
+	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
+	if err != nil || principal == nil {
+		return false
+	}
+
+	return !principal.IsAgent && principal.Approved && !principal.Suspended && !principal.Silenced && authz.IsAdmin(principal.Role)
+}
+
 func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context, resource, principalUsername string) (string, string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(resource))
 	if err != nil || parsed == nil || parsed.User != nil {
@@ -538,6 +601,9 @@ func (h *Handler) validateOAuthInstanceAuthorizationCodeTarget(ctx context.Conte
 	if authCode == nil || !oauthClientCanAuthorizeInstanceResource(client) {
 		return errOAuthInvalidTarget
 	}
+	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, authCode.PrincipalUsername) {
+		return errOAuthInvalidTarget
+	}
 
 	return h.validateOAuthInstanceResourceOwner(ctx, authCode.Resource, authCode.PrincipalUsername, authCode.Username)
 }
@@ -548,6 +614,9 @@ func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, c
 	}
 
 	username := strings.TrimSpace(token.Username)
+	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, username) {
+		return errOAuthInvalidTarget
+	}
 	return h.validateOAuthInstanceResourceOwner(ctx, token.Resource, username, username)
 }
 
