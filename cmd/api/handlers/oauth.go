@@ -50,6 +50,9 @@ const (
 
 	oauthTokenTypeBearer       = "Bearer"
 	oauthTokenExpiresInSeconds = 3600
+
+	oauthInstanceSurfacePtah = "ptah"
+	oauthInstanceSurfaceBa   = "ba"
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
@@ -318,6 +321,29 @@ func (h *Handler) bindAuthorizeTarget(ctx *apptheory.Context, flow *authorizeFlo
 		return nil, nil
 	}
 
+	if oauthResourceTargetsInstancePlane(req.resource) {
+		targetUsername, canonicalResource, err := h.resolveAuthorizeTargetInstanceFromResource(ctx.Context(), req.resource, flow.principalUsername)
+		if err != nil {
+			var targetErr *oauthAuthorizeTargetError
+			if errors.As(err, &targetErr) {
+				return h.oauthErrorLift(ctx, targetErr.code, targetErr.description, req.redirectURI, req.state)
+			}
+
+			h.logger.Error("failed to resolve OAuth instance resource target", zap.Error(err))
+			return h.oauthErrorLift(ctx, "server_error", "Failed to resolve requested resource", req.redirectURI, req.state)
+		}
+		if !oauthClientCanAuthorizeInstanceResource(flow.client) {
+			return h.oauthErrorLift(ctx, "access_denied", "instance-plane MCP requires an account-holder OAuth client", req.redirectURI, req.state)
+		}
+
+		// Instance-plane resources belong to the account holder, not to an actor.
+		// Keeping the token subject on the principal prevents Ptah/Ba authorization
+		// from becoming an actor-scoped Ka session.
+		flow.username = targetUsername
+		flow.request.resource = canonicalResource
+		return nil, nil
+	}
+
 	targetUsername, canonicalResource, err := h.resolveAuthorizeTargetActorFromResource(ctx.Context(), req.resource, flow.principalUsername)
 	if err == nil {
 		flow.username = targetUsername
@@ -394,6 +420,135 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 	}
 
 	return actorUsername, canonicalResource, nil
+}
+
+func oauthResourceTargetsInstancePlane(resource string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(resource))
+	if err != nil || parsed == nil {
+		return false
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	return len(segments) > 0 && segments[0] == "instance"
+}
+
+func oauthClientCanAuthorizeInstanceResource(client *storage.OAuthClient) bool {
+	if client == nil {
+		return false
+	}
+
+	// Agent clients are reserved for actor-scoped Ka resources. In particular,
+	// an agent client must not mint an account-holder token for Ptah or Ba.
+	return !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) &&
+		strings.TrimSpace(client.AgentUsername) == ""
+}
+
+func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context, resource, principalUsername string) (string, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(resource))
+	if err != nil || parsed == nil || parsed.User != nil {
+		return "", "", oauthInvalidInstanceResourceTarget()
+	}
+	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
+		return "", "", oauthInvalidInstanceResourceTarget()
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) != 3 || segments[0] != "instance" || segments[2] != "mcp" {
+		return "", "", oauthInvalidInstanceResourceTarget()
+	}
+
+	surface := strings.TrimSpace(segments[1])
+	if surface != oauthInstanceSurfacePtah && surface != oauthInstanceSurfaceBa {
+		return "", "", oauthInvalidInstanceResourceTarget()
+	}
+
+	canonicalResource, err := h.canonicalOAuthInstanceResource(surface)
+	if err != nil {
+		return "", "", err
+	}
+	canonicalURL, err := url.Parse(canonicalResource)
+	if err != nil || canonicalURL == nil {
+		return "", "", errors.New("authorization server instance resource URL is invalid")
+	}
+	if !strings.EqualFold(parsed.Scheme, canonicalURL.Scheme) ||
+		!strings.EqualFold(parsed.Host, canonicalURL.Host) ||
+		parsed.EscapedPath() != canonicalURL.EscapedPath() {
+		return "", "", oauthInvalidInstanceResourceTarget()
+	}
+
+	principalUsername = strings.TrimSpace(principalUsername)
+	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
+	if err != nil || principal == nil || principal.IsAgent {
+		return "", "", &oauthAuthorizeTargetError{
+			code:        "access_denied",
+			description: "instance-plane MCP requires an account-holder principal",
+		}
+	}
+
+	return principalUsername, canonicalResource, nil
+}
+
+func oauthInvalidInstanceResourceTarget() error {
+	return &oauthAuthorizeTargetError{
+		code:        "invalid_target",
+		description: "resource must be the instance-plane MCP URL for this server",
+	}
+}
+
+func (h *Handler) canonicalOAuthInstanceResource(surface string) (string, error) {
+	if h == nil || h.cfg == nil {
+		return "", errors.New("authorization server instance resource URL is unavailable")
+	}
+
+	// BuildPublicMCPAccessBundle is the existing source of truth for the
+	// public API hostname (including the api.<stageDomain> transformation).
+	// Only the path differs for the Body-owned instance plane.
+	actorBundle := auth.BuildPublicMCPAccessBundle(h.cfg.BaseURL(), "instance-resource")
+	if actorBundle.MCPURL == "" {
+		return "", errors.New("authorization server instance resource URL is invalid")
+	}
+	parsed, err := url.Parse(actorBundle.MCPURL)
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("authorization server instance resource URL is invalid")
+	}
+
+	parsed.Path = "/instance/" + surface + "/mcp"
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func (h *Handler) validateOAuthInstanceResourceOwner(ctx context.Context, resource, principalUsername, targetUsername string) error {
+	principalUsername = strings.TrimSpace(principalUsername)
+	targetUsername = strings.TrimSpace(targetUsername)
+	if principalUsername == "" || targetUsername == "" || principalUsername != targetUsername {
+		return errOAuthInvalidTarget
+	}
+
+	resolvedUsername, canonicalResource, err := h.resolveAuthorizeTargetInstanceFromResource(ctx, resource, principalUsername)
+	if err != nil || resolvedUsername != targetUsername || canonicalResource != strings.TrimSpace(resource) {
+		return errOAuthInvalidTarget
+	}
+
+	return nil
+}
+
+func (h *Handler) validateOAuthInstanceAuthorizationCodeTarget(ctx context.Context, client *storage.OAuthClient, authCode *storage.AuthorizationCode) error {
+	if authCode == nil || !oauthClientCanAuthorizeInstanceResource(client) {
+		return errOAuthInvalidTarget
+	}
+
+	return h.validateOAuthInstanceResourceOwner(ctx, authCode.Resource, authCode.PrincipalUsername, authCode.Username)
+}
+
+func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, client *storage.OAuthClient, token *storage.RefreshToken) error {
+	if token == nil || !oauthClientCanAuthorizeInstanceResource(client) || strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassAgent) {
+		return errOAuthInvalidTarget
+	}
+
+	username := strings.TrimSpace(token.Username)
+	return h.validateOAuthInstanceResourceOwner(ctx, token.Resource, username, username)
 }
 
 func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
@@ -1149,6 +1304,11 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	if storedResource != requestedResource {
 		return "", "", nil, errOAuthInvalidTarget
 	}
+	if oauthResourceTargetsInstancePlane(storedResource) {
+		if err := h.validateOAuthInstanceAuthorizationCodeTarget(ctx, client, authCode); err != nil {
+			return "", "", nil, err
+		}
+	}
 
 	// Consume the authorization code before issuing tokens. This prevents code reuse via
 	// concurrent exchanges in the (small) TOCTOU window between read and delete.
@@ -1499,6 +1659,11 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		return "", "", nil, errors.Join(failedToValidateRefreshToken(), err)
+	}
+	if oauthResourceTargetsInstancePlane(storedToken.Resource) {
+		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, storedToken); err != nil {
+			return "", "", nil, auth.ErrInvalidToken
+		}
 	}
 
 	// Validate refresh token belongs to the client
