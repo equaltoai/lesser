@@ -338,6 +338,20 @@ func TestOAuthInstancePlaneOperatorRejectsNonOwner(t *testing.T) {
 		},
 	}
 	h, _, _ := round11NewHandler(t, round11TestConfig(), state)
+	authorizeCtx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, map[string]string{
+		"response_type": "code",
+		"client_id":     "owner-operator",
+		"redirect_uri":  "https://client.example/callback",
+		"resource":      resource,
+		"scope":         "read write admin",
+		"state":         "operator-non-owner",
+	}, nil)
+	require.NoError(t, err)
+	authorizeCtx.Set("username", "intruder")
+	authorizeResp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(authorizeCtx))
+	authorizeURL, err := url.Parse(firstStringValue(authorizeResp.Headers, "location"))
+	require.NoError(t, err)
+	require.Equal(t, "access_denied", authorizeURL.Query().Get("error"))
 
 	params := url.Values{
 		"grant_type":    {oauthGrantTypeAuthorizationCode},
