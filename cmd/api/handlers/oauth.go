@@ -336,7 +336,7 @@ func normalizeOAuthResourceIndicator(resource string) (string, error) {
 	if !strings.EqualFold(parsed.Scheme, "https") {
 		return "", errors.New("resource must use https")
 	}
-	if parsed.RawQuery != "" {
+	if parsed.RawQuery != "" || parsed.ForceQuery {
 		return "", errors.New("resource must not include a query string")
 	}
 	if parsed.Fragment != "" {
@@ -409,7 +409,7 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 			description: "resource must be the actor-scoped MCP URL for this server",
 		}
 	}
-	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
+	if parsed.ForceQuery || strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "invalid_target",
 			description: "resource must be the actor-scoped MCP URL for this server",
@@ -498,6 +498,19 @@ func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResource(ctx context.Co
 		return false
 	}
 
+	return h.oauthInstanceOperatorPrincipal(ctx, principalUsername)
+}
+
+// oauthInstanceOperatorPrincipal reports whether the current local account is an
+// active administrator who can receive instance-plane operator authority. This
+// is intentionally evaluated against the account row at issuance/refresh time;
+// the public OAuth client's class is not itself an authority grant.
+func (h *Handler) oauthInstanceOperatorPrincipal(ctx context.Context, principalUsername string) bool {
+	principalUsername = strings.TrimSpace(principalUsername)
+	if h == nil || h.repos == nil || h.repos.Account() == nil || principalUsername == "" {
+		return false
+	}
+
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
 	if err != nil || principal == nil {
 		return false
@@ -511,7 +524,7 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 	if err != nil || parsed == nil || parsed.User != nil {
 		return "", "", oauthInvalidInstanceResourceTarget()
 	}
-	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
+	if parsed.ForceQuery || strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
 		return "", "", oauthInvalidInstanceResourceTarget()
 	}
 
@@ -601,11 +614,12 @@ func (h *Handler) validateOAuthInstanceAuthorizationCodeTarget(ctx context.Conte
 	if authCode == nil || !oauthClientCanAuthorizeInstanceResource(client) {
 		return errOAuthInvalidTarget
 	}
-	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, authCode.PrincipalUsername) {
+	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
+	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, principalUsername) {
 		return errOAuthInvalidTarget
 	}
 
-	return h.validateOAuthInstanceResourceOwner(ctx, authCode.Resource, authCode.PrincipalUsername, authCode.Username)
+	return h.validateOAuthInstanceResourceOwner(ctx, authCode.Resource, principalUsername, authCode.Username)
 }
 
 func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, client *storage.OAuthClient, token *storage.RefreshToken) error {
@@ -617,7 +631,20 @@ func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, c
 	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, username) {
 		return errOAuthInvalidTarget
 	}
+	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) && !h.oauthInstanceOperatorPrincipal(ctx, username) {
+		return errOAuthInvalidTarget
+	}
 	return h.validateOAuthInstanceResourceOwner(ctx, token.Resource, username, username)
+}
+
+func oauthAuthorizationCodePrincipalUsername(authCode *storage.AuthorizationCode) string {
+	if authCode == nil {
+		return ""
+	}
+	if principalUsername := strings.TrimSpace(authCode.PrincipalUsername); principalUsername != "" {
+		return principalUsername
+	}
+	return strings.TrimSpace(authCode.Username)
 }
 
 func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
@@ -1363,6 +1390,9 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	if err != nil {
 		return "", "", nil, err
 	}
+	if err := validateOAuthAuthorizationCodeScopes(client, authCode); err != nil {
+		return "", "", nil, err
+	}
 	storedResource := strings.TrimSpace(authCode.Resource)
 	if storedResource != "" && requestedResource == "" {
 		// Some public MCP clients bind the resource at authorization time but omit it
@@ -1386,7 +1416,11 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", nil, auth.ErrInvalidGrant
 	}
 
-	clientClass, sessionID, accessTTL, err := authorizationCodeExchangeTokenContext(h.cfg, client, authCode)
+	_, sessionID, accessTTL, err := authorizationCodeExchangeTokenContext(h.cfg, client, authCode)
+	if err != nil {
+		return "", "", nil, err
+	}
+	clientClass, err := h.oauthAuthorizationCodeClientClass(ctx, client, authCode)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -1486,6 +1520,36 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	return authCode, nil
 }
 
+func validateOAuthAuthorizationCodeScopes(client *storage.OAuthClient, authCode *storage.AuthorizationCode) error {
+	if client == nil || authCode == nil {
+		return auth.ErrInvalidGrant
+	}
+	if err := auth.ValidateScopes(authCode.Scopes); err != nil {
+		return auth.ErrInvalidScope
+	}
+	if !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassOperator) {
+		if err := auth.ValidatePublicOAuthScopes(authCode.Scopes); err != nil {
+			return auth.ErrInvalidScope
+		}
+	} else if !oauthResourceTargetsInstancePlane(authCode.Resource) && oauthScopesContainAdmin(authCode.Scopes) {
+		return auth.ErrInvalidScope
+	}
+	if len(client.Scopes) > 0 && !auth.ScopeSetAllows(client.Scopes, authCode.Scopes) {
+		return auth.ErrInvalidScope
+	}
+	return nil
+}
+
+func oauthScopesContainAdmin(scopes []string) bool {
+	for _, scope := range scopes {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		if scope == auth.ScopeAdmin || strings.HasPrefix(scope, auth.ScopeAdmin+":") {
+			return true
+		}
+	}
+	return false
+}
+
 func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
 	// All public (non-confidential) clients must use PKCE, regardless of
 	// registration source. The previous implementation only required PKCE
@@ -1530,6 +1594,47 @@ func authorizationCodeExchangeTokenContext(cfg *config.Config, client *storage.O
 		return "", "", 0, auth.ErrInvalidGrant
 	}
 	return clientClass, sessionID, auth.AgentAccessTokenTTL(cfg), nil
+}
+
+// oauthAuthorizationCodeClientClass derives the authority marker for the token
+// being issued. A dynamically registered client remains cli/web in storage and
+// receives operator authority only for an exact instance-plane resource when the
+// authorization-code principal is still an active local administrator. The
+// marker is therefore bound to this token audience, not to the public client.
+func (h *Handler) oauthAuthorizationCodeClientClass(ctx context.Context, client *storage.OAuthClient, authCode *storage.AuthorizationCode) (string, error) {
+	if client == nil || authCode == nil {
+		return "", auth.ErrInvalidGrant
+	}
+
+	// Derive the class from the persisted client record rather than trusting the
+	// caller-supplied context. The operator marker is an issuance decision, so a
+	// stale or inconsistent intermediate value must not elevate a generic client.
+	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
+	if !oauthResourceTargetsInstancePlane(authCode.Resource) {
+		if clientClass == auth.ClientClassOperator {
+			// The internally provisioned operator client may still be used for a
+			// non-instance OAuth resource, but it must not export its operator
+			// marker outside the instance plane.
+			return auth.ClientClassWeb, nil
+		}
+		return clientClass, nil
+	}
+
+	if err := h.validateOAuthInstanceAuthorizationCodeTarget(ctx, client, authCode); err != nil {
+		return "", err
+	}
+	if clientClass != auth.ClientClassCLI && clientClass != auth.ClientClassWeb && clientClass != auth.ClientClassOperator {
+		return clientClass, nil
+	}
+
+	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
+	if h.oauthInstanceOperatorPrincipal(ctx, principalUsername) {
+		return auth.ClientClassOperator, nil
+	}
+	if clientClass == auth.ClientClassOperator {
+		return "", errOAuthInvalidTarget
+	}
+	return clientClass, nil
 }
 
 func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID string, client *storage.OAuthClient, authCode *storage.AuthorizationCode, clientClass, sessionID string, accessTTL time.Duration) *storage.RefreshToken {
@@ -1728,6 +1833,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		return "", "", nil, errors.Join(failedToValidateRefreshToken(), err)
+	}
+	if strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(storedToken.Resource) {
+		return "", "", nil, auth.ErrInvalidToken
 	}
 	if oauthResourceTargetsInstancePlane(storedToken.Resource) {
 		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, storedToken); err != nil {
