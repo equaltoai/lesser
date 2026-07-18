@@ -24,10 +24,10 @@ func TestService_RecoverHostedGenesisTurnCallsHostRecoverWithoutUserMessage(t *t
 	)
 
 	var (
-		sawMethod     string
-		sawPath       string
-		sawAuth       string
-		sawBody       map[string]any
+		sawMethod      string
+		sawPath        string
+		sawAuth        string
+		sawBody        map[string]any
 		sawContentType string
 	)
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -339,8 +339,8 @@ func TestService_RecoverHostedGenesisTurnInvalidJSONResponseReturnsTypedError(t 
 		// Valid JSON wrapper but conversation field is a string, not an object —
 		// parseHostConversationEnvelope will fail unmarshaling into hostMintConversationResponse.
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-			"version":    "1",
-			"request_id": "host-req-bad-conv",
+			"version":      "1",
+			"request_id":   "host-req-bad-conv",
 			"conversation": "not-a-valid-conversation-object",
 		}))
 	}))
