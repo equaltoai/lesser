@@ -235,6 +235,7 @@ The release assembly descriptor freezes these input category names:
 | `managed_service_urls` | managed control-plane URLs and instance-key ARN | CLI flags and provisioning input JSON |
 | `provisioning_input` | managed bootstrap/config blob supplied with the deploy request | `--provisioning-input` |
 | `bootstrap_io` | local output paths and receipt/bootstrap handling | `--out`, local Lesser state dir |
+| `binding_secrets` | ARN-backed body/Ptah → Lesser binding receiver credential | `SOUL_BINDING_INTEGRATION_KEY_ARN` or provisioning input JSON |
 
 ### Separation rules
 
@@ -263,6 +264,7 @@ Install-specific values that affect the release assembly are expressed as CloudF
 - `LesserHostUrl`
 - `LesserHostAttestationsUrl`
 - `LesserHostInstanceKeyArn`
+- `SoulBindingIntegrationKeyArn`
 - `TranslationEnabled`
 - `TipEnabled`
 - `TipChainId`
@@ -273,6 +275,7 @@ Install-specific values that affect the release assembly are expressed as CloudF
 - Shared-stack resources that are installation-specific but stable across stages are resolved through shared-stack outputs or dynamic SSM references at deploy time.
 - The release assembly keeps CloudFormation templates generic; it does not rewrite template bytes per installation.
 - `ReleaseAssetBucketName` binds the stage templates to the shared release-asset bucket created by the shared stack for that installation.
+- `SoulBindingIntegrationKeyArn` is the ARN for the dedicated body/Ptah → Lesser receiving credential used by `/api/v1/souls/bindings`. Managed runners must pass the ARN, not a raw secret value, when deploying the body instance-plane/Ptah binding surface.
 
 ## Managed Runner And Operator Execution Contract
 

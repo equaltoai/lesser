@@ -20,14 +20,15 @@ type managedProvisioningInput struct {
 	ConsentMessage     string `json:"consent_message,omitempty"`
 	ConsentSignature   string `json:"consent_signature,omitempty"`
 
-	LesserHostURL             string `json:"lesser_host_url,omitempty"`
-	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
-	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
-	InstancePlaneEnabled      *bool  `json:"instance_plane_enabled,omitempty"`
-	APICORSAllowedOrigins     string `json:"api_cors_allowed_origins,omitempty"`
-	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
-	AllowAgents               *bool  `json:"allow_agents,omitempty"`
-	AllowAgentRegistration    *bool  `json:"allow_agent_registration,omitempty"`
+	LesserHostURL                string `json:"lesser_host_url,omitempty"`
+	LesserHostAttestationsURL    string `json:"lesser_host_attestations_url,omitempty"`
+	LesserHostInstanceKeyARN     string `json:"lesser_host_instance_key_arn,omitempty"`
+	SoulBindingIntegrationKeyARN string `json:"soul_binding_integration_key_arn,omitempty"`
+	InstancePlaneEnabled         *bool  `json:"instance_plane_enabled,omitempty"`
+	APICORSAllowedOrigins        string `json:"api_cors_allowed_origins,omitempty"`
+	TranslationEnabled           *bool  `json:"translation_enabled,omitempty"`
+	AllowAgents                  *bool  `json:"allow_agents,omitempty"`
+	AllowAgentRegistration       *bool  `json:"allow_agent_registration,omitempty"`
 
 	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
 	TipChainID         *int   `json:"tip_chain_id,omitempty"`
@@ -77,6 +78,7 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	in.LesserHostURL = strings.TrimRight(strings.TrimSpace(in.LesserHostURL), "/")
 	in.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(in.LesserHostAttestationsURL), "/")
 	in.LesserHostInstanceKeyARN = strings.TrimSpace(in.LesserHostInstanceKeyARN)
+	in.SoulBindingIntegrationKeyARN = strings.TrimSpace(in.SoulBindingIntegrationKeyARN)
 	in.APICORSAllowedOrigins = strings.TrimSpace(in.APICORSAllowedOrigins)
 	in.TipContractAddress = strings.TrimSpace(in.TipContractAddress)
 	if in.AdminUsername == "" {

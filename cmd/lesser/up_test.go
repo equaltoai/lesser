@@ -106,6 +106,7 @@ func TestParseUpArgs(t *testing.T) {
   "admin_username": "app",
   "lesser_host_url": "https://lab.lesser.host",
   "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "soul_binding_integration_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:soulBinding",
   "instance_plane_enabled": true,
   "api_cors_allowed_origins": "https://app.example.com",
   "translation_enabled": true,
@@ -127,6 +128,7 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
 		require.Equal(t, "https://lab.lesser.host", args.LesserHostURL)
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", args.LesserHostInstanceKeyARN)
+		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:soulBinding", args.SoulBindingIntegrationKeyARN)
 		require.NotNil(t, args.InstancePlaneEnabled)
 		require.True(t, *args.InstancePlaneEnabled)
 		require.Equal(t, "https://app.example.com", args.APICORSAllowedOrigins)
@@ -498,7 +500,10 @@ func TestUpEnv_Deploy_UsesLegacyReleaseAssemblyWhenEnabled(t *testing.T) {
 	}
 
 	env := &upEnv{
-		args:            upArgs{ReleaseDir: "/tmp/release"},
+		args: upArgs{
+			ReleaseDir:                   "/tmp/release",
+			SoulBindingIntegrationKeyARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding",
+		},
 		app:             "app",
 		baseDomain:      "example.com",
 		awsProfile:      "profile",

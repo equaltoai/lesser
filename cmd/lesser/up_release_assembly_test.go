@@ -245,6 +245,24 @@ func TestUpEnvDeployFromReleaseAssembly_RequiresPreparedAssembly(t *testing.T) {
 	require.ErrorContains(t, err, "release deploy assembly is not prepared")
 }
 
+func TestUpEnvDeployFromReleaseAssembly_RequiresSoulBindingArn(t *testing.T) {
+	env := &upEnv{
+		app:        "app",
+		baseDomain: "example.com",
+		awsProfile: "profile",
+		accountID:  "123456789012",
+		awsCfg:     aws.Config{Region: "us-east-1"},
+		hostedZone: hostedZone{ID: "Z1", Name: "example.com"},
+		stages:     []naming.Stage{naming.StageDev},
+		releaseAssembly: &releaseDeployAssemblyInstallResult{
+			SharedTemplate: filepath.Join(t.TempDir(), "missing.template.json"),
+		},
+	}
+
+	_, err := env.deployFromReleaseAssembly(context.Background())
+	require.ErrorContains(t, err, "SOUL_BINDING_INTEGRATION_KEY_ARN is required")
+}
+
 func TestUpEnvDeployFromReleaseAssembly_ErrorsWhenSharedTemplateMissing(t *testing.T) {
 	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
 	t.Cleanup(func() {
@@ -254,6 +272,9 @@ func TestUpEnvDeployFromReleaseAssembly_ErrorsWhenSharedTemplateMissing(t *testi
 	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
 
 	env := &upEnv{
+		args: upArgs{
+			SoulBindingIntegrationKeyARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding",
+		},
 		app:        "app",
 		baseDomain: "example.com",
 		awsProfile: "profile",
@@ -297,7 +318,9 @@ func TestUpEnvDeployFromReleaseAssembly_ErrorsWhenStageTemplateURLMissing(t *tes
 	workspaceRoot := t.TempDir()
 	assets := stubReleaseDeployAssetsInstallResult(t, workspaceRoot)
 	env := &upEnv{
-		args:            upArgs{},
+		args: upArgs{
+			SoulBindingIntegrationKeyARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding",
+		},
 		app:             "app",
 		baseDomain:      "example.com",
 		awsProfile:      "profile",
@@ -320,10 +343,12 @@ func TestReleaseStageTemplateParametersNormalizesAPICORS(t *testing.T) {
 		baseDomain: "example.com",
 		hostedZone: hostedZone{ID: "Z123"},
 		args: upArgs{
-			APICORSAllowedOrigins: " https://APP.example.com/ , https://bad.example/path ",
+			APICORSAllowedOrigins:        " https://APP.example.com/ , https://bad.example/path ",
+			SoulBindingIntegrationKeyARN: " arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding ",
 		},
 	}
 
 	params := env.releaseStageTemplateParameters("assets-bucket")
 	require.Equal(t, "https://app.example.com", params["ApiCorsAllowedOrigins"])
+	require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding", params["SoulBindingIntegrationKeyArn"])
 }

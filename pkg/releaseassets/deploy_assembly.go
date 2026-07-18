@@ -36,27 +36,28 @@ const DeployAssemblyManifestKind = "lesser.deploy_assembly_descriptor"
 const DeployAssemblyManifestSchemaVersion = 1
 
 const (
-	deployAssemblyInternalManifestPath    = "manifest.json"
-	deployAssemblyPayloadKind             = "lesser.cloudformation_release_assembly"
-	deployAssemblyPayloadContractVersion  = 1
-	deployAssemblyInternalManifestKind    = "lesser.cloudformation_release_assembly_manifest"
-	deployAssemblyInternalManifestVersion = 1
-	cdkBootstrapValidationRule            = "CheckBootstrapVersion"
-	placeholderAppSlug                    = "appslugplaceholder"
-	placeholderBaseDomain                 = "base.example.com"
-	placeholderHostedZoneID               = "ZHOSTEDZONEPLACEHOLDER"
-	placeholderAccountID                  = "111111111111"
-	placeholderRegion                     = "us-west-2"
-	placeholderLesserHostURL              = "https://lesser-host.example.invalid"
-	placeholderLesserHostAttestationsURL  = "https://lesser-host-attestations.example.invalid"
-	placeholderLesserHostInstanceKeyARN   = "LESSER_HOST_INSTANCE_KEY_ARN_PLACEHOLDER"
-	placeholderTranslationEnabled         = "TRANSLATION_ENABLED_PLACEHOLDER"
-	placeholderAllowAgents                = "ALLOW_AGENTS_PLACEHOLDER"
-	placeholderAllowAgentRegistration     = "ALLOW_AGENT_REGISTRATION_PLACEHOLDER"
-	placeholderTipEnabled                 = "TIP_ENABLED_PLACEHOLDER"
-	placeholderTipChainID                 = "TIP_CHAIN_ID_PLACEHOLDER"
-	placeholderTipContractAddress         = "TIP_CONTRACT_ADDRESS_PLACEHOLDER"
-	placeholderAPICORSAllowedOrigins      = "https://api-cors-placeholder.example.invalid"
+	deployAssemblyInternalManifestPath      = "manifest.json"
+	deployAssemblyPayloadKind               = "lesser.cloudformation_release_assembly"
+	deployAssemblyPayloadContractVersion    = 1
+	deployAssemblyInternalManifestKind      = "lesser.cloudformation_release_assembly_manifest"
+	deployAssemblyInternalManifestVersion   = 1
+	cdkBootstrapValidationRule              = "CheckBootstrapVersion"
+	placeholderAppSlug                      = "appslugplaceholder"
+	placeholderBaseDomain                   = "base.example.com"
+	placeholderHostedZoneID                 = "ZHOSTEDZONEPLACEHOLDER"
+	placeholderAccountID                    = "111111111111"
+	placeholderRegion                       = "us-west-2"
+	placeholderLesserHostURL                = "https://lesser-host.example.invalid"
+	placeholderLesserHostAttestationsURL    = "https://lesser-host-attestations.example.invalid"
+	placeholderLesserHostInstanceKeyARN     = "LESSER_HOST_INSTANCE_KEY_ARN_PLACEHOLDER"
+	placeholderSoulBindingIntegrationKeyARN = "SOUL_BINDING_INTEGRATION_KEY_ARN_PLACEHOLDER"
+	placeholderTranslationEnabled           = "TRANSLATION_ENABLED_PLACEHOLDER"
+	placeholderAllowAgents                  = "ALLOW_AGENTS_PLACEHOLDER"
+	placeholderAllowAgentRegistration       = "ALLOW_AGENT_REGISTRATION_PLACEHOLDER"
+	placeholderTipEnabled                   = "TIP_ENABLED_PLACEHOLDER"
+	placeholderTipChainID                   = "TIP_CHAIN_ID_PLACEHOLDER"
+	placeholderTipContractAddress           = "TIP_CONTRACT_ADDRESS_PLACEHOLDER"
+	placeholderAPICORSAllowedOrigins        = "https://api-cors-placeholder.example.invalid"
 )
 
 var stageTemplateFileNames = map[naming.Stage]string{
@@ -66,16 +67,17 @@ var stageTemplateFileNames = map[naming.Stage]string{
 }
 
 var stageContextPlaceholders = map[string]string{
-	"lesserHostUrl":             placeholderLesserHostURL,
-	"lesserHostAttestationsUrl": placeholderLesserHostAttestationsURL,
-	"lesserHostInstanceKeyArn":  placeholderLesserHostInstanceKeyARN,
-	"translationEnabled":        placeholderTranslationEnabled,
-	"allowAgents":               placeholderAllowAgents,
-	"allowAgentRegistration":    placeholderAllowAgentRegistration,
-	"tipEnabled":                placeholderTipEnabled,
-	"tipChainId":                placeholderTipChainID,
-	"tipContractAddress":        placeholderTipContractAddress,
-	"apiCorsAllowedOrigins":     placeholderAPICORSAllowedOrigins,
+	"lesserHostUrl":                placeholderLesserHostURL,
+	"lesserHostAttestationsUrl":    placeholderLesserHostAttestationsURL,
+	"lesserHostInstanceKeyArn":     placeholderLesserHostInstanceKeyARN,
+	"soulBindingIntegrationKeyArn": placeholderSoulBindingIntegrationKeyARN,
+	"translationEnabled":           placeholderTranslationEnabled,
+	"allowAgents":                  placeholderAllowAgents,
+	"allowAgentRegistration":       placeholderAllowAgentRegistration,
+	"tipEnabled":                   placeholderTipEnabled,
+	"tipChainId":                   placeholderTipChainID,
+	"tipContractAddress":           placeholderTipContractAddress,
+	"apiCorsAllowedOrigins":        placeholderAPICORSAllowedOrigins,
 }
 
 var stageLookupParameterNames = map[string]struct{}{
@@ -102,6 +104,7 @@ var stageReleaseParameters = []struct {
 	{Name: "LesserHostUrl", Description: "managed Lesser host base URL", WithDefault: true},
 	{Name: "LesserHostAttestationsUrl", Description: "managed Lesser host attestations URL", WithDefault: true},
 	{Name: "LesserHostInstanceKeyArn", Description: "managed Lesser host instance key secret ARN", WithDefault: true},
+	{Name: "SoulBindingIntegrationKeyArn", Description: "body/Ptah -> Lesser soul-binding integration secret ARN", WithDefault: true},
 	{Name: "TranslationEnabled", Description: "per-install translation toggle", WithDefault: true},
 	{Name: "AllowAgents", Description: "explicit opt-in per-install agent enablement toggle", WithDefault: true},
 	{Name: "AllowAgentRegistration", Description: "explicit opt-in per-install agent registration toggle", WithDefault: true},
@@ -365,6 +368,7 @@ func WriteDeployAssembly(repoRoot string, outDir string, version string, gitSHA 
 				"managed_service_urls",
 				"provisioning_input",
 				"bootstrap_io",
+				"binding_secrets",
 			},
 		},
 		Verification: DeployAssemblyVerification{
@@ -489,24 +493,25 @@ func addStageReleaseParameters(template map[string]any) {
 
 func stageTemplateReplacements(stage naming.Stage) []placeholderReplacement {
 	return orderedPlaceholderReplacements(map[string]string{
-		stagePlaceholderDomain(stage):        stageDomainSub(stage),
-		"*." + stagePlaceholderDomain(stage): "*." + stageDomainSub(stage),
-		placeholderBaseDomain:                "${BaseDomain}",
-		placeholderHostedZoneID:              "${HostedZoneId}",
-		placeholderAppSlug:                   "${AppSlug}",
-		placeholderAccountID:                 "${AWS::AccountId}",
-		placeholderRegion:                    "${AWS::Region}",
-		placeholderLesserHostURL:             "${LesserHostUrl}",
-		placeholderLesserHostAttestationsURL: "${LesserHostAttestationsUrl}",
-		placeholderLesserHostInstanceKeyARN:  "${LesserHostInstanceKeyArn}",
-		placeholderTranslationEnabled:        "${TranslationEnabled}",
-		placeholderAllowAgents:               "${AllowAgents}",
-		placeholderAllowAgentRegistration:    "${AllowAgentRegistration}",
-		placeholderTipEnabled:                "${TipEnabled}",
-		placeholderTipChainID:                "${TipChainId}",
-		placeholderTipContractAddress:        "${TipContractAddress}",
-		placeholderAPICORSAllowedOrigins:     "${ApiCorsAllowedOrigins}",
-		assetBucketPlaceholder():             "${ReleaseAssetBucketName}",
+		stagePlaceholderDomain(stage):           stageDomainSub(stage),
+		"*." + stagePlaceholderDomain(stage):    "*." + stageDomainSub(stage),
+		placeholderBaseDomain:                   "${BaseDomain}",
+		placeholderHostedZoneID:                 "${HostedZoneId}",
+		placeholderAppSlug:                      "${AppSlug}",
+		placeholderAccountID:                    "${AWS::AccountId}",
+		placeholderRegion:                       "${AWS::Region}",
+		placeholderLesserHostURL:                "${LesserHostUrl}",
+		placeholderLesserHostAttestationsURL:    "${LesserHostAttestationsUrl}",
+		placeholderLesserHostInstanceKeyARN:     "${LesserHostInstanceKeyArn}",
+		placeholderSoulBindingIntegrationKeyARN: "${SoulBindingIntegrationKeyArn}",
+		placeholderTranslationEnabled:           "${TranslationEnabled}",
+		placeholderAllowAgents:                  "${AllowAgents}",
+		placeholderAllowAgentRegistration:       "${AllowAgentRegistration}",
+		placeholderTipEnabled:                   "${TipEnabled}",
+		placeholderTipChainID:                   "${TipChainId}",
+		placeholderTipContractAddress:           "${TipContractAddress}",
+		placeholderAPICORSAllowedOrigins:        "${ApiCorsAllowedOrigins}",
+		assetBucketPlaceholder():                "${ReleaseAssetBucketName}",
 	})
 }
 
@@ -1036,22 +1041,23 @@ func normalizeDependsOnSub(value map[string]any) (string, error) {
 
 func resolveDependsOnPlaceholders(value string) string {
 	replacements := orderedPlaceholderReplacements(map[string]string{
-		"${AppSlug}":                   placeholderAppSlug,
-		"${AWS::AccountId}":            placeholderAccountID,
-		"${AWS::Region}":               placeholderRegion,
-		"${BaseDomain}":                placeholderBaseDomain,
-		"${HostedZoneId}":              placeholderHostedZoneID,
-		"${ReleaseAssetBucketName}":    assetBucketPlaceholder(),
-		"${LesserHostUrl}":             placeholderLesserHostURL,
-		"${LesserHostAttestationsUrl}": placeholderLesserHostAttestationsURL,
-		"${LesserHostInstanceKeyArn}":  placeholderLesserHostInstanceKeyARN,
-		"${TranslationEnabled}":        placeholderTranslationEnabled,
-		"${AllowAgents}":               placeholderAllowAgents,
-		"${AllowAgentRegistration}":    placeholderAllowAgentRegistration,
-		"${TipEnabled}":                placeholderTipEnabled,
-		"${TipChainId}":                placeholderTipChainID,
-		"${TipContractAddress}":        placeholderTipContractAddress,
-		"${ApiCorsAllowedOrigins}":     placeholderAPICORSAllowedOrigins,
+		"${AppSlug}":                      placeholderAppSlug,
+		"${AWS::AccountId}":               placeholderAccountID,
+		"${AWS::Region}":                  placeholderRegion,
+		"${BaseDomain}":                   placeholderBaseDomain,
+		"${HostedZoneId}":                 placeholderHostedZoneID,
+		"${ReleaseAssetBucketName}":       assetBucketPlaceholder(),
+		"${LesserHostUrl}":                placeholderLesserHostURL,
+		"${LesserHostAttestationsUrl}":    placeholderLesserHostAttestationsURL,
+		"${LesserHostInstanceKeyArn}":     placeholderLesserHostInstanceKeyARN,
+		"${SoulBindingIntegrationKeyArn}": placeholderSoulBindingIntegrationKeyARN,
+		"${TranslationEnabled}":           placeholderTranslationEnabled,
+		"${AllowAgents}":                  placeholderAllowAgents,
+		"${AllowAgentRegistration}":       placeholderAllowAgentRegistration,
+		"${TipEnabled}":                   placeholderTipEnabled,
+		"${TipChainId}":                   placeholderTipChainID,
+		"${TipContractAddress}":           placeholderTipContractAddress,
+		"${ApiCorsAllowedOrigins}":        placeholderAPICORSAllowedOrigins,
 	})
 	resolved, _ := applyPlaceholderReplacements(value, replacements)
 	return resolved

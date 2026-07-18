@@ -229,9 +229,10 @@ Current safe lesser-host/update provisioner flow:
 2. Materialize a Lesser repo checkout at the matching release/tag or git SHA.
 3. Obtain target-account AWS credentials for the managed instance account before invoking `lesser up`.
 4. Write a managed `--provisioning-input` JSON payload with the app slug, stage, admin wallet, lesser-host URLs,
-   optional `api_cors_allowed_origins`, and any managed feature flags. For first provisioning, `consent_message` must be
-   the exact structured `lesser.init_admin_consent.v1` JSON signed by the admin wallet and `consent_signature` must be
-   the EIP-191 signature over those exact bytes.
+   optional `api_cors_allowed_origins`, the ARN-backed body/Ptah → Lesser binding credential
+   (`soul_binding_integration_key_arn`) when the instance-plane Ptah path is enabled, and any managed feature flags. For
+   first provisioning, `consent_message` must be the exact structured `lesser.init_admin_consent.v1` JSON signed by the
+   admin wallet and `consent_signature` must be the EIP-191 signature over those exact bytes.
 5. Run `./lesser up --release-dir <dir> --base-domain <domain> --provisioning-input <json> [--stage <stage>]`.
 6. On first provisioning only, run `./lesser init-admin --base-domain <domain> --provisioning-input <json>` after the
    deploy succeeds.

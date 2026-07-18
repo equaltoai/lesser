@@ -29,8 +29,9 @@ func TestConfiguredSecretReadPolicyUsesExactConfiguredSecretARNs(t *testing.T) {
 	})
 
 	attachConfiguredSecretReadPolicy(stack, "lesser", "development", []awsiam.IRole{role, role2}, map[string]interface{}{
-		"lesserHostInstanceKeyArn": " arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/instance-key-abc123 ",
-		"vapidSecretArn":           "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789",
+		"lesserHostInstanceKeyArn":     " arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/instance-key-abc123 ",
+		"soulBindingIntegrationKeyArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/soul-binding-def456",
+		"vapidSecretArn":               "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789",
 	})
 
 	app.Synth(nil)
@@ -65,15 +66,18 @@ func TestConfiguredSecretReadPolicyUsesExactConfiguredSecretARNs(t *testing.T) {
 	}
 
 	res := extractStatementResources(t, statement)
-	if len(res) != 2 {
-		t.Fatalf("expected two exact secret resources, got %d", len(res))
+	if len(res) != 3 {
+		t.Fatalf("expected three exact secret resources, got %d", len(res))
 	}
 
 	if got, ok := res[0].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/instance-key-abc123" {
 		t.Fatalf("unexpected first secret resource: %#v", res[0])
 	}
-	if got, ok := res[1].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789" {
+	if got, ok := res[1].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host/lab/instances/theory/soul-binding-def456" {
 		t.Fatalf("unexpected second secret resource: %#v", res[1])
+	}
+	if got, ok := res[2].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789" {
+		t.Fatalf("unexpected third secret resource: %#v", res[2])
 	}
 }
 

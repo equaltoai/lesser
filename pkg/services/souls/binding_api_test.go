@@ -64,6 +64,37 @@ func TestService_BindSoulBody_SuccessReplayAndStatusProjection(t *testing.T) {
 	require.GreaterOrEqual(t, hostCalls, 3, "POST and GET re-fetch Host source truth")
 }
 
+func TestService_BindSoulBody_InstanceTrustWalletlessSuccess(t *testing.T) {
+	host := newSoulBindingHost(t, func(w http.ResponseWriter, r *http.Request) {
+		writeSoulBindingHostIdentity(t, w, testBindingSoulAgentID, "drone-ada", http.StatusOK, func(agent map[string]any) {
+			delete(agent, "wallet")
+			delete(agent, "principal_address")
+		})
+	})
+	defer host.Close()
+
+	repo := newSoulBindingFakeRepo(host.URL)
+	svc := newSoulBindingTestService(repo)
+	input := testSoulBindingInput("bind-walletless-instance-trust")
+	input.PrincipalAddressHint = "0xffffffffffffffffffffffffffffffffffffffff"
+
+	projection, err := svc.BindSoulBody(context.Background(), input)
+	require.NoError(t, err)
+	require.False(t, projection.Replayed)
+	require.True(t, projection.Soul.Bound)
+	require.Equal(t, testBindingSoulAgentID, projection.Soul.AgentID)
+	require.Equal(t, "drone-ada", projection.Soul.BoundAgentUsername)
+	require.Empty(t, projection.Soul.PrincipalAddress)
+	require.Empty(t, projection.Soul.Wallet)
+	require.Empty(t, projection.Soul.BoundPrincipalAddress, "caller principal hints must not become binding authority")
+	require.Equal(t, SoulAuthorityModelInstanceTrust, projection.Soul.AuthorityModel)
+	require.Equal(t, SoulAnchorStateHostedOffchain, projection.Soul.AnchorState)
+	require.Equal(t, SoulOperationalBindingHostedBound, projection.Soul.OperationalBinding)
+	require.Equal(t, 1, projection.Soul.PublishedVersion)
+	require.Equal(t, 1, repo.bindCalls, "walletless path must still write only through BindSoulBody")
+	require.Empty(t, repo.bindingsByAgent[testBindingSoulAgentID].PrincipalAddress)
+}
+
 func TestService_BindSoulBody_IdempotencyMismatch(t *testing.T) {
 	host := newSoulBindingHost(t, func(w http.ResponseWriter, r *http.Request) {
 		writeSoulBindingHostIdentity(t, w, testBindingSoulAgentID, "drone-ada", http.StatusOK)
@@ -199,6 +230,81 @@ func TestService_BindSoulBody_LocalAndHostRejections(t *testing.T) {
 	})
 }
 
+func TestService_BindSoulBody_HostSourceTruthRejections(t *testing.T) {
+	otherSoul := "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name: "wrong agent id",
+			mutate: func(agent map[string]any) {
+				agent["agent_id"] = otherSoul
+			},
+		},
+		{
+			name: "wrong domain",
+			mutate: func(agent map[string]any) {
+				agent["domain"] = "other.example.com"
+			},
+		},
+		{
+			name: "wrong local id",
+			mutate: func(agent map[string]any) {
+				agent["local_id"] = "other-agent"
+			},
+		},
+		{
+			name: "inactive lifecycle",
+			mutate: func(agent map[string]any) {
+				agent["status"] = "active"
+				agent["lifecycle_status"] = "inactive"
+			},
+		},
+		{
+			name: "wrong authority model",
+			mutate: func(agent map[string]any) {
+				agent["authority_model"] = "wallet_principal"
+			},
+		},
+		{
+			name: "wrong anchor state",
+			mutate: func(agent map[string]any) {
+				agent["anchor_state"] = "onchain"
+			},
+		},
+		{
+			name: "wrong operational binding",
+			mutate: func(agent map[string]any) {
+				agent["operational_binding"] = "wallet_bound"
+			},
+		},
+		{
+			name: "missing publication evidence",
+			mutate: func(agent map[string]any) {
+				agent["published_version"] = 0
+				delete(agent, "self_description_version")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := newSoulBindingHost(t, func(w http.ResponseWriter, r *http.Request) {
+				writeSoulBindingHostIdentity(t, w, testBindingSoulAgentID, "drone-ada", http.StatusOK, tc.mutate)
+			})
+			defer host.Close()
+
+			repo := newSoulBindingFakeRepo(host.URL)
+			svc := newSoulBindingTestService(repo)
+
+			_, err := svc.BindSoulBody(context.Background(), testSoulBindingInput("host-reject-"+strings.ReplaceAll(tc.name, " ", "-")))
+			require.ErrorIs(t, err, ErrSoulBindingHostRegistryRejected)
+			require.Nil(t, repo.bindingsByAgent[testBindingSoulAgentID])
+			require.Equal(t, 0, repo.bindCalls)
+		})
+	}
+}
+
 func newSoulBindingFakeRepo(hostURL string) *fakeInstanceRepo {
 	return &fakeInstanceRepo{
 		trust: &storageModels.EffectiveTrustConfig{
@@ -250,29 +356,42 @@ func newSoulBindingHost(t *testing.T, handler http.HandlerFunc) *httptest.Server
 	}))
 }
 
-func writeSoulBindingHostIdentity(t *testing.T, w http.ResponseWriter, agentID string, localID string, status int) {
+func writeSoulBindingHostIdentity(
+	t *testing.T,
+	w http.ResponseWriter,
+	agentID string,
+	localID string,
+	status int,
+	mutate ...func(map[string]any),
+) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if status != http.StatusOK {
 		return
 	}
+	agent := map[string]any{
+		"agent_id":                 agentID,
+		"domain":                   "example.com",
+		"local_id":                 localID,
+		"wallet":                   testBindingPrincipal,
+		"principal_address":        testBindingPrincipal,
+		"status":                   "active",
+		"lifecycle_status":         "active",
+		"authority_model":          SoulAuthorityModelInstanceTrust,
+		"anchor_state":             SoulAnchorStateHostedOffchain,
+		"operational_binding":      SoulOperationalBindingHostedBound,
+		"published_version":        1,
+		"self_description_version": 1,
+	}
+	for _, fn := range mutate {
+		if fn != nil {
+			fn(agent)
+		}
+	}
 	require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 		"version": "1",
-		"agent": map[string]any{
-			"agent_id":                 agentID,
-			"domain":                   "example.com",
-			"local_id":                 localID,
-			"wallet":                   testBindingPrincipal,
-			"principal_address":        testBindingPrincipal,
-			"status":                   "active",
-			"lifecycle_status":         "active",
-			"authority_model":          SoulAuthorityModelInstanceTrust,
-			"anchor_state":             SoulAnchorStateHostedOffchain,
-			"operational_binding":      SoulOperationalBindingHostedBound,
-			"published_version":        1,
-			"self_description_version": 1,
-		},
+		"agent":   agent,
 	}))
 }
 

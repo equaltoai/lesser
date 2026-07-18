@@ -315,8 +315,8 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 				RecoveryCategory:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
 				RecoveryAction:     workflow.SoulBootstrapRecoveryActionRefreshState,
 			},
-			wantPhase:  model.SoulBootstrapPhaseConversation,
-			wantState:  workflow.SoulBootstrapStateConversationInProgress,
+			wantPhase: model.SoulBootstrapPhaseConversation,
+			wantState: workflow.SoulBootstrapStateConversationInProgress,
 			// P52 L3.2 G14: in_progress is a pending turn — poll via REFRESH_STATE
 			// is primary, matching the locked projection table and the seeded
 			// NextAction.
@@ -362,8 +362,8 @@ func TestProject49GraphQLProjectionCoversLockedStatusTableRows(t *testing.T) {
 				RecoveryCategory:   workflow.SoulBootstrapRecoveryCategoryRefreshState,
 				RecoveryAction:     workflow.SoulBootstrapRecoveryActionRefreshState,
 			},
-			wantPhase:  model.SoulBootstrapPhaseConversation,
-			wantState:  workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
+			wantPhase: model.SoulBootstrapPhaseConversation,
+			wantState: workflow.SoulBootstrapStateConversationDeclarationExtractionPending,
 			// P52 L3.2 G14: declaration extraction is pending — poll only
 			// (REFRESH_STATE), matching the locked projection table and the
 			// seeded NextAction.
