@@ -256,7 +256,7 @@ func validateSoulBindingIntegrationDeployContexts(contexts map[string]string) er
 
 func deployContextTruthy(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "1", "yes":
+	case flagTrue, "1", flagYes:
 		return true
 	default:
 		return false
@@ -265,7 +265,7 @@ func deployContextTruthy(value string) bool {
 
 func deployContextExplicitFalse(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "false", "0", "no":
+	case flagFalse, "0", "no":
 		return true
 	default:
 		return false
