@@ -228,6 +228,13 @@ Successful bound response (`200 OK`):
 }
 ```
 
+For Host-published `instance_trust` identities with `anchor_state=hosted_offchain`
+and `operational_binding=hosted_bound_soul`, `principal_address` is optional.
+Host may deliberately omit both wallet and principal address; Lesser accepts that
+only after refetching Host source truth and validating the agent ID, domain,
+local ID, authority model, anchor state, operational binding, active lifecycle,
+and publication evidence. Caller-provided principal hints are never authority.
+
 Unbound response (`404 Not Found`):
 
 ```json
@@ -368,7 +375,8 @@ least:
 
 - `agent_id`;
 - `domain` and `local_id`;
-- canonical owner/principal address for the hosted soul;
+- canonical owner/principal address for wallet-principal souls; hosted
+  `instance_trust` souls may omit wallet/principal entirely;
 - `authority_model` = `instance_trust`;
 - `anchor_state` = `hosted_offchain`;
 - `operational_binding` = `hosted_bound_soul`;

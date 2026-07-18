@@ -264,6 +264,7 @@ func TestTransformNestedStageTemplateAssetAddsReleaseParameters(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &transformed))
 	parameters := transformed["Parameters"].(map[string]any)
 	require.Contains(t, parameters, "AppSlug")
+	require.Contains(t, parameters, "SoulBindingIntegrationKeyArn")
 
 	props := transformed["Resources"].(map[string]any)["Alarm"].(map[string]any)["Properties"].(map[string]any)
 	require.Equal(t, map[string]any{"Fn::Sub": "${AppSlug}-dev-metrics-processor-critical-errors"}, props["AlarmName"])
@@ -641,6 +642,7 @@ func TestWriteDeployAssembly(t *testing.T) {
 		"managed_service_urls",
 		"provisioning_input",
 		"bootstrap_io",
+		"binding_secrets",
 	}, descriptor.InstanceInputs.Optional)
 
 	archiveEntries := readTarGzEntryBytes(t, filepath.Join(outDir, DeployAssemblyArchiveName))
@@ -664,6 +666,8 @@ func TestWriteDeployAssembly(t *testing.T) {
 	require.Contains(t, devTemplate, `{{resolve:ssm:/${AppSlug}/dev/lesser-body/exports/v1/mcp_lambda_arn}}`)
 	require.Contains(t, devTemplate, `dev.${BaseDomain}`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${LesserHostUrl}"`)
+	require.Contains(t, devTemplate, `"SoulBindingIntegrationKeyArn"`)
+	require.Contains(t, devTemplate, `"Fn::Sub": "${SoulBindingIntegrationKeyArn}"`)
 	require.Contains(t, devTemplate, `"ApiCorsAllowedOrigins"`)
 	require.Contains(t, devTemplate, `"Fn::Sub": "${ReleaseAssetBucketName}"`)
 
@@ -1081,6 +1085,7 @@ JSON
         "ManagedUrl": "https://lesser-host.example.invalid",
         "ManagedAttestations": "https://lesser-host-attestations.example.invalid",
         "ManagedKey": "LESSER_HOST_INSTANCE_KEY_ARN_PLACEHOLDER",
+        "SoulBindingKey": "SOUL_BINDING_INTEGRATION_KEY_ARN_PLACEHOLDER",
         "Translation": "TRANSLATION_ENABLED_PLACEHOLDER",
         "TipEnabled": "TIP_ENABLED_PLACEHOLDER",
         "TipChain": "TIP_CHAIN_ID_PLACEHOLDER",

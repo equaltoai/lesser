@@ -150,6 +150,9 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	if err := rejectLambdaFunctionURLHost(contexts["lesserHostUrl"]); err != nil {
 		return cdkDeployResult{}, err
 	}
+	if err := validateSoulBindingIntegrationDeployContexts(contexts); err != nil {
+		return cdkDeployResult{}, err
+	}
 	if v := strings.TrimSpace(req.LambdaAssetRoot); v != "" {
 		contexts["lambdaAssetRoot"] = v
 	}
@@ -236,6 +239,37 @@ func cdkDestroyStack(ctx context.Context, repoRoot string, awsProfile string, re
 		return fmt.Errorf("cdk destroy %s: %w", req.StackName, err)
 	}
 	return nil
+}
+
+func validateSoulBindingIntegrationDeployContexts(contexts map[string]string) error {
+	if !deployContextTruthy(contexts["instancePlaneEnabled"]) {
+		return nil
+	}
+	if deployContextExplicitFalse(contexts["bodyEnabled"]) {
+		return nil
+	}
+	if strings.TrimSpace(contexts["soulBindingIntegrationKeyArn"]) != "" {
+		return nil
+	}
+	return fmt.Errorf("SOUL_BINDING_INTEGRATION_KEY_ARN is required when INSTANCE_PLANE_ENABLED=true and BODY_ENABLED is not false")
+}
+
+func deployContextTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func deployContextExplicitFalse(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "false", "0", "no":
+		return true
+	default:
+		return false
+	}
 }
 
 func writeCdkOutputs(path string, stackName string, outputs map[string]string) error {

@@ -117,6 +117,9 @@ func (s *Service) BindSoulBody(ctx context.Context, input BindSoulBodyInput) (*S
 		return nil, err
 	}
 
+	// Host instance-trust identities may be deliberately walletless/principal-less.
+	// The Host refetch and invariant checks above are the authority for this
+	// server-to-server path; caller-provided principal hints are never authority.
 	binding, err := s.instanceRepo.BindSoulBody(ctx, identity.AgentID, targetAgent.Username, canonicalOwnerAddress(identity))
 	if err != nil {
 		mapped := mapSoulBindingWriteError(err)
@@ -291,9 +294,6 @@ func (s *Service) fetchAndValidateHostedSoulBindingIdentity(ctx context.Context,
 		return nil, ErrSoulBindingHostRegistryRejected
 	}
 	if !hostSoulIdentityHasPublicationEvidence(identity) {
-		return nil, ErrSoulBindingHostRegistryRejected
-	}
-	if canonicalOwnerAddress(identity) == "" {
 		return nil, ErrSoulBindingHostRegistryRejected
 	}
 

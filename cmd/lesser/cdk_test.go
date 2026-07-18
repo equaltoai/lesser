@@ -246,6 +246,69 @@ func TestCdkDeployWithOutputs_UsesInstancePlaneEnvContext(t *testing.T) {
 	require.Contains(t, gotArgs, "instancePlaneEnabled=false")
 }
 
+func TestCdkDeployWithOutputs_RequiresSoulBindingArnForInstancePlane(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+	t.Setenv("INSTANCE_PLANE_ENABLED", "true")
+	t.Setenv("BODY_ENABLED", "")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY_ARN", "")
+
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		t.Fatal("cdk deploy must not run without the receiving soul-binding credential ARN")
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		t.Fatal("resolveStackOutputsFn should not run when preflight fails")
+		return nil, nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), t.TempDir(), "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SOUL_BINDING_INTEGRATION_KEY_ARN is required")
+}
+
+func TestCdkDeployWithOutputs_UsesSoulBindingArnForInstancePlane(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousResolveOutputs := resolveStackOutputsFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		resolveStackOutputsFn = previousResolveOutputs
+	})
+	t.Setenv("INSTANCE_PLANE_ENABLED", "true")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY_ARN", " arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding ")
+
+	repoRoot := t.TempDir()
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	resolveStackOutputsFn = func(context.Context, string, cdkDeployRequest) (map[string]string, error) {
+		return map[string]string{"Key": "Value"}, nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "instancePlaneEnabled=true")
+	require.Contains(t, gotArgs, "soulBindingIntegrationKeyArn=arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding")
+}
+
 func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousResolveOutputs := resolveStackOutputsFn
