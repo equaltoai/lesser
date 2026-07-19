@@ -38,6 +38,13 @@ func (e *upEnv) deployFromReleaseAssembly(ctx context.Context) (*upReceipt, erro
 
 	receipt := newUpReceipt(e.app, e.baseDomain, e.awsProfile, e.accountID, e.awsCfg.Region, e.stages, e.hostedZone)
 	receipt.Integration = resolveIntegrationReceipt(e.args)
+	if err := validateSoulBindingIntegrationDeployContexts(map[string]string{
+		"bodyEnabled":                  "true",
+		"instancePlaneEnabled":         "true",
+		"soulBindingIntegrationKeyArn": e.args.SoulBindingIntegrationKeyARN,
+	}); err != nil {
+		return nil, err
+	}
 
 	if err := ensureAPIGatewayCloudWatchLogsRoleFn(ctx, e.awsCfg); err != nil {
 		return nil, err
@@ -118,14 +125,15 @@ func (e *upEnv) releaseStageTemplateParameters(releaseAssetBucket string) map[st
 			"lesserHostAttestationsUrl",
 			e.args.LesserHostAttestationsURL,
 		),
-		"LesserHostInstanceKeyArn": strings.TrimSpace(e.args.LesserHostInstanceKeyARN),
-		"TranslationEnabled":       optionalBoolString(e.args.TranslationEnabled),
-		"AllowAgents":              optionalBoolString(e.args.AllowAgents),
-		"AllowAgentRegistration":   optionalBoolString(e.args.AllowAgentRegistration),
-		"TipEnabled":               optionalBoolString(e.args.TipEnabled),
-		"TipChainId":               optionalIntString(e.args.TipChainID),
-		"TipContractAddress":       strings.TrimSpace(e.args.TipContractAddress),
-		"ApiCorsAllowedOrigins":    normalizeReleaseStageParameter("apiCorsAllowedOrigins", e.args.APICORSAllowedOrigins),
+		"LesserHostInstanceKeyArn":     strings.TrimSpace(e.args.LesserHostInstanceKeyARN),
+		"SoulBindingIntegrationKeyArn": strings.TrimSpace(e.args.SoulBindingIntegrationKeyARN),
+		"TranslationEnabled":           optionalBoolString(e.args.TranslationEnabled),
+		"AllowAgents":                  optionalBoolString(e.args.AllowAgents),
+		"AllowAgentRegistration":       optionalBoolString(e.args.AllowAgentRegistration),
+		"TipEnabled":                   optionalBoolString(e.args.TipEnabled),
+		"TipChainId":                   optionalIntString(e.args.TipChainID),
+		"TipContractAddress":           strings.TrimSpace(e.args.TipContractAddress),
+		"ApiCorsAllowedOrigins":        normalizeReleaseStageParameter("apiCorsAllowedOrigins", e.args.APICORSAllowedOrigins),
 	}
 	return params
 }

@@ -31,14 +31,15 @@ type upArgs struct {
 	OutPath                string
 	RebuildLambdas         bool
 
-	LesserHostURL             string
-	LesserHostAttestationsURL string
-	LesserHostInstanceKeyARN  string
-	APICORSAllowedOrigins     string
-	InstancePlaneEnabled      *bool
-	TranslationEnabled        *bool
-	AllowAgents               *bool
-	AllowAgentRegistration    *bool
+	LesserHostURL                string
+	LesserHostAttestationsURL    string
+	LesserHostInstanceKeyARN     string
+	SoulBindingIntegrationKeyARN string
+	APICORSAllowedOrigins        string
+	InstancePlaneEnabled         *bool
+	TranslationEnabled           *bool
+	AllowAgents                  *bool
+	AllowAgentRegistration       *bool
 
 	TipEnabled         *bool
 	TipChainID         *int
@@ -534,6 +535,9 @@ func (e *upEnv) deployFromSource(ctx context.Context) (*upReceipt, error) {
 	if v := strings.TrimSpace(e.args.LesserHostInstanceKeyARN); v != "" {
 		contexts["lesserHostInstanceKeyArn"] = v
 	}
+	if v := strings.TrimSpace(e.args.SoulBindingIntegrationKeyARN); v != "" {
+		contexts["soulBindingIntegrationKeyArn"] = v
+	}
 	if e.args.TranslationEnabled != nil {
 		contexts["translationEnabled"] = strconv.FormatBool(*e.args.TranslationEnabled)
 	}
@@ -684,6 +688,9 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	if strings.TrimSpace(args.APICORSAllowedOrigins) == "" {
 		args.APICORSAllowedOrigins = firstNonEmpty(os.Getenv("API_CORS_ALLOWED_ORIGINS"), os.Getenv("CORS_ALLOWED_ORIGINS"))
 	}
+	if strings.TrimSpace(args.SoulBindingIntegrationKeyARN) == "" {
+		args.SoulBindingIntegrationKeyARN = strings.TrimSpace(os.Getenv("SOUL_BINDING_INTEGRATION_KEY_ARN"))
+	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) != "" {
 		normalized, err := normalizeBootstrapWalletAddress(args.BootstrapWalletAddress)
 		if err != nil {
@@ -770,6 +777,9 @@ func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput)
 	}
 	if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
 		args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
+	}
+	if strings.TrimSpace(args.SoulBindingIntegrationKeyARN) == "" {
+		args.SoulBindingIntegrationKeyARN = in.SoulBindingIntegrationKeyARN
 	}
 	if args.InstancePlaneEnabled == nil {
 		args.InstancePlaneEnabled = in.InstancePlaneEnabled

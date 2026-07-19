@@ -29,14 +29,15 @@ type upReceipt struct {
 }
 
 type integrationReceipt struct {
-	LesserHostURL             string `json:"lesser_host_url,omitempty"`
-	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
-	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
-	BodyEnabled               *bool  `json:"body_enabled,omitempty"`
-	InstancePlaneEnabled      *bool  `json:"instance_plane_enabled,omitempty"`
-	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
-	AllowAgents               *bool  `json:"allow_agents,omitempty"`
-	AllowAgentRegistration    *bool  `json:"allow_agent_registration,omitempty"`
+	LesserHostURL                string `json:"lesser_host_url,omitempty"`
+	LesserHostAttestationsURL    string `json:"lesser_host_attestations_url,omitempty"`
+	LesserHostInstanceKeyARN     string `json:"lesser_host_instance_key_arn,omitempty"`
+	SoulBindingIntegrationKeyARN string `json:"soul_binding_integration_key_arn,omitempty"`
+	BodyEnabled                  *bool  `json:"body_enabled,omitempty"`
+	InstancePlaneEnabled         *bool  `json:"instance_plane_enabled,omitempty"`
+	TranslationEnabled           *bool  `json:"translation_enabled,omitempty"`
+	AllowAgents                  *bool  `json:"allow_agents,omitempty"`
+	AllowAgentRegistration       *bool  `json:"allow_agent_registration,omitempty"`
 
 	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
 	TipChainID         *int   `json:"tip_chain_id,omitempty"`

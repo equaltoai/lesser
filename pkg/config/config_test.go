@@ -79,6 +79,8 @@ func TestConfig_GetDoesNotResolveSecretARNs(t *testing.T) {
 	t.Setenv("INSTANCE_API_KEY_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY", "")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host-key")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY", "")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding-key")
 
 	ResetForTests()
 	cfg := Get()
@@ -89,6 +91,8 @@ func TestConfig_GetDoesNotResolveSecretARNs(t *testing.T) {
 	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
 	assert.Equal(t, "", cfg.LesserHostInstanceKey)
 	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:lesser-host-key", cfg.LesserHostInstanceKeyARN)
+	assert.Equal(t, "", cfg.SoulBindingIntegrationKey)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-binding-key", cfg.SoulBindingIntegrationKeyARN)
 }
 
 func TestConfig_OAuthClientSecretRotationGracePeriod_DefaultsTo24Hours(t *testing.T) {

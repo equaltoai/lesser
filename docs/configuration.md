@@ -53,6 +53,7 @@ Related managed integration inputs:
 - `LESSER_HOST_URL`
 - `LESSER_HOST_ATTESTATIONS_URL`
 - `LESSER_HOST_INSTANCE_KEY_ARN`
+- `SOUL_BINDING_INTEGRATION_KEY_ARN` — ARN for the dedicated body/Ptah → Lesser server-to-server binding bearer. Required for instance-plane/body-enabled Ptah binding deploys; use the ARN-backed path and never commit or log the raw bearer value.
 
 For the repo-boundary explanation of soul, see `docs/soul.md`.
 
@@ -69,6 +70,12 @@ Well-known config records:
 - `SK="AI_CONFIG"`: AI feature gating and defaults
 - `SK="WELL_KNOWN_LESSER_SOUL_AGENT"`: stores the current HTTPS proof value served at `GET /.well-known/lesser-soul-agent`
 - `SK="SOUL_ENS_CHANNEL#<agentId>"`: stores the ENS channel name, chain, and optional resolver override published for a soul agent
+
+The soul-binding receiver credential is intentionally **not** an instance-owned feature flag. `lesser up` forwards
+`SOUL_BINDING_INTEGRATION_KEY_ARN` into CDK context as `soulBindingIntegrationKeyArn`; CDK sets only the
+`SOUL_BINDING_INTEGRATION_KEY_ARN` Lambda environment value and grants Lambda roles read access to that exact
+Secrets Manager ARN. Runtime resolution remains fail-closed when neither the ARN nor a local/manual direct
+`SOUL_BINDING_INTEGRATION_KEY` is present.
 
 ### Precedence model
 

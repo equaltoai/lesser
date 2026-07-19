@@ -395,27 +395,27 @@ type acceptSemanticsTurnState struct {
 }
 
 type acceptSemanticsTurnStateRow struct {
-	LesserState        string   `json:"lesser_state"`
-	TypedNextAction    string   `json:"typed_next_action"`
-	AvailableActions   []string `json:"available_actions"`
-	PollPrimary        bool     `json:"poll_primary"`
+	LesserState      string   `json:"lesser_state"`
+	TypedNextAction  string   `json:"typed_next_action"`
+	AvailableActions []string `json:"available_actions"`
+	PollPrimary      bool     `json:"poll_primary"`
 }
 
 type acceptSemanticsErrors struct {
-	AcceptTimeout     acceptSemanticsErrorRow `json:"accept_timeout"`
+	AcceptTimeout      acceptSemanticsErrorRow  `json:"accept_timeout"`
 	HostAuthoredFailed acceptSemanticsFailedRow `json:"host_authored_failed"`
 }
 
 type acceptSemanticsErrorRow struct {
-	HostErrorCode     string `json:"host_error_code"`
-	TypedNextAction   string `json:"typed_next_action"`
-	RetrySameStep     bool   `json:"retry_same_step"`
+	HostErrorCode   string `json:"host_error_code"`
+	TypedNextAction string `json:"typed_next_action"`
+	RetrySameStep   bool   `json:"retry_same_step"`
 }
 
 type acceptSemanticsFailedRow struct {
-	HostErrorCode    string `json:"host_error_code"`
-	TypedNextAction  string `json:"typed_next_action"`
-	RetrySameStep    bool   `json:"retry_same_step"`
+	HostErrorCode   string `json:"host_error_code"`
+	TypedNextAction string `json:"typed_next_action"`
+	RetrySameStep   bool   `json:"retry_same_step"`
 }
 
 type acceptSemanticsGreater struct {

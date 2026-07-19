@@ -10,6 +10,7 @@ func TestResolveIntegrationReceipt_DefaultsBodyEnabledWhenOtherwiseEmpty(t *test
 	t.Setenv("LESSER_HOST_URL", "")
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", "")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", "")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY_ARN", "")
 	t.Setenv("BODY_ENABLED", "")
 	t.Setenv("INSTANCE_PLANE_ENABLED", "")
 	t.Setenv("TRANSLATION_ENABLED", "")
@@ -28,6 +29,7 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	t.Setenv("LESSER_HOST_URL", " https://env.example/ ")
 	t.Setenv("LESSER_HOST_ATTESTATIONS_URL", " https://env-attest.example/ ")
 	t.Setenv("LESSER_HOST_INSTANCE_KEY_ARN", " arn:aws:secretsmanager:us-east-1:123:secret:abc ")
+	t.Setenv("SOUL_BINDING_INTEGRATION_KEY_ARN", " arn:aws:secretsmanager:us-east-1:123:secret:env-binding ")
 	t.Setenv("BODY_ENABLED", "false")
 	t.Setenv("INSTANCE_PLANE_ENABLED", "yes")
 	t.Setenv("TRANSLATION_ENABLED", "yes")
@@ -37,10 +39,11 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 
 	translationEnabled := false
 	args := upArgs{
-		LesserHostURL:            " https://args.example/ ",
-		TranslationEnabled:       &translationEnabled,
-		TipContractAddress:       " 0xargs ",
-		LesserHostInstanceKeyARN: "",
+		LesserHostURL:                " https://args.example/ ",
+		TranslationEnabled:           &translationEnabled,
+		TipContractAddress:           " 0xargs ",
+		LesserHostInstanceKeyARN:     "",
+		SoulBindingIntegrationKeyARN: " arn:aws:secretsmanager:us-east-1:123:secret:args-binding ",
 	}
 
 	out := resolveIntegrationReceipt(args)
@@ -48,6 +51,7 @@ func TestResolveIntegrationReceipt_ResolvesArgsAndEnv(t *testing.T) {
 	require.Equal(t, "https://args.example", out.LesserHostURL)
 	require.Equal(t, "https://env-attest.example", out.LesserHostAttestationsURL)
 	require.Equal(t, "arn:aws:secretsmanager:us-east-1:123:secret:abc", out.LesserHostInstanceKeyARN)
+	require.Equal(t, "arn:aws:secretsmanager:us-east-1:123:secret:args-binding", out.SoulBindingIntegrationKeyARN)
 	require.NotNil(t, out.BodyEnabled)
 	require.False(t, *out.BodyEnabled)
 	require.NotNil(t, out.InstancePlaneEnabled)

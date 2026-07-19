@@ -47,8 +47,8 @@ runtime implementation itself belongs to `lesser-body`.
 Owns the **managed hosting control plane**.
 
 `lesser-host` provisions and updates managed Lesser deployments, supplies managed integration inputs such as
-`LESSER_HOST_URL` and related trust settings, and coordinates deployment-time wiring for managed environments. It is not
-the ActivityPub runtime itself.
+`LESSER_HOST_URL`, `LESSER_HOST_INSTANCE_KEY_ARN`, and `SOUL_BINDING_INTEGRATION_KEY_ARN`, and coordinates
+deployment-time wiring for managed environments. It is not the ActivityPub runtime itself.
 
 ### `lesser-soul`
 
