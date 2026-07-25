@@ -8,7 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 func decodeJSON(t *testing.T, resp *apptheory.Response) map[string]any {

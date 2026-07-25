@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {

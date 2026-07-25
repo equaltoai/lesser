@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/theory-cloud/apptheory/pkg/streamer"
+	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
 	"go.uber.org/zap"
 )
 

@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"

@@ -2,7 +2,7 @@ package auth
 
 import (
 	"github.com/equaltoai/lesser/pkg/common"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	"go.uber.org/zap"
 )
 

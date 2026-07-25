@@ -1,7 +1,7 @@
 package apptheory
 
 import (
-	apptheoryRuntime "github.com/theory-cloud/apptheory/runtime"
+	apptheoryRuntime "github.com/theory-cloud/apptheory/v2/runtime"
 	"github.com/theory-cloud/tabletheory/v2"
 )
 
