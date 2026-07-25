@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/apptheory/pkg/streamer"
+	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
 	"go.uber.org/zap"
 )
 

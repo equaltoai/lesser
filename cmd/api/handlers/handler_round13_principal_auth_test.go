@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 func TestValidateClaimsScopesRound13(t *testing.T) {

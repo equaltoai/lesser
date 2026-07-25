@@ -3,7 +3,7 @@ package handlers
 import (
 	"strings"
 
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 func headerValue(ctx *apptheory.Context, key string) string {

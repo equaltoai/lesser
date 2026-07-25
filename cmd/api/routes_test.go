@@ -6,7 +6,7 @@ import (
 
 	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	"go.uber.org/zap/zaptest"
 )
 

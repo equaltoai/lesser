@@ -12,7 +12,7 @@ import (
 	skillservice "github.com/equaltoai/lesser/pkg/services/skills"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 func TestSkillHandlers_ServiceErrorMapping(t *testing.T) {

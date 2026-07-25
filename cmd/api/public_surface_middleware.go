@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/auth/publicsurface"
 	"github.com/equaltoai/lesser/pkg/common"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 // createPublicSurfaceMiddleware enforces Lesser's default-deny public surface policy.

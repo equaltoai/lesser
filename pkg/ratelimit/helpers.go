@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
-	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheoryLimited "github.com/theory-cloud/apptheory/v2/pkg/limited"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	"github.com/theory-cloud/tabletheory/v2"
 	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"github.com/theory-cloud/tabletheory/v2/pkg/session"
