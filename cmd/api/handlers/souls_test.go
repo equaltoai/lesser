@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 type stubSoulHandlerService struct {

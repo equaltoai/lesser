@@ -12,7 +12,7 @@ import (
 	comprehendTypes "github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/apptheory/pkg/streamer"
+	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
 	"go.uber.org/zap"
 )
 

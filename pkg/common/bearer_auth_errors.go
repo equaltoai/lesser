@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	apptheory "github.com/theory-cloud/apptheory/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 )
 
 const (
