@@ -142,6 +142,27 @@ func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequest(t *te
 	}, cmd)
 }
 
+func TestStatuses_CreateHelpers_DirectMessageRecipientUsesCompleteExactUsername(t *testing.T) {
+	t.Parallel()
+
+	claims := &auth.Claims{Username: "prototype-13"}
+	for _, recipient := range []string{"prototype-11", "prototype"} {
+		recipient := recipient
+		t.Run(recipient, func(t *testing.T) {
+			t.Parallel()
+
+			req := &apimodels.CreateStatusRequest{
+				Status:     "@" + recipient + " exact recipient",
+				Visibility: VisibilityDirect,
+			}
+
+			cmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, nil)
+			require.NoError(t, err)
+			require.Equal(t, []string{recipient}, cmd.Recipients)
+		})
+	}
+}
+
 func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequestRequiresSingleRecipient(t *testing.T) {
 	t.Parallel()
 
