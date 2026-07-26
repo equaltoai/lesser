@@ -1,6 +1,7 @@
 package conversations
 
 import (
+	"context"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -13,6 +14,53 @@ func TestExtractMentionHandles_SupportsRemoteAndLocalMentions(t *testing.T) {
 
 	mentions := ExtractMentionHandles("hello @bob@example.com and @carol, looping back to @bob@example.com")
 	require.Equal(t, []string{"bob@example.com", "carol", "bob@example.com"}, mentions)
+}
+
+func TestExtractMentionHandles_PreservesCompleteHyphenatedUsernames(t *testing.T) {
+	t.Parallel()
+
+	mentions := ExtractMentionHandles(
+		"hello @prototype-11 and @prototype, plus remote @user-name@remote.example",
+	)
+	require.Equal(t, []string{"prototype-11", "prototype", "user-name@remote.example"}, mentions)
+}
+
+func TestDirectMessageRecipientResolutionPrefersCompleteExactUsername(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	accounts := map[string]*storage.Account{
+		"prototype":    createTestAccount("prototype", "prototype"),
+		"prototype-11": createTestAccount("prototype-11", "prototype-11"),
+	}
+
+	for _, expectedUsername := range []string{"prototype-11", "prototype"} {
+		expectedUsername := expectedUsername
+		t.Run(expectedUsername, func(t *testing.T) {
+			t.Parallel()
+
+			service, _, _, accountRepo, _, _ := createTestService()
+			sender := createTestAccount("prototype-13", "prototype-13")
+			accountRepo.On("GetAccount", ctx, "prototype-13").Return(sender, nil).Once()
+			for username, account := range accounts {
+				accountRepo.On("GetAccount", ctx, username).Return(account, nil).Maybe()
+			}
+
+			recipients := ExtractMentionHandles("@" + expectedUsername + " exact recipient")
+			require.Len(t, recipients, 1)
+			cmd := &SendDirectMessageCommand{
+				SenderID:   "prototype-13",
+				Recipients: recipients,
+				Content:    "@" + expectedUsername + " exact recipient",
+			}
+
+			_, recipient, resolvedAccounts, err := service.getDirectMessageAccounts(ctx, cmd, recipients[0])
+			require.NoError(t, err)
+			require.Same(t, accounts[expectedUsername], recipient)
+			require.Same(t, accounts[expectedUsername], resolvedAccounts[expectedUsername])
+			accountRepo.AssertExpectations(t)
+		})
+	}
 }
 
 func TestExtractMentionHandles_SupportsStartOfStringMentions(t *testing.T) {

@@ -101,6 +101,48 @@ func TestBuildMentionTagsUsesActorFallbackAndSkipsUnresolved(t *testing.T) {
 	assert.Equal(t, []string{"bob"}, usernames)
 }
 
+func TestBuildMentionTagsResolvesCompleteExactUsernameWhenPrefixAccountExists(t *testing.T) {
+	accounts := map[string]*storage.Account{
+		"prototype": {
+			User: &storage.User{Username: "prototype"},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: "https://example.com/users/prototype"},
+			},
+		},
+		"prototype-11": {
+			User: &storage.User{Username: "prototype-11"},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: "https://example.com/users/prototype-11"},
+			},
+		},
+	}
+	service := &Service{
+		domainName: "example.com",
+		accountRepo: &stubAccountRepo{
+			domain:   "example.com",
+			accounts: accounts,
+		},
+		logger: zap.NewNop(),
+	}
+	author := &storage.Account{User: &storage.User{Username: "prototype-13"}}
+
+	for _, username := range []string{"prototype-11", "prototype"} {
+		username := username
+		t.Run(username, func(t *testing.T) {
+			tags, usernames := service.buildMentionTags(
+				context.Background(),
+				"public mention @"+username,
+				author,
+			)
+
+			require.Len(t, tags, 1)
+			assert.Equal(t, "https://example.com/users/"+username, tags[0].Href)
+			assert.Equal(t, "@"+username, tags[0].Name)
+			assert.Equal(t, []string{username}, usernames)
+		})
+	}
+}
+
 func TestNotifyMentionsDeduplicatesRecipientsAndSkipsAuthor(t *testing.T) {
 	notifier := &stubNotificationService{}
 	service := &Service{

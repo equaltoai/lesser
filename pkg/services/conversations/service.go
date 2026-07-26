@@ -2485,7 +2485,7 @@ func formatDirectMessageMentionTagName(username, domain, localDomain string) str
 	return "@" + username + "@" + domain
 }
 
-var dmMentionHandleRegex = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_])@([a-zA-Z0-9_]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)
+var dmMentionHandleRegex = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_-])@([a-zA-Z0-9_-]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)
 
 // ExtractMentionHandles exposes the DM-safe mention parsing used by the conversation service so
 // REST handlers can resolve direct-message recipients consistently with note mention handling.
