@@ -15,11 +15,65 @@ import (
 func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 	t.Parallel()
 
-	client := &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}}
+	tests := []struct {
+		name        string
+		client      *storage.OAuthClient
+		clientID    string
+		redirectURI string
+		wantErr     error
+	}{
+		{
+			name:        "missing client id",
+			client:      &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
+			redirectURI: "https://example.com/callback",
+			wantErr:     auth.ErrInvalidRequest,
+		},
+		{
+			name:        "exact match",
+			client:      &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
+			clientID:    "client-1",
+			redirectURI: "https://example.com/callback",
+		},
+		{
+			name: "public cli loopback port mismatch",
+			client: &storage.OAuthClient{
+				RedirectURIs: []string{"http://127.0.0.1:37371/callback"},
+				ClientClass:  auth.ClientClassCLI,
+			},
+			clientID:    "client-1",
+			redirectURI: "http://127.0.0.1:3118/callback",
+		},
+		{
+			name: "public web loopback port mismatch",
+			client: &storage.OAuthClient{
+				RedirectURIs: []string{"http://127.0.0.1:37371/callback"},
+				ClientClass:  auth.ClientClassWeb,
+			},
+			clientID:    "client-1",
+			redirectURI: "http://127.0.0.1:3118/callback",
+			wantErr:     auth.ErrInvalidRequest,
+		},
+		{
+			name:        "different path",
+			client:      &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
+			clientID:    "client-1",
+			redirectURI: "https://example.com/other",
+			wantErr:     auth.ErrInvalidRequest,
+		},
+	}
 
-	require.ErrorIs(t, validateAuthorizationCodeExchangeRedirect(client, "", "https://example.com/callback", "code"), auth.ErrInvalidRequest)
-	require.NoError(t, validateAuthorizationCodeExchangeRedirect(client, "client-1", "https://example.com/callback", "code"))
-	require.ErrorIs(t, validateAuthorizationCodeExchangeRedirect(client, "client-1", "https://example.com/other", "code"), auth.ErrInvalidRequest)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateAuthorizationCodeExchangeRedirect(tt.client, tt.clientID, tt.redirectURI, "code")
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestLoadAndValidateAuthorizationCodeRequiresStoredPKCE(t *testing.T) {

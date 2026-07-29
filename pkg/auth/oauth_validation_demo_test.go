@@ -96,16 +96,17 @@ func TestMastodonOAuthValidationDemo(t *testing.T) {
 func TestMastodonOAuthComplianceRules(t *testing.T) {
 	t.Run("Redirect URI Rules", func(t *testing.T) {
 		// From docs/oauth-validation.md:
-		// - Redirect URI must EXACTLY match one of the registered redirect_uris
+		// - Redirect URI must match one of the registered redirect_uris
+		// - RFC 8252 public native loopback redirects may vary only the port
 		// - Support special URI: urn:ietf:wg:oauth:2.0:oob for out-of-band
 		// - Use "redirect_uri" (singular) during authorization, not "redirect_uris"
 
 		// These rules are implemented in ValidateRedirectURI method:
-		// 1. Exact matching only - no prefix matching
+		// 1. Exact matching with only the RFC 8252 loopback-port exception
 		// 2. Special case for urn:ietf:wg:oauth:2.0:oob (if registered)
 		// 3. Parameter validation for singular redirect_uri
 
-		t.Log("Redirect URI validation implements Mastodon exact matching rules")
+		t.Log("Redirect URI validation implements exact matching with RFC 8252 loopback ports")
 		assert.True(t, true, "Implementation follows Mastodon redirect URI rules")
 	})
 
