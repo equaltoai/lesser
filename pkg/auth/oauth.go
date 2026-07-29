@@ -243,7 +243,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 }
 
 // ValidateRedirectURI validates redirect URI according to Mastodon OAuth rules
-// Mastodon requires EXACT matching of redirect URIs with no exceptions
+// and RFC 8252's native-app loopback port exception.
 func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{"clientID": clientID, "redirectURI": redirectURI}); err != nil {
 		return ErrInvalidRequest
@@ -260,11 +260,11 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 		return ErrInvalidClient
 	}
 
-	// Mastodon requires EXACT matching - no prefix matching, no exceptions
-	// The only special case is the out-of-band URI
+	// Redirects match exactly unless RFC 8252 permits a public native client
+	// to vary only the port of an otherwise identical loopback URI.
 	for _, registeredURI := range client.RedirectURIs {
-		if registeredURI == redirectURI {
-			return nil // Exact match found
+		if RedirectURIsMatch(client, registeredURI, redirectURI) {
+			return nil
 		}
 	}
 
