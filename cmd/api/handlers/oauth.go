@@ -1468,7 +1468,7 @@ func validateAuthorizationCodeExchangeRedirect(client *storage.OAuthClient, clie
 		return auth.ErrInvalidRequest
 	}
 	for _, registeredURI := range client.RedirectURIs {
-		if registeredURI == redirectURI {
+		if auth.RedirectURIsMatch(client, registeredURI, redirectURI) {
 			return nil
 		}
 	}

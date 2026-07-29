@@ -31,7 +31,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0
 	github.com/aws/aws-sdk-go-v2/service/transcribe v1.54.3
 	github.com/aws/aws-sdk-go-v2/service/translate v1.33.20
-	github.com/aws/aws-xray-sdk-go/v2 v2.0.0
+	github.com/aws/aws-xray-sdk-go/v2 v2.0.3
 	github.com/aws/smithy-go v1.27.4
 	github.com/bbrks/go-blurhash v1.2.0
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
@@ -138,7 +138,7 @@ require (
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
-	google.golang.org/grpc v1.79.3 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
