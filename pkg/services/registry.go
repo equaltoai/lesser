@@ -1008,6 +1008,13 @@ func (r *Registry) Drafts() *cms.DraftService {
 		r.cmsSchedulingEnabled(),
 		r.logger,
 	)
+	r.draftService.SetPrincipalUsernameProvider(func(ctx context.Context) (string, error) {
+		state, err := r.storage.Instance().GetInstanceState(ctx)
+		if err != nil {
+			return "", err
+		}
+		return state.PrimaryAdminUsername, nil
+	})
 	r.initialized["Drafts"] = true
 
 	return r.draftService

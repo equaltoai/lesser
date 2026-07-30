@@ -37,11 +37,12 @@ type articleDraftPublisher interface {
 
 // DraftService handles business logic for drafts
 type DraftService struct {
-	draftRepo      draftRepository
-	articleService articleDraftPublisher
-	domain         string
-	scheduling     bool
-	logger         *zap.Logger
+	draftRepo         draftRepository
+	articleService    articleDraftPublisher
+	domain            string
+	scheduling        bool
+	logger            *zap.Logger
+	principalUsername func(context.Context) (string, error)
 }
 
 // NewDraftService creates a new DraftService
@@ -53,6 +54,12 @@ func NewDraftService(draftRepo draftRepository, articleService *ArticleService, 
 		scheduling:     schedulingEnabled,
 		logger:         logger,
 	}
+}
+
+// SetPrincipalUsernameProvider supplies the instance's designated operator account.
+// Generated drafts fail closed when this provider is absent or cannot identify one.
+func (s *DraftService) SetPrincipalUsernameProvider(provider func(context.Context) (string, error)) {
+	s.principalUsername = provider
 }
 
 // CreateDraft creates a new draft
@@ -201,6 +208,15 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
+	if strings.TrimSpace(draft.GeneratedBy) != "" {
+		approved, approvalErr := s.HasActiveApproval(ctx, authorID, draftID)
+		if approvalErr != nil {
+			return approvalErr
+		}
+		if !approved {
+			return stdErrors.New("generated draft requires an active approved review")
+		}
+	}
 	draft.ScheduledAt = &scheduledAt
 	draft.Status = draftStatusScheduled
 	draft.UpdatedAt = time.Now()
@@ -223,6 +239,15 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
+	}
+	if strings.TrimSpace(draft.GeneratedBy) != "" {
+		approved, approvalErr := s.HasActiveApproval(ctx, authorID, draftID)
+		if approvalErr != nil {
+			return nil, approvalErr
+		}
+		if !approved {
+			return nil, stdErrors.New("generated draft requires an active approved review")
+		}
 	}
 
 	if s.isPublishedDraftCleanup(draft) {
