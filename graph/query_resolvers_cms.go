@@ -1057,7 +1057,7 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 	return out, nil
 }
 
-func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error) {
+func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, _ *model.Cursor) (*model.DraftReviewConnection, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
