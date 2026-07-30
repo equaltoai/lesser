@@ -15,6 +15,8 @@ const (
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
 )
 
+var errDraftReviewStorageUnavailable = errors.New("draft review storage is not available")
+
 type draftReviewRepository interface {
 	PutDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	RevokeDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
@@ -28,7 +30,7 @@ type draftReviewRepository interface {
 func (s *DraftService) reviewRepository() (draftReviewRepository, error) {
 	repo, ok := s.draftRepo.(draftReviewRepository)
 	if !ok || repo == nil {
-		return nil, errors.New("draft review storage is not available")
+		return nil, errDraftReviewStorageUnavailable
 	}
 	return repo, nil
 }
@@ -202,20 +204,19 @@ func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 	return principal, nil
 }
 
-// HasActiveApproval enforces the generated-draft publication gate. Every active
-// grant needs a current approval, and the instance principal must be one of them.
-func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
-	principal, err := s.instancePrincipal(ctx)
-	if err != nil {
-		return false, err
-	}
+type draftReviewApprovalState struct {
+	active map[string]*models.DraftReviewGrant
+	latest map[string]*models.DraftReviewVerdict
+}
+
+func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draftID string) (*draftReviewApprovalState, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	grants, err := repo.ListDraftReviewGrants(ctx, owner, draftID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	active := make(map[string]*models.DraftReviewGrant, len(grants))
 	for _, grant := range grants {
@@ -223,12 +224,9 @@ func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID str
 			active[grant.Reviewer] = grant
 		}
 	}
-	if len(active) == 0 || active[principal] == nil {
-		return false, nil
-	}
 	verdicts, err := repo.ListDraftReviewVerdicts(ctx, owner, draftID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	latest := make(map[string]*models.DraftReviewVerdict, len(active))
 	for _, verdict := range verdicts {
@@ -240,10 +238,57 @@ func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID str
 			}
 		}
 	}
-	for reviewer := range active {
-		if verdict := latest[reviewer]; verdict == nil || verdict.Verdict != DraftReviewApproved {
-			return false, nil
+	return &draftReviewApprovalState{active: active, latest: latest}, nil
+}
+
+func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
+	if state == nil {
+		return false
+	}
+	for reviewer := range state.active {
+		if verdict := state.latest[reviewer]; verdict == nil || verdict.Verdict != DraftReviewApproved {
+			return false
 		}
 	}
-	return true, nil
+	return true
+}
+
+// HasUnanimousActiveApproval applies the all-invited-reviewers rule. With no
+// active grants the result is vacuously true, preserving human draft behavior.
+func (s *DraftService) HasUnanimousActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID)
+	if err != nil {
+		if errors.Is(err, errDraftReviewStorageUnavailable) {
+			// A repository without review support cannot contain active grants;
+			// preserve the pre-review behavior for human-authored drafts.
+			return true, nil
+		}
+		return false, err
+	}
+	return allActiveReviewersApproved(state), nil
+}
+
+// HasPrincipalApproval applies the additional generated-content principal rule.
+func (s *DraftService) HasPrincipalApproval(ctx context.Context, owner, draftID string) (bool, error) {
+	principal, err := s.instancePrincipal(ctx)
+	if err != nil {
+		return false, err
+	}
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID)
+	if err != nil {
+		return false, err
+	}
+	grant := state.active[principal]
+	verdict := state.latest[principal]
+	return grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, nil
+}
+
+// HasActiveApproval preserves the combined generated-draft gate for callers
+// that need both unanimous active-reviewer and principal approval.
+func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
+	approved, err := s.HasUnanimousActiveApproval(ctx, owner, draftID)
+	if err != nil || !approved {
+		return approved, err
+	}
+	return s.HasPrincipalApproval(ctx, owner, draftID)
 }

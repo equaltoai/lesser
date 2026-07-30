@@ -90,9 +90,15 @@ func (errReviewNotFound) Error() string { return "not found" }
 func newReviewService(t *testing.T) (*DraftService, *reviewMemRepo) {
 	t.Helper()
 	repo := newReviewMemRepo()
-	svc := NewDraftService(repo, nil, "example.test", true, zap.NewNop())
+	svc := &DraftService{
+		draftRepo:      repo,
+		articleService: newMemArticleService(),
+		domain:         "example.test",
+		scheduling:     true,
+		logger:         zap.NewNop(),
+	}
 	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "principal", nil })
-	draft := &models.Draft{ID: "d1", AuthorID: "owner", ContentType: activitypub.ArticleType, Content: "draft", ContentFormat: "markdown", GeneratedBy: "agent"}
+	draft := &models.Draft{ID: "d1", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "Review draft", Slug: "review-draft", Content: "draft", ContentFormat: "markdown", GeneratedBy: "agent"}
 	require.NoError(t, svc.CreateDraft(context.Background(), draft))
 	return svc, repo
 }
@@ -119,6 +125,58 @@ func TestDraftReviewGateRequiresAllActiveReviewersAndPrincipal(t *testing.T) {
 	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.False(t, approved, "latest verdict supersedes per reviewer")
+}
+
+func TestHumanDraftWithActiveReviewsRequiresUnanimousApproval(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer-a")
+	require.NoError(t, err)
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer-b")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "reviewer-a", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+
+	err = svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour))
+	require.ErrorContains(t, err, "every active reviewer", "a missing current verdict must block")
+
+	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewChangesRequested, "revise")
+	require.NoError(t, err)
+	_, err = svc.PublishDraft(ctx, "owner", "d1")
+	require.ErrorContains(t, err, "every active reviewer", "changes requested must block")
+
+	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
+	article, err := svc.PublishDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.NotNil(t, article)
+}
+
+func TestAgentDraftRequiresPrincipalApprovalAfterReviewerConsensus(t *testing.T) {
+	svc, _ := newReviewService(t)
+	ctx := context.Background()
+
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+
+	_, err = svc.PublishDraft(ctx, "owner", "d1")
+	require.ErrorContains(t, err, "instance principal")
+
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
+	article, err := svc.PublishDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.NotNil(t, article)
 }
 
 func TestDraftReviewRevocationAndRegrantInvalidateApproval(t *testing.T) {

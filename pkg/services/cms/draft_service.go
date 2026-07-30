@@ -208,13 +208,20 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
+	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	if approvalErr != nil {
+		return approvalErr
+	}
+	if !approved {
+		return stdErrors.New("draft requires approval from every active reviewer")
+	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		approved, approvalErr := s.HasActiveApproval(ctx, authorID, draftID)
-		if approvalErr != nil {
-			return approvalErr
+		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
+		if principalErr != nil {
+			return principalErr
 		}
-		if !approved {
-			return stdErrors.New("generated draft requires an active approved review")
+		if !principalApproved {
+			return stdErrors.New("generated draft requires an active approval from the instance principal")
 		}
 	}
 	draft.ScheduledAt = &scheduledAt
@@ -240,13 +247,20 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
 	}
+	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	if approvalErr != nil {
+		return nil, approvalErr
+	}
+	if !approved {
+		return nil, stdErrors.New("draft requires approval from every active reviewer")
+	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		approved, approvalErr := s.HasActiveApproval(ctx, authorID, draftID)
-		if approvalErr != nil {
-			return nil, approvalErr
+		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
+		if principalErr != nil {
+			return nil, principalErr
 		}
-		if !approved {
-			return nil, stdErrors.New("generated draft requires an active approved review")
+		if !principalApproved {
+			return nil, stdErrors.New("generated draft requires an active approval from the instance principal")
 		}
 	}
 
