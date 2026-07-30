@@ -2,12 +2,14 @@ package cms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -21,6 +23,8 @@ type reviewMemRepo struct {
 	createGrantCalls        int
 	regrantGrantCalls       int
 	revokeGrantCalls        int
+	getGrantErr             error
+	callLog                 []string
 }
 
 func newReviewMemRepo() *reviewMemRepo {
@@ -39,21 +43,28 @@ func (r *reviewMemRepo) storeGrant(g *models.DraftReviewGrant) error {
 	return nil
 }
 func (r *reviewMemRepo) CreateDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.callLog = append(r.callLog, "create")
 	r.createGrantCalls++
 	return r.storeGrant(g)
 }
 func (r *reviewMemRepo) RegrantDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.callLog = append(r.callLog, "regrant")
 	r.regrantGrantCalls++
 	return r.storeGrant(g)
 }
 func (r *reviewMemRepo) RevokeDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.callLog = append(r.callLog, "revoke")
 	r.revokeGrantCalls++
 	return r.storeGrant(g)
 }
 func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, reviewer string) (*models.DraftReviewGrant, error) {
+	r.callLog = append(r.callLog, "get")
+	if r.getGrantErr != nil {
+		return nil, r.getGrantErr
+	}
 	g, ok := r.grants[reviewKey(owner, draft, reviewer)]
 	if !ok {
-		return nil, errReviewNotFound{}
+		return nil, storage.ErrNotFound
 	}
 	copy := *g
 	return &copy, nil
@@ -117,10 +128,6 @@ func (r *reviewMemRepo) ListDraftReviewVerdicts(_ context.Context, owner, draft 
 	}
 	return out, nil
 }
-
-type errReviewNotFound struct{}
-
-func (errReviewNotFound) Error() string { return "not found" }
 
 func newReviewService(t *testing.T) (*DraftService, *reviewMemRepo) {
 	t.Helper()
@@ -251,6 +258,33 @@ func TestDraftReviewRevocationAndRegrantInvalidateApproval(t *testing.T) {
 	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.True(t, approved)
+}
+
+func TestShareDraftForReviewFailsClosedOnGrantLookupError(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	revokedAt := time.Now().UTC().Add(-time.Hour)
+	key := reviewKey("owner", "d1", "principal")
+	repo.grants[key] = &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "d1",
+		Reviewer:  "principal",
+		RevokedAt: &revokedAt,
+		Version:   7,
+	}
+	transientErr := errors.New("transient grant lookup failure")
+	repo.getGrantErr = transientErr
+	repo.callLog = nil
+
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.ErrorIs(t, err, transientErr)
+	require.Equal(t, []string{"get"}, repo.callLog, "a failed read must not be followed by any grant write")
+	require.Zero(t, repo.createGrantCalls)
+	require.Zero(t, repo.regrantGrantCalls)
+	require.Equal(t, 7, repo.grants[key].Version)
+	require.Equal(t, revokedAt, *repo.grants[key].RevokedAt)
+	require.Empty(t, repo.grants[key].GSI2PK)
+	require.Empty(t, repo.grants[key].GSI2SK)
 }
 
 func TestDraftReviewQueueRejectsStaleRevokedIndexRow(t *testing.T) {

@@ -8,10 +8,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v2"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"github.com/theory-cloud/tabletheory/v2/pkg/session"
 	"github.com/theory-cloud/tabletheory/v2/pkg/testing/fakedb"
@@ -55,6 +57,25 @@ func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
 	condition := strings.ToLower(aws.ToString(client.putInputs[0].ConditionExpression))
 	require.NotContains(t, condition, "version")
 	require.NotContains(t, condition, "=", "a create must not require a version value on a nonexistent item")
+}
+
+func TestDraftRepositoryGetDraftReviewGrantMapsNotFoundSentinel(t *testing.T) {
+	ctx := context.Background()
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", mock.AnythingOfType("*models.DraftReviewGrant")).Return(query).Once()
+	query.On("Where", "PK", "=", "USER#owner#DRAFT#REVIEW").Return(query).Once()
+	query.On("Where", "SK", "=", "GRANT#draft-1#REVIEWER#reviewer").Return(query).Once()
+	query.On("First", mock.AnythingOfType("*models.DraftReviewGrant")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	grant, err := repo.GetDraftReviewGrant(ctx, "owner", "draft-1", "reviewer")
+	require.Nil(t, grant)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
 }
 
 func TestDraftRepositoryRevokeDraftReviewGrantRemovesSparseIndexKeys(t *testing.T) {

@@ -8,8 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -241,6 +243,9 @@ func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draf
 	var grant models.DraftReviewGrant
 	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "=", fmt.Sprintf("GRANT#%s#REVIEWER#%s", draftID, reviewer)).First(&grant)
 	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
 		return nil, err
 	}
 	return &grant, nil

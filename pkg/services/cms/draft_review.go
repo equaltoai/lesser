@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -71,12 +72,16 @@ func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, 
 	}
 	now := time.Now().UTC()
 	g := &models.DraftReviewGrant{OwnerID: owner, DraftID: draftID, Reviewer: reviewer, GrantedAt: now}
-	if existing, e := repo.GetDraftReviewGrant(ctx, owner, draftID, reviewer); e == nil && existing != nil {
+	existing, getErr := repo.GetDraftReviewGrant(ctx, owner, draftID, reviewer)
+	if getErr == nil && existing != nil {
 		g.Version = existing.Version
 		if err := repo.RegrantDraftReviewGrant(ctx, g); err != nil {
 			return nil, err
 		}
 		return g, nil
+	}
+	if getErr != nil && !errors.Is(getErr, storage.ErrNotFound) {
+		return nil, getErr
 	}
 	if err := repo.CreateDraftReviewGrant(ctx, g); err != nil {
 		return nil, err
