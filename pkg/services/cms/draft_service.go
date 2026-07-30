@@ -226,6 +226,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 	}
 	draft.ScheduledAt = &scheduledAt
 	draft.Status = draftStatusScheduled
+	draft.PublishFailureReason = ""
 	draft.UpdatedAt = time.Now()
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }

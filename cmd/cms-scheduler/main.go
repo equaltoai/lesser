@@ -297,6 +297,7 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 	now := time.Now().UTC()
 	draft.Status = "failed"
 	draft.ScheduledAt = nil
+	draft.PublishFailureReason = scheduledPublishFailureReason(err)
 	draft.UpdatedAt = now
 	if updateErr := draftRepo.UpdateDraft(ctx, authorID, draft); updateErr != nil {
 		p.logger.Warn("failed to mark scheduled draft as failed",
@@ -306,6 +307,25 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 			zap.Error(updateErr),
 		)
 	}
+}
+
+func scheduledPublishFailureReason(err error) string {
+	const (
+		defaultReason = "scheduled publish suppressed"
+		maxRunes      = 512
+	)
+	if err == nil {
+		return defaultReason
+	}
+	reason := strings.TrimSpace(err.Error())
+	if reason == "" {
+		return defaultReason
+	}
+	runes := []rune(reason)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes])
+	}
+	return reason
 }
 
 func envInt(key string, defaultValue int) int {

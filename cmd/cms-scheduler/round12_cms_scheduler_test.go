@@ -206,6 +206,32 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 		require.NotNil(t, repo.lastUpdated)
 		require.Equal(t, "failed", repo.lastUpdated.Status)
 		require.Nil(t, repo.lastUpdated.ScheduledAt)
+		require.Contains(t, repo.lastUpdated.PublishFailureReason, "boom")
+	})
+
+	t.Run("approval suppression reason is persisted without draft source", func(t *testing.T) {
+		const source = "private raw draft source"
+		const reason = "generated draft requires an active approval from the instance principal"
+		pub := &fakeDraftPublisher{
+			publishFn: func(context.Context, string, string) (*models.Article, error) {
+				return nil, errors.New(reason)
+			},
+		}
+		repo := &fakeDraftRepo{
+			getFn: func(context.Context, string, string) (*models.Draft, error) {
+				return &models.Draft{
+					ID:       "draft-1",
+					AuthorID: "author-1",
+					Status:   "scheduled",
+					Content:  source,
+				}, nil
+			},
+		}
+
+		err := p.publishScheduledDraft(context.Background(), pub, repo, draft)
+		require.Error(t, err)
+		require.Equal(t, reason, repo.lastUpdated.PublishFailureReason)
+		require.NotContains(t, repo.lastUpdated.PublishFailureReason, source)
 	})
 }
 

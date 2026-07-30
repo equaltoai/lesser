@@ -35,8 +35,9 @@ type Draft struct {
 	ContentFormat string `theorydb:"attr:contentFormat" json:"content_format"` // html, markdown
 
 	// Draft state
-	Status      string     `theorydb:"attr:status" json:"status"` // draft, scheduled, publishing, failed
-	ScheduledAt *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
+	Status               string     `theorydb:"attr:status" json:"status"` // draft, scheduled, publishing, failed
+	ScheduledAt          *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
+	PublishFailureReason string     `theorydb:"attr:publishFailureReason" json:"publish_failure_reason,omitempty"`
 
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
