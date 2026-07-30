@@ -1057,7 +1057,7 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 	return out, nil
 }
 
-func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, _ *model.Cursor) (*model.DraftReviewConnection, error) {
+func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1069,7 +1069,15 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, _ *m
 	if svc == nil {
 		return nil, errors.New("draft service is not available")
 	}
-	grants, err := svc.SharedDraftReviews(ctx, username, clampCMSPageSize(first))
+	cursor := ""
+	if after != nil {
+		cursor = string(*after)
+	}
+	grants, nextCursor, err := svc.SharedDraftReviews(ctx, username, clampCMSPageSize(first), cursor)
+	if err != nil {
+		return nil, err
+	}
+	totalCount, err := svc.CountSharedDraftReviews(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -1085,7 +1093,17 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, _ *m
 		}
 		edges = append(edges, &model.DraftReviewEdge{Node: r.convertCMSDraftReview(ctx, d, g, vs), Cursor: model.Cursor(g.GSI2SK)})
 	}
-	return &model.DraftReviewConnection{Edges: edges, PageInfo: &model.PageInfo{HasNextPage: false, HasPreviousPage: false}, TotalCount: len(edges)}, nil
+	pageInfo := &model.PageInfo{
+		HasNextPage:     nextCursor != "",
+		HasPreviousPage: after != nil,
+	}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
+	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: totalCount}, nil
 }
 func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {

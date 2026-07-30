@@ -215,28 +215,51 @@ func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draf
 	return &grant, nil
 }
 
-// ListActiveDraftReviewGrants returns the sparse reviewer queue.
-func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int) ([]*models.DraftReviewGrant, error) {
+// ListActiveDraftReviewGrants returns one page from the sparse reviewer queue.
+func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	if limit <= 0 {
 		limit = 25
 	}
-	var rows []models.DraftReviewGrant
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Model(&models.DraftReviewGrant{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
 		Filter("RevokedAt", "attribute_not_exists", nil).
-		OrderBy("gsi2SK", "DESC").
-		Limit(limit).
-		All(&rows)
+		OrderBy("gsi2SK", "DESC")
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi2SK", "<", cursor)
+	}
+
+	var rows []models.DraftReviewGrant
+	err := query.Limit(limit + 1).All(&rows)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	nextCursor := ""
+	if len(rows) > limit {
+		nextCursor = rows[limit-1].GSI2SK
+		rows = rows[:limit]
 	}
 	out := make([]*models.DraftReviewGrant, len(rows))
 	for i := range rows {
 		out[i] = &rows[i]
 	}
-	return out, nil
+	return out, nextCursor, nil
+}
+
+// CountActiveDraftReviewGrants returns the full active sparse queue size.
+func (r *DraftRepository) CountActiveDraftReviewGrants(ctx context.Context, reviewer string) (int, error) {
+	count, err := r.db.WithContext(ctx).
+		Model(&models.DraftReviewGrant{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
+		Filter("RevokedAt", "attribute_not_exists", nil).
+		Count()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
 // ListDraftReviewGrants returns all grant records for one draft.

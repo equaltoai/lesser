@@ -21,7 +21,8 @@ type draftReviewRepository interface {
 	PutDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	RevokeDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	GetDraftReviewGrant(context.Context, string, string, string) (*models.DraftReviewGrant, error)
-	ListActiveDraftReviewGrants(context.Context, string, int) ([]*models.DraftReviewGrant, error)
+	ListActiveDraftReviewGrants(context.Context, string, int, string) ([]*models.DraftReviewGrant, string, error)
+	CountActiveDraftReviewGrants(context.Context, string) (int, error)
 	ListDraftReviewGrants(context.Context, string, string) ([]*models.DraftReviewGrant, error)
 	CreateDraftReviewVerdict(context.Context, *models.DraftReviewVerdict) error
 	ListDraftReviewVerdicts(context.Context, string, string) ([]*models.DraftReviewVerdict, error)
@@ -99,15 +100,15 @@ func (s *DraftService) ActiveDraftReviewGrant(ctx context.Context, owner, draftI
 	return g, nil
 }
 
-// SharedDraftReviews lists active review queue grants for a reviewer.
-func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, limit int) ([]*models.DraftReviewGrant, error) {
+// SharedDraftReviews lists one cursor page of active review queue grants.
+func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	grants, err := repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), limit)
+	grants, nextCursor, err := repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), limit, strings.TrimSpace(cursor))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	active := make([]*models.DraftReviewGrant, 0, len(grants))
 	for _, grant := range grants {
@@ -115,7 +116,16 @@ func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, 
 			active = append(active, grant)
 		}
 	}
-	return active, nil
+	return active, nextCursor, nil
+}
+
+// CountSharedDraftReviews returns the full active queue size.
+func (s *DraftService) CountSharedDraftReviews(ctx context.Context, reviewer string) (int, error) {
+	repo, err := s.reviewRepository()
+	if err != nil {
+		return 0, err
+	}
+	return repo.CountActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer))
 }
 
 // DraftReviewForCaller resolves a draft only for its owner or active reviewer.
@@ -130,15 +140,25 @@ func (s *DraftService) DraftReviewForCaller(ctx context.Context, caller, draftID
 		}
 		return d, nil, nil
 	}
-	grants, e := s.SharedDraftReviews(ctx, caller, 200)
-	if e != nil {
-		return nil, nil, e
-	}
-	for _, g := range grants {
-		if g != nil && g.DraftID == draftID {
-			d, e := s.draftRepo.GetDraft(ctx, g.OwnerID, draftID)
-			return d, g, e
+	cursor := ""
+	for {
+		grants, nextCursor, e := s.SharedDraftReviews(ctx, caller, 200, cursor)
+		if e != nil {
+			return nil, nil, e
 		}
+		for _, g := range grants {
+			if g != nil && g.DraftID == draftID {
+				d, getErr := s.draftRepo.GetDraft(ctx, g.OwnerID, draftID)
+				return d, g, getErr
+			}
+		}
+		if nextCursor == "" {
+			break
+		}
+		if nextCursor == cursor {
+			return nil, nil, errors.New("draft review pagination did not advance")
+		}
+		cursor = nextCursor
 	}
 	return nil, nil, errors.New("draft review not found")
 }

@@ -2,6 +2,8 @@ package cms
 
 import (
 	"context"
+	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -41,18 +43,36 @@ func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, rev
 	copy := *g
 	return &copy, nil
 }
-func (r *reviewMemRepo) ListActiveDraftReviewGrants(_ context.Context, reviewer string, _ int) ([]*models.DraftReviewGrant, error) {
+func (r *reviewMemRepo) ListActiveDraftReviewGrants(_ context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	// Production filters RevokedAt at the repository and service boundaries.
 	// includeRevokedQueueRows deliberately simulates a stale sparse-index row so
 	// service tests prove that index membership alone cannot restore access.
 	out := []*models.DraftReviewGrant{}
 	for _, g := range r.grants {
-		if g.Reviewer == reviewer && (g.RevokedAt == nil || r.includeRevokedQueueRows) {
+		if g.Reviewer == reviewer && (g.RevokedAt == nil || r.includeRevokedQueueRows) && (cursor == "" || g.GSI2SK < cursor) {
 			copy := *g
 			out = append(out, &copy)
 		}
 	}
-	return out, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].GSI2SK > out[j].GSI2SK })
+	if limit <= 0 {
+		limit = 25
+	}
+	nextCursor := ""
+	if len(out) > limit {
+		nextCursor = out[limit-1].GSI2SK
+		out = out[:limit]
+	}
+	return out, nextCursor, nil
+}
+func (r *reviewMemRepo) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
+	count := 0
+	for _, g := range r.grants {
+		if g.Reviewer == reviewer && g.RevokedAt == nil {
+			count++
+		}
+	}
+	return count, nil
 }
 func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft string) ([]*models.DraftReviewGrant, error) {
 	out := []*models.DraftReviewGrant{}
@@ -219,12 +239,58 @@ func TestDraftReviewQueueRejectsStaleRevokedIndexRow(t *testing.T) {
 	stored.GSI2SK = grant.GSI2SK
 	repo.includeRevokedQueueRows = true
 
-	queue, err := svc.SharedDraftReviews(ctx, "principal", 25)
+	queue, _, err := svc.SharedDraftReviews(ctx, "principal", 25, "")
 	require.NoError(t, err)
 	require.Empty(t, queue, "a stale sparse-index row must not restore queue access")
 
 	_, _, err = svc.DraftReviewForCaller(ctx, "principal", "d1")
 	require.Error(t, err, "a stale sparse-index row must not restore draft access")
+}
+
+func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-time.Hour)
+	for i, draftID := range []string{"older", "middle", "newer"} {
+		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
+		require.NoError(t, svc.CreateDraft(ctx, draft))
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Minute)}
+		require.NoError(t, repo.PutDraftReviewGrant(ctx, grant))
+	}
+
+	first, next, err := svc.SharedDraftReviews(ctx, "reviewer", 2, "")
+	require.NoError(t, err)
+	require.Len(t, first, 2)
+	require.Equal(t, []string{"newer", "middle"}, []string{first[0].DraftID, first[1].DraftID})
+	require.Equal(t, first[1].GSI2SK, next)
+
+	second, finalCursor, err := svc.SharedDraftReviews(ctx, "reviewer", 2, next)
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+	require.Equal(t, "older", second[0].DraftID)
+	require.Empty(t, finalCursor)
+
+	total, err := svc.CountSharedDraftReviews(ctx, "reviewer")
+	require.NoError(t, err)
+	require.Equal(t, 3, total)
+}
+
+func TestDraftReviewForCallerPagesPastFormerTwoHundredGrantCap(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < 201; i++ {
+		draftID := fmt.Sprintf("paged-%03d", i)
+		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
+		require.NoError(t, svc.CreateDraft(ctx, draft))
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Second)}
+		require.NoError(t, repo.PutDraftReviewGrant(ctx, grant))
+	}
+
+	draft, grant, err := svc.DraftReviewForCaller(ctx, "reviewer", "paged-000")
+	require.NoError(t, err)
+	require.Equal(t, "paged-000", draft.ID)
+	require.Equal(t, "paged-000", grant.DraftID)
 }
 
 func TestDraftReviewRejectsUngrantAndOwner(t *testing.T) {
