@@ -1095,7 +1095,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	}
 	pageInfo := &model.PageInfo{
 		HasNextPage:     nextCursor != "",
-		HasPreviousPage: after != nil,
+		HasPreviousPage: cursor != "",
 	}
 	if len(edges) > 0 {
 		start := edges[0].Cursor
