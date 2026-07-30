@@ -167,12 +167,12 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	return result, nextCursor, nil
 }
 
-// PutDraftReviewGrant creates or updates a review grant.
-func (r *DraftRepository) PutDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+// CreateDraftReviewGrant creates a first-time review grant.
+func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Model(grant).Update()
+	return r.db.WithContext(ctx).Model(grant).Create()
 }
 
 // RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.

@@ -18,28 +18,37 @@ type reviewMemRepo struct {
 	grants                  map[string]*models.DraftReviewGrant
 	verdicts                []*models.DraftReviewVerdict
 	includeRevokedQueueRows bool
+	createGrantCalls        int
+	regrantGrantCalls       int
+	revokeGrantCalls        int
 }
 
 func newReviewMemRepo() *reviewMemRepo {
 	return &reviewMemRepo{memDraftRepo: newMemDraftRepo(), grants: map[string]*models.DraftReviewGrant{}}
 }
 func reviewKey(owner, draft, reviewer string) string { return owner + "|" + draft + "|" + reviewer }
-func (r *reviewMemRepo) PutDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+func (r *reviewMemRepo) storeGrant(g *models.DraftReviewGrant) error {
 	if err := g.UpdateKeys(); err != nil {
 		return err
 	}
-	// This logical service double replaces the full row. TableTheory's production
-	// Update path is SET-only for non-empty fields; repository mock tests assert
-	// the explicit REMOVE clauses required for revoke and re-grant transitions.
+	// This logical service double replaces the full row and does not exercise
+	// TableTheory's create/update conditions. Repository tests use the real
+	// TableTheory builders to cover those production clauses.
 	copy := *g
 	r.grants[reviewKey(g.OwnerID, g.DraftID, g.Reviewer)] = &copy
 	return nil
 }
-func (r *reviewMemRepo) RegrantDraftReviewGrant(ctx context.Context, g *models.DraftReviewGrant) error {
-	return r.PutDraftReviewGrant(ctx, g)
+func (r *reviewMemRepo) CreateDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.createGrantCalls++
+	return r.storeGrant(g)
 }
-func (r *reviewMemRepo) RevokeDraftReviewGrant(ctx context.Context, g *models.DraftReviewGrant) error {
-	return r.PutDraftReviewGrant(ctx, g)
+func (r *reviewMemRepo) RegrantDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.regrantGrantCalls++
+	return r.storeGrant(g)
+}
+func (r *reviewMemRepo) RevokeDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
+	r.revokeGrantCalls++
+	return r.storeGrant(g)
 }
 func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, reviewer string) (*models.DraftReviewGrant, error) {
 	g, ok := r.grants[reviewKey(owner, draft, reviewer)]
@@ -206,21 +215,26 @@ func TestAgentDraftRequiresPrincipalApprovalAfterReviewerConsensus(t *testing.T)
 }
 
 func TestDraftReviewRevocationAndRegrantInvalidateApproval(t *testing.T) {
-	svc, _ := newReviewService(t)
+	svc, repo := newReviewService(t)
 	ctx := context.Background()
 	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
 	require.NoError(t, err)
+	require.Equal(t, 1, repo.createGrantCalls)
+	require.Zero(t, repo.regrantGrantCalls)
 	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "ok")
 	require.NoError(t, err)
 	approved, err := svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.True(t, approved)
 	require.NoError(t, svc.RevokeDraftReview(ctx, "owner", "d1", "principal"))
+	require.Equal(t, 1, repo.revokeGrantCalls)
 	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.False(t, approved)
 	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
 	require.NoError(t, err)
+	require.Equal(t, 1, repo.createGrantCalls, "re-share after revoke must not use the first-write path")
+	require.Equal(t, 1, repo.regrantGrantCalls, "re-share after revoke must use the explicit re-grant path")
 	draft, grant, err := svc.DraftReviewForCaller(ctx, "principal", "d1")
 	require.NoError(t, err, "re-invited reviewer can read the draft")
 	require.Equal(t, "d1", draft.ID)
@@ -268,7 +282,7 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
 		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Minute)}
-		require.NoError(t, repo.PutDraftReviewGrant(ctx, grant))
+		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 
 	first, next, err := svc.SharedDraftReviews(ctx, "reviewer", 2, "")
@@ -297,7 +311,7 @@ func TestDraftReviewForCallerPagesPastFormerTwoHundredGrantCap(t *testing.T) {
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
 		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Second)}
-		require.NoError(t, repo.PutDraftReviewGrant(ctx, grant))
+		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 
 	draft, grant, err := svc.DraftReviewForCaller(ctx, "reviewer", "paged-000")

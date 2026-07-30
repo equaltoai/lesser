@@ -2,15 +2,60 @@ package repositories
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v2"
 	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v2/pkg/session"
+	"github.com/theory-cloud/tabletheory/v2/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
+
+type draftReviewRecordingDynamo struct {
+	*fakedb.Fake
+	putInputs    []*dynamodb.PutItemInput
+	updateInputs []*dynamodb.UpdateItemInput
+}
+
+func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
+	d.putInputs = append(d.putInputs, input)
+	return d.Fake.PutItem(ctx, input, opts...)
+}
+
+func (d *draftReviewRecordingDynamo) UpdateItem(ctx context.Context, input *dynamodb.UpdateItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
+	d.updateInputs = append(d.updateInputs, input)
+	return d.Fake.UpdateItem(ctx, input, opts...)
+}
+
+func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.DraftReviewGrant{}))
+
+	grant := &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC(),
+	}
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
+
+	require.Len(t, client.putInputs, 1, "first-time grants must use TableTheory's create path")
+	require.Empty(t, client.updateInputs, "first-time grants must not use the version-conditioned update path")
+	condition := strings.ToLower(aws.ToString(client.putInputs[0].ConditionExpression))
+	require.NotContains(t, condition, "version")
+	require.NotContains(t, condition, "=", "a create must not require a version value on a nonexistent item")
+}
 
 func TestDraftRepositoryRevokeDraftReviewGrantRemovesSparseIndexKeys(t *testing.T) {
 	ctx := context.Background()
