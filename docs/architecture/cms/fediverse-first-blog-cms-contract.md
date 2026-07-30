@@ -178,6 +178,89 @@ Minimum MVP sanitizer behavior:
 
 M3 owns implementation of this renderer/sanitizer boundary.
 
+## Shareable draft review contract (M2a)
+
+M2a uses **explicit, account-bound reviewer grants**. It deliberately does not
+use bearer share tokens: a token could be forwarded, logged, or cached outside
+the authenticated CMS boundary, while a grant names one authenticated lesser
+account and can be revoked without rotating an opaque secret. Grants and
+verdicts are private CMS workflow records; they are never ActivityPub objects,
+Mastodon REST fields, or raw-draft delivery paths.
+
+### Stable GraphQL operations
+
+The additive GraphQL surface is:
+
+```graphql
+sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
+draftReview(id: ID!): DraftReview
+shareDraftForReview(draftId: ID!, reviewer: String!): DraftReview!
+submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String): DraftReview!
+```
+
+`reviewer` is a local canonical account username, not an actor URL and never a
+remote ActivityPub identifier. `sharedDraftReviews` returns only currently
+active grants for the authenticated reviewer, newest grant first. `draftReview`
+returns a draft only to its owner or to a caller with an active grant. A grant
+contains no raw source; review rendering remains exclusively `draftPreview`,
+which invokes the canonical server renderer/sanitizer.
+
+### Authorization matrix
+
+| Operation | Draft owner | Granted local reviewer | Other authenticated identity | Unauthenticated |
+| --- | --- | --- | --- | --- |
+| `shareDraftForReview` / revoke | allow; owner may replace or revoke a grant | deny | deny | deny |
+| `sharedDraftReviews` | own grants are not queued | allow; active grants only | empty | deny |
+| `draftReview` | allow | allow; active grant only | deny | deny |
+| `draft` | allow | deny; use `draftReview` | deny | deny |
+| `draftPreview` | allow | allow only after active-grant authorization | deny | deny |
+| `submitDraftReview` | deny (a reviewer must be distinct from the owner) | allow; active grant only | deny | deny |
+| `publishDraft` / `scheduleDraft` | allow, subject to generated-draft gate below | deny | deny | deny |
+
+Owners can grant only local authenticated accounts and cannot grant themselves.
+Granting the same reviewer again is idempotent and refreshes the grant time;
+revocation takes effect immediately for queue, `draftReview`, preview, and
+verdict authorization. A reviewer may submit multiple ordered verdict rounds
+while their grant remains active. `APPROVED` and `CHANGES_REQUESTED` are the
+only M2a verdicts. The newest verdict is the current status, while immutable
+history remains available for audit and re-review.
+
+### Persistence and server-side publication gate
+
+Review records use the single table, with no new physical DynamoDB index:
+
+- `DraftReviewGrant`: `PK=USER#<owner>#DRAFT#REVIEW`,
+  `SK=GRANT#<draftID>#REVIEWER#<reviewer>`; sparse GSI2 queue entry
+  `gsi2PK=DRAFT#REVIEWER#<reviewer>`,
+  `gsi2SK=TIME#<grantedAt>#OWNER#<owner>#DRAFT#<draftID>`.
+- `DraftReviewVerdict`: same owner partition,
+  `SK=VERDICT#<draftID>#TIME#<recordedAt>#REVIEWER#<reviewer>`.
+
+Both records use TableTheory primary-key tags and optimistic-concurrency
+versioning. The GSI2 entry is sparse and serves only the reviewer queue; no
+scan, new table, or new GSI is introduced. Stream consumers must ignore these
+private CMS record types unless a future processor explicitly opts in.
+
+On every verdict, the server records the reviewer and current structured status
+on the draft (`reviewedBy`, `reviewStatus`, `editorNotes`) and preserves the
+round in verdict history. Publishing copies this attribution to the target
+article/revision using the existing attribution path. If `generatedBy != null`,
+`publishDraft` and `scheduleDraft` must reject unless a non-revoked recorded
+`APPROVED` verdict exists; client/UI state never substitutes for that check. A
+subsequent `CHANGES_REQUESTED` verdict supersedes an earlier approval until a
+later approval is recorded. Human-authored drafts retain their current publish
+behavior.
+
+### Compatibility and consumer handoff
+
+This is additive GraphQL-only CMS functionality: existing `draft`,
+`draftPreview`, `myDrafts`, and publish operations retain their shapes and
+ownership semantics for human-authored drafts. It does not change Mastodon
+REST, OpenAPI, ActivityPub, JSON-LD, WebFinger, NodeInfo, or renderer output.
+`docs/contracts/graphql-schema.graphql` must be regenerated with the schema
+commit. lesser-body M2b and greater-components M2c consume this documented
+contract; neither may persist grants or reimplement authorization locally.
+
 ## Agent-authored draft attribution and review policy
 
 ### Identity separation
