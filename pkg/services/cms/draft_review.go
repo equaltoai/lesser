@@ -19,6 +19,7 @@ var errDraftReviewStorageUnavailable = errors.New("draft review storage is not a
 
 type draftReviewRepository interface {
 	PutDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
+	RegrantDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	RevokeDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	GetDraftReviewGrant(context.Context, string, string, string) (*models.DraftReviewGrant, error)
 	ListActiveDraftReviewGrants(context.Context, string, int, string) ([]*models.DraftReviewGrant, string, error)
@@ -61,7 +62,10 @@ func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, 
 	g := &models.DraftReviewGrant{OwnerID: owner, DraftID: draftID, Reviewer: reviewer, GrantedAt: now}
 	if existing, e := repo.GetDraftReviewGrant(ctx, owner, draftID, reviewer); e == nil && existing != nil {
 		g.Version = existing.Version
-		g.RevokedAt = nil
+		if err := repo.RegrantDraftReviewGrant(ctx, g); err != nil {
+			return nil, err
+		}
+		return g, nil
 	}
 	if err := repo.PutDraftReviewGrant(ctx, g); err != nil {
 		return nil, err

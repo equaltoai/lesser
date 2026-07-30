@@ -28,9 +28,15 @@ func (r *reviewMemRepo) PutDraftReviewGrant(_ context.Context, g *models.DraftRe
 	if err := g.UpdateKeys(); err != nil {
 		return err
 	}
+	// This logical service double replaces the full row. TableTheory's production
+	// Update path is SET-only for non-empty fields; repository mock tests assert
+	// the explicit REMOVE clauses required for revoke and re-grant transitions.
 	copy := *g
 	r.grants[reviewKey(g.OwnerID, g.DraftID, g.Reviewer)] = &copy
 	return nil
+}
+func (r *reviewMemRepo) RegrantDraftReviewGrant(ctx context.Context, g *models.DraftReviewGrant) error {
+	return r.PutDraftReviewGrant(ctx, g)
 }
 func (r *reviewMemRepo) RevokeDraftReviewGrant(ctx context.Context, g *models.DraftReviewGrant) error {
 	return r.PutDraftReviewGrant(ctx, g)
@@ -215,12 +221,19 @@ func TestDraftReviewRevocationAndRegrantInvalidateApproval(t *testing.T) {
 	require.False(t, approved)
 	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
 	require.NoError(t, err)
-	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
+	draft, grant, err := svc.DraftReviewForCaller(ctx, "principal", "d1")
+	require.NoError(t, err, "re-invited reviewer can read the draft")
+	require.Equal(t, "d1", draft.ID)
+	require.Nil(t, grant.RevokedAt)
+	approved, err = svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
-	require.False(t, approved, "regrant requires a fresh verdict")
+	require.False(t, approved, "re-invited reviewer is counted and requires a fresh verdict")
 	time.Sleep(time.Millisecond) // grant and fresh verdict must have distinct timestamps.
 	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "again")
 	require.NoError(t, err)
+	approved, err = svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.True(t, approved, "fresh verdict restores reviewer unanimity")
 	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.True(t, approved)

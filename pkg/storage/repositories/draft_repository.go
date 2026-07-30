@@ -175,6 +175,37 @@ func (r *DraftRepository) PutDraftReviewGrant(ctx context.Context, grant *models
 	return r.db.WithContext(ctx).Model(grant).Update()
 }
 
+// RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
+func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if grant == nil || grant.RevokedAt != nil {
+		return fmt.Errorf("active draft review grant is required")
+	}
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := grant.Version + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(grant).
+		Where("PK", "=", grant.PK).
+		Where("SK", "=", grant.SK).
+		UpdateBuilder()
+	builder.Set("GrantedAt", grant.GrantedAt.UTC())
+	builder.Set("GSI2PK", grant.GSI2PK)
+	builder.Set("GSI2SK", grant.GSI2SK)
+	builder.Remove("RevokedAt")
+	builder.ConditionVersion(int64(grant.Version))
+	builder.Set("Version", nextVersion)
+	if err := builder.Execute(); err != nil {
+		return err
+	}
+	grant.Version = nextVersion
+	return nil
+}
+
 // RevokeDraftReviewGrant persists revocation and removes the sparse queue keys.
 func (r *DraftRepository) RevokeDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if grant == nil || grant.RevokedAt == nil {
