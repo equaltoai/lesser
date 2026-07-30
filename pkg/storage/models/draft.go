@@ -42,8 +42,10 @@ type Draft struct {
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 
 	// Authoring attribution
-	GeneratedBy string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
-	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	GeneratedBy  string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
+	ReviewedBy   string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	ReviewStatus string `theorydb:"attr:reviewStatus,omitempty" json:"review_status,omitempty"`
+	EditorNotes  string `theorydb:"attr:editorNotes,omitempty" json:"editor_notes,omitempty"`
 
 	// Autosave tracking
 	AutosaveVersion int       `theorydb:"attr:autosaveVersion" json:"autosave_version"`
