@@ -13,8 +13,9 @@ import (
 
 type reviewMemRepo struct {
 	*memDraftRepo
-	grants   map[string]*models.DraftReviewGrant
-	verdicts []*models.DraftReviewVerdict
+	grants                  map[string]*models.DraftReviewGrant
+	verdicts                []*models.DraftReviewVerdict
+	includeRevokedQueueRows bool
 }
 
 func newReviewMemRepo() *reviewMemRepo {
@@ -29,6 +30,9 @@ func (r *reviewMemRepo) PutDraftReviewGrant(_ context.Context, g *models.DraftRe
 	r.grants[reviewKey(g.OwnerID, g.DraftID, g.Reviewer)] = &copy
 	return nil
 }
+func (r *reviewMemRepo) RevokeDraftReviewGrant(ctx context.Context, g *models.DraftReviewGrant) error {
+	return r.PutDraftReviewGrant(ctx, g)
+}
 func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, reviewer string) (*models.DraftReviewGrant, error) {
 	g, ok := r.grants[reviewKey(owner, draft, reviewer)]
 	if !ok {
@@ -38,9 +42,12 @@ func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, rev
 	return &copy, nil
 }
 func (r *reviewMemRepo) ListActiveDraftReviewGrants(_ context.Context, reviewer string, _ int) ([]*models.DraftReviewGrant, error) {
+	// Production filters RevokedAt at the repository and service boundaries.
+	// includeRevokedQueueRows deliberately simulates a stale sparse-index row so
+	// service tests prove that index membership alone cannot restore access.
 	out := []*models.DraftReviewGrant{}
 	for _, g := range r.grants {
-		if g.Reviewer == reviewer && g.RevokedAt == nil {
+		if g.Reviewer == reviewer && (g.RevokedAt == nil || r.includeRevokedQueueRows) {
 			copy := *g
 			out = append(out, &copy)
 		}
@@ -139,6 +146,27 @@ func TestDraftReviewRevocationAndRegrantInvalidateApproval(t *testing.T) {
 	approved, err = svc.HasActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.True(t, approved)
+}
+
+func TestDraftReviewQueueRejectsStaleRevokedIndexRow(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	grant, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+
+	revokedAt := time.Now().UTC()
+	stored := repo.grants[reviewKey("owner", "d1", "principal")]
+	stored.RevokedAt = &revokedAt
+	stored.GSI2PK = grant.GSI2PK
+	stored.GSI2SK = grant.GSI2SK
+	repo.includeRevokedQueueRows = true
+
+	queue, err := svc.SharedDraftReviews(ctx, "principal", 25)
+	require.NoError(t, err)
+	require.Empty(t, queue, "a stale sparse-index row must not restore queue access")
+
+	_, _, err = svc.DraftReviewForCaller(ctx, "principal", "d1")
+	require.Error(t, err, "a stale sparse-index row must not restore draft access")
 }
 
 func TestDraftReviewRejectsUngrantAndOwner(t *testing.T) {

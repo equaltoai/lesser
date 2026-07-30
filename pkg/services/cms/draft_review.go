@@ -17,6 +17,7 @@ const (
 
 type draftReviewRepository interface {
 	PutDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
+	RevokeDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	GetDraftReviewGrant(context.Context, string, string, string) (*models.DraftReviewGrant, error)
 	ListActiveDraftReviewGrants(context.Context, string, int) ([]*models.DraftReviewGrant, error)
 	ListDraftReviewGrants(context.Context, string, string) ([]*models.DraftReviewGrant, error)
@@ -77,7 +78,7 @@ func (s *DraftService) RevokeDraftReview(ctx context.Context, owner, draftID, re
 	}
 	now := time.Now().UTC()
 	g.RevokedAt = &now
-	return repo.PutDraftReviewGrant(ctx, g)
+	return repo.RevokeDraftReviewGrant(ctx, g)
 }
 
 // ActiveDraftReviewGrant returns a non-revoked grant for one reviewer.
@@ -102,7 +103,17 @@ func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, 
 	if err != nil {
 		return nil, err
 	}
-	return repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), limit)
+	grants, err := repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), limit)
+	if err != nil {
+		return nil, err
+	}
+	active := make([]*models.DraftReviewGrant, 0, len(grants))
+	for _, grant := range grants {
+		if grant != nil && grant.RevokedAt == nil {
+			active = append(active, grant)
+		}
+	}
+	return active, nil
 }
 
 // DraftReviewForCaller resolves a draft only for its owner or active reviewer.

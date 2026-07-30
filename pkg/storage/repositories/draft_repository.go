@@ -175,6 +175,36 @@ func (r *DraftRepository) PutDraftReviewGrant(ctx context.Context, grant *models
 	return r.db.WithContext(ctx).Model(grant).Update()
 }
 
+// RevokeDraftReviewGrant persists revocation and removes the sparse queue keys.
+func (r *DraftRepository) RevokeDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if grant == nil || grant.RevokedAt == nil {
+		return fmt.Errorf("revoked draft review grant is required")
+	}
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := grant.Version + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(grant).
+		Where("PK", "=", grant.PK).
+		Where("SK", "=", grant.SK).
+		UpdateBuilder()
+	builder.Set("RevokedAt", grant.RevokedAt.UTC())
+	builder.Remove("GSI2PK")
+	builder.Remove("GSI2SK")
+	builder.ConditionVersion(int64(grant.Version))
+	builder.Set("Version", nextVersion)
+	if err := builder.Execute(); err != nil {
+		return err
+	}
+	grant.Version = nextVersion
+	return nil
+}
+
 // GetDraftReviewGrant loads a grant by its owner, draft, and reviewer.
 func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draftID, reviewer string) (*models.DraftReviewGrant, error) {
 	var grant models.DraftReviewGrant
@@ -191,7 +221,14 @@ func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, revie
 		limit = 25
 	}
 	var rows []models.DraftReviewGrant
-	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Index("gsi2").Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).OrderBy("gsi2SK", "DESC").Limit(limit).All(&rows)
+	err := r.db.WithContext(ctx).
+		Model(&models.DraftReviewGrant{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
+		Filter("RevokedAt", "attribute_not_exists", nil).
+		OrderBy("gsi2SK", "DESC").
+		Limit(limit).
+		All(&rows)
 	if err != nil {
 		return nil, err
 	}
