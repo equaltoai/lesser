@@ -166,3 +166,66 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 
 	return result, nextCursor, nil
 }
+
+func (r *DraftRepository) PutDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(grant).Update()
+}
+func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draftID, reviewer string) (*models.DraftReviewGrant, error) {
+	var grant models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "=", fmt.Sprintf("GRANT#%s#REVIEWER#%s", draftID, reviewer)).First(&grant)
+	if err != nil {
+		return nil, err
+	}
+	return &grant, nil
+}
+func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int) ([]*models.DraftReviewGrant, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	var rows []models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Index("gsi2").Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).OrderBy("gsi2SK", "DESC").Limit(limit).All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewGrant, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewGrant, error) {
+	var rows []models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+		Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", draftID)).
+		OrderBy("SK", "ASC").All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewGrant, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+func (r *DraftRepository) CreateDraftReviewVerdict(ctx context.Context, verdict *models.DraftReviewVerdict) error {
+	if err := verdict.UpdateKeys(); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(verdict).Create()
+}
+func (r *DraftRepository) ListDraftReviewVerdicts(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewVerdict, error) {
+	var rows []models.DraftReviewVerdict
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewVerdict{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", draftID)).OrderBy("SK", "ASC").All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewVerdict, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}

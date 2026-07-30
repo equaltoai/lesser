@@ -313,7 +313,7 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.Dra
 		return nil, errors.New("draft service is not available")
 	}
 
-	draft, err := drafts.GetDraft(ctx, username, strings.TrimSpace(id))
+	draft, _, err := drafts.DraftReviewForCaller(ctx, username, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
 	}
@@ -1055,4 +1055,57 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 	}
 
 	return out, nil
+}
+
+func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	grants, err := svc.SharedDraftReviews(ctx, username, clampCMSPageSize(first))
+	if err != nil {
+		return nil, err
+	}
+	edges := make([]*model.DraftReviewEdge, 0, len(grants))
+	for _, g := range grants {
+		d, e := svc.GetDraft(ctx, g.OwnerID, g.DraftID)
+		if e != nil {
+			return nil, e
+		}
+		vs, e := svc.DraftReviewVerdicts(ctx, g.OwnerID, g.DraftID)
+		if e != nil {
+			return nil, e
+		}
+		edges = append(edges, &model.DraftReviewEdge{Node: r.convertCMSDraftReview(ctx, d, g, vs), Cursor: model.Cursor(g.GSI2SK)})
+	}
+	return &model.DraftReviewConnection{Edges: edges, PageInfo: &model.PageInfo{HasNextPage: false, HasPreviousPage: false}, TotalCount: len(edges)}, nil
+}
+func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.DraftReview, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	d, g, err := svc.DraftReviewForCaller(ctx, username, id)
+	if err != nil {
+		return nil, err
+	}
+	vs, err := svc.DraftReviewVerdicts(ctx, d.AuthorID, d.ID)
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSDraftReview(ctx, d, g, vs), nil
 }
