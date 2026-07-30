@@ -195,6 +195,7 @@ The additive GraphQL surface is:
 sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
 draftReview(id: ID!): DraftReview
 shareDraftForReview(draftId: ID!, reviewer: String!): DraftReview!
+revokeDraftReview(draftId: ID!, reviewer: String!): Boolean!
 submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String): DraftReview!
 ```
 
@@ -209,7 +210,7 @@ which invokes the canonical server renderer/sanitizer.
 
 | Operation | Draft owner | Granted local reviewer | Other authenticated identity | Unauthenticated |
 | --- | --- | --- | --- | --- |
-| `shareDraftForReview` / revoke | allow; owner may replace or revoke a grant | deny | deny | deny |
+| `shareDraftForReview` / `revokeDraftReview` | allow; owner may replace or revoke a grant | deny | deny | deny |
 | `sharedDraftReviews` | own grants are not queued | allow; active grants only | empty | deny |
 | `draftReview` | allow | allow; active grant only | deny | deny |
 | `draft` | allow | deny; use `draftReview` | deny | deny |
