@@ -206,7 +206,8 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 		require.NotNil(t, repo.lastUpdated)
 		require.Equal(t, "failed", repo.lastUpdated.Status)
 		require.Nil(t, repo.lastUpdated.ScheduledAt)
-		require.Contains(t, repo.lastUpdated.PublishFailureReason, "boom")
+		require.Equal(t, scheduledPublishFailed, repo.lastUpdated.PublishFailureReason)
+		require.NotContains(t, repo.lastUpdated.PublishFailureReason, "boom")
 	})
 
 	t.Run("approval suppression reason is persisted without draft source", func(t *testing.T) {
@@ -230,7 +231,8 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 
 		err := p.publishScheduledDraft(context.Background(), pub, repo, draft)
 		require.Error(t, err)
-		require.Equal(t, reason, repo.lastUpdated.PublishFailureReason)
+		require.Equal(t, scheduledReviewBlocked, repo.lastUpdated.PublishFailureReason)
+		require.NotEqual(t, reason, repo.lastUpdated.PublishFailureReason)
 		require.NotContains(t, repo.lastUpdated.PublishFailureReason, source)
 	})
 }

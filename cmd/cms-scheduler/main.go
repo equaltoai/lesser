@@ -32,6 +32,8 @@ import (
 const (
 	defaultPageSize        = 25
 	defaultMaxDraftsPerRun = 200
+	scheduledPublishFailed = "scheduled publish failed"
+	scheduledReviewBlocked = "scheduled publish suppressed: draft review approval required"
 
 	envPageSize        = "CMS_SCHEDULER_PAGE_SIZE"
 	envMaxDraftsPerRun = "CMS_SCHEDULER_MAX_DRAFTS"
@@ -310,22 +312,14 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 }
 
 func scheduledPublishFailureReason(err error) string {
-	const (
-		defaultReason = "scheduled publish suppressed"
-		maxRunes      = 512
-	)
 	if err == nil {
-		return defaultReason
+		return scheduledPublishFailed
 	}
-	reason := strings.TrimSpace(err.Error())
-	if reason == "" {
-		return defaultReason
+	reason := strings.ToLower(err.Error())
+	if strings.Contains(reason, "every active reviewer") || strings.Contains(reason, "instance principal") {
+		return scheduledReviewBlocked
 	}
-	runes := []rune(reason)
-	if len(runes) > maxRunes {
-		return string(runes[:maxRunes])
-	}
-	return reason
+	return scheduledPublishFailed
 }
 
 func envInt(key string, defaultValue int) int {
