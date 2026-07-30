@@ -380,7 +380,7 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 
 	pageInfo := &model.PageInfo{
 		HasNextPage:     nextCursor != "",
-		HasPreviousPage: after != nil,
+		HasPreviousPage: cursor != "",
 	}
 	if len(edges) > 0 {
 		start := edges[0].Cursor
@@ -1073,10 +1073,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	if svc == nil {
 		return nil, errors.New("draft service is not available")
 	}
-	cursor := ""
-	if after != nil {
-		cursor = string(*after)
-	}
+	cursor := trimDraftReviewCursor(after)
 	grants, nextCursor, err := svc.SharedDraftReviews(ctx, username, clampCMSPageSize(first), cursor)
 	if err != nil {
 		return nil, err
