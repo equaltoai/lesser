@@ -16,9 +16,9 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 	}
 	requireContainsAll(t, csp, []string{
 		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
-		"'sha256-SaCkFfPruIdTXT8/97JArQmGxiJAL2o4bBDvSgJ5y3Q='",
+		"'sha256-Ya0pUYrC7nM5Cn/056TyVuEiz6dFGrzmkWzgON0pF0U='",
 		"'sha256-eIXWvAmxkr251LJZkjniEK5LcPF3NkapbJepohwYRIc='",
-		"'sha256-IV0HjYu959C/EiJIL2l/9Ty8PA4757JXhA/g112YXVE='",
+		"'sha256-akD8rFdL+EsozO0lnT/LRcV7tR1XHwagTjg9VZqsgJU='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
 	})
 	requireContainsAll(t, clientCSP, []string{
