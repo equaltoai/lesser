@@ -167,12 +167,15 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	return result, nextCursor, nil
 }
 
+// PutDraftReviewGrant creates or updates a review grant.
 func (r *DraftRepository) PutDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
 		return err
 	}
 	return r.db.WithContext(ctx).Model(grant).Update()
 }
+
+// GetDraftReviewGrant loads a grant by its owner, draft, and reviewer.
 func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draftID, reviewer string) (*models.DraftReviewGrant, error) {
 	var grant models.DraftReviewGrant
 	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "=", fmt.Sprintf("GRANT#%s#REVIEWER#%s", draftID, reviewer)).First(&grant)
@@ -181,6 +184,8 @@ func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draf
 	}
 	return &grant, nil
 }
+
+// ListActiveDraftReviewGrants returns the sparse reviewer queue.
 func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int) ([]*models.DraftReviewGrant, error) {
 	if limit <= 0 {
 		limit = 25
@@ -196,6 +201,8 @@ func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, revie
 	}
 	return out, nil
 }
+
+// ListDraftReviewGrants returns all grant records for one draft.
 func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewGrant, error) {
 	var rows []models.DraftReviewGrant
 	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
@@ -211,12 +218,16 @@ func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, dr
 	}
 	return out, nil
 }
+
+// CreateDraftReviewVerdict records an immutable verdict.
 func (r *DraftRepository) CreateDraftReviewVerdict(ctx context.Context, verdict *models.DraftReviewVerdict) error {
 	if err := verdict.UpdateKeys(); err != nil {
 		return err
 	}
 	return r.db.WithContext(ctx).Model(verdict).Create()
 }
+
+// ListDraftReviewVerdicts returns ordered verdict history.
 func (r *DraftRepository) ListDraftReviewVerdicts(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewVerdict, error) {
 	var rows []models.DraftReviewVerdict
 	err := r.db.WithContext(ctx).Model(&models.DraftReviewVerdict{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", draftID)).OrderBy("SK", "ASC").All(&rows)

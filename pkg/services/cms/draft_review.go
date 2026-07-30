@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+// Draft review verdict values.
 const (
 	DraftReviewApproved         = "APPROVED"
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
@@ -30,6 +31,8 @@ func (s *DraftService) reviewRepository() (draftReviewRepository, error) {
 	}
 	return repo, nil
 }
+
+// ShareDraftForReview creates or refreshes an owner-authorized reviewer grant.
 func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, reviewer string) (*models.DraftReviewGrant, error) {
 	owner = strings.TrimSpace(owner)
 	draftID = strings.TrimSpace(draftID)
@@ -61,6 +64,8 @@ func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, 
 	}
 	return g, nil
 }
+
+// RevokeDraftReview immediately disables a reviewer grant.
 func (s *DraftService) RevokeDraftReview(ctx context.Context, owner, draftID, reviewer string) error {
 	repo, err := s.reviewRepository()
 	if err != nil {
@@ -74,6 +79,8 @@ func (s *DraftService) RevokeDraftReview(ctx context.Context, owner, draftID, re
 	g.RevokedAt = &now
 	return repo.PutDraftReviewGrant(ctx, g)
 }
+
+// ActiveDraftReviewGrant returns a non-revoked grant for one reviewer.
 func (s *DraftService) ActiveDraftReviewGrant(ctx context.Context, owner, draftID, reviewer string) (*models.DraftReviewGrant, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
@@ -88,6 +95,8 @@ func (s *DraftService) ActiveDraftReviewGrant(ctx context.Context, owner, draftI
 	}
 	return g, nil
 }
+
+// SharedDraftReviews lists active review queue grants for a reviewer.
 func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, limit int) ([]*models.DraftReviewGrant, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
@@ -95,6 +104,8 @@ func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, 
 	}
 	return repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), limit)
 }
+
+// DraftReviewForCaller resolves a draft only for its owner or active reviewer.
 func (s *DraftService) DraftReviewForCaller(ctx context.Context, caller, draftID string) (*models.Draft, *models.DraftReviewGrant, error) {
 	caller = strings.TrimSpace(caller)
 	draftID = strings.TrimSpace(draftID)
@@ -118,6 +129,8 @@ func (s *DraftService) DraftReviewForCaller(ctx context.Context, caller, draftID
 	}
 	return nil, nil, errors.New("draft review not found")
 }
+
+// SubmitDraftReview records an immutable reviewer verdict.
 func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, draftID, verdict, notes string) (*models.DraftReviewVerdict, error) {
 	caller = strings.TrimSpace(caller)
 	owner = strings.TrimSpace(owner)
@@ -154,6 +167,8 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	}
 	return v, nil
 }
+
+// DraftReviewVerdicts lists ordered verdict history for a draft.
 func (s *DraftService) DraftReviewVerdicts(ctx context.Context, owner, draftID string) ([]*models.DraftReviewVerdict, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {

@@ -20,7 +20,10 @@ type DraftReviewGrant struct {
 	Version   int        `theorydb:"version,attr:version"`
 }
 
+// TableName returns the table for a review grant.
 func (DraftReviewGrant) TableName() string { return MainTableName }
+
+// UpdateKeys derives grant primary and sparse reviewer-queue keys.
 func (g *DraftReviewGrant) UpdateKeys() error {
 	if strings.TrimSpace(g.OwnerID) == "" || strings.TrimSpace(g.DraftID) == "" || strings.TrimSpace(g.Reviewer) == "" {
 		return fmt.Errorf("ownerID, draftID, and reviewer are required")
@@ -40,6 +43,7 @@ func (g *DraftReviewGrant) UpdateKeys() error {
 	return nil
 }
 
+// DraftReviewVerdict is an immutable review decision audit record.
 type DraftReviewVerdict struct {
 	PK         string    `theorydb:"pk,attr:PK"`
 	SK         string    `theorydb:"sk,attr:SK"`
@@ -52,7 +56,10 @@ type DraftReviewVerdict struct {
 	Version    int       `theorydb:"version,attr:version"`
 }
 
+// TableName returns the table for a review verdict.
 func (DraftReviewVerdict) TableName() string { return MainTableName }
+
+// UpdateKeys derives verdict primary keys.
 func (v *DraftReviewVerdict) UpdateKeys() error {
 	if strings.TrimSpace(v.OwnerID) == "" || strings.TrimSpace(v.DraftID) == "" || strings.TrimSpace(v.Reviewer) == "" || strings.TrimSpace(v.Verdict) == "" {
 		return fmt.Errorf("ownerID, draftID, reviewer, and verdict are required")
