@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -315,8 +316,8 @@ func scheduledPublishFailureReason(err error) string {
 	if err == nil {
 		return scheduledPublishFailed
 	}
-	reason := strings.ToLower(err.Error())
-	if strings.Contains(reason, "every active reviewer") || strings.Contains(reason, "instance principal") {
+	if errors.Is(err, cms.ErrDraftReviewApprovalRequired) ||
+		errors.Is(err, cms.ErrDraftReviewPrincipalApprovalRequired) {
 		return scheduledReviewBlocked
 	}
 	return scheduledPublishFailed

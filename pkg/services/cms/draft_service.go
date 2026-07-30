@@ -213,7 +213,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return approvalErr
 	}
 	if !approved {
-		return stdErrors.New("draft requires approval from every active reviewer")
+		return ErrDraftReviewApprovalRequired
 	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
 		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
@@ -221,7 +221,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 			return principalErr
 		}
 		if !principalApproved {
-			return stdErrors.New("generated draft requires an active approval from the instance principal")
+			return ErrDraftReviewPrincipalApprovalRequired
 		}
 	}
 	draft.ScheduledAt = &scheduledAt
@@ -253,7 +253,7 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 		return nil, approvalErr
 	}
 	if !approved {
-		return nil, stdErrors.New("draft requires approval from every active reviewer")
+		return nil, ErrDraftReviewApprovalRequired
 	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
 		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
@@ -261,7 +261,7 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 			return nil, principalErr
 		}
 		if !principalApproved {
-			return nil, stdErrors.New("generated draft requires an active approval from the instance principal")
+			return nil, ErrDraftReviewPrincipalApprovalRequired
 		}
 	}
 

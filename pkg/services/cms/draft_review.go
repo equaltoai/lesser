@@ -15,7 +15,18 @@ const (
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
 )
 
-var errDraftReviewStorageUnavailable = errors.New("draft review storage is not available")
+var (
+	// ErrDraftReviewApprovalRequired means an active reviewer is missing a current approval.
+	ErrDraftReviewApprovalRequired = errors.New("draft requires approval from every active reviewer")
+	// ErrDraftReviewPrincipalApprovalRequired means the designated principal is missing a current approval.
+	ErrDraftReviewPrincipalApprovalRequired = errors.New("generated draft requires an active approval from the instance principal")
+	// ErrInstancePrincipalUnavailable means the principal provider could not be used.
+	ErrInstancePrincipalUnavailable = errors.New("instance principal is unavailable")
+	// ErrInstancePrincipalNotConfigured means the provider returned no principal username.
+	ErrInstancePrincipalNotConfigured = errors.New("instance principal is not configured")
+
+	errDraftReviewStorageUnavailable = errors.New("draft review storage is not available")
+)
 
 type draftReviewRepository interface {
 	CreateDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
@@ -215,15 +226,15 @@ func (s *DraftService) DraftReviewVerdicts(ctx context.Context, owner, draftID s
 }
 func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 	if s.principalUsername == nil {
-		return "", errors.New("instance principal is unavailable")
+		return "", ErrInstancePrincipalUnavailable
 	}
 	principal, err := s.principalUsername(ctx)
 	if err != nil {
-		return "", err
+		return "", errors.Join(ErrInstancePrincipalUnavailable, err)
 	}
 	principal = strings.TrimSpace(principal)
 	if principal == "" {
-		return "", errors.New("instance principal is not configured")
+		return "", ErrInstancePrincipalNotConfigured
 	}
 	return principal, nil
 }
