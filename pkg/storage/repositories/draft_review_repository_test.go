@@ -2,11 +2,9 @@ package repositories
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -54,9 +52,7 @@ func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
 
 	require.Len(t, client.putInputs, 1, "first-time grants must use TableTheory's create path")
 	require.Empty(t, client.updateInputs, "first-time grants must not use the version-conditioned update path")
-	condition := strings.ToLower(aws.ToString(client.putInputs[0].ConditionExpression))
-	require.NotContains(t, condition, "version")
-	require.NotContains(t, condition, "=", "a create must not require a version value on a nonexistent item")
+	require.Nil(t, client.putInputs[0].ConditionExpression, "the create path must remain an unconditional PutItem")
 }
 
 func TestDraftRepositoryGetDraftReviewGrantMapsNotFoundSentinel(t *testing.T) {
