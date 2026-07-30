@@ -37,6 +37,13 @@ func trimStringPtr(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
+func trimDraftReviewCursor(after *model.Cursor) string {
+	if after == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(*after))
+}
+
 func cmsResolveBySlug[E any](
 	ctx context.Context,
 	db dynamormcore.DB,
@@ -338,10 +345,7 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 	}
 
 	limit := clampCMSPageSize(first)
-	cursor := ""
-	if after != nil {
-		cursor = string(*after)
-	}
+	cursor := trimDraftReviewCursor(after)
 
 	items, nextCursor, err := store.Draft().ListDraftsByAuthorPaginated(ctx, username, limit, cursor)
 	if err != nil {
