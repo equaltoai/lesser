@@ -212,10 +212,9 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 
 	t.Run("approval suppression reason is persisted without draft source", func(t *testing.T) {
 		const source = "private raw draft source"
-		const reason = "generated draft requires an active approval from the instance principal"
 		pub := &fakeDraftPublisher{
 			publishFn: func(context.Context, string, string) (*models.Article, error) {
-				return nil, errors.New(reason)
+				return nil, cms.ErrDraftReviewPrincipalApprovalRequired
 			},
 		}
 		repo := &fakeDraftRepo{
@@ -232,7 +231,7 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 		err := p.publishScheduledDraft(context.Background(), pub, repo, draft)
 		require.Error(t, err)
 		require.Equal(t, scheduledReviewBlocked, repo.lastUpdated.PublishFailureReason)
-		require.NotEqual(t, reason, repo.lastUpdated.PublishFailureReason)
+		require.NotEqual(t, cms.ErrDraftReviewPrincipalApprovalRequired.Error(), repo.lastUpdated.PublishFailureReason)
 		require.NotContains(t, repo.lastUpdated.PublishFailureReason, source)
 	})
 }
