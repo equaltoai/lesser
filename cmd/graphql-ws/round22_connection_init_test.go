@@ -102,8 +102,9 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.Nil(t, resp)
 	})
 
-	t.Run("invalid_token_sends_protocol_error", func(t *testing.T) {
+	t.Run("invalid_token_closes_connection", func(t *testing.T) {
 		var bodies [][]byte
+		var closeCode int
 		validator := &fakeTokenValidator{err: errors.New("bad token")}
 		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
@@ -112,22 +113,25 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 			bodies = append(bodies, b)
 			return nil
 		}
+		s.closeConnection = func(_ context.Context, _ *apptheory.WebSocketContext, _ string, code int, _ string) error {
+			closeCode = code
+			return nil
+		}
+		s.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 
 		resp, err := s.handleConnectionInit(context.Background(), wsCtx, "c1", wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"token":"t"}`)})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, 200, resp.Status)
 
-		require.Len(t, bodies, 1)
-		var out responseEnvelope
-		require.NoError(t, json.Unmarshal(bodies[0], &out))
-		require.Equal(t, "error", out.Type)
-		require.Equal(t, connectionInitErrorID, out.ID)
-		require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, out.Payload))
+		require.Empty(t, bodies)
+		require.Equal(t, wsCloseForbidden, closeCode)
+		require.NotContains(t, s.connections, "c1")
 	})
 
-	t.Run("missing_username_sends_protocol_error", func(t *testing.T) {
+	t.Run("missing_username_closes_connection", func(t *testing.T) {
 		var bodies [][]byte
+		var closeCode int
 		validator := &fakeTokenValidator{claims: &auth.Claims{}}
 		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
@@ -136,18 +140,20 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 			bodies = append(bodies, b)
 			return nil
 		}
+		s.closeConnection = func(_ context.Context, _ *apptheory.WebSocketContext, _ string, code int, _ string) error {
+			closeCode = code
+			return nil
+		}
+		s.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 
 		resp, err := s.handleConnectionInit(context.Background(), wsCtx, "c1", wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"Authorization":"Bearer t"}`)})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, 200, resp.Status)
 
-		require.Len(t, bodies, 1)
-		var out responseEnvelope
-		require.NoError(t, json.Unmarshal(bodies[0], &out))
-		require.Equal(t, "error", out.Type)
-		require.Equal(t, connectionInitErrorID, out.ID)
-		require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, out.Payload))
+		require.Empty(t, bodies)
+		require.Equal(t, wsCloseForbidden, closeCode)
+		require.NotContains(t, s.connections, "c1")
 	})
 
 	t.Run("success_persists_identity_and_acks", func(t *testing.T) {

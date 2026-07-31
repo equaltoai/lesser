@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -400,6 +401,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	var streamName string
 	switch timelineType {
 	case model.TimelineTypeHome:
+		username = strings.TrimSpace(username)
 		if err := common.ValidateRequiredParam("username", username); err != nil {
 			return nil, ErrUsernameCannotBeEmpty
 		}
@@ -409,6 +411,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	case model.TimelineTypeLocal:
 		streamName = "public:local"
 	case model.TimelineTypeDirect:
+		username = strings.TrimSpace(username)
 		if err := common.ValidateRequiredParam("username", username); err != nil {
 			return nil, ErrUsernameCannotBeEmpty
 		}

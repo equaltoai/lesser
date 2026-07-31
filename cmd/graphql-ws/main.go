@@ -31,6 +31,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	appstreamer "github.com/theory-cloud/apptheory/v2/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -41,8 +42,12 @@ import (
 const graphqlWSName = "graphql-ws"
 const graphqlTransportWSSubprotocol = "graphql-transport-ws"
 const wsCodeUnauthenticated = "UNAUTHENTICATED"
-const connectionInitErrorID = "connection-init"
 const protocolErrorID = "protocol-error"
+
+const (
+	wsCloseInvalidMessage = 4400
+	wsCloseForbidden      = 4403
+)
 
 type connectionState struct {
 	username      string
@@ -97,6 +102,7 @@ type wsServer struct {
 	wsContexts  map[string]*apptheory.WebSocketContext // Store WebSocket contexts for message sending
 
 	sendJSONMessage func(wsCtx *apptheory.WebSocketContext, payload any) error
+	closeConnection func(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, code int, reason string) error
 }
 
 type wsMessage struct {
@@ -193,7 +199,34 @@ func accessTokenFromInitPayload(raw json.RawMessage) (token string, presented bo
 		return "", true, errors.New("connection_init headers must contain authorization")
 	}
 
-	return "", true, errors.New("connection_init payload does not contain a supported credential")
+	if containsCredentialKey(payload) {
+		return "", true, errors.New("connection_init credential must use a supported top-level shape")
+	}
+
+	return "", false, nil
+}
+
+func containsCredentialKey(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, nested := range typed {
+			normalized := strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(strings.TrimSpace(key)))
+			switch normalized {
+			case "authorization", "accesstoken", "token", "authtoken":
+				return true
+			}
+			if containsCredentialKey(nested) {
+				return true
+			}
+		}
+	case []any:
+		for _, nested := range typed {
+			if containsCredentialKey(nested) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type subscribePayload struct {
@@ -242,6 +275,16 @@ func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlEx
 		wsContexts:          make(map[string]*apptheory.WebSocketContext),
 		sendJSONMessage: func(wsCtx *apptheory.WebSocketContext, payload any) error {
 			return wsCtx.SendJSONMessage(payload)
+		},
+		closeConnection: func(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, _ int, _ string) error {
+			if wsCtx == nil {
+				return errors.New("websocket context is nil")
+			}
+			client, err := appstreamer.NewClient(ctx, wsCtx.ManagementEndpoint)
+			if err != nil {
+				return err
+			}
+			return client.DeleteConnection(ctx, connectionID)
 		},
 	}
 }
@@ -365,6 +408,7 @@ func (s *wsServer) removeConnection(ctx context.Context, connectionID string) {
 		state = existing
 	}
 	delete(s.connections, connectionID)
+	delete(s.wsContexts, connectionID)
 	s.mu.Unlock()
 
 	if state != nil {
@@ -807,7 +851,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	tokenValue, credentialPresented, payloadErr := accessTokenFromInitPayload(msg.Payload)
 	if payloadErr != nil {
 		log.Warn("connection_init contains an invalid payload", zap.Error(payloadErr))
-		s.sendError(wsCtx, connectionInitErrorID, "invalid_payload", "Invalid connection_init payload")
+		s.rejectConnectionInit(ctx, wsCtx, connectionID, wsCloseInvalidMessage, "Invalid connection_init payload")
 		return okWebSocketResponse(), nil
 	}
 	if !credentialPresented {
@@ -822,7 +866,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	}
 	if tokenValue == "" {
 		log.Warn("connection_init contains an empty access token")
-		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Invalid or expired token")
+		s.rejectConnectionInit(ctx, wsCtx, connectionID, wsCloseForbidden, "Forbidden")
 		return okWebSocketResponse(), nil
 	}
 
@@ -834,7 +878,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	claims, err := s.oauthService.ValidateAccessToken(tokenValue)
 	if err != nil {
 		log.Warn("connection_init failed token validation", zap.Error(err))
-		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Invalid or expired token")
+		s.rejectConnectionInit(ctx, wsCtx, connectionID, wsCloseForbidden, "Forbidden")
 		return okWebSocketResponse(), nil
 	}
 
@@ -842,9 +886,10 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	if username == "" {
 		username = claims.Username
 	}
+	username = strings.TrimSpace(username)
 	if username == "" {
 		log.Warn("connection_init missing username in claims")
-		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Missing username in token claims")
+		s.rejectConnectionInit(ctx, wsCtx, connectionID, wsCloseForbidden, "Forbidden")
 		return okWebSocketResponse(), nil
 	}
 
@@ -857,6 +902,27 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 		return nil, err
 	}
 	return okWebSocketResponse(), nil
+}
+
+func (s *wsServer) rejectConnectionInit(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, code int, reason string) {
+	// graphql-transport-ws defines failed initialization as a socket close, not
+	// an operation-scoped Error message. API Gateway's DeleteConnection API does
+	// not accept a close code or reason, but keeping the protocol values in this
+	// seam lets tests pin the intended classification and a future transport
+	// expose the exact CloseEvent without changing the authorization decision.
+	s.removeConnection(ctx, connectionID)
+	if s.closeConnection == nil {
+		s.logger.Error("graphql websocket connection closer is not configured",
+			zap.String("connection_id", connectionID),
+			zap.Int("desired_close_code", code))
+		return
+	}
+	if err := s.closeConnection(ctx, wsCtx, connectionID, code, reason); err != nil {
+		s.logger.Warn("failed to disconnect rejected graphql websocket connection",
+			zap.String("connection_id", connectionID),
+			zap.Int("desired_close_code", code),
+			zap.Error(err))
+	}
 }
 
 func (s *wsServer) isAuthenticatedConnection(ctx context.Context, connectionID string) bool {
@@ -1228,7 +1294,15 @@ func hasTerminalAuthorizationError(errs gqlerror.List) bool {
 		if gqlErr == nil || gqlErr.Extensions == nil {
 			continue
 		}
-		if code, _ := gqlErr.Extensions["code"].(string); code == wsCodeUnauthenticated || code == string(apperrors.CodeForbidden) {
+		code, ok := gqlErr.Extensions["code"].(string)
+		if !ok {
+			continue
+		}
+		if code == wsCodeUnauthenticated {
+			return true
+		}
+		status := apperrors.ErrorCode(code).GetHTTPStatusCode()
+		if status == 401 || status == 403 {
 			return true
 		}
 	}

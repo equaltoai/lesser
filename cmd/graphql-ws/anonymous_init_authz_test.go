@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/auth"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -49,10 +50,15 @@ func TestConnectionInit_EmptyPayloadAcknowledgesAnonymousPrincipal(t *testing.T)
 	require.Equal(t, "anonymous", repo.lastUpdated.Info.AuthMethod)
 }
 
-func TestConnectionInit_InvalidTokenHasStructuredAuthenticationCode(t *testing.T) {
+func TestConnectionInit_InvalidTokenClosesAsForbidden(t *testing.T) {
 	server := newServer(&fakeTokenValidator{err: errors.New("expired")}, nil, nil, zap.NewNop(), nil, nil, nil)
 	server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 	messages := captureWSMessages(t, server)
+	var closeCode int
+	server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, code int, _ string) error {
+		closeCode = code
+		return nil
+	}
 
 	_, err := server.handleConnectionInit(
 		context.Background(),
@@ -61,17 +67,20 @@ func TestConnectionInit_InvalidTokenHasStructuredAuthenticationCode(t *testing.T
 		wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"access_token":"expired"}`)},
 	)
 	require.NoError(t, err)
-	require.Len(t, *messages, 1)
-	require.Equal(t, "error", (*messages)[0].Type)
-	require.Equal(t, connectionInitErrorID, (*messages)[0].ID)
-	require.Equal(t, "UNAUTHENTICATED", graphQLErrorExtensionCode(t, (*messages)[0].Payload))
-	require.False(t, server.connections["c1"].initialized)
+	require.Empty(t, *messages, "connection_init refusal is a socket close, not an operation error")
+	require.Equal(t, wsCloseForbidden, closeCode)
+	require.NotContains(t, server.connections, "c1")
 }
 
 func TestConnectionInit_PresentButEmptyCredentialDoesNotDowngradeToAnonymous(t *testing.T) {
 	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 	server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 	messages := captureWSMessages(t, server)
+	var closeCode int
+	server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, code int, _ string) error {
+		closeCode = code
+		return nil
+	}
 
 	_, err := server.handleConnectionInit(
 		context.Background(),
@@ -80,18 +89,16 @@ func TestConnectionInit_PresentButEmptyCredentialDoesNotDowngradeToAnonymous(t *
 		wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"access_token":""}`)},
 	)
 	require.NoError(t, err)
-	require.Len(t, *messages, 1)
-	require.Equal(t, "error", (*messages)[0].Type)
-	require.Equal(t, connectionInitErrorID, (*messages)[0].ID)
-	require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, (*messages)[0].Payload))
-	require.False(t, server.connections["c1"].initialized)
+	require.Empty(t, *messages)
+	require.Equal(t, wsCloseForbidden, closeCode)
+	require.NotContains(t, server.connections, "c1")
 }
 
 func TestConnectionInit_CredentialLikeUnknownShapesFailClosed(t *testing.T) {
 	tests := map[string]json.RawMessage{
 		"headers must be an object": json.RawMessage(`{"headers":"Bearer token"}`),
 		"unknown nested envelope":   json.RawMessage(`{"payload":{"Authorization":"Bearer token"}}`),
-		"unknown metadata":          json.RawMessage(`{"client":"contentus"}`),
+		"nested token mixed case":   json.RawMessage(`{"metadata":{"ToKeN":"secret"}}`),
 	}
 
 	for name, payload := range tests {
@@ -99,6 +106,11 @@ func TestConnectionInit_CredentialLikeUnknownShapesFailClosed(t *testing.T) {
 			server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 			server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 			messages := captureWSMessages(t, server)
+			var closeCode int
+			server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, code int, _ string) error {
+				closeCode = code
+				return nil
+			}
 
 			_, err := server.handleConnectionInit(
 				context.Background(),
@@ -107,12 +119,36 @@ func TestConnectionInit_CredentialLikeUnknownShapesFailClosed(t *testing.T) {
 				wsMessage{Type: "connection_init", Payload: payload},
 			)
 			require.NoError(t, err)
-			require.Len(t, *messages, 1)
-			require.Equal(t, "error", (*messages)[0].Type)
-			require.Equal(t, "BAD_REQUEST", graphQLErrorExtensionCode(t, (*messages)[0].Payload))
-			require.False(t, server.connections["c1"].initialized)
+			require.Empty(t, *messages)
+			require.Equal(t, wsCloseInvalidMessage, closeCode)
+			require.NotContains(t, server.connections, "c1")
 		})
 	}
+}
+
+func TestConnectionInit_BenignMetadataAcknowledgesAnonymousPrincipal(t *testing.T) {
+	repo := &fakeConnRepo{}
+	server := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
+	server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
+	messages := captureWSMessages(t, server)
+	closeCalled := false
+	server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, _ int, _ string) error {
+		closeCalled = true
+		return nil
+	}
+
+	_, err := server.handleConnectionInit(
+		context.Background(),
+		&appTheory.WebSocketContext{ConnectionID: "c1"},
+		"c1",
+		wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"client":"contentus","version":"4"}`)},
+	)
+	require.NoError(t, err)
+	require.False(t, closeCalled)
+	require.Len(t, *messages, 1)
+	require.Equal(t, "connection_ack", (*messages)[0].Type)
+	require.False(t, connectionACKAuthenticated(t, (*messages)[0].Payload))
+	require.True(t, server.connections["c1"].initialized)
 }
 
 func TestConnectionInit_AuthorizationHeaderIsCaseInsensitive(t *testing.T) {
@@ -330,6 +366,34 @@ func TestAuthenticatedNonAdminAuthorizationFailureIsTerminalError(t *testing.T) 
 		t.Fatalf("terminal authorization error must not be followed by %#v", extra)
 	case <-time.After(25 * time.Millisecond):
 	}
+}
+
+func TestTerminalAuthorizationErrorsCoverEveryHTTPAuthCode(t *testing.T) {
+	terminalCodes := []string{
+		wsCodeUnauthenticated,
+		string(apperrors.CodeUnauthorized),
+		string(apperrors.CodeAuthFailed),
+		string(apperrors.CodeTokenExpired),
+		string(apperrors.CodeTokenInvalid),
+		string(apperrors.CodeTokenRevoked),
+		string(apperrors.CodeForbidden),
+		string(apperrors.CodeInsufficientScope),
+		string(apperrors.CodeAccountSuspended),
+	}
+	for _, code := range terminalCodes {
+		t.Run(code, func(t *testing.T) {
+			require.True(t, hasTerminalAuthorizationError(gqlerror.List{&gqlerror.Error{
+				Extensions: map[string]any{"code": code},
+			}}))
+		})
+	}
+
+	require.False(t, hasTerminalAuthorizationError(gqlerror.List{&gqlerror.Error{
+		Extensions: map[string]any{"code": string(apperrors.CodeInternal)},
+	}}))
+	require.False(t, hasTerminalAuthorizationError(gqlerror.List{&gqlerror.Error{
+		Extensions: map[string]any{"code": apperrors.CodeForbidden},
+	}}), "the websocket presenter contract stores codes as strings")
 }
 
 func TestSubscribeBeforeConnectionAckReturnsOneTerminalError(t *testing.T) {

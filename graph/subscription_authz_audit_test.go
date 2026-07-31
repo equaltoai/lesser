@@ -217,4 +217,23 @@ func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {
 	homeSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "user:alice")
 	require.NoError(t, err)
 	require.Len(t, homeSubscriptions, 1)
+
+	for _, tc := range []struct {
+		name       string
+		username   string
+		typeValue  model.TimelineType
+		streamName string
+	}{
+		{name: "home spaces", username: "   ", typeValue: model.TimelineTypeHome, streamName: "user:   "},
+		{name: "home tab", username: "\t", typeValue: model.TimelineTypeHome, streamName: "user:\t"},
+		{name: "direct spaces", username: "   ", typeValue: model.TimelineTypeDirect, streamName: "direct:   "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, subscribeErr := manager.SubscribeToTimeline(ctx, tc.username, tc.typeValue)
+			require.ErrorIs(t, subscribeErr, ErrUsernameCannotBeEmpty)
+			subscriptions, lookupErr := connRepo.GetSubscriptionsForStream(ctx, tc.streamName)
+			require.NoError(t, lookupErr)
+			require.Empty(t, subscriptions)
+		})
+	}
 }
