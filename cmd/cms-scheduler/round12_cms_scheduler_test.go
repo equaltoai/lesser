@@ -206,6 +206,33 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 		require.NotNil(t, repo.lastUpdated)
 		require.Equal(t, "failed", repo.lastUpdated.Status)
 		require.Nil(t, repo.lastUpdated.ScheduledAt)
+		require.Equal(t, scheduledPublishFailed, repo.lastUpdated.PublishFailureReason)
+		require.NotContains(t, repo.lastUpdated.PublishFailureReason, "boom")
+	})
+
+	t.Run("approval suppression reason is persisted without draft source", func(t *testing.T) {
+		const source = "private raw draft source"
+		pub := &fakeDraftPublisher{
+			publishFn: func(context.Context, string, string) (*models.Article, error) {
+				return nil, cms.ErrDraftReviewPrincipalApprovalRequired
+			},
+		}
+		repo := &fakeDraftRepo{
+			getFn: func(context.Context, string, string) (*models.Draft, error) {
+				return &models.Draft{
+					ID:       "draft-1",
+					AuthorID: "author-1",
+					Status:   "scheduled",
+					Content:  source,
+				}, nil
+			},
+		}
+
+		err := p.publishScheduledDraft(context.Background(), pub, repo, draft)
+		require.Error(t, err)
+		require.Equal(t, scheduledReviewBlocked, repo.lastUpdated.PublishFailureReason)
+		require.NotEqual(t, cms.ErrDraftReviewPrincipalApprovalRequired.Error(), repo.lastUpdated.PublishFailureReason)
+		require.NotContains(t, repo.lastUpdated.PublishFailureReason, source)
 	})
 }
 

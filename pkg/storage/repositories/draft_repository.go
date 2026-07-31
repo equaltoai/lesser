@@ -8,8 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -165,4 +167,172 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	}
 
 	return result, nextCursor, nil
+}
+
+// CreateDraftReviewGrant creates a first-time review grant.
+func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(grant).Create()
+}
+
+// RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
+func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if grant == nil || grant.RevokedAt != nil {
+		return fmt.Errorf("active draft review grant is required")
+	}
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := grant.Version + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(grant).
+		Where("PK", "=", grant.PK).
+		Where("SK", "=", grant.SK).
+		UpdateBuilder()
+	builder.Set("GrantedAt", grant.GrantedAt.UTC())
+	builder.Set("GSI2PK", grant.GSI2PK)
+	builder.Set("GSI2SK", grant.GSI2SK)
+	builder.Remove("RevokedAt")
+	builder.ConditionVersion(int64(grant.Version))
+	builder.Set("Version", nextVersion)
+	if err := builder.Execute(); err != nil {
+		return err
+	}
+	grant.Version = nextVersion
+	return nil
+}
+
+// RevokeDraftReviewGrant persists revocation and removes the sparse queue keys.
+func (r *DraftRepository) RevokeDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
+	if grant == nil || grant.RevokedAt == nil {
+		return fmt.Errorf("revoked draft review grant is required")
+	}
+	if err := grant.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := grant.Version + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(grant).
+		Where("PK", "=", grant.PK).
+		Where("SK", "=", grant.SK).
+		UpdateBuilder()
+	builder.Set("RevokedAt", grant.RevokedAt.UTC())
+	builder.Remove("GSI2PK")
+	builder.Remove("GSI2SK")
+	builder.ConditionVersion(int64(grant.Version))
+	builder.Set("Version", nextVersion)
+	if err := builder.Execute(); err != nil {
+		return err
+	}
+	grant.Version = nextVersion
+	return nil
+}
+
+// GetDraftReviewGrant loads a grant by its owner, draft, and reviewer.
+func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draftID, reviewer string) (*models.DraftReviewGrant, error) {
+	var grant models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "=", fmt.Sprintf("GRANT#%s#REVIEWER#%s", draftID, reviewer)).First(&grant)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, err
+	}
+	return &grant, nil
+}
+
+// ListActiveDraftReviewGrants returns one page from the sparse reviewer queue.
+func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	query := r.db.WithContext(ctx).
+		Model(&models.DraftReviewGrant{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
+		Filter("RevokedAt", "attribute_not_exists", nil).
+		OrderBy("gsi2SK", "DESC")
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi2SK", "<", cursor)
+	}
+
+	var rows []models.DraftReviewGrant
+	err := query.Limit(limit + 1).All(&rows)
+	if err != nil {
+		return nil, "", err
+	}
+	nextCursor := ""
+	if len(rows) > limit {
+		nextCursor = rows[limit-1].GSI2SK
+		rows = rows[:limit]
+	}
+	out := make([]*models.DraftReviewGrant, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nextCursor, nil
+}
+
+// CountActiveDraftReviewGrants returns the full active sparse queue size.
+func (r *DraftRepository) CountActiveDraftReviewGrants(ctx context.Context, reviewer string) (int, error) {
+	count, err := r.db.WithContext(ctx).
+		Model(&models.DraftReviewGrant{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
+		Filter("RevokedAt", "attribute_not_exists", nil).
+		Count()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// ListDraftReviewGrants returns all grant records for one draft.
+func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewGrant, error) {
+	var rows []models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+		Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", draftID)).
+		OrderBy("SK", "ASC").All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewGrant, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+
+// CreateDraftReviewVerdict records an immutable verdict.
+func (r *DraftRepository) CreateDraftReviewVerdict(ctx context.Context, verdict *models.DraftReviewVerdict) error {
+	if err := verdict.UpdateKeys(); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(verdict).Create()
+}
+
+// ListDraftReviewVerdicts returns ordered verdict history.
+func (r *DraftRepository) ListDraftReviewVerdicts(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewVerdict, error) {
+	var rows []models.DraftReviewVerdict
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewVerdict{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", draftID)).OrderBy("SK", "ASC").All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewVerdict, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
 }
