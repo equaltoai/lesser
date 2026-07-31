@@ -34,7 +34,8 @@ func TestExtractAccessTokenFromInitPayload(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, extractAccessTokenFromInitPayload(tc.payload))
+			got, _, _ := accessTokenFromInitPayload(tc.payload)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -61,7 +62,7 @@ func (s *stagedConnRepo) GetConnection(_ context.Context, connectionID string) (
 func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
-	t.Run("missing_token_sends_connection_error", func(t *testing.T) {
+	t.Run("missing_token_acknowledges_anonymous_connection", func(t *testing.T) {
 		var bodies [][]byte
 		s := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
@@ -82,8 +83,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 			Payload map[string]any `json:"payload"`
 		}
 		require.NoError(t, json.Unmarshal(bodies[0], &out))
-		require.Equal(t, "connection_error", out.Type)
-		require.Equal(t, "unauthorized", out.Payload["code"])
+		require.Equal(t, "connection_ack", out.Type)
 	})
 
 	t.Run("oauth_missing_returns_app_error", func(t *testing.T) {
@@ -117,6 +117,9 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.NoError(t, json.Unmarshal(bodies[0], &out))
 		require.Equal(t, "connection_error", out.Type)
 		require.Equal(t, "unauthorized", out.Payload["code"])
+		extensions, ok := out.Payload["extensions"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, wsCodeUnauthenticated, extensions["code"])
 	})
 
 	t.Run("missing_username_sends_connection_error", func(t *testing.T) {
@@ -143,6 +146,9 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.NoError(t, json.Unmarshal(bodies[0], &out))
 		require.Equal(t, "connection_error", out.Type)
 		require.Equal(t, "forbidden", out.Payload["code"])
+		extensions, ok := out.Payload["extensions"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, wsCodeUnauthenticated, extensions["code"])
 	})
 
 	t.Run("success_persists_identity_and_acks", func(t *testing.T) {

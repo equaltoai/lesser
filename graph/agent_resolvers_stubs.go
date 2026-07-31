@@ -1611,7 +1611,9 @@ func agentCursorForUser(user *storage.User) model.Cursor {
 
 // AgentActivity is the resolver for the agentActivity field.
 func (r *subscriptionResolver) AgentActivity(ctx context.Context, username string) (<-chan *model.AgentActivityEvent, error) {
-	_ = ctx
+	if _, err := r.requireAuth(ctx); err != nil {
+		return nil, err
+	}
 	_ = username
 
 	ch := make(chan *model.AgentActivityEvent)
