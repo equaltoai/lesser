@@ -16,26 +16,35 @@ import (
 
 func TestExtractAccessTokenFromInitPayload(t *testing.T) {
 	tests := []struct {
-		name    string
-		payload json.RawMessage
-		want    string
+		name          string
+		payload       json.RawMessage
+		want          string
+		wantPresented bool
+		wantErr       bool
 	}{
 		{name: "empty", payload: nil, want: ""},
-		{name: "invalid_json", payload: json.RawMessage("{"), want: ""},
-		{name: "access_token", payload: json.RawMessage(`{"access_token":"a b"}`), want: "a+b"},
-		{name: "accessToken", payload: json.RawMessage(`{"accessToken":"t"}`), want: "t"},
-		{name: "token", payload: json.RawMessage(`{"token":"t"}`), want: "t"},
-		{name: "authToken", payload: json.RawMessage(`{"authToken":"t"}`), want: "t"},
-		{name: "authorization_lower", payload: json.RawMessage(`{"authorization":"Bearer token"}`), want: "token"},
-		{name: "authorization_upper", payload: json.RawMessage(`{"Authorization":"Bearer token"}`), want: "token"},
-		{name: "headers_authorization_lower", payload: json.RawMessage(`{"headers":{"authorization":"Bearer token"}}`), want: "token"},
-		{name: "headers_authorization_upper", payload: json.RawMessage(`{"headers":{"Authorization":"Bearer token"}}`), want: "token"},
+		{name: "empty_object", payload: json.RawMessage(`{}`), want: ""},
+		{name: "invalid_json", payload: json.RawMessage("{"), want: "", wantErr: true},
+		{name: "access_token", payload: json.RawMessage(`{"access_token":"a b"}`), want: "a+b", wantPresented: true},
+		{name: "accessToken", payload: json.RawMessage(`{"accessToken":"t"}`), want: "t", wantPresented: true},
+		{name: "token", payload: json.RawMessage(`{"token":"t"}`), want: "t", wantPresented: true},
+		{name: "authToken", payload: json.RawMessage(`{"authToken":"t"}`), want: "t", wantPresented: true},
+		{name: "authorization_case_insensitive", payload: json.RawMessage(`{"AUTHORIZATION":"Bearer token"}`), want: "token", wantPresented: true},
+		{name: "headers_authorization_case_insensitive", payload: json.RawMessage(`{"headers":{"AUTHORIZATION":"Bearer token"}}`), want: "token", wantPresented: true},
+		{name: "unknown_shape", payload: json.RawMessage(`{"payload":{"token":"t"}}`), want: "", wantPresented: true, wantErr: true},
+		{name: "first_present_fails_closed", payload: json.RawMessage(`{"access_token":"","Authorization":"Bearer valid"}`), want: "", wantPresented: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, _, _ := accessTokenFromInitPayload(tc.payload)
+			got, presented, err := accessTokenFromInitPayload(tc.payload)
 			require.Equal(t, tc.want, got)
+			require.Equal(t, tc.wantPresented, presented)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
@@ -93,7 +102,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.Nil(t, resp)
 	})
 
-	t.Run("invalid_token_sends_connection_error", func(t *testing.T) {
+	t.Run("invalid_token_sends_protocol_error", func(t *testing.T) {
 		var bodies [][]byte
 		validator := &fakeTokenValidator{err: errors.New("bad token")}
 		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
@@ -110,19 +119,14 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.Equal(t, 200, resp.Status)
 
 		require.Len(t, bodies, 1)
-		var out struct {
-			Type    string         `json:"type"`
-			Payload map[string]any `json:"payload"`
-		}
+		var out responseEnvelope
 		require.NoError(t, json.Unmarshal(bodies[0], &out))
-		require.Equal(t, "connection_error", out.Type)
-		require.Equal(t, "unauthorized", out.Payload["code"])
-		extensions, ok := out.Payload["extensions"].(map[string]any)
-		require.True(t, ok)
-		require.Equal(t, wsCodeUnauthenticated, extensions["code"])
+		require.Equal(t, "error", out.Type)
+		require.Equal(t, connectionInitErrorID, out.ID)
+		require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, out.Payload))
 	})
 
-	t.Run("missing_username_sends_connection_error", func(t *testing.T) {
+	t.Run("missing_username_sends_protocol_error", func(t *testing.T) {
 		var bodies [][]byte
 		validator := &fakeTokenValidator{claims: &auth.Claims{}}
 		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
@@ -139,16 +143,11 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.Equal(t, 200, resp.Status)
 
 		require.Len(t, bodies, 1)
-		var out struct {
-			Type    string         `json:"type"`
-			Payload map[string]any `json:"payload"`
-		}
+		var out responseEnvelope
 		require.NoError(t, json.Unmarshal(bodies[0], &out))
-		require.Equal(t, "connection_error", out.Type)
-		require.Equal(t, "forbidden", out.Payload["code"])
-		extensions, ok := out.Payload["extensions"].(map[string]any)
-		require.True(t, ok)
-		require.Equal(t, wsCodeUnauthenticated, extensions["code"])
+		require.Equal(t, "error", out.Type)
+		require.Equal(t, connectionInitErrorID, out.ID)
+		require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, out.Payload))
 	})
 
 	t.Run("success_persists_identity_and_acks", func(t *testing.T) {

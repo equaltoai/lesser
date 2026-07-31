@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -40,6 +41,8 @@ import (
 const graphqlWSName = "graphql-ws"
 const graphqlTransportWSSubprotocol = "graphql-transport-ws"
 const wsCodeUnauthenticated = "UNAUTHENTICATED"
+const connectionInitErrorID = "connection-init"
+const protocolErrorID = "protocol-error"
 
 type connectionState struct {
 	username      string
@@ -112,6 +115,9 @@ func accessTokenFromInitPayload(raw json.RawMessage) (token string, presented bo
 	if err := json.Unmarshal(trimmed, &payload); err != nil {
 		return "", false, err
 	}
+	if len(payload) == 0 {
+		return "", false, nil
+	}
 
 	// Common shapes seen in GraphQL WS clients:
 	// - { "authorization": "Bearer <token>" }
@@ -136,21 +142,58 @@ func accessTokenFromInitPayload(raw json.RawMessage) (token string, presented bo
 		}
 	}
 
-	for _, key := range []string{"authorization", "Authorization"} {
-		if value, found, readErr := readString(payload, key); found || readErr != nil {
+	readHeader := func(container map[string]any, key string) (string, bool, error) {
+		var matchedKey string
+		for candidate := range container {
+			if !strings.EqualFold(candidate, key) {
+				continue
+			}
+			if matchedKey != "" {
+				return "", true, fmt.Errorf("connection_init credential %q is ambiguous", key)
+			}
+			matchedKey = candidate
+		}
+		if matchedKey == "" {
+			return "", false, nil
+		}
+		return readString(container, matchedKey)
+	}
+
+	if value, found, readErr := readHeader(payload, "authorization"); found || readErr != nil {
+		return normalizeAuthToken(value), found, readErr
+	}
+
+	headersValue, headersFound, headersErr := func() (any, bool, error) {
+		var matchedKey string
+		for candidate := range payload {
+			if !strings.EqualFold(candidate, "headers") {
+				continue
+			}
+			if matchedKey != "" {
+				return nil, true, errors.New("connection_init headers field is ambiguous")
+			}
+			matchedKey = candidate
+		}
+		if matchedKey == "" {
+			return nil, false, nil
+		}
+		return payload[matchedKey], true, nil
+	}()
+	if headersErr != nil {
+		return "", true, headersErr
+	}
+	if headersFound {
+		headers, ok := headersValue.(map[string]any)
+		if !ok {
+			return "", true, errors.New("connection_init headers must be an object")
+		}
+		if value, found, readErr := readHeader(headers, "authorization"); found || readErr != nil {
 			return normalizeAuthToken(value), found, readErr
 		}
+		return "", true, errors.New("connection_init headers must contain authorization")
 	}
 
-	if headers, ok := payload["headers"].(map[string]any); ok {
-		for _, key := range []string{"authorization", "Authorization"} {
-			if value, found, readErr := readString(headers, key); found || readErr != nil {
-				return normalizeAuthToken(value), found, readErr
-			}
-		}
-	}
-
-	return "", false, nil
+	return "", true, errors.New("connection_init payload does not contain a supported credential")
 }
 
 type subscribePayload struct {
@@ -158,12 +201,6 @@ type subscribePayload struct {
 	OperationName string                 `json:"operationName,omitempty"`
 	Variables     map[string]interface{} `json:"variables,omitempty"`
 	Extensions    map[string]interface{} `json:"extensions,omitempty"`
-}
-
-type errorPayload struct {
-	Message    string         `json:"message"`
-	Code       string         `json:"code,omitempty"`
-	Extensions map[string]any `json:"extensions,omitempty"`
 }
 
 type responseEnvelope struct {
@@ -761,7 +798,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 
 	if s.isAuthenticatedConnection(ctx, connectionID) {
 		log.Info("received connection_init for authenticated connection")
-		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
+		if err := s.sendConnectionACK(wsCtx, true); err != nil {
 			return nil, err
 		}
 		return okWebSocketResponse(), nil
@@ -770,10 +807,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	tokenValue, credentialPresented, payloadErr := accessTokenFromInitPayload(msg.Payload)
 	if payloadErr != nil {
 		log.Warn("connection_init contains an invalid payload", zap.Error(payloadErr))
-		_ = s.sendJSON(wsCtx, responseEnvelope{
-			Type:    "connection_error",
-			Payload: newErrorPayload("Invalid connection_init payload", "invalid_payload", "BAD_REQUEST"),
-		})
+		s.sendError(wsCtx, connectionInitErrorID, "invalid_payload", "Invalid connection_init payload")
 		return okWebSocketResponse(), nil
 	}
 	if !credentialPresented {
@@ -781,17 +815,14 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 			log.Warn("failed to persist anonymous graphql connection identity", zap.Error(err))
 		}
 		log.Info("connection_init accepted for anonymous principal")
-		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
+		if err := s.sendConnectionACK(wsCtx, false); err != nil {
 			return nil, err
 		}
 		return okWebSocketResponse(), nil
 	}
 	if tokenValue == "" {
 		log.Warn("connection_init contains an empty access token")
-		_ = s.sendJSON(wsCtx, responseEnvelope{
-			Type:    "connection_error",
-			Payload: newErrorPayload("Invalid or expired token", "unauthorized", wsCodeUnauthenticated),
-		})
+		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Invalid or expired token")
 		return okWebSocketResponse(), nil
 	}
 
@@ -803,10 +834,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	claims, err := s.oauthService.ValidateAccessToken(tokenValue)
 	if err != nil {
 		log.Warn("connection_init failed token validation", zap.Error(err))
-		_ = s.sendJSON(wsCtx, responseEnvelope{
-			Type:    "connection_error",
-			Payload: newErrorPayload("Invalid or expired token", "unauthorized", wsCodeUnauthenticated),
-		})
+		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Invalid or expired token")
 		return okWebSocketResponse(), nil
 	}
 
@@ -816,10 +844,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	}
 	if username == "" {
 		log.Warn("connection_init missing username in claims")
-		_ = s.sendJSON(wsCtx, responseEnvelope{
-			Type:    "connection_error",
-			Payload: newErrorPayload("Missing username in token claims", "forbidden", wsCodeUnauthenticated),
-		})
+		s.sendError(wsCtx, connectionInitErrorID, "unauthorized", "Missing username in token claims")
 		return okWebSocketResponse(), nil
 	}
 
@@ -828,7 +853,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	}
 
 	log.Info("connection_init authenticated", zap.String("username", username))
-	if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
+	if err := s.sendConnectionACK(wsCtx, true); err != nil {
 		return nil, err
 	}
 	return okWebSocketResponse(), nil
@@ -898,14 +923,12 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 	if s.instanceRepo == nil {
 		s.logger.Error("instance repository unavailable for graphql subscriptions")
 		s.sendError(wsCtx, msg.ID, "internal_error", "instance repository unavailable")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	instanceState, instanceErr := s.instanceRepo.GetInstanceState(ctx)
 	if instanceErr != nil || instanceState.Locked {
 		s.sendError(wsCtx, msg.ID, "instance_locked", "instance is locked")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -916,19 +939,16 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
 		s.sendError(wsCtx, msg.ID, "unauthorized", "connection context not found")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 	if !connectionInitialized(state) {
 		s.sendError(wsCtx, msg.ID, "unauthorized", "connection_init has not been acknowledged")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	if s.exec == nil {
 		s.logger.Error("graphql executor not initialized")
 		s.sendError(wsCtx, msg.ID, "internal_error", "GraphQL executor unavailable")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -939,14 +959,12 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 				zap.String("connection_id", connectionID),
 				zap.Error(err))
 			s.sendError(wsCtx, msg.ID, "invalid_payload", "subscription payload could not be parsed")
-			_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 			return
 		}
 	}
 
 	if strings.TrimSpace(payload.Query) == "" {
 		s.sendError(wsCtx, msg.ID, "invalid_request", "subscription payload must include a query")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -972,7 +990,6 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			zap.String("subscription_id", msg.ID),
 			zap.Errors("errors", convertErrors(gqlErrs)))
 		s.sendGraphQLErrors(wsCtx, msg.ID, gqlErrs)
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -981,7 +998,6 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID))
 		s.sendError(wsCtx, msg.ID, "invalid_operation", "operation must be a subscription")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -1026,7 +1042,6 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 					zap.String("stream", streamName),
 					zap.Error(err))
 				s.sendError(wsCtx, msg.ID, "internal_error", "failed to register subscription")
-				_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 				return
 			}
 		}
@@ -1045,7 +1060,6 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 	if !s.addSubscription(connectionID, msg.ID, cancel) {
 		cancel()
 		s.sendError(wsCtx, msg.ID, "connection_closed", "connection no longer active")
-		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -1055,21 +1069,25 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 }
 
 func (s *wsServer) sendError(wsCtx *apptheory.WebSocketContext, id, code, message string) {
-	payload := newErrorPayload(message, code, structuredErrorCode(code))
-	env := responseEnvelope{
-		ID:      id,
-		Type:    "error",
-		Payload: payload,
+	if strings.TrimSpace(id) == "" {
+		id = protocolErrorID
 	}
-	_ = s.sendJSON(wsCtx, env)
+	s.sendGraphQLErrors(wsCtx, id, gqlerror.List{&gqlerror.Error{
+		Message: message,
+		Extensions: map[string]any{
+			"code":        structuredErrorCode(code),
+			"legacy_code": code,
+		},
+	}})
 }
 
-func newErrorPayload(message, legacyCode, structuredCode string) errorPayload {
-	payload := errorPayload{Message: message, Code: legacyCode}
-	if structuredCode != "" {
-		payload.Extensions = map[string]any{"code": structuredCode}
-	}
-	return payload
+func (s *wsServer) sendConnectionACK(wsCtx *apptheory.WebSocketContext, authenticated bool) error {
+	return s.sendJSON(wsCtx, responseEnvelope{
+		Type: "connection_ack",
+		Payload: map[string]any{
+			"extensions": map[string]any{"authenticated": authenticated},
+		},
+	})
 }
 
 func structuredErrorCode(code string) string {
@@ -1162,6 +1180,7 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 				zap.String("subscription_id", subscriptionID),
 				zap.Error(err))
 			s.sendGraphQLErrors(wsCtx, subscriptionID, gqlerror.List{gqlerror.Errorf("%v", err)})
+			terminalError = true
 		}
 
 		_ = s.clearSubscription(ctx, connectionID, subscriptionID, false)
@@ -1188,7 +1207,7 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 		if response == nil {
 			return
 		}
-		if hasAuthenticationError(response.Errors) {
+		if hasTerminalAuthorizationError(response.Errors) {
 			s.sendGraphQLErrors(wsCtx, subscriptionID, response.Errors)
 			terminalError = true
 			return
@@ -1204,12 +1223,12 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 	}
 }
 
-func hasAuthenticationError(errs gqlerror.List) bool {
+func hasTerminalAuthorizationError(errs gqlerror.List) bool {
 	for _, gqlErr := range errs {
 		if gqlErr == nil || gqlErr.Extensions == nil {
 			continue
 		}
-		if code, _ := gqlErr.Extensions["code"].(string); code == wsCodeUnauthenticated {
+		if code, _ := gqlErr.Extensions["code"].(string); code == wsCodeUnauthenticated || code == string(apperrors.CodeForbidden) {
 			return true
 		}
 	}

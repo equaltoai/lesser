@@ -18,6 +18,10 @@ func TestSubscriptionResolvers_AnonymousAuthorizationMatrix(t *testing.T) {
 	listID := "list-1"
 
 	gated := map[string]func() error{
+		"actor timeline": func() error {
+			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeActor, nil)
+			return err
+		},
 		"activity stream": func() error {
 			_, err := resolver.Subscription().ActivityStream(ctx, nil)
 			return err
@@ -143,7 +147,6 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 	for _, timelineType := range []model.TimelineType{
 		model.TimelineTypePublic,
 		model.TimelineTypeLocal,
-		model.TimelineTypeActor,
 	} {
 		t.Run(string(timelineType), func(t *testing.T) {
 			manager.manager.subscriptionsMux.RLock()
@@ -181,4 +184,37 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {
+	connRepo := inmemory.NewStreamingConnectionRepository()
+	manager := NewGraphQLSubscriptionManager(connRepo, streaming.NewMockPublisher(), nil)
+	ctx, cancel := context.WithCancel(WithConnectionID(context.Background(), "routing-conn"))
+	t.Cleanup(cancel)
+	require.NoError(t, manager.Start(ctx))
+	t.Cleanup(func() { _ = manager.Stop() })
+
+	_, err := manager.SubscribeToTimeline(ctx, "", model.TimelineTypePublic)
+	require.NoError(t, err)
+	publicSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, StreamNamePublic)
+	require.NoError(t, err)
+	require.Len(t, publicSubscriptions, 1)
+
+	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeLocal)
+	require.NoError(t, err)
+	localSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "public:local")
+	require.NoError(t, err)
+	require.Len(t, localSubscriptions, 1)
+
+	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeActor)
+	require.Error(t, err)
+	emptyUserSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "user:")
+	require.NoError(t, err)
+	require.Empty(t, emptyUserSubscriptions)
+
+	_, err = manager.SubscribeToTimeline(ctx, "alice", model.TimelineTypeHome)
+	require.NoError(t, err)
+	homeSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "user:alice")
+	require.NoError(t, err)
+	require.Len(t, homeSubscriptions, 1)
 }

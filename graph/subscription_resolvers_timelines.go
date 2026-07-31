@@ -110,7 +110,7 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 
 func timelineAllowsAnonymous(timelineType model.TimelineType) bool {
 	switch timelineType {
-	case model.TimelineTypePublic, model.TimelineTypeLocal, model.TimelineTypeActor:
+	case model.TimelineTypePublic, model.TimelineTypeLocal:
 		return true
 	default:
 		return false

@@ -400,15 +400,21 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	var streamName string
 	switch timelineType {
 	case model.TimelineTypeHome:
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return nil, ErrUsernameCannotBeEmpty
+		}
 		streamName = fmt.Sprintf("user:%s", username)
 	case model.TimelineTypePublic:
 		streamName = StreamNamePublic
 	case model.TimelineTypeLocal:
 		streamName = "public:local"
 	case model.TimelineTypeDirect:
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return nil, ErrUsernameCannotBeEmpty
+		}
 		streamName = fmt.Sprintf("direct:%s", username)
 	default:
-		streamName = fmt.Sprintf("user:%s", username)
+		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)
 	}
 
 	streams := []string{streamName}

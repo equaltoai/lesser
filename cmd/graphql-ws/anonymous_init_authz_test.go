@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/executor"
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -17,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 	appTheory "github.com/theory-cloud/apptheory/v2/runtime"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +38,7 @@ func TestConnectionInit_EmptyPayloadAcknowledgesAnonymousPrincipal(t *testing.T)
 	require.Equal(t, 200, response.Status)
 	require.Len(t, *messages, 1)
 	require.Equal(t, "connection_ack", (*messages)[0].Type)
+	require.False(t, connectionACKAuthenticated(t, (*messages)[0].Payload))
 
 	state, err := server.getConnection(context.Background(), "c1")
 	require.NoError(t, err)
@@ -59,8 +62,9 @@ func TestConnectionInit_InvalidTokenHasStructuredAuthenticationCode(t *testing.T
 	)
 	require.NoError(t, err)
 	require.Len(t, *messages, 1)
-	require.Equal(t, "connection_error", (*messages)[0].Type)
-	require.Equal(t, "UNAUTHENTICATED", payloadExtensionCode(t, (*messages)[0].Payload))
+	require.Equal(t, "error", (*messages)[0].Type)
+	require.Equal(t, connectionInitErrorID, (*messages)[0].ID)
+	require.Equal(t, "UNAUTHENTICATED", graphQLErrorExtensionCode(t, (*messages)[0].Payload))
 	require.False(t, server.connections["c1"].initialized)
 }
 
@@ -77,9 +81,57 @@ func TestConnectionInit_PresentButEmptyCredentialDoesNotDowngradeToAnonymous(t *
 	)
 	require.NoError(t, err)
 	require.Len(t, *messages, 1)
-	require.Equal(t, "connection_error", (*messages)[0].Type)
-	require.Equal(t, wsCodeUnauthenticated, payloadExtensionCode(t, (*messages)[0].Payload))
+	require.Equal(t, "error", (*messages)[0].Type)
+	require.Equal(t, connectionInitErrorID, (*messages)[0].ID)
+	require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, (*messages)[0].Payload))
 	require.False(t, server.connections["c1"].initialized)
+}
+
+func TestConnectionInit_CredentialLikeUnknownShapesFailClosed(t *testing.T) {
+	tests := map[string]json.RawMessage{
+		"headers must be an object": json.RawMessage(`{"headers":"Bearer token"}`),
+		"unknown nested envelope":   json.RawMessage(`{"payload":{"Authorization":"Bearer token"}}`),
+		"unknown metadata":          json.RawMessage(`{"client":"contentus"}`),
+	}
+
+	for name, payload := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
+			server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
+			messages := captureWSMessages(t, server)
+
+			_, err := server.handleConnectionInit(
+				context.Background(),
+				&appTheory.WebSocketContext{ConnectionID: "c1"},
+				"c1",
+				wsMessage{Type: "connection_init", Payload: payload},
+			)
+			require.NoError(t, err)
+			require.Len(t, *messages, 1)
+			require.Equal(t, "error", (*messages)[0].Type)
+			require.Equal(t, "BAD_REQUEST", graphQLErrorExtensionCode(t, (*messages)[0].Payload))
+			require.False(t, server.connections["c1"].initialized)
+		})
+	}
+}
+
+func TestConnectionInit_AuthorizationHeaderIsCaseInsensitive(t *testing.T) {
+	validator := &fakeTokenValidator{claims: &auth.Claims{Username: "alice"}}
+	server := newServer(validator, nil, nil, zap.NewNop(), &fakeConnRepo{}, nil, nil)
+	server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
+	messages := captureWSMessages(t, server)
+
+	_, err := server.handleConnectionInit(
+		context.Background(),
+		&appTheory.WebSocketContext{ConnectionID: "c1"},
+		"c1",
+		wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"AUTHORIZATION":"Bearer valid"}`)},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "valid", validator.token)
+	require.Len(t, *messages, 1)
+	require.Equal(t, "connection_ack", (*messages)[0].Type)
+	require.True(t, connectionACKAuthenticated(t, (*messages)[0].Payload))
 }
 
 func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
@@ -97,7 +149,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
-	for _, timelineType := range []string{"PUBLIC", "LOCAL", "ACTOR"} {
+	for _, timelineType := range []string{"PUBLIC", "LOCAL"} {
 		t.Run(timelineType, func(t *testing.T) {
 			connectionID := "safe-conn-" + timelineType
 			subscriptionID := "safe-" + timelineType
@@ -126,6 +178,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	}
 
 	gated := map[string]string{
+		"ACTOR timeline":            "timelineUpdates(type: ACTOR) { id }",
 		"HOME timeline":             "timelineUpdates(type: HOME) { id }",
 		"HASHTAG timeline":          "timelineUpdates(type: HASHTAG) { id }",
 		"LIST timeline":             `timelineUpdates(type: LIST, listId: "list-1") { id }`,
@@ -216,7 +269,9 @@ func TestAuthenticatedConnectionStillStreamsGatedSubscription(t *testing.T) {
 		Payload: json.RawMessage(`{"access_token":"valid"}`),
 	})
 	require.NoError(t, err)
-	require.Equal(t, "connection_ack", receiveWSMessage(t, messages).Type)
+	ack := receiveWSMessage(t, messages)
+	require.Equal(t, "connection_ack", ack.Type)
+	require.True(t, connectionACKAuthenticated(t, ack.Payload))
 
 	server.handleSubscribe(context.Background(), wsMessage{
 		ID:      "home-subscription",
@@ -231,6 +286,66 @@ func TestAuthenticatedConnectionStillStreamsGatedSubscription(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	require.True(t, server.cancelSubscription(context.Background(), "authenticated-conn", "home-subscription"))
 	require.Equal(t, "complete", receiveWSMessage(t, messages).Type)
+}
+
+func TestAuthenticatedNonAdminAuthorizationFailureIsTerminalError(t *testing.T) {
+	dispatched := false
+	exec := &fakeGraphQLExecutor{dispatch: func(ctx context.Context, _ *graphql.OperationContext) (graphql.ResponseHandler, context.Context) {
+		return func(context.Context) *graphql.Response {
+			if dispatched {
+				return nil
+			}
+			dispatched = true
+			return &graphql.Response{Errors: gqlerror.List{&gqlerror.Error{
+				Message:    "admin privileges required",
+				Extensions: map[string]any{"code": "FORBIDDEN"},
+			}}}
+		}, ctx
+	}}
+	server := newServer(nil, nil, exec, zap.NewNop(), &fakeConnRepo{}, nil, nil)
+	server.connections["member-conn"] = &connectionState{
+		username:      "alice",
+		claims:        &auth.Claims{Username: "alice", Scopes: []string{"read"}},
+		initialized:   true,
+		subscriptions: map[string]*subscriptionState{"admin-only": {cancel: func() {}}},
+	}
+	messages := make(chan responseEnvelope, 10)
+	server.sendJSONMessage = func(_ *appTheory.WebSocketContext, payload any) error {
+		raw, err := json.Marshal(payload)
+		require.NoError(t, err)
+		var envelope responseEnvelope
+		require.NoError(t, json.Unmarshal(raw, &envelope))
+		messages <- envelope
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	server.executeSubscription(ctx, "member-conn", "admin-only", &graphql.OperationContext{}, cancel, &appTheory.WebSocketContext{ConnectionID: "member-conn"})
+
+	message := receiveWSMessage(t, messages)
+	require.Equal(t, "error", message.Type)
+	require.Equal(t, "FORBIDDEN", graphQLErrorExtensionCode(t, message.Payload))
+	select {
+	case extra := <-messages:
+		t.Fatalf("terminal authorization error must not be followed by %#v", extra)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func TestSubscribeBeforeConnectionAckReturnsOneTerminalError(t *testing.T) {
+	server := newServer(nil, nil, nil, zap.NewNop(), &fakeConnRepo{}, nil, &fakeInstanceRepo{state: &models.InstanceState{}})
+	server.connections["pending"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
+	messages := captureWSMessages(t, server)
+
+	server.handleSubscribe(context.Background(), wsMessage{
+		ID:      "too-early",
+		Type:    "subscribe",
+		Payload: json.RawMessage(`{"query":"subscription { timelineUpdates(type: PUBLIC) { id } }"}`),
+	}, &appTheory.WebSocketContext{ConnectionID: "pending"})
+
+	require.Len(t, *messages, 1)
+	require.Equal(t, "error", (*messages)[0].Type)
+	require.Equal(t, wsCodeUnauthenticated, graphQLErrorExtensionCode(t, (*messages)[0].Payload))
 }
 
 func TestAnonymousConversationServerlessFastPathRefusesBeforePersistence(t *testing.T) {
@@ -306,16 +421,17 @@ func captureWSMessages(t *testing.T, server *wsServer) *[]responseEnvelope {
 	return &messages
 }
 
-func payloadExtensionCode(t *testing.T, payload any) string {
+func connectionACKAuthenticated(t *testing.T, payload any) bool {
 	t.Helper()
 	raw, err := json.Marshal(payload)
 	require.NoError(t, err)
 	var decoded struct {
-		Extensions map[string]any `json:"extensions"`
+		Extensions struct {
+			Authenticated bool `json:"authenticated"`
+		} `json:"extensions"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &decoded))
-	code, _ := decoded.Extensions["code"].(string)
-	return code
+	return decoded.Extensions.Authenticated
 }
 
 func graphQLErrorExtensionCode(t *testing.T, payload any) string {

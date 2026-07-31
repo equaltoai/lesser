@@ -102,15 +102,13 @@ func TestHandleSubscribe_EarlyBranches(t *testing.T) {
 	s.handleSubscribe(context.Background(), wsMessage{}, wsCtx)
 	require.Len(t, bodies, 1)
 	require.Equal(t, "error", bodies[0].Type)
-	require.Equal(t, "", bodies[0].ID)
+	require.Equal(t, protocolErrorID, bodies[0].ID)
 
 	bodies = nil
 	s.handleSubscribe(context.Background(), wsMessage{ID: "sub-1"}, wsCtx)
-	require.Len(t, bodies, 2)
+	require.Len(t, bodies, 1)
 	require.Equal(t, "error", bodies[0].Type)
 	require.Equal(t, "sub-1", bodies[0].ID)
-	require.Equal(t, "complete", bodies[1].Type)
-	require.Equal(t, "sub-1", bodies[1].ID)
 }
 
 func TestConfigureGraphQLExecutor_ExercisesConfigBranches(t *testing.T) {

@@ -1180,11 +1180,15 @@ func (s *businessLogicService) emitUnfollowEvents(ctx context.Context, activity 
 	if s.publisher == nil {
 		return
 	}
+	username, ok := s.validatedActorStreamUsername(actor)
+	if !ok {
+		return
+	}
 
 	// Emit unfollow event to user's stream for real-time UI updates
 	event := &streaming.Event{
 		Type:      "relationship.unfollowed",
-		Stream:    fmt.Sprintf("user:%s", actor.PreferredUsername),
+		Stream:    fmt.Sprintf("user:%s", username),
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
 			"activity":   activity,
@@ -1193,16 +1197,21 @@ func (s *businessLogicService) emitUnfollowEvents(ctx context.Context, activity 
 		},
 	}
 
-	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, event); err != nil {
+	if err := s.publisher.PublishToUser(ctx, username, event); err != nil {
 		s.logger.Error("failed to emit unfollow event", zap.Error(err))
 	}
 }
 
 func (s *businessLogicService) emitUnlikeEvents(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) {
+	username, ok := s.validatedActorStreamUsername(actor)
+	if !ok {
+		return
+	}
+
 	// Emit unlike event to user's stream for real-time UI updates
 	event := streaming.Event{
 		Type:      "status.unliked",
-		Stream:    fmt.Sprintf("user:%s", actor.PreferredUsername),
+		Stream:    fmt.Sprintf("user:%s", username),
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
 			"activity":  activity,
@@ -1211,26 +1220,28 @@ func (s *businessLogicService) emitUnlikeEvents(ctx context.Context, activity *a
 		},
 	}
 
-	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, &event); err != nil {
+	if err := s.publisher.PublishToUser(ctx, username, &event); err != nil {
 		s.logger.Error("failed to emit unlike event", zap.Error(err))
 	}
 }
 
 func (s *businessLogicService) emitPostUpdateEvents(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, note *activitypub.Note) {
-	// Emit update event to user's stream
-	userEvent := streaming.Event{
-		Type:      "status.updated",
-		Stream:    fmt.Sprintf("user:%s", actor.PreferredUsername),
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"activity": activity,
-			"status":   note,
-			"actor":    actor,
-		},
-	}
+	if username, ok := s.validatedActorStreamUsername(actor); ok {
+		// Emit update event to the validated user's stream.
+		userEvent := streaming.Event{
+			Type:      "status.updated",
+			Stream:    fmt.Sprintf("user:%s", username),
+			Timestamp: time.Now(),
+			Payload: map[string]interface{}{
+				"activity": activity,
+				"status":   note,
+				"actor":    actor,
+			},
+		}
 
-	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, &userEvent); err != nil {
-		s.logger.Error("failed to emit user update event", zap.Error(err))
+		if err := s.publisher.PublishToUser(ctx, username, &userEvent); err != nil {
+			s.logger.Error("failed to emit user update event", zap.Error(err))
+		}
 	}
 
 	// For public posts, also emit to public stream
@@ -1250,6 +1261,22 @@ func (s *businessLogicService) emitPostUpdateEvents(ctx context.Context, activit
 			s.logger.Error("failed to emit public update event", zap.Error(err))
 		}
 	}
+}
+
+func (s *businessLogicService) validatedActorStreamUsername(actor *activitypub.Actor) (string, bool) {
+	if actor == nil {
+		s.logger.Warn("skipping user stream event for missing actor")
+		return "", false
+	}
+
+	username := strings.TrimSpace(actor.PreferredUsername)
+	if err := activitypub.ValidateUsername(username); err != nil {
+		s.logger.Warn("skipping user stream event for invalid actor username",
+			zap.String("actor_id", actor.ID),
+			zap.Error(err))
+		return "", false
+	}
+	return username, true
 }
 
 // extractMediaIDs converts media ID interfaces to string slice
