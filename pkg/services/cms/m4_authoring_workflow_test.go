@@ -17,14 +17,11 @@ import (
 func TestM4DraftPublishCreatesCanonicalArticleWithAttribution(t *testing.T) {
 	t.Parallel()
 
-	repo := newMemDraftRepo()
+	repo := newReviewMemRepo()
 	articles := newMemArticleService()
-	svc := &DraftService{
-		draftRepo:      repo,
-		articleService: articles,
-		domain:         "example.com",
-		logger:         zap.NewNop(),
-	}
+	svc := NewDraftService(repo, nil, "example.com", false, zap.NewNop())
+	svc.articleService = articles
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "principal", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-1",
@@ -36,9 +33,12 @@ func TestM4DraftPublishCreatesCanonicalArticleWithAttribution(t *testing.T) {
 		ContentFormat: "markdown",
 		Status:        draftStatusDraft,
 		GeneratedBy:   " https://example.com/users/agent-0 ",
-		ReviewedBy:    " https://example.com/users/alice ",
 	}
 	require.NoError(t, repo.CreateDraft(context.Background(), draft))
+	_, err := svc.ShareDraftForReview(context.Background(), "alice", "draft-1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(context.Background(), "principal", "alice", "draft-1", DraftReviewApproved, "approved")
+	require.NoError(t, err)
 
 	article, err := svc.PublishDraft(context.Background(), "alice", "draft-1")
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestM4DraftPublishCreatesCanonicalArticleWithAttribution(t *testing.T) {
 	require.Equal(t, "https://example.com/articles/agent-draft", article.ID)
 	require.Equal(t, "agent-draft", article.Slug)
 	require.Equal(t, "https://example.com/users/agent-0", article.GeneratedBy)
-	require.Equal(t, "https://example.com/users/alice", article.ReviewedBy)
+	require.Equal(t, "principal", article.ReviewedBy)
 	require.Equal(t, "https://example.com/users/alice", article.PublishedBy)
 }
 

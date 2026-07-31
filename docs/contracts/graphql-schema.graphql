@@ -2431,6 +2431,44 @@ type DraftConnection {
   totalCount: Int!
 }
 
+enum DraftReviewVerdict {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+type DraftReviewGrant {
+  reviewer: Actor!
+  grantedAt: Time!
+}
+
+type DraftReviewVerdictRecord {
+  verdict: DraftReviewVerdict!
+  notes: String
+  reviewer: Actor!
+  recordedAt: Time!
+}
+
+type DraftReview {
+  draftId: ID!
+  title: String
+  subtitle: String
+  excerpt: String
+  contentFormat: ContentFormat!
+  status: DraftStatus!
+  scheduledAt: Time
+  updatedAt: Time!
+  createdAt: Time!
+  generatedBy: Actor
+  reviewedBy: Actor
+  reviewStatus: String
+  editorNotes: String
+  grant: DraftReviewGrant
+  verdicts: [DraftReviewVerdictRecord!]!
+}
+
+type DraftReviewEdge { node: DraftReview!, cursor: Cursor! }
+type DraftReviewConnection { edges: [DraftReviewEdge!]!, pageInfo: PageInfo!, totalCount: Int! }
+
 type DraftPreview {
   draftId: ID!
   success: Boolean!
@@ -2541,6 +2579,8 @@ extend type Query {
   draft(id: ID!): Draft
   draftPreview(id: ID!): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
+  sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
+  draftReview(id: ID!): DraftReview
 
   # Revision history
   revisions(objectId: ID!, first: Int, after: Cursor): RevisionConnection!
@@ -2579,6 +2619,9 @@ extend type Mutation {
   publishDraft(id: ID!): Article!
   scheduleDraft(id: ID!, scheduledAt: Time!): Draft!
   cancelScheduledDraft(id: ID!): Draft!
+  shareDraftForReview(draftId: ID!, reviewer: String!): DraftReview!
+  revokeDraftReview(draftId: ID!, reviewer: String!): Boolean!
+  submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String): DraftReview!
 
   # Article operations
   createArticle(input: CreateArticleInput!): Article!

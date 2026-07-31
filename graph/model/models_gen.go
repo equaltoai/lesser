@@ -1193,6 +1193,47 @@ type DraftPreview struct {
 	Errors        []string `json:"errors"`
 }
 
+type DraftReview struct {
+	DraftID       string                      `json:"draftId"`
+	Title         *string                     `json:"title,omitempty"`
+	Subtitle      *string                     `json:"subtitle,omitempty"`
+	Excerpt       *string                     `json:"excerpt,omitempty"`
+	ContentFormat ContentFormat               `json:"contentFormat"`
+	Status        DraftStatus                 `json:"status"`
+	ScheduledAt   *Time                       `json:"scheduledAt,omitempty"`
+	UpdatedAt     Time                        `json:"updatedAt"`
+	CreatedAt     Time                        `json:"createdAt"`
+	GeneratedBy   *activitypub.Actor          `json:"generatedBy,omitempty"`
+	ReviewedBy    *activitypub.Actor          `json:"reviewedBy,omitempty"`
+	ReviewStatus  *string                     `json:"reviewStatus,omitempty"`
+	EditorNotes   *string                     `json:"editorNotes,omitempty"`
+	Grant         *DraftReviewGrant           `json:"grant,omitempty"`
+	Verdicts      []*DraftReviewVerdictRecord `json:"verdicts"`
+}
+
+type DraftReviewConnection struct {
+	Edges      []*DraftReviewEdge `json:"edges"`
+	PageInfo   *PageInfo          `json:"pageInfo"`
+	TotalCount int                `json:"totalCount"`
+}
+
+type DraftReviewEdge struct {
+	Node   *DraftReview `json:"node"`
+	Cursor Cursor       `json:"cursor"`
+}
+
+type DraftReviewGrant struct {
+	Reviewer  *activitypub.Actor `json:"reviewer"`
+	GrantedAt Time               `json:"grantedAt"`
+}
+
+type DraftReviewVerdictRecord struct {
+	Verdict    DraftReviewVerdict `json:"verdict"`
+	Notes      *string            `json:"notes,omitempty"`
+	Reviewer   *activitypub.Actor `json:"reviewer"`
+	RecordedAt Time               `json:"recordedAt"`
+}
+
 type DroneWorkflowMutationPayload struct {
 	Agent    *Agent                `json:"agent"`
 	Workflow *AgentWorkflowSurface `json:"workflow"`
@@ -4292,6 +4333,61 @@ func (e *DmRequestState) UnmarshalJSON(b []byte) error {
 }
 
 func (e DmRequestState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type DraftReviewVerdict string
+
+const (
+	DraftReviewVerdictApproved         DraftReviewVerdict = "APPROVED"
+	DraftReviewVerdictChangesRequested DraftReviewVerdict = "CHANGES_REQUESTED"
+)
+
+var AllDraftReviewVerdict = []DraftReviewVerdict{
+	DraftReviewVerdictApproved,
+	DraftReviewVerdictChangesRequested,
+}
+
+func (e DraftReviewVerdict) IsValid() bool {
+	switch e {
+	case DraftReviewVerdictApproved, DraftReviewVerdictChangesRequested:
+		return true
+	}
+	return false
+}
+
+func (e DraftReviewVerdict) String() string {
+	return string(e)
+}
+
+func (e *DraftReviewVerdict) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DraftReviewVerdict(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DraftReviewVerdict", str)
+	}
+	return nil
+}
+
+func (e DraftReviewVerdict) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DraftReviewVerdict) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DraftReviewVerdict) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

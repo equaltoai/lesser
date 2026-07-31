@@ -1526,3 +1526,82 @@ func derefString(value *string) string {
 	}
 	return *value
 }
+
+func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID string, reviewer string) (*model.DraftReview, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	owner, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reviewer = strings.TrimSpace(reviewer)
+	if r.cmsStorage() == nil || r.cmsStorage().Account() == nil {
+		return nil, ErrStorageUnavailable
+	}
+	if _, err := r.cmsStorage().Account().GetAccount(ctx, reviewer); err != nil {
+		return nil, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	g, err := svc.ShareDraftForReview(ctx, owner, draftID, reviewer)
+	if err != nil {
+		return nil, err
+	}
+	d, err := svc.GetDraft(ctx, owner, draftID)
+	if err != nil {
+		return nil, err
+	}
+	vs, err := svc.DraftReviewVerdicts(ctx, owner, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSDraftReview(ctx, d, g, vs), nil
+}
+func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return false, err
+	}
+	owner, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return false, errors.New("draft service is not available")
+	}
+	if err := svc.RevokeDraftReview(ctx, owner, draftID, reviewer); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string) (*model.DraftReview, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	caller, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	d, g, err := svc.DraftReviewForCaller(ctx, caller, draftID)
+	if err != nil {
+		return nil, err
+	}
+	if g == nil {
+		return nil, errors.New("draft owner cannot review their own draft")
+	}
+	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes)); err != nil {
+		return nil, err
+	}
+	vs, err := svc.DraftReviewVerdicts(ctx, d.AuthorID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSDraftReview(ctx, d, g, vs), nil
+}

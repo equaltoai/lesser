@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -32,6 +33,8 @@ import (
 const (
 	defaultPageSize        = 25
 	defaultMaxDraftsPerRun = 200
+	scheduledPublishFailed = "scheduled publish failed"
+	scheduledReviewBlocked = "scheduled publish suppressed: draft review approval required"
 
 	envPageSize        = "CMS_SCHEDULER_PAGE_SIZE"
 	envMaxDraftsPerRun = "CMS_SCHEDULER_MAX_DRAFTS"
@@ -297,6 +300,7 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 	now := time.Now().UTC()
 	draft.Status = "failed"
 	draft.ScheduledAt = nil
+	draft.PublishFailureReason = scheduledPublishFailureReason(err)
 	draft.UpdatedAt = now
 	if updateErr := draftRepo.UpdateDraft(ctx, authorID, draft); updateErr != nil {
 		p.logger.Warn("failed to mark scheduled draft as failed",
@@ -306,6 +310,17 @@ func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, dr
 			zap.Error(updateErr),
 		)
 	}
+}
+
+func scheduledPublishFailureReason(err error) string {
+	if err == nil {
+		return scheduledPublishFailed
+	}
+	if errors.Is(err, cms.ErrDraftReviewApprovalRequired) ||
+		errors.Is(err, cms.ErrDraftReviewPrincipalApprovalRequired) {
+		return scheduledReviewBlocked
+	}
+	return scheduledPublishFailed
 }
 
 func envInt(key string, defaultValue int) int {

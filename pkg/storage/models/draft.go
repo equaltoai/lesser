@@ -35,15 +35,18 @@ type Draft struct {
 	ContentFormat string `theorydb:"attr:contentFormat" json:"content_format"` // html, markdown
 
 	// Draft state
-	Status      string     `theorydb:"attr:status" json:"status"` // draft, scheduled, publishing, failed
-	ScheduledAt *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
+	Status               string     `theorydb:"attr:status" json:"status"` // draft, scheduled, publishing, failed
+	ScheduledAt          *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
+	PublishFailureReason string     `theorydb:"attr:publishFailureReason" json:"publish_failure_reason,omitempty"`
 
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 
 	// Authoring attribution
-	GeneratedBy string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
-	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	GeneratedBy  string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
+	ReviewedBy   string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
+	ReviewStatus string `theorydb:"attr:reviewStatus,omitempty" json:"review_status,omitempty"`
+	EditorNotes  string `theorydb:"attr:editorNotes,omitempty" json:"editor_notes,omitempty"`
 
 	// Autosave tracking
 	AutosaveVersion int       `theorydb:"attr:autosaveVersion" json:"autosave_version"`

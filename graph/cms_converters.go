@@ -514,3 +514,26 @@ func (r *Resolver) canViewCMSPrivateAttribution(ctx context.Context, attributedT
 	}
 	return strings.EqualFold(cmsNormalizeUsername(attributedTo), claims.Username)
 }
+
+func (r *Resolver) convertCMSDraftReview(ctx context.Context, draft *models.Draft, grant *models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict) *model.DraftReview {
+	if draft == nil {
+		return nil
+	}
+	var scheduledAt *model.Time
+	if draft.ScheduledAt != nil {
+		t := model.Time(*draft.ScheduledAt)
+		scheduledAt = &t
+	}
+	var reviewGrant *model.DraftReviewGrant
+	if grant != nil {
+		reviewGrant = &model.DraftReviewGrant{Reviewer: r.resolveActorByID(ctx, grant.Reviewer), GrantedAt: model.Time(grant.GrantedAt)}
+	}
+	out := make([]*model.DraftReviewVerdictRecord, 0, len(verdicts))
+	for _, v := range verdicts {
+		if v == nil {
+			continue
+		}
+		out = append(out, &model.DraftReviewVerdictRecord{Verdict: model.DraftReviewVerdict(v.Verdict), Notes: cmsOptionalString(v.Notes), Reviewer: r.resolveActorByID(ctx, v.Reviewer), RecordedAt: model.Time(v.RecordedAt)})
+	}
+	return &model.DraftReview{DraftID: draft.ID, Title: cmsOptionalString(draft.Title), ContentFormat: cmsContentFormatFromStorage(draft.ContentFormat), Status: cmsDraftStatusFromStorage(draft.Status), ScheduledAt: scheduledAt, UpdatedAt: model.Time(draft.UpdatedAt), CreatedAt: model.Time(draft.CreatedAt), GeneratedBy: r.resolveActorByID(ctx, draft.GeneratedBy), ReviewedBy: r.resolveActorByID(ctx, draft.ReviewedBy), ReviewStatus: cmsOptionalString(draft.ReviewStatus), EditorNotes: cmsOptionalString(draft.EditorNotes), Grant: reviewGrant, Verdicts: out}
+}
