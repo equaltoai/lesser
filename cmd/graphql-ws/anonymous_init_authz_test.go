@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -168,6 +169,97 @@ func TestConnectionInit_AuthorizationHeaderIsCaseInsensitive(t *testing.T) {
 	require.Len(t, *messages, 1)
 	require.Equal(t, "connection_ack", (*messages)[0].Type)
 	require.True(t, connectionACKAuthenticated(t, (*messages)[0].Payload))
+}
+
+func TestConnectionInit_DuplicatePreservesInitializedConnection(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialPayload json.RawMessage
+		secondPayload  json.RawMessage
+		wantAuthCalls  int32
+	}{
+		{
+			name:           "authenticated valid second payload",
+			initialPayload: json.RawMessage(`{"access_token":"valid"}`),
+			secondPayload:  json.RawMessage(`{"access_token":"valid"}`),
+			wantAuthCalls:  1,
+		},
+		{
+			name:           "authenticated malformed second payload",
+			initialPayload: json.RawMessage(`{"access_token":"valid"}`),
+			secondPayload:  json.RawMessage(`{`),
+			wantAuthCalls:  1,
+		},
+		{
+			name:           "anonymous valid second payload",
+			initialPayload: json.RawMessage(`{}`),
+			secondPayload:  json.RawMessage(`{"access_token":"valid"}`),
+			wantAuthCalls:  0,
+		},
+		{
+			name:           "anonymous malformed second payload",
+			initialPayload: json.RawMessage(`{}`),
+			secondPayload:  json.RawMessage(`{`),
+			wantAuthCalls:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &fakeConnRepo{}
+			validator := &fakeTokenValidator{claims: &auth.Claims{Username: "alice"}}
+			server := newServer(validator, nil, nil, zap.NewNop(), repo, nil, nil)
+			server.connections["c1"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
+			messages := captureWSMessages(t, server)
+			wsCtx := &appTheory.WebSocketContext{ConnectionID: "c1"}
+
+			_, err := server.handleConnectionInit(
+				context.Background(),
+				wsCtx,
+				"c1",
+				wsMessage{Type: "connection_init", Payload: tc.initialPayload},
+			)
+			require.NoError(t, err)
+			require.Len(t, *messages, 1)
+			require.Equal(t, "connection_ack", (*messages)[0].Type)
+
+			cancelled := false
+			liveSubscription := &subscriptionState{cancel: func() { cancelled = true }}
+			server.connections["c1"].subscriptions["live-subscription"] = liveSubscription
+			stateBefore := server.connections["c1"]
+			recordBefore := repo.lastUpdated
+			writesBefore := atomic.LoadInt32(&repo.writeCalls)
+			updatesBefore := atomic.LoadInt32(&repo.updateCalls)
+
+			var closeCode int
+			var closeReason string
+			server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, code int, reason string) error {
+				closeCode = code
+				closeReason = reason
+				return nil
+			}
+
+			_, err = server.handleConnectionInit(
+				context.Background(),
+				wsCtx,
+				"c1",
+				wsMessage{Type: "connection_init", Payload: tc.secondPayload},
+			)
+			require.NoError(t, err)
+			require.Equal(t, 4429, closeCode)
+			require.Equal(t, "Too many initialisation requests", closeReason)
+			require.Len(t, *messages, 1, "duplicate connection_init must not send a second ACK")
+			require.Same(t, stateBefore, server.connections["c1"])
+			require.Same(t, liveSubscription, server.connections["c1"].subscriptions["live-subscription"])
+			require.False(t, cancelled, "duplicate connection_init must not cancel live subscriptions")
+			require.Same(t, recordBefore, repo.lastUpdated)
+			require.Equal(t, writesBefore, atomic.LoadInt32(&repo.writeCalls))
+			require.Equal(t, updatesBefore, atomic.LoadInt32(&repo.updateCalls))
+			require.Zero(t, atomic.LoadInt32(&repo.deleteSubsCalls))
+			require.Zero(t, atomic.LoadInt32(&repo.deleteConnCalls))
+			require.Equal(t, tc.wantAuthCalls, atomic.LoadInt32(&validator.calls), "duplicate payload must not be parsed or validated")
+		})
+	}
 }
 
 func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {

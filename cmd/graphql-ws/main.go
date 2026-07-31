@@ -45,8 +45,9 @@ const wsCodeUnauthenticated = "UNAUTHENTICATED"
 const protocolErrorID = "protocol-error"
 
 const (
-	wsCloseInvalidMessage = 4400
-	wsCloseForbidden      = 4403
+	wsCloseInvalidMessage                = 4400
+	wsCloseForbidden                     = 4403
+	wsCloseTooManyInitialisationRequests = 4429
 )
 
 type connectionState struct {
@@ -840,11 +841,15 @@ func (s *wsServer) rememberWebSocketContext(connectionID string, wsCtx *apptheor
 func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, msg wsMessage) (*apptheory.Response, error) {
 	log := s.logger.With(zap.String("connection_id", connectionID))
 
-	if s.isAuthenticatedConnection(ctx, connectionID) {
-		log.Info("received connection_init for authenticated connection")
-		if err := s.sendConnectionACK(wsCtx, true); err != nil {
-			return nil, err
-		}
+	if s.isInitializedConnection(ctx, connectionID) {
+		log.Warn("received duplicate connection_init")
+		s.closeConnectionWithDesiredCode(
+			ctx,
+			wsCtx,
+			connectionID,
+			wsCloseTooManyInitialisationRequests,
+			"Too many initialisation requests",
+		)
 		return okWebSocketResponse(), nil
 	}
 
@@ -906,11 +911,17 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 
 func (s *wsServer) rejectConnectionInit(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, code int, reason string) {
 	// graphql-transport-ws defines failed initialization as a socket close, not
-	// an operation-scoped Error message. API Gateway's DeleteConnection API does
-	// not accept a close code or reason, but keeping the protocol values in this
-	// seam lets tests pin the intended classification and a future transport
-	// expose the exact CloseEvent without changing the authorization decision.
+	// an operation-scoped Error message.
 	s.removeConnection(ctx, connectionID)
+	s.closeConnectionWithDesiredCode(ctx, wsCtx, connectionID, code, reason)
+}
+
+func (s *wsServer) closeConnectionWithDesiredCode(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, code int, reason string) {
+	// API Gateway's DeleteConnection API does not accept a close code or reason,
+	// but keeping the protocol values in this seam lets tests pin the intended
+	// classification and a future transport expose the exact CloseEvent without
+	// changing the authorization decision. Callers decide whether state removal
+	// is appropriate before reaching this side-effect-bounded transport seam.
 	if s.closeConnection == nil {
 		s.logger.Error("graphql websocket connection closer is not configured",
 			zap.String("connection_id", connectionID),
@@ -925,9 +936,9 @@ func (s *wsServer) rejectConnectionInit(ctx context.Context, wsCtx *apptheory.We
 	}
 }
 
-func (s *wsServer) isAuthenticatedConnection(ctx context.Context, connectionID string) bool {
+func (s *wsServer) isInitializedConnection(ctx context.Context, connectionID string) bool {
 	state, err := s.getConnection(ctx, connectionID)
-	return err == nil && state != nil && state.username != ""
+	return err == nil && state != nil && state.initialized
 }
 
 func (s *wsServer) handleComplete(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, msg wsMessage) (*apptheory.Response, error) {
