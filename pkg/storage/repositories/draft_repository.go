@@ -174,7 +174,7 @@ func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *mod
 	if err := grant.UpdateKeys(); err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Model(grant).Create()
+	return r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
 }
 
 // RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
