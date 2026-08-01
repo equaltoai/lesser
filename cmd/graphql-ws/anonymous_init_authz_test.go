@@ -262,6 +262,61 @@ func TestConnectionInit_DuplicatePreservesInitializedConnection(t *testing.T) {
 	}
 }
 
+type persistedConnectionRepo struct {
+	*fakeConnRepo
+	connection *models.WebSocketConnection
+}
+
+func (r *persistedConnectionRepo) GetConnection(_ context.Context, _ string) (*models.WebSocketConnection, error) {
+	atomic.AddInt32(&r.getConnCalls, 1)
+	return r.connection, nil
+}
+
+func TestConnectionInit_DuplicateAnonymousConnectionRehydratesFromRepository(t *testing.T) {
+	repo := &persistedConnectionRepo{
+		fakeConnRepo: &fakeConnRepo{},
+		connection: &models.WebSocketConnection{
+			ConnectionID: "c1",
+			Username:     "",
+			Info: models.ConnectionInfo{
+				AuthMethod: "anonymous",
+			},
+		},
+	}
+	server := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
+	messages := captureWSMessages(t, server)
+	var closeCode int
+	var closeReason string
+	server.closeConnection = func(_ context.Context, _ *appTheory.WebSocketContext, _ string, code int, reason string) error {
+		closeCode = code
+		closeReason = reason
+		return nil
+	}
+
+	require.NotContains(t, server.connections, "c1", "the test must start with a cold in-memory cache")
+	_, err := server.handleConnectionInit(
+		context.Background(),
+		&appTheory.WebSocketContext{ConnectionID: "c1"},
+		"c1",
+		wsMessage{Type: "connection_init", Payload: json.RawMessage(`{`)},
+	)
+	require.NoError(t, err)
+	require.Equal(t, wsCloseTooManyInitialisationRequests, closeCode)
+	require.Equal(t, "Too many initialisation requests", closeReason)
+	require.Empty(t, *messages, "the duplicate must be rejected before its malformed payload is parsed")
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.getConnCalls))
+	require.Zero(t, atomic.LoadInt32(&repo.writeCalls))
+	require.Zero(t, atomic.LoadInt32(&repo.updateCalls))
+	require.Zero(t, atomic.LoadInt32(&repo.deleteSubsCalls))
+	require.Zero(t, atomic.LoadInt32(&repo.deleteConnCalls))
+
+	state := server.connections["c1"]
+	require.NotNil(t, state)
+	require.True(t, state.initialized)
+	require.Empty(t, state.username)
+	require.Nil(t, state.claims)
+}
+
 func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	manager := graph.NewSubscriptionManager(
 		inmemory.NewStreamingConnectionRepository(),
@@ -430,15 +485,27 @@ func TestAuthenticatedNonAdminAuthorizationFailureIsTerminalError(t *testing.T) 
 			}}}
 		}, ctx
 	}}
+	subscriptionCanceled := false
+	ctx, cancelContext := context.WithCancel(context.Background())
+	cancel := func() {
+		subscriptionCanceled = true
+		cancelContext()
+	}
 	server := newServer(nil, nil, exec, zap.NewNop(), &fakeConnRepo{}, nil, nil)
 	server.connections["member-conn"] = &connectionState{
 		username:      "alice",
 		claims:        &auth.Claims{Username: "alice", Scopes: []string{"read"}},
 		initialized:   true,
-		subscriptions: map[string]*subscriptionState{"admin-only": {cancel: func() {}}},
+		subscriptions: map[string]*subscriptionState{"admin-only": {cancel: cancel}},
 	}
 	messages := make(chan responseEnvelope, 10)
 	server.sendJSONMessage = func(_ *appTheory.WebSocketContext, payload any) error {
+		server.mu.RLock()
+		_, active := server.connections["member-conn"].subscriptions["admin-only"]
+		server.mu.RUnlock()
+		require.False(t, active, "terminal operation errors must be cleaned up before they are observable")
+		require.True(t, subscriptionCanceled, "terminal operation errors must cancel their operation context before they are observable")
+
 		raw, err := json.Marshal(payload)
 		require.NoError(t, err)
 		var envelope responseEnvelope
@@ -447,7 +514,6 @@ func TestAuthenticatedNonAdminAuthorizationFailureIsTerminalError(t *testing.T) 
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	server.executeSubscription(ctx, "member-conn", "admin-only", &graphql.OperationContext{}, cancel, &appTheory.WebSocketContext{ConnectionID: "member-conn"})
 
 	message := receiveWSMessage(t, messages)

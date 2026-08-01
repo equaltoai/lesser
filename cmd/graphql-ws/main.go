@@ -1249,6 +1249,10 @@ func (s *wsServer) sendGraphQLResponse(wsCtx *apptheory.WebSocketContext, id str
 
 func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscriptionID string, opCtx *graphql.OperationContext, cancel context.CancelFunc, wsCtx *apptheory.WebSocketContext) {
 	terminalError := false
+	cleanup := sync.OnceFunc(func() {
+		_ = s.clearSubscription(ctx, connectionID, subscriptionID, false)
+		cancel()
+	})
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("subscription panic: %v", r)
@@ -1256,12 +1260,12 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 				zap.String("connection_id", connectionID),
 				zap.String("subscription_id", subscriptionID),
 				zap.Error(err))
+			cleanup()
 			s.sendGraphQLErrors(wsCtx, subscriptionID, gqlerror.List{gqlerror.Errorf("%v", err)})
 			terminalError = true
 		}
 
-		_ = s.clearSubscription(ctx, connectionID, subscriptionID, false)
-		cancel()
+		cleanup()
 
 		if terminalError {
 			return
@@ -1285,6 +1289,10 @@ func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscr
 			return
 		}
 		if hasTerminalAuthorizationError(response.Errors) {
+			// An Error frame terminates the operation. Remove the operation before
+			// publishing that frame so a client can never observe a terminal error
+			// while the subscription is still registered.
+			cleanup()
 			s.sendGraphQLErrors(wsCtx, subscriptionID, response.Errors)
 			terminalError = true
 			return
