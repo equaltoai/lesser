@@ -95,4 +95,41 @@ func TestGetConnectionRehydratesCredentialExpiry(t *testing.T) {
 	require.NotNil(t, state.claims)
 	require.NotNil(t, state.claims.ExpiresAt)
 	require.Equal(t, expiresAt, state.claims.ExpiresAt.Time)
+	require.False(t, state.credentialExpiryUnavailable)
+}
+
+func TestLegacyConnectionWithoutCredentialExpiryFailsClosedOnNextOperation(t *testing.T) {
+	exec := &fakeGraphQLExecutor{create: func(context.Context, *graphql.RawParams) (*graphql.OperationContext, gqlerror.List) {
+		return &graphql.OperationContext{Operation: &ast.OperationDefinition{Operation: ast.Subscription}}, nil
+	}}
+	repo := &fakeConnRepo{getConnection: &models.WebSocketConnection{
+		ConnectionID: "legacy",
+		UserID:       "alice",
+		Username:     "alice",
+		Info: models.ConnectionInfo{
+			AuthMethod:    "oauth",
+			CustomHeaders: map[string]string{"scopes": "read"},
+		},
+	}}
+	server := newServer(nil, nil, exec, zap.NewNop(), repo, nil, &fakeInstanceRepo{state: &models.InstanceState{}})
+	messages := make(chan responseEnvelope, 1)
+	server.sendJSONMessage = func(_ *appTheory.WebSocketContext, payload any) error {
+		raw, err := json.Marshal(payload)
+		require.NoError(t, err)
+		var envelope responseEnvelope
+		require.NoError(t, json.Unmarshal(raw, &envelope))
+		messages <- envelope
+		return nil
+	}
+
+	server.handleSubscribe(context.Background(), wsMessage{
+		ID:      "legacy-operation",
+		Type:    "subscribe",
+		Payload: json.RawMessage(`{"query":"subscription { timelineUpdates(type: HOME) { id } }"}`),
+	}, &appTheory.WebSocketContext{ConnectionID: "legacy"})
+
+	message := receiveWSMessage(t, messages)
+	require.Equal(t, "error", message.Type)
+	require.Equal(t, wsCodeCredentialExpired, graphQLErrorExtensionCode(t, message.Payload))
+	require.Zero(t, atomic.LoadInt32(&exec.createCalls), "legacy authenticated rows without persisted expiry must force re-authentication before operation creation")
 }

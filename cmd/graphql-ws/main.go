@@ -55,10 +55,11 @@ const (
 )
 
 type connectionState struct {
-	username      string
-	claims        *auth.Claims
-	initialized   bool
-	subscriptions map[string]*subscriptionState
+	username                    string
+	claims                      *auth.Claims
+	initialized                 bool
+	credentialExpiryUnavailable bool
+	subscriptions               map[string]*subscriptionState
 }
 
 type subscriptionState struct {
@@ -361,10 +362,11 @@ func (s *wsServer) registerConnection(ctx context.Context, connectionID, usernam
 		subscriptions = existing.subscriptions
 	}
 	s.connections[connectionID] = &connectionState{
-		username:      username,
-		claims:        claims,
-		initialized:   true,
-		subscriptions: subscriptions,
+		username:                    username,
+		claims:                      claims,
+		initialized:                 true,
+		credentialExpiryUnavailable: claims != nil && claims.ExpiresAt == nil,
+		subscriptions:               subscriptions,
 	}
 	s.mu.Unlock()
 
@@ -476,6 +478,7 @@ func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*con
 	}
 
 	var claims *auth.Claims
+	credentialExpiryUnavailable := false
 	if connection.Username != "" {
 		claims = &auth.Claims{
 			Username: connection.Username,
@@ -489,15 +492,20 @@ func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*con
 					return nil, fmt.Errorf("invalid persisted graphql credential expiry: %w", parseErr)
 				}
 				claims.ExpiresAt = jwt.NewNumericDate(time.Unix(expiresAt, 0).UTC())
+			} else {
+				credentialExpiryUnavailable = true
 			}
+		} else {
+			credentialExpiryUnavailable = true
 		}
 	}
 
 	state = &connectionState{
-		username:      connection.Username,
-		claims:        claims,
-		initialized:   connection.Username != "" || connection.Info.AuthMethod == "anonymous",
-		subscriptions: make(map[string]*subscriptionState),
+		username:                    connection.Username,
+		claims:                      claims,
+		initialized:                 connection.Username != "" || connection.Info.AuthMethod == "anonymous",
+		credentialExpiryUnavailable: credentialExpiryUnavailable,
+		subscriptions:               make(map[string]*subscriptionState),
 	}
 
 	s.mu.Lock()
@@ -1222,7 +1230,13 @@ func (s *wsServer) sendOperationCredentialExpiredError(wsCtx *apptheory.WebSocke
 }
 
 func connectionCredentialExpired(state *connectionState, now time.Time) bool {
-	if state == nil || state.claims == nil || state.claims.ExpiresAt == nil {
+	if state == nil || state.claims == nil {
+		return false
+	}
+	if state.credentialExpiryUnavailable {
+		return true
+	}
+	if state.claims.ExpiresAt == nil {
 		return false
 	}
 	return !now.Before(state.claims.ExpiresAt.Time)
