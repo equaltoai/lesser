@@ -25,7 +25,7 @@ The current deployable baseline consumes the latest released Theory Cloud framew
 
 - AppTheory `v1.7.0` in the Go runtime and CDK app.
 - TableTheory `v1.8.3` in the Go runtime.
-- FaceTheory `v3.2.2` as the recommended client-app dependency in `docs/guides/CLIENT_APP_GUIDE.md`.
+- FaceTheory `v4.0.1` as the recommended client-app dependency in `docs/guides/CLIENT_APP_GUIDE.md`.
 
 Deploy implications:
 
