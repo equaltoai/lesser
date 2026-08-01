@@ -324,21 +324,6 @@ func validateReplyParentVisibility(status *models.Status, requestedVisibility st
 	return notes.ValidateChildReach("reply", status, requestedVisibility)
 }
 
-func replyVisibilityRank(visibility string) (int, bool) {
-	switch strings.TrimSpace(visibility) {
-	case models.VisibilityPublic:
-		return 0, true
-	case models.VisibilityUnlisted:
-		return 1, true
-	case models.VisibilityPrivate:
-		return 2, true
-	case models.VisibilityDirect:
-		return 3, true
-	default:
-		return 0, false
-	}
-}
-
 func replyParentResultFromStatus(status *models.Status, fetched bool, localDomain string) *notes.ResolvedReplyParent {
 	if status == nil {
 		return nil
