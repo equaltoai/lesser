@@ -650,6 +650,10 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 		return r.convertCMSArticle(ctx, article, true), nil
 	}
 
+	return r.cmsArticleByLegacySlug(ctx, store, domain, tenant, slug)
+}
+
+func (r *queryResolver) cmsArticleByLegacySlug(ctx context.Context, store storagecore.RepositoryStorage, domain, tenant, slug string) (*model.Article, error) {
 	legacyID := cmsArticleID(domain, slug)
 	article, err := store.Article().GetArticle(ctx, legacyID)
 	if err != nil {
