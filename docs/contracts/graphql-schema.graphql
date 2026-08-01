@@ -2347,6 +2347,7 @@ type TOCEntry {
 
 type Article {
   id: ID!
+  deletedAt: Time
   slug: String!
   authorId: ID!
   author: Actor!

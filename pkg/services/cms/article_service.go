@@ -414,11 +414,13 @@ func (s *ArticleService) buildArticleTombstone(article *models.Article) (*models
 	}
 
 	tombstone := &models.Tombstone{
-		ID:         objectID,
-		FormerType: formerType,
-		DeletedBy:  deletedBy,
-		Summary:    summary,
-		Deleted:    time.Now(),
+		ID:           objectID,
+		FormerType:   formerType,
+		DeletedBy:    deletedBy,
+		AttributedTo: deletedBy,
+		IsPublic:     true,
+		Summary:      summary,
+		Deleted:      time.Now(),
 	}
 	if err := tombstone.BeforeCreate(); err != nil {
 		return nil, fmt.Errorf("prepare article tombstone: %w", err)

@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/cms"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -504,10 +506,76 @@ func (r *queryResolver) Article(ctx context.Context, id string) (*model.Article,
 
 	article, err := store.Article().GetArticle(ctx, strings.TrimSpace(id))
 	if err != nil {
+		if cmsArticleNotFound(err) {
+			return r.deletedCMSArticle(ctx, strings.TrimSpace(id))
+		}
 		return nil, err
 	}
 
 	return r.convertCMSArticle(ctx, article, true), nil
+}
+
+func (r *queryResolver) deletedCMSArticle(ctx context.Context, id string) (*model.Article, error) {
+	store := r.cmsStorage()
+	if store == nil || store.GetDB() == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	var tombstone models.Tombstone
+	err := store.GetDB().WithContext(ctx).Model(&models.Tombstone{}).
+		Where("PK", "=", "OBJECT#"+strings.TrimSpace(id)).
+		Where("SK", "=", "TOMBSTONE").
+		First(&tombstone)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(tombstone.FormerType), "Article") || !r.cmsArticleTombstoneVisible(ctx, &tombstone) {
+		return nil, nil
+	}
+
+	deletedAt := model.Time(tombstone.Deleted)
+	createdAt := tombstone.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = tombstone.Deleted
+	}
+	authorID := strings.TrimSpace(tombstone.AttributedTo)
+	if authorID == "" {
+		authorID = strings.TrimSpace(tombstone.DeletedBy)
+	}
+
+	return &model.Article{
+		ID:              tombstone.ID,
+		DeletedAt:       &deletedAt,
+		Slug:            cmsExtractSlugFromURL(tombstone.ID),
+		AuthorID:        authorID,
+		Author:          r.resolveActorByID(ctx, authorID),
+		ContentFormat:   model.ContentFormatHTML,
+		TableOfContents: []*model.TOCEntry{},
+		Categories:      []*model.Category{},
+		PublishedAt:     deletedAt,
+		CreatedAt:       model.Time(createdAt),
+		UpdatedAt:       deletedAt,
+	}, nil
+}
+
+func (r *queryResolver) cmsArticleTombstoneVisible(ctx context.Context, tombstone *models.Tombstone) bool {
+	if tombstone == nil {
+		return false
+	}
+	if tombstone.IsPublic {
+		return true
+	}
+
+	username := strings.TrimSpace(getUsernameFromContext(ctx))
+	if username == "" {
+		return false
+	}
+	viewerActorID := cmsLocalActorID(r.getDomain(), username)
+	return strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.AttributedTo)) ||
+		strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.DeletedBy))
 }
 
 func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.Article, error) {
@@ -585,6 +653,9 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 	legacyID := cmsArticleID(domain, slug)
 	article, err := store.Article().GetArticle(ctx, legacyID)
 	if err != nil {
+		if cmsArticleNotFound(err) {
+			return r.deletedCMSArticle(ctx, legacyID)
+		}
 		return nil, err
 	}
 
@@ -601,6 +672,10 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 	}
 
 	return r.convertCMSArticle(ctx, article, true), nil
+}
+
+func cmsArticleNotFound(err error) bool {
+	return common.IsNotFound(err) || errors.Is(err, storage.ErrNotFound) || dynamormerrors.IsNotFound(err)
 }
 
 func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) (*model.ArticleConnection, error) {

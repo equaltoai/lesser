@@ -567,6 +567,8 @@ func TestArticleService_M2ArticleDeleteFederationAndTombstone(t *testing.T) {
 	require.Equal(t, canonicalArticle.ID, capturedTombstone.ID)
 	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
 	require.Equal(t, "https://example.com/users/alice", capturedTombstone.DeletedBy)
+	require.Equal(t, "https://example.com/users/alice", capturedTombstone.AttributedTo)
+	require.True(t, capturedTombstone.IsPublic)
 	require.Equal(t, "Tombstone", capturedTombstone.Type)
 	require.Equal(t, "OBJECT#"+canonicalArticle.ID, capturedTombstone.PK)
 	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)

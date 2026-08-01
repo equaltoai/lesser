@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -113,6 +114,56 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.Equal(t, "https://localhost/articles/updated-draft", article.ID)
 	require.Equal(t, cmsLocalActorID(resolver.getDomain(), "alice"), article.AuthorID)
 	require.NotEmpty(t, article.ID)
+}
+
+func TestRound12CMS_ArticleReadSurfacesVisibleTombstone(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	deletedID := "https://localhost/articles/deleted-article"
+	deletedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	tombstoneDB := new(dynamormmocks.MockDB)
+	deletedQuery := new(dynamormmocks.MockQuery)
+	missingQuery := new(dynamormmocks.MockQuery)
+	storage.db = tombstoneDB
+
+	tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Twice()
+	tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(deletedQuery).Once()
+	deletedQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(deletedQuery).Once()
+	deletedQuery.On("Where", "SK", "=", "TOMBSTONE").Return(deletedQuery).Once()
+	deletedQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*models.Tombstone)
+		*dest = models.Tombstone{
+			ID:           deletedID,
+			FormerType:   "Article",
+			Deleted:      deletedAt,
+			CreatedAt:    deletedAt,
+			DeletedBy:    "https://localhost/users/alice",
+			AttributedTo: "https://localhost/users/alice",
+			IsPublic:     true,
+		}
+	}).Return(nil).Once()
+
+	missingID := "https://localhost/articles/never-existed"
+	tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(missingQuery).Once()
+	missingQuery.On("Where", "PK", "=", "OBJECT#"+missingID).Return(missingQuery).Once()
+	missingQuery.On("Where", "SK", "=", "TOMBSTONE").Return(missingQuery).Once()
+	missingQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+	deleted, err := resolver.Query().Article(ctx, deletedID)
+	require.NoError(t, err)
+	require.NotNil(t, deleted)
+	require.Equal(t, deletedID, deleted.ID)
+	require.NotNil(t, deleted.DeletedAt)
+	require.Equal(t, model.Time(deletedAt), *deleted.DeletedAt)
+
+	missing, err := resolver.Query().Article(ctx, missingID)
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	tombstoneDB.AssertExpectations(t)
+	deletedQuery.AssertExpectations(t)
+	missingQuery.AssertExpectations(t)
 }
 
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
