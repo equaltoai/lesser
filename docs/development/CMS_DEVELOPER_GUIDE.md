@@ -37,6 +37,16 @@ Nested business objects still count toward the limit; agents should prefer scala
 
 `lesser-body` and other MCP clients should treat this schema as the canonical Lesser contract and avoid substituting local CMS/profile storage.
 
+## CMS read-path renderer boundary
+
+For the ordinary CMS GraphQL read paths (`article`, `articleBySlug`, and Article connections), Lesser is the authority for
+the stored raw source and its declared `contentFormat`; `Article.content` is not a promise of presentation-ready HTML.
+Rendering and sanitizing that source for browser presentation belongs to the FaceTheory/greater-components client plane.
+Consumers must select the renderer for the declared format and must not insert raw Article source into an HTML sink.
+
+This boundary is intentional (operator ruling 2026-08-01) and makes the read-path behavior tracked in #1287 by-design.
+It does not change the separate server-rendered draft-preview, public-page, or ActivityPub publication contracts.
+
 ## Service ownership (canonical responsibilities)
 
 ### `ArticleService` (`pkg/services/cms/article_service.go`)
