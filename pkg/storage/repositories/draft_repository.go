@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -174,7 +175,11 @@ func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *mod
 	if err := grant.UpdateKeys(); err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
+	err := r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
+	if dynamormerrors.IsConditionFailed(err) {
+		return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
+	}
+	return err
 }
 
 // RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
