@@ -20,10 +20,10 @@ Current state:
 
 ## Theory Cloud framework baseline
 
-The current deployable baseline consumes the latest released Theory Cloud framework line that was evaluated on
-2026-05-18:
+As of 2026-08-01, the current deployable baseline uses these Theory Cloud framework pins:
 
-- AppTheory `v2.0.1` in the Go runtime and CDK app.
+- AppTheory `v2.0.1` in the Go runtime; the CDK app separately pins AppTheory `cdk-go` at
+  `v0.0.0-20260708194537-63e44cc6b4fc`.
 - TableTheory `v2.0.5` in the Go runtime.
 - FaceTheory `v4.0.1` as the recommended client-app dependency in `docs/guides/CLIENT_APP_GUIDE.md`.
 

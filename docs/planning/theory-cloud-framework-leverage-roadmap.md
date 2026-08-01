@@ -52,8 +52,9 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 ### What is definitely true in lesser today
 
 - post-refresh pins:
-  - root `go.mod`: AppTheory `v1.7.0`, TableTheory `v1.8.3`;
-  - `infra/cdk/go.mod`: AppTheory `v1.7.0`, AWS CDK Go `v2.254.0`, jsii runtime `v1.129.0`;
+  - root `go.mod`: AppTheory `v2.0.1`, TableTheory `v2.0.5`;
+  - `infra/cdk/go.mod`: AppTheory `cdk-go` `v0.0.0-20260708194537-63e44cc6b4fc`, AWS CDK Go `v2.261.0`,
+    jsii runtime `v1.133.0`;
   - FaceTheory client-install tests/docs: `v3.2.2` GitHub release asset;
   - auth UI: Astro `6.3.3`, Svelte `5.55.7`, devalue override `5.8.1`.
 - The baseline already fixed one CDK/jsii surfaced issue by canonicalizing `LambdaAssetRoot` to an absolute path
