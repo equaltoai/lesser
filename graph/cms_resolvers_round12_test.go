@@ -457,12 +457,86 @@ func TestRound12CMS_AllSeriesAuthorPaginationRoundTrips(t *testing.T) {
 	seriesRepo.AssertExpectations(t)
 }
 
+func TestRound12CMS_AllSeriesAuthorPaginationRejectsCrossAuthorCursor(t *testing.T) {
+	ctx := context.Background()
+	seriesRepo := storagemocks.NewMockSeriesRepository()
+	storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+	resolver := &Resolver{
+		Config: &config.Config{
+			CMSLongFormPublishingEnabled: true,
+			CMSSeriesEnabled:             true,
+		},
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	}
+
+	bobCursor := round12SeriesCursor(t, &models.Series{
+		PK: "AUTHOR#bob#SERIES",
+		SK: "ID#series-1",
+	})
+	alice := "alice"
+	first := 2
+
+	page, err := resolver.Query().AllSeries(ctx, &alice, &first, &bobCursor)
+	require.Nil(t, page)
+	require.EqualError(t, err, ErrInvalidAfterCursor.Error())
+	seriesRepo.AssertNotCalled(t, "ListSeriesByAuthorPaginated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestRound12CMS_AllSeriesAuthorPaginationRejectsTamperedCursorEnvelopes(t *testing.T) {
+	tests := map[string]model.Cursor{
+		"not encoded": "not-a-cursor",
+		"missing PK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"SK": &types.AttributeValueMemberS{Value: "ID#series-1"},
+		}),
+		"non-string PK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberN{Value: "1"},
+			"SK": &types.AttributeValueMemberS{Value: "ID#series-1"},
+		}),
+		"missing SK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "AUTHOR#alice#SERIES"},
+		}),
+		"non-string SK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "AUTHOR#alice#SERIES"},
+			"SK": &types.AttributeValueMemberN{Value: "1"},
+		}),
+	}
+
+	for name, cursor := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			seriesRepo := storagemocks.NewMockSeriesRepository()
+			storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+			resolver := &Resolver{
+				Config: &config.Config{
+					CMSLongFormPublishingEnabled: true,
+					CMSSeriesEnabled:             true,
+				},
+				Storage: storage,
+				Logger:  zap.NewNop(),
+			}
+			alice := "alice"
+			first := 2
+
+			page, err := resolver.Query().AllSeries(ctx, &alice, &first, &cursor)
+			require.Nil(t, page)
+			require.EqualError(t, err, ErrInvalidAfterCursor.Error())
+			seriesRepo.AssertNotCalled(t, "ListSeriesByAuthorPaginated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
+}
+
 func round12SeriesCursor(t *testing.T, series *models.Series) model.Cursor {
 	t.Helper()
-	encoded, err := dynamormquery.EncodeCursor(map[string]types.AttributeValue{
+	return round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{Value: series.PK},
 		"SK": &types.AttributeValueMemberS{Value: series.SK},
-	}, "", "")
+	})
+}
+
+func round12EncodeSeriesCursorEnvelope(t *testing.T, key map[string]types.AttributeValue) model.Cursor {
+	t.Helper()
+	encoded, err := dynamormquery.EncodeCursor(key, "", "")
 	require.NoError(t, err)
 	return model.Cursor(encoded)
 }

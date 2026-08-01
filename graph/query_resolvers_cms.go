@@ -937,7 +937,10 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 	)
 
 	if username != "" {
-		authorCursor := cmsSeriesAuthorCursor(cursor)
+		authorCursor, cursorErr := cmsSeriesAuthorCursor(cursor, username)
+		if cursorErr != nil {
+			return nil, cursorErr
+		}
 		items, nextCursor, err = store.Series().ListSeriesByAuthorPaginated(ctx, username, limit, authorCursor)
 		if err != nil {
 			return nil, err
@@ -945,7 +948,7 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		if nextCursor != "" {
 			encodedCursor, cursorErr := cmsSeriesEdgeCursor(&models.Series{
 				AuthorID: username,
-				SK:       cmsSeriesAuthorCursor(nextCursor),
+				SK:       strings.TrimSpace(nextCursor),
 			})
 			if cursorErr != nil {
 				return nil, cursorErr
@@ -1023,24 +1026,31 @@ func cmsSeriesEdgeCursor(item *models.Series) (model.Cursor, error) {
 	return model.Cursor(encoded), nil
 }
 
-func cmsSeriesAuthorCursor(cursor string) string {
+func cmsSeriesAuthorCursor(cursor, authorID string) (string, error) {
 	cursor = strings.TrimSpace(cursor)
 	if cursor == "" {
-		return ""
+		return "", nil
 	}
 
 	decoded, err := dynamormquery.DecodeCursor(cursor)
 	if err != nil {
-		return cursor
+		return "", ErrInvalidAfterCursorWithContext(fmt.Errorf("decode series cursor: %w", err))
 	}
 	key, err := decoded.ToAttributeValues()
 	if err != nil {
-		return cursor
+		return "", ErrInvalidAfterCursorWithContext(fmt.Errorf("decode series cursor key: %w", err))
 	}
-	if sk, ok := key["SK"].(*types.AttributeValueMemberS); ok && strings.TrimSpace(sk.Value) != "" {
-		return strings.TrimSpace(sk.Value)
+
+	expectedPK := fmt.Sprintf("AUTHOR#%s#SERIES", strings.TrimSpace(authorID))
+	pk, ok := key["PK"].(*types.AttributeValueMemberS)
+	if !ok || strings.TrimSpace(pk.Value) != expectedPK {
+		return "", ErrInvalidAfterCursorWithContext(errors.New("series cursor does not match author partition"))
 	}
-	return cursor
+	sk, ok := key["SK"].(*types.AttributeValueMemberS)
+	if !ok || strings.TrimSpace(sk.Value) == "" {
+		return "", ErrInvalidAfterCursorWithContext(errors.New("series cursor is missing its sort key"))
+	}
+	return strings.TrimSpace(sk.Value), nil
 }
 
 func listGlobalSeriesPaginated(ctx context.Context, db dynamormcore.DB, limit int, cursor string) ([]*models.Series, string, error) {
