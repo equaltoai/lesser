@@ -14,7 +14,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	commonerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -63,7 +65,7 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Res
 	// Check if this is a quote boost
 	if req.Comment != nil && *req.Comment != "" {
 		// Create a quote boost
-		return h.createQuoteBoostLift(ctx, statusID, objectID, *req.Comment, req.Visibility, actor)
+		return h.createQuoteBoostLift(ctx, username, statusID, objectID, *req.Comment, req.Visibility, actor)
 	}
 
 	// Traditional boost - create Announce activity
@@ -217,13 +219,43 @@ func (h *Handler) extractContentFromObject(obj any) string {
 }
 
 // createQuoteBoostLift creates a new status with a quote relationship
-func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) (*apptheory.Response, error) {
+func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusID, objectID, comment, visibility string, actor *activitypub.Actor) (*apptheory.Response, error) {
 	// Validate and default visibility if not specified
 	if err := common.ValidateVisibility(visibility); err != nil {
 		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 	if visibility == "" {
 		visibility = storageModels.VisibilityPublic
+	}
+
+	if h.registry == nil {
+		h.logger.Error("service registry unavailable while resolving quote target")
+		return common.RespondInternalServerError(ctx)
+	}
+	notesService := h.registry.Notes()
+	if notesService == nil {
+		h.logger.Error("notes service unavailable while resolving quote target")
+		return common.RespondInternalServerError(ctx)
+	}
+	quoteTarget, err := notesService.ResolveQuoteTarget(ctx.Context(), username, statusID)
+	if err != nil {
+		h.logger.Warn("quote target rejected",
+			zap.String("status_id", statusID),
+			zap.String("viewer", username),
+			zap.Error(err))
+		if appErr, ok := commonerrors.AsAppError(err); ok {
+			return common.RespondWithAppError(ctx, appErr)
+		}
+		return common.RespondInternalServerError(ctx)
+	}
+	if err := notes.ValidateChildReach("quote", quoteTarget, visibility); err != nil {
+		if appErr, ok := commonerrors.AsAppError(err); ok {
+			return common.RespondWithAppError(ctx, appErr)
+		}
+		return common.RespondInternalServerError(ctx)
+	}
+	if quoteTarget.Note != nil && strings.TrimSpace(quoteTarget.Note.ID) != "" {
+		objectID = strings.TrimSpace(quoteTarget.Note.ID)
 	}
 
 	// Generate note ID

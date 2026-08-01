@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -55,7 +57,16 @@ func TestUnifiedBoostHandlers_Round11(t *testing.T) {
 		},
 	}
 
-	handler, _, _ := round11NewHandler(t, cfg, state)
+	handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: &NotesServiceStub{
+		ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawQuoteTarget string) (*storagemodels.Status, error) {
+			require.Equal(t, "alice", viewerID)
+			require.Equal(t, "status-1", rawQuoteTarget)
+			return quoteBoostTarget("status-1", objectID, storagemodels.VisibilityPublic), nil
+		},
+		ReblogNoteFunc: func(_ context.Context, cmd *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
+			return &notes.LikeResult{Status: &storagemodels.Status{StatusID: cmd.StatusID}}, nil
+		},
+	}})
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 	headers := map[string]string{"Authorization": "Bearer " + writeToken}
 

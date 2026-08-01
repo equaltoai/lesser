@@ -86,15 +86,38 @@ func (r *Resolver) ResolveReplyParent(
 	rawInReplyTo string,
 	requestedVisibility string,
 ) (*notes.ResolvedReplyParent, error) {
+	return r.resolveStatusReference(ctx, author, rawInReplyTo, requestedVisibility, true)
+}
+
+// ResolveQuoteTarget reuses the reply path's storage-first, authorized remote
+// fetch and materialization flow. Viewer access and quote reach are enforced by
+// the notes service after the target has a stable local projection.
+func (r *Resolver) ResolveQuoteTarget(
+	ctx context.Context,
+	author *storage.Account,
+	rawQuoteTarget string,
+) (*notes.ResolvedReplyParent, error) {
+	return r.resolveStatusReference(ctx, author, rawQuoteTarget, "", false)
+}
+
+func (r *Resolver) resolveStatusReference(
+	ctx context.Context,
+	author *storage.Account,
+	rawInReplyTo string,
+	requestedVisibility string,
+	validateReach bool,
+) (*notes.ResolvedReplyParent, error) {
 	rawInReplyTo = strings.TrimSpace(rawInReplyTo)
 	if rawInReplyTo == "" {
 		return nil, nil
 	}
 
 	if status, err := r.resolveStoredParent(ctx, rawInReplyTo); err == nil && status != nil {
-		if err := validateReplyParentVisibility(status, requestedVisibility); err != nil {
-			r.logOutcome("visibility_rejected", rawInReplyTo, status, false, err)
-			return nil, err
+		if validateReach {
+			if err := validateReplyParentVisibility(status, requestedVisibility); err != nil {
+				r.logOutcome("visibility_rejected", rawInReplyTo, status, false, err)
+				return nil, err
+			}
 		}
 		r.logOutcome("stored", rawInReplyTo, status, false, nil)
 		return replyParentResultFromStatus(status, false, r.localDomain), nil
@@ -111,7 +134,7 @@ func (r *Resolver) ResolveReplyParent(
 		return nil, invalidReplyParentReference(rawInReplyTo, err)
 	}
 
-	if requestedVisibility == models.VisibilityDirect {
+	if validateReach && requestedVisibility == models.VisibilityDirect {
 		return nil, unusableReplyParent(parentURL, "direct replies are handled by conversations")
 	}
 
@@ -145,9 +168,11 @@ func (r *Resolver) ResolveReplyParent(
 		return nil, mappedErr
 	}
 
-	if err := validateReplyParentVisibility(status, requestedVisibility); err != nil {
-		r.logOutcome("visibility_rejected", rawInReplyTo, status, true, err)
-		return nil, err
+	if validateReach {
+		if err := validateReplyParentVisibility(status, requestedVisibility); err != nil {
+			r.logOutcome("visibility_rejected", rawInReplyTo, status, true, err)
+			return nil, err
+		}
 	}
 
 	r.logOutcome("materialized", rawInReplyTo, status, true, nil)
@@ -296,21 +321,7 @@ func fetchedReplyParentNote(obj any) (*activitypub.Note, error) {
 }
 
 func validateReplyParentVisibility(status *models.Status, requestedVisibility string) error {
-	if status == nil {
-		return unusableReplyParent("", "reply parent is unavailable")
-	}
-
-	parentRank, parentOK := replyVisibilityRank(status.Visibility)
-	requestedRank, requestedOK := replyVisibilityRank(requestedVisibility)
-	if !parentOK || !requestedOK {
-		return unusableReplyParent(status.StatusID, "reply visibility is unsupported")
-	}
-
-	if requestedRank < parentRank {
-		return unusableReplyParent(status.StatusID, "reply visibility cannot broaden beyond the parent")
-	}
-
-	return nil
+	return notes.ValidateChildReach("reply", status, requestedVisibility)
 }
 
 func replyVisibilityRank(visibility string) (int, bool) {

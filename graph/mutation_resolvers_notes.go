@@ -43,10 +43,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		return nil, errors.New("notes service is not available")
 	}
 	if quoteTargetID != "" {
-		quoteTarget, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-			StatusID: quoteTargetID,
-			ViewerID: username,
-		})
+		quoteTarget, err := service.ResolveQuoteTarget(ctx, username, quoteTargetID)
 		if err != nil {
 			return nil, errors.Join(errors.New("failed to load quote target"), err)
 		}
@@ -557,10 +554,7 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	if service == nil {
 		return nil, errors.New("notes service is not available")
 	}
-	quoteTarget, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-		StatusID: strings.TrimSpace(input.QuoteURL),
-		ViewerID: username,
-	})
+	quoteTarget, err := service.ResolveQuoteTarget(ctx, username, strings.TrimSpace(input.QuoteURL))
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to load quote target"), err)
 	}
@@ -605,52 +599,5 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 }
 
 func validateMutationChildReach(relationship string, parent *models.Status, requestedVisibility string) error {
-	if parent == nil {
-		return apperrors.NewAppError(
-			apperrors.CodeUnprocessableEntity,
-			apperrors.CategoryValidation,
-			"parent status is not usable",
-		)
-	}
-
-	parentRank, parentOK := mutationVisibilityRank(parent.Visibility)
-	requestedRank, requestedOK := mutationVisibilityRank(requestedVisibility)
-	if !parentOK || !requestedOK {
-		return apperrors.NewAppError(
-			apperrors.CodeUnprocessableEntity,
-			apperrors.CategoryValidation,
-			"status visibility is not supported for this relationship",
-		).
-			WithMetadata("relationship", relationship).
-			WithMetadata("parent_visibility", parent.Visibility).
-			WithMetadata("requested_visibility", requestedVisibility)
-	}
-	if requestedRank < parentRank {
-		return apperrors.NewAppError(
-			apperrors.CodeUnprocessableEntity,
-			apperrors.CategoryValidation,
-			"requested visibility exceeds parent reach",
-		).
-			WithMetadata("relationship", relationship).
-			WithMetadata("parent_id", parent.StatusID).
-			WithMetadata("parent_visibility", parent.Visibility).
-			WithMetadata("requested_visibility", requestedVisibility)
-	}
-
-	return nil
-}
-
-func mutationVisibilityRank(visibility string) (int, bool) {
-	switch strings.ToLower(strings.TrimSpace(visibility)) {
-	case models.VisibilityPublic:
-		return 0, true
-	case models.VisibilityUnlisted:
-		return 1, true
-	case models.VisibilityPrivate:
-		return 2, true
-	case models.VisibilityDirect:
-		return 3, true
-	default:
-		return 0, false
-	}
+	return notes.ValidateChildReach(relationship, parent, requestedVisibility)
 }

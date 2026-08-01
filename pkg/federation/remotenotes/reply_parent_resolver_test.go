@@ -310,6 +310,35 @@ func TestReplyParentResolver_ResolveReplyParent(t *testing.T) {
 	})
 }
 
+func TestReplyParentResolver_ResolveQuoteTargetMaterializesRemoteStatus(t *testing.T) {
+	parentURL := "https://remote.example/users/steward/statuses/fresh-quote"
+	statusRepo := &stubStatusRepo{}
+	objectRepo := &stubObjectRepo{}
+	fetcher := &stubFetcher{obj: remoteNoteObject(parentURL, models.VisibilityPrivate)}
+	resolver := NewReplyParentResolver(
+		statusRepo,
+		objectRepo,
+		&stubDomainBlockRepo{},
+		fetcher,
+		"example.com",
+		zap.NewNop(),
+	)
+
+	result, err := resolver.ResolveQuoteTarget(context.Background(), localAuthorAccount("alice"), parentURL)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status)
+	require.Len(t, objectRepo.created, 1)
+	assert.True(t, result.Fetched)
+	assert.True(t, result.Remote)
+	assert.Equal(t, models.VisibilityPrivate, result.Status.Visibility)
+	assert.Equal(t, parentURL, result.CanonicalObjectURL)
+	assert.Equal(t, parentURL, fetcher.gotURL)
+	require.NotNil(t, fetcher.gotActor)
+	assert.Equal(t, "alice", fetcher.gotActor.PreferredUsername)
+	assert.Same(t, result.Status, statusRepo.byURL[parentURL], "the fetched quote target must be materialized before caller-side access evaluation")
+}
+
 func localAuthorAccount(username string) *storage.Account {
 	actorID := "https://example.com/users/" + username
 	return &storage.Account{
