@@ -18,8 +18,8 @@ This checklist is for maintainers preparing a release/deployable build.
 ## Theory Cloud framework baseline
 
 - [ ] Confirm release notes name the pinned framework baseline:
-  - AppTheory `v1.7.0`
-  - TableTheory `v1.8.3`
+  - AppTheory `v2.0.1`
+  - TableTheory `v2.0.5`
   - FaceTheory `v4.0.1` for client-app guidance
 - [ ] Confirm auth UI dependency remediation remains intact (`cd auth-ui && corepack pnpm audit --prod` when touching
       `auth-ui/package.json` or `auth-ui/pnpm-lock.yaml`)

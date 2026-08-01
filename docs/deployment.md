@@ -23,8 +23,8 @@ Current state:
 The current deployable baseline consumes the latest released Theory Cloud framework line that was evaluated on
 2026-05-18:
 
-- AppTheory `v1.7.0` in the Go runtime and CDK app.
-- TableTheory `v1.8.3` in the Go runtime.
+- AppTheory `v2.0.1` in the Go runtime and CDK app.
+- TableTheory `v2.0.5` in the Go runtime.
 - FaceTheory `v4.0.1` as the recommended client-app dependency in `docs/guides/CLIENT_APP_GUIDE.md`.
 
 Deploy implications:
