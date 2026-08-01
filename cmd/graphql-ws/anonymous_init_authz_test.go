@@ -18,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	appTheory "github.com/theory-cloud/apptheory/v2/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -433,7 +434,11 @@ func TestAuthenticatedConnectionStillStreamsGatedSubscription(t *testing.T) {
 	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
-	validator := &fakeTokenValidator{claims: &auth.Claims{Username: "alice", Scopes: []string{"read"}}}
+	validator := &fakeTokenValidator{claims: &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+		Username:         "alice",
+		Scopes:           []string{"read"},
+	}}
 	server := newServer(validator, resolver, exec, zap.NewNop(), &fakeConnRepo{}, nil, &fakeInstanceRepo{state: &models.InstanceState{}})
 	server.connections["authenticated-conn"] = &connectionState{subscriptions: map[string]*subscriptionState{}}
 	messages := make(chan responseEnvelope, 10)

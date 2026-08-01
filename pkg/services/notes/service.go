@@ -125,6 +125,7 @@ type FederationService interface {
 // ReplyParentResolver resolves and materializes reply parents for note creation.
 type ReplyParentResolver interface {
 	ResolveReplyParent(ctx context.Context, author *storage.Account, rawInReplyTo string, requestedVisibility string) (*ResolvedReplyParent, error)
+	ResolveQuoteTarget(ctx context.Context, author *storage.Account, rawQuoteTarget string) (*ResolvedReplyParent, error)
 }
 
 // ResolvedReplyParent describes a reply parent resolved for a single create-note request.
@@ -674,6 +675,44 @@ func (s *Service) resolveCreateReplyParent(ctx context.Context, author *storage.
 		Visibility:         parent.Visibility,
 		Remote:             !s.replyParentIsLocal(parent),
 	}, nil
+}
+
+// ResolveQuoteTarget resolves and, when necessary, materializes a quote target
+// before applying the normal viewer-aware status access checks. Quote creation
+// must not turn an unviewable status reference into an existence oracle.
+func (s *Service) ResolveQuoteTarget(ctx context.Context, viewerID, rawQuoteTarget string) (*models.Status, error) {
+	if err := common.ValidateRequiredParam("quote_target", strings.TrimSpace(rawQuoteTarget)); err != nil {
+		return nil, ErrStatusIDRequired
+	}
+	if err := common.ValidateRequiredParam("viewer_id", strings.TrimSpace(viewerID)); err != nil {
+		return nil, ErrStatusNotFound
+	}
+
+	lookupID := strings.TrimSpace(rawQuoteTarget)
+	if s.replyParents != nil {
+		author, err := s.accountRepo.GetAccount(ctx, viewerID)
+		if err != nil {
+			return nil, ErrGetAuthorAccount
+		}
+
+		resolved, err := s.replyParents.ResolveQuoteTarget(ctx, author, lookupID)
+		if err != nil {
+			return nil, err
+		}
+		if resolved != nil {
+			switch {
+			case strings.TrimSpace(resolved.CanonicalStatusID) != "":
+				lookupID = strings.TrimSpace(resolved.CanonicalStatusID)
+			case resolved.Status != nil && strings.TrimSpace(resolved.Status.StatusID) != "":
+				lookupID = strings.TrimSpace(resolved.Status.StatusID)
+			}
+		}
+	}
+
+	return s.GetNoteWithViewer(ctx, &GetNoteQuery{
+		StatusID: lookupID,
+		ViewerID: viewerID,
+	})
 }
 
 func replyConversationID(cmd *CreateNoteCommand, parent *models.Status) string {

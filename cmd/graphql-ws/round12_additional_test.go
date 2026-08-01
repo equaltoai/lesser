@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -77,6 +79,7 @@ type fakeConnRepo struct {
 	deleteSubCalls      int32
 	lastDeleteSubConn   string
 	lastDeleteSubStream string
+	getConnection       *models.WebSocketConnection
 }
 
 func (f *fakeConnRepo) WriteConnection(_ context.Context, connectionID string, userID string, username string, streams []string) (*models.WebSocketConnection, error) {
@@ -112,6 +115,9 @@ func (f *fakeConnRepo) GetConnection(_ context.Context, _ string) (*models.WebSo
 	atomic.AddInt32(&f.getConnCalls, 1)
 	if f.getConnErr != nil {
 		return nil, f.getConnErr
+	}
+	if f.getConnection != nil {
+		return f.getConnection, nil
 	}
 	return &models.WebSocketConnection{
 		ConnectionID: "c1",
@@ -175,8 +181,13 @@ func setDummyAWSEnv(t *testing.T) {
 func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 	repo := &fakeConnRepo{updateErr: errors.New("update failed")}
 	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 
-	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{Username: "user", Scopes: []string{"read"}})
+	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt)},
+		Username:         "user",
+		Scopes:           []string{"read"},
+	})
 	require.Error(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.writeCalls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.updateCalls))
@@ -184,6 +195,7 @@ func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 	require.Equal(t, "graphql-ws", repo.lastUpdated.Info.Protocol)
 	require.Equal(t, "oauth", repo.lastUpdated.Info.AuthMethod)
 	require.Equal(t, "read", repo.lastUpdated.Info.CustomHeaders["scopes"])
+	require.Equal(t, fmt.Sprintf("%d", expiresAt.Unix()), repo.lastUpdated.Info.CustomHeaders[wsCredentialExpiresAtHeader])
 
 	state, err2 := s.getConnection(context.Background(), "c1")
 	require.NoError(t, err2)

@@ -304,27 +304,6 @@ func TestResolveStoredParentAndFetchGuards(t *testing.T) {
 }
 
 func TestReplyParentVisibilityAndFailureHelpers(t *testing.T) {
-	t.Run("maps supported visibility levels and rejects unknown values", func(t *testing.T) {
-		rank, ok := replyVisibilityRank(models.VisibilityPublic)
-		require.True(t, ok)
-		assert.Equal(t, 0, rank)
-
-		rank, ok = replyVisibilityRank(models.VisibilityUnlisted)
-		require.True(t, ok)
-		assert.Equal(t, 1, rank)
-
-		rank, ok = replyVisibilityRank(models.VisibilityPrivate)
-		require.True(t, ok)
-		assert.Equal(t, 2, rank)
-
-		rank, ok = replyVisibilityRank(models.VisibilityDirect)
-		require.True(t, ok)
-		assert.Equal(t, 3, rank)
-
-		_, ok = replyVisibilityRank("followers")
-		assert.False(t, ok)
-	})
-
 	t.Run("normalizes parent domains and materialize failure mapping", func(t *testing.T) {
 		assert.Equal(t, "remote.example", replyParentDomain("https://remote.example/users/steward/statuses/seed-1"))
 		assert.Empty(t, replyParentDomain("not-a-url"))

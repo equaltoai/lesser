@@ -8,6 +8,13 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
 
 - REST write APIs and non-public GraphQL fields require OAuth bearer authentication.
 - GraphQL anonymous reads are limited to the documented public-read subset and only expose public/unlisted content.
+- GraphQL WebSocket authentication is rechecked when each `subscribe` operation starts. An authenticated connection whose
+  JWT is expired receives `extensions.code=TOKEN_EXPIRED`; anonymous access to a gated operation remains
+  `extensions.code=UNAUTHENTICATED`. Expiry is not rechecked continuously or while delivering an already-established
+  subscription, so token expiry does not tear down an in-flight operation.
+- Authenticated WebSocket connection rows without a persisted `token_expires_at` fail closed on their next operation and
+  receive `TOKEN_EXPIRED`, forcing one reconnect/re-authentication. This includes rows created before expiry persistence
+  was introduced; anonymous rows remain unaffected.
 - Device-code authorization is disabled by default. When enabled, `client_class=cli` tokens are governed by the CLI
   automation rails in `docs/configuration.md` regardless of account type.
 - Browser CORS is fail-closed by default to the instance origin unless the operator configures an explicit trusted origin
@@ -18,6 +25,18 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
 - Public/unlisted objects may be returned by anonymous public-read surfaces.
 - Private/followers/direct content requires an authenticated viewer and the same visibility and participant checks used
   by REST handlers.
+- Reply and quote reach is ordered `public < unlisted < private/followers < direct`, from widest to narrowest audience.
+  REST status replies, GraphQL note/quote mutations, and `POST /api/v1/statuses/{id}/reblog` quote requests with a
+  non-empty `comment` reject a child visibility wider than the referenced status with the structured
+  `UNPROCESSABLE_ENTITY` error. GraphQL quote inputs whose visibility is omitted inherit the target visibility; the REST
+  reblog-quote request retains its documented public default, which is therefore rejected when it would widen reach.
+  These paths never silently clamp an explicit author choice.
+- GraphQL quote mutations and REST reblog-quotes resolve the target storage-first, fetch and materialize a canonical
+  remote ActivityPub Note when absent locally, and then apply viewer-access and reach checks. Deleted or inaccessible
+  targets remain indistinguishable from missing statuses. The separate lesser-exclusive
+  `POST /api/v1/statuses/{id}/quote` extension still requires a locally materialized target and is not the
+  Mastodon-compatible reblog-quote creation path described above.
+- `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.
 - Once a direct message is stored, ActivityPub addressing fields (`to`, `cc`, `bto`, `bcc` and their stored status
@@ -39,6 +58,11 @@ Before promoting a release beyond `dev`, validate the behaviors that changed in 
 6. Lambda-optimized TableTheory clients retain the configured timeout safety buffer when a Lambda context deadline is
    applied.
 7. DM conversation backfill ignores message-text mentions and uses stored recipient fields.
+8. A pre-expiry-persistence authenticated GraphQL WebSocket row is refused with `TOKEN_EXPIRED` on its next subscribe
+   operation, while a newly authenticated row with an unexpired JWT can subscribe and anonymous public subscriptions are
+   unchanged.
+9. REST and GraphQL quotes can materialize a previously unseen remote target, reject inaccessible targets, and reject
+   public quotes of private/followers/direct targets without changing empty-comment reblog behavior.
 
 The release path remains `dev -> staging -> live` (with staging where the deployment uses it). Soak is evidence-based:
 check API auth behavior, anonymous public-read visibility, direct-message visibility, federation delivery/receipt,
