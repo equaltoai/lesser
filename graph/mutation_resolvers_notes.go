@@ -38,6 +38,22 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	if err != nil {
 		return nil, err
 	}
+	service := r.Registry.Notes()
+	if service == nil {
+		return nil, errors.New("notes service is not available")
+	}
+	if quoteTargetID != "" {
+		quoteTarget, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: quoteTargetID,
+			ViewerID: username,
+		})
+		if err != nil {
+			return nil, errors.Join(errors.New("failed to load quote target"), err)
+		}
+		if err := validateMutationChildReach("quote", quoteTarget, cmd.Visibility); err != nil {
+			return nil, err
+		}
+	}
 
 	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil && claims.IsAgent {
 		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution)
@@ -60,7 +76,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 
 	// Create note using service
 	serviceStart := time.Now()
-	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
+	result, err := service.CreateNote(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to create note",
 			zap.String("user", username),
@@ -323,7 +339,7 @@ func (r *mutationResolver) buildCreateNoteCommand(username string, input model.C
 	cmd := &notes.CreateNoteCommand{
 		AuthorID:   username,
 		Content:    input.Content,
-		Visibility: strings.ToLower(input.Visibility.String()),
+		Visibility: postingVisibilityFromGraphQL(input.Visibility),
 		Sensitive:  input.Sensitive != nil && *input.Sensitive,
 	}
 
@@ -537,11 +553,26 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 		return nil, err
 	}
 
-	// Set default visibility if not provided
-	// Convert GraphQL enum (PUBLIC, UNLISTED, etc.) to lowercase (public, unlisted, etc.)
-	visibility := "public"
+	service := r.Registry.Notes()
+	if service == nil {
+		return nil, errors.New("notes service is not available")
+	}
+	quoteTarget, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: strings.TrimSpace(input.QuoteURL),
+		ViewerID: username,
+	})
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to load quote target"), err)
+	}
+
+	// Omitted visibility inherits the target's effective reach. An explicit
+	// visibility remains author-controlled as long as it does not widen reach.
+	visibility := quoteTarget.Visibility
 	if input.Visibility != nil {
-		visibility = strings.ToLower(string(*input.Visibility))
+		visibility = postingVisibilityFromGraphQL(*input.Visibility)
+	}
+	if err := validateMutationChildReach("quote", quoteTarget, visibility); err != nil {
+		return nil, err
 	}
 
 	// Create the quote note using the notes service
@@ -558,7 +589,7 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 		cmd.SpoilerText = *input.SpoilerText
 	}
 
-	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
+	result, err := service.CreateNote(ctx, cmd)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to create quote note"), err)
 	}
@@ -571,4 +602,55 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	return &model.CreateNotePayload{
 		Object: r.convertStatusToObject(ctx, result.Note),
 	}, nil
+}
+
+func validateMutationChildReach(relationship string, parent *models.Status, requestedVisibility string) error {
+	if parent == nil {
+		return apperrors.NewAppError(
+			apperrors.CodeUnprocessableEntity,
+			apperrors.CategoryValidation,
+			"parent status is not usable",
+		)
+	}
+
+	parentRank, parentOK := mutationVisibilityRank(parent.Visibility)
+	requestedRank, requestedOK := mutationVisibilityRank(requestedVisibility)
+	if !parentOK || !requestedOK {
+		return apperrors.NewAppError(
+			apperrors.CodeUnprocessableEntity,
+			apperrors.CategoryValidation,
+			"status visibility is not supported for this relationship",
+		).
+			WithMetadata("relationship", relationship).
+			WithMetadata("parent_visibility", parent.Visibility).
+			WithMetadata("requested_visibility", requestedVisibility)
+	}
+	if requestedRank < parentRank {
+		return apperrors.NewAppError(
+			apperrors.CodeUnprocessableEntity,
+			apperrors.CategoryValidation,
+			"requested visibility exceeds parent reach",
+		).
+			WithMetadata("relationship", relationship).
+			WithMetadata("parent_id", parent.StatusID).
+			WithMetadata("parent_visibility", parent.Visibility).
+			WithMetadata("requested_visibility", requestedVisibility)
+	}
+
+	return nil
+}
+
+func mutationVisibilityRank(visibility string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(visibility)) {
+	case models.VisibilityPublic:
+		return 0, true
+	case models.VisibilityUnlisted:
+		return 1, true
+	case models.VisibilityPrivate:
+		return 2, true
+	case models.VisibilityDirect:
+		return 3, true
+	default:
+		return 0, false
+	}
 }

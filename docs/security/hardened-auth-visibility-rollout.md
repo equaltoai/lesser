@@ -18,6 +18,10 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
 - Public/unlisted objects may be returned by anonymous public-read surfaces.
 - Private/followers/direct content requires an authenticated viewer and the same visibility and participant checks used
   by REST handlers.
+- Reply and quote reach is non-widening: `public > unlisted > private/followers > direct`. An explicit child visibility
+  wider than the parent status is rejected with the structured `UNPROCESSABLE_ENTITY` error; mutation inputs whose quote
+  visibility is optional inherit the parent status visibility when omitted. Lesser never silently clamps an explicit
+  author choice.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.
 - Once a direct message is stored, ActivityPub addressing fields (`to`, `cc`, `bto`, `bcc` and their stored status
