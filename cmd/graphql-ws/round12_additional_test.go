@@ -321,13 +321,13 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 	// Instance repo missing.
 	server.instanceRepo = nil
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
-	require.Equal(t, 2, len(msgs)) // error + complete
+	require.Equal(t, 1, len(msgs)) // terminal error
 	msgs = make(chan []byte, 10)
 
 	// Instance locked.
 	server.instanceRepo = &fakeInstanceRepo{state: &models.InstanceState{Locked: true}}
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Connection context missing.
@@ -337,25 +337,25 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Executor missing.
 	server.connections["c1"] = &connectionState{username: "user", claims: &auth.Claims{Username: "user"}, subscriptions: map[string]*subscriptionState{}}
 	server.exec = nil
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Payload parse error.
 	server.exec = &fakeGraphQLExecutor{}
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Missing query.
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// CreateOperationContext errors.
@@ -370,7 +370,7 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Not a subscription.
@@ -385,7 +385,7 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"query { viewer { id } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 }
 
 func TestHandleSubscribe_SuccessPath(t *testing.T) {
@@ -528,7 +528,7 @@ func TestExecuteSubscription_RecoversPanic(t *testing.T) {
 	cancel := func() {}
 	s.executeSubscription(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
 
-	require.Equal(t, 2, len(msgs)) // error + complete
+	require.Equal(t, 1, len(msgs)) // terminal error
 }
 
 func TestInitializeHelpersAndFallbacks(t *testing.T) {

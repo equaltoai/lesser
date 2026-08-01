@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"errors"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -18,7 +17,10 @@ import (
 
 // ActivityStream is the resolver for the activityStream field.
 func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error) {
-	username := r.optionalAuth(ctx)
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	r.Logger.Info("Activity stream subscription started",
 		zap.String("user", username),
@@ -61,10 +63,10 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 
 	// Validate request
 	if timelineType == model.TimelineTypeList && listID == nil {
-		return nil, errors.New("listId is required for list timeline type")
+		return nil, ErrListIDParameterRequired
 	}
-	if timelineType != model.TimelineTypePublic && username == "" {
-		return nil, errors.New("authentication required for this timeline type")
+	if !timelineAllowsAnonymous(timelineType) && username == "" {
+		return nil, ErrAuthenticationRequired
 	}
 
 	r.Logger.Info("Timeline updates subscription started",
@@ -104,4 +106,13 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 		zap.String("type", string(timelineType)))
 
 	return timelineChan, nil
+}
+
+func timelineAllowsAnonymous(timelineType model.TimelineType) bool {
+	switch timelineType {
+	case model.TimelineTypePublic, model.TimelineTypeLocal:
+		return true
+	default:
+		return false
+	}
 }
