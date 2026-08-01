@@ -942,6 +942,16 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		if err != nil {
 			return nil, err
 		}
+		if nextCursor != "" {
+			encodedCursor, cursorErr := cmsSeriesEdgeCursor(&models.Series{
+				AuthorID: username,
+				SK:       cmsSeriesAuthorCursor(nextCursor),
+			})
+			if cursorErr != nil {
+				return nil, cursorErr
+			}
+			nextCursor = string(encodedCursor)
+		}
 	} else {
 		items, nextCursor, err = listGlobalSeriesPaginated(ctx, store.GetDB(), limit, cursor)
 		if err != nil {

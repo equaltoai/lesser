@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	storagemocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -394,6 +395,66 @@ func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
 	endCursorQuery.AssertExpectations(t)
 	nonLastCursorQuery.AssertExpectations(t)
 	startCursorQuery.AssertExpectations(t)
+}
+
+func TestRound12CMS_AllSeriesAuthorPaginationRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	seriesRepo := storagemocks.NewMockSeriesRepository()
+	storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+	resolver := &Resolver{
+		Config: &config.Config{
+			CMSLongFormPublishingEnabled: true,
+			CMSSeriesEnabled:             true,
+		},
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	}
+
+	firstSeries := &models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-1", ID: "series-1", AuthorID: "alice", Title: "One"}
+	secondSeries := &models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-2", ID: "series-2", AuthorID: "alice", Title: "Two"}
+	firstCursor := round12SeriesCursor(t, firstSeries)
+	secondCursor := round12SeriesCursor(t, secondSeries)
+	rawNextCursor := secondSeries.SK
+	require.NotEqual(t, string(secondCursor), rawNextCursor)
+
+	seriesRepo.On("ListSeriesByAuthorPaginated", ctx, "alice", 2, "").
+		Return([]*models.Series{firstSeries, secondSeries}, rawNextCursor, nil).
+		Once()
+	seriesRepo.On("ListSeriesByAuthorPaginated", ctx, "alice", 2, firstSeries.SK).
+		Return([]*models.Series{secondSeries}, "", nil).
+		Twice()
+
+	authorID := "alice"
+	first := 2
+	pageOne, err := resolver.Query().AllSeries(ctx, &authorID, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, pageOne.Edges, 2)
+	require.True(t, pageOne.PageInfo.HasNextPage)
+	require.NotNil(t, pageOne.PageInfo.StartCursor)
+	require.NotNil(t, pageOne.PageInfo.EndCursor)
+	require.Equal(t, firstCursor, pageOne.Edges[0].Cursor)
+	require.Equal(t, firstCursor, *pageOne.PageInfo.StartCursor)
+	require.Equal(t, secondCursor, pageOne.Edges[1].Cursor)
+	require.Equal(t, secondCursor, *pageOne.PageInfo.EndCursor)
+	for _, edge := range pageOne.Edges {
+		decoded, decodeErr := dynamormquery.DecodeCursor(string(edge.Cursor))
+		require.NoError(t, decodeErr)
+		require.NotNil(t, decoded)
+		_, decodeErr = decoded.ToAttributeValues()
+		require.NoError(t, decodeErr)
+	}
+
+	pageAfterNonLast, err := resolver.Query().AllSeries(ctx, &authorID, &first, &pageOne.Edges[0].Cursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterNonLast.Edges, 1)
+	require.Equal(t, "alice|series-2", pageAfterNonLast.Edges[0].Node.ID)
+
+	pageAfterStart, err := resolver.Query().AllSeries(ctx, &authorID, &first, pageOne.PageInfo.StartCursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterStart.Edges, 1)
+	require.Equal(t, "alice|series-2", pageAfterStart.Edges[0].Node.ID)
+
+	seriesRepo.AssertExpectations(t)
 }
 
 func round12SeriesCursor(t *testing.T, series *models.Series) model.Cursor {
