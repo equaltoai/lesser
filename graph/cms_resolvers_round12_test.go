@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -17,6 +18,7 @@ import (
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
 	"go.uber.org/zap"
 )
 
@@ -171,44 +173,89 @@ func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(dynamormmocks.MockDB)
 	firstQuery := new(dynamormmocks.MockQuery)
-	secondQuery := new(dynamormmocks.MockQuery)
+	endCursorQuery := new(dynamormmocks.MockQuery)
+	nonLastCursorQuery := new(dynamormmocks.MockQuery)
+	startCursorQuery := new(dynamormmocks.MockQuery)
 	storage.db = mockDB
 
-	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	firstSeries := models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-1", ID: "series-1", AuthorID: "alice", Title: "One"}
+	secondSeries := models.Series{PK: "AUTHOR#bob#SERIES", SK: "ID#series-2", ID: "series-2", AuthorID: "bob", Title: "Two"}
+	thirdSeries := models.Series{PK: "AUTHOR#carol#SERIES", SK: "ID#series-3", ID: "series-3", AuthorID: "carol", Title: "Three"}
+	firstCursor := round12SeriesCursor(t, &firstSeries)
+	secondCursor := round12SeriesCursor(t, &secondSeries)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Times(4)
 	mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(firstQuery).Once()
 	firstQuery.On("Where", "SK", "BEGINS_WITH", "ID#").Return(firstQuery).Once()
-	firstQuery.On("Limit", 1).Return(firstQuery).Once()
+	firstQuery.On("Limit", 2).Return(firstQuery).Once()
 	firstQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Series)
-		*dest = []models.Series{{ID: "series-1", AuthorID: "alice", SK: "ID#series-1", Title: "One"}}
-	}).Return(&dynamormcore.PaginatedResult{NextCursor: "opaque-next"}, nil).Once()
+		*dest = []models.Series{firstSeries, secondSeries}
+	}).Return(&dynamormcore.PaginatedResult{NextCursor: string(secondCursor)}, nil).Once()
 
-	mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(secondQuery).Once()
-	secondQuery.On("Where", "SK", "BEGINS_WITH", "ID#").Return(secondQuery).Once()
-	secondQuery.On("Limit", 1).Return(secondQuery).Once()
-	secondQuery.On("Cursor", "opaque-next").Return(secondQuery).Once()
-	secondQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]models.Series)
-		*dest = []models.Series{{ID: "series-2", AuthorID: "bob", SK: "ID#series-2", Title: "Two"}}
-	}).Return(&dynamormcore.PaginatedResult{}, nil).Once()
+	expectRound12GlobalSeriesPage := func(query *dynamormmocks.MockQuery, after model.Cursor, item models.Series) {
+		mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(query).Once()
+		query.On("Where", "SK", "BEGINS_WITH", "ID#").Return(query).Once()
+		query.On("Limit", 2).Return(query).Once()
+		query.On("Cursor", string(after)).Return(query).Once()
+		query.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Series)
+			*dest = []models.Series{item}
+		}).Return(&dynamormcore.PaginatedResult{}, nil).Once()
+	}
+	expectRound12GlobalSeriesPage(endCursorQuery, secondCursor, thirdSeries)
+	expectRound12GlobalSeriesPage(nonLastCursorQuery, firstCursor, secondSeries)
+	expectRound12GlobalSeriesPage(startCursorQuery, firstCursor, secondSeries)
 
-	first := 1
+	first := 2
 	pageOne, err := resolver.Query().AllSeries(ctx, nil, &first, nil)
 	require.NoError(t, err)
-	require.Len(t, pageOne.Edges, 1)
+	require.Len(t, pageOne.Edges, 2)
 	require.True(t, pageOne.PageInfo.HasNextPage)
+	require.NotNil(t, pageOne.PageInfo.StartCursor)
 	require.NotNil(t, pageOne.PageInfo.EndCursor)
-	require.Equal(t, model.Cursor("opaque-next"), *pageOne.PageInfo.EndCursor)
+	require.Equal(t, firstCursor, pageOne.Edges[0].Cursor)
+	require.Equal(t, firstCursor, *pageOne.PageInfo.StartCursor)
+	require.Equal(t, secondCursor, pageOne.Edges[1].Cursor)
+	require.Equal(t, secondCursor, *pageOne.PageInfo.EndCursor)
+	for _, edge := range pageOne.Edges {
+		decoded, decodeErr := dynamormquery.DecodeCursor(string(edge.Cursor))
+		require.NoError(t, decodeErr)
+		require.NotNil(t, decoded)
+		_, decodeErr = decoded.ToAttributeValues()
+		require.NoError(t, decodeErr)
+	}
 
-	pageTwo, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.EndCursor)
+	pageAfterEnd, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.EndCursor)
 	require.NoError(t, err)
-	require.Len(t, pageTwo.Edges, 1)
-	require.False(t, pageTwo.PageInfo.HasNextPage)
-	require.Equal(t, []string{"alice|series-1", "bob|series-2"}, []string{pageOne.Edges[0].Node.ID, pageTwo.Edges[0].Node.ID})
+	require.Len(t, pageAfterEnd.Edges, 1)
+	require.Equal(t, "carol|series-3", pageAfterEnd.Edges[0].Node.ID)
+
+	pageAfterNonLast, err := resolver.Query().AllSeries(ctx, nil, &first, &pageOne.Edges[0].Cursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterNonLast.Edges, 1)
+	require.Equal(t, "bob|series-2", pageAfterNonLast.Edges[0].Node.ID)
+
+	pageAfterStart, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.StartCursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterStart.Edges, 1)
+	require.Equal(t, "bob|series-2", pageAfterStart.Edges[0].Node.ID)
 
 	mockDB.AssertExpectations(t)
 	firstQuery.AssertExpectations(t)
-	secondQuery.AssertExpectations(t)
+	endCursorQuery.AssertExpectations(t)
+	nonLastCursorQuery.AssertExpectations(t)
+	startCursorQuery.AssertExpectations(t)
+}
+
+func round12SeriesCursor(t *testing.T, series *models.Series) model.Cursor {
+	t.Helper()
+	encoded, err := dynamormquery.EncodeCursor(map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: series.PK},
+		"SK": &types.AttributeValueMemberS{Value: series.SK},
+	}, "", "")
+	require.NoError(t, err)
+	return model.Cursor(encoded)
 }
 
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {

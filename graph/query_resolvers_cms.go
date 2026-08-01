@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/cms"
@@ -14,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
 )
 
 const (
@@ -936,7 +938,8 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 	)
 
 	if username != "" {
-		items, nextCursor, err = store.Series().ListSeriesByAuthorPaginated(ctx, username, limit, cursor)
+		authorCursor := cmsSeriesAuthorCursor(cursor)
+		items, nextCursor, err = store.Series().ListSeriesByAuthorPaginated(ctx, username, limit, authorCursor)
 		if err != nil {
 			return nil, err
 		}
@@ -953,9 +956,9 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		if node == nil {
 			continue
 		}
-		edgeCursor := model.Cursor(node.ID)
-		if item != nil && strings.TrimSpace(item.SK) != "" {
-			edgeCursor = model.Cursor(item.SK)
+		edgeCursor, cursorErr := cmsSeriesEdgeCursor(item)
+		if cursorErr != nil {
+			return nil, cursorErr
 		}
 		edges = append(edges, &model.SeriesEdge{
 			Node:   node,
@@ -982,6 +985,53 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		PageInfo:   pageInfo,
 		TotalCount: len(edges),
 	}, nil
+}
+
+func cmsSeriesEdgeCursor(item *models.Series) (model.Cursor, error) {
+	if item == nil {
+		return "", errors.New("series is required to build cursor")
+	}
+
+	pk := strings.TrimSpace(item.PK)
+	if pk == "" && strings.TrimSpace(item.AuthorID) != "" {
+		pk = fmt.Sprintf("AUTHOR#%s#SERIES", strings.TrimSpace(item.AuthorID))
+	}
+	sk := strings.TrimSpace(item.SK)
+	if sk == "" && strings.TrimSpace(item.ID) != "" {
+		sk = "ID#" + strings.TrimSpace(item.ID)
+	}
+	if pk == "" || sk == "" {
+		return "", errors.New("series keys are required to build cursor")
+	}
+
+	encoded, err := dynamormquery.EncodeCursor(map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: pk},
+		"SK": &types.AttributeValueMemberS{Value: sk},
+	}, "", "")
+	if err != nil {
+		return "", fmt.Errorf("encode series cursor: %w", err)
+	}
+	return model.Cursor(encoded), nil
+}
+
+func cmsSeriesAuthorCursor(cursor string) string {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return ""
+	}
+
+	decoded, err := dynamormquery.DecodeCursor(cursor)
+	if err != nil {
+		return cursor
+	}
+	key, err := decoded.ToAttributeValues()
+	if err != nil {
+		return cursor
+	}
+	if sk, ok := key["SK"].(*types.AttributeValueMemberS); ok && strings.TrimSpace(sk.Value) != "" {
+		return strings.TrimSpace(sk.Value)
+	}
+	return cursor
 }
 
 func listGlobalSeriesPaginated(ctx context.Context, db dynamormcore.DB, limit int, cursor string) ([]*models.Series, string, error) {
