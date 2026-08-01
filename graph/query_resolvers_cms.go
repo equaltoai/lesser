@@ -937,17 +937,9 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 			return nil, err
 		}
 	} else {
-		var seriesModels []models.Series
-		err = store.GetDB().WithContext(ctx).Model(&models.Series{}).
-			Where("SK", "BEGINS_WITH", "ID#").
-			Limit(limit).
-			All(&seriesModels)
+		items, nextCursor, err = listGlobalSeriesPaginated(ctx, store.GetDB(), limit, cursor)
 		if err != nil {
 			return nil, err
-		}
-		items = make([]*models.Series, 0, len(seriesModels))
-		for i := range seriesModels {
-			items = append(items, &seriesModels[i])
 		}
 	}
 
@@ -966,6 +958,9 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 			Cursor: edgeCursor,
 		})
 	}
+	if nextCursor != "" && len(edges) > 0 {
+		edges[len(edges)-1].Cursor = model.Cursor(nextCursor)
+	}
 
 	pageInfo := &model.PageInfo{
 		HasNextPage:     nextCursor != "",
@@ -983,6 +978,31 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		PageInfo:   pageInfo,
 		TotalCount: len(edges),
 	}, nil
+}
+
+func listGlobalSeriesPaginated(ctx context.Context, db dynamormcore.DB, limit int, cursor string) ([]*models.Series, string, error) {
+	query := db.WithContext(ctx).Model(&models.Series{}).
+		Where("SK", "BEGINS_WITH", "ID#").
+		Limit(limit)
+	if strings.TrimSpace(cursor) != "" {
+		query = query.Cursor(strings.TrimSpace(cursor))
+	}
+
+	var seriesModels []models.Series
+	page, err := query.AllPaginated(&seriesModels)
+	if err != nil {
+		return nil, "", err
+	}
+
+	items := make([]*models.Series, 0, len(seriesModels))
+	for i := range seriesModels {
+		items = append(items, &seriesModels[i])
+	}
+	nextCursor := ""
+	if page != nil {
+		nextCursor = page.NextCursor
+	}
+	return items, nextCursor, nil
 }
 
 func (r *queryResolver) Category(ctx context.Context, id string) (*model.Category, error) {

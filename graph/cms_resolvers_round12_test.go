@@ -166,6 +166,51 @@ func TestRound12CMS_ArticleReadSurfacesVisibleTombstone(t *testing.T) {
 	missingQuery.AssertExpectations(t)
 }
 
+func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	firstQuery := new(dynamormmocks.MockQuery)
+	secondQuery := new(dynamormmocks.MockQuery)
+	storage.db = mockDB
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(firstQuery).Once()
+	firstQuery.On("Where", "SK", "BEGINS_WITH", "ID#").Return(firstQuery).Once()
+	firstQuery.On("Limit", 1).Return(firstQuery).Once()
+	firstQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Series)
+		*dest = []models.Series{{ID: "series-1", AuthorID: "alice", SK: "ID#series-1", Title: "One"}}
+	}).Return(&dynamormcore.PaginatedResult{NextCursor: "opaque-next"}, nil).Once()
+
+	mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(secondQuery).Once()
+	secondQuery.On("Where", "SK", "BEGINS_WITH", "ID#").Return(secondQuery).Once()
+	secondQuery.On("Limit", 1).Return(secondQuery).Once()
+	secondQuery.On("Cursor", "opaque-next").Return(secondQuery).Once()
+	secondQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Series)
+		*dest = []models.Series{{ID: "series-2", AuthorID: "bob", SK: "ID#series-2", Title: "Two"}}
+	}).Return(&dynamormcore.PaginatedResult{}, nil).Once()
+
+	first := 1
+	pageOne, err := resolver.Query().AllSeries(ctx, nil, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, pageOne.Edges, 1)
+	require.True(t, pageOne.PageInfo.HasNextPage)
+	require.NotNil(t, pageOne.PageInfo.EndCursor)
+	require.Equal(t, model.Cursor("opaque-next"), *pageOne.PageInfo.EndCursor)
+
+	pageTwo, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.EndCursor)
+	require.NoError(t, err)
+	require.Len(t, pageTwo.Edges, 1)
+	require.False(t, pageTwo.PageInfo.HasNextPage)
+	require.Equal(t, []string{"alice|series-1", "bob|series-2"}, []string{pageOne.Edges[0].Node.ID, pageTwo.Edges[0].Node.ID})
+
+	mockDB.AssertExpectations(t)
+	firstQuery.AssertExpectations(t)
+	secondQuery.AssertExpectations(t)
+}
+
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := round12AuthContext("alice")
