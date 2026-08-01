@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -22,6 +24,20 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.uber.org/zap"
 )
+
+const injectedGrantCreateFailure = "injected tabletheory transport failure: private detail"
+
+type failingGrantCreateDynamo struct {
+	*fakedb.Fake
+}
+
+func (d *failingGrantCreateDynamo) PutItem(
+	context.Context,
+	*dynamodb.PutItemInput,
+	...func(*dynamodb.Options),
+) (*dynamodb.PutItemOutput, error) {
+	return nil, errors.New(injectedGrantCreateFailure)
+}
 
 type duplicateGrantExecutableSchema struct {
 	schema     *ast.Schema
@@ -121,4 +137,49 @@ func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 	require.NotNil(t, persisted.RevokedAt, "the failed duplicate must not resurrect the revoked grant")
 	require.Empty(t, persisted.GSI2PK, "the revoked grant must stay out of the reviewer queue")
 	require.Empty(t, persisted.GSI2SK, "the revoked grant must stay out of the reviewer queue")
+}
+
+func TestGraphQLDraftReviewGrantCreateFailureReturnsInternalCode(t *testing.T) {
+	client := &failingGrantCreateDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.DraftReviewGrant{}))
+	repository := repositories.NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+
+	grant := &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC(),
+	}
+	schema := gqlparser.MustLoadSchema(&ast.Source{Input: `
+		schema { mutation: Mutation }
+		type Mutation { shareDraftForReview: Boolean }
+	`})
+	server := handler.NewDefaultServer(&duplicateGrantExecutableSchema{
+		schema:     schema,
+		repository: repository,
+		staleGrant: grant,
+	})
+	server.SetErrorPresenter(graphQLErrorPresenter)
+
+	requestBody := []byte(`{"query":"mutation { shareDraftForReview }"}`)
+	request := httptest.NewRequest(http.MethodPost, "/graphql", bytes.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+
+	var payload struct {
+		Errors []struct {
+			Message    string         `json:"message"`
+			Extensions map[string]any `json:"extensions"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
+	require.Len(t, payload.Errors, 1)
+	require.Equal(t, string(apperrors.CodeInternal), payload.Errors[0].Extensions["code"])
+	require.Equal(t, float64(http.StatusInternalServerError), payload.Errors[0].Extensions["http_status"])
+	require.Equal(t, "Failed to create draft review grant", payload.Errors[0].Message)
+	require.NotContains(t, response.Body.String(), injectedGrantCreateFailure)
 }

@@ -179,7 +179,7 @@ func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *mod
 	if dynamormerrors.IsConditionFailed(err) {
 		return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
 	}
-	return err
+	return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 }
 
 // RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
