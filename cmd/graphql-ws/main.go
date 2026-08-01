@@ -84,6 +84,12 @@ type graphqlConnectionRepo interface {
 	DeleteSubscription(ctx context.Context, connectionID string, stream string) error
 }
 
+type graphqlStreamSubscriptionRepo interface {
+	PutAll(ctx context.Context, records []*models.GraphQLStreamSubscription) error
+	DeleteSubscription(ctx context.Context, connectionID, subscriptionID string) error
+	DeleteAllForConnection(ctx context.Context, connectionID string) error
+}
+
 type subscriptionManager interface {
 	IsRunning() bool
 	Start(ctx context.Context) error
@@ -100,7 +106,7 @@ type wsServer struct {
 	exec                gqlExecutor
 	startOnce           sync.Once
 	connRepo            graphqlConnectionRepo
-	gqlSubRepo          *repositories.GraphQLStreamSubscriptionRepository
+	gqlSubRepo          graphqlStreamSubscriptionRepo
 	instanceRepo        instanceStateRepo
 
 	mu          sync.RWMutex
@@ -255,11 +261,11 @@ var (
 	repos          core.RepositoryStorage
 	oauth          *auth.OAuthService
 	connectionRepo *repositories.StreamingConnectionRepository
-	gqlSubRepo     *repositories.GraphQLStreamSubscriptionRepository
+	gqlSubRepo     graphqlStreamSubscriptionRepo
 	server         *wsServer
 )
 
-func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlExecutor, log *zap.Logger, connRepo graphqlConnectionRepo, gqlSubRepo *repositories.GraphQLStreamSubscriptionRepository, instanceRepo instanceStateRepo) *wsServer {
+func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlExecutor, log *zap.Logger, connRepo graphqlConnectionRepo, gqlSubRepo graphqlStreamSubscriptionRepo, instanceRepo instanceStateRepo) *wsServer {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -1132,24 +1138,24 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			streaming.DMRequestsStreamName(state.username),
 		}
 
+		records := make([]*models.GraphQLStreamSubscription, 0, len(streams))
 		for _, streamName := range streams {
-			record := &models.GraphQLStreamSubscription{
+			records = append(records, &models.GraphQLStreamSubscription{
 				ConnectionID:   connectionID,
 				SubscriptionID: msg.ID,
 				Stream:         streamName,
 				Field:          rootField,
 				UserID:         state.username,
-			}
+			})
+		}
 
-			if err := s.gqlSubRepo.Put(ctx, record); err != nil {
-				s.logger.Warn("failed to persist graphql stream subscription",
-					zap.String("connection_id", connectionID),
-					zap.String("subscription_id", msg.ID),
-					zap.String("stream", streamName),
-					zap.Error(err))
-				s.sendError(wsCtx, msg.ID, "internal_error", "failed to register subscription")
-				return
-			}
+		if err := s.gqlSubRepo.PutAll(ctx, records); err != nil {
+			s.logger.Warn("failed to persist graphql stream subscription",
+				zap.String("connection_id", connectionID),
+				zap.String("subscription_id", msg.ID),
+				zap.Error(err))
+			s.sendError(wsCtx, msg.ID, "internal_error", "failed to register subscription")
+			return
 		}
 
 		s.logger.Info("registered serverless subscription",
