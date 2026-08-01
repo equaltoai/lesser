@@ -576,8 +576,7 @@ func (r *queryResolver) cmsArticleTombstoneVisible(ctx context.Context, tombston
 		return false
 	}
 	viewerActorID := cmsLocalActorID(r.getDomain(), username)
-	return strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.AttributedTo)) ||
-		strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.DeletedBy))
+	return strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.AttributedTo))
 }
 
 func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.Article, error) {

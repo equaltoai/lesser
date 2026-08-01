@@ -168,6 +168,154 @@ func TestRound12CMS_ArticleReadSurfacesVisibleTombstone(t *testing.T) {
 	missingQuery.AssertExpectations(t)
 }
 
+func TestRound12CMS_ArticleTombstoneDisclosure(t *testing.T) {
+	deletedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		ctx          context.Context
+		formerType   string
+		attributedTo string
+		isPublic     bool
+		wantVisible  bool
+	}{
+		{
+			name:         "public article is visible",
+			ctx:          context.Background(),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+			isPublic:     true,
+			wantVisible:  true,
+		},
+		{
+			name:         "non-public article is visible to original author",
+			ctx:          round12AuthContext("alice"),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+			wantVisible:  true,
+		},
+		{
+			name:         "non-public article is hidden from other viewer",
+			ctx:          round12AuthContext("bob"),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+		},
+		{
+			name:       "legacy non-public tombstone without attribution is hidden",
+			ctx:        round12AuthContext("alice"),
+			formerType: "Article",
+		},
+		{
+			name:         "non-article tombstone is hidden",
+			ctx:          context.Background(),
+			formerType:   "Note",
+			attributedTo: "https://localhost/users/alice",
+			isPublic:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storage := newRound12GraphResolver(t)
+			deletedID := "https://localhost/articles/deleted-article"
+			tombstoneDB := new(dynamormmocks.MockDB)
+			tombstoneQuery := new(dynamormmocks.MockQuery)
+			storage.db = tombstoneDB
+
+			tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Once()
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+			tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.Tombstone)
+				*dest = models.Tombstone{
+					ID:           deletedID,
+					FormerType:   tt.formerType,
+					Deleted:      deletedAt,
+					CreatedAt:    deletedAt,
+					DeletedBy:    "https://localhost/users/alice",
+					AttributedTo: tt.attributedTo,
+					IsPublic:     tt.isPublic,
+				}
+			}).Return(nil).Once()
+
+			article, err := resolver.Query().Article(tt.ctx, deletedID)
+			require.NoError(t, err)
+			if tt.wantVisible {
+				require.NotNil(t, article)
+				require.Equal(t, deletedID, article.ID)
+			} else {
+				require.Nil(t, article)
+			}
+
+			tombstoneDB.AssertExpectations(t)
+			tombstoneQuery.AssertExpectations(t)
+		})
+	}
+}
+
+func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
+	tests := []struct {
+		name        string
+		ctx         context.Context
+		wantVisible bool
+	}{
+		{name: "original author sees non-public tombstone", ctx: round12AuthContext("alice"), wantVisible: true},
+		{name: "other viewer does not see non-public tombstone", ctx: round12AuthContext("bob")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storage := newRound12GraphResolver(t)
+			tombstoneDB := new(dynamormmocks.MockDB)
+			tenantIndexQuery := new(dynamormmocks.MockQuery)
+			legacyIndexQuery := new(dynamormmocks.MockQuery)
+			tombstoneQuery := new(dynamormmocks.MockQuery)
+			storage.db = tombstoneDB
+
+			slug := "deleted-by-slug"
+			deletedID := cmsArticleID(resolver.getDomain(), slug)
+			tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Times(3)
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("Where", "PK", "=", models.CMSTenantArticleSlugIndexPK("localhost", slug)).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("Where", "PK", "=", models.CMSArticleSlugIndexPK(slug)).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+			tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.Tombstone)
+				*dest = models.Tombstone{
+					ID:           deletedID,
+					FormerType:   "Article",
+					Deleted:      time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+					DeletedBy:    "https://localhost/users/alice",
+					AttributedTo: "https://localhost/users/alice",
+				}
+			}).Return(nil).Once()
+
+			article, err := resolver.Query().ArticleBySlug(tt.ctx, slug)
+			require.NoError(t, err)
+			if tt.wantVisible {
+				require.NotNil(t, article)
+				require.Equal(t, deletedID, article.ID)
+			} else {
+				require.Nil(t, article)
+			}
+
+			tombstoneDB.AssertExpectations(t)
+			tenantIndexQuery.AssertExpectations(t)
+			legacyIndexQuery.AssertExpectations(t)
+			tombstoneQuery.AssertExpectations(t)
+		})
+	}
+}
+
 func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := context.Background()
