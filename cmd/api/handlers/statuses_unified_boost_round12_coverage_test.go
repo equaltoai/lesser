@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	commonerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -82,6 +83,11 @@ func TestHandleReblogLift_UsesUnifiedBoostParserOnLiveRoute(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawQuoteTarget string) (*storagemodels.Status, error) {
+					require.Equal(t, "alice", viewerID)
+					require.Equal(t, "status-1", rawQuoteTarget)
+					return quoteBoostTarget("status-1", objectID, storagemodels.VisibilityPublic), nil
+				},
 				ReblogNoteFunc: func(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
 					t.Fatal("pure reblog service should not be called for quote comments")
 					return nil, nil
@@ -210,7 +216,16 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 				"ACTOR#bob#PROFILE": true,
 			},
 		}
-		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{})
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: &NotesServiceStub{
+			ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawQuoteTarget string) (*storagemodels.Status, error) {
+				require.Equal(t, "alice", viewerID)
+				require.Equal(t, "status-1", rawQuoteTarget)
+				return quoteBoostTarget("status-1", objectID, storagemodels.VisibilityPublic), nil
+			},
+			ReblogNoteFunc: func(_ context.Context, cmd *notes.ReblogNoteCommand) (*notes.LikeResult, error) {
+				return &notes.LikeResult{Status: &storagemodels.Status{StatusID: cmd.StatusID}}, nil
+			},
+		}})
 
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 		headers := map[string]string{"Authorization": "Bearer " + token}
@@ -356,4 +371,112 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 			Timestamp:    time.Now().Add(-1 * time.Minute),
 		})
 	})
+}
+
+func quoteBoostTarget(statusID, objectID, visibility string) *storagemodels.Status {
+	now := time.Now().UTC()
+	return &storagemodels.Status{
+		StatusID:       statusID,
+		AuthorID:       "https://remote.example/users/bob",
+		AuthorUsername: "bob@remote.example",
+		Visibility:     visibility,
+		PublishedAt:    now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ModifiedAt:     now,
+		Note: &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: objectID, Type: activitypub.NoteType},
+			AttributedTo: "https://remote.example/users/bob",
+			Content:      "original",
+			Visibility:   visibility,
+		},
+	}
+}
+
+func TestHandleReblogLift_EnforcesQuoteReachAndViewerAccess(t *testing.T) {
+	cfg := round11TestConfig()
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+	comment := "bounded quote"
+
+	newQuoteHandler := func(t *testing.T, target *storagemodels.Status, resolveErr error) *Handler {
+		t.Helper()
+		state := &round10QueryState{
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {Username: "alice", Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+					PreferredUsername: "alice",
+					Followers:         cfg.ActorURL("alice") + "/followers",
+				}},
+			},
+		}
+		if target != nil && target.Note != nil {
+			state.objectsByID = map[string]storagemodels.Object{
+				target.Note.ID: {
+					ID:           target.Note.ID,
+					Type:         activitypub.NoteType,
+					Content:      target.Content,
+					AttributedTo: target.AuthorID,
+					Published:    target.PublishedAt,
+				},
+			}
+		}
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: &NotesServiceStub{
+			ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawQuoteTarget string) (*storagemodels.Status, error) {
+				require.Equal(t, "alice", viewerID)
+				require.Equal(t, "status-1", rawQuoteTarget)
+				return target, resolveErr
+			},
+		}})
+		return h
+	}
+
+	for _, targetVisibility := range []string{storagemodels.VisibilityPrivate, storagemodels.VisibilityDirect} {
+		t.Run(targetVisibility+" target cannot be publicly quoted", func(t *testing.T) {
+			target := quoteBoostTarget("status-1", cfg.BaseURL()+"/objects/status-1", targetVisibility)
+			h := newQuoteHandler(t, target, nil)
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{
+				Comment:    &comment,
+				Visibility: storagemodels.VisibilityPublic,
+			})
+			require.NoError(t, err)
+			ctx.Params["id"] = "status-1"
+
+			resp := requireStatus(t, http.StatusUnprocessableEntity)(h.HandleReblogLift(ctx))
+			var body common.StandardErrorResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, string(commonerrors.CodeUnprocessableEntity), body.Code)
+		})
+	}
+
+	t.Run("unviewable target remains indistinguishable from not found", func(t *testing.T) {
+		h := newQuoteHandler(t, nil, notes.ErrStatusNotFound)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{Comment: &comment})
+		require.NoError(t, err)
+		ctx.Params["id"] = "status-1"
+		requireStatus(t, http.StatusNotFound)(h.HandleReblogLift(ctx))
+	})
+
+	tests := []struct {
+		name             string
+		targetVisibility string
+		quoteVisibility  string
+	}{
+		{name: "equal public", targetVisibility: storagemodels.VisibilityPublic, quoteVisibility: storagemodels.VisibilityPublic},
+		{name: "narrower private", targetVisibility: storagemodels.VisibilityPublic, quoteVisibility: storagemodels.VisibilityPrivate},
+		{name: "equal followers", targetVisibility: storagemodels.VisibilityPrivate, quoteVisibility: storagemodels.VisibilityPrivate},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := quoteBoostTarget("status-1", cfg.BaseURL()+"/objects/status-1", tt.targetVisibility)
+			h := newQuoteHandler(t, target, nil)
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{
+				Comment:    &comment,
+				Visibility: tt.quoteVisibility,
+			})
+			require.NoError(t, err)
+			ctx.Params["id"] = "status-1"
+			requireStatus(t, http.StatusOK)(h.HandleReblogLift(ctx))
+		})
+	}
 }

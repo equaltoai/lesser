@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -52,7 +53,48 @@ func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
 
 	require.Len(t, client.putInputs, 1, "first-time grants must use TableTheory's create path")
 	require.Empty(t, client.updateInputs, "first-time grants must not use the version-conditioned update path")
-	require.Nil(t, client.putInputs[0].ConditionExpression, "the create path must remain an unconditional PutItem")
+	require.Contains(t, aws.ToString(client.putInputs[0].ConditionExpression), "attribute_not_exists",
+		"first-time grants must use a conditional PutItem")
+	require.Contains(t, client.putInputs[0].ExpressionAttributeNames, "#n1")
+	require.Equal(t, "PK", client.putInputs[0].ExpressionAttributeNames["#n1"])
+}
+
+func TestDraftRepositoryCreateDraftReviewGrantRejectsStaleCreateAfterRevoke(t *testing.T) {
+	ctx := context.Background()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fakedb.New())
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.DraftReviewGrant{}))
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+
+	// This stale grant represents caller A after its Get observed no grant.
+	staleGrant := &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC().Add(-time.Minute),
+	}
+
+	// Caller B creates and then completes a revocation before A reaches Create.
+	grant := &models.DraftReviewGrant{
+		OwnerID:   staleGrant.OwnerID,
+		DraftID:   staleGrant.DraftID,
+		Reviewer:  staleGrant.Reviewer,
+		GrantedAt: staleGrant.GrantedAt,
+	}
+	require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
+	revokedAt := time.Now().UTC()
+	grant.RevokedAt = &revokedAt
+	require.NoError(t, repo.RevokeDraftReviewGrant(ctx, grant))
+
+	err = repo.CreateDraftReviewGrant(ctx, staleGrant)
+	require.Error(t, err, "a stale create must fail instead of resurrecting a revoked grant")
+	require.ErrorIs(t, err, dynamormerrors.ErrConditionFailed)
+
+	persisted, getErr := repo.GetDraftReviewGrant(ctx, grant.OwnerID, grant.DraftID, grant.Reviewer)
+	require.NoError(t, getErr)
+	require.NotNil(t, persisted.RevokedAt, "the completed revocation must remain persisted")
+	require.Empty(t, persisted.GSI2PK, "the revoked grant must stay out of the reviewer queue")
+	require.Empty(t, persisted.GSI2SK, "the revoked grant must stay out of the reviewer queue")
 }
 
 func TestDraftRepositoryGetDraftReviewGrantMapsNotFoundSentinel(t *testing.T) {

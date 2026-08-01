@@ -90,7 +90,7 @@ func TestGraphQLSubscriptionManager_SubscribeVariantsAndCleanup(t *testing.T) {
 	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeDirect)
 	require.NoError(t, err)
 	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeActor)
-	require.NoError(t, err)
+	require.Error(t, err)
 
 	// Various subscription types.
 	_, err = sm.SubscribeToNotifications(ctx, "alice")

@@ -590,7 +590,7 @@ func (h *Handler) HandleReblogLift(ctx *apptheory.Context) (*apptheory.Response,
 		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
 
-	return h.createQuoteBoostLift(ctx, statusID, objectID, *req.Comment, req.Visibility, actor)
+	return h.createQuoteBoostLift(ctx, claims.Username, statusID, objectID, *req.Comment, req.Visibility, actor)
 }
 
 // HandleUnreblogLift handles POST /api/v1/statuses/:id/unreblog

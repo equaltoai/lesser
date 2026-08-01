@@ -150,7 +150,7 @@ func TestHandleDefault_SendsExpectedMessages(t *testing.T) {
 	require.Len(t, bodies, 3)
 }
 
-func TestHandleDefault_SubscribeWithoutInstanceRepo_SendsErrorAndComplete(t *testing.T) {
+func TestHandleDefault_SubscribeWithoutInstanceRepo_SendsTerminalError(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
 	t.Setenv("AWS_SESSION_TOKEN", "dummy")
@@ -174,14 +174,10 @@ func TestHandleDefault_SubscribeWithoutInstanceRepo_SendsErrorAndComplete(t *tes
 	app := newWebSocketApp(s)
 	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"id":"sub1","type":"subscribe","payload":{"query":"subscription { ping }"}}`, nil, nil))
 	require.Equal(t, 200, resp.StatusCode)
-	require.Len(t, bodies, 2)
+	require.Len(t, bodies, 1)
 
 	var env responseEnvelope
 	require.NoError(t, json.Unmarshal(bodies[0], &env))
 	require.Equal(t, "error", env.Type)
-	require.Equal(t, "sub1", env.ID)
-
-	require.NoError(t, json.Unmarshal(bodies[1], &env))
-	require.Equal(t, "complete", env.Type)
 	require.Equal(t, "sub1", env.ID)
 }

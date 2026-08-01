@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testinginmemory "github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -548,6 +550,81 @@ type stubReplyParentResolver struct {
 	resolved map[string]*ResolvedReplyParent
 	err      error
 	calls    []replyParentResolutionCall
+}
+
+func (s *stubReplyParentResolver) ResolveQuoteTarget(_ context.Context, author *storage.Account, rawQuoteTarget string) (*ResolvedReplyParent, error) {
+	call := replyParentResolutionCall{raw: rawQuoteTarget}
+	if author != nil {
+		if author.User != nil {
+			call.username = author.User.Username
+		}
+		if author.Actor != nil {
+			call.authorID = author.Actor.ID
+		}
+	}
+	s.calls = append(s.calls, call)
+
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.resolved != nil {
+		return s.resolved[rawQuoteTarget], nil
+	}
+	return nil, nil
+}
+
+func TestResolveQuoteTargetAppliesViewerAccessAfterResolution(t *testing.T) {
+	ctx := context.Background()
+	statusRepo := testinginmemory.NewStatusRepository()
+	now := time.Now().UTC()
+	target := &models.Status{
+		StatusID:       "remote-direct",
+		AuthorID:       "https://remote.example/users/bob",
+		AuthorUsername: "bob@remote.example",
+		Visibility:     models.VisibilityDirect,
+		ToRecipients:   []string{"https://example.com/users/carol"},
+		PublishedAt:    now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ModifiedAt:     now,
+		Note: &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: "https://remote.example/users/bob/statuses/direct", Type: activitypub.NoteType},
+			AttributedTo: "https://remote.example/users/bob",
+			Visibility:   models.VisibilityDirect,
+		},
+	}
+	require.NoError(t, statusRepo.CreateStatus(ctx, target))
+
+	resolver := &stubReplyParentResolver{resolved: map[string]*ResolvedReplyParent{
+		target.Note.ID: {
+			Status:             target,
+			CanonicalStatusID:  target.StatusID,
+			CanonicalObjectURL: target.Note.ID,
+			Visibility:         target.Visibility,
+			Fetched:            true,
+			Remote:             true,
+		},
+	}}
+	service := &Service{
+		noteRepo:     statusRepo,
+		accountRepo:  &stubAccountRepo{domain: "example.com"},
+		replyParents: resolver,
+		domainName:   "example.com",
+		logger:       zap.NewNop(),
+	}
+
+	_, err := service.ResolveQuoteTarget(ctx, "alice", target.Note.ID)
+	appErr, ok := apperrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, apperrors.CodeNotFound, appErr.Code)
+	require.Len(t, resolver.calls, 1)
+	require.Equal(t, "alice", resolver.calls[0].username)
+
+	target.ToRecipients = []string{"https://example.com/users/alice"}
+	require.NoError(t, statusRepo.UpdateStatus(ctx, target))
+	visible, err := service.ResolveQuoteTarget(ctx, "alice", target.Note.ID)
+	require.NoError(t, err)
+	require.Equal(t, target.StatusID, visible.StatusID)
 }
 
 func (s *stubReplyParentResolver) ResolveReplyParent(_ context.Context, author *storage.Account, rawInReplyTo string, requestedVisibility string) (*ResolvedReplyParent, error) {

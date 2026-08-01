@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -77,6 +79,7 @@ type fakeConnRepo struct {
 	deleteSubCalls      int32
 	lastDeleteSubConn   string
 	lastDeleteSubStream string
+	getConnection       *models.WebSocketConnection
 }
 
 func (f *fakeConnRepo) WriteConnection(_ context.Context, connectionID string, userID string, username string, streams []string) (*models.WebSocketConnection, error) {
@@ -112,6 +115,9 @@ func (f *fakeConnRepo) GetConnection(_ context.Context, _ string) (*models.WebSo
 	atomic.AddInt32(&f.getConnCalls, 1)
 	if f.getConnErr != nil {
 		return nil, f.getConnErr
+	}
+	if f.getConnection != nil {
+		return f.getConnection, nil
 	}
 	return &models.WebSocketConnection{
 		ConnectionID: "c1",
@@ -175,8 +181,13 @@ func setDummyAWSEnv(t *testing.T) {
 func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 	repo := &fakeConnRepo{updateErr: errors.New("update failed")}
 	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 
-	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{Username: "user", Scopes: []string{"read"}})
+	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt)},
+		Username:         "user",
+		Scopes:           []string{"read"},
+	})
 	require.Error(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.writeCalls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.updateCalls))
@@ -184,6 +195,7 @@ func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 	require.Equal(t, "graphql-ws", repo.lastUpdated.Info.Protocol)
 	require.Equal(t, "oauth", repo.lastUpdated.Info.AuthMethod)
 	require.Equal(t, "read", repo.lastUpdated.Info.CustomHeaders["scopes"])
+	require.Equal(t, fmt.Sprintf("%d", expiresAt.Unix()), repo.lastUpdated.Info.CustomHeaders[wsCredentialExpiresAtHeader])
 
 	state, err2 := s.getConnection(context.Background(), "c1")
 	require.NoError(t, err2)
@@ -321,13 +333,13 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 	// Instance repo missing.
 	server.instanceRepo = nil
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
-	require.Equal(t, 2, len(msgs)) // error + complete
+	require.Equal(t, 1, len(msgs)) // terminal error
 	msgs = make(chan []byte, 10)
 
 	// Instance locked.
 	server.instanceRepo = &fakeInstanceRepo{state: &models.InstanceState{Locked: true}}
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Connection context missing.
@@ -337,25 +349,25 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Executor missing.
 	server.connections["c1"] = &connectionState{username: "user", claims: &auth.Claims{Username: "user"}, subscriptions: map[string]*subscriptionState{}}
 	server.exec = nil
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Payload parse error.
 	server.exec = &fakeGraphQLExecutor{}
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Missing query.
 	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// CreateOperationContext errors.
@@ -370,7 +382,7 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Not a subscription.
@@ -385,7 +397,7 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"query { viewer { id } }"}`),
 	}, wsCtx)
-	require.Equal(t, 2, len(msgs))
+	require.Equal(t, 1, len(msgs))
 }
 
 func TestHandleSubscribe_SuccessPath(t *testing.T) {
@@ -528,7 +540,7 @@ func TestExecuteSubscription_RecoversPanic(t *testing.T) {
 	cancel := func() {}
 	s.executeSubscription(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
 
-	require.Equal(t, 2, len(msgs)) // error + complete
+	require.Equal(t, 1, len(msgs)) // terminal error
 }
 
 func TestInitializeHelpersAndFallbacks(t *testing.T) {
