@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/golang-jwt/jwt/v5"
 	appstreamer "github.com/theory-cloud/apptheory/v2/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
@@ -42,6 +44,8 @@ import (
 const graphqlWSName = "graphql-ws"
 const graphqlTransportWSSubprotocol = "graphql-transport-ws"
 const wsCodeUnauthenticated = "UNAUTHENTICATED"
+const wsCodeCredentialExpired = "TOKEN_EXPIRED"
+const wsCredentialExpiresAtHeader = "token_expires_at"
 const protocolErrorID = "protocol-error"
 
 const (
@@ -331,6 +335,9 @@ func (s *wsServer) registerConnection(ctx context.Context, connectionID, usernam
 			if claims != nil && len(claims.Scopes) > 0 {
 				connectionRecord.Info.CustomHeaders["scopes"] = strings.Join(claims.Scopes, " ")
 			}
+			if claims != nil && claims.ExpiresAt != nil {
+				connectionRecord.Info.CustomHeaders[wsCredentialExpiresAtHeader] = strconv.FormatInt(claims.ExpiresAt.Unix(), 10)
+			}
 			connectionRecord.LastActivity = time.Now()
 			connectionRecord.Established = time.Now()
 			connectionRecord.UpdateState(models.ConnectionStateConnected)
@@ -473,6 +480,16 @@ func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*con
 		claims = &auth.Claims{
 			Username: connection.Username,
 			Scopes:   scopes,
+		}
+		if connection.Info.CustomHeaders != nil {
+			rawExpiresAt := strings.TrimSpace(connection.Info.CustomHeaders[wsCredentialExpiresAtHeader])
+			if rawExpiresAt != "" {
+				expiresAt, parseErr := strconv.ParseInt(rawExpiresAt, 10, 64)
+				if parseErr != nil {
+					return nil, fmt.Errorf("invalid persisted graphql credential expiry: %w", parseErr)
+				}
+				claims.ExpiresAt = jwt.NewNumericDate(time.Unix(expiresAt, 0).UTC())
+			}
 		}
 	}
 
@@ -1022,6 +1039,10 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 		s.sendError(wsCtx, msg.ID, "unauthorized", "connection_init has not been acknowledged")
 		return
 	}
+	if connectionCredentialExpired(state, time.Now()) {
+		s.sendOperationCredentialExpiredError(wsCtx, msg.ID)
+		return
+	}
 
 	if s.exec == nil {
 		s.logger.Error("graphql executor not initialized")
@@ -1191,6 +1212,20 @@ func (s *wsServer) sendOperationAuthenticationError(wsCtx *apptheory.WebSocketCo
 		Message:    message,
 		Extensions: map[string]any{"code": wsCodeUnauthenticated},
 	}})
+}
+
+func (s *wsServer) sendOperationCredentialExpiredError(wsCtx *apptheory.WebSocketContext, id string) {
+	s.sendGraphQLErrors(wsCtx, id, gqlerror.List{&gqlerror.Error{
+		Message:    "credential expired; re-authentication required",
+		Extensions: map[string]any{"code": wsCodeCredentialExpired},
+	}})
+}
+
+func connectionCredentialExpired(state *connectionState, now time.Time) bool {
+	if state == nil || state.claims == nil || state.claims.ExpiresAt == nil {
+		return false
+	}
+	return !now.Before(state.claims.ExpiresAt.Time)
 }
 
 func (s *wsServer) sendGraphQLErrors(wsCtx *apptheory.WebSocketContext, id string, errs gqlerror.List) {
