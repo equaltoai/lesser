@@ -33,13 +33,35 @@ import (
 )
 
 const injectedGrantCreateFailure = "injected tabletheory transport failure: private detail"
+const injectedGrantUpdateFailure = "injected regrant transport failure: private detail"
 
 type failingGrantCreateDynamo struct {
 	*fakedb.Fake
 	failGrantCreates    bool
+	failGrantUpdate     bool
+	conflictGrantUpdate bool
 	hideGrantReads      int
 	grantCreateFailures int
+	grantUpdateFailures int
 	grantReadsHidden    int
+}
+
+func (d *failingGrantCreateDynamo) UpdateItem(
+	ctx context.Context,
+	input *dynamodb.UpdateItemInput,
+	opts ...func(*dynamodb.Options),
+) (*dynamodb.UpdateItemOutput, error) {
+	if isDraftReviewGrantKey(input.Key) {
+		switch {
+		case d.conflictGrantUpdate:
+			d.grantUpdateFailures++
+			return nil, &types.ConditionalCheckFailedException{}
+		case d.failGrantUpdate:
+			d.grantUpdateFailures++
+			return nil, errors.New(injectedGrantUpdateFailure)
+		}
+	}
+	return d.Fake.UpdateItem(ctx, input, opts...)
 }
 
 func (d *failingGrantCreateDynamo) PutItem(
@@ -218,4 +240,87 @@ func TestGraphQLDraftReviewGrantCreateFailureReturnsInternalCode(t *testing.T) {
 	require.Equal(t, "Failed to create draft review grant", payload.Errors[0].Message)
 	require.NotContains(t, response.Body.String(), injectedGrantCreateFailure)
 	require.Equal(t, 1, client.grantCreateFailures, "the transport fault injection must fail the grant create")
+}
+
+func TestGraphQLDraftReviewGrantRegrantConflictReturnsConflictCode(t *testing.T) {
+	ctx := context.Background()
+	client := &failingGrantCreateDynamo{Fake: fakedb.New()}
+	harness := newDraftReviewWireHarness(t, client)
+	grant := seedRevokedDraftReviewGrant(t, ctx, harness.repository)
+	client.conflictGrantUpdate = true
+
+	response := executeShareDraftForReview(t, harness.server)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	payload := decodeDraftReviewWireErrors(t, response)
+	require.Len(t, payload.Errors, 1)
+	require.Equal(t, string(apperrors.CodeConflict), payload.Errors[0].Extensions["code"])
+	require.Equal(t, float64(http.StatusConflict), payload.Errors[0].Extensions["http_status"])
+	require.Equal(t, 1, client.grantUpdateFailures, "the optimistic-concurrency fault injection must fail the regrant")
+
+	persisted, err := harness.repository.GetDraftReviewGrant(ctx, grant.OwnerID, grant.DraftID, grant.Reviewer)
+	require.NoError(t, err)
+	require.NotNil(t, persisted.RevokedAt, "a conflicted regrant must not resurrect the revoked grant")
+	require.Empty(t, persisted.GSI2PK)
+	require.Empty(t, persisted.GSI2SK)
+}
+
+func TestGraphQLDraftReviewGrantRegrantFailureReturnsInternalCode(t *testing.T) {
+	ctx := context.Background()
+	client := &failingGrantCreateDynamo{Fake: fakedb.New()}
+	harness := newDraftReviewWireHarness(t, client)
+	grant := seedRevokedDraftReviewGrant(t, ctx, harness.repository)
+	client.failGrantUpdate = true
+
+	response := executeShareDraftForReview(t, harness.server)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	payload := decodeDraftReviewWireErrors(t, response)
+	require.Len(t, payload.Errors, 1)
+	require.Equal(t, string(apperrors.CodeInternal), payload.Errors[0].Extensions["code"])
+	require.Equal(t, float64(http.StatusInternalServerError), payload.Errors[0].Extensions["http_status"])
+	require.Equal(t, "Failed to create draft review grant", payload.Errors[0].Message)
+	require.NotContains(t, response.Body.String(), injectedGrantUpdateFailure)
+	require.Equal(t, 1, client.grantUpdateFailures, "the transport fault injection must fail the regrant")
+
+	persisted, err := harness.repository.GetDraftReviewGrant(ctx, grant.OwnerID, grant.DraftID, grant.Reviewer)
+	require.NoError(t, err)
+	require.NotNil(t, persisted.RevokedAt, "a failed regrant must not resurrect the revoked grant")
+}
+
+func seedRevokedDraftReviewGrant(t *testing.T, ctx context.Context, repository *repositories.DraftRepository) *models.DraftReviewGrant {
+	t.Helper()
+	grant := &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC().Add(-time.Minute),
+	}
+	require.NoError(t, repository.CreateDraftReviewGrant(ctx, grant))
+	revokedAt := time.Now().UTC()
+	grant.RevokedAt = &revokedAt
+	require.NoError(t, repository.RevokeDraftReviewGrant(ctx, grant))
+	return grant
+}
+
+func executeShareDraftForReview(t *testing.T, server *handler.Server) *httptest.ResponseRecorder {
+	t.Helper()
+	requestBody := []byte(`{"query":"mutation { shareDraftForReview(draftId: \"draft-1\", reviewer: \"reviewer\") { draftId } }"}`)
+	request := httptest.NewRequest(http.MethodPost, "/graphql", bytes.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	return response
+}
+
+type draftReviewWireErrorPayload struct {
+	Errors []struct {
+		Message    string         `json:"message"`
+		Extensions map[string]any `json:"extensions"`
+	} `json:"errors"`
+}
+
+func decodeDraftReviewWireErrors(t *testing.T, response *httptest.ResponseRecorder) draftReviewWireErrorPayload {
+	t.Helper()
+	var payload draftReviewWireErrorPayload
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
+	return payload
 }

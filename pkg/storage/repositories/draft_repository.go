@@ -188,7 +188,7 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 		return fmt.Errorf("active draft review grant is required")
 	}
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 
 	nextVersion := grant.Version + 1
@@ -207,7 +207,10 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 	builder.ConditionVersion(int64(grant.Version))
 	builder.Set("Version", nextVersion)
 	if err := builder.Execute(); err != nil {
-		return err
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
+		}
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 	grant.Version = nextVersion
 	return nil
