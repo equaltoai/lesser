@@ -2,11 +2,13 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -57,6 +59,17 @@ func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
 		"first-time grants must use a conditional PutItem")
 	require.Contains(t, client.putInputs[0].ExpressionAttributeNames, "#n1")
 	require.Equal(t, "PK", client.putInputs[0].ExpressionAttributeNames["#n1"])
+}
+
+func TestDraftRepositoryCreateDraftReviewGrantCodesKeyPreparationFailure(t *testing.T) {
+	repo := NewDraftRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+
+	err := repo.CreateDraftReviewGrant(context.Background(), &models.DraftReviewGrant{})
+	require.Error(t, err)
+	var appErr *apperrors.AppError
+	require.True(t, errors.As(err, &appErr))
+	require.Equal(t, apperrors.CodeInternal, appErr.Code)
+	require.Equal(t, "Failed to create draft review grant", appErr.Message)
 }
 
 func TestDraftRepositoryCreateDraftReviewGrantRejectsStaleCreateAfterRevoke(t *testing.T) {

@@ -173,7 +173,7 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 // CreateDraftReviewGrant creates a first-time review grant.
 func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 	err := r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
 	if dynamormerrors.IsConditionFailed(err) {
