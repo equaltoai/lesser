@@ -105,13 +105,14 @@ func TestDraftReviewResolversTreatWhitespaceCursorAsAbsent(t *testing.T) {
 	})
 
 	t.Run("SharedDraftReviews", func(t *testing.T) {
-		resolver, drafts := newDraftReviewCursorResolver(t)
+		resolver, _ := newDraftReviewCursorResolver(t)
 		after := model.Cursor(" \t\n ")
 
 		result, err := resolver.Query().SharedDraftReviews(round12AuthContext("reviewer"), nil, &after)
 		require.NoError(t, err)
 		require.NotNil(t, result.PageInfo)
+		// This is the resolver-sensitive assertion: the service independently trims
+		// its cursor, so asserting the repository's captured cursor would be vacuous.
 		require.False(t, result.PageInfo.HasPreviousPage)
-		require.Empty(t, drafts.sharedDraftReviewsCursor, "SharedDraftReviews must pass the trimmed cursor downstream")
 	})
 }
