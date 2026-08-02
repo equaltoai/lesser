@@ -20,6 +20,8 @@ node -e '
   }
 '
 
+node --test "${ROOT_DIR}/scripts/verify_auth_ui_csp.test.mjs"
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 expected_hashes="${tmp_dir}/expected"
@@ -88,7 +90,7 @@ const styles = [];
 for (const htmlPath of htmlFiles(distDir)) {
   const html = fs.readFileSync(htmlPath, "utf8");
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    if (!/\bsrc\s*=/i.test(match[1])) {
+    if (!/(^|\s)src\s*=/i.test(match[1])) {
       scripts.push(sha256CSP(match[2]));
     }
   }
