@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -40,4 +41,8 @@ func TestDraftReviewVerdictUpdateKeys(t *testing.T) {
 	require.False(t, implicitTime.RecordedAt.IsZero())
 	require.Error(t, (&DraftReviewVerdict{}).UpdateKeys())
 	require.Equal(t, MainTableName, verdict.TableName())
+	field, ok := reflect.TypeOf(*verdict).FieldByName("ContentHash")
+	require.True(t, ok)
+	require.Equal(t, "attr:contentHash,omitempty", field.Tag.Get("theorydb"))
+	require.Equal(t, "content_hash,omitempty", field.Tag.Get("json"))
 }

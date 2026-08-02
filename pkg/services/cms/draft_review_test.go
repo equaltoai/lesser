@@ -169,6 +169,177 @@ func TestDraftReviewGateRequiresAllActiveReviewersAndPrincipal(t *testing.T) {
 	require.False(t, approved, "latest verdict supersedes per reviewer")
 }
 
+func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
+	draft := &models.Draft{
+		ContentFormat: "markdown",
+		Title:         "Review draft",
+		Content:       "draft",
+		Slug:          "first-slug",
+		MetadataJSON:  `{"version":1}`,
+	}
+	require.Equal(t, "7c9933a0acf8c08f480f19136b164da3491ff943ba29a3a872c895fb403136ce", draftReviewContentHash(draft))
+
+	draft.Slug = "renamed"
+	draft.MetadataJSON = `{"version":2}`
+	draft.AutosaveVersion++
+	draft.UpdatedAt = time.Now().UTC()
+	require.Equal(t, "7c9933a0acf8c08f480f19136b164da3491ff943ba29a3a872c895fb403136ce", draftReviewContentHash(draft))
+}
+
+func TestDraftReviewApprovalBindsToCurrentContent(t *testing.T) {
+	testCases := map[string]func(*models.Draft){
+		"title": func(draft *models.Draft) { draft.Title = "Edited title" },
+		"content": func(draft *models.Draft) {
+			draft.Content = "edited content"
+		},
+		"format": func(draft *models.Draft) { draft.ContentFormat = "html" },
+	}
+
+	for name, edit := range testCases {
+		t.Run(name, func(t *testing.T) {
+			svc, repo := newReviewService(t)
+			ctx := context.Background()
+			draft, err := repo.GetDraft(ctx, "owner", "d1")
+			require.NoError(t, err)
+			draft.GeneratedBy = ""
+			require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+			_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+			require.NoError(t, err)
+			verdict, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+			require.NoError(t, err)
+			require.NotEmpty(t, verdict.ContentHash)
+
+			approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+			require.NoError(t, err)
+			require.True(t, approved, "an approval at the current content hash must count")
+
+			draft, err = repo.GetDraft(ctx, "owner", "d1")
+			require.NoError(t, err)
+			edit(draft)
+			require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+			approved, err = svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+			require.NoError(t, err)
+			require.False(t, approved, "an edit to reviewed content must invalidate the approval")
+			require.ErrorIs(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)), ErrDraftReviewApprovalRequired)
+			_, err = svc.PublishDraft(ctx, "owner", "d1")
+			require.ErrorIs(t, err, ErrDraftReviewApprovalRequired)
+		})
+	}
+}
+
+func TestDraftReviewAfterContentEditRestoresApproval(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	first, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+
+	draft, err = repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.Content = "revised draft"
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.False(t, approved)
+
+	time.Sleep(time.Millisecond)
+	second, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "re-reviewed")
+	require.NoError(t, err)
+	require.NotEqual(t, first.ContentHash, second.ContentHash)
+	approved, err = svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.True(t, approved)
+}
+
+func TestDraftReviewChangesRequestedAtCurrentHashBlocks(t *testing.T) {
+	svc, _ := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	verdict, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewChangesRequested, "revise")
+	require.NoError(t, err)
+	require.NotEmpty(t, verdict.ContentHash)
+
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.False(t, approved)
+}
+
+func TestDraftReviewVerdictWithoutContentHashNeverCounts(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	grant, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateDraftReviewVerdict(ctx, &models.DraftReviewVerdict{
+		OwnerID:    "owner",
+		DraftID:    "d1",
+		Reviewer:   "reviewer",
+		Verdict:    DraftReviewApproved,
+		RecordedAt: grant.GrantedAt.Add(time.Second),
+	}))
+
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.False(t, approved, "a pre-migration verdict must fail closed")
+}
+
+func TestDraftReviewDraftFetchFailuresFailClosed(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	require.NoError(t, repo.DeleteDraft(ctx, "owner", "d1"))
+
+	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+	require.Error(t, err)
+	require.Empty(t, repo.verdicts, "a missing draft must not leave an unbound verdict")
+
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.Error(t, err)
+	require.False(t, approved)
+}
+
+func TestDraftReviewPrincipalApprovalBindsToCurrentContent(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
+
+	approved, err := svc.HasPrincipalApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.True(t, approved)
+
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.Title = "edited after principal approval"
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	approved, err = svc.HasPrincipalApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.False(t, approved)
+}
+
+func TestDraftReviewNoActiveGrantsRemainsVacuouslyApproved(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.True(t, approved)
+}
+
 func TestHumanDraftWithActiveReviewsRequiresUnanimousApproval(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()

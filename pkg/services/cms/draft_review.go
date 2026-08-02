@@ -2,7 +2,9 @@ package cms
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,6 +17,13 @@ const (
 	DraftReviewApproved         = "APPROVED"
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
 )
+
+// draftReviewContentHash excludes slug, metadata, autosave state, and timestamps
+// because only format, title, and content are reviewed.
+func draftReviewContentHash(d *models.Draft) string {
+	canonical := d.ContentFormat + "\x00" + d.Title + "\x00" + d.Content
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(canonical)))
+}
 
 var (
 	// ErrDraftReviewApprovalRequired means an active reviewer is missing a current approval.
@@ -204,12 +213,20 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	if err != nil {
 		return nil, err
 	}
-	v := &models.DraftReviewVerdict{OwnerID: owner, DraftID: strings.TrimSpace(draftID), Reviewer: caller, Verdict: verdict, Notes: strings.TrimSpace(notes), RecordedAt: time.Now().UTC()}
-	if err := repo.CreateDraftReviewVerdict(ctx, v); err != nil {
-		return nil, err
-	}
 	d, err := s.draftRepo.GetDraft(ctx, owner, draftID)
 	if err != nil {
+		return nil, err
+	}
+	v := &models.DraftReviewVerdict{
+		OwnerID:     owner,
+		DraftID:     strings.TrimSpace(draftID),
+		Reviewer:    caller,
+		Verdict:     verdict,
+		Notes:       strings.TrimSpace(notes),
+		ContentHash: draftReviewContentHash(d),
+		RecordedAt:  time.Now().UTC(),
+	}
+	if err := repo.CreateDraftReviewVerdict(ctx, v); err != nil {
 		return nil, err
 	}
 	d.ReviewedBy = caller
@@ -268,11 +285,20 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 	if err != nil {
 		return nil, err
 	}
+	draft, err := s.draftRepo.GetDraft(ctx, owner, draftID)
+	if err != nil {
+		return nil, err
+	}
+	currentHash := draftReviewContentHash(draft)
 	latest := make(map[string]*models.DraftReviewVerdict, len(active))
 	for _, verdict := range verdicts {
+		if verdict == nil {
+			continue
+		}
 		grant := active[verdict.Reviewer]
 		// A re-grant deliberately requires a verdict recorded after the new grant.
-		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) {
+		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
+			verdict.ContentHash != "" && verdict.ContentHash == currentHash {
 			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
 				latest[verdict.Reviewer] = verdict
 			}
