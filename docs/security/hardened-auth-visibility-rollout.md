@@ -42,9 +42,10 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   `GET /api/v1/statuses/{id}/quotes` extension likewise returns **501 Not Implemented** after parameter validation and
   before storage access so neither target existence nor a real quote-row count is exposed. Authenticated
   `PUT /api/v1/accounts/quote_permissions` returns **501 Not Implemented** after authentication and body validation
-  until permission persistence exists; it never echoes request values as though they were saved. The unauthenticated
-  `GET /api/v1/accounts/{id}/quote_permissions` extension also returns **501 Not Implemented** after path-parameter
-  validation and before storage access; existent, missing, and hostile-text account IDs receive the same response, and
+  until permission persistence exists; it never echoes request values as though they were saved. The
+  `GET /api/v1/accounts/{id}/quote_permissions` extension requires bearer authentication, so anonymous callers receive
+  **401 Unauthorized**. Its handler performs no additional per-target authorization and returns **501 Not Implemented**
+  after path-parameter validation and before storage access for existent, missing, and hostile-text account IDs alike;
   the route never fabricates all-permissive settings.
 - The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
   `GET` handlers remain **501 Not Implemented** pending persistence. `createQuoteBoostLift` marks the future enforcement
