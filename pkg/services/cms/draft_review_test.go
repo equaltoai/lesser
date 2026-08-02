@@ -26,6 +26,8 @@ type reviewMemRepo struct {
 	getGrantErr             error
 	callLog                 []string
 	getDraftCalls           int
+	listGrantCalls          int
+	listVerdictCalls        int
 	afterGetDraft           func(int)
 	afterCreateVerdict      func()
 }
@@ -124,6 +126,7 @@ func (r *reviewMemRepo) CountActiveDraftReviewGrants(_ context.Context, reviewer
 	return count, nil
 }
 func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft string) ([]*models.DraftReviewGrant, error) {
+	r.listGrantCalls++
 	out := []*models.DraftReviewGrant{}
 	for _, g := range r.grants {
 		if g.OwnerID == owner && g.DraftID == draft {
@@ -145,6 +148,7 @@ func (r *reviewMemRepo) CreateDraftReviewVerdict(_ context.Context, v *models.Dr
 	return nil
 }
 func (r *reviewMemRepo) ListDraftReviewVerdicts(_ context.Context, owner, draft string) ([]*models.DraftReviewVerdict, error) {
+	r.listVerdictCalls++
 	out := []*models.DraftReviewVerdict{}
 	for _, v := range r.verdicts {
 		if v.OwnerID == owner && v.DraftID == draft {
@@ -376,6 +380,54 @@ func TestHumanDraftWithoutReviewersHasNoApprovalGateRead(t *testing.T) {
 	repo.getDraftCalls = 0
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
 	require.Equal(t, 1, repo.getDraftCalls, "schedule must load the draft only once")
+}
+
+func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+	repo.getDraftCalls = 0
+	repo.listGrantCalls = 0
+	repo.listVerdictCalls = 0
+	repo.afterGetDraft = func(int) {
+		panic("zero-grant approval must not reload the draft")
+	}
+
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.True(t, approved)
+	require.Equal(t, 1, repo.listGrantCalls)
+	require.Zero(t, repo.listVerdictCalls, "zero active grants make verdict history irrelevant")
+	require.Zero(t, repo.getDraftCalls, "zero active grants must return before loading draft content")
+}
+
+func TestGeneratedDraftGateDerivesApprovalStateOnce(t *testing.T) {
+	for _, operation := range []string{"schedule", "publish"} {
+		t.Run(operation, func(t *testing.T) {
+			svc, repo := newReviewService(t)
+			ctx := context.Background()
+			_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+			require.NoError(t, err)
+			_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
+			require.NoError(t, err)
+
+			repo.listGrantCalls = 0
+			repo.listVerdictCalls = 0
+			if operation == "schedule" {
+				err = svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour))
+				require.NoError(t, err)
+			} else {
+				_, err = svc.PublishDraft(ctx, "owner", "d1")
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, repo.listGrantCalls, "the gate must derive active grants once")
+			require.Equal(t, 1, repo.listVerdictCalls, "the gate must derive current verdicts once")
+		})
+	}
 }
 
 func TestSubmitDraftReviewPreservesConcurrentOwnerEdit(t *testing.T) {

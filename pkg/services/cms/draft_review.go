@@ -23,7 +23,10 @@ const (
 // reviewed content or permalink. Each field is length-prefixed so field
 // boundaries remain unambiguous even when values contain control characters.
 // Metadata, autosave state, and timestamps do not reach the published article
-// and are intentionally excluded.
+// and are intentionally excluded. GeneratedBy is also excluded because
+// cmsApplyDraftRequestAttribution in graph/mutation_resolvers_cms.go only sets
+// and never clears it; that invariant is load-bearing because GeneratedBy
+// enables the principal-approval gate.
 func draftReviewContentHash(d *models.Draft) string {
 	h := sha256.New()
 	var length [8]byte
@@ -342,6 +345,42 @@ func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
 		}
 	}
 	return true
+}
+
+// draftReviewGateApprovals derives the approval snapshot once for the publish
+// and schedule gates, then answers both the unanimous-reviewer and conditional
+// principal requirements from that same snapshot.
+func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, bool, error) {
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
+	if err != nil {
+		if !errors.Is(err, errDraftReviewStorageUnavailable) {
+			return false, false, err
+		}
+		if strings.TrimSpace(draft.GeneratedBy) == "" {
+			// A repository without review support cannot contain active grants;
+			// preserve the pre-review behavior for human-authored drafts.
+			return true, true, nil
+		}
+		// Preserve the generated-draft error ordering: principal resolution ran
+		// before its independent approval-state derivation on the former path.
+		if _, principalErr := s.instancePrincipal(ctx); principalErr != nil {
+			return false, false, principalErr
+		}
+		return false, false, err
+	}
+	if !allActiveReviewersApproved(state) {
+		return false, false, nil
+	}
+	if strings.TrimSpace(draft.GeneratedBy) == "" {
+		return true, true, nil
+	}
+	principal, err := s.instancePrincipal(ctx)
+	if err != nil {
+		return false, false, err
+	}
+	grant := state.active[principal]
+	verdict := state.latest[principal]
+	return true, grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, nil
 }
 
 // HasUnanimousActiveApproval applies the all-invited-reviewers rule. With no
