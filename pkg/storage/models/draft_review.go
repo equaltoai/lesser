@@ -45,15 +45,16 @@ func (g *DraftReviewGrant) UpdateKeys() error {
 
 // DraftReviewVerdict is an immutable review decision audit record.
 type DraftReviewVerdict struct {
-	PK         string    `theorydb:"pk,attr:PK"`
-	SK         string    `theorydb:"sk,attr:SK"`
-	OwnerID    string    `theorydb:"attr:ownerID"`
-	DraftID    string    `theorydb:"attr:draftID"`
-	Reviewer   string    `theorydb:"attr:reviewer"`
-	Verdict    string    `theorydb:"attr:verdict"`
-	Notes      string    `theorydb:"attr:notes,omitempty"`
-	RecordedAt time.Time `theorydb:"attr:recordedAt"`
-	Version    int       `theorydb:"version,attr:version"`
+	PK          string    `theorydb:"pk,attr:PK"`
+	SK          string    `theorydb:"sk,attr:SK"`
+	OwnerID     string    `theorydb:"attr:ownerID"`
+	DraftID     string    `theorydb:"attr:draftID"`
+	Reviewer    string    `theorydb:"attr:reviewer"`
+	Verdict     string    `theorydb:"attr:verdict"`
+	Notes       string    `theorydb:"attr:notes,omitempty"`
+	ContentHash string    `theorydb:"attr:contentHash,omitempty" json:"content_hash,omitempty"`
+	RecordedAt  time.Time `theorydb:"attr:recordedAt"`
+	Version     int       `theorydb:"version,attr:version"`
 }
 
 // TableName returns the table for a review verdict.

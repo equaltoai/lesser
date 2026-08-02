@@ -27,6 +27,55 @@ type draftReviewRecordingDynamo struct {
 	updateInputs []*dynamodb.UpdateItemInput
 }
 
+func TestDraftRepositoryUpdateDraftReviewFieldsDoesNotClobberOwnerContent(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	persisted := &models.Draft{
+		AuthorID:      "owner",
+		ID:            "draft-1",
+		ContentType:   "Article",
+		Title:         "owner title",
+		Slug:          "owner-slug",
+		Content:       "owner late edit",
+		ContentFormat: "markdown",
+		Status:        "draft",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	staleReviewSnapshot := *persisted
+	staleReviewSnapshot.Title = "stale title"
+	staleReviewSnapshot.Slug = "stale-slug"
+	staleReviewSnapshot.Content = "stale reviewed body"
+	staleReviewSnapshot.ReviewedBy = "reviewer"
+	staleReviewSnapshot.ReviewStatus = "APPROVED"
+	staleReviewSnapshot.EditorNotes = "ready"
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.UpdateDraftReviewFields(ctx, "owner", &staleReviewSnapshot))
+
+	got, err := repo.GetDraft(ctx, "owner", "draft-1")
+	require.NoError(t, err)
+	require.Equal(t, "owner title", got.Title)
+	require.Equal(t, "owner-slug", got.Slug)
+	require.Equal(t, "owner late edit", got.Content)
+	require.Equal(t, "reviewer", got.ReviewedBy)
+	require.Equal(t, "APPROVED", got.ReviewStatus)
+	require.Equal(t, "ready", got.EditorNotes)
+	require.Len(t, client.updateInputs, 1)
+	require.Contains(t, aws.ToString(client.updateInputs[0].ConditionExpression), "attribute_exists")
+
+	missing := staleReviewSnapshot
+	missing.ID = "missing"
+	require.ErrorIs(t, repo.UpdateDraftReviewFields(ctx, "owner", &missing), storage.ErrNotFound)
+}
+
 func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	d.putInputs = append(d.putInputs, input)
 	return d.Fake.PutItem(ctx, input, opts...)

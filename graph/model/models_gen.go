@@ -1229,10 +1229,11 @@ type DraftReviewGrant struct {
 }
 
 type DraftReviewVerdictRecord struct {
-	Verdict    DraftReviewVerdict `json:"verdict"`
-	Notes      *string            `json:"notes,omitempty"`
-	Reviewer   *activitypub.Actor `json:"reviewer"`
-	RecordedAt Time               `json:"recordedAt"`
+	Verdict     DraftReviewVerdict `json:"verdict"`
+	Notes       *string            `json:"notes,omitempty"`
+	ContentHash *string            `json:"contentHash,omitempty"`
+	Reviewer    *activitypub.Actor `json:"reviewer"`
+	RecordedAt  Time               `json:"recordedAt"`
 }
 
 type DroneWorkflowMutationPayload struct {
