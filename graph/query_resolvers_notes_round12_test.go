@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/config"
+	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -54,6 +55,50 @@ func TestRound12QueryResolvers_Notes_ObjectTimelineSearch(t *testing.T) {
 	result, err := q.Search(context.Background(), "alice", nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
+}
+
+func TestQueryResolverTimeline_ListRequiresAuthAndWiresListID(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	query := resolver.Query()
+	listID := "list-1"
+
+	t.Run("anonymous list matches authenticated timeline error shape", func(t *testing.T) {
+		_, err := query.Timeline(context.Background(), model.TimelineTypeList, nil, &listID, nil, nil, nil, nil, nil)
+		require.ErrorIs(t, err, ErrAuthenticationRequired)
+
+		for _, timelineType := range []model.TimelineType{model.TimelineTypeHome, model.TimelineTypeDirect} {
+			_, siblingErr := query.Timeline(context.Background(), timelineType, nil, nil, nil, nil, nil, nil, nil)
+			require.Error(t, siblingErr)
+			require.Equal(t, pkgerrors.GetErrorCode(siblingErr), pkgerrors.GetErrorCode(err))
+			require.Equal(t, pkgerrors.GetErrorCategory(siblingErr), pkgerrors.GetErrorCategory(err))
+			require.Equal(t, pkgerrors.GetHTTPStatus(siblingErr), pkgerrors.GetHTTPStatus(err))
+		}
+	})
+
+	t.Run("list ID validation precedes authentication", func(t *testing.T) {
+		emptyListID := ""
+		for _, test := range []struct {
+			name   string
+			listID *string
+		}{
+			{name: "missing"},
+			{name: "empty", listID: &emptyListID},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				_, err := query.Timeline(context.Background(), model.TimelineTypeList, nil, test.listID, nil, nil, nil, nil, nil)
+				require.ErrorIs(t, err, ErrListIDParameterRequired)
+			})
+		}
+	})
+
+	t.Run("authenticated list reaches notes service with list ID", func(t *testing.T) {
+		connection, err := query.Timeline(
+			round12AuthContext("alice"), model.TimelineTypeList, nil, &listID, nil, nil, nil, nil, nil,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, connection)
+		require.Empty(t, connection.Edges)
+	})
 }
 
 func TestRound12QueryResolvers_Notes_ThreadContext_StorageNil(t *testing.T) {
