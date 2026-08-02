@@ -200,7 +200,8 @@ Dependency-maintenance, operational-reliability, framework-consumption, docs. Po
 - Strict AppTheory route registration is adopted for selected surfaces without OpenAPI/GraphQL/federation route drift.
 - CDK function construct adoption either lands with template-parity proof or produces a framework-feedback signal instead
   of a local workaround.
-- FaceTheory v3.2.2 guidance remains backward-compatible for client app authors.
+- FaceTheory client guidance remains backward-compatible as release pins advance (the current recommendation is
+  `v4.0.1`); lesser continues to require dependency presence without enforcing an exact version or URL.
 
 ### Specialist routing
 
