@@ -40,8 +40,8 @@ func (q *QuotePermissions) GetSK() string {
 }
 
 // IsAllowed checks if a given user is allowed to quote based on permissions.
-// It intentionally has no production callers while quote-permission reads and writes are walled off as unimplemented;
-// createQuoteBoostLift is the documented enforcement point once persistence lands.
+// Account-level permissions are persisted by the GraphQL updateAccountQuotePermissions mutation. The GraphQL quote
+// path enforces the equivalent predicate in QuoteService.checkQuotePermissions; REST quote creation must do the same.
 func (q *QuotePermissions) IsAllowed(quoterUsername string, isFollower bool, isMentioned bool) bool {
 	// Check if user is in block list
 	for _, blocked := range q.BlockList {

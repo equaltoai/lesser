@@ -270,8 +270,8 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 		Content:      comment,
 		AttributedTo: actor.ID,
 		QuoteURL:     objectID,
-		// Quote permissions are not implemented. When persistence lands, this is the
-		// enforcement point that must consult QuotePermissions.IsAllowed.
+		// Account-level quote permissions are persisted by GraphQL. The GraphQL quote path
+		// enforces them in QuoteService.checkQuotePermissions; this REST twin must match it.
 		Quoteable:          true,
 		QuoteNotifications: true,
 	}

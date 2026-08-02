@@ -334,19 +334,19 @@ content.
 
 ## P1 — Privacy leak: GraphQL `accountQuotePermissions` exposes `blockList` publicly
 
-**Status:** confirmed  
-**Confidence:** 7/10  
+**Status:** fixed; REST enforcement follow-up in progress
+**Confidence:** 9/10
 
-`accountQuotePermissions(username: ...)` can be queried without authentication and returns the account’s quote-permission
-configuration including `blockList` (a user preference that is typically private).
+Account-level quote permissions are live: the authenticated GraphQL mutation `updateAccountQuotePermissions` persists
+them, and the GraphQL quote path enforces them through `QuoteService.checkQuotePermissions` in
+`pkg/services/quotes/quote_service.go`. The REST quote-permission GET and PUT routes return `501 Not Implemented` because
+their REST implementation genuinely does not exist; they do not fabricate or persist preferences.
 
-**Location:**
-- Schema: `graph/core.graphql:1076`
-- Resolver: `graph/query_resolvers_accounts.go:83` (no `requireAuth` / role gating; returns `blockList`)
-
-**Recommendation:** decide intended exposure:
-- If this is only for the account owner: require auth and ensure the requester matches the username.
-- If others need to know “can I quote this user?”: return a computed boolean for the *viewer*, not the raw block list.
+The authenticated GraphQL `accountQuotePermissions(username: ...)` read also returns a not-implemented error for every
+target. It fails closed without fabricating defaults while a real read is pending an explicit authorization decision:
+whether an account owner, another viewer, or both may read the raw block list is a product decision, not a safe default.
+The REST quote-creation twin must use the same account-level enforcement as the GraphQL quote path; the next remediation
+commit closes that asymmetry.
 
 ---
 
