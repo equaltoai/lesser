@@ -4543,6 +4543,11 @@ func (s *Service) unmuteStatus(ctx context.Context, userID, statusID string) err
 // getDirectTimeline retrieves the direct message timeline for a user
 func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Result, error) {
 	// For now, we'll just return an empty list since we don't have list service integration
+	// The eventual implementation MUST delegate to lists.Service.GetListTimeline, which
+	// enforces ViewerID == list.Username before returning statuses. When this stub is
+	// implemented, revisit TestService_round15_view_permissions_and_timelines: its
+	// viewer "bob" and "list-1" pair needs an ownership fixture before it can exercise
+	// the implemented list timeline path.
 	// In a complete implementation, this would:
 	// 1. Get the list membership
 	// 2. Query statuses from list members
