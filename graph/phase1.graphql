@@ -133,6 +133,7 @@ type DraftReviewGrant {
 type DraftReviewVerdictRecord {
   verdict: DraftReviewVerdict!
   notes: String
+  contentHash: String
   reviewer: Actor!
   recordedAt: Time!
 }

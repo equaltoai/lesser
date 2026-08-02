@@ -1215,10 +1215,11 @@ type ComplexityRoot struct {
 	}
 
 	DraftReviewVerdictRecord struct {
-		Notes      func(childComplexity int) int
-		RecordedAt func(childComplexity int) int
-		Reviewer   func(childComplexity int) int
-		Verdict    func(childComplexity int) int
+		ContentHash func(childComplexity int) int
+		Notes       func(childComplexity int) int
+		RecordedAt  func(childComplexity int) int
+		Reviewer    func(childComplexity int) int
+		Verdict     func(childComplexity int) int
 	}
 
 	Driver struct {
@@ -9391,6 +9392,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftReviewGrant.Reviewer(childComplexity), true
+
+	case "DraftReviewVerdictRecord.contentHash":
+		if e.complexity.DraftReviewVerdictRecord.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewVerdictRecord.ContentHash(childComplexity), true
 
 	case "DraftReviewVerdictRecord.notes":
 		if e.complexity.DraftReviewVerdictRecord.Notes == nil {
@@ -63700,6 +63708,8 @@ func (ec *executionContext) fieldContext_DraftReview_verdicts(_ context.Context,
 				return ec.fieldContext_DraftReviewVerdictRecord_verdict(ctx, field)
 			case "notes":
 				return ec.fieldContext_DraftReviewVerdictRecord_notes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReviewVerdictRecord_contentHash(ctx, field)
 			case "reviewer":
 				return ec.fieldContext_DraftReviewVerdictRecord_reviewer(ctx, field)
 			case "recordedAt":
@@ -64186,6 +64196,47 @@ func (ec *executionContext) _DraftReviewVerdictRecord_notes(ctx context.Context,
 }
 
 func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewVerdictRecord_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewVerdictRecord_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DraftReviewVerdictRecord",
 		Field:      field,
@@ -168650,6 +168701,8 @@ func (ec *executionContext) _DraftReviewVerdictRecord(ctx context.Context, sel a
 			}
 		case "notes":
 			out.Values[i] = ec._DraftReviewVerdictRecord_notes(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._DraftReviewVerdictRecord_contentHash(ctx, field, obj)
 		case "reviewer":
 			out.Values[i] = ec._DraftReviewVerdictRecord_reviewer(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
