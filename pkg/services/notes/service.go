@@ -2939,7 +2939,7 @@ type BookmarkResult struct {
 
 // BookmarkNote adds a status to user's bookmarks
 func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*BookmarkResult, error) {
-	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.BookmarkerID, "bookmarker")
+	note, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.BookmarkerID, "bookmarker")
 	if err != nil {
 		return nil, err
 	}
@@ -2963,7 +2963,7 @@ func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*
 
 // UnbookmarkNote removes a status from user's bookmarks
 func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand) (*BookmarkResult, error) {
-	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnbookmarkerID, "unbookmarker")
+	note, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnbookmarkerID, "unbookmarker")
 	if err != nil {
 		return nil, err
 	}
@@ -3181,7 +3181,11 @@ type statusInteractionIdentity struct {
 
 // LikeNote adds a like to a status
 func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
-	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.LikerID, "liker")
+	note, actor, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.LikerID, "liker")
+	if err != nil {
+		return nil, err
+	}
+	identity, err := s.resolveStatusInteractionIdentity(note, actor, cmd.LikerID, "liker", cmd.StatusID)
 	if err != nil {
 		return nil, err
 	}
@@ -3220,7 +3224,11 @@ func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResu
 
 // UnlikeNote removes a like from a status
 func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*LikeResult, error) {
-	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnlikerID, "unliker")
+	note, actor, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnlikerID, "unliker")
+	if err != nil {
+		return nil, err
+	}
+	identity, err := s.resolveStatusInteractionIdentity(note, actor, cmd.UnlikerID, "unliker", cmd.StatusID)
 	if err != nil {
 		return nil, err
 	}
@@ -3292,21 +3300,21 @@ func (s *Service) prepareStatusInteraction(
 	statusID string,
 	actorID string,
 	actorType string,
-) (*models.Status, *storage.Account, statusInteractionIdentity, error) {
+) (*models.Status, *storage.Account, error) {
 	note, err := s.noteRepo.GetStatus(ctx, statusID)
 	if err != nil {
-		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+		return nil, nil, ErrStatusNotFound
 	}
 	if note.Deleted {
-		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+		return nil, nil, ErrStatusNotFound
 	}
 
 	canView, err := s.checkViewPermissions(ctx, note, actorID)
 	if err != nil {
-		return nil, nil, statusInteractionIdentity{}, ErrCheckViewPermissions
+		return nil, nil, ErrCheckViewPermissions
 	}
 	if !canView {
-		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+		return nil, nil, ErrStatusNotFound
 	}
 
 	actor, err := s.accountRepo.GetAccount(ctx, actorID)
@@ -3315,9 +3323,19 @@ func (s *Service) prepareStatusInteraction(
 			zap.String("actor_id", actorID),
 			zap.String("actor_type", actorType),
 			zap.Error(err))
-		return nil, nil, statusInteractionIdentity{}, errors.Join(ErrGetAuthorAccount, err)
+		return nil, nil, errors.Join(ErrGetAuthorAccount, err)
 	}
 
+	return note, actor, nil
+}
+
+func (s *Service) resolveStatusInteractionIdentity(
+	note *models.Status,
+	actor *storage.Account,
+	actorID string,
+	actorType string,
+	statusID string,
+) (statusInteractionIdentity, error) {
 	identity, err := s.statusInteractionIdentity(note, actor)
 	if err != nil {
 		s.logger.Error("failed to resolve status interaction identity",
@@ -3325,10 +3343,10 @@ func (s *Service) prepareStatusInteraction(
 			zap.String("actor_type", actorType),
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, nil, statusInteractionIdentity{}, errors.Join(ErrExecuteAction, err)
+		return statusInteractionIdentity{}, errors.Join(ErrExecuteAction, err)
 	}
 
-	return note, actor, identity, nil
+	return identity, nil
 }
 
 func (s *Service) statusInteractionIdentity(status *models.Status, actor *storage.Account) (statusInteractionIdentity, error) {
@@ -3465,7 +3483,11 @@ type GetRebloggersQuery struct {
 
 // ReblogNote creates a reblog/announce of a status
 func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*LikeResult, error) {
-	note, reblogger, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.RebloggerID, "reblogger")
+	note, reblogger, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.RebloggerID, "reblogger")
+	if err != nil {
+		return nil, err
+	}
+	identity, err := s.resolveStatusInteractionIdentity(note, reblogger, cmd.RebloggerID, "reblogger", cmd.StatusID)
 	if err != nil {
 		return nil, err
 	}
@@ -3505,7 +3527,11 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 
 // UnreblogNote removes a reblog/announce of a status
 func (s *Service) UnreblogNote(ctx context.Context, cmd *UnreblogNoteCommand) (*LikeResult, error) {
-	note, _, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnrebloggerID, "unreblogger")
+	note, actor, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnrebloggerID, "unreblogger")
+	if err != nil {
+		return nil, err
+	}
+	identity, err := s.resolveStatusInteractionIdentity(note, actor, cmd.UnrebloggerID, "unreblogger", cmd.StatusID)
 	if err != nil {
 		return nil, err
 	}
@@ -3682,7 +3708,7 @@ type UnmuteNoteCommand struct {
 
 // MuteNote mutes a status for a user
 func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResult, error) {
-	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "muter")
+	note, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "muter")
 	if err != nil {
 		return nil, err
 	}
@@ -3715,7 +3741,7 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 
 // UnmuteNote unmutes a status for a user
 func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*LikeResult, error) {
-	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "unmuter")
+	note, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "unmuter")
 	if err != nil {
 		return nil, err
 	}
