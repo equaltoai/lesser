@@ -398,7 +398,10 @@ func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	return common.IsPubliclyVisible(status.Visibility)
 }
 
-// CheckQuotePermissions applies the account-level quote predicate shared by every quote-creation surface.
+// CheckQuotePermissions applies the account-level quote predicate to relationship-minting paths:
+// GraphQL quote creation and REST reblog-with-comment. GraphQL createQuoteNote only embeds a URL
+// without minting a relationship and is outside this control by design; a blocked user can always
+// paste a URL into ordinary post text, while this predicate governs quote relationships.
 func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
 	// Get quote permissions for the target status author
 	permissions, err := qs.GetQuotePermissions(ctx, targetStatus.AuthorUsername)
