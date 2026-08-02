@@ -10027,22 +10027,14 @@ paths:
                         schema:
                             $ref: '#/components/schemas/UpdateQuotePermissionsRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote permission updates are not implemented and no settings are persisted.
             x-lesser-handler: HandleUpdateQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -18217,14 +18209,10 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
                 "422":
                     $ref: '#/components/responses/UnprocessableEntity'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
                 "501":
                     description: Quote creation is not implemented; target IDs are not looked up.
             x-lesser-handler: HandleCreateQuotePostLift
@@ -18288,18 +18276,10 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuoteStatusSummaryList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote listing is not implemented; target IDs and quote counts are not looked up.
             x-lesser-handler: HandleGetQuotesOfStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
