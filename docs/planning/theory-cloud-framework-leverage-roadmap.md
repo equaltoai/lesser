@@ -112,7 +112,7 @@ local adoption proceeds.
      creates functions directly with native AWS CDK.
    - Verification: synth a representative function behind tests and compare generated CloudFormation for function name,
      architecture, runtime, timeout, memory, role, env, asset path, DLQ, and permissions before broader migration.
-4. **FaceTheory v3.2.2 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
+4. **FaceTheory v4.0.1 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
    - Evidence: `lesser client install` validates that a FaceTheory dependency exists; enforcing an exact dependency URL
      would break local workspace/client development.
    - Verification: docs/tests are enough in lesser; any client-app enforcement belongs in client repos or a non-blocking

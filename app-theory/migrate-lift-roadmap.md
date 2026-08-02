@@ -196,7 +196,10 @@ Known import sites at time of drafting (pre-migration):
 
 Status (as of 2026-02-02): `rg -n "github.com/aws/aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .` returns 0 results.
 
-## Execution steps (single branch / single PR)
+## Historical execution steps (2026-01-31; completed)
+
+These steps preserve the original migration record only; use `go.mod` and `infra/cdk/go.mod` as the source of truth for
+current module paths and pins, and do not apply the pre-v2 versions below to today's tree.
 
 ### 0) Pre-flight
 1. Create a branch dedicated to the replacement.
