@@ -325,6 +325,8 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 		}
 		grant := active[verdict.Reviewer]
 		// A re-grant deliberately requires a verdict recorded after the new grant.
+		// Pre-deploy approvals have no hash and deliberately revert to unapproved;
+		// the fail-closed/no-backfill rollout requires re-review.
 		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
 			verdict.ContentHash == currentHash {
 			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
@@ -351,6 +353,15 @@ func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
 // and schedule gates, then answers both the unanimous-reviewer and conditional
 // principal requirements from that same snapshot.
 func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, bool, error) {
+	if draft == nil {
+		// Callers without a snapshot fetch it exactly once before deriving both
+		// approval answers from that same content.
+		var err error
+		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
+		if err != nil {
+			return false, false, err
+		}
+	}
 	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
 	if err != nil {
 		if !errors.Is(err, errDraftReviewStorageUnavailable) {

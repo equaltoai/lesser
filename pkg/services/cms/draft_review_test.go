@@ -405,6 +405,45 @@ func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
 	require.Zero(t, repo.getDraftCalls, "zero active grants must return before loading draft content")
 }
 
+func TestDraftReviewApprovalStateRejectsLegacyHashlessVerdict(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	grant, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateDraftReviewVerdict(ctx, &models.DraftReviewVerdict{
+		OwnerID:    "owner",
+		DraftID:    "d1",
+		Reviewer:   "reviewer",
+		Verdict:    DraftReviewApproved,
+		RecordedAt: grant.GrantedAt.Add(time.Nanosecond),
+	}))
+
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	state, err := svc.draftReviewApprovalState(ctx, "owner", "d1", draft)
+	require.NoError(t, err)
+	require.Contains(t, state.active, "reviewer")
+	require.NotContains(t, state.latest, "reviewer",
+		"a pre-migration verdict without a content hash must require re-review")
+	require.False(t, allActiveReviewersApproved(state))
+}
+
+func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
+
+	repo.getDraftCalls = 0
+	unanimous, principal, err := svc.draftReviewGateApprovals(ctx, "owner", "d1", nil)
+	require.NoError(t, err)
+	require.True(t, unanimous)
+	require.True(t, principal)
+	require.Equal(t, 1, repo.getDraftCalls, "a nil snapshot must trigger exactly one draft read")
+}
+
 func TestGeneratedDraftGateDerivesApprovalStateOnce(t *testing.T) {
 	for _, operation := range []string{"schedule", "publish"} {
 		t.Run(operation, func(t *testing.T) {
