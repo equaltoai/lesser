@@ -21,7 +21,7 @@ func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
 			name:             "create quote",
 			route:            routeDef{Method: methodPOST, Path: "/api/v1/statuses/{id}/quote"},
 			initialResponses: []string{"200", "400", "401", "403", "404", "422", "429", "500"},
-			wantResponses:    []string{"400", "401", "403", "422", "429", "501"},
+			wantResponses:    []string{"400", "401", "403", "429", "501"},
 			wantDescription:  "Quote creation is not implemented; target IDs are not looked up.",
 		},
 		{

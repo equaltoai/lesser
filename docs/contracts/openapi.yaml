@@ -18201,8 +18201,6 @@ paths:
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "501":
