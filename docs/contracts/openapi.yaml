@@ -9734,22 +9734,14 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote permission reads are not implemented and no settings are retrieved.
             x-lesser-handler: HandleGetQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:

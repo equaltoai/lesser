@@ -32,6 +32,13 @@ func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
 			wantDescription:  "Quote listing is not implemented; target IDs and quote counts are not looked up.",
 		},
 		{
+			name:             "get quote permissions",
+			route:            routeDef{Method: methodGET, Path: "/api/v1/accounts/{id}/quote_permissions"},
+			initialResponses: []string{"200", "400", "401", "403", "404", "500"},
+			wantResponses:    []string{"400", "401", "403", "501"},
+			wantDescription:  "Quote permission reads are not implemented and no settings are retrieved.",
+		},
+		{
 			name:             "update quote permissions",
 			route:            routeDef{Method: methodPUT, Path: "/api/v1/accounts/quote_permissions"},
 			initialResponses: []string{"200", "400", "401", "403", "422", "500"},

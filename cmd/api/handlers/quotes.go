@@ -131,18 +131,11 @@ func (h *Handler) HandleGetQuotePermissionsLift(ctx *apptheory.Context) (*appthe
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Get quote permissions
-	permissions, err := h.getQuotePermissions(ctx, accountID)
-	if err != nil {
-		h.logger.Error("failed to get quote permissions", zap.String("account_id", accountID), zap.Error(err))
-		return common.RespondFailedToGet(ctx, "permissions")
-	}
-
-	return okJSON(apimodels.QuotePermissionsResponse{
-		AllowPublic:    permissions.AllowPublic,
-		AllowFollowers: permissions.AllowFollowers,
-		AllowMentioned: permissions.AllowMentioned,
-		BlockList:      permissions.BlockList,
+	// Permission persistence is not implemented. Return before storage access so
+	// existent and missing account IDs remain indistinguishable and clients are
+	// never given fabricated all-permissive settings.
+	return apptheory.JSON(http.StatusNotImplemented, common.StandardErrorResponse{
+		Error: "quote permissions endpoint is not implemented",
 	})
 }
 
@@ -190,13 +183,4 @@ func (h *Handler) deleteQuoteRelationship(ctx *apptheory.Context, relationship *
 		return nil
 	}
 	return h.repos.Quote().DeleteQuoteRelationship(ctx.Context(), relationship.QuoterNoteID, relationship.TargetNoteID)
-}
-
-func (h *Handler) getQuotePermissions(_ *apptheory.Context, username string) (*storageModels.QuotePermissions, error) {
-	// Placeholder implementation - would query from storage
-	permissions := &storageModels.QuotePermissions{
-		Username: username,
-	}
-	permissions.SetDefaults()
-	return permissions, nil
 }

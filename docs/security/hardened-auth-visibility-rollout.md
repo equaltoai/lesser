@@ -42,7 +42,10 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   `GET /api/v1/statuses/{id}/quotes` extension likewise returns **501 Not Implemented** after parameter validation and
   before storage access so neither target existence nor a real quote-row count is exposed. Authenticated
   `PUT /api/v1/accounts/quote_permissions` returns **501 Not Implemented** after authentication and body validation
-  until permission persistence exists; it never echoes request values as though they were saved.
+  until permission persistence exists; it never echoes request values as though they were saved. The unauthenticated
+  `GET /api/v1/accounts/{id}/quote_permissions` extension also returns **501 Not Implemented** after path-parameter
+  validation and before storage access; existent, missing, and hostile-text account IDs receive the same response, and
+  the route never fabricates all-permissive settings.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.

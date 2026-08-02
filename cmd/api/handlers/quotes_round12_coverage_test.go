@@ -221,6 +221,40 @@ func TestCreateQuotePostReturnsNotImplementedWithoutStatusLookup(t *testing.T) {
 	}
 }
 
+func TestGetQuotePermissionsReturnsNotImplementedWithoutStorageLookup(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "existent account shape", id: "alice"},
+		{name: "nonexistent account", id: "definitely-not-a-real-account-9f2b"},
+		{name: "path traversal text", id: "../../root"},
+		{name: "sql injection text", id: "'; DROP--"},
+	}
+
+	var expectedBody []byte
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{}
+			handler, _, _ := round11NewHandler(t, round11TestConfig(), state)
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
+
+			resp, err := handler.HandleGetQuotePermissionsLift(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotImplemented, resp.Status)
+			if expectedBody == nil {
+				expectedBody = append([]byte(nil), resp.Body...)
+			} else {
+				require.Equal(t, expectedBody, resp.Body, "all account IDs must receive an identical response")
+			}
+			require.JSONEq(t, `{"error":"quote permissions endpoint is not implemented"}`, string(resp.Body))
+			require.Empty(t, state.wheres, "501 path must not perform a storage query")
+		})
+	}
+}
+
 func TestQuotes_Round12_GetQuotesOfStatus_Coverage(t *testing.T) {
 	cfg := round11TestConfig()
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
@@ -421,16 +455,10 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handlerDel.HandleDeleteQuotePostLift(ctxDel))
 	})
 
-	t.Run("get_quote_permissions_validation_and_ok", func(t *testing.T) {
+	t.Run("get_quote_permissions_validation_and_not_implemented", func(t *testing.T) {
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts//quote_permissions", nil, nil, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusBadRequest)(handler.HandleGetQuotePermissionsLift(ctxMissing))
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "alice"
-
-		requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctx))
 	})
 
 	t.Run("update_quote_permissions_auth_validation_and_not_implemented", func(t *testing.T) {

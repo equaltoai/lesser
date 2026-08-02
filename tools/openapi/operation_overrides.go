@@ -39,6 +39,13 @@ func applyQuoteOverrides(op *operation, route routeDef) {
 		op.Responses["501"] = response{
 			Description: "Quote listing is not implemented; target IDs and quote counts are not looked up.",
 		}
+	case route.Method == methodGET && route.Path == "/api/v1/accounts/{id}/quote_permissions":
+		delete(op.Responses, "200")
+		delete(op.Responses, "404")
+		delete(op.Responses, "500")
+		op.Responses["501"] = response{
+			Description: "Quote permission reads are not implemented and no settings are retrieved.",
+		}
 	case route.Method == methodPUT && route.Path == "/api/v1/accounts/quote_permissions":
 		delete(op.Responses, "200")
 		delete(op.Responses, "422")

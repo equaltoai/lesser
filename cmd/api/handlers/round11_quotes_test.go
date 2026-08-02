@@ -45,7 +45,7 @@ func TestQuotesPermissions(t *testing.T) {
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
 	require.NoError(t, err)
 	ctxGet.Params["id"] = "alice"
-	requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctxGet))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotePermissionsLift(ctxGet))
 
 	updateToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:accounts"})
 	headers := map[string]string{"Authorization": "Bearer " + updateToken}
