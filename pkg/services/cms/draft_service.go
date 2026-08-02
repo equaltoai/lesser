@@ -208,7 +208,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
-	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	approved, approvalErr := s.hasUnanimousActiveApproval(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return approvalErr
 	}
@@ -216,7 +216,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return ErrDraftReviewApprovalRequired
 	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
+		principalApproved, principalErr := s.hasPrincipalApproval(ctx, authorID, draftID, draft)
 		if principalErr != nil {
 			return principalErr
 		}
@@ -248,7 +248,7 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
 	}
-	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	approved, approvalErr := s.hasUnanimousActiveApproval(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return nil, approvalErr
 	}
@@ -256,7 +256,7 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 		return nil, ErrDraftReviewApprovalRequired
 	}
 	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
+		principalApproved, principalErr := s.hasPrincipalApproval(ctx, authorID, draftID, draft)
 		if principalErr != nil {
 			return nil, principalErr
 		}

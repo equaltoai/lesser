@@ -25,10 +25,33 @@ type reviewMemRepo struct {
 	revokeGrantCalls        int
 	getGrantErr             error
 	callLog                 []string
+	getDraftCalls           int
+	afterGetDraft           func(int)
+	afterCreateVerdict      func()
 }
 
 func newReviewMemRepo() *reviewMemRepo {
 	return &reviewMemRepo{memDraftRepo: newMemDraftRepo(), grants: map[string]*models.DraftReviewGrant{}}
+}
+
+func (r *reviewMemRepo) GetDraft(ctx context.Context, owner, draftID string) (*models.Draft, error) {
+	r.getDraftCalls++
+	draft, err := r.memDraftRepo.GetDraft(ctx, owner, draftID)
+	if r.afterGetDraft != nil {
+		r.afterGetDraft(r.getDraftCalls)
+	}
+	return draft, err
+}
+
+func (r *reviewMemRepo) UpdateDraftReviewFields(_ context.Context, owner string, draft *models.Draft) error {
+	stored, ok := r.items[r.key(owner, draft.ID)]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	stored.ReviewedBy = draft.ReviewedBy
+	stored.ReviewStatus = draft.ReviewStatus
+	stored.EditorNotes = draft.EditorNotes
+	return nil
 }
 func reviewKey(owner, draft, reviewer string) string { return owner + "|" + draft + "|" + reviewer }
 func (r *reviewMemRepo) storeGrant(g *models.DraftReviewGrant) error {
@@ -116,6 +139,9 @@ func (r *reviewMemRepo) CreateDraftReviewVerdict(_ context.Context, v *models.Dr
 	}
 	copy := *v
 	r.verdicts = append(r.verdicts, &copy)
+	if r.afterCreateVerdict != nil {
+		r.afterCreateVerdict()
+	}
 	return nil
 }
 func (r *reviewMemRepo) ListDraftReviewVerdicts(_ context.Context, owner, draft string) ([]*models.DraftReviewVerdict, error) {
@@ -177,13 +203,21 @@ func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
 		Slug:          "first-slug",
 		MetadataJSON:  `{"version":1}`,
 	}
-	require.Equal(t, "7c9933a0acf8c08f480f19136b164da3491ff943ba29a3a872c895fb403136ce", draftReviewContentHash(draft))
+	original := draftReviewContentHash(draft)
+	require.Len(t, original, 64)
 
 	draft.Slug = "renamed"
+	require.NotEqual(t, original, draftReviewContentHash(draft), "the published permalink requires re-review")
+	draft.Slug = "first-slug"
 	draft.MetadataJSON = `{"version":2}`
 	draft.AutosaveVersion++
 	draft.UpdatedAt = time.Now().UTC()
-	require.Equal(t, "7c9933a0acf8c08f480f19136b164da3491ff943ba29a3a872c895fb403136ce", draftReviewContentHash(draft))
+	require.Equal(t, original, draftReviewContentHash(draft))
+
+	left := &models.Draft{ContentFormat: "a\x00b", Slug: "c"}
+	right := &models.Draft{ContentFormat: "a", Slug: "b\x00c"}
+	require.NotEqual(t, draftReviewContentHash(left), draftReviewContentHash(right),
+		"length prefixes must keep control characters from crossing field boundaries")
 }
 
 func TestDraftReviewApprovalBindsToCurrentContent(t *testing.T) {
@@ -193,6 +227,7 @@ func TestDraftReviewApprovalBindsToCurrentContent(t *testing.T) {
 			draft.Content = "edited content"
 		},
 		"format": func(draft *models.Draft) { draft.ContentFormat = "html" },
+		"slug":   func(draft *models.Draft) { draft.Slug = "edited-slug" },
 	}
 
 	for name, edit := range testCases {
@@ -272,24 +307,6 @@ func TestDraftReviewChangesRequestedAtCurrentHashBlocks(t *testing.T) {
 	require.False(t, approved)
 }
 
-func TestDraftReviewVerdictWithoutContentHashNeverCounts(t *testing.T) {
-	svc, repo := newReviewService(t)
-	ctx := context.Background()
-	grant, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
-	require.NoError(t, err)
-	require.NoError(t, repo.CreateDraftReviewVerdict(ctx, &models.DraftReviewVerdict{
-		OwnerID:    "owner",
-		DraftID:    "d1",
-		Reviewer:   "reviewer",
-		Verdict:    DraftReviewApproved,
-		RecordedAt: grant.GrantedAt.Add(time.Second),
-	}))
-
-	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
-	require.NoError(t, err)
-	require.False(t, approved, "a pre-migration verdict must fail closed")
-}
-
 func TestDraftReviewDraftFetchFailuresFailClosed(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()
@@ -304,6 +321,92 @@ func TestDraftReviewDraftFetchFailuresFailClosed(t *testing.T) {
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.Error(t, err)
 	require.False(t, approved)
+}
+
+func TestDraftReviewGateHashesTheSnapshotBeingScheduledOrPublished(t *testing.T) {
+	for _, operation := range []string{"schedule", "publish"} {
+		t.Run(operation, func(t *testing.T) {
+			svc, repo := newReviewService(t)
+			ctx := context.Background()
+			draft, err := repo.GetDraft(ctx, "owner", "d1")
+			require.NoError(t, err)
+			draft.GeneratedBy = ""
+			draft.Content = "approved content"
+			require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+			_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+			require.NoError(t, err)
+			_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+			require.NoError(t, err)
+
+			draft, err = repo.GetDraft(ctx, "owner", "d1")
+			require.NoError(t, err)
+			draft.Content = "unapproved payload"
+			require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+			repo.getDraftCalls = 0
+			repo.afterGetDraft = func(call int) {
+				if call == 1 {
+					// Simulate the owner reverting storage to the approved content
+					// after the operation loaded the unapproved snapshot.
+					repo.items[repo.key("owner", "d1")].Content = "approved content"
+				}
+			}
+
+			if operation == "schedule" {
+				err = svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour))
+				require.ErrorIs(t, err, ErrDraftReviewApprovalRequired)
+			} else {
+				_, err = svc.PublishDraft(ctx, "owner", "d1")
+				require.ErrorIs(t, err, ErrDraftReviewApprovalRequired)
+				require.Empty(t, svc.articleService.(*memArticleService).items)
+			}
+			require.Equal(t, 1, repo.getDraftCalls, "the gate must reuse the operation's loaded snapshot")
+		})
+	}
+}
+
+func TestHumanDraftWithoutReviewersHasNoApprovalGateRead(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+
+	repo.getDraftCalls = 0
+	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
+	require.Equal(t, 1, repo.getDraftCalls, "schedule must load the draft only once")
+}
+
+func TestSubmitDraftReviewPreservesConcurrentOwnerEdit(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	draft.GeneratedBy = ""
+	draft.Content = "reviewed body"
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+
+	repo.afterCreateVerdict = func() {
+		stored := repo.items[repo.key("owner", "d1")]
+		stored.Content = "owner late edit"
+	}
+	verdict, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+
+	stored, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.Equal(t, "owner late edit", stored.Content, "review summary must not clobber owner content")
+	require.Equal(t, "reviewer", stored.ReviewedBy)
+	require.Equal(t, DraftReviewApproved, stored.ReviewStatus)
+	require.Equal(t, "ready", stored.EditorNotes)
+	require.NotEqual(t, verdict.ContentHash, draftReviewContentHash(stored),
+		"the verdict must remain bound to the snapshot the reviewer saw")
+	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.False(t, approved, "the concurrent owner edit must fail closed until re-review")
 }
 
 func TestDraftReviewPrincipalApprovalBindsToCurrentContent(t *testing.T) {

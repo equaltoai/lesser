@@ -3,8 +3,9 @@ package cms
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -18,11 +19,20 @@ const (
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
 )
 
-// draftReviewContentHash excludes slug, metadata, autosave state, and timestamps
-// because only format, title, and content are reviewed.
+// draftReviewContentHash binds every field that changes the published article's
+// reviewed content or permalink. Each field is length-prefixed so field
+// boundaries remain unambiguous even when values contain control characters.
+// Metadata, autosave state, and timestamps do not reach the published article
+// and are intentionally excluded.
 func draftReviewContentHash(d *models.Draft) string {
-	canonical := d.ContentFormat + "\x00" + d.Title + "\x00" + d.Content
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(canonical)))
+	h := sha256.New()
+	var length [8]byte
+	for _, field := range []string{d.ContentFormat, d.Slug, d.Title, d.Content} {
+		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+		_, _ = h.Write(length[:])
+		_, _ = h.Write([]byte(field))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 var (
@@ -48,6 +58,10 @@ type draftReviewRepository interface {
 	ListDraftReviewGrants(context.Context, string, string) ([]*models.DraftReviewGrant, error)
 	CreateDraftReviewVerdict(context.Context, *models.DraftReviewVerdict) error
 	ListDraftReviewVerdicts(context.Context, string, string) ([]*models.DraftReviewVerdict, error)
+}
+
+type draftReviewFieldUpdater interface {
+	UpdateDraftReviewFields(context.Context, string, *models.Draft) error
 }
 
 func (s *DraftService) reviewRepository() (draftReviewRepository, error) {
@@ -213,6 +227,10 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	if err != nil {
 		return nil, err
 	}
+	fieldUpdater, ok := s.draftRepo.(draftReviewFieldUpdater)
+	if !ok || fieldUpdater == nil {
+		return nil, errDraftReviewStorageUnavailable
+	}
 	d, err := s.draftRepo.GetDraft(ctx, owner, draftID)
 	if err != nil {
 		return nil, err
@@ -232,7 +250,7 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	d.ReviewedBy = caller
 	d.ReviewStatus = verdict
 	d.EditorNotes = v.Notes
-	if err := s.draftRepo.UpdateDraft(ctx, owner, d); err != nil {
+	if err := fieldUpdater.UpdateDraftReviewFields(ctx, owner, d); err != nil {
 		return nil, err
 	}
 	return v, nil
@@ -266,7 +284,7 @@ type draftReviewApprovalState struct {
 	latest map[string]*models.DraftReviewVerdict
 }
 
-func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draftID string) (*draftReviewApprovalState, error) {
+func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draftID string, draft *models.Draft) (*draftReviewApprovalState, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
 		return nil, err
@@ -281,13 +299,20 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 			active[grant.Reviewer] = grant
 		}
 	}
+	if len(active) == 0 {
+		return &draftReviewApprovalState{active: active, latest: map[string]*models.DraftReviewVerdict{}}, nil
+	}
 	verdicts, err := repo.ListDraftReviewVerdicts(ctx, owner, draftID)
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.draftRepo.GetDraft(ctx, owner, draftID)
-	if err != nil {
-		return nil, err
+	if draft == nil {
+		// Public approval helpers may not already have the draft snapshot. Fetch
+		// exactly once, and only when an active grant makes the hash relevant.
+		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	currentHash := draftReviewContentHash(draft)
 	latest := make(map[string]*models.DraftReviewVerdict, len(active))
@@ -298,7 +323,7 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 		grant := active[verdict.Reviewer]
 		// A re-grant deliberately requires a verdict recorded after the new grant.
 		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
-			verdict.ContentHash != "" && verdict.ContentHash == currentHash {
+			verdict.ContentHash == currentHash {
 			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
 				latest[verdict.Reviewer] = verdict
 			}
@@ -322,7 +347,11 @@ func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
 // HasUnanimousActiveApproval applies the all-invited-reviewers rule. With no
 // active grants the result is vacuously true, preserving human draft behavior.
 func (s *DraftService) HasUnanimousActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
-	state, err := s.draftReviewApprovalState(ctx, owner, draftID)
+	return s.hasUnanimousActiveApproval(ctx, owner, draftID, nil)
+}
+
+func (s *DraftService) hasUnanimousActiveApproval(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, error) {
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
 	if err != nil {
 		if errors.Is(err, errDraftReviewStorageUnavailable) {
 			// A repository without review support cannot contain active grants;
@@ -336,11 +365,15 @@ func (s *DraftService) HasUnanimousActiveApproval(ctx context.Context, owner, dr
 
 // HasPrincipalApproval applies the additional generated-content principal rule.
 func (s *DraftService) HasPrincipalApproval(ctx context.Context, owner, draftID string) (bool, error) {
+	return s.hasPrincipalApproval(ctx, owner, draftID, nil)
+}
+
+func (s *DraftService) hasPrincipalApproval(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, error) {
 	principal, err := s.instancePrincipal(ctx)
 	if err != nil {
 		return false, err
 	}
-	state, err := s.draftReviewApprovalState(ctx, owner, draftID)
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
 	if err != nil {
 		return false, err
 	}
@@ -352,9 +385,18 @@ func (s *DraftService) HasPrincipalApproval(ctx context.Context, owner, draftID 
 // HasActiveApproval preserves the combined generated-draft gate for callers
 // that need both unanimous active-reviewer and principal approval.
 func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
-	approved, err := s.HasUnanimousActiveApproval(ctx, owner, draftID)
-	if err != nil || !approved {
-		return approved, err
+	state, err := s.draftReviewApprovalState(ctx, owner, draftID, nil)
+	if err != nil {
+		return false, err
 	}
-	return s.HasPrincipalApproval(ctx, owner, draftID)
+	if !allActiveReviewersApproved(state) {
+		return false, nil
+	}
+	principal, err := s.instancePrincipal(ctx)
+	if err != nil {
+		return false, err
+	}
+	grant := state.active[principal]
+	verdict := state.latest[principal]
+	return grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, nil
 }
