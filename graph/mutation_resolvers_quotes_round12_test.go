@@ -49,3 +49,25 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	_, err = resolver.Mutation().UpdateQuotePermissions(round12AuthContext("bob"), "status-1", true, model.QuotePermissionEveryone)
 	require.Error(t, err)
 }
+
+func TestGraphQLQuoteControl_ProjectsStoredTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		storedType string
+		quoteable  bool
+		permission model.QuotePermission
+	}{
+		{name: "public", storedType: "public", quoteable: true, permission: model.QuotePermissionEveryone},
+		{name: "followers", storedType: EventTypeFollowers, quoteable: true, permission: model.QuotePermissionFollowers},
+		{name: "mentioned", storedType: "mentioned", quoteable: true, permission: model.QuotePermissionFollowers},
+		{name: "deny default", storedType: "unknown", quoteable: false, permission: model.QuotePermissionNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quoteable, permission := graphQLQuoteControl(tt.storedType)
+			require.Equal(t, tt.quoteable, quoteable)
+			require.Equal(t, tt.permission, permission)
+		})
+	}
+}

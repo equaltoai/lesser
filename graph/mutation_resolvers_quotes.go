@@ -120,6 +120,8 @@ func graphQLQuoteControl(storedQuoteType string) (bool, model.QuotePermission) {
 		return true, model.QuotePermissionEveryone
 	case EventTypeFollowers:
 		return true, model.QuotePermissionFollowers
+	case "mentioned":
+		return true, model.QuotePermissionFollowers
 	default:
 		return false, model.QuotePermissionNone
 	}
