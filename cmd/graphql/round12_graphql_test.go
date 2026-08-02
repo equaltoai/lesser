@@ -567,6 +567,24 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
+	t.Run("rejects_account_quote_permissions_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for anonymous quote permission reads")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"{ accountQuotePermissions(username: \"alice\") { username allowPublic } }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
 	t.Run("rejects_mutation_without_auth", func(t *testing.T) {
 		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			require.Fail(t, "graphql handler should not be invoked for anonymous mutations")
