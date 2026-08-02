@@ -3,13 +3,11 @@ package handlers
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
 	"go.uber.org/zap"
@@ -63,31 +61,20 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *apptheory.Context) (*apptheor
 	}
 
 	// Parse pagination parameters
-	limit, err := common.ParseFollowLimit(queryValue(ctx, "limit"))
-	if err != nil {
+	if _, err := common.ParseFollowLimit(queryValue(ctx, "limit")); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	offset, err := common.ParseAndValidateIntWithBounds("offset", queryValue(ctx, "offset"), -1, 10000, 0)
-	if err != nil {
+	if _, err := common.ParseAndValidateIntWithBounds("offset", queryValue(ctx, "offset"), -1, 10000, 0); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Get quote relationships for the status
-	quotes, err := h.getQuotesForStatus(ctx, statusID, limit, offset)
-	if err != nil {
-		h.logger.Error("failed to get quotes", zap.String("status_id", statusID), zap.Error(err))
-		return common.RespondFailedToGet(ctx, "quotes")
-	}
-
-	// Convert to API format
-	apiQuotes := make([]apimodels.QuoteStatusSummary, 0, len(quotes))
-	for _, quote := range quotes {
-		apiQuote := h.convertQuoteToAPI(ctx, quote)
-		apiQuotes = append(apiQuotes, apiQuote)
-	}
-
-	return okJSON(apiQuotes)
+	// Quote rows are not yet backed by real status projections. Return before
+	// storage access so the response cannot disclose a target's existence or
+	// the number of quote relationships associated with it.
+	return apptheory.JSON(http.StatusNotImplemented, common.StandardErrorResponse{
+		Error: "quotes endpoint is not implemented",
+	})
 }
 
 // HandleDeleteQuotePostLift handles DELETE /api/v1/statuses/:id/quote/:quote_id
@@ -163,7 +150,7 @@ func (h *Handler) HandleGetQuotePermissionsLift(ctx *apptheory.Context) (*appthe
 // Updates quote permissions for the authenticated user
 func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	username, err := h.authenticateUser(ctx, []string{"write:accounts", auth.ScopeWrite})
+	_, err := h.authenticateUser(ctx, []string{"write:accounts", auth.ScopeWrite})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
@@ -178,74 +165,14 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*app
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
-	// Get existing permissions or create new ones
-	permissions, err := h.getQuotePermissions(ctx, username)
-	if err != nil {
-		// Create default permissions if none exist
-		permissions = &storageModels.QuotePermissions{
-			Username: username,
-		}
-		permissions.SetDefaults()
-	}
-
-	// Update permissions
-	if params.AllowPublic != nil {
-		permissions.AllowPublic = *params.AllowPublic
-	}
-	if params.AllowFollowers != nil {
-		permissions.AllowFollowers = *params.AllowFollowers
-	}
-	if params.AllowMentioned != nil {
-		permissions.AllowMentioned = *params.AllowMentioned
-	}
-	if params.BlockList != nil {
-		permissions.BlockList = params.BlockList
-	}
-
-	// Save updated permissions
-	err = h.saveQuotePermissions(ctx, permissions)
-	if err != nil {
-		h.logger.Error("failed to save quote permissions", zap.Error(err))
-		return common.RespondFailedToUpdate(ctx, "permissions")
-	}
-
-	return okJSON(apimodels.QuotePermissionsResponse{
-		AllowPublic:    permissions.AllowPublic,
-		AllowFollowers: permissions.AllowFollowers,
-		AllowMentioned: permissions.AllowMentioned,
-		BlockList:      permissions.BlockList,
+	// Persistence is not implemented. Refuse the update rather than echoing
+	// request values as though they were saved.
+	return apptheory.JSON(http.StatusNotImplemented, common.StandardErrorResponse{
+		Error: "quote permission updates are not implemented",
 	})
 }
 
 // Helper methods
-
-func (h *Handler) getQuotesForStatus(ctx *apptheory.Context, statusID string, limit int, _ int) ([]interface{}, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-
-	result, err := h.repos.Quote().GetQuotesForStatus(ctx.Context(), statusID, interfaces.PaginationOptions{Limit: limit})
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]interface{}, 0, len(result.Items))
-	for _, rel := range result.Items {
-		out = append(out, rel)
-	}
-
-	return out, nil
-}
-
-func (h *Handler) convertQuoteToAPI(_ *apptheory.Context, _ interface{}) apimodels.QuoteStatusSummary {
-	// Placeholder implementation
-	return apimodels.QuoteStatusSummary{
-		ID:        "quote_id",
-		CreatedAt: time.Now().Format(time.RFC3339),
-		Account:   apimodels.QuoteStatusAccount{ID: "user_id"},
-		Content:   "Quote content",
-	}
-}
 
 func (h *Handler) getQuoteRelationship(ctx *apptheory.Context, quoteStatusID string, targetStatusID string) (*storageModels.QuoteRelationship, error) {
 	relationship, err := h.repos.Quote().GetQuoteRelationship(ctx.Context(), quoteStatusID, targetStatusID)
@@ -272,9 +199,4 @@ func (h *Handler) getQuotePermissions(_ *apptheory.Context, username string) (*s
 	}
 	permissions.SetDefaults()
 	return permissions, nil
-}
-
-func (h *Handler) saveQuotePermissions(_ *apptheory.Context, _ *storageModels.QuotePermissions) error {
-	// Placeholder implementation - would save to storage
-	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -248,49 +247,52 @@ func TestQuotes_Round12_GetQuotesOfStatus_Coverage(t *testing.T) {
 
 		requireStatus(t, http.StatusBadRequest)(handler.HandleGetQuotesOfStatusLift(ctx))
 	})
+}
 
-	t.Run("ok_empty", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
+func TestGetQuotesReturnsNotImplementedWithoutStorageRead(t *testing.T) {
+	cfg := round11TestConfig()
+	tests := []struct {
+		name   string
+		id     string
+		status *storagemodels.Status
+	}{
+		{name: "existent", id: "public", status: &storagemodels.Status{StatusID: "public", Visibility: storagemodels.VisibilityPublic}},
+		{name: "followers only", id: "followers", status: &storagemodels.Status{StatusID: "followers", Visibility: storagemodels.VisibilityPrivate}},
+		{name: "nonexistent", id: "missing"},
+	}
 
-		requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctx))
-	})
+	var contractBody []byte
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{statusByID: map[string]storagemodels.Status{}}
+			if tt.status != nil {
+				state.statusByID[tt.id] = *tt.status
+			}
+			handler, _, _ := round11NewHandler(t, cfg, state)
+			ctx, err := round10NewLiftContext(
+				http.MethodGet,
+				"/api/v1/statuses/"+tt.id+"/quotes",
+				nil,
+				map[string]string{"limit": "10", "offset": "0"},
+				nil,
+			)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
 
-	t.Run("ok_non_empty", func(t *testing.T) {
-		rel := storagemodels.QuoteRelationship{
-			QuoterNoteID: "q1",
-			TargetNoteID: "s1",
-			QuoterID:     "alice",
-			Timestamp:    time.Now().Add(-10 * time.Minute),
-		}
-		rel.GenerateID()
-		require.NoError(t, rel.UpdateKeys())
+			resp := requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotesOfStatusLift(ctx))
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "quotes endpoint is not implemented", body["error"])
+			require.Empty(t, state.wheres, "501 path must not perform a storage query")
 
-		state := &round10QueryState{quoteRelationships: []storagemodels.QuoteRelationship{rel}}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
-
-		resp := requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctx))
-		var summaries []apimodels.QuoteStatusSummary
-		require.NoError(t, json.Unmarshal(resp.Body, &summaries))
-		require.Len(t, summaries, 1)
-	})
-
-	t.Run("service_error", func(t *testing.T) {
-		allErrType := reflect.TypeOf(&[]storagemodels.QuoteRelationship{}).String()
-		state := &round10QueryState{allErrorByType: map[string]error{allErrType: stdErrors.New("query failed")}}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
-
-		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetQuotesOfStatusLift(ctx))
-	})
+			if contractBody == nil {
+				contractBody = append([]byte(nil), resp.Body...)
+			} else {
+				require.Equal(t, contractBody, resp.Body, "all valid target IDs must have the same 501 body")
+			}
+		})
+	}
 }
 
 func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
@@ -431,7 +433,7 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctx))
 	})
 
-	t.Run("update_quote_permissions_unauthorized_scope_and_ok", func(t *testing.T) {
+	t.Run("update_quote_permissions_auth_validation_and_not_implemented", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", nil, nil, apimodels.UpdateQuotePermissionsRequest{})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleUpdateQuotePermissionsLift(ctx))
@@ -456,23 +458,20 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 			BlockList:      []string{"bob"},
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctx3))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctx3))
 
 		ctx4 := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/accounts/quote_permissions",
 			map[string]string{"Authorization": "Bearer " + writeToken, "Content-Type": "application/x-www-form-urlencoded"},
 			nil,
 			[]byte(`{"allow_followers":true,"allow_mentioned":false}`),
 		)
-		requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctx4))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctx4))
 	})
 
 	t.Run("helper_functions", func(t *testing.T) {
-		_ = handler.convertQuoteToAPI(nil, map[string]any{"id": "q"})
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", nil, nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, handler.deleteQuoteRelationship(ctx, &storagemodels.QuoteRelationship{QuoterNoteID: "q1", TargetNoteID: "s1"}))
 		require.NoError(t, handler.deleteQuoteRelationship(ctx, nil))
-		_, err = handler.getQuotesForStatus(ctx, "s1", 0, 0)
-		require.NoError(t, err)
 	})
 }

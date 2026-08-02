@@ -38,7 +38,11 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   (operator ruling 2026-08-01); persistence does not grant the denied viewer access. The separate lesser-exclusive
   `POST /api/v1/statuses/{id}/quote` extension returns **501 Not Implemented** before target lookup pending a real
   authorization-, persistence-, and federation-aware implementation; it is not the Mastodon-compatible reblog-quote
-  creation path described above and does not disclose whether a target status exists.
+  creation path described above and does not disclose whether a target status exists. The companion
+  `GET /api/v1/statuses/{id}/quotes` extension likewise returns **501 Not Implemented** after parameter validation and
+  before storage access so neither target existence nor a real quote-row count is exposed. Authenticated
+  `PUT /api/v1/accounts/quote_permissions` returns **501 Not Implemented** after authentication and body validation
+  until permission persistence exists; it never echoes request values as though they were saved.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.
