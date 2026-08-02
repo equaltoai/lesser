@@ -107,7 +107,7 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		ctxLower, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/quote", map[string]string{"authorization": "Bearer " + writeToken}, nil, apimodels.CreateQuotePostRequest{Status: "hi"})
 		require.NoError(t, err)
 		ctxLower.Params["id"] = "s1"
-		requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctxLower))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctxLower))
 
 		ctxDirect, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/quote", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateQuotePostRequest{Status: "hi"})
 		require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "missing"
 
-		requireStatus(t, http.StatusNotFound)(handler.HandleCreateQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctx))
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -167,8 +167,59 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "s1"
 
-		requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctx))
 	})
+}
+
+func TestCreateQuotePostReturnsNotImplementedWithoutStatusLookup(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+
+	tests := []struct {
+		name   string
+		id     string
+		status *storagemodels.Status
+	}{
+		{name: "existent", id: "public", status: &storagemodels.Status{StatusID: "public", Visibility: storagemodels.VisibilityPublic}},
+		{name: "followers only", id: "followers", status: &storagemodels.Status{StatusID: "followers", Visibility: storagemodels.VisibilityPrivate}},
+		{name: "nonexistent", id: "missing"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{statusByID: map[string]storagemodels.Status{}}
+			if tt.status != nil {
+				state.statusByID[tt.id] = *tt.status
+			}
+			handler, _, _ := round11NewHandler(t, cfg, state)
+			ctx, err := round10NewLiftContext(
+				http.MethodPost,
+				"/api/v1/statuses/"+tt.id+"/quote",
+				headers,
+				nil,
+				apimodels.CreateQuotePostRequest{Status: "quote text"},
+			)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
+
+			resp, err := handler.HandleCreateQuotePostLift(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotImplemented, resp.Status)
+
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "quote endpoint is not implemented", body["error"])
+			require.NotContains(t, body, "id")
+			require.NotContains(t, body, "content")
+			require.NotContains(t, body, "quoted_status")
+
+			for _, where := range state.wheres {
+				require.NotEqual(t, "status#"+tt.id, where.value, "501 path must not look up the target status")
+			}
+		})
+	}
 }
 
 func TestQuotes_Round12_GetQuotesOfStatus_Coverage(t *testing.T) {

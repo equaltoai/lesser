@@ -36,9 +36,9 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   targets remain indistinguishable from missing statuses. A fetched remote quote target may therefore remain persisted
   locally even when the requesting viewer is denied. This is intentional and mirrors reply-parent materialization
   (operator ruling 2026-08-01); persistence does not grant the denied viewer access. The separate lesser-exclusive
-  `POST /api/v1/statuses/{id}/quote` extension is currently an **UNIMPLEMENTED stub**, not the Mastodon-compatible
-  reblog-quote creation path described above: `checkQuotePermissions` returns true unconditionally and `createQuotePost`
-  is a placeholder. Operators and clients must not treat that stub as an authorization-enforcing quote endpoint.
+  `POST /api/v1/statuses/{id}/quote` extension returns **501 Not Implemented** before target lookup pending a real
+  authorization-, persistence-, and federation-aware implementation; it is not the Mastodon-compatible reblog-quote
+  creation path described above and does not disclose whether a target status exists.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.

@@ -16,6 +16,20 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applySoulOverrides(op, route)
 	applySkillOverrides(op, route)
 	applyStatusOverrides(op, route)
+	applyQuoteOverrides(op, route)
+}
+
+func applyQuoteOverrides(op *operation, route routeDef) {
+	if route.Method != methodPOST || route.Path != "/api/v1/statuses/{id}/quote" {
+		return
+	}
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+	delete(op.Responses, "200")
+	op.Responses["501"] = response{
+		Description: "Quote creation is not implemented; target IDs are not looked up.",
+	}
 }
 
 func applySkillOverrides(op *operation, route routeDef) {

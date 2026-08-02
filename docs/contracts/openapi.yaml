@@ -18211,28 +18211,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateQuotePostRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuoteStatusSummary'
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -18247,6 +18225,8 @@ paths:
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote creation is not implemented; target IDs are not looked up.
             x-lesser-handler: HandleCreateQuotePostLift
             x-lesser-lambda: api
             x-lesser-routeSources:

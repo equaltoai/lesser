@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+func TestApplyOperationOverridesMakesQuoteStubNotImplemented(t *testing.T) {
+	t.Parallel()
+
+	op := &operation{Responses: map[string]response{"200": {Description: "OK"}}}
+	applyOperationOverrides(op, routeDef{Method: methodPOST, Path: "/api/v1/statuses/{id}/quote"})
+
+	if _, ok := op.Responses["200"]; ok {
+		t.Fatal("quote stub must not advertise a fabricated success response")
+	}
+	resp, ok := op.Responses["501"]
+	if !ok {
+		t.Fatal("quote stub must advertise 501 Not Implemented")
+	}
+	if resp.Description != "Quote creation is not implemented; target IDs are not looked up." {
+		t.Fatalf("501 description = %q", resp.Description)
+	}
+}
+
 func TestExtractAPIRouteMetaInfersRouteMiddlewareAuth(t *testing.T) {
 	t.Parallel()
 

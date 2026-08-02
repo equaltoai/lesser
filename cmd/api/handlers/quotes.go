@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -24,7 +24,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Authenticate user
-	username, err := h.authenticateUser(ctx, []string{"write:statuses", auth.ScopeWrite})
+	_, err := h.authenticateUser(ctx, []string{"write:statuses", auth.ScopeWrite})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
@@ -46,39 +46,12 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.
 		}
 	}
 
-	// Check if original status exists and is quotable
-	originalStatus, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
-	if err != nil {
-		h.logger.Error("failed to get original status", zap.String("status_id", statusID), zap.Error(err))
-		return common.RespondStatusNotFound(ctx)
-	}
-
-	if originalStatus == nil {
-		return common.RespondStatusNotFound(ctx)
-	}
-
-	// Check quote permissions
-	canQuote, err := h.checkQuotePermissions(ctx, username, originalStatus)
-	if err != nil {
-		h.logger.Error("failed to check quote permissions", zap.Error(err))
-		return common.RespondInternalServerError(ctx, "failed to check permissions")
-	}
-
-	if !canQuote {
-		return common.RespondNotAuthorized(ctx, "quote this status")
-	}
-
-	// Create the quote post
-	quotePost, err := h.createQuotePost(ctx, username, originalStatus, &params)
-	if err != nil {
-		h.logger.Error("failed to create quote post", zap.Error(err))
-		return common.RespondFailedToCreate(ctx, "quote post")
-	}
-
-	// Convert to API format
-	apiStatus := h.convertStatusToAPI(ctx, quotePost)
-
-	return okJSON(apiStatus)
+	// The routed extension is intentionally inert until quote authorization,
+	// persistence, and federation are implemented. Return before looking up the
+	// target so existent, private, and missing IDs remain indistinguishable.
+	return apptheory.JSON(http.StatusNotImplemented, common.StandardErrorResponse{
+		Error: "quote endpoint is not implemented",
+	})
 }
 
 // HandleGetQuotesOfStatusLift handles GET /api/v1/statuses/:id/quotes
@@ -246,38 +219,6 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*app
 
 // Helper methods
 
-func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
-	// For now, return a simple implementation
-	// In a full implementation, this would:
-	// 1. Get the original status author
-	// 2. Get their quote permissions
-	// 3. Check if quoter is allowed based on relationship and permissions
-	return true, nil
-}
-
-func (h *Handler) createQuotePost(_ *apptheory.Context, username string, _ interface{}, _ interface{}) (interface{}, error) {
-	// Placeholder implementation
-	// In a full implementation, this would:
-	// 1. Create the new status with quote content
-	// 2. Create the quote relationship
-	// 3. Update counters and notifications
-	// 4. Handle federation
-
-	now := time.Now()
-	quotePost := map[string]interface{}{
-		"id":         fmt.Sprintf("quote_%d", now.Unix()),
-		"created_at": now.Format(time.RFC3339),
-		"account":    map[string]interface{}{"id": username, "username": username},
-		"content":    "Quote post content", // Would be from params
-		"quoted_status": map[string]interface{}{
-			"id": "original_status_id",
-			// Original status data would go here
-		},
-	}
-
-	return quotePost, nil
-}
-
 func (h *Handler) getQuotesForStatus(ctx *apptheory.Context, statusID string, limit int, _ int) ([]interface{}, error) {
 	if limit <= 0 {
 		limit = 20
@@ -303,16 +244,6 @@ func (h *Handler) convertQuoteToAPI(_ *apptheory.Context, _ interface{}) apimode
 		CreatedAt: time.Now().Format(time.RFC3339),
 		Account:   apimodels.QuoteStatusAccount{ID: "user_id"},
 		Content:   "Quote content",
-	}
-}
-
-func (h *Handler) convertStatusToAPI(_ *apptheory.Context, _ interface{}) apimodels.QuoteStatusSummary {
-	// Placeholder implementation
-	return apimodels.QuoteStatusSummary{
-		ID:        "status_id",
-		CreatedAt: time.Now().Format(time.RFC3339),
-		Account:   apimodels.QuoteStatusAccount{ID: "user_id"},
-		Content:   "Status content",
 	}
 }
 

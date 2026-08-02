@@ -24,7 +24,7 @@ func TestQuotesHandlers(t *testing.T) {
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
 	require.NoError(t, err)
 	ctxCreate.Params["id"] = "123"
-	requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctxCreate))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctxCreate))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/quotes", nil, map[string]string{"limit": "2", "offset": "0"}, nil)
 	require.NoError(t, err)
