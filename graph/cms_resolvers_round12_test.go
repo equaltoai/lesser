@@ -263,6 +263,18 @@ func TestRound12CMS_ArticleTombstoneVisibilityRequiresMatchingNonEmptyAttributio
 	require.True(t, cmsArticleTombstoneVisibleToActor("  "+aliceActorID+"  ", aliceActorID))
 }
 
+func TestRound12CMS_AnonymousViewerCannotSeeAttributedArticleTombstone(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	query := &queryResolver{resolver}
+	tombstone := &models.Tombstone{
+		FormerType:   "Article",
+		AttributedTo: cmsLocalActorID(resolver.getDomain(), ""),
+		IsPublic:     false,
+	}
+
+	require.False(t, query.cmsArticleTombstoneVisible(context.Background(), tombstone))
+}
+
 func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
 	tests := []struct {
 		name        string
