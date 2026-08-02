@@ -716,7 +716,7 @@ func TestArticleService_DeleteArticle_TombstoneErrorBranches(t *testing.T) {
 	})
 }
 
-func TestArticleService_BuildArticleTombstoneDerivesPublicAddressing(t *testing.T) {
+func TestArticleService_BuildArticleTombstonePinsPublicAddressingPredicate(t *testing.T) {
 	t.Parallel()
 
 	svc := NewArticleService(&fakeArticleRepo{}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
@@ -727,8 +727,12 @@ func TestArticleService_BuildArticleTombstoneDerivesPublicAddressing(t *testing.
 		isPublic bool
 	}{
 		{name: "legacy empty addressing defaults public", isPublic: true},
-		{name: "public in to", to: []string{activitypub.PublicAddress}, isPublic: true},
-		{name: "public in cc", cc: []string{"https://example.com/users/alice/followers", activitypub.PublicAddress}, isPublic: true},
+		{name: "canonical public in to", to: []string{activitypub.PublicAddress}, isPublic: true},
+		{name: "canonical public in cc", cc: []string{"https://example.com/users/alice/followers", activitypub.PublicAddress}, isPublic: true},
+		{name: "compact public in to", to: []string{"as:Public"}, isPublic: true},
+		{name: "bare public in cc", cc: []string{" Public "}, isPublic: true},
+		{name: "case variant is not public", to: []string{"public"}, isPublic: false},
+		{name: "empty recipient is not public", to: []string{""}, isPublic: false},
 		{name: "private recipients", to: []string{"https://example.com/users/bob"}},
 	}
 

@@ -254,18 +254,13 @@ func TestRound12CMS_ArticleTombstoneDisclosure(t *testing.T) {
 	}
 }
 
-func TestRound12CMS_ArticleTombstoneVisibilityRejectsMissingAttribution(t *testing.T) {
-	resolver, _ := newRound12GraphResolver(t)
-	query := &queryResolver{resolver}
+func TestRound12CMS_ArticleTombstoneVisibilityRequiresMatchingNonEmptyAttribution(t *testing.T) {
+	aliceActorID := "https://example.com/users/alice"
 
-	require.False(t, query.cmsArticleTombstoneVisible(
-		round12AuthContext("alice"),
-		&models.Tombstone{FormerType: "Article"},
-	))
-	require.True(t, query.cmsArticleTombstoneVisible(
-		context.Background(),
-		&models.Tombstone{FormerType: "Article", IsPublic: true},
-	))
+	require.False(t, cmsArticleTombstoneVisibleToActor("", ""))
+	require.False(t, cmsArticleTombstoneVisibleToActor("", aliceActorID))
+	require.False(t, cmsArticleTombstoneVisibleToActor("https://example.com/users/bob", aliceActorID))
+	require.True(t, cmsArticleTombstoneVisibleToActor("  "+aliceActorID+"  ", aliceActorID))
 }
 
 func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {

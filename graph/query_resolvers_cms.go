@@ -580,6 +580,17 @@ func (r *queryResolver) cmsArticleTombstoneVisible(ctx context.Context, tombston
 		return false
 	}
 	viewerActorID := cmsLocalActorID(r.getDomain(), username)
+	return cmsArticleTombstoneVisibleToActor(attributedTo, viewerActorID)
+}
+
+func cmsArticleTombstoneVisibleToActor(attributedTo, viewerActorID string) bool {
+	attributedTo = strings.TrimSpace(attributedTo)
+	// Defense-in-depth: an unattributed tombstone must never become visible if
+	// an identity resolver can also return an empty actor ID in the future.
+	if attributedTo == "" {
+		return false
+	}
+	viewerActorID = strings.TrimSpace(viewerActorID)
 	return strings.EqualFold(viewerActorID, attributedTo)
 }
 
