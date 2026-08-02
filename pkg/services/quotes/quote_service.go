@@ -585,14 +585,17 @@ func (qs *QuoteService) createQuoteNotification(_ context.Context, quoteStatus, 
 }
 
 func (qs *QuoteService) checkFollowRelationship(_ context.Context, _ string, _ string) (bool, error) {
-	// Placeholder implementation
-	// In reality, this would check if follower follows followee
+	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
+	// Registration assigns this arm to private-default accounts, so it currently denies every
+	// quoter, including an actual follower.
 	return false, nil
 }
 
 func (qs *QuoteService) checkMentioned(_ *models.Status, _ string) bool {
-	// Simple check if username is mentioned in the status content
-	return false // Placeholder
+	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
+	// Registration assigns this arm to direct-default accounts, so it currently denies every
+	// quoter, including an actually mentioned account.
+	return false
 }
 
 func generateStatusID() string {

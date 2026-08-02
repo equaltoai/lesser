@@ -48,8 +48,18 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   after path-parameter validation and before storage access for existent, missing, and hostile-text account IDs alike;
   the route never fabricates all-permissive settings.
 - The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
-  `GET` handlers remain **501 Not Implemented** pending persistence. `createQuoteBoostLift` marks the future enforcement
-  hook at its `Quoteable: true` assignment; that hook must consult `QuotePermissions.IsAllowed` when storage lands.
+  `GET` handlers remain **501 Not Implemented** even though the authenticated GraphQL mutation persists account-level
+  preferences. REST reblog-with-comment and GraphQL relationship-minting paths enforce that persisted account-level row
+  through the shared `QuoteService.CheckQuotePermissions` predicate.
+- **Shipping decision:** REST reblog-with-comment enforcement ships with the block-list and `allow_public` arms live while
+  the `allow_followers` and `allow_mentioned` arms remain fail-closed placeholders tracked by lesser#1317.
+  `ApplyVisibilityDefaults` assigns those states at registration: private/followers-default accounts rely on
+  `allow_followers`, and direct-default accounts rely on `allow_mentioned`. Until lesser#1317 lands, every quoter—including
+  an actual follower or mentioned account—is denied for those account classes. This intentionally changes the affected
+  client response from **200** before `cf7c8ebdd` to **403 FORBIDDEN**; failing open a privacy control is not an acceptable
+  interim behavior.
+- Per-note quote controls are persisted by GraphQL but are not yet read by general `Status` projections or enforced by
+  production quote-relationship creation. That work needs explicit missing-row semantics and is tracked as lesser#1318.
 - Quote deletion deliberately returns the same **404 Not Found** response for a missing relationship and one owned by a
   different account, preventing ownership from becoming an existence oracle; successful owner deletion is unchanged.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
