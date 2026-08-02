@@ -96,7 +96,11 @@ func applyTimelineTypeFilter(username string, timelineType model.TimelineType, h
 		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
 			return ErrListIDParameterRequired
 		}
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return ErrAuthenticationRequired
+		}
 		query.TimelineType = TimelineTypeList
+		query.ListID = *listID
 		// List timeline is handled differently - need to get list members
 		// and fetch their posts
 	case model.TimelineTypeDirect:
