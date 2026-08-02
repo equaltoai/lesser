@@ -267,9 +267,11 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 			ID:   fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), noteID),
 			Type: "Note",
 		},
-		Content:            comment,
-		AttributedTo:       actor.ID,
-		QuoteURL:           objectID,
+		Content:      comment,
+		AttributedTo: actor.ID,
+		QuoteURL:     objectID,
+		// Quote permissions are not implemented. When persistence lands, this is the
+		// enforcement point that must consult QuotePermissions.IsAllowed.
 		Quoteable:          true,
 		QuoteNotifications: true,
 	}

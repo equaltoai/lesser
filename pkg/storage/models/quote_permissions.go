@@ -39,7 +39,9 @@ func (q *QuotePermissions) GetSK() string {
 	return q.SK
 }
 
-// IsAllowed checks if a given user is allowed to quote based on permissions
+// IsAllowed checks if a given user is allowed to quote based on permissions.
+// It intentionally has no production callers while quote-permission reads and writes are walled off as unimplemented;
+// createQuoteBoostLift is the documented enforcement point once persistence lands.
 func (q *QuotePermissions) IsAllowed(quoterUsername string, isFollower bool, isMentioned bool) bool {
 	// Check if user is in block list
 	for _, blocked := range q.BlockList {

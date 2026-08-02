@@ -46,6 +46,9 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   `GET /api/v1/accounts/{id}/quote_permissions` extension also returns **501 Not Implemented** after path-parameter
   validation and before storage access; existent, missing, and hostile-text account IDs receive the same response, and
   the route never fabricates all-permissive settings.
+- The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
+  `GET` handlers remain **501 Not Implemented** pending persistence. `createQuoteBoostLift` marks the future enforcement
+  hook at its `Quoteable: true` assignment; that hook must consult `QuotePermissions.IsAllowed` when storage lands.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.
