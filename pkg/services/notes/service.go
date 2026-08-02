@@ -3461,6 +3461,17 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	if err != nil {
 		return nil, ErrStatusNotFound
 	}
+	if note.Deleted {
+		return nil, ErrStatusNotFound
+	}
+
+	canView, err := s.checkViewPermissions(ctx, note, cmd.RebloggerID)
+	if err != nil {
+		return nil, ErrCheckViewPermissions
+	}
+	if !canView {
+		return nil, ErrStatusNotFound
+	}
 
 	if !note.CanBeReblogged() {
 		s.logger.Warn("status cannot be boosted due to visibility or deletion state",

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -12,10 +13,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
+	storagemocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
 	"go.uber.org/zap"
 )
 
@@ -113,6 +117,428 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 	require.Equal(t, "https://localhost/articles/updated-draft", article.ID)
 	require.Equal(t, cmsLocalActorID(resolver.getDomain(), "alice"), article.AuthorID)
 	require.NotEmpty(t, article.ID)
+}
+
+func TestRound12CMS_ArticleReadSurfacesVisibleTombstone(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	deletedID := "https://localhost/articles/deleted-article"
+	deletedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	tombstoneDB := new(dynamormmocks.MockDB)
+	deletedQuery := new(dynamormmocks.MockQuery)
+	missingQuery := new(dynamormmocks.MockQuery)
+	storage.db = tombstoneDB
+
+	tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Twice()
+	tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(deletedQuery).Once()
+	deletedQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(deletedQuery).Once()
+	deletedQuery.On("Where", "SK", "=", "TOMBSTONE").Return(deletedQuery).Once()
+	deletedQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*models.Tombstone)
+		*dest = models.Tombstone{
+			ID:           deletedID,
+			FormerType:   "Article",
+			Deleted:      deletedAt,
+			CreatedAt:    deletedAt,
+			DeletedBy:    "https://localhost/users/alice",
+			AttributedTo: "https://localhost/users/alice",
+			IsPublic:     true,
+		}
+	}).Return(nil).Once()
+
+	missingID := "https://localhost/articles/never-existed"
+	tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(missingQuery).Once()
+	missingQuery.On("Where", "PK", "=", "OBJECT#"+missingID).Return(missingQuery).Once()
+	missingQuery.On("Where", "SK", "=", "TOMBSTONE").Return(missingQuery).Once()
+	missingQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+	deleted, err := resolver.Query().Article(ctx, deletedID)
+	require.NoError(t, err)
+	require.NotNil(t, deleted)
+	require.Equal(t, deletedID, deleted.ID)
+	require.NotNil(t, deleted.DeletedAt)
+	require.Equal(t, model.Time(deletedAt), *deleted.DeletedAt)
+
+	missing, err := resolver.Query().Article(ctx, missingID)
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	tombstoneDB.AssertExpectations(t)
+	deletedQuery.AssertExpectations(t)
+	missingQuery.AssertExpectations(t)
+}
+
+func TestRound12CMS_ArticleTombstoneDisclosure(t *testing.T) {
+	deletedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		ctx          context.Context
+		formerType   string
+		attributedTo string
+		isPublic     bool
+		wantVisible  bool
+	}{
+		{
+			name:         "public article is visible",
+			ctx:          context.Background(),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+			isPublic:     true,
+			wantVisible:  true,
+		},
+		{
+			name:         "non-public article is visible to original author",
+			ctx:          round12AuthContext("alice"),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+			wantVisible:  true,
+		},
+		{
+			name:         "non-public article is hidden from other viewer",
+			ctx:          round12AuthContext("bob"),
+			formerType:   "Article",
+			attributedTo: "https://localhost/users/alice",
+		},
+		{
+			name:       "legacy non-public tombstone without attribution is hidden",
+			ctx:        round12AuthContext("alice"),
+			formerType: "Article",
+		},
+		{
+			name:         "non-article tombstone is hidden",
+			ctx:          context.Background(),
+			formerType:   "Note",
+			attributedTo: "https://localhost/users/alice",
+			isPublic:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storage := newRound12GraphResolver(t)
+			deletedID := "https://localhost/articles/deleted-article"
+			tombstoneDB := new(dynamormmocks.MockDB)
+			tombstoneQuery := new(dynamormmocks.MockQuery)
+			storage.db = tombstoneDB
+
+			tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Once()
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+			tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.Tombstone)
+				*dest = models.Tombstone{
+					ID:           deletedID,
+					FormerType:   tt.formerType,
+					Deleted:      deletedAt,
+					CreatedAt:    deletedAt,
+					DeletedBy:    "https://localhost/users/alice",
+					AttributedTo: tt.attributedTo,
+					IsPublic:     tt.isPublic,
+				}
+			}).Return(nil).Once()
+
+			article, err := resolver.Query().Article(tt.ctx, deletedID)
+			require.NoError(t, err)
+			if tt.wantVisible {
+				require.NotNil(t, article)
+				require.Equal(t, deletedID, article.ID)
+			} else {
+				require.Nil(t, article)
+			}
+
+			tombstoneDB.AssertExpectations(t)
+			tombstoneQuery.AssertExpectations(t)
+		})
+	}
+}
+
+func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
+	tests := []struct {
+		name        string
+		ctx         context.Context
+		wantVisible bool
+	}{
+		{name: "original author sees non-public tombstone", ctx: round12AuthContext("alice"), wantVisible: true},
+		{name: "other viewer does not see non-public tombstone", ctx: round12AuthContext("bob")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver, storage := newRound12GraphResolver(t)
+			tombstoneDB := new(dynamormmocks.MockDB)
+			tenantIndexQuery := new(dynamormmocks.MockQuery)
+			legacyIndexQuery := new(dynamormmocks.MockQuery)
+			tombstoneQuery := new(dynamormmocks.MockQuery)
+			storage.db = tombstoneDB
+
+			slug := "deleted-by-slug"
+			deletedID := cmsArticleID(resolver.getDomain(), slug)
+			tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Times(3)
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("Where", "PK", "=", models.CMSTenantArticleSlugIndexPK("localhost", slug)).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(tenantIndexQuery).Once()
+			tenantIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("Where", "PK", "=", models.CMSArticleSlugIndexPK(slug)).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(legacyIndexQuery).Once()
+			legacyIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+			tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+deletedID).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+			tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.Tombstone)
+				*dest = models.Tombstone{
+					ID:           deletedID,
+					FormerType:   "Article",
+					Deleted:      time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+					DeletedBy:    "https://localhost/users/alice",
+					AttributedTo: "https://localhost/users/alice",
+				}
+			}).Return(nil).Once()
+
+			article, err := resolver.Query().ArticleBySlug(tt.ctx, slug)
+			require.NoError(t, err)
+			if tt.wantVisible {
+				require.NotNil(t, article)
+				require.Equal(t, deletedID, article.ID)
+			} else {
+				require.Nil(t, article)
+			}
+
+			tombstoneDB.AssertExpectations(t)
+			tenantIndexQuery.AssertExpectations(t)
+			legacyIndexQuery.AssertExpectations(t)
+			tombstoneQuery.AssertExpectations(t)
+		})
+	}
+}
+
+func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	firstQuery := new(dynamormmocks.MockQuery)
+	endCursorQuery := new(dynamormmocks.MockQuery)
+	nonLastCursorQuery := new(dynamormmocks.MockQuery)
+	startCursorQuery := new(dynamormmocks.MockQuery)
+	storage.db = mockDB
+
+	firstSeries := models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-1", ID: "series-1", AuthorID: "alice", Title: "One"}
+	secondSeries := models.Series{PK: "AUTHOR#bob#SERIES", SK: "ID#series-2", ID: "series-2", AuthorID: "bob", Title: "Two"}
+	thirdSeries := models.Series{PK: "AUTHOR#carol#SERIES", SK: "ID#series-3", ID: "series-3", AuthorID: "carol", Title: "Three"}
+	firstCursor := round12SeriesCursor(t, &firstSeries)
+	secondCursor := round12SeriesCursor(t, &secondSeries)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Times(4)
+	mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(firstQuery).Once()
+	firstQuery.On("Where", "SK", "BEGINS_WITH", "ID#").Return(firstQuery).Once()
+	firstQuery.On("Limit", 2).Return(firstQuery).Once()
+	firstQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Series)
+		*dest = []models.Series{firstSeries, secondSeries}
+	}).Return(&dynamormcore.PaginatedResult{NextCursor: string(secondCursor)}, nil).Once()
+
+	expectRound12GlobalSeriesPage := func(query *dynamormmocks.MockQuery, after model.Cursor, item models.Series) {
+		mockDB.On("Model", mock.AnythingOfType("*models.Series")).Return(query).Once()
+		query.On("Where", "SK", "BEGINS_WITH", "ID#").Return(query).Once()
+		query.On("Limit", 2).Return(query).Once()
+		query.On("Cursor", string(after)).Return(query).Once()
+		query.On("AllPaginated", mock.AnythingOfType("*[]models.Series")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Series)
+			*dest = []models.Series{item}
+		}).Return(&dynamormcore.PaginatedResult{}, nil).Once()
+	}
+	expectRound12GlobalSeriesPage(endCursorQuery, secondCursor, thirdSeries)
+	expectRound12GlobalSeriesPage(nonLastCursorQuery, firstCursor, secondSeries)
+	expectRound12GlobalSeriesPage(startCursorQuery, firstCursor, secondSeries)
+
+	first := 2
+	pageOne, err := resolver.Query().AllSeries(ctx, nil, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, pageOne.Edges, 2)
+	require.True(t, pageOne.PageInfo.HasNextPage)
+	require.NotNil(t, pageOne.PageInfo.StartCursor)
+	require.NotNil(t, pageOne.PageInfo.EndCursor)
+	require.Equal(t, firstCursor, pageOne.Edges[0].Cursor)
+	require.Equal(t, firstCursor, *pageOne.PageInfo.StartCursor)
+	require.Equal(t, secondCursor, pageOne.Edges[1].Cursor)
+	require.Equal(t, secondCursor, *pageOne.PageInfo.EndCursor)
+	for _, edge := range pageOne.Edges {
+		decoded, decodeErr := dynamormquery.DecodeCursor(string(edge.Cursor))
+		require.NoError(t, decodeErr)
+		require.NotNil(t, decoded)
+		_, decodeErr = decoded.ToAttributeValues()
+		require.NoError(t, decodeErr)
+	}
+
+	pageAfterEnd, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.EndCursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterEnd.Edges, 1)
+	require.Equal(t, "carol|series-3", pageAfterEnd.Edges[0].Node.ID)
+
+	pageAfterNonLast, err := resolver.Query().AllSeries(ctx, nil, &first, &pageOne.Edges[0].Cursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterNonLast.Edges, 1)
+	require.Equal(t, "bob|series-2", pageAfterNonLast.Edges[0].Node.ID)
+
+	pageAfterStart, err := resolver.Query().AllSeries(ctx, nil, &first, pageOne.PageInfo.StartCursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterStart.Edges, 1)
+	require.Equal(t, "bob|series-2", pageAfterStart.Edges[0].Node.ID)
+
+	mockDB.AssertExpectations(t)
+	firstQuery.AssertExpectations(t)
+	endCursorQuery.AssertExpectations(t)
+	nonLastCursorQuery.AssertExpectations(t)
+	startCursorQuery.AssertExpectations(t)
+}
+
+func TestRound12CMS_AllSeriesAuthorPaginationRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	seriesRepo := storagemocks.NewMockSeriesRepository()
+	storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+	resolver := &Resolver{
+		Config: &config.Config{
+			CMSLongFormPublishingEnabled: true,
+			CMSSeriesEnabled:             true,
+		},
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	}
+
+	firstSeries := &models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-1", ID: "series-1", AuthorID: "alice", Title: "One"}
+	secondSeries := &models.Series{PK: "AUTHOR#alice#SERIES", SK: "ID#series-2", ID: "series-2", AuthorID: "alice", Title: "Two"}
+	firstCursor := round12SeriesCursor(t, firstSeries)
+	secondCursor := round12SeriesCursor(t, secondSeries)
+	rawNextCursor := secondSeries.SK
+	require.NotEqual(t, string(secondCursor), rawNextCursor)
+
+	seriesRepo.On("ListSeriesByAuthorPaginated", ctx, "alice", 2, "").
+		Return([]*models.Series{firstSeries, secondSeries}, rawNextCursor, nil).
+		Once()
+	seriesRepo.On("ListSeriesByAuthorPaginated", ctx, "alice", 2, firstSeries.SK).
+		Return([]*models.Series{secondSeries}, "", nil).
+		Twice()
+
+	authorID := "alice"
+	first := 2
+	pageOne, err := resolver.Query().AllSeries(ctx, &authorID, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, pageOne.Edges, 2)
+	require.True(t, pageOne.PageInfo.HasNextPage)
+	require.NotNil(t, pageOne.PageInfo.StartCursor)
+	require.NotNil(t, pageOne.PageInfo.EndCursor)
+	require.Equal(t, firstCursor, pageOne.Edges[0].Cursor)
+	require.Equal(t, firstCursor, *pageOne.PageInfo.StartCursor)
+	require.Equal(t, secondCursor, pageOne.Edges[1].Cursor)
+	require.Equal(t, secondCursor, *pageOne.PageInfo.EndCursor)
+	for _, edge := range pageOne.Edges {
+		decoded, decodeErr := dynamormquery.DecodeCursor(string(edge.Cursor))
+		require.NoError(t, decodeErr)
+		require.NotNil(t, decoded)
+		_, decodeErr = decoded.ToAttributeValues()
+		require.NoError(t, decodeErr)
+	}
+
+	pageAfterNonLast, err := resolver.Query().AllSeries(ctx, &authorID, &first, &pageOne.Edges[0].Cursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterNonLast.Edges, 1)
+	require.Equal(t, "alice|series-2", pageAfterNonLast.Edges[0].Node.ID)
+
+	pageAfterStart, err := resolver.Query().AllSeries(ctx, &authorID, &first, pageOne.PageInfo.StartCursor)
+	require.NoError(t, err)
+	require.Len(t, pageAfterStart.Edges, 1)
+	require.Equal(t, "alice|series-2", pageAfterStart.Edges[0].Node.ID)
+
+	seriesRepo.AssertExpectations(t)
+}
+
+func TestRound12CMS_AllSeriesAuthorPaginationRejectsCrossAuthorCursor(t *testing.T) {
+	ctx := context.Background()
+	seriesRepo := storagemocks.NewMockSeriesRepository()
+	storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+	resolver := &Resolver{
+		Config: &config.Config{
+			CMSLongFormPublishingEnabled: true,
+			CMSSeriesEnabled:             true,
+		},
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	}
+
+	bobCursor := round12SeriesCursor(t, &models.Series{
+		PK: "AUTHOR#bob#SERIES",
+		SK: "ID#series-1",
+	})
+	alice := "alice"
+	first := 2
+
+	page, err := resolver.Query().AllSeries(ctx, &alice, &first, &bobCursor)
+	require.Nil(t, page)
+	require.EqualError(t, err, ErrInvalidAfterCursor.Error())
+	seriesRepo.AssertNotCalled(t, "ListSeriesByAuthorPaginated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestRound12CMS_AllSeriesAuthorPaginationRejectsTamperedCursorEnvelopes(t *testing.T) {
+	tests := map[string]model.Cursor{
+		"not encoded": "not-a-cursor",
+		"missing PK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"SK": &types.AttributeValueMemberS{Value: "ID#series-1"},
+		}),
+		"non-string PK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberN{Value: "1"},
+			"SK": &types.AttributeValueMemberS{Value: "ID#series-1"},
+		}),
+		"missing SK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "AUTHOR#alice#SERIES"},
+		}),
+		"non-string SK": round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "AUTHOR#alice#SERIES"},
+			"SK": &types.AttributeValueMemberN{Value: "1"},
+		}),
+	}
+
+	for name, cursor := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			seriesRepo := storagemocks.NewMockSeriesRepository()
+			storage := pkgtesting.NewMockRepositoryStorage(pkgtesting.WithSeriesRepository(seriesRepo))
+			resolver := &Resolver{
+				Config: &config.Config{
+					CMSLongFormPublishingEnabled: true,
+					CMSSeriesEnabled:             true,
+				},
+				Storage: storage,
+				Logger:  zap.NewNop(),
+			}
+			alice := "alice"
+			first := 2
+
+			page, err := resolver.Query().AllSeries(ctx, &alice, &first, &cursor)
+			require.Nil(t, page)
+			require.EqualError(t, err, ErrInvalidAfterCursor.Error())
+			seriesRepo.AssertNotCalled(t, "ListSeriesByAuthorPaginated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
+}
+
+func round12SeriesCursor(t *testing.T, series *models.Series) model.Cursor {
+	t.Helper()
+	return round12EncodeSeriesCursorEnvelope(t, map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: series.PK},
+		"SK": &types.AttributeValueMemberS{Value: series.SK},
+	})
+}
+
+func round12EncodeSeriesCursorEnvelope(t *testing.T, key map[string]types.AttributeValue) model.Cursor {
+	t.Helper()
+	encoded, err := dynamormquery.EncodeCursor(key, "", "")
+	require.NoError(t, err)
+	return model.Cursor(encoded)
 }
 
 func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {

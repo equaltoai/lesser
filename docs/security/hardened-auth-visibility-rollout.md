@@ -33,9 +33,12 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   These paths never silently clamp an explicit author choice.
 - GraphQL quote mutations and REST reblog-quotes resolve the target storage-first, fetch and materialize a canonical
   remote ActivityPub Note when absent locally, and then apply viewer-access and reach checks. Deleted or inaccessible
-  targets remain indistinguishable from missing statuses. The separate lesser-exclusive
-  `POST /api/v1/statuses/{id}/quote` extension still requires a locally materialized target and is not the
-  Mastodon-compatible reblog-quote creation path described above.
+  targets remain indistinguishable from missing statuses. A fetched remote quote target may therefore remain persisted
+  locally even when the requesting viewer is denied. This is intentional and mirrors reply-parent materialization
+  (operator ruling 2026-08-01); persistence does not grant the denied viewer access. The separate lesser-exclusive
+  `POST /api/v1/statuses/{id}/quote` extension is currently an **UNIMPLEMENTED stub**, not the Mastodon-compatible
+  reblog-quote creation path described above: `checkQuotePermissions` returns true unconditionally and `createQuotePost`
+  is a placeholder. Operators and clients must not treat that stub as an authorization-enforcing quote endpoint.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.

@@ -173,7 +173,7 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 // CreateDraftReviewGrant creates a first-time review grant.
 func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 	err := r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
 	if dynamormerrors.IsConditionFailed(err) {
@@ -188,7 +188,7 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 		return fmt.Errorf("active draft review grant is required")
 	}
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 
 	nextVersion := grant.Version + 1
@@ -207,7 +207,10 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 	builder.ConditionVersion(int64(grant.Version))
 	builder.Set("Version", nextVersion)
 	if err := builder.Execute(); err != nil {
-		return err
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
+		}
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 	grant.Version = nextVersion
 	return nil

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -25,6 +26,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 
 	now := time.Date(2026, 3, 26, 10, 0, 0, 0, time.UTC)
 	requestedAt := now.Add(-time.Hour)
+	sortAt := now.Add(-30 * time.Minute)
 	conversation := &storagemodels.Conversation{
 		ID:           "conv-1",
 		Participants: []string{"alice", "bob"},
@@ -41,6 +43,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 			RequestedAt:     &requestedAt,
 			PreviewStatusID: "status-preview",
 			Unread:          true,
+			SortAt:          sortAt,
 		},
 	}
 
@@ -75,6 +78,8 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 	gqlConversation := resolver.convertConversationListToGraphQL(round12AuthContext("alice"), conversation, prefetch)
 	require.NotNil(t, gqlConversation)
 	require.Equal(t, "conv-1", gqlConversation.ID)
+	require.NotNil(t, gqlConversation.Cursor)
+	require.Equal(t, model.Cursor(sortAt.Format(time.RFC3339Nano)+"#conv-1"), *gqlConversation.Cursor)
 	require.NotNil(t, gqlConversation.ViewerMetadata)
 	require.Equal(t, "PENDING", string(gqlConversation.ViewerMetadata.RequestState))
 	require.NotNil(t, gqlConversation.ViewerMetadata.RequestedAt)

@@ -952,6 +952,7 @@ type ContinuityPanel struct {
 
 type Conversation struct {
 	ID             string                      `json:"id"`
+	Cursor         *Cursor                     `json:"cursor,omitempty"`
 	LastStatus     *Object                     `json:"lastStatus,omitempty"`
 	Unread         bool                        `json:"unread"`
 	Accounts       []*activitypub.Actor        `json:"accounts"`

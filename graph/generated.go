@@ -828,6 +828,7 @@ type ComplexityRoot struct {
 		Content            func(childComplexity int) int
 		ContentFormat      func(childComplexity int) int
 		CreatedAt          func(childComplexity int) int
+		DeletedAt          func(childComplexity int) int
 		EditorNotes        func(childComplexity int) int
 		Excerpt            func(childComplexity int) int
 		FeaturedImage      func(childComplexity int) int
@@ -1011,6 +1012,7 @@ type ComplexityRoot struct {
 	Conversation struct {
 		Accounts       func(childComplexity int) int
 		CreatedAt      func(childComplexity int) int
+		Cursor         func(childComplexity int) int
 		ID             func(childComplexity int) int
 		LastStatus     func(childComplexity int) int
 		Unread         func(childComplexity int) int
@@ -7626,6 +7628,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Article.CreatedAt(childComplexity), true
 
+	case "Article.deletedAt":
+		if e.complexity.Article.DeletedAt == nil {
+			break
+		}
+
+		return e.complexity.Article.DeletedAt(childComplexity), true
+
 	case "Article.editorNotes":
 		if e.complexity.Article.EditorNotes == nil {
 			break
@@ -8465,6 +8474,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Conversation.CreatedAt(childComplexity), true
+
+	case "Conversation.cursor":
+		if e.complexity.Conversation.Cursor == nil {
+			break
+		}
+
+		return e.complexity.Conversation.Cursor(childComplexity), true
 
 	case "Conversation.id":
 		if e.complexity.Conversation.ID == nil {
@@ -51557,6 +51573,47 @@ func (ec *executionContext) fieldContext_Article_id(_ context.Context, field gra
 	return fc, nil
 }
 
+func (ec *executionContext) _Article_deletedAt(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Article_deletedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeletedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Article_deletedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Article",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Article_slug(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Article_slug(ctx, field)
 	if err != nil {
@@ -53164,6 +53221,8 @@ func (ec *executionContext) fieldContext_ArticleEdge_node(_ context.Context, fie
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -57597,6 +57656,47 @@ func (ec *executionContext) fieldContext_Conversation_id(_ context.Context, fiel
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Conversation_cursor(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Conversation_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Cursor)
+	fc.Result = res
+	return ec.marshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Conversation_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Conversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
 		},
 	}
 	return fc, nil
@@ -92092,6 +92192,8 @@ func (ec *executionContext) fieldContext_Mutation_createConversation(ctx context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -92285,6 +92387,8 @@ func (ec *executionContext) fieldContext_Mutation_acceptMessageRequest(ctx conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -92411,6 +92515,8 @@ func (ec *executionContext) fieldContext_Mutation_markConversationAsRead(ctx con
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -96177,6 +96283,8 @@ func (ec *executionContext) fieldContext_Mutation_publishDraft(ctx context.Conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96701,6 +96809,8 @@ func (ec *executionContext) fieldContext_Mutation_createArticle(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96814,6 +96924,8 @@ func (ec *executionContext) fieldContext_Mutation_updateArticle(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96982,6 +97094,8 @@ func (ec *executionContext) fieldContext_Mutation_restoreRevision(ctx context.Co
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -97748,6 +97862,8 @@ func (ec *executionContext) fieldContext_Mutation_addArticleToCategory(ctx conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -97861,6 +97977,8 @@ func (ec *executionContext) fieldContext_Mutation_removeArticleFromCategory(ctx 
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -114087,6 +114205,8 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -114155,6 +114275,8 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -118232,6 +118354,8 @@ func (ec *executionContext) fieldContext_Query_article(ctx context.Context, fiel
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -118342,6 +118466,8 @@ func (ec *executionContext) fieldContext_Query_articleBySlug(ctx context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -130017,6 +130143,8 @@ func (ec *executionContext) fieldContext_SendMessagePayload_conversation(_ conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -143565,6 +143693,8 @@ func (ec *executionContext) fieldContext_Subscription_conversationUpdates(_ cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -165724,6 +165854,8 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "deletedAt":
+			out.Values[i] = ec._Article_deletedAt(ctx, field, obj)
 		case "slug":
 			out.Values[i] = ec._Article_slug(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -167119,6 +167251,8 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "cursor":
+			out.Values[i] = ec._Conversation_cursor(ctx, field, obj)
 		case "lastStatus":
 			out.Values[i] = ec._Conversation_lastStatus(ctx, field, obj)
 		case "unread":

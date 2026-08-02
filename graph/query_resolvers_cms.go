@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/cms"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
 )
 
 const (
@@ -504,10 +508,75 @@ func (r *queryResolver) Article(ctx context.Context, id string) (*model.Article,
 
 	article, err := store.Article().GetArticle(ctx, strings.TrimSpace(id))
 	if err != nil {
+		if cmsArticleNotFound(err) {
+			return r.deletedCMSArticle(ctx, strings.TrimSpace(id))
+		}
 		return nil, err
 	}
 
 	return r.convertCMSArticle(ctx, article, true), nil
+}
+
+func (r *queryResolver) deletedCMSArticle(ctx context.Context, id string) (*model.Article, error) {
+	store := r.cmsStorage()
+	if store == nil || store.GetDB() == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	var tombstone models.Tombstone
+	err := store.GetDB().WithContext(ctx).Model(&models.Tombstone{}).
+		Where("PK", "=", "OBJECT#"+strings.TrimSpace(id)).
+		Where("SK", "=", "TOMBSTONE").
+		First(&tombstone)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(tombstone.FormerType), "Article") || !r.cmsArticleTombstoneVisible(ctx, &tombstone) {
+		return nil, nil
+	}
+
+	deletedAt := model.Time(tombstone.Deleted)
+	createdAt := tombstone.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = tombstone.Deleted
+	}
+	authorID := strings.TrimSpace(tombstone.AttributedTo)
+	if authorID == "" {
+		authorID = strings.TrimSpace(tombstone.DeletedBy)
+	}
+
+	return &model.Article{
+		ID:              tombstone.ID,
+		DeletedAt:       &deletedAt,
+		Slug:            cmsExtractSlugFromURL(tombstone.ID),
+		AuthorID:        authorID,
+		Author:          r.resolveActorByID(ctx, authorID),
+		ContentFormat:   model.ContentFormatHTML,
+		TableOfContents: []*model.TOCEntry{},
+		Categories:      []*model.Category{},
+		PublishedAt:     deletedAt,
+		CreatedAt:       model.Time(createdAt),
+		UpdatedAt:       deletedAt,
+	}, nil
+}
+
+func (r *queryResolver) cmsArticleTombstoneVisible(ctx context.Context, tombstone *models.Tombstone) bool {
+	if tombstone == nil {
+		return false
+	}
+	if tombstone.IsPublic {
+		return true
+	}
+
+	username := strings.TrimSpace(getUsernameFromContext(ctx))
+	if username == "" {
+		return false
+	}
+	viewerActorID := cmsLocalActorID(r.getDomain(), username)
+	return strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.AttributedTo))
 }
 
 func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.Article, error) {
@@ -582,9 +651,16 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 		return r.convertCMSArticle(ctx, article, true), nil
 	}
 
+	return r.cmsArticleByLegacySlug(ctx, store, domain, tenant, slug)
+}
+
+func (r *queryResolver) cmsArticleByLegacySlug(ctx context.Context, store storagecore.RepositoryStorage, domain, tenant, slug string) (*model.Article, error) {
 	legacyID := cmsArticleID(domain, slug)
 	article, err := store.Article().GetArticle(ctx, legacyID)
 	if err != nil {
+		if cmsArticleNotFound(err) {
+			return r.deletedCMSArticle(ctx, legacyID)
+		}
 		return nil, err
 	}
 
@@ -601,6 +677,10 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 	}
 
 	return r.convertCMSArticle(ctx, article, true), nil
+}
+
+func cmsArticleNotFound(err error) bool {
+	return common.IsNotFound(err) || errors.Is(err, storage.ErrNotFound) || dynamormerrors.IsNotFound(err)
 }
 
 func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) (*model.ArticleConnection, error) {
@@ -857,22 +937,28 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 	)
 
 	if username != "" {
-		items, nextCursor, err = store.Series().ListSeriesByAuthorPaginated(ctx, username, limit, cursor)
+		authorCursor, cursorErr := cmsSeriesAuthorCursor(cursor, username)
+		if cursorErr != nil {
+			return nil, cursorErr
+		}
+		items, nextCursor, err = store.Series().ListSeriesByAuthorPaginated(ctx, username, limit, authorCursor)
 		if err != nil {
 			return nil, err
+		}
+		if nextCursor != "" {
+			encodedCursor, cursorErr := cmsSeriesEdgeCursor(&models.Series{
+				AuthorID: username,
+				SK:       strings.TrimSpace(nextCursor),
+			})
+			if cursorErr != nil {
+				return nil, cursorErr
+			}
+			nextCursor = string(encodedCursor)
 		}
 	} else {
-		var seriesModels []models.Series
-		err = store.GetDB().WithContext(ctx).Model(&models.Series{}).
-			Where("SK", "BEGINS_WITH", "ID#").
-			Limit(limit).
-			All(&seriesModels)
+		items, nextCursor, err = listGlobalSeriesPaginated(ctx, store.GetDB(), limit, cursor)
 		if err != nil {
 			return nil, err
-		}
-		items = make([]*models.Series, 0, len(seriesModels))
-		for i := range seriesModels {
-			items = append(items, &seriesModels[i])
 		}
 	}
 
@@ -882,14 +968,17 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		if node == nil {
 			continue
 		}
-		edgeCursor := model.Cursor(node.ID)
-		if item != nil && strings.TrimSpace(item.SK) != "" {
-			edgeCursor = model.Cursor(item.SK)
+		edgeCursor, cursorErr := cmsSeriesEdgeCursor(item)
+		if cursorErr != nil {
+			return nil, cursorErr
 		}
 		edges = append(edges, &model.SeriesEdge{
 			Node:   node,
 			Cursor: edgeCursor,
 		})
+	}
+	if nextCursor != "" && len(edges) > 0 {
+		edges[len(edges)-1].Cursor = model.Cursor(nextCursor)
 	}
 
 	pageInfo := &model.PageInfo{
@@ -908,6 +997,85 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 		PageInfo:   pageInfo,
 		TotalCount: len(edges),
 	}, nil
+}
+
+func cmsSeriesEdgeCursor(item *models.Series) (model.Cursor, error) {
+	if item == nil {
+		return "", errors.New("series is required to build cursor")
+	}
+
+	pk := strings.TrimSpace(item.PK)
+	if pk == "" && strings.TrimSpace(item.AuthorID) != "" {
+		pk = fmt.Sprintf("AUTHOR#%s#SERIES", strings.TrimSpace(item.AuthorID))
+	}
+	sk := strings.TrimSpace(item.SK)
+	if sk == "" && strings.TrimSpace(item.ID) != "" {
+		sk = "ID#" + strings.TrimSpace(item.ID)
+	}
+	if pk == "" || sk == "" {
+		return "", errors.New("series keys are required to build cursor")
+	}
+
+	encoded, err := dynamormquery.EncodeCursor(map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: pk},
+		"SK": &types.AttributeValueMemberS{Value: sk},
+	}, "", "")
+	if err != nil {
+		return "", fmt.Errorf("encode series cursor: %w", err)
+	}
+	return model.Cursor(encoded), nil
+}
+
+func cmsSeriesAuthorCursor(cursor, authorID string) (string, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return "", nil
+	}
+
+	decoded, err := dynamormquery.DecodeCursor(cursor)
+	if err != nil {
+		return "", ErrInvalidAfterCursorWithContext(fmt.Errorf("decode series cursor: %w", err))
+	}
+	key, err := decoded.ToAttributeValues()
+	if err != nil {
+		return "", ErrInvalidAfterCursorWithContext(fmt.Errorf("decode series cursor key: %w", err))
+	}
+
+	expectedPK := fmt.Sprintf("AUTHOR#%s#SERIES", strings.TrimSpace(authorID))
+	pk, ok := key["PK"].(*types.AttributeValueMemberS)
+	if !ok || strings.TrimSpace(pk.Value) != expectedPK {
+		return "", ErrInvalidAfterCursorWithContext(errors.New("series cursor does not match author partition"))
+	}
+	sk, ok := key["SK"].(*types.AttributeValueMemberS)
+	if !ok || strings.TrimSpace(sk.Value) == "" {
+		return "", ErrInvalidAfterCursorWithContext(errors.New("series cursor is missing its sort key"))
+	}
+	return strings.TrimSpace(sk.Value), nil
+}
+
+func listGlobalSeriesPaginated(ctx context.Context, db dynamormcore.DB, limit int, cursor string) ([]*models.Series, string, error) {
+	query := db.WithContext(ctx).Model(&models.Series{}).
+		Where("SK", "BEGINS_WITH", "ID#").
+		Limit(limit)
+	if strings.TrimSpace(cursor) != "" {
+		query = query.Cursor(strings.TrimSpace(cursor))
+	}
+
+	var seriesModels []models.Series
+	page, err := query.AllPaginated(&seriesModels)
+	if err != nil {
+		return nil, "", err
+	}
+
+	items := make([]*models.Series, 0, len(seriesModels))
+	for i := range seriesModels {
+		items = append(items, &seriesModels[i])
+	}
+	nextCursor := ""
+	if page != nil {
+		nextCursor = page.NextCursor
+	}
+	return items, nextCursor, nil
 }
 
 func (r *queryResolver) Category(ctx context.Context, id string) (*model.Category, error) {

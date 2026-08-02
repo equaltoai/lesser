@@ -750,6 +750,7 @@ type SendMessagePayload {
 
 type Conversation {
   id: ID!
+  cursor: Cursor
   lastStatus: Object
   unread: Boolean!
   accounts: [Actor!]!
@@ -2346,6 +2347,7 @@ type TOCEntry {
 
 type Article {
   id: ID!
+  deletedAt: Time
   slug: String!
   authorId: ID!
   author: Actor!

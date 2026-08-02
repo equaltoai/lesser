@@ -160,6 +160,11 @@ func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *
 			round12PopulateSlice(args.Get(0), state)
 		}
 	}).Return(nil).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		if state.autoPopulateAll {
+			round12PopulateSlice(args.Get(0), state)
+		}
+	}).Return(&dynamormcore.PaginatedResult{}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		if state.autoPopulateScan {
 			round12PopulateSlice(args.Get(0), state)

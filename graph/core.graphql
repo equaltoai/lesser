@@ -747,6 +747,7 @@ type SendMessagePayload {
 
 type Conversation {
   id: ID!
+  cursor: Cursor
   lastStatus: Object
   unread: Boolean!
   accounts: [Actor!]!
