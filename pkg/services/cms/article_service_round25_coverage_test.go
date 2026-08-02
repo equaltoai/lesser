@@ -716,6 +716,39 @@ func TestArticleService_DeleteArticle_TombstoneErrorBranches(t *testing.T) {
 	})
 }
 
+func TestArticleService_BuildArticleTombstoneDerivesPublicAddressing(t *testing.T) {
+	t.Parallel()
+
+	svc := NewArticleService(&fakeArticleRepo{}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+	tests := []struct {
+		name     string
+		to       []string
+		cc       []string
+		isPublic bool
+	}{
+		{name: "legacy empty addressing defaults public", isPublic: true},
+		{name: "public in to", to: []string{activitypub.PublicAddress}, isPublic: true},
+		{name: "public in cc", cc: []string{"https://example.com/users/alice/followers", activitypub.PublicAddress}, isPublic: true},
+		{name: "private recipients", to: []string{"https://example.com/users/bob"}},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tombstone, err := svc.buildArticleTombstone(&models.Article{Object: models.Object{
+				ID:           "https://example.com/articles/addressed",
+				Type:         activitypub.ArticleType,
+				AttributedTo: "https://example.com/users/alice",
+				To:           tt.to,
+				CC:           tt.cc,
+			}})
+			require.NoError(t, err)
+			require.Equal(t, tt.isPublic, tombstone.IsPublic)
+		})
+	}
+}
+
 func assertArticleWriteActivity(t *testing.T, activity *activitypub.Activity, activityType string, articleID string) {
 	t.Helper()
 

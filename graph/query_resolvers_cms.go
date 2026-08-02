@@ -570,13 +570,17 @@ func (r *queryResolver) cmsArticleTombstoneVisible(ctx context.Context, tombston
 	if tombstone.IsPublic {
 		return true
 	}
+	attributedTo := strings.TrimSpace(tombstone.AttributedTo)
+	if attributedTo == "" {
+		return false
+	}
 
 	username := strings.TrimSpace(getUsernameFromContext(ctx))
 	if username == "" {
 		return false
 	}
 	viewerActorID := cmsLocalActorID(r.getDomain(), username)
-	return strings.EqualFold(viewerActorID, strings.TrimSpace(tombstone.AttributedTo))
+	return strings.EqualFold(viewerActorID, attributedTo)
 }
 
 func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.Article, error) {

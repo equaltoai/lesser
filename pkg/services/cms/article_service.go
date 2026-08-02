@@ -418,7 +418,7 @@ func (s *ArticleService) buildArticleTombstone(article *models.Article) (*models
 		FormerType:   formerType,
 		DeletedBy:    deletedBy,
 		AttributedTo: deletedBy,
-		IsPublic:     true,
+		IsPublic:     articleIsPubliclyAddressed(article),
 		Summary:      summary,
 		Deleted:      time.Now(),
 	}
@@ -427,6 +427,29 @@ func (s *ArticleService) buildArticleTombstone(article *models.Article) (*models
 	}
 
 	return tombstone, nil
+}
+
+// articleIsPubliclyAddressed derives tombstone visibility from the stored
+// ActivityPub addressing. Legacy articles without addressing predate explicit
+// audience fields and retain their historical public default.
+func articleIsPubliclyAddressed(article *models.Article) bool {
+	if article == nil {
+		return false
+	}
+	if len(article.To) == 0 && len(article.CC) == 0 {
+		return true
+	}
+	for _, recipient := range article.To {
+		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
+			return true
+		}
+	}
+	for _, recipient := range article.CC {
+		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ArticleService) persistArticleTombstone(ctx context.Context, tombstone *models.Tombstone) error {

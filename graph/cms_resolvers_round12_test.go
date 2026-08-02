@@ -254,6 +254,20 @@ func TestRound12CMS_ArticleTombstoneDisclosure(t *testing.T) {
 	}
 }
 
+func TestRound12CMS_ArticleTombstoneVisibilityRejectsMissingAttribution(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	query := &queryResolver{resolver}
+
+	require.False(t, query.cmsArticleTombstoneVisible(
+		round12AuthContext("alice"),
+		&models.Tombstone{FormerType: "Article"},
+	))
+	require.True(t, query.cmsArticleTombstoneVisible(
+		context.Background(),
+		&models.Tombstone{FormerType: "Article", IsPublic: true},
+	))
+}
+
 func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
 	tests := []struct {
 		name        string
