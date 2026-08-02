@@ -10,6 +10,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -251,6 +252,44 @@ func TestGetQuotePermissionsReturnsNotImplementedWithoutStorageLookup(t *testing
 			}
 			require.JSONEq(t, `{"error":"quote permissions endpoint is not implemented"}`, string(resp.Body))
 			require.Empty(t, state.wheres, "501 path must not perform a storage query")
+		})
+	}
+}
+
+func TestDeleteQuoteAcceptsOnlyCanonicalOrLegacyOwnerIdentity(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+	tests := []struct {
+		name     string
+		quoterID string
+		want     int
+	}{
+		{name: "production actor URI owner", quoterID: common.GenerateActorID(cfg.Domain, "alice"), want: http.StatusOK},
+		{name: "local actor URI non-owner", quoterID: common.GenerateActorID(cfg.Domain, "bob"), want: http.StatusForbidden},
+		{name: "remote actor URI", quoterID: "https://remote.example/users/alice", want: http.StatusForbidden},
+		{name: "legacy bare username owner", quoterID: "alice", want: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel := storagemodels.QuoteRelationship{
+				QuoterNoteID: "q1",
+				TargetNoteID: "s1",
+				QuoterID:     tt.quoterID,
+				Timestamp:    time.Now().Add(-10 * time.Minute),
+			}
+			rel.GenerateID()
+			require.NoError(t, rel.UpdateKeys())
+			handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+				quoteRelationships: []storagemodels.QuoteRelationship{rel},
+			})
+			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", headers, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = "s1"
+			ctx.Params["quote_id"] = "q1"
+
+			requireStatus(t, tt.want)(handler.HandleDeleteQuotePostLift(ctx))
 		})
 	}
 }

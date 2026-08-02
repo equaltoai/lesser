@@ -109,7 +109,11 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondNotFound(ctx, "quote")
 	}
 
-	if quote.QuoterID != username {
+	ownedByUser := quote.QuoterID == username
+	if !ownedByUser && h.cfg != nil {
+		ownedByUser = quote.QuoterID == common.GenerateActorID(h.cfg.Domain, username)
+	}
+	if !ownedByUser {
 		return common.RespondNotAuthorizedToDelete(ctx, "quote")
 	}
 
