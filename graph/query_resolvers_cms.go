@@ -596,48 +596,26 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 	}
 
 	tenant := strings.ToLower(strings.TrimSpace(domain))
-	fetchIndexedArticle := func(indexPK string) (*models.Article, bool, error) {
-		var idx models.CMSSlugIndex
-		err := store.GetDB().WithContext(ctx).Model(&models.CMSSlugIndex{}).
-			Where("PK", "=", indexPK).
-			Where("SK", "=", models.CMSSlugIndexSK()).
-			First(&idx)
-		if err != nil {
-			if dynamormerrors.IsNotFound(err) {
-				return nil, false, nil
-			}
-			return nil, false, err
-		}
-		targetID := strings.TrimSpace(idx.TargetID)
-		if targetID == "" {
-			return nil, false, nil
-		}
-		article, err := store.Article().GetArticle(ctx, targetID)
-		if err != nil {
-			return nil, false, err
-		}
-		if article == nil {
-			return nil, false, nil
-		}
-		if !cmsStorageIDBelongsToTenant(article.ID, tenant) {
-			return nil, false, nil
-		}
-		return article, true, nil
-	}
 
 	// Preferred path: use a tenant-scoped slug index so IDs are stable and
 	// slugs are editable without exposing another tenant's same-slug object.
-	if article, ok, err := fetchIndexedArticle(models.CMSTenantArticleSlugIndexPK(tenant, slug)); err != nil {
+	if article, targetID, ok, err := cmsIndexedArticle(ctx, store, tenant, models.CMSTenantArticleSlugIndexPK(tenant, slug)); err != nil {
 		return nil, err
 	} else if ok {
+		if article == nil {
+			return r.deletedCMSArticle(ctx, targetID)
+		}
 		return r.convertCMSArticle(ctx, article, true), nil
 	}
 
 	// Back-compat path: read the legacy global index only after verifying that
 	// the resolved target belongs to this resolver's tenant, then backfill.
-	if article, ok, err := fetchIndexedArticle(models.CMSArticleSlugIndexPK(slug)); err != nil {
+	if article, targetID, ok, err := cmsIndexedArticle(ctx, store, tenant, models.CMSArticleSlugIndexPK(slug)); err != nil {
 		return nil, err
 	} else if ok {
+		if article == nil {
+			return r.deletedCMSArticle(ctx, targetID)
+		}
 		backfill := &models.CMSSlugIndex{
 			PK:       models.CMSTenantArticleSlugIndexPK(tenant, slug),
 			Slug:     slug,
@@ -652,6 +630,40 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 	}
 
 	return r.cmsArticleByLegacySlug(ctx, store, domain, tenant, slug)
+}
+
+func cmsIndexedArticle(ctx context.Context, store storagecore.RepositoryStorage, tenant, indexPK string) (*models.Article, string, bool, error) {
+	var idx models.CMSSlugIndex
+	err := store.GetDB().WithContext(ctx).Model(&models.CMSSlugIndex{}).
+		Where("PK", "=", indexPK).
+		Where("SK", "=", models.CMSSlugIndexSK()).
+		First(&idx)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, "", false, nil
+		}
+		return nil, "", false, err
+	}
+
+	targetID := strings.TrimSpace(idx.TargetID)
+	if targetID == "" || !cmsStorageIDBelongsToTenant(targetID, tenant) {
+		return nil, "", false, nil
+	}
+
+	article, err := store.Article().GetArticle(ctx, targetID)
+	if err != nil {
+		if cmsArticleNotFound(err) {
+			return nil, targetID, true, nil
+		}
+		return nil, "", false, err
+	}
+	if article == nil {
+		return nil, targetID, true, nil
+	}
+	if !cmsStorageIDBelongsToTenant(article.ID, tenant) {
+		return nil, "", false, nil
+	}
+	return article, targetID, true, nil
 }
 
 func (r *queryResolver) cmsArticleByLegacySlug(ctx context.Context, store storagecore.RepositoryStorage, domain, tenant, slug string) (*model.Article, error) {

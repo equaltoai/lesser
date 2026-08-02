@@ -317,6 +317,94 @@ func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
 	}
 }
 
+func TestRound12CMS_ArticleBySlugUsesIndexTargetForRenamedArticleTombstone(t *testing.T) {
+	const (
+		originalSlug = "a"
+		currentSlug  = "b"
+	)
+
+	// Published article IDs remain fixed across slug-index aliases. Both the
+	// current slug and the retained former-slug alias therefore point at the
+	// original object ID after deletion.
+	articleID := cmsArticleID("localhost", originalSlug)
+	deletedAt := time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC)
+
+	for _, slug := range []string{currentSlug, originalSlug} {
+		slug := slug
+		t.Run(slug, func(t *testing.T) {
+			resolver, storage := newRound12GraphResolver(t)
+			mockDB := new(dynamormmocks.MockDB)
+			indexQuery := new(dynamormmocks.MockQuery)
+			tombstoneQuery := new(dynamormmocks.MockQuery)
+			storage.db = mockDB
+
+			mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
+			mockDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(indexQuery).Once()
+			indexQuery.On("Where", "PK", "=", models.CMSTenantArticleSlugIndexPK("localhost", slug)).Return(indexQuery).Once()
+			indexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(indexQuery).Once()
+			indexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.CMSSlugIndex)
+				*dest = models.CMSSlugIndex{Slug: slug, TargetID: articleID}
+			}).Return(nil).Once()
+
+			mockDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+articleID).Return(tombstoneQuery).Once()
+			tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+			tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Run(func(args mock.Arguments) {
+				dest := args.Get(0).(*models.Tombstone)
+				*dest = models.Tombstone{
+					ID:           articleID,
+					FormerType:   "Article",
+					Deleted:      deletedAt,
+					CreatedAt:    deletedAt,
+					AttributedTo: "https://localhost/users/alice",
+					IsPublic:     true,
+				}
+			}).Return(nil).Once()
+
+			article, err := resolver.Query().ArticleBySlug(context.Background(), slug)
+			require.NoError(t, err)
+			require.NotNil(t, article)
+			require.Equal(t, articleID, article.ID)
+			require.NotNil(t, article.DeletedAt)
+
+			mockDB.AssertExpectations(t)
+			indexQuery.AssertExpectations(t)
+			tombstoneQuery.AssertExpectations(t)
+		})
+	}
+
+	t.Run("never existed", func(t *testing.T) {
+		resolver, storage := newRound12GraphResolver(t)
+		mockDB := new(dynamormmocks.MockDB)
+		tenantIndexQuery := new(dynamormmocks.MockQuery)
+		legacyIndexQuery := new(dynamormmocks.MockQuery)
+		tombstoneQuery := new(dynamormmocks.MockQuery)
+		storage.db = mockDB
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Times(3)
+		mockDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(tenantIndexQuery).Once()
+		tenantIndexQuery.On("Where", "PK", "=", models.CMSTenantArticleSlugIndexPK("localhost", "never-existed")).Return(tenantIndexQuery).Once()
+		tenantIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(tenantIndexQuery).Once()
+		tenantIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+		mockDB.On("Model", mock.AnythingOfType("*models.CMSSlugIndex")).Return(legacyIndexQuery).Once()
+		legacyIndexQuery.On("Where", "PK", "=", models.CMSArticleSlugIndexPK("never-existed")).Return(legacyIndexQuery).Once()
+		legacyIndexQuery.On("Where", "SK", "=", models.CMSSlugIndexSK()).Return(legacyIndexQuery).Once()
+		legacyIndexQuery.On("First", mock.AnythingOfType("*models.CMSSlugIndex")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+		missingID := cmsArticleID("localhost", "never-existed")
+		mockDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Once()
+		tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+missingID).Return(tombstoneQuery).Once()
+		tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Once()
+		tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+		article, err := resolver.Query().ArticleBySlug(context.Background(), "never-existed")
+		require.NoError(t, err)
+		require.Nil(t, article)
+	})
+}
+
 func TestRound12CMS_AllSeriesGlobalPaginationRoundTrips(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := context.Background()
