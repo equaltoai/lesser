@@ -338,7 +338,7 @@ content.
 **Confidence:** 9/10
 
 Account-level quote permissions are live: the authenticated GraphQL mutation `updateAccountQuotePermissions` persists
-them, and the GraphQL quote path enforces them through `QuoteService.checkQuotePermissions` in
+them, and the GraphQL quote path enforces them through `QuoteService.CheckQuotePermissions` in
 `pkg/services/quotes/quote_service.go`. The REST quote-permission GET and PUT routes return `501 Not Implemented` because
 their REST implementation genuinely does not exist; they do not fabricate or persist preferences.
 
