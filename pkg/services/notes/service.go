@@ -2939,10 +2939,9 @@ type BookmarkResult struct {
 
 // BookmarkNote adds a status to user's bookmarks
 func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*BookmarkResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.BookmarkerID, "bookmarker")
 	if err != nil {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
 	if s.bookmarkRepo == nil {
@@ -2964,10 +2963,9 @@ func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*
 
 // UnbookmarkNote removes a status from user's bookmarks
 func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand) (*BookmarkResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.UnbookmarkerID, "unbookmarker")
 	if err != nil {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
 	if s.bookmarkRepo == nil {
@@ -3299,6 +3297,17 @@ func (s *Service) prepareStatusInteraction(
 	if err != nil {
 		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
 	}
+	if note.Deleted {
+		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+	}
+
+	canView, err := s.checkViewPermissions(ctx, note, actorID)
+	if err != nil {
+		return nil, nil, statusInteractionIdentity{}, ErrCheckViewPermissions
+	}
+	if !canView {
+		return nil, nil, statusInteractionIdentity{}, ErrStatusNotFound
+	}
 
 	actor, err := s.accountRepo.GetAccount(ctx, actorID)
 	if err != nil {
@@ -3456,21 +3465,9 @@ type GetRebloggersQuery struct {
 
 // ReblogNote creates a reblog/announce of a status
 func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, reblogger, identity, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.RebloggerID, "reblogger")
 	if err != nil {
-		return nil, ErrStatusNotFound
-	}
-	if note.Deleted {
-		return nil, ErrStatusNotFound
-	}
-
-	canView, err := s.checkViewPermissions(ctx, note, cmd.RebloggerID)
-	if err != nil {
-		return nil, ErrCheckViewPermissions
-	}
-	if !canView {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
 	if !note.CanBeReblogged() {
@@ -3478,20 +3475,6 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 			zap.String("status_id", cmd.StatusID),
 			zap.String("visibility", note.Visibility),
 			zap.Bool("deleted", note.Deleted))
-		return nil, ErrReblogStatus
-	}
-
-	// Get reblogger's account
-	reblogger, err := s.accountRepo.GetAccount(ctx, cmd.RebloggerID)
-	if err != nil {
-		return nil, ErrGetRebloggerAccount
-	}
-
-	identity, err := s.statusInteractionIdentity(note, reblogger)
-	if err != nil {
-		s.logger.Error("failed to resolve reblog object identity",
-			zap.String("status_id", cmd.StatusID),
-			zap.Error(err))
 		return nil, ErrReblogStatus
 	}
 
@@ -3699,10 +3682,9 @@ type UnmuteNoteCommand struct {
 
 // MuteNote mutes a status for a user
 func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "muter")
 	if err != nil {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
 	// Mute the status through repository interface
@@ -3733,10 +3715,9 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 
 // UnmuteNote unmutes a status for a user
 func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, _, _, err := s.prepareStatusInteraction(ctx, cmd.StatusID, cmd.MuterID, "unmuter")
 	if err != nil {
-		return nil, ErrStatusNotFound
+		return nil, err
 	}
 
 	// Unmute the status through repository interface
