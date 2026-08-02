@@ -147,7 +147,7 @@ func authUIInlineScriptHashes() []string {
 		// Astro/Svelte island runtime snippets generated into auth-ui/dist/*.html.
 		// Refreshed 2026-07-30 after the Astro 7 auth UI dependency remediation;
 		// hashes verified unchanged against a fresh auth-ui production build.
-		// CI verifies these hashes are refreshed at least as recently as auth-ui source:
+		// CI builds auth-ui from its pinned lockfile and verifies these exact hashes:
 		//   bash scripts/verify_auth_ui_csp.sh
 		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
 		"'sha256-Ya0pUYrC7nM5Cn/056TyVuEiz6dFGrzmkWzgON0pF0U='",

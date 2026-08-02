@@ -102,7 +102,7 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 	}
 
 	// Check quote permissions
-	canQuote, err := qs.checkQuotePermissions(ctx, req.QuoterUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, req.QuoterUsername, targetStatus)
 	if err != nil {
 		qs.logger.Error("failed to check quote permissions",
 			zap.String("quoter", req.QuoterUsername),
@@ -182,7 +182,7 @@ func (qs *QuoteService) AttachQuoteToStatus(ctx context.Context, quoteStatus *mo
 		return nil, ErrTargetStatusNotQuotable
 	}
 
-	canQuote, err := qs.checkQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
 	if err != nil {
 		return nil, ErrCheckQuotePermissions(err)
 	}
@@ -398,7 +398,11 @@ func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	return common.IsPubliclyVisible(status.Visibility)
 }
 
-func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+// CheckQuotePermissions applies the account-level quote predicate to relationship-minting paths:
+// GraphQL quote creation and REST reblog-with-comment. GraphQL createQuoteNote only embeds a URL
+// without minting a relationship and is outside this control by design; a blocked user can always
+// paste a URL into ordinary post text, while this predicate governs quote relationships.
+func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
 	// Get quote permissions for the target status author
 	permissions, err := qs.GetQuotePermissions(ctx, targetStatus.AuthorUsername)
 	if err != nil {
@@ -584,14 +588,17 @@ func (qs *QuoteService) createQuoteNotification(_ context.Context, quoteStatus, 
 }
 
 func (qs *QuoteService) checkFollowRelationship(_ context.Context, _ string, _ string) (bool, error) {
-	// Placeholder implementation
-	// In reality, this would check if follower follows followee
+	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
+	// Registration assigns this arm to private-default accounts, so it currently denies every
+	// quoter, including an actual follower.
 	return false, nil
 }
 
 func (qs *QuoteService) checkMentioned(_ *models.Status, _ string) bool {
-	// Simple check if username is mentioned in the status content
-	return false // Placeholder
+	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
+	// Registration assigns this arm to direct-default accounts, so it currently denies every
+	// quoter, including an actually mentioned account.
+	return false
 }
 
 func generateStatusID() string {

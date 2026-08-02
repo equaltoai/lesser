@@ -1367,7 +1367,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		QuoteURL:         quoteURL,
 		QuoteContext:     quoteContext,
 		Quoteable:        quoteable,
-		QuotePermissions: model.QuotePermissionEveryone,
+		QuotePermissions: determineQuotePermission(status),
 		QuoteCount:       status.QuoteCount,
 		Quotes: &model.QuoteConnection{
 			Edges:      []*model.QuoteEdge{},

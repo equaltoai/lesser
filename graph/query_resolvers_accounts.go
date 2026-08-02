@@ -9,12 +9,14 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	"github.com/equaltoai/lesser/pkg/services/search"
-	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
+
+var errAccountQuotePermissionsNotImplemented = apperrors.Internal("account quote permissions are not implemented")
 
 // NOTE: imports intentionally omitted. Run gofmt/goimports and add any
 // required imports after generating these files.
@@ -68,46 +70,12 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 	return r.materializeActorResolution(ctx, resolution), nil
 }
 
-// AccountQuotePermissions resolves quote permissions for the requested username.
-func (r *queryResolver) AccountQuotePermissions(ctx context.Context, username string) (*model.AccountQuotePermissions, error) {
-	resolved := deriveUsernameFromIRI(username)
-	if err := common.ValidateRequiredParam("username", resolved); err != nil {
+// AccountQuotePermissions is unavailable until quote-permission persistence is implemented.
+func (r *queryResolver) AccountQuotePermissions(ctx context.Context, _ string) (*model.AccountQuotePermissions, error) {
+	if _, err := r.requireAuth(ctx); err != nil {
 		return nil, err
 	}
-
-	storage := r.Registry.GetStorage()
-	if storage == nil || storage.Quote() == nil {
-		return nil, errors.New("quote repository is not available")
-	}
-
-	perms, err := storage.Quote().GetQuotePermissions(ctx, resolved)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			perms = &storageModels.QuotePermissions{
-				Username: resolved,
-			}
-			perms.SetDefaults()
-			_ = perms.UpdateKeys()
-		} else {
-			r.Logger.Error("Failed to get quote permissions",
-				zap.String("username", resolved),
-				zap.Error(err))
-			return nil, errors.Join(errors.New("failed to get quote permissions"), err)
-		}
-	}
-
-	blockList := perms.BlockList
-	if blockList == nil {
-		blockList = []string{}
-	}
-
-	return &model.AccountQuotePermissions{
-		Username:       resolved,
-		AllowPublic:    perms.AllowPublic,
-		AllowFollowers: perms.AllowFollowers,
-		AllowMentioned: perms.AllowMentioned,
-		BlockList:      blockList,
-	}, nil
+	return nil, errAccountQuotePermissionsNotImplemented
 }
 
 // CustomEmojis is the resolver for the customEmojis field.

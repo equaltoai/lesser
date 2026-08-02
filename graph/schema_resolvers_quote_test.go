@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -167,6 +168,18 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 	require.NotNil(t, obj.QuoteContext)
 	require.Equal(t, status.QuoteTargetStatusID, obj.QuoteContext.OriginalNoteID)
 	require.Equal(t, target.AuthorID, obj.QuoteContext.OriginalAuthor)
+}
+
+func TestDetermineQuoteableDocumentsUnhydratedMetadataDefault(t *testing.T) {
+	for _, status := range []*models.Status{
+		nil,
+		{},
+		{Note: &activitypub.Note{Quoteable: false}},
+		{Note: &activitypub.Note{Quoteable: true}},
+	} {
+		require.True(t, determineQuoteable(status))
+		require.Equal(t, model.QuotePermissionEveryone, determineQuotePermission(status))
+	}
 }
 
 func TestQuoteContextResolverOriginalAuthorUsesLoader(t *testing.T) {

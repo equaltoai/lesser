@@ -418,15 +418,51 @@ func (s *ArticleService) buildArticleTombstone(article *models.Article) (*models
 		FormerType:   formerType,
 		DeletedBy:    deletedBy,
 		AttributedTo: deletedBy,
-		IsPublic:     true,
-		Summary:      summary,
-		Deleted:      time.Now(),
+		// No CMS writer populates Article.To/CC today. Keep the historical public
+		// default for unaddressed articles while deriving fail-closed once an
+		// audience-writing surface is introduced.
+		IsPublic: articleIsPubliclyAddressed(article),
+		Summary:  summary,
+		Deleted:  time.Now(),
 	}
 	if err := tombstone.BeforeCreate(); err != nil {
 		return nil, fmt.Errorf("prepare article tombstone: %w", err)
 	}
 
 	return tombstone, nil
+}
+
+// articleIsPubliclyAddressed derives tombstone visibility from the stored
+// ActivityPub addressing. No CMS writer populates Article.To/CC today, so
+// unaddressed articles retain their historical public default. The explicit
+// predicate is forward-looking defense-in-depth for a future audience field.
+func articleIsPubliclyAddressed(article *models.Article) bool {
+	if article == nil {
+		return false
+	}
+	if len(article.To) == 0 && len(article.CC) == 0 {
+		return true
+	}
+	for _, recipient := range article.To {
+		if isActivityStreamsPublicAddress(recipient) {
+			return true
+		}
+	}
+	for _, recipient := range article.CC {
+		if isActivityStreamsPublicAddress(recipient) {
+			return true
+		}
+	}
+	return false
+}
+
+func isActivityStreamsPublicAddress(recipient string) bool {
+	switch strings.TrimSpace(recipient) {
+	case activitypub.PublicAddress, "as:Public", "Public":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *ArticleService) persistArticleTombstone(ctx context.Context, tombstone *models.Tombstone) error {

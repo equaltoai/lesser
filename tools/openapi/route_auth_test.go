@@ -3,8 +3,72 @@ package main
 import (
 	"go/ast"
 	"go/parser"
+	"slices"
 	"testing"
 )
+
+func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		route            routeDef
+		initialResponses []string
+		wantResponses    []string
+		wantDescription  string
+	}{
+		{
+			name:             "create quote",
+			route:            routeDef{Method: methodPOST, Path: "/api/v1/statuses/{id}/quote"},
+			initialResponses: []string{"200", "400", "401", "403", "404", "422", "429", "500"},
+			wantResponses:    []string{"400", "401", "403", "429", "501"},
+			wantDescription:  "Quote creation is not implemented; target IDs are not looked up.",
+		},
+		{
+			name:             "list quotes",
+			route:            routeDef{Method: methodGET, Path: "/api/v1/statuses/{id}/quotes"},
+			initialResponses: []string{"200", "400", "404", "500"},
+			wantResponses:    []string{"400", "501"},
+			wantDescription:  "Quote listing is not implemented; target IDs and quote counts are not looked up.",
+		},
+		{
+			name:             "get quote permissions",
+			route:            routeDef{Method: methodGET, Path: "/api/v1/accounts/{id}/quote_permissions"},
+			initialResponses: []string{"200", "400", "401", "403", "404", "500"},
+			wantResponses:    []string{"400", "401", "403", "501"},
+			wantDescription:  "Quote permission reads are not implemented and no settings are retrieved.",
+		},
+		{
+			name:             "update quote permissions",
+			route:            routeDef{Method: methodPUT, Path: "/api/v1/accounts/quote_permissions"},
+			initialResponses: []string{"200", "400", "401", "403", "422", "500"},
+			wantResponses:    []string{"400", "401", "403", "501"},
+			wantDescription:  "Quote permission updates are not implemented and no settings are persisted.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op := &operation{Responses: make(map[string]response, len(tt.initialResponses))}
+			for _, status := range tt.initialResponses {
+				op.Responses[status] = response{}
+			}
+			applyOperationOverrides(op, tt.route)
+
+			gotResponses := make([]string, 0, len(op.Responses))
+			for status := range op.Responses {
+				gotResponses = append(gotResponses, status)
+			}
+			slices.Sort(gotResponses)
+			if !slices.Equal(gotResponses, tt.wantResponses) {
+				t.Fatalf("responses = %v, want only reachable %v", gotResponses, tt.wantResponses)
+			}
+			if got := op.Responses["501"].Description; got != tt.wantDescription {
+				t.Fatalf("501 description = %q", got)
+			}
+		})
+	}
+}
 
 func TestExtractAPIRouteMetaInfersRouteMiddlewareAuth(t *testing.T) {
 	t.Parallel()

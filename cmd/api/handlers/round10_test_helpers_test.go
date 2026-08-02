@@ -123,6 +123,7 @@ type round10QueryState struct {
 	agentAccessLeasesByKey    map[string]storagemodels.AgentAccessLease
 	agentAccessChallengesByID map[string]storagemodels.AgentAccessLeaseChallenge
 	agentGovernanceByUsername map[string]storagemodels.AgentGovernanceState
+	quotePermissionsByUser    map[string]storagemodels.QuotePermissions
 	agentMemoryEventsByAgent  map[string][]storagemodels.AgentMemoryEvent
 	remoteActorsByPK          map[string]storagemodels.RemoteActor
 	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
@@ -581,6 +582,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
 			}
 			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.QuotePermissions:
+			if m == nil {
+				return
+			}
+			if state.quotePermissionsByUser == nil {
+				state.quotePermissionsByUser = map[string]storagemodels.QuotePermissions{}
+			}
+			state.quotePermissionsByUser[m.Username] = *m
 		case *storagemodels.OAuthClient:
 			if m == nil {
 				return
@@ -752,6 +761,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
 			}
 			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.QuotePermissions:
+			if m == nil {
+				return
+			}
+			if state.quotePermissionsByUser == nil {
+				state.quotePermissionsByUser = map[string]storagemodels.QuotePermissions{}
+			}
+			state.quotePermissionsByUser[m.Username] = *m
 		case *storagemodels.RefreshToken:
 			if m == nil {
 				return
@@ -788,6 +805,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.forceVapidNotFound {
 		mockQuery.On("First", mock.AnythingOfType("*models.VAPIDKeyRecord")).Return(dynamormerrors.ErrItemNotFound).Maybe()
 	}
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.QuotePermissions); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK || !strings.HasPrefix(pk, "USER#") || sk != "QUOTE_PERMISSIONS" {
+			return false
+		}
+		if _, hasInjectedError := state.firstErrorPK[pk]; hasInjectedError {
+			return false
+		}
+		_, exists := state.quotePermissionsByUser[strings.TrimPrefix(pk, "USER#")]
+		return !exists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
 	if len(state.notFoundPKSK) > 0 {
 		mockQuery.On("First", mock.MatchedBy(func(_ any) bool {
@@ -1032,6 +1065,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			return
 		}
 		switch d := dest.(type) {
+		case *storagemodels.QuotePermissions:
+			pk, _ := state.whereString("PK")
+			*d = state.quotePermissionsByUser[strings.TrimPrefix(pk, "USER#")]
 		case *storagemodels.AgentInstanceConfig:
 			if state.agentInstanceConfig != nil {
 				*d = *state.agentInstanceConfig

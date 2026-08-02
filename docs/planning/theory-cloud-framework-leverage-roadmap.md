@@ -112,7 +112,7 @@ local adoption proceeds.
      creates functions directly with native AWS CDK.
    - Verification: synth a representative function behind tests and compare generated CloudFormation for function name,
      architecture, runtime, timeout, memory, role, env, asset path, DLQ, and permissions before broader migration.
-4. **FaceTheory v3.2.2 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
+4. **FaceTheory v4.0.1 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
    - Evidence: `lesser client install` validates that a FaceTheory dependency exists; enforcing an exact dependency URL
      would break local workspace/client development.
    - Verification: docs/tests are enough in lesser; any client-app enforcement belongs in client repos or a non-blocking
@@ -200,7 +200,8 @@ Dependency-maintenance, operational-reliability, framework-consumption, docs. Po
 - Strict AppTheory route registration is adopted for selected surfaces without OpenAPI/GraphQL/federation route drift.
 - CDK function construct adoption either lands with template-parity proof or produces a framework-feedback signal instead
   of a local workaround.
-- FaceTheory v3.2.2 guidance remains backward-compatible for client app authors.
+- FaceTheory client guidance remains backward-compatible as release pins advance (the current recommendation is
+  `v4.0.1`); lesser continues to require dependency presence without enforcing an exact version or URL.
 
 ### Specialist routing
 

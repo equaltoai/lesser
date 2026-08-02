@@ -16,6 +16,45 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applySoulOverrides(op, route)
 	applySkillOverrides(op, route)
 	applyStatusOverrides(op, route)
+	applyQuoteOverrides(op, route)
+}
+
+func applyQuoteOverrides(op *operation, route routeDef) {
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+
+	switch {
+	case route.Method == methodPOST && route.Path == "/api/v1/statuses/{id}/quote":
+		delete(op.Responses, "200")
+		delete(op.Responses, "404")
+		delete(op.Responses, "422")
+		delete(op.Responses, "500")
+		op.Responses["501"] = response{
+			Description: "Quote creation is not implemented; target IDs are not looked up.",
+		}
+	case route.Method == methodGET && route.Path == "/api/v1/statuses/{id}/quotes":
+		delete(op.Responses, "200")
+		delete(op.Responses, "404")
+		delete(op.Responses, "500")
+		op.Responses["501"] = response{
+			Description: "Quote listing is not implemented; target IDs and quote counts are not looked up.",
+		}
+	case route.Method == methodGET && route.Path == "/api/v1/accounts/{id}/quote_permissions":
+		delete(op.Responses, "200")
+		delete(op.Responses, "404")
+		delete(op.Responses, "500")
+		op.Responses["501"] = response{
+			Description: "Quote permission reads are not implemented and no settings are retrieved.",
+		}
+	case route.Method == methodPUT && route.Path == "/api/v1/accounts/quote_permissions":
+		delete(op.Responses, "200")
+		delete(op.Responses, "422")
+		delete(op.Responses, "500")
+		op.Responses["501"] = response{
+			Description: "Quote permission updates are not implemented and no settings are persisted.",
+		}
+	}
 }
 
 func applySkillOverrides(op *operation, route routeDef) {

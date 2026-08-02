@@ -31,9 +31,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify auth UI CSP freshness
-        run: bash scripts/verify_auth_ui_csp.sh
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

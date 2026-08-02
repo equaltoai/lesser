@@ -334,19 +334,35 @@ content.
 
 ## P1 — Privacy leak: GraphQL `accountQuotePermissions` exposes `blockList` publicly
 
-**Status:** confirmed  
-**Confidence:** 7/10  
+**Status:** fixed
+**Confidence:** 9/10
 
-`accountQuotePermissions(username: ...)` can be queried without authentication and returns the account’s quote-permission
-configuration including `blockList` (a user preference that is typically private).
+Account-level quote permissions are live: the authenticated GraphQL mutation `updateAccountQuotePermissions` persists
+them, and the GraphQL quote path enforces them through `QuoteService.CheckQuotePermissions` in
+`pkg/services/quotes/quote_service.go`. The REST quote-permission GET and PUT routes return `501 Not Implemented` because
+their REST implementation genuinely does not exist; they do not fabricate or persist preferences.
 
-**Location:**
-- Schema: `graph/core.graphql:1076`
-- Resolver: `graph/query_resolvers_accounts.go:83` (no `requireAuth` / role gating; returns `blockList`)
+The authenticated GraphQL `accountQuotePermissions(username: ...)` read also returns a not-implemented error for every
+target. It fails closed without fabricating defaults while a real read is pending an explicit authorization decision:
+whether an account owner, another viewer, or both may read the raw block list is a product decision, not a safe default.
+The REST quote-creation twin now uses the same account-level `QuoteService.CheckQuotePermissions` predicate and maps its
+denial and storage-error classes into the established REST error contract.
 
-**Recommendation:** decide intended exposure:
-- If this is only for the account owner: require auth and ensure the requester matches the username.
-- If others need to know “can I quote this user?”: return a computed boolean for the *viewer*, not the raw block list.
+**Shipping decision:** REST reblog-with-comment enforcement ships with the block-list and `allow_public` arms live while
+the `allow_followers` and `allow_mentioned` arms remain fail-closed placeholders tracked by lesser#1317.
+`ApplyVisibilityDefaults` assigns those states at registration: private/followers-default accounts rely on
+`allow_followers`, and direct-default accounts rely on `allow_mentioned`. Until lesser#1317 lands, every quoter—including
+an actual follower or mentioned account—is denied for those account classes. This intentionally changes the affected
+client response from `200` before `cf7c8ebdd` to `403 FORBIDDEN`; failing open a privacy control is not an acceptable
+interim behavior.
+
+Per-note quote controls are separate from those account-level permissions. The GraphQL `updateQuotePermissions` mutation
+persists its control in `StatusMetadata` and now reads that row back so its own payload reflects the stored `quoteable`
+and `quotePermissions` values. General `Status` projections do not hydrate `StatusMetadata`, however, and no production
+quote-creation path currently calls the repository's otherwise-unused `IsQuoteAllowed` helper. Those general GraphQL
+object projections therefore retain their legacy permissive quoteability default. Enforcing the per-note control requires
+a separately designed read/enforcement path with explicit missing-row semantics; this remediation does not fabricate one.
+That enforcement work is tracked as lesser#1318.
 
 ---
 

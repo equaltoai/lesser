@@ -36,9 +36,32 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   targets remain indistinguishable from missing statuses. A fetched remote quote target may therefore remain persisted
   locally even when the requesting viewer is denied. This is intentional and mirrors reply-parent materialization
   (operator ruling 2026-08-01); persistence does not grant the denied viewer access. The separate lesser-exclusive
-  `POST /api/v1/statuses/{id}/quote` extension is currently an **UNIMPLEMENTED stub**, not the Mastodon-compatible
-  reblog-quote creation path described above: `checkQuotePermissions` returns true unconditionally and `createQuotePost`
-  is a placeholder. Operators and clients must not treat that stub as an authorization-enforcing quote endpoint.
+  `POST /api/v1/statuses/{id}/quote` extension returns **501 Not Implemented** before target lookup pending a real
+  authorization-, persistence-, and federation-aware implementation; it is not the Mastodon-compatible reblog-quote
+  creation path described above and does not disclose whether a target status exists. The companion
+  `GET /api/v1/statuses/{id}/quotes` extension likewise returns **501 Not Implemented** after parameter validation and
+  before storage access so neither target existence nor a real quote-row count is exposed. Authenticated
+  `PUT /api/v1/accounts/quote_permissions` returns **501 Not Implemented** after authentication and body validation
+  until permission persistence exists; it never echoes request values as though they were saved. The
+  `GET /api/v1/accounts/{id}/quote_permissions` extension requires bearer authentication, so anonymous callers receive
+  **401 Unauthorized**. Its handler performs no additional per-target authorization and returns **501 Not Implemented**
+  after path-parameter validation and before storage access for existent, missing, and hostile-text account IDs alike;
+  the route never fabricates all-permissive settings.
+- The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
+  `GET` handlers remain **501 Not Implemented** even though the authenticated GraphQL mutation persists account-level
+  preferences. REST reblog-with-comment and GraphQL relationship-minting paths enforce that persisted account-level row
+  through the shared `QuoteService.CheckQuotePermissions` predicate.
+- **Shipping decision:** REST reblog-with-comment enforcement ships with the block-list and `allow_public` arms live while
+  the `allow_followers` and `allow_mentioned` arms remain fail-closed placeholders tracked by lesser#1317.
+  `ApplyVisibilityDefaults` assigns those states at registration: private/followers-default accounts rely on
+  `allow_followers`, and direct-default accounts rely on `allow_mentioned`. Until lesser#1317 lands, every quoter—including
+  an actual follower or mentioned account—is denied for those account classes. This intentionally changes the affected
+  client response from **200** before `cf7c8ebdd` to **403 FORBIDDEN**; failing open a privacy control is not an acceptable
+  interim behavior.
+- Per-note quote controls are persisted by GraphQL but are not yet read by general `Status` projections or enforced by
+  production quote-relationship creation. That work needs explicit missing-row semantics and is tracked as lesser#1318.
+- Quote deletion deliberately returns the same **404 Not Found** response for a missing relationship and one owned by a
+  different account, preventing ownership from becoming an existence oracle; successful owner deletion is unchanged.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.

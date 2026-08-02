@@ -84,6 +84,19 @@ func TestRunVerifyCI_Round20_PropagatesAuditFailure(t *testing.T) {
 	require.ErrorIs(t, runVerifyCI(nil), errSentinel)
 }
 
+func TestRunVerifyCI_Round20_PropagatesAuthUICSPFailure(t *testing.T) {
+	_ = setupVerifyCIRound20Harness(t)
+
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		if name == "bash" && firstArgOrEmpty(args) == "scripts/verify_auth_ui_csp.sh" {
+			return errSentinel
+		}
+		return nil
+	}
+
+	require.ErrorIs(t, runVerifyCI(nil), errSentinel)
+}
+
 func TestRunVerifyCI_Round20_PropagatesSecScanFailure(t *testing.T) {
 	_ = setupVerifyCIRound20Harness(t)
 
