@@ -61,11 +61,7 @@ TARGETS=(
 
 bash "${ROOT_DIR}/scripts/verify_auth_ui_csp.sh"
 
-echo "Building auth UI release bundle"
-cd "${ROOT_DIR}/auth-ui"
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
-cd "${ROOT_DIR}"
+echo "Using the verified auth UI production build for the release bundle"
 
 echo "Building canonical Lambda zip artifacts"
 LESSER_BUILD_VERSION="${VERSION}" go run ./cmd/lesser build lambdas --rebuild

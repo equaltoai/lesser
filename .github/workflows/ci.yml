@@ -27,8 +27,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify auth UI CSP freshness
-        run: bash scripts/verify_auth_ui_csp.sh
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Set up Go
         id: setup-go
