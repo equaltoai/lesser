@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -91,13 +92,23 @@ func TestQueryResolverTimeline_ListRequiresAuthAndWiresListID(t *testing.T) {
 		}
 	})
 
-	t.Run("authenticated list reaches notes service with list ID", func(t *testing.T) {
-		connection, err := query.Timeline(
-			round12AuthContext("alice"), model.TimelineTypeList, nil, &listID, nil, nil, nil, nil, nil,
-		)
-		require.NoError(t, err)
-		require.NotNil(t, connection)
-		require.Empty(t, connection.Edges)
+	t.Run("authenticated list preserves caller list ID", func(t *testing.T) {
+		for _, requestedListID := range []string{"list-alpha", "list-beta"} {
+			t.Run(requestedListID, func(t *testing.T) {
+				serviceQuery := &notes.ListNotesQuery{}
+				require.NoError(t, applyTimelineTypeFilter(
+					"alice", model.TimelineTypeList, nil, &requestedListID, nil, serviceQuery,
+				))
+				require.Equal(t, requestedListID, serviceQuery.ListID)
+
+				connection, err := query.Timeline(
+					round12AuthContext("alice"), model.TimelineTypeList, nil, &requestedListID, nil, nil, nil, nil, nil,
+				)
+				require.NoError(t, err)
+				require.NotNil(t, connection)
+				require.Empty(t, connection.Edges)
+			})
+		}
 	})
 }
 
