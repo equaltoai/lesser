@@ -81,14 +81,16 @@ func (r *Resolver) buildMentions(status *models.Status) []*model.Mention {
 	return mentions
 }
 
-func determineQuoteable(status *models.Status) bool {
-	if status == nil || status.Note == nil {
-		return true
-	}
-	if status.Note.Quoteable {
-		return status.Note.Quoteable
-	}
+func determineQuoteable(_ *models.Status) bool {
+	// Per-note controls live in a separate StatusMetadata row that is not hydrated into Status.
+	// Preserve the legacy permissive projection until that read path is wired; do not pretend
+	// activitypub.Note's false zero value distinguishes an explicit denial from an absent field.
 	return true
+}
+
+func determineQuotePermission(_ *models.Status) model.QuotePermission {
+	// See determineQuoteable: the base Status projection has no persisted per-note control.
+	return model.QuotePermissionEveryone
 }
 
 func extractStatusSummary(status *models.Status) *string {

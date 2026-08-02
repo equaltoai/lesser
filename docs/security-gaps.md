@@ -348,6 +348,13 @@ whether an account owner, another viewer, or both may read the raw block list is
 The REST quote-creation twin now uses the same account-level `QuoteService.CheckQuotePermissions` predicate and maps its
 denial and storage-error classes into the established REST error contract.
 
+Per-note quote controls are separate from those account-level permissions. The GraphQL `updateQuotePermissions` mutation
+persists its control in `StatusMetadata` and now reads that row back so its own payload reflects the stored `quoteable`
+and `quotePermissions` values. General `Status` projections do not hydrate `StatusMetadata`, however, and no production
+quote-creation path currently calls the repository's otherwise-unused `IsQuoteAllowed` helper. Those general GraphQL
+object projections therefore retain their legacy permissive quoteability default. Enforcing the per-note control requires
+a separately designed read/enforcement path with explicit missing-row semantics; this remediation does not fabricate one.
+
 ---
 
 ## P1 — Defense-in-depth: No CSP on HTML responses
