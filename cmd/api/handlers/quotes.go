@@ -114,7 +114,9 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *apptheory.Context) (*apptheory.
 		ownedByUser = quote.QuoterID == common.GenerateActorID(h.cfg.Domain, username)
 	}
 	if !ownedByUser {
-		return common.RespondNotAuthorizedToDelete(ctx, "quote")
+		// Do not disclose that a quote relationship exists when the caller does
+		// not own it; missing and non-owned relationships share one response.
+		return common.RespondNotFound(ctx, "quote")
 	}
 
 	// Delete the quote relationship

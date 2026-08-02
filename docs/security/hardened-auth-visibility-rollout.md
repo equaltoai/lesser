@@ -50,6 +50,8 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
 - The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
   `GET` handlers remain **501 Not Implemented** pending persistence. `createQuoteBoostLift` marks the future enforcement
   hook at its `Quoteable: true` assignment; that hook must consult `QuotePermissions.IsAllowed` when storage lands.
+- Quote deletion deliberately returns the same **404 Not Found** response for a missing relationship and one owned by a
+  different account, preventing ownership from becoming an existence oracle; successful owner deletion is unchanged.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
 - Direct messages are 1:1 in v1. `POST /api/v1/statuses` with `visibility=direct` must include exactly one resolvable
   local or remote `@mention`; group DMs are not accepted.

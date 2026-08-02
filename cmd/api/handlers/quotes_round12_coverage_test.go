@@ -266,8 +266,8 @@ func TestDeleteQuoteAcceptsOnlyCanonicalOrLegacyOwnerIdentity(t *testing.T) {
 		want     int
 	}{
 		{name: "production actor URI owner", quoterID: common.GenerateActorID(cfg.Domain, "alice"), want: http.StatusOK},
-		{name: "local actor URI non-owner", quoterID: common.GenerateActorID(cfg.Domain, "bob"), want: http.StatusForbidden},
-		{name: "remote actor URI", quoterID: "https://remote.example/users/alice", want: http.StatusForbidden},
+		{name: "local actor URI non-owner", quoterID: common.GenerateActorID(cfg.Domain, "bob"), want: http.StatusNotFound},
+		{name: "remote actor URI", quoterID: "https://remote.example/users/alice", want: http.StatusNotFound},
 		{name: "legacy bare username owner", quoterID: "alice", want: http.StatusOK},
 	}
 
@@ -290,6 +290,46 @@ func TestDeleteQuoteAcceptsOnlyCanonicalOrLegacyOwnerIdentity(t *testing.T) {
 			ctx.Params["quote_id"] = "q1"
 
 			requireStatus(t, tt.want)(handler.HandleDeleteQuotePostLift(ctx))
+		})
+	}
+}
+
+func TestDeleteQuoteReturnsUniformNotFoundForMissingAndNonOwner(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+
+	nonOwner := storagemodels.QuoteRelationship{
+		QuoterNoteID: "q1",
+		TargetNoteID: "s1",
+		QuoterID:     common.GenerateActorID(cfg.Domain, "bob"),
+		Timestamp:    time.Now().Add(-10 * time.Minute),
+	}
+	nonOwner.GenerateID()
+	require.NoError(t, nonOwner.UpdateKeys())
+
+	tests := []struct {
+		name          string
+		relationships []storagemodels.QuoteRelationship
+	}{
+		{name: "missing relationship"},
+		{name: "relationship owned by another account", relationships: []storagemodels.QuoteRelationship{nonOwner}},
+	}
+	var expectedBody []byte
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{quoteRelationships: tt.relationships})
+			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", headers, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = "s1"
+			ctx.Params["quote_id"] = "q1"
+
+			resp := requireStatus(t, http.StatusNotFound)(handler.HandleDeleteQuotePostLift(ctx))
+			if expectedBody == nil {
+				expectedBody = append([]byte(nil), resp.Body...)
+			}
+			require.Equal(t, expectedBody, resp.Body)
+			require.JSONEq(t, `{"error":"quote not found","error_code":"NOT_FOUND"}`, string(resp.Body))
 		})
 	}
 }
@@ -438,7 +478,7 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 		ctx.Params["id"] = "s1"
 		ctx.Params["quote_id"] = "q1"
 
-		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteQuotePostLift(ctx))
 
 		state2 := &round10QueryState{quoteRelationships: []storagemodels.QuoteRelationship{
 			func() storagemodels.QuoteRelationship {
