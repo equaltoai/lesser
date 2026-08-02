@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestQuoteService_checkQuotePermissions_CoversBranches(t *testing.T) {
+func TestQuoteService_CheckQuotePermissions_CoversBranches(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -24,7 +24,7 @@ func TestQuoteService_checkQuotePermissions_CoversBranches(t *testing.T) {
 			},
 		}
 		qs := &QuoteService{storage: fakeQuoteStorage{status: &fakeQuoteStatusRepo{}, quote: quoteRepo}, logger: zap.NewNop()}
-		ok, err := qs.checkQuotePermissions(ctx, "alice", target)
+		ok, err := qs.CheckQuotePermissions(ctx, "alice", target)
 		require.NoError(t, err)
 		require.False(t, ok)
 	})
@@ -36,7 +36,7 @@ func TestQuoteService_checkQuotePermissions_CoversBranches(t *testing.T) {
 			},
 		}
 		qs := &QuoteService{storage: fakeQuoteStorage{status: &fakeQuoteStatusRepo{}, quote: quoteRepo}, logger: zap.NewNop()}
-		ok, err := qs.checkQuotePermissions(ctx, "alice", target)
+		ok, err := qs.CheckQuotePermissions(ctx, "alice", target)
 		require.NoError(t, err)
 		require.True(t, ok)
 	})
@@ -48,7 +48,7 @@ func TestQuoteService_checkQuotePermissions_CoversBranches(t *testing.T) {
 			},
 		}
 		qs := &QuoteService{storage: fakeQuoteStorage{status: &fakeQuoteStatusRepo{}, quote: quoteRepo}, logger: zap.NewNop()}
-		ok, err := qs.checkQuotePermissions(ctx, "alice", target)
+		ok, err := qs.CheckQuotePermissions(ctx, "alice", target)
 		require.NoError(t, err)
 		require.False(t, ok)
 	})
@@ -60,7 +60,7 @@ func TestQuoteService_checkQuotePermissions_CoversBranches(t *testing.T) {
 			},
 		}
 		qs := &QuoteService{storage: fakeQuoteStorage{status: &fakeQuoteStatusRepo{}, quote: quoteRepo}, logger: zap.NewNop()}
-		ok, err := qs.checkQuotePermissions(ctx, "alice", target)
+		ok, err := qs.CheckQuotePermissions(ctx, "alice", target)
 		require.NoError(t, err)
 		require.False(t, ok)
 	})

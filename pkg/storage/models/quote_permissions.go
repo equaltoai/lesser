@@ -41,7 +41,7 @@ func (q *QuotePermissions) GetSK() string {
 
 // IsAllowed checks if a given user is allowed to quote based on permissions.
 // Account-level permissions are persisted by the GraphQL updateAccountQuotePermissions mutation. The GraphQL quote
-// path enforces the equivalent predicate in QuoteService.checkQuotePermissions; REST quote creation must do the same.
+// path enforces the equivalent predicate in QuoteService.CheckQuotePermissions; REST quote creation must do the same.
 func (q *QuotePermissions) IsAllowed(quoterUsername string, isFollower bool, isMentioned bool) bool {
 	// Check if user is in block list
 	for _, blocked := range q.BlockList {

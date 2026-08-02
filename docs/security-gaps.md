@@ -334,7 +334,7 @@ content.
 
 ## P1 — Privacy leak: GraphQL `accountQuotePermissions` exposes `blockList` publicly
 
-**Status:** fixed; REST enforcement follow-up in progress
+**Status:** fixed
 **Confidence:** 9/10
 
 Account-level quote permissions are live: the authenticated GraphQL mutation `updateAccountQuotePermissions` persists
@@ -345,8 +345,8 @@ their REST implementation genuinely does not exist; they do not fabricate or per
 The authenticated GraphQL `accountQuotePermissions(username: ...)` read also returns a not-implemented error for every
 target. It fails closed without fabricating defaults while a real read is pending an explicit authorization decision:
 whether an account owner, another viewer, or both may read the raw block list is a product decision, not a safe default.
-The REST quote-creation twin must use the same account-level enforcement as the GraphQL quote path; the next remediation
-commit closes that asymmetry.
+The REST quote-creation twin now uses the same account-level `QuoteService.CheckQuotePermissions` predicate and maps its
+denial and storage-error classes into the established REST error contract.
 
 ---
 

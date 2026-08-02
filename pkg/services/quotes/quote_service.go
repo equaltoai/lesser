@@ -102,7 +102,7 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 	}
 
 	// Check quote permissions
-	canQuote, err := qs.checkQuotePermissions(ctx, req.QuoterUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, req.QuoterUsername, targetStatus)
 	if err != nil {
 		qs.logger.Error("failed to check quote permissions",
 			zap.String("quoter", req.QuoterUsername),
@@ -182,7 +182,7 @@ func (qs *QuoteService) AttachQuoteToStatus(ctx context.Context, quoteStatus *mo
 		return nil, ErrTargetStatusNotQuotable
 	}
 
-	canQuote, err := qs.checkQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
 	if err != nil {
 		return nil, ErrCheckQuotePermissions(err)
 	}
@@ -398,7 +398,8 @@ func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	return common.IsPubliclyVisible(status.Visibility)
 }
 
-func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+// CheckQuotePermissions applies the account-level quote predicate shared by every quote-creation surface.
+func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
 	// Get quote permissions for the target status author
 	permissions, err := qs.GetQuotePermissions(ctx, targetStatus.AuthorUsername)
 	if err != nil {
