@@ -1763,15 +1763,11 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx context.Context, re
 		}
 		h.appendStreamEvent(ctx, requestID, streaming.PublicLocalStream, "delete", objectID)
 
-		// Public actor streams mirror create fanout: only public objects from a
-		// local author may reach the anonymous per-actor key. Older tombstones may
-		// lack AttributedTo, so use the authorized deleter as a compatibility
-		// fallback while keeping missing IsPublic fail-closed.
+		// Public actor streams mirror create fanout: only public objects with an
+		// explicitly recorded local author may reach the anonymous per-actor key.
+		// DeletedBy identifies the deleter and is never an author fallback.
 		if tombstone.IsPublic {
 			authorID := strings.TrimSpace(tombstone.AttributedTo)
-			if authorID == "" {
-				authorID = strings.TrimSpace(tombstone.DeletedBy)
-			}
 			if h.isLocalActorID(authorID) {
 				username, err := common.ActorUsernameFromID(authorID)
 				if err != nil {
@@ -1786,7 +1782,6 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx context.Context, re
 							zap.String("stream", actorStream),
 							zap.Error(err))
 					}
-					h.appendStreamEvent(ctx, requestID, actorStream, "delete", objectID)
 				}
 			}
 		}

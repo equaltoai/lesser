@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -110,9 +113,10 @@ func TestPublicActorDeletionFanoutRequiresPublicLocalAuthor(t *testing.T) {
 		streamingRepo: streamRepo,
 		accountRepo:   fakeFollowerRepo{},
 		statusRepo: fakeStatusRepo{statusByID: map[string]*models.Status{
-			"local-public":  {StatusID: "local-public"},
-			"local-private": {StatusID: "local-private"},
-			"remote-public": {StatusID: "remote-public"},
+			"local-public":   {StatusID: "local-public"},
+			"local-private":  {StatusID: "local-private"},
+			"remote-public":  {StatusID: "remote-public"},
+			"missing-author": {StatusID: "missing-author"},
 		}},
 		domain: "example.com",
 	}
@@ -131,9 +135,25 @@ func TestPublicActorDeletionFanoutRequiresPublicLocalAuthor(t *testing.T) {
 	localPrivate := newTombstoneRecord("local-private", "https://example.com/users/alice", false, deletedAt)
 	require.NoError(t, handler.processTombstoneEvent(context.Background(), "local-private", localPrivate))
 	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
+
+	// DeletedBy identifies the deleter, not necessarily the author. A public
+	// tombstone without attribution must not guess an actor stream from it.
+	missingAuthor := newTombstoneRecordWithActors(
+		"missing-author",
+		"",
+		"https://example.com/users/alice",
+		true,
+		deletedAt,
+	)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "missing-author", missingAuthor))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
 }
 
 func newTombstoneRecord(id, authorID string, isPublic bool, deletedAt time.Time) events.DynamoDBEventRecord {
+	return newTombstoneRecordWithActors(id, authorID, authorID, isPublic, deletedAt)
+}
+
+func newTombstoneRecordWithActors(id, attributedTo, deletedBy string, isPublic bool, deletedAt time.Time) events.DynamoDBEventRecord {
 	return events.DynamoDBEventRecord{
 		EventID:   "tombstone-" + id,
 		EventName: eventNameInsert,
@@ -142,11 +162,41 @@ func newTombstoneRecord(id, authorID string, isPublic bool, deletedAt time.Time)
 			"type":         events.NewStringAttribute("Tombstone"),
 			"formerType":   events.NewStringAttribute("Note"),
 			"deleted":      events.NewStringAttribute(deletedAt.Format(time.RFC3339)),
-			"deletedBy":    events.NewStringAttribute(authorID),
-			"attributedTo": events.NewStringAttribute(authorID),
+			"deletedBy":    events.NewStringAttribute(deletedBy),
+			"attributedTo": events.NewStringAttribute(attributedTo),
 			"isPublic":     events.NewBooleanAttribute(isPublic),
 		}},
 	}
+}
+
+func TestPublicActorDeletionDoesNotWriteUnconsumableSSEEvent(t *testing.T) {
+	t.Setenv("STREAM_EVENTS_TABLE_NAME", "stream-events")
+
+	db := new(dynamormmocks.MockDB)
+	query := new(dynamormmocks.MockQuery)
+	db.On("WithContext", mock.Anything).Return(db).Twice()
+	db.On("Model", mock.Anything).Return(query).Twice()
+	query.On("Create").Return(nil).Twice()
+
+	handler := &StreamRouterHandler{
+		logger:         zap.NewNop(),
+		apiClient:      &fakeStreamerClient{},
+		streamingRepo:  &fakeStreamRepo{},
+		statusRepo:     fakeStatusRepo{statusByID: map[string]*models.Status{"local-public": {StatusID: "local-public"}}},
+		streamEventLog: streaming.NewStreamEventLog(db, time.Hour),
+		domain:         "example.com",
+	}
+	tombstone := &models.Tombstone{
+		ID:           "local-public",
+		FormerType:   activitypub.NoteType,
+		AttributedTo: "https://example.com/users/alice",
+		DeletedBy:    "https://example.com/users/alice",
+		IsPublic:     true,
+	}
+
+	require.NoError(t, handler.broadcastDeletionToStreams(context.Background(), "sse-delete", tombstone, StreamMessage{}))
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
 }
 
 func statusRecordWithVisibility(record events.DynamoDBEventRecord, visibility string) events.DynamoDBEventRecord {
