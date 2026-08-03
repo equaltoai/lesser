@@ -177,28 +177,36 @@ func TestReplyParentResolver_ResolveReplyParent(t *testing.T) {
 	})
 
 	t.Run("rejects fetched remote parent attributed to a local actor", func(t *testing.T) {
-		parentURL := "https://evil.example/objects/forged-parent"
-		statusRepo := &stubStatusRepo{}
-		objectRepo := &stubObjectRepo{}
-		forged := remoteNoteObject(parentURL, models.VisibilityPublic)
-		forged["attributedTo"] = "https://example.com/users/alice"
-		resolver := NewReplyParentResolver(
-			statusRepo,
-			objectRepo,
-			&stubDomainBlockRepo{},
-			&stubFetcher{obj: forged},
-			"example.com",
-			zap.NewNop(),
-		)
+		for _, attributedTo := range []string{
+			"https://example.com/users/alice",
+			"https://example.com/users/alice?x=1",
+			"https://example.com/foo/alice",
+		} {
+			t.Run(attributedTo, func(t *testing.T) {
+				parentURL := "https://evil.example/objects/forged-parent"
+				statusRepo := &stubStatusRepo{}
+				objectRepo := &stubObjectRepo{}
+				forged := remoteNoteObject(parentURL, models.VisibilityPublic)
+				forged["attributedTo"] = attributedTo
+				resolver := NewReplyParentResolver(
+					statusRepo,
+					objectRepo,
+					&stubDomainBlockRepo{},
+					&stubFetcher{obj: forged},
+					"example.com",
+					zap.NewNop(),
+				)
 
-		_, err := resolver.ResolveReplyParent(context.Background(), localAuthorAccount("alice"), parentURL, models.VisibilityPublic)
-		require.Error(t, err)
-		appErr, ok := commonerrors.AsAppError(err)
-		require.True(t, ok)
-		assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, appErr.Code)
-		assert.Empty(t, objectRepo.created)
-		assert.Empty(t, statusRepo.byID)
-		assert.Empty(t, statusRepo.byURL)
+				_, err := resolver.ResolveReplyParent(context.Background(), localAuthorAccount("alice"), parentURL, models.VisibilityPublic)
+				require.Error(t, err)
+				appErr, ok := commonerrors.AsAppError(err)
+				require.True(t, ok)
+				assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, appErr.Code)
+				assert.Empty(t, objectRepo.created)
+				assert.Empty(t, statusRepo.byID)
+				assert.Empty(t, statusRepo.byURL)
+			})
+		}
 	})
 
 	t.Run("timeout maps to 408", func(t *testing.T) {

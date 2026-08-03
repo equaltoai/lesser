@@ -576,7 +576,7 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 				"id":           noteID,
 				"type":         activitypub.NoteType,
 				"content":      "forged local author",
-				"attributedTo": env.local.ID,
+				"attributedTo": env.local.ID + "?x=1",
 				"to":           []any{activitypub.PublicAddress},
 			},
 		}

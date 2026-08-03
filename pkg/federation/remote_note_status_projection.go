@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -14,7 +15,13 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 	if note == nil {
 		return nil
 	}
-	if remoteNoteAttributionIsLocal(note.AttributedTo, localDomain) {
+	local := remoteNoteLocalDomain(localDomain)
+	if local == "" {
+		// Fail closed: a projection with no valid local domain anchor is never
+		// safe, because the local-author rejection below cannot be evaluated.
+		return nil
+	}
+	if remoteNoteAttributionIsLocal(note.AttributedTo, local) {
 		return nil
 	}
 	statusID := models.CanonicalStatusIDForDomain(note.ID, localDomain)
@@ -41,20 +48,30 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 	return status
 }
 
-// remoteNoteAttributionIsLocal applies the canonical actor-URL rules used by
-// inbox origin binding before comparing the attributed actor's host with this
-// instance. Remote projection is never a valid entry point for local actors.
-func remoteNoteAttributionIsLocal(attributedTo, localDomain string) bool {
-	canonicalActorID, err := common.CanonicalActorID(attributedTo)
-	if err != nil {
-		return false
-	}
-	if _, err := common.ActorUsernameFromID(canonicalActorID); err != nil {
-		return false
-	}
+// remoteNoteAttributionIsLocal compares the attributed actor's host with this
+// instance using the same lenient host extraction the fanout consumers apply
+// (url.Parse host, case-insensitive, agnostic to path shape, query, fragment,
+// userinfo, and port). Guard and consumer must agree by construction: any
+// actor ID the stream router treats as local must be rejected here. Remote
+// actors with non-canonical path shapes (/profile/<name>, /actor, etc.) still
+// project — their host is not local, so they cannot reach local stream keys.
+func remoteNoteAttributionIsLocal(attributedTo, normalizedLocalDomain string) bool {
+	actorDomain := normalizeActorDomain(common.ExtractDomainFromActorID(strings.TrimSpace(attributedTo)))
+	return actorDomain != "" && actorDomain == normalizedLocalDomain
+}
 
-	actorDomain := normalizeActorDomain(common.ExtractDomainFromActorID(canonicalActorID))
-	return actorDomain != "" && actorDomain == normalizeActorDomain(localDomain)
+// remoteNoteLocalDomain normalizes the configured local domain (with or
+// without scheme) and fails closed on any value that cannot be a valid host.
+func remoteNoteLocalDomain(localDomain string) string {
+	local := normalizeActorDomain(localDomain)
+	if local == "" {
+		return ""
+	}
+	u, err := url.Parse("https://" + local)
+	if err != nil || u.Hostname() != local {
+		return ""
+	}
+	return local
 }
 
 func remoteStatusAuthorUsername(note *activitypub.Note, localDomain string) string {
