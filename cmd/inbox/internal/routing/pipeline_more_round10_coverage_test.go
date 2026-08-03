@@ -723,6 +723,43 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
 	})
 
+	t.Run("update note validation rejects malformed id independently of attribution guard", func(t *testing.T) {
+		noteID := "not-an-activitypub-url"
+		objectRepo := inmemory.NewObjectRepository()
+		require.NoError(t, objectRepo.CreateObject(ctx, &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: noteID, Type: activitypub.NoteType},
+			AttributedTo: env.remoteActorID,
+			Content:      "before",
+		}))
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/update-malformed-note-id"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "after",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.Error(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Empty(t, statusRepo.updated)
+		require.Empty(t, statusRepo.created)
+		stored, err := objectRepo.GetObject(ctx, noteID)
+		require.NoError(t, err)
+		storedNote, ok := stored.(*activitypub.Note)
+		require.True(t, ok)
+		require.Equal(t, "before", storedNote.Content)
+		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
+	})
+
 	t.Run("update note preserves tombstone metadata", func(t *testing.T) {
 		noteID := "https://remote.example/users/bob/statuses/update-deleted-123"
 		deletedAt := time.Date(2025, 12, 28, 11, 0, 0, 0, time.UTC)
