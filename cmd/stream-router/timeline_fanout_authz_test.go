@@ -82,7 +82,11 @@ func TestBuildWebSocketStatusStreamsKeepsAnonymousAndPrivateKeysDisjoint(t *test
 
 	remoteStatus := publicStatus
 	remoteStatus.AuthorID = "https://remote.example/users/alice"
-	remoteStatus.AuthorUsername = "alice@remote.example"
+	// Remote status projection stores the bare actor-path username, so a remote
+	// alice collides with local alice unless AuthorID locality remains in the
+	// authorization guard.
+	remoteStatus.AuthorUsername = "alice"
+	require.Equal(t, publicStatus.AuthorUsername, remoteStatus.AuthorUsername)
 	remoteStreams := handler.buildWebSocketStatusStreams(&remoteStatus)
 	require.Contains(t, remoteStreams, streaming.PublicRemoteStream)
 	require.NotContains(t, remoteStreams, streaming.PublicLocalStream)
