@@ -125,7 +125,7 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 		AgentCapabilities: &agents.Capabilities{
 			RequiresApproval: true,
 		},
-	}, nil).Once()
+	}, nil).Twice()
 
 	resolver := &mutationResolver{&Resolver{
 		Config:  &config.Config{Domain: "example.com"},
@@ -143,7 +143,7 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 		TriggerType:     &triggerType,
 		TriggerDetails:  &triggerDetails,
 		MemoryCitations: []string{"status-1", "status-1"},
-	})
+	}, auth.DelegationContentClassNote)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Equal(t, "mention", got.TriggerType)
@@ -159,5 +159,19 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 	require.Equal(t, agents.DroneContinuityStatePlanned, got.ContinuityState)
 	require.Contains(t, got.ContinuitySummary, "@agent")
 	require.Equal(t, "Graduating", got.ModerationLabel)
+	require.Empty(t, got.ApprovedBy)
+
+	verified, err := resolver.buildAgentPostAttribution(context.Background(), &auth.Claims{
+		Username:               "agent",
+		IsAgent:                true,
+		DelegatedBy:            "@owner",
+		Scopes:                 []string{"write"},
+		DelegationPrincipal:    "owner",
+		DelegationAgent:        "agent",
+		DelegationContentClass: auth.DelegationContentClassNote,
+	}, nil, auth.DelegationContentClassNote)
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/users/owner", verified.DelegatedBy)
+	require.Equal(t, "https://example.com/users/owner", verified.ApprovedBy)
 	mockUserRepo.AssertExpectations(t)
 }

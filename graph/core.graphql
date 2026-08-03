@@ -155,6 +155,7 @@ type AgentPostAttribution {
   triggerDetails: String
   memoryCitations: [String!]
   delegatedBy: String
+  approvedBy: String
   delegatedByDid: String
   scopes: [String!]
   constraints: [String!]
@@ -172,12 +173,6 @@ input AgentPostAttributionInput {
   triggerType: String
   triggerDetails: String
   memoryCitations: [String!]
-  delegatedBy: String
-  delegatedByDid: String
-  scopes: [String!]
-  constraints: [String!]
-  schemaVersion: String
-  modelId: String
 }
 
 type ContentMap {

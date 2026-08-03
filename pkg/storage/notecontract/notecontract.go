@@ -124,6 +124,7 @@ type persistedAgentPostAttribution struct {
 	TriggerDetails  string   `json:"TriggerDetails,omitempty"`
 	MemoryCitations []string `json:"MemoryCitations,omitempty"`
 	DelegatedBy     string   `json:"DelegatedBy,omitempty"`
+	ApprovedBy      string   `json:"ApprovedBy,omitempty"`
 	DelegatedByDID  string   `json:"DelegatedByDID,omitempty"`
 	Scopes          []string `json:"Scopes,omitempty"`
 	Constraints     []string `json:"Constraints,omitempty"`
@@ -205,6 +206,7 @@ func persistedNoteFromActivityPub(note *activitypub.Note) persistedNote {
 			TriggerDetails:  note.AgentAttribution.TriggerDetails,
 			MemoryCitations: append([]string(nil), note.AgentAttribution.MemoryCitations...),
 			DelegatedBy:     note.AgentAttribution.DelegatedBy,
+			ApprovedBy:      note.AgentAttribution.ApprovedBy,
 			DelegatedByDID:  note.AgentAttribution.DelegatedByDID,
 			Scopes:          append([]string(nil), note.AgentAttribution.Scopes...),
 			Constraints:     append([]string(nil), note.AgentAttribution.Constraints...),
@@ -285,6 +287,7 @@ func (p persistedNote) toActivityPub() *activitypub.Note {
 			TriggerDetails:  p.AgentAttribution.TriggerDetails,
 			MemoryCitations: append([]string(nil), p.AgentAttribution.MemoryCitations...),
 			DelegatedBy:     p.AgentAttribution.DelegatedBy,
+			ApprovedBy:      p.AgentAttribution.ApprovedBy,
 			DelegatedByDID:  p.AgentAttribution.DelegatedByDID,
 			Scopes:          append([]string(nil), p.AgentAttribution.Scopes...),
 			Constraints:     append([]string(nil), p.AgentAttribution.Constraints...),

@@ -707,6 +707,7 @@ type ComplexityRoot struct {
 	}
 
 	AgentPostAttribution struct {
+		ApprovedBy        func(childComplexity int) int
 		Constraints       func(childComplexity int) int
 		ContinuityState   func(childComplexity int) int
 		ContinuitySummary func(childComplexity int) int
@@ -6991,6 +6992,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AgentMCPAccess.Scopes(childComplexity), true
+
+	case "AgentPostAttribution.approvedBy":
+		if e.complexity.AgentPostAttribution.ApprovedBy == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.ApprovedBy(childComplexity), true
 
 	case "AgentPostAttribution.constraints":
 		if e.complexity.AgentPostAttribution.Constraints == nil {
@@ -47859,6 +47867,47 @@ func (ec *executionContext) _AgentPostAttribution_delegatedBy(ctx context.Contex
 }
 
 func (ec *executionContext) fieldContext_AgentPostAttribution_delegatedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_approvedBy(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_approvedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ApprovedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_approvedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AgentPostAttribution",
 		Field:      field,
@@ -106137,6 +106186,8 @@ func (ec *executionContext) fieldContext_Object_agentAttribution(_ context.Conte
 				return ec.fieldContext_AgentPostAttribution_memoryCitations(ctx, field)
 			case "delegatedBy":
 				return ec.fieldContext_AgentPostAttribution_delegatedBy(ctx, field)
+			case "approvedBy":
+				return ec.fieldContext_AgentPostAttribution_approvedBy(ctx, field)
 			case "delegatedByDid":
 				return ec.fieldContext_AgentPostAttribution_delegatedByDid(ctx, field)
 			case "scopes":
@@ -154809,7 +154860,7 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations", "delegatedBy", "delegatedByDid", "scopes", "constraints", "schemaVersion", "modelId"}
+	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -154837,48 +154888,6 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 				return it, err
 			}
 			it.MemoryCitations = data
-		case "delegatedBy":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedBy"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.DelegatedBy = data
-		case "delegatedByDid":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedByDid"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.DelegatedByDid = data
-		case "scopes":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scopes"))
-			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Scopes = data
-		case "constraints":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("constraints"))
-			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Constraints = data
-		case "schemaVersion":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("schemaVersion"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.SchemaVersion = data
-		case "modelId":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelId"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.ModelID = data
 		}
 	}
 
@@ -165290,6 +165299,8 @@ func (ec *executionContext) _AgentPostAttribution(ctx context.Context, sel ast.S
 			out.Values[i] = ec._AgentPostAttribution_memoryCitations(ctx, field, obj)
 		case "delegatedBy":
 			out.Values[i] = ec._AgentPostAttribution_delegatedBy(ctx, field, obj)
+		case "approvedBy":
+			out.Values[i] = ec._AgentPostAttribution_approvedBy(ctx, field, obj)
 		case "delegatedByDid":
 			out.Values[i] = ec._AgentPostAttribution_delegatedByDid(ctx, field, obj)
 		case "scopes":

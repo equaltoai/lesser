@@ -252,16 +252,19 @@ func PrincipalFromClaims(claims *Claims) *apptheory.AuthPrincipal {
 		Identity: principalIdentityFromClaims(claims),
 		Scopes:   append([]string(nil), claims.Scopes...),
 		Claims: map[string]any{
-			principalClaimsRawKey: claims,
-			"username":            claims.GetUsername(),
-			"client_id":           claims.ClientID,
-			"client_class":        claims.ClientClass,
-			"session_id":          claims.SessionID,
-			"agent_session_id":    claims.AgentSessionID,
-			"is_agent":            claims.IsAgent,
-			"agent_type":          claims.AgentType,
-			"delegated_by":        claims.DelegatedBy,
-			"subject":             strings.TrimSpace(claims.Subject),
+			principalClaimsRawKey:      claims,
+			"username":                 claims.GetUsername(),
+			"client_id":                claims.ClientID,
+			"client_class":             claims.ClientClass,
+			"session_id":               claims.SessionID,
+			"agent_session_id":         claims.AgentSessionID,
+			"is_agent":                 claims.IsAgent,
+			"agent_type":               claims.AgentType,
+			"delegated_by":             claims.DelegatedBy,
+			"delegation_principal":     claims.DelegationPrincipal,
+			"delegation_agent":         claims.DelegationAgent,
+			"delegation_content_class": claims.DelegationContentClass,
+			"subject":                  strings.TrimSpace(claims.Subject),
 		},
 	}
 }
@@ -433,6 +436,15 @@ func claimsFromPrincipal(principal *apptheory.AuthPrincipal) *Claims {
 	}
 	if delegatedBy, ok := principal.Claims["delegated_by"].(string); ok {
 		claims.DelegatedBy = delegatedBy
+	}
+	if delegationPrincipal, ok := principal.Claims["delegation_principal"].(string); ok {
+		claims.DelegationPrincipal = delegationPrincipal
+	}
+	if delegationAgent, ok := principal.Claims["delegation_agent"].(string); ok {
+		claims.DelegationAgent = delegationAgent
+	}
+	if delegationContentClass, ok := principal.Claims["delegation_content_class"].(string); ok {
+		claims.DelegationContentClass = delegationContentClass
 	}
 	if subject, ok := principal.Claims["subject"].(string); ok {
 		claims.Subject = subject

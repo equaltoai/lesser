@@ -35,6 +35,8 @@ var (
 	ErrInvalidScope = errors.New("invalid_scope")
 	// ErrInvalidAPIKey is returned when the API key is invalid
 	ErrInvalidAPIKey = errors.New("invalid_api_key")
+	// ErrInvalidDelegationCredential is returned when a scoped delegation claim set is incomplete or mismatched.
+	ErrInvalidDelegationCredential = errors.New("invalid_delegation_credential")
 )
 
 // Scopes define the permissions that can be granted
@@ -73,6 +75,12 @@ const (
 	ClientClassOperator = "operator"
 )
 
+// Delegation content classes bind a principal approval to one server-recognized publishing surface.
+const (
+	DelegationContentClassNote          = "note"
+	DelegationContentClassDirectMessage = "direct_message"
+)
+
 // AgentAccessTokenTTL returns the configured default lifetime for agent access tokens.
 // When no agent-specific override is configured, Lesser falls back to the shared OAuth default.
 func AgentAccessTokenTTL(cfg *config.Config) time.Duration {
@@ -102,6 +110,19 @@ type Claims struct {
 	AgentType      string `json:"agent_type,omitempty"`
 	DelegatedBy    string `json:"delegated_by,omitempty"`
 	AgentSessionID string `json:"agent_session_id,omitempty"`
+
+	// Scoped delegation attestation. These claims are minted only by Lesser's delegated-agent
+	// endpoint and are covered by the access token signature and registered expiry.
+	DelegationPrincipal    string `json:"delegation_principal,omitempty"`
+	DelegationAgent        string `json:"delegation_agent,omitempty"`
+	DelegationContentClass string `json:"delegation_content_class,omitempty"`
+}
+
+// DelegationCredentialClaims contains the server-validated binding added to a delegated access token.
+type DelegationCredentialClaims struct {
+	Principal    string
+	Agent        string
+	ContentClass string
 }
 
 // OAuthService handles OAuth 2.0 operations
@@ -340,6 +361,30 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContext(ctx cont
 
 // GenerateTokensWithAccessTokenTTLAndClientContextAndAudience generates tokens with explicit client context and JWT audience.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID, audience string) (accessToken, refreshToken string, err error) {
+	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{})
+}
+
+// GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation extends Lesser's existing signed
+// OAuth access-token mechanism with an optional, server-minted content-class delegation binding.
+func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID string,
+	delegation DelegationCredentialClaims,
+) (accessToken, refreshToken string, err error) {
+	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "", delegation)
+}
+
+func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelegation(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience string,
+	delegation DelegationCredentialClaims,
+) (accessToken, refreshToken string, err error) {
 	if accessTokenTTL <= 0 {
 		accessTokenTTL = AccessTokenDuration
 	}
@@ -355,15 +400,18 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudien
 	}
 
 	accessToken, err = s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
-		ExpiresAt:      time.Now().Add(accessTokenTTL),
-		IPAddress:      ipAddress,
-		SessionID:      effectiveSessionID,
-		ClientClass:    clientClass,
-		Audience:       audience,
-		IsAgent:        isAgent,
-		AgentType:      agentType,
-		DelegatedBy:    delegatedBy,
-		AgentSessionID: agentSessionID,
+		ExpiresAt:              time.Now().Add(accessTokenTTL),
+		IPAddress:              ipAddress,
+		SessionID:              effectiveSessionID,
+		ClientClass:            clientClass,
+		Audience:               audience,
+		IsAgent:                isAgent,
+		AgentType:              agentType,
+		DelegatedBy:            delegatedBy,
+		AgentSessionID:         agentSessionID,
+		DelegationPrincipal:    strings.TrimSpace(delegation.Principal),
+		DelegationAgent:        strings.TrimSpace(delegation.Agent),
+		DelegationContentClass: strings.TrimSpace(delegation.ContentClass),
 	})
 	if err != nil {
 		if s.auditLogger != nil {
@@ -396,10 +444,13 @@ type accessTokenMetadata struct {
 	ExpiresAt    time.Time
 	Audience     string
 
-	IsAgent        bool
-	AgentType      string
-	DelegatedBy    string
-	AgentSessionID string
+	IsAgent                bool
+	AgentType              string
+	DelegatedBy            string
+	AgentSessionID         string
+	DelegationPrincipal    string
+	DelegationAgent        string
+	DelegationContentClass string
 
 	ClientClass string
 }
@@ -421,19 +472,22 @@ func (s *OAuthService) generateAccessTokenWithMetadata(username, clientID string
 			// Add unique JTI for token tracking
 			ID: generateSecureJTI(),
 		},
-		Username:       username,
-		ClientID:       clientID,
-		Scopes:         scopes,
-		ClientClass:    meta.ClientClass,
-		SessionID:      meta.SessionID,
-		DeviceID:       meta.DeviceID,
-		TokenVersion:   meta.TokenVersion,
-		IPAddress:      meta.IPAddress,
-		UserAgent:      meta.UserAgent,
-		IsAgent:        meta.IsAgent,
-		AgentType:      meta.AgentType,
-		DelegatedBy:    meta.DelegatedBy,
-		AgentSessionID: meta.AgentSessionID,
+		Username:               username,
+		ClientID:               clientID,
+		Scopes:                 scopes,
+		ClientClass:            meta.ClientClass,
+		SessionID:              meta.SessionID,
+		DeviceID:               meta.DeviceID,
+		TokenVersion:           meta.TokenVersion,
+		IPAddress:              meta.IPAddress,
+		UserAgent:              meta.UserAgent,
+		IsAgent:                meta.IsAgent,
+		AgentType:              meta.AgentType,
+		DelegatedBy:            meta.DelegatedBy,
+		AgentSessionID:         meta.AgentSessionID,
+		DelegationPrincipal:    meta.DelegationPrincipal,
+		DelegationAgent:        meta.DelegationAgent,
+		DelegationContentClass: meta.DelegationContentClass,
 	}
 	if audience := strings.TrimSpace(meta.Audience); audience != "" {
 		claims.Audience = jwt.ClaimStrings{audience}
@@ -452,6 +506,55 @@ func normalizeDelegatedBy(value string) string {
 		return trimmed
 	}
 	return "@" + trimmed
+}
+
+// NormalizeDelegationContentClass accepts only Lesser's server-recognized attestation scopes.
+func NormalizeDelegationContentClass(value string) (string, error) {
+	contentClass := strings.ToLower(strings.TrimSpace(value))
+	switch contentClass {
+	case "":
+		return "", nil
+	case DelegationContentClassNote, DelegationContentClassDirectMessage:
+		return contentClass, nil
+	default:
+		return "", ErrInvalidDelegationCredential
+	}
+}
+
+func delegationIdentity(value string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
+}
+
+// ValidateDelegationAttestation validates the complete signed claim binding for a publishing
+// operation. A token with no scoped binding is a legacy credential and returns present=false.
+// Any partial or mismatched binding fails closed.
+func ValidateDelegationAttestation(claims *Claims, requiredContentClass string) (principal string, present bool, err error) {
+	if claims == nil {
+		return "", false, nil
+	}
+
+	rawPrincipal := strings.TrimSpace(claims.DelegationPrincipal)
+	rawAgent := strings.TrimSpace(claims.DelegationAgent)
+	rawClass := strings.TrimSpace(claims.DelegationContentClass)
+	if rawPrincipal == "" && rawAgent == "" && rawClass == "" {
+		return "", false, nil
+	}
+	if rawPrincipal == "" || rawAgent == "" || rawClass == "" || !claims.IsAgent {
+		return "", true, ErrInvalidDelegationCredential
+	}
+
+	contentClass, classErr := NormalizeDelegationContentClass(rawClass)
+	requiredClass, requiredErr := NormalizeDelegationContentClass(requiredContentClass)
+	if classErr != nil || requiredErr != nil || requiredClass == "" || contentClass != requiredClass {
+		return "", true, ErrInvalidDelegationCredential
+	}
+	if !strings.EqualFold(rawAgent, strings.TrimSpace(claims.Username)) ||
+		delegationIdentity(rawPrincipal) == "" ||
+		delegationIdentity(rawPrincipal) != delegationIdentity(claims.DelegatedBy) {
+		return "", true, ErrInvalidDelegationCredential
+	}
+
+	return normalizeDelegatedBy(rawPrincipal), true, nil
 }
 
 func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string) (bool, string, string) {

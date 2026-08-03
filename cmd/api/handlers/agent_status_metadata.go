@@ -164,6 +164,19 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
 	}
 	delegatedBy = h.normalizeDelegatedByActorURI(delegatedBy)
+	contentClass := auth.DelegationContentClassNote
+	if strings.EqualFold(strings.TrimSpace(req.Visibility), "direct") {
+		contentClass = auth.DelegationContentClassDirectMessage
+	}
+	approvedBy, _, attestationErr := auth.ValidateDelegationAttestation(claims, contentClass)
+	if attestationErr != nil {
+		resp, respErr := common.RespondForbidden(ctx, "delegation credential is not valid for this post")
+		return nil, resp, respErr
+	}
+	approvedBy = h.normalizeDelegatedByActorURI(approvedBy)
+	if approvedBy != "" {
+		delegatedBy = approvedBy
+	}
 
 	modelID := strings.TrimSpace(agentUser.AgentVersion)
 	if modelID == "" {
@@ -175,6 +188,7 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 		TriggerDetails:  triggerDetails,
 		MemoryCitations: memoryCitations,
 		DelegatedBy:     delegatedBy,
+		ApprovedBy:      approvedBy,
 		Scopes:          append([]string(nil), claims.Scopes...),
 		Constraints:     buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
 		SchemaVersion:   activitypub.AgentAttributionSchemaVersion,

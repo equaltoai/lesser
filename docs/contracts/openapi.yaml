@@ -1184,6 +1184,8 @@ components:
                     type: string
                 bio:
                     type: string
+                content_class:
+                    type: string
                 device_label:
                     type: string
                 display_name:
@@ -1403,6 +1405,8 @@ components:
         AgentPostAttribution:
             additionalProperties: false
             properties:
+                approved_by:
+                    type: string
                 constraints:
                     items:
                         type: string
@@ -1435,6 +1439,18 @@ components:
                     type: array
                 soul_agent_id:
                     type: string
+                trigger_details:
+                    type: string
+                trigger_type:
+                    type: string
+            type: object
+        AgentPostAttributionInput:
+            additionalProperties: false
+            properties:
+                memory_citations:
+                    items:
+                        type: string
+                    type: array
                 trigger_details:
                     type: string
                 trigger_type:
@@ -2370,7 +2386,7 @@ components:
             properties:
                 agent_attribution:
                     anyOf:
-                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - $ref: '#/components/schemas/AgentPostAttributionInput'
                         - type: "null"
                 in_reply_to_id:
                     description: Reply parent reference. Accepts a local status ID or a canonical remote status URL. Canonical remote URLs are resolved locally first and materialized on the create path when needed. Direct replies remain conversations-owned.
@@ -7636,6 +7652,8 @@ components:
                                 anyOf:
                                     - additionalProperties: false
                                       properties:
+                                        approved_by:
+                                            type: string
                                         constraints:
                                             items:
                                                 type: string

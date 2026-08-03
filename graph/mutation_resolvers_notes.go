@@ -53,7 +53,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil && claims.IsAgent {
-		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution)
+		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution, auth.DelegationContentClassNote)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +155,7 @@ var allowedAgentAttributionTriggerTypes = map[string]struct{}{
 	"manual":        {},
 }
 
-func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims *auth.Claims, input *model.AgentPostAttributionInput) (*activitypub.AgentPostAttribution, error) {
+func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims *auth.Claims, input *model.AgentPostAttributionInput, contentClass string) (*activitypub.AgentPostAttribution, error) {
 	if claims == nil || !claims.IsAgent {
 		return nil, nil
 	}
@@ -205,6 +205,14 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
 	}
 	delegatedBy = r.normalizeDelegatedByActorURI(delegatedBy)
+	approvedBy, _, attestationErr := auth.ValidateDelegationAttestation(claims, contentClass)
+	if attestationErr != nil {
+		return nil, apperrors.NewAuthError(apperrors.CodeForbidden, "delegation credential is not valid for this post")
+	}
+	approvedBy = r.normalizeDelegatedByActorURI(approvedBy)
+	if approvedBy != "" {
+		delegatedBy = approvedBy
+	}
 
 	modelID := strings.TrimSpace(agentUser.AgentVersion)
 	if modelID == "" {
@@ -236,6 +244,7 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 		TriggerDetails:    triggerDetails,
 		MemoryCitations:   memoryCitations,
 		DelegatedBy:       delegatedBy,
+		ApprovedBy:        approvedBy,
 		Scopes:            append([]string(nil), claims.Scopes...),
 		Constraints:       buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
 		SchemaVersion:     activitypub.AgentAttributionSchemaVersion,

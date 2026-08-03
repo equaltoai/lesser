@@ -120,6 +120,7 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		req := apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
 			Scopes:        []string{"write:statuses"},
+			ContentClass:  auth.DelegationContentClassNote,
 		}
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, req)
@@ -131,6 +132,13 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.NotEmpty(t, out.Token.AccessToken)
 		require.Equal(t, "Bearer", out.Token.TokenType)
+		oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
+		claims, err := oauthService.ValidateAccessToken(out.Token.AccessToken)
+		require.NoError(t, err)
+		principal, present, err := auth.ValidateDelegationAttestation(claims, auth.DelegationContentClassNote)
+		require.NoError(t, err)
+		require.True(t, present)
+		require.Equal(t, "@owner", principal)
 	})
 
 	t.Run("registration disabled still allows delegating to existing agent", func(t *testing.T) {
@@ -240,8 +248,18 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 	h, _, _ := round11NewHandler(t, cfg, state)
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 
-	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin})
+	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin, auth.ScopeRead})
 	headers := map[string]string{"Authorization": "Bearer " + adminToken}
+
+	t.Run("admin cannot attest as the agent principal", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			Scopes:        []string{auth.ScopeRead},
+			ContentClass:  auth.DelegationContentClassNote,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
+	})
 
 	t.Run("update_policy", func(t *testing.T) {
 		req := apimodels.UpdateAdminAgentPolicyRequest{
@@ -359,7 +377,7 @@ func TestAgentFeaturesRound12_StatusAttributionAndMemoryEvents(t *testing.T) {
 	require.Nil(t, resp)
 	require.Equal(t, "orig1", req.InReplyToID)
 
-	req.AgentAttribution = &apimodels.AgentPostAttribution{
+	req.AgentAttribution = &apimodels.AgentPostAttributionInput{
 		TriggerType:    "mention",
 		TriggerDetails: "hello",
 		MemoryCitations: []string{
