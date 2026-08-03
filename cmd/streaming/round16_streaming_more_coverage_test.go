@@ -66,6 +66,11 @@ func TestResolveCanonicalStreamSubscription_Round16(t *testing.T) {
 	cases := []tc{
 		{name: "empty stream", conn: authed, stream: " ", wantCode: apperrors.CodeBadRequest},
 		{name: "public ok", conn: authed, stream: streaming.PublicStream, want: streaming.PublicStream},
+		{name: "public actor anonymous ok", conn: noAuth, stream: "public:actor:Alice", want: streaming.PublicActorStreamName("alice")},
+		{name: "public actor trims username", conn: authed, stream: "public:actor: alice ", want: streaming.PublicActorStreamName("alice")},
+		{name: "public actor missing username", conn: authed, stream: "public:actor:", wantCode: apperrors.CodeBadRequest},
+		{name: "public actor invalid username", conn: authed, stream: "public:actor:alice!", wantCode: apperrors.CodeBadRequest},
+		{name: "public actor extra segment", conn: authed, stream: "public:actor:alice:extra", wantCode: apperrors.CodeBadRequest},
 		{name: "public invalid suffix", conn: authed, stream: "public:unknown", wantCode: apperrors.CodeBadRequest},
 		{name: "hashtag missing tag", conn: authed, stream: "hashtag", wantCode: apperrors.CodeBadRequest},
 		{name: "hashtag empty tag", conn: authed, stream: "hashtag: ", wantCode: apperrors.CodeBadRequest},
