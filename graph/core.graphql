@@ -1471,7 +1471,8 @@ type UploadMediaPayload {
 type Subscription {
   # Activity streams
   activityStream(types: [ActivityType!]): Activity!
-  timelineUpdates(type: TimelineType!, actorId: ID, hashtag: String, listId: ID): Object!
+  # ACTOR uses a local actor username and publishes public statuses only.
+  timelineUpdates(type: TimelineType!, actorUsername: String, hashtag: String, listId: ID): Object!
   
   # Notification stream
   notificationStream(types: [String!]): Notification!

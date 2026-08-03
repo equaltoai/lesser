@@ -27,10 +27,10 @@ func TestValidateTimelineRoutingInputsFailsClosed(t *testing.T) {
 		wantField    string
 		wantMessage  string
 	}{
-		{name: "actor missing", timelineType: model.TimelineTypeActor, wantField: "actorId", wantMessage: "parameter required"},
-		{name: "actor blank", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &empty}, wantField: "actorId", wantMessage: "valid actor stream username"},
-		{name: "actor malformed", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &invalidActor}, wantField: "actorId", wantMessage: "valid actor stream username"},
-		{name: "actor extra hashtag", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &actor, hashtag: &hashtag}, wantField: "hashtag", wantMessage: "not allowed for ACTOR timeline"},
+		{name: "actor missing", timelineType: model.TimelineTypeActor, wantField: "actorUsername", wantMessage: "parameter required"},
+		{name: "actor blank", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &empty}, wantField: "actorUsername", wantMessage: "valid local actor username"},
+		{name: "actor malformed", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &invalidActor}, wantField: "actorUsername", wantMessage: "valid local actor username"},
+		{name: "actor extra hashtag", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &actor, hashtag: &hashtag}, wantField: "hashtag", wantMessage: "not allowed for ACTOR timeline"},
 		{name: "hashtag missing", timelineType: model.TimelineTypeHashtag, wantField: "hashtag", wantMessage: "parameter required"},
 		{name: "hashtag blank", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &empty}, wantField: "hashtag", wantMessage: "valid hashtag"},
 		{name: "hashtag malformed", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &invalidHashtag}, wantField: "hashtag", wantMessage: "valid hashtag"},
@@ -38,11 +38,11 @@ func TestValidateTimelineRoutingInputsFailsClosed(t *testing.T) {
 		{name: "list missing", timelineType: model.TimelineTypeList, wantField: "listId", wantMessage: "parameter required"},
 		{name: "list blank", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{listID: &empty}, wantField: "listId", wantMessage: "valid list ID"},
 		{name: "list malformed", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{listID: &invalidList}, wantField: "listId", wantMessage: "valid list ID"},
-		{name: "list extra actor", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{actorID: &actor, listID: &listID}, wantField: "actorId", wantMessage: "not allowed for LIST timeline"},
-		{name: "public extra actor", timelineType: model.TimelineTypePublic, inputs: timelineRoutingInputs{actorID: &actor}, wantField: "actorId", wantMessage: "not allowed for PUBLIC timeline"},
+		{name: "list extra actor", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{actorUsername: &actor, listID: &listID}, wantField: "actorUsername", wantMessage: "not allowed for LIST timeline"},
+		{name: "public extra actor", timelineType: model.TimelineTypePublic, inputs: timelineRoutingInputs{actorUsername: &actor}, wantField: "actorUsername", wantMessage: "not allowed for PUBLIC timeline"},
 		{name: "local extra hashtag", timelineType: model.TimelineTypeLocal, inputs: timelineRoutingInputs{hashtag: &hashtag}, wantField: "hashtag", wantMessage: "not allowed for LOCAL timeline"},
 		{name: "home extra list", timelineType: model.TimelineTypeHome, inputs: timelineRoutingInputs{listID: &listID}, wantField: "listId", wantMessage: "not allowed for HOME timeline"},
-		{name: "direct extra actor", timelineType: model.TimelineTypeDirect, inputs: timelineRoutingInputs{actorID: &actor}, wantField: "actorId", wantMessage: "not allowed for DIRECT timeline"},
+		{name: "direct extra actor", timelineType: model.TimelineTypeDirect, inputs: timelineRoutingInputs{actorUsername: &actor}, wantField: "actorUsername", wantMessage: "not allowed for DIRECT timeline"},
 	}
 
 	for _, test := range tests {
@@ -70,7 +70,7 @@ func TestTimelineStreamNameCanonicalizesNewRoutingInputs(t *testing.T) {
 		inputs       timelineRoutingInputs
 		want         string
 	}{
-		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &actor}, want: streaming.UserStreamName("alice-1")},
+		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &actor}, want: streaming.PublicActorStreamName("alice-1")},
 		{name: "hashtag", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &hashtag}, want: streaming.HashtagStreamName("golang")},
 		{name: "list", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{listID: &listID}, want: streaming.ListStreamName("list_123")},
 	}
@@ -101,7 +101,7 @@ func TestSubscribeToTimelinePersistsNewCanonicalRoutes(t *testing.T) {
 		inputs       timelineRoutingInputs
 		wantStream   string
 	}{
-		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &actor}, wantStream: streaming.UserStreamName("alice")},
+		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &actor}, wantStream: streaming.PublicActorStreamName("alice")},
 		{name: "hashtag", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &hashtag}, wantStream: streaming.HashtagStreamName("golang")},
 		{name: "list", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{listID: &listID}, wantStream: streaming.ListStreamName("list-1")},
 	}
@@ -109,7 +109,7 @@ func TestSubscribeToTimelinePersistsNewCanonicalRoutes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			updates, err := manager.SubscribeToTimeline(
-				ctx, "alice", test.timelineType, test.inputs.actorID, test.inputs.hashtag, test.inputs.listID,
+				ctx, "alice", test.timelineType, test.inputs.actorUsername, test.inputs.hashtag, test.inputs.listID,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, updates)
@@ -131,6 +131,7 @@ func TestSubscribeToTimelineRejectsMalformedRoutesBeforePersistence(t *testing.T
 
 	invalidActor := "alice:admin"
 	invalidHashtag := "go:lang"
+	doublePrefixHashtag := "##golang"
 	invalidList := "list:private"
 	tests := []struct {
 		name          string
@@ -138,15 +139,16 @@ func TestSubscribeToTimelineRejectsMalformedRoutesBeforePersistence(t *testing.T
 		inputs        timelineRoutingInputs
 		forbiddenName string
 	}{
-		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorID: &invalidActor}, forbiddenName: "user:alice:admin"},
+		{name: "actor", timelineType: model.TimelineTypeActor, inputs: timelineRoutingInputs{actorUsername: &invalidActor}, forbiddenName: "public:actor:alice:admin"},
 		{name: "hashtag", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &invalidHashtag}, forbiddenName: "hashtag:go:lang"},
+		{name: "hashtag double prefix", timelineType: model.TimelineTypeHashtag, inputs: timelineRoutingInputs{hashtag: &doublePrefixHashtag}, forbiddenName: "hashtag:#golang"},
 		{name: "list", timelineType: model.TimelineTypeList, inputs: timelineRoutingInputs{listID: &invalidList}, forbiddenName: "list:list:private"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := manager.SubscribeToTimeline(
-				ctx, "alice", test.timelineType, test.inputs.actorID, test.inputs.hashtag, test.inputs.listID,
+				ctx, "alice", test.timelineType, test.inputs.actorUsername, test.inputs.hashtag, test.inputs.listID,
 			)
 			require.Error(t, err)
 
@@ -170,6 +172,15 @@ func TestTimelineUpdatesListIsAuthenticatedOnly(t *testing.T) {
 
 	listID := " list-1 "
 	_, err := resolver.Subscription().TimelineUpdates(
+		WithConnectionID(round12AuthContext("mallory"), "non-owner-list"), model.TimelineTypeList, nil, nil, &listID,
+	)
+	require.ErrorIs(t, err, ErrListNotFoundOrAccessDenied)
+
+	subscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.ListStreamName("list-1"))
+	require.NoError(t, err)
+	require.Empty(t, subscriptions)
+
+	_, err = resolver.Subscription().TimelineUpdates(
 		WithConnectionID(context.Background(), "anonymous-list"), model.TimelineTypeList, nil, nil, &listID,
 	)
 	require.ErrorIs(t, err, ErrAuthenticationRequired)
@@ -180,7 +191,7 @@ func TestTimelineUpdatesListIsAuthenticatedOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, updates)
 
-	subscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.ListStreamName("list-1"))
+	subscriptions, err = connRepo.GetSubscriptionsForStream(ctx, streaming.ListStreamName("list-1"))
 	require.NoError(t, err)
 	require.Len(t, subscriptions, 1)
 }

@@ -136,17 +136,17 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	t.Cleanup(func() { _ = manager.Stop() })
 
-	actorID := " alice "
+	actorUsername := " alice "
 	hashtag := " #GoLang "
 	for _, test := range []struct {
-		timelineType model.TimelineType
-		actorID      *string
-		hashtag      *string
-		wantStream   string
+		timelineType  model.TimelineType
+		actorUsername *string
+		hashtag       *string
+		wantStream    string
 	}{
 		{timelineType: model.TimelineTypePublic, wantStream: StreamNamePublic},
 		{timelineType: model.TimelineTypeLocal, wantStream: streaming.PublicLocalStream},
-		{timelineType: model.TimelineTypeActor, actorID: &actorID, wantStream: streaming.UserStreamName("alice")},
+		{timelineType: model.TimelineTypeActor, actorUsername: &actorUsername, wantStream: streaming.PublicActorStreamName("alice")},
 		{timelineType: model.TimelineTypeHashtag, hashtag: &hashtag, wantStream: streaming.HashtagStreamName("golang")},
 	} {
 		t.Run(string(test.timelineType), func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 			manager.manager.subscriptionsMux.RUnlock()
 
-			updates, err := resolver.Subscription().TimelineUpdates(ctx, test.timelineType, test.actorID, test.hashtag, nil)
+			updates, err := resolver.Subscription().TimelineUpdates(ctx, test.timelineType, test.actorUsername, test.hashtag, nil)
 			require.NoError(t, err)
 			require.NotNil(t, updates)
 
@@ -186,6 +186,13 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 		})
 	}
+
+	actorSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.PublicActorStreamName("alice"))
+	require.NoError(t, err)
+	require.Len(t, actorSubscriptions, 1)
+	privateUserSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.UserStreamName("alice"))
+	require.NoError(t, err)
+	require.Empty(t, privateUserSubscriptions)
 }
 
 func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {

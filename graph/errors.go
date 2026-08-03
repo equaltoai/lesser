@@ -20,6 +20,7 @@ var (
 	ErrHashtagParameterRequired   = errors.NewValidationError("hashtag", "parameter required for hashtag timeline")
 	ErrListIDParameterRequired    = errors.NewValidationError("listId", "parameter required for list timeline")
 	ErrActorIDParameterRequired   = errors.NewValidationError("actorId", "parameter required for ACTOR timeline")
+	ErrActorUsernameRequired      = errors.NewValidationError("actorUsername", "parameter required for ACTOR timeline updates")
 	ErrTrusteeIDRequired          = errors.NewValidationError("trustee_id", "required")
 	ErrObjectIDRequired           = errors.NewValidationError("objectId", "required")
 	ErrReasonRequired             = errors.NewValidationError("reason", "required")

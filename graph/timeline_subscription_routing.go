@@ -8,26 +8,25 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/streaming"
 )
 
 const (
-	timelineInputActorID = "actorId"
-	timelineInputHashtag = "hashtag"
-	timelineInputListID  = "listId"
+	timelineInputActorUsername = "actorUsername"
+	timelineInputHashtag       = "hashtag"
+	timelineInputListID        = "listId"
 )
 
 type timelineRoutingInputs struct {
-	actorID *string
-	hashtag *string
-	listID  *string
+	actorUsername *string
+	hashtag       *string
+	listID        *string
 }
 
 type validatedTimelineRoute struct {
-	actorID string
-	hashtag string
-	listID  string
+	actorUsername string
+	hashtag       string
+	listID        string
 }
 
 func validateTimelineRoutingInputs(timelineType model.TimelineType, inputs timelineRoutingInputs) (validatedTimelineRoute, error) {
@@ -37,20 +36,20 @@ func validateTimelineRoutingInputs(timelineType model.TimelineType, inputs timel
 
 	switch timelineType {
 	case model.TimelineTypeActor:
-		if inputs.actorID == nil {
-			return validatedTimelineRoute{}, ErrActorIDParameterRequired
+		if inputs.actorUsername == nil {
+			return validatedTimelineRoute{}, ErrActorUsernameRequired
 		}
-		actorID := strings.TrimSpace(*inputs.actorID)
-		if err := activitypub.ValidateUsername(actorID); err != nil {
-			return validatedTimelineRoute{}, invalidTimelineRoutingInput(timelineInputActorID, timelineType, "a valid actor stream username", err)
+		actorUsername := strings.TrimSpace(*inputs.actorUsername)
+		if err := activitypub.ValidateUsername(actorUsername); err != nil {
+			return validatedTimelineRoute{}, invalidTimelineRoutingInput(timelineInputActorUsername, timelineType, "a valid local actor username", err)
 		}
-		return validatedTimelineRoute{actorID: actorID}, nil
+		return validatedTimelineRoute{actorUsername: actorUsername}, nil
 	case model.TimelineTypeHashtag:
 		if inputs.hashtag == nil {
 			return validatedTimelineRoute{}, ErrHashtagParameterRequired
 		}
-		hashtag := mastodon.NormalizeHashtag(strings.TrimSpace(*inputs.hashtag))
-		if err := common.ValidateHashtag(hashtag); err != nil {
+		hashtag, err := streaming.NormalizeHashtagStreamValue(*inputs.hashtag)
+		if err != nil {
 			return validatedTimelineRoute{}, invalidTimelineRoutingInput(timelineInputHashtag, timelineType, "a valid hashtag", err)
 		}
 		return validatedTimelineRoute{hashtag: hashtag}, nil
@@ -74,7 +73,7 @@ func rejectUnexpectedTimelineRoutingInputs(timelineType model.TimelineType, inpu
 	expected := ""
 	switch timelineType {
 	case model.TimelineTypeActor:
-		expected = timelineInputActorID
+		expected = timelineInputActorUsername
 	case model.TimelineTypeHashtag:
 		expected = timelineInputHashtag
 	case model.TimelineTypeList:
@@ -89,7 +88,7 @@ func rejectUnexpectedTimelineRoutingInputs(timelineType model.TimelineType, inpu
 		name  string
 		value *string
 	}{
-		{name: timelineInputActorID, value: inputs.actorID},
+		{name: timelineInputActorUsername, value: inputs.actorUsername},
 		{name: timelineInputHashtag, value: inputs.hashtag},
 		{name: timelineInputListID, value: inputs.listID},
 	} {
@@ -130,7 +129,7 @@ func timelineStreamName(username string, timelineType model.TimelineType, inputs
 		}
 		return streaming.DirectStreamName(username), nil
 	case model.TimelineTypeActor:
-		return streaming.UserStreamName(route.actorID), nil
+		return streaming.PublicActorStreamName(route.actorUsername), nil
 	case model.TimelineTypeHashtag:
 		return streaming.HashtagStreamName(route.hashtag), nil
 	case model.TimelineTypeList:

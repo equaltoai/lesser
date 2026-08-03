@@ -108,11 +108,11 @@ func (sm *SubscriptionManager) SubscribeToTimelineUpdates(
 	ctx context.Context,
 	username string,
 	timelineType model.TimelineType,
-	actorID *string,
+	actorUsername *string,
 	hashtag *string,
 	listID *string,
 ) (<-chan *model.Object, error) {
-	return sm.manager.SubscribeToTimeline(ctx, username, timelineType, actorID, hashtag, listID)
+	return sm.manager.SubscribeToTimeline(ctx, username, timelineType, actorUsername, hashtag, listID)
 }
 
 // SubscribeToCostUpdates creates a channel for cost updates using event bus

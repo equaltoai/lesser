@@ -337,7 +337,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	anonymousSafe := map[string]string{
 		"PUBLIC":  "timelineUpdates(type: PUBLIC) { id }",
 		"LOCAL":   "timelineUpdates(type: LOCAL) { id }",
-		"ACTOR":   `timelineUpdates(type: ACTOR, actorId: "alice") { id }`,
+		"ACTOR":   `timelineUpdates(type: ACTOR, actorUsername: "alice") { id }`,
 		"HASHTAG": `timelineUpdates(type: HASHTAG, hashtag: "golang") { id }`,
 	}
 	for name, field := range anonymousSafe {
@@ -471,7 +471,7 @@ func TestAuthenticatedConnectionStreamsTimelineAuthorizationSet(t *testing.T) {
 	authenticated := map[string]string{
 		"HOME":    "timelineUpdates(type: HOME) { id }",
 		"DIRECT":  "timelineUpdates(type: DIRECT) { id }",
-		"ACTOR":   `timelineUpdates(type: ACTOR, actorId: "alice") { id }`,
+		"ACTOR":   `timelineUpdates(type: ACTOR, actorUsername: "alice") { id }`,
 		"HASHTAG": `timelineUpdates(type: HASHTAG, hashtag: "golang") { id }`,
 		"LIST":    `timelineUpdates(type: LIST, listId: "list-1") { id }`,
 	}

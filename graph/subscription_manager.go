@@ -395,7 +395,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(
 	ctx context.Context,
 	username string,
 	timelineType model.TimelineType,
-	actorID *string,
+	actorUsername *string,
 	hashtag *string,
 	listID *string,
 ) (<-chan *model.Object, error) {
@@ -404,9 +404,9 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(
 	}
 
 	streamName, err := timelineStreamName(username, timelineType, timelineRoutingInputs{
-		actorID: actorID,
-		hashtag: hashtag,
-		listID:  listID,
+		actorUsername: actorUsername,
+		hashtag:       hashtag,
+		listID:        listID,
 	})
 	if err != nil {
 		return nil, err
