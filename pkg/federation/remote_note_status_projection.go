@@ -48,16 +48,46 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 	return status
 }
 
-// remoteNoteAttributionIsLocal compares the attributed actor's host with this
-// instance using the same lenient host extraction the fanout consumers apply
-// (url.Parse host, case-insensitive, agnostic to path shape, query, fragment,
-// userinfo, and port). Guard and consumer must agree by construction: any
-// actor ID the stream router treats as local must be rejected here. Remote
-// actors with non-canonical path shapes (/profile/<name>, /actor, etc.) still
+// remoteNoteAttributionIsLocal decides whether an attributed actor must be
+// treated as local, in which case the note must never be projected from a
+// remote-fed object.
+//
+// The primary test parses with net/url — the same parser family the fanout
+// consumer (StreamRouterHandler.isLocalActorID) parses with, including its
+// scheme lowercasing, Hostname() extraction with Host fallback, and
+// case-insensitive host compare. On top of that the guard trims surrounding
+// whitespace, fails closed on parse errors and empty input, and adds an
+// additive canonical branch, so the guard rejects a strict superset of the
+// IDs the consumer treats as local: consumer-local always implies
+// guard-local. The remaining divergence is therefore one-directional in the
+// safe direction only (e.g. a whitespace-padded or unparseable ID is local
+// here but not to the consumer).
+//
+// The canonical branch is independent defense: CanonicalActorID normalizes
+// the scheme, so it covers case-variant schemes even if the primary parse
+// ever diverged from the consumer again. A canonicalization failure
+// contributes no rejection and falls through to the host compare, so honest
+// remote path shapes (/profile/<name>, /actor, /api/v1/accounts/<name>) still
 // project — their host is not local, so they cannot reach local stream keys.
 func remoteNoteAttributionIsLocal(attributedTo, normalizedLocalDomain string) bool {
-	actorDomain := normalizeActorDomain(common.ExtractDomainFromActorID(strings.TrimSpace(attributedTo)))
-	return actorDomain != "" && actorDomain == normalizedLocalDomain
+	if canonical, err := common.CanonicalActorID(attributedTo); err == nil {
+		if domain := normalizeActorDomain(common.ExtractDomainFromActorID(canonical)); domain != "" && domain == normalizedLocalDomain {
+			return true
+		}
+	}
+	trimmed := strings.TrimSpace(attributedTo)
+	if trimmed == "" {
+		return true // no attribution is never safe to project
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return true // fail closed
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = u.Host
+	}
+	return strings.EqualFold(strings.TrimSpace(host), normalizedLocalDomain)
 }
 
 // remoteNoteLocalDomain normalizes the configured local domain (with or
