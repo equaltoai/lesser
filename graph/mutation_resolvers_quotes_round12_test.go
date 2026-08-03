@@ -36,6 +36,11 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	storedType, err := storageRepo.Object().GetQuoteType(context.Background(), "status-1")
 	require.NoError(t, err)
 	require.Equal(t, EventTypeFollowers, storedType)
+	storedStatus, err := storageRepo.Status().GetStatus(context.Background(), "status-1")
+	require.NoError(t, err)
+	projected := resolver.convertStatusToObject(context.Background(), storedStatus)
+	require.True(t, projected.Quoteable)
+	require.Equal(t, model.QuotePermissionFollowers, projected.QuotePermissions)
 
 	payload, err = resolver.Mutation().UpdateQuotePermissions(round12AuthContext("alice"), "status-1", false, model.QuotePermissionEveryone)
 	require.NoError(t, err)
@@ -45,6 +50,9 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	storedType, err = storageRepo.Object().GetQuoteType(context.Background(), "status-1")
 	require.NoError(t, err)
 	require.Equal(t, "disabled", storedType)
+	projected = resolver.convertStatusToObject(context.Background(), storedStatus)
+	require.False(t, projected.Quoteable)
+	require.Equal(t, model.QuotePermissionNone, projected.QuotePermissions)
 
 	_, err = resolver.Mutation().UpdateQuotePermissions(round12AuthContext("bob"), "status-1", true, model.QuotePermissionEveryone)
 	require.Error(t, err)

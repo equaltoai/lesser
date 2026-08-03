@@ -186,6 +186,83 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		require.Equal(t, string(graphQLAppErr.Code), rest.body.Code)
 	})
 
+	t.Run("per-note none denies both surfaces after account allow", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
+					"status-1": {StatusID: "status-1", QuoteType: "disabled", AllowQuotes: false},
+				}
+			})
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("per-note followers allows follower and denies non-follower on both surfaces", func(t *testing.T) {
+		permissions := &storagemodels.QuotePermissions{AllowPublic: true}
+		withFollowersControl := func(follows bool) func(*round10QueryState, *storagemodels.Status) {
+			return func(state *round10QueryState, _ *storagemodels.Status) {
+				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
+					"status-1": {StatusID: "status-1", QuoteType: "followers", AllowQuotes: true},
+				}
+				if follows {
+					state.relationshipRecords = []storagemodels.RelationshipRecord{
+						{PK: "FOLLOW#mallory", SK: "FOLLOWING#alice", State: storagemodels.RelationshipAccepted},
+					}
+				}
+			}
+		}
+
+		handler, quoteService := newHarness(t, permissions, nil, withFollowersControl(true))
+		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
+			StatusID: "mallory-note-follower-quote", AuthorUsername: "mallory",
+		}, "status-1")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
+
+		handler, quoteService = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withFollowersControl(false))
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("per-note mentioned allows mentioned and denies unmentioned on both surfaces", func(t *testing.T) {
+		withMentionedControl := func(mentioned bool) func(*round10QueryState, *storagemodels.Status) {
+			return func(state *round10QueryState, status *storagemodels.Status) {
+				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
+					"status-1": {StatusID: "status-1", QuoteType: "mentioned", AllowQuotes: true},
+				}
+				if mentioned {
+					status.Mentions = []string{cfg.ActorURL("mallory")}
+				}
+			}
+		}
+
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(true))
+		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
+			StatusID: "mallory-note-mentioned-quote", AuthorUsername: "mallory",
+		}, "status-1")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
+
+		handler, quoteService = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(false))
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("per-note storage error fails closed as forbidden on both surfaces", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.firstErrorPK = map[string]error{"STATUS_META#status-1": stdErrors.New("metadata unavailable")}
+			})
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("per-note public cannot widen account denial", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
+					"status-1": {StatusID: "status-1", QuoteType: storagemodels.VisibilityPublic, AllowQuotes: true},
+				}
+			})
+		assertDeniedParity(t, handler, quoteService)
+	})
+
 	t.Run("allowed viewer creates the REST quote unchanged", func(t *testing.T) {
 		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, nil)
 		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)

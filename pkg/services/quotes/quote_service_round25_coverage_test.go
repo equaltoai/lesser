@@ -171,12 +171,19 @@ type fakeQuoteStorage struct {
 	status       quoteStatusRepository
 	quote        quoteRepository
 	relationship quoteRelationshipRepository
+	object       quoteObjectRepository
 }
 
 func (f fakeQuoteStorage) Status() quoteStatusRepository { return f.status }
 func (f fakeQuoteStorage) Quote() quoteRepository        { return f.quote }
 func (f fakeQuoteStorage) Relationship() quoteRelationshipRepository {
 	return f.relationship
+}
+func (f fakeQuoteStorage) Object() quoteObjectRepository {
+	if f.object != nil {
+		return f.object
+	}
+	return &fakeQuoteObjectRepo{quoteType: models.VisibilityPublic}
 }
 
 func TestQuoteService_Round25_CreateQuotePost(t *testing.T) {

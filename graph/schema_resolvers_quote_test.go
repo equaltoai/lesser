@@ -162,7 +162,7 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 
 	obj := resolver.convertStatusToObject(context.Background(), status)
 	require.NotNil(t, obj)
-	require.True(t, obj.Quoteable)
+	require.False(t, obj.Quoteable)
 	require.NotNil(t, obj.QuoteURL)
 	require.Equal(t, target.Note.ID, *obj.QuoteURL)
 	require.NotNil(t, obj.QuoteContext)
@@ -170,15 +170,17 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 	require.Equal(t, target.AuthorID, obj.QuoteContext.OriginalAuthor)
 }
 
-func TestDetermineQuoteableDocumentsUnhydratedMetadataDefault(t *testing.T) {
+func TestDetermineQuoteableFailsClosedWithoutPersistedReader(t *testing.T) {
+	resolver := &Resolver{Logger: zap.NewNop()}
 	for _, status := range []*models.Status{
 		nil,
 		{},
-		{Note: &activitypub.Note{Quoteable: false}},
-		{Note: &activitypub.Note{Quoteable: true}},
+		{StatusID: "one", Note: &activitypub.Note{Quoteable: false}},
+		{StatusID: "two", Note: &activitypub.Note{Quoteable: true}},
 	} {
-		require.True(t, determineQuoteable(status))
-		require.Equal(t, model.QuotePermissionEveryone, determineQuotePermission(status))
+		quoteable, permission := resolver.determineQuoteable(context.Background(), status)
+		require.False(t, quoteable)
+		require.Equal(t, model.QuotePermissionNone, permission)
 	}
 }
 

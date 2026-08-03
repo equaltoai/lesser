@@ -1755,10 +1755,11 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 	metadata, err := r.getStatusMetadata(ctx, statusID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No metadata means default to disabled (restrictive)
-			r.logger.Debug("no metadata found for status, defaulting to disabled quotes",
+			// Absence means the author has not applied a per-note tightening control. Preserve
+			// the legacy account-level decision; an explicit NONE control persists "disabled".
+			r.logger.Debug("no metadata found for status, applying no per-note quote restriction",
 				zap.String("status_id", statusID))
-			return "disabled", nil
+			return models.VisibilityPublic, nil
 		}
 		return "", ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}

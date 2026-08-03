@@ -438,7 +438,7 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 		require.NoError(t, repo.WithdrawQuote(ctx, "missing-quote-note"))
 	})
 
-	t.Run("GetQuoteType not found returns disabled", func(t *testing.T) {
+	t.Run("GetQuoteType not found applies no per-note restriction", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("First", mock.AnythingOfType("*models.StatusMetadata")).Return(dynamormErrors.ErrItemNotFound).Once()
@@ -448,7 +448,7 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 
 		quoteType, err := repo.GetQuoteType(ctx, "note-1")
 		require.NoError(t, err)
-		require.Equal(t, "disabled", quoteType)
+		require.Equal(t, models.VisibilityPublic, quoteType)
 	})
 
 	t.Run("IsWithdrawnFromQuotes not found returns false", func(t *testing.T) {

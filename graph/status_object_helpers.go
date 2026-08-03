@@ -81,16 +81,29 @@ func (r *Resolver) buildMentions(status *models.Status) []*model.Mention {
 	return mentions
 }
 
-func determineQuoteable(_ *models.Status) bool {
-	// Per-note controls live in a separate StatusMetadata row that is not hydrated into Status.
-	// Preserve the legacy permissive projection until that read path is wired; do not pretend
-	// activitypub.Note's false zero value distinguishes an explicit denial from an absent field.
-	return true
-}
+func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status) (bool, model.QuotePermission) {
+	if r == nil || status == nil || strings.TrimSpace(status.StatusID) == "" {
+		return false, model.QuotePermissionNone
+	}
 
-func determineQuotePermission(_ *models.Status) model.QuotePermission {
-	// See determineQuoteable: the base Status projection has no persisted per-note control.
-	return model.QuotePermissionEveryone
+	store := r.Storage
+	if r.Registry != nil && r.Registry.GetStorage() != nil {
+		store = r.Registry.GetStorage()
+	}
+	if store == nil || store.Object() == nil {
+		return false, model.QuotePermissionNone
+	}
+
+	quoteType, err := store.Object().GetQuoteType(ctx, status.StatusID)
+	if err != nil {
+		if r.Logger != nil {
+			r.Logger.Warn("per-note quote control projection failed closed",
+				zap.String("status_id", status.StatusID),
+				zap.Error(err))
+		}
+		return false, model.QuotePermissionNone
+	}
+	return graphQLQuoteControl(quoteType)
 }
 
 func extractStatusSummary(status *models.Status) *string {

@@ -46,10 +46,15 @@ type quoteRelationshipRepository interface {
 	IsFollowing(ctx context.Context, followerID, followingID string) (bool, error)
 }
 
+type quoteObjectRepository interface {
+	GetQuoteType(ctx context.Context, statusID string) (string, error)
+}
+
 type quoteStorage interface {
 	Status() quoteStatusRepository
 	Quote() quoteRepository
 	Relationship() quoteRelationshipRepository
+	Object() quoteObjectRepository
 }
 
 type quoteRepositoryStorageWrapper struct {
@@ -61,6 +66,7 @@ func (w quoteRepositoryStorageWrapper) Quote() quoteRepository        { return w
 func (w quoteRepositoryStorageWrapper) Relationship() quoteRelationshipRepository {
 	return w.storage.Relationship()
 }
+func (w quoteRepositoryStorageWrapper) Object() quoteObjectRepository { return w.storage.Object() }
 
 // NewQuoteService creates a new quote service
 func NewQuoteService(storage core.RepositoryStorage, logger *zap.Logger) *QuoteService {
@@ -408,11 +414,21 @@ func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	return common.IsPubliclyVisible(status.Visibility)
 }
 
-// CheckQuotePermissions applies the account-level quote predicate to relationship-minting paths:
-// GraphQL quote creation and REST reblog-with-comment. GraphQL createQuoteNote only embeds a URL
-// without minting a relationship and is outside this control by design; a blocked user can always
-// paste a URL into ordinary post text, while this predicate governs quote relationships.
+// CheckQuotePermissions applies account authorization first, then the persisted per-note control,
+// to both relationship-minting paths: GraphQL quote creation and REST reblog-with-comment. A
+// per-note control may only tighten an account-level allow and can never widen an account denial.
+// GraphQL createQuoteNote only embeds a URL without minting a relationship and is outside this
+// control by design; a blocked user can always paste a URL into ordinary post text.
 func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+	accountAllowed, err := qs.checkAccountQuotePermissions(ctx, quoterUsername, targetStatus)
+	if err != nil || !accountAllowed {
+		return accountAllowed, err
+	}
+
+	return qs.checkPerNoteQuotePermissions(ctx, quoterUsername, targetStatus)
+}
+
+func (qs *QuoteService) checkAccountQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
 	// Get quote permissions for the target status author
 	permissions, err := qs.GetQuotePermissions(ctx, targetStatus.AuthorUsername)
 	if err != nil {
@@ -462,6 +478,40 @@ func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsernam
 	}
 
 	return false, nil
+}
+
+func (qs *QuoteService) checkPerNoteQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+	if targetStatus == nil || strings.TrimSpace(targetStatus.StatusID) == "" || qs.storage == nil || qs.storage.Object() == nil {
+		return false, nil
+	}
+
+	quoteType, err := qs.storage.Object().GetQuoteType(ctx, targetStatus.StatusID)
+	if err != nil {
+		qs.logger.Warn("per-note quote control lookup failed closed",
+			zap.String("quoter", quoterUsername),
+			zap.String("target_status_id", targetStatus.StatusID),
+			zap.Error(err))
+		return false, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(quoteType)) {
+	case models.VisibilityPublic:
+		return true, nil
+	case "followers":
+		allowed, lookupErr := qs.checkFollowRelationship(ctx, quoterUsername, targetStatus.AuthorUsername)
+		if lookupErr != nil {
+			return false, nil
+		}
+		return allowed, nil
+	case "mentioned":
+		allowed, lookupErr := qs.checkMentioned(ctx, targetStatus, quoterUsername)
+		if lookupErr != nil {
+			return false, nil
+		}
+		return allowed, nil
+	default:
+		return false, nil
+	}
 }
 
 func (qs *QuoteService) createQuoteStatus(ctx context.Context, req *CreateQuoteRequest, _ *models.Status) (*models.Status, error) {
