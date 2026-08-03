@@ -68,7 +68,7 @@ func TestGraphQLSubscriptionManager_SubscribeVariantsAndCleanup(t *testing.T) {
 	sm := NewGraphQLSubscriptionManager(connRepo, pub, zap.NewNop())
 
 	// Not running guards.
-	_, err := sm.SubscribeToTimeline(context.Background(), "alice", model.TimelineTypeHome)
+	_, err := sm.SubscribeToTimeline(context.Background(), "alice", model.TimelineTypeHome, nil, nil, nil)
 	require.ErrorIs(t, err, ErrSubscriptionManagerNotRunning)
 	_, err = sm.SubscribeToHashtagActivity(context.Background(), "alice", nil)
 	require.ErrorIs(t, err, ErrSubscriptionManagerNotRunning)
@@ -81,15 +81,15 @@ func TestGraphQLSubscriptionManager_SubscribeVariantsAndCleanup(t *testing.T) {
 	ctx = WithConnectionID(ctx, "conn-1")
 
 	// Exercise stream selection branches.
-	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeHome)
+	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeHome, nil, nil, nil)
 	require.NoError(t, err)
-	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypePublic)
+	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypePublic, nil, nil, nil)
 	require.NoError(t, err)
-	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeLocal)
+	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeLocal, nil, nil, nil)
 	require.NoError(t, err)
-	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeDirect)
+	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeDirect, nil, nil, nil)
 	require.NoError(t, err)
-	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeActor)
+	_, err = sm.SubscribeToTimeline(ctx, "alice", model.TimelineTypeActor, nil, nil, nil)
 	require.Error(t, err)
 
 	// Various subscription types.
