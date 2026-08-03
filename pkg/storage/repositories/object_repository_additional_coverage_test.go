@@ -116,6 +116,46 @@ func TestObjectRepository_GetOrCreateStatusMetadata_CreatesOnNotFound(t *testing
 	require.NotNil(t, metadata)
 }
 
+func TestObjectRepositoryGetQuoteTypesUsesOneBatchRead(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.StatusMetadata")).Return(mockQuery).Once()
+	mockQuery.On("BatchGet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		keys := args.Get(0).([]any)
+		require.Len(t, keys, 3)
+		rows := args.Get(1).(*[]*models.StatusMetadata)
+		*rows = []*models.StatusMetadata{
+			{StatusID: "one", QuoteType: "followers"},
+			{StatusID: "two", QuoteType: "disabled"},
+			nil,
+			{},
+		}
+	}).Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	quoteTypes, err := repo.GetQuoteTypes(context.Background(), []string{"one", "two", "missing", "one"})
+	require.NoError(t, err)
+	require.Equal(t, "followers", quoteTypes["one"])
+	require.Equal(t, "disabled", quoteTypes["two"])
+	require.Equal(t, models.VisibilityPublic, quoteTypes["missing"])
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+
+	empty, err := repo.GetQuoteTypes(context.Background(), []string{"", " "})
+	require.NoError(t, err)
+	require.Empty(t, empty)
+
+	errorDB := new(mocks.MockDB)
+	errorQuery := new(mocks.MockQuery)
+	errorDB.On("WithContext", mock.Anything).Return(errorDB).Once()
+	errorDB.On("Model", mock.AnythingOfType("*models.StatusMetadata")).Return(errorQuery).Once()
+	errorQuery.On("BatchGet", mock.Anything, mock.Anything).Return(dynamormErrors.ErrInvalidModel).Once()
+	errorRepo := NewObjectRepository(errorDB, "test-table", "example.com", zap.NewNop())
+	_, err = errorRepo.GetQuoteTypes(context.Background(), []string{"one"})
+	require.Error(t, err)
+}
+
 func TestObjectRepository_CreateObject_PreservesRemoteNoteFields(t *testing.T) {
 	ctx := context.Background()
 	publishedAt := time.Date(2025, 1, 20, 10, 11, 12, 0, time.UTC)

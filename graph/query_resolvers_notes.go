@@ -132,6 +132,7 @@ func isAgentObject(obj *model.Object) bool {
 }
 
 func (r *queryResolver) timelineObjectEdges(ctx context.Context, notesIn []*models.Status, excludeAgents bool) []*model.ObjectEdge {
+	r.prefetchQuoteControls(ctx, notesIn)
 	edges := make([]*model.ObjectEdge, 0, len(notesIn))
 	for _, note := range notesIn {
 		obj := r.convertStatusToObject(ctx, note)
@@ -555,6 +556,7 @@ func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo int
 }
 
 func (r *queryResolver) convertStatusesToObjects(ctx context.Context, statuses []*models.Status) []*model.Object {
+	r.prefetchQuoteControls(ctx, statuses)
 	objects := make([]*model.Object, 0, len(statuses))
 	for _, status := range statuses {
 		if status == nil {

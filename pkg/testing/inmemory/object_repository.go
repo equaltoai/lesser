@@ -907,6 +907,22 @@ func (r *ObjectRepository) GetQuoteType(_ context.Context, statusID string) (str
 	return quoteType, nil
 }
 
+// GetQuoteTypes returns quote controls for a request-local batch.
+func (r *ObjectRepository) GetQuoteTypes(_ context.Context, statusIDs []string) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	quoteTypes := make(map[string]string, len(statusIDs))
+	for _, statusID := range statusIDs {
+		quoteType, ok := r.quoteTypes[statusID]
+		if !ok {
+			quoteType = quoteTypeDisabled
+		}
+		quoteTypes[statusID] = quoteType
+	}
+	return quoteTypes, nil
+}
+
 // IsWithdrawnFromQuotes checks if a status is withdrawn from quotes
 func (r *ObjectRepository) IsWithdrawnFromQuotes(_ context.Context, statusID string) (bool, error) {
 	r.mu.RLock()

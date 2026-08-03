@@ -94,7 +94,21 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 		return false, model.QuotePermissionNone
 	}
 
-	quoteType, err := store.Object().GetQuoteType(ctx, status.StatusID)
+	quoteType := ""
+	var err error
+	if GetLoaders(ctx) != nil {
+		loaded, loadErr := loadQuoteControl(ctx, status.StatusID)
+		err = loadErr
+		if loaded != nil {
+			quoteType = loaded.quoteType
+			r.trackQuoteControlBatch(ctx, loaded.batch)
+		}
+	} else {
+		// Non-GraphQL callers and focused unit tests have no request loader. The
+		// production GraphQL middleware always installs a fresh loader set.
+		quoteType, err = store.Object().GetQuoteType(ctx, status.StatusID)
+		r.trackDynamoOperation(ctx, "read", 1)
+	}
 	if err != nil {
 		if r.Logger != nil {
 			r.Logger.Warn("per-note quote control projection failed closed",
@@ -104,6 +118,55 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 		return false, model.QuotePermissionNone
 	}
 	return graphQLQuoteControl(quoteType)
+}
+
+func (r *Resolver) trackQuoteControlBatch(ctx context.Context, batch *quoteControlBatch) {
+	if r == nil || batch == nil || batch.readUnits <= 0 || !batch.tracked.CompareAndSwap(false, true) {
+		return
+	}
+	r.trackDynamoOperation(ctx, "read", batch.readUnits)
+}
+
+func quoteControlPrefetchIDs(statuses []*models.Status) []string {
+	seen := make(map[string]struct{}, len(statuses)*3)
+	ids := make([]string, 0, len(statuses)*3)
+	add := func(raw string) {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	for _, status := range statuses {
+		if status == nil {
+			continue
+		}
+		add(status.StatusID)
+		add(status.InReplyToID)
+		add(boostTargetStatusID(status))
+	}
+	return ids
+}
+
+func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models.Status) {
+	if GetLoaders(ctx) == nil {
+		return
+	}
+	ids := quoteControlPrefetchIDs(statuses)
+	if len(ids) == 0 {
+		return
+	}
+	loaded, _ := loadQuoteControls(ctx, ids)
+	for _, result := range loaded {
+		if result != nil {
+			r.trackQuoteControlBatch(ctx, result.batch)
+			return
+		}
+	}
 }
 
 func extractStatusSummary(status *models.Status) *string {

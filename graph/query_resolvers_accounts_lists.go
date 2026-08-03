@@ -148,6 +148,7 @@ func (r *queryResolver) Favourites(ctx context.Context, first *int, after *model
 			statusByID[status.StatusID] = status
 		}
 	}
+	r.prefetchQuoteControls(ctx, statuses)
 
 	edges := make([]*model.ObjectEdge, 0, len(likeEdges))
 	for _, edge := range likeEdges {
@@ -258,6 +259,7 @@ func (r *queryResolver) Bookmarks(ctx context.Context, first *int, after *model.
 			statusByID[status.StatusID] = status
 		}
 	}
+	r.prefetchQuoteControls(ctx, statuses)
 
 	edges := make([]*model.ObjectEdge, 0, len(bookmarkEdges))
 	for _, edge := range bookmarkEdges {

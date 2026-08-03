@@ -164,3 +164,13 @@ func TestObjectRepository_round22_helper_storage_paths(t *testing.T) {
 	require.Equal(t, []string{"a", "c"}, removeString([]string{"a", "b", "c"}, "b"))
 	require.Equal(t, []string{"a", "c"}, removeString([]string{"a", "c"}, "z"))
 }
+
+func TestObjectRepositoryGetQuoteTypes(t *testing.T) {
+	repo := NewObjectRepository()
+	repo.quoteTypes["public"] = "public"
+
+	quoteTypes, err := repo.GetQuoteTypes(context.Background(), []string{"public", "missing"})
+	require.NoError(t, err)
+	require.Equal(t, "public", quoteTypes["public"])
+	require.Equal(t, quoteTypeDisabled, quoteTypes["missing"])
+}

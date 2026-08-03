@@ -1771,6 +1771,43 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 	return metadata.QuoteType, nil
 }
 
+// GetQuoteTypes returns per-status quote controls with one BatchGetItem-style read.
+// Missing metadata means no per-note tightening and therefore defaults to public.
+func (r *ObjectRepository) GetQuoteTypes(ctx context.Context, statusIDs []string) (map[string]string, error) {
+	quoteTypes := make(map[string]string, len(statusIDs))
+	keyModels := make([]any, 0, len(statusIDs))
+	seen := make(map[string]struct{}, len(statusIDs))
+	for _, rawID := range statusIDs {
+		statusID := strings.TrimSpace(rawID)
+		if statusID == "" {
+			continue
+		}
+		quoteTypes[statusID] = models.VisibilityPublic
+		if _, ok := seen[statusID]; ok {
+			continue
+		}
+		seen[statusID] = struct{}{}
+		metadata := models.NewStatusMetadata(statusID)
+		keyModels = append(keyModels, metadata)
+	}
+	if len(keyModels) == 0 {
+		return quoteTypes, nil
+	}
+
+	var metadataRows []*models.StatusMetadata
+	err := r.db.WithContext(ctx).Model(&models.StatusMetadata{}).BatchGet(keyModels, &metadataRows)
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "status_metadata_batch")
+	}
+	for _, metadata := range metadataRows {
+		if metadata == nil || strings.TrimSpace(metadata.StatusID) == "" {
+			continue
+		}
+		quoteTypes[metadata.StatusID] = metadata.QuoteType
+	}
+	return quoteTypes, nil
+}
+
 // IsWithdrawnFromQuotes checks if a status is withdrawn from quotes
 func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID string) (bool, error) {
 	// Get status metadata to check withdrawal status

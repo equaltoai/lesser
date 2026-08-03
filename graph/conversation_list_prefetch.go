@@ -232,6 +232,7 @@ func (r *Resolver) loadConversationListPrefetch(ctx context.Context, viewerUsern
 		if statuses, err := storageRepo.Status().GetStatusesByIDs(ctx, statusIDs); err == nil {
 			prefetch.statusesByID = buildConversationStatusMap(statuses)
 			prefetch.statusesReady = true
+			r.prefetchQuoteControls(ctx, statuses)
 		}
 	} else {
 		prefetch.statusesReady = true

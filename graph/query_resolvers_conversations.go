@@ -131,6 +131,7 @@ func (r *queryResolver) ConversationMessages(ctx context.Context, conversationID
 	if result == nil {
 		return nil, nil
 	}
+	r.prefetchQuoteControls(ctx, result.Messages.Items)
 
 	edges := make([]*model.ObjectEdge, 0, len(result.Messages.Items))
 	for _, status := range result.Messages.Items {
