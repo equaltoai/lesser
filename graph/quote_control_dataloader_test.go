@@ -71,7 +71,7 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 	}{
 		"public":         {true, model.QuotePermissionEveryone},
 		"followers":      {true, model.QuotePermissionFollowers},
-		"mentioned":      {true, model.QuotePermissionFollowers},
+		"mentioned":      {true, model.QuotePermissionMentioned},
 		"disabled":       {false, model.QuotePermissionNone},
 		"missing":        {true, model.QuotePermissionEveryone},
 		"reply-parent":   {true, model.QuotePermissionFollowers},

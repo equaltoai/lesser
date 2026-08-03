@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	stdErrors "errors"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -57,6 +58,10 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 		case model.QuotePermissionFollowers:
 			storagePermissions.AllowPublic = false
 			storagePermissions.AllowFollowers = true
+			storagePermissions.AllowMentioned = true
+		case model.QuotePermissionMentioned:
+			storagePermissions.AllowPublic = false
+			storagePermissions.AllowFollowers = false
 			storagePermissions.AllowMentioned = true
 		case model.QuotePermissionNone:
 			storagePermissions.AllowPublic = false
@@ -115,13 +120,13 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 }
 
 func graphQLQuoteControl(storedQuoteType string) (bool, model.QuotePermission) {
-	switch storedQuoteType {
+	switch strings.ToLower(strings.TrimSpace(storedQuoteType)) {
 	case "public":
 		return true, model.QuotePermissionEveryone
 	case EventTypeFollowers:
 		return true, model.QuotePermissionFollowers
 	case "mentioned":
-		return true, model.QuotePermissionFollowers
+		return true, model.QuotePermissionMentioned
 	default:
 		return false, model.QuotePermissionNone
 	}

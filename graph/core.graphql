@@ -682,6 +682,7 @@ type QuoteContext {
 enum QuotePermission {
   EVERYONE
   FOLLOWERS
+  MENTIONED
   NONE
 }
 

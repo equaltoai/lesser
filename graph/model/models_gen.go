@@ -5881,18 +5881,20 @@ type QuotePermission string
 const (
 	QuotePermissionEveryone  QuotePermission = "EVERYONE"
 	QuotePermissionFollowers QuotePermission = "FOLLOWERS"
+	QuotePermissionMentioned QuotePermission = "MENTIONED"
 	QuotePermissionNone      QuotePermission = "NONE"
 )
 
 var AllQuotePermission = []QuotePermission{
 	QuotePermissionEveryone,
 	QuotePermissionFollowers,
+	QuotePermissionMentioned,
 	QuotePermissionNone,
 }
 
 func (e QuotePermission) IsValid() bool {
 	switch e {
-	case QuotePermissionEveryone, QuotePermissionFollowers, QuotePermissionNone:
+	case QuotePermissionEveryone, QuotePermissionFollowers, QuotePermissionMentioned, QuotePermissionNone:
 		return true
 	}
 	return false
