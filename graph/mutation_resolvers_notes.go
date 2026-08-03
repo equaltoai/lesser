@@ -53,7 +53,8 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil && claims.IsAgent {
-		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution, auth.DelegationContentClassNote)
+		contentClass := auth.DelegationContentClassForVisibility(cmd.Visibility)
+		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution, contentClass)
 		if err != nil {
 			return nil, err
 		}

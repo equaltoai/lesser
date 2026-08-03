@@ -164,10 +164,7 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
 	}
 	delegatedBy = h.normalizeDelegatedByActorURI(delegatedBy)
-	contentClass := auth.DelegationContentClassNote
-	if strings.EqualFold(strings.TrimSpace(req.Visibility), "direct") {
-		contentClass = auth.DelegationContentClassDirectMessage
-	}
+	contentClass := auth.DelegationContentClassForVisibility(req.Visibility)
 	approvedBy, _, attestationErr := auth.ValidateDelegationAttestation(claims, contentClass)
 	if attestationErr != nil {
 		resp, respErr := common.RespondForbidden(ctx, "delegation credential is not valid for this post")

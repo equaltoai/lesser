@@ -521,6 +521,15 @@ func NormalizeDelegationContentClass(value string) (string, error) {
 	}
 }
 
+// DelegationContentClassForVisibility derives the attestation scope from the
+// effective persisted visibility used by every publishing surface.
+func DelegationContentClassForVisibility(visibility string) string {
+	if strings.EqualFold(strings.TrimSpace(visibility), "direct") {
+		return DelegationContentClassDirectMessage
+	}
+	return DelegationContentClassNote
+}
+
 func delegationIdentity(value string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 }

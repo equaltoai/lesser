@@ -8,7 +8,9 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -106,6 +108,60 @@ func TestRound12MutationResolvers_Notes_CreateDeleteAndSchedule(t *testing.T) {
 
 	// Ensure status repo remains usable for other tests.
 	require.NotNil(t, storageRepo.Status())
+}
+
+func TestCreateNoteDelegationContentClassMatchesEffectiveVisibility(t *testing.T) {
+	tests := []struct {
+		name         string
+		visibility   model.Visibility
+		contentClass string
+		allowed      bool
+	}{
+		{name: "note credential cannot attest direct message", visibility: model.VisibilityDirect, contentClass: auth.DelegationContentClassNote},
+		{name: "direct message credential attests direct message", visibility: model.VisibilityDirect, contentClass: auth.DelegationContentClassDirectMessage, allowed: true},
+		{name: "note credential attests public note", visibility: model.VisibilityPublic, contentClass: auth.DelegationContentClassNote, allowed: true},
+		{name: "note credential attests unlisted note", visibility: model.VisibilityUnlisted, contentClass: auth.DelegationContentClassNote, allowed: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver, storageRepo := newRound12GraphResolver(t)
+			require.NoError(t, storageRepo.User().CreateUser(context.Background(), &storage.User{
+				Username: "agent", IsAgent: true, AgentOwner: "owner",
+			}))
+
+			claims := &auth.Claims{
+				Username: "agent", IsAgent: true, DelegatedBy: "@owner",
+				DelegationPrincipal: "owner", DelegationAgent: "agent",
+				DelegationContentClass: test.contentClass,
+			}
+			ctx := context.WithValue(context.Background(), common.ContextKeyClaims, claims)
+			payload, err := resolver.Mutation().CreateNote(ctx, model.CreateNoteInput{
+				Content: "delegation visibility parity", Visibility: test.visibility,
+			})
+
+			restContentClass := auth.DelegationContentClassForVisibility(postingVisibilityFromGraphQL(test.visibility))
+			_, _, restDecisionErr := auth.ValidateDelegationAttestation(claims, restContentClass)
+			require.Equal(t, test.allowed, restDecisionErr == nil, "REST and GraphQL must classify the same operation identically")
+			if !test.allowed {
+				require.ErrorIs(t, restDecisionErr, auth.ErrInvalidDelegationCredential)
+				require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+				require.Nil(t, payload)
+				count, countErr := storageRepo.Status().CountStatusesByAuthor(ctx, "agent")
+				require.NoError(t, countErr)
+				require.Zero(t, count, "a rejected credential must not persist approved_by or any status")
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, payload)
+			status, ok := payload.Activity.Object.(*models.Status)
+			require.True(t, ok)
+			require.NotNil(t, status.Note)
+			require.NotNil(t, status.Note.AgentAttribution)
+			require.Equal(t, resolver.Config.ActorURL("owner"), status.Note.AgentAttribution.ApprovedBy)
+		})
+	}
 }
 
 func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) {
