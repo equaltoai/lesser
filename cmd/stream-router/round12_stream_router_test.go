@@ -767,10 +767,11 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_ErrorBranches_Round12(t *test
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
 			NewImage: map[string]events.DynamoDBAttributeValue{
-				"ID":         events.NewStringAttribute("1"),
-				"FormerType": events.NewStringAttribute("Follow"),
-				"Deleted":    events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
-				"DeletedBy":  events.NewStringAttribute("https://example.com/users/alice"),
+				"ID":           events.NewStringAttribute("1"),
+				"FormerType":   events.NewStringAttribute("Follow"),
+				"Deleted":      events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+				"DeletedBy":    events.NewStringAttribute("https://example.com/users/alice"),
+				"AttributedTo": events.NewStringAttribute("https://example.com/users/alice"),
 			},
 		},
 	}

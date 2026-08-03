@@ -1733,8 +1733,15 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 		// Don't return error - this is not critical
 	}
 
-	// Remove the object from user timelines (followers of the deleter)
-	if err := h.removeFromFollowerTimelines(ctx, requestID, tombstone.DeletedBy, tombstone.ID); err != nil {
+	// Remove the object from the author's followers' home timelines. DeletedBy
+	// identifies the deleter (possibly a moderator) and is never an author
+	// fallback; without an explicitly recorded author we fail closed and skip
+	// this leg rather than guess.
+	authorID := strings.TrimSpace(tombstone.AttributedTo)
+	if authorID == "" {
+		logger.Warn("skipping follower timeline removal for deletion without attributed author",
+			zap.String("object_id", tombstone.ID))
+	} else if err := h.removeFromFollowerTimelines(ctx, requestID, authorID, tombstone.ID); err != nil {
 		logger.Warn("failed to remove from follower timelines", zap.Error(err))
 	}
 

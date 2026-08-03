@@ -149,6 +149,72 @@ func TestPublicActorDeletionFanoutRequiresPublicLocalAuthor(t *testing.T) {
 	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
 }
 
+// followerRepoByUser returns distinct follower sets per username so tests can
+// tell the author's followers apart from the deleter's.
+type followerRepoByUser map[string][]*activitypub.Actor
+
+func (r followerRepoByUser) GetFollowers(_ context.Context, username string, _ int, _ string) ([]*activitypub.Actor, string, error) {
+	return r[username], "", nil
+}
+
+func TestTombstoneFollowerRemovalTargetsAuthorNotDeleter(t *testing.T) {
+	const (
+		aliceFollowerConnection = "carol-home"
+		modFollowerConnection   = "dave-home"
+	)
+
+	streamRepo := &fakeStreamRepo{
+		subsByStream: map[string][]models.WebSocketSubscription{
+			streaming.UserStreamName("carol"): {{ConnectionID: aliceFollowerConnection}},
+			streaming.UserStreamName("dave"):  {{ConnectionID: modFollowerConnection}},
+		},
+		getConnErrByID: make(map[string]error),
+	}
+	client := &fakeStreamerClient{}
+	handler := &StreamRouterHandler{
+		logger:        zap.NewNop(),
+		apiClient:     client,
+		streamingRepo: streamRepo,
+		accountRepo: followerRepoByUser{
+			"alice": {{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/carol"}}},
+			"mod":   {{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/dave"}}},
+		},
+		statusRepo: fakeStatusRepo{statusByID: map[string]*models.Status{
+			"alice-status":   {StatusID: "alice-status"},
+			"missing-author": {StatusID: "missing-author"},
+		}},
+		domain: "example.com",
+	}
+
+	deletedAt := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+
+	// A moderator deleting alice's status retracts it from alice's followers'
+	// home timelines, not the moderator's.
+	moderated := newTombstoneRecordWithActors(
+		"alice-status",
+		"https://example.com/users/alice",
+		"https://example.com/users/mod",
+		true,
+		deletedAt,
+	)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "moderated", moderated))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, aliceFollowerConnection))
+	require.Equal(t, 0, connectionCallCount(client.postCalls, modFollowerConnection))
+
+	// Without an explicitly recorded author the follower-removal leg fails
+	// closed: no follower stream is touched and processing does not fail.
+	missingAuthor := newTombstoneRecordWithActors(
+		"missing-author",
+		"",
+		"https://example.com/users/mod",
+		true,
+		deletedAt,
+	)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "missing-author", missingAuthor))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, aliceFollowerConnection))
+	require.Equal(t, 0, connectionCallCount(client.postCalls, modFollowerConnection))
+}
+
 func newTombstoneRecord(id, authorID string, isPublic bool, deletedAt time.Time) events.DynamoDBEventRecord {
 	return newTombstoneRecordWithActors(id, authorID, authorID, isPublic, deletedAt)
 }
