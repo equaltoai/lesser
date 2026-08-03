@@ -13,7 +13,7 @@ import (
 //
 // Non-URL actor IDs (bare usernames, user@domain handles) always return false.
 func IsLocalActorID(actorID, localDomain string) bool {
-	if actorID == "" || localDomain == "" {
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(localDomain) == "" {
 		return false
 	}
 	host := ExtractDomainFromActorID(actorID)
@@ -23,17 +23,18 @@ func IsLocalActorID(actorID, localDomain string) bool {
 	return strings.EqualFold(host, strings.TrimSpace(localDomain))
 }
 
+// IsHTTPActorID reports whether actorID is a parseable HTTP(S) actor URL with a host.
+// Scheme and host case follow net/url semantics rather than raw prefix matching.
+func IsHTTPActorID(actorID string) bool {
+	u, ok := parseHTTPActorID(actorID)
+	return ok && strings.TrimSpace(u.Host) != ""
+}
+
 // ExtractDomainFromActorID returns the host portion of an actor URL.
 // Returns empty string when actorID is not a valid HTTP/HTTPS URL.
 func ExtractDomainFromActorID(actorID string) string {
-	if actorID == "" {
-		return ""
-	}
-	if !strings.HasPrefix(actorID, "http://") && !strings.HasPrefix(actorID, "https://") {
-		return ""
-	}
-	u, err := url.Parse(actorID)
-	if err != nil {
+	u, ok := parseHTTPActorID(actorID)
+	if !ok {
 		return ""
 	}
 	host := u.Hostname()
@@ -41,6 +42,21 @@ func ExtractDomainFromActorID(actorID string) string {
 		host = u.Host
 	}
 	return strings.ToLower(strings.TrimSpace(host))
+}
+
+func parseHTTPActorID(actorID string) (*url.URL, bool) {
+	trimmed := strings.TrimSpace(actorID)
+	if trimmed == "" {
+		return nil, false
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u == nil || u.Host == "" {
+		return nil, false
+	}
+	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
+		return nil, false
+	}
+	return u, true
 }
 
 // ValidateActorDomainConsistency verifies that a fetched actor document's

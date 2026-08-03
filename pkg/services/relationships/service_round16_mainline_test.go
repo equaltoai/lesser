@@ -927,6 +927,7 @@ func TestService_BaseURL_Branches(t *testing.T) {
 func TestIsLocalActor(t *testing.T) {
 	assert.False(t, isLocalActor(nil, "example.com"))
 	assert.True(t, isLocalActor(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, "example.com"))
+	assert.True(t, isLocalActor(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "HTTP://EXAMPLE.COM/users/alice"}}, "example.com"))
 }
 
 func TestService_StorageErrorBranches(t *testing.T) {
