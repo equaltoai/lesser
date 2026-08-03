@@ -8,10 +8,28 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
+	projectionContext := func() context.Context {
+		loaders := NewLoaders(storageRepo, zap.NewNop())
+		loaders.QuoteAccountLoader = newQuoteAccountLoaderWithLookup(
+			func(_ context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+				permissions := make(map[string]*models.QuotePermissions, len(usernames))
+				for _, username := range usernames {
+					permissions[username] = &models.QuotePermissions{
+						Username:       username,
+						AllowPublic:    true,
+						AllowFollowers: true,
+						AllowMentioned: true,
+					}
+				}
+				return permissions, nil
+			}, zap.NewNop())
+		return WithLoaders(context.Background(), loaders)
+	}
 
 	// Avoid pulling in boosted-state checks inside convertStatusToObject.
 	originalBoostFn := viewerBoostStateResolverFunc
@@ -38,7 +56,7 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	require.Equal(t, EventTypeFollowers, storedType)
 	storedStatus, err := storageRepo.Status().GetStatus(context.Background(), "status-1")
 	require.NoError(t, err)
-	projected := resolver.convertStatusToObject(context.Background(), storedStatus)
+	projected := resolver.convertStatusToObject(projectionContext(), storedStatus)
 	require.True(t, projected.Quoteable)
 	require.Equal(t, model.QuotePermissionFollowers, projected.QuotePermissions)
 
@@ -58,7 +76,7 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	storedType, err = storageRepo.Object().GetQuoteType(context.Background(), "status-1")
 	require.NoError(t, err)
 	require.Equal(t, "disabled", storedType)
-	projected = resolver.convertStatusToObject(context.Background(), storedStatus)
+	projected = resolver.convertStatusToObject(projectionContext(), storedStatus)
 	require.False(t, projected.Quoteable)
 	require.Equal(t, model.QuotePermissionNone, projected.QuotePermissions)
 

@@ -55,6 +55,24 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, tracker.Close(context.Background())) })
 	resolver.UnifiedTracker = tracker
 	resolver.TableName = "lesser-test"
+	var accountCalls atomic.Int32
+	newRequestLoaders := func() *Loaders {
+		loaders := NewLoaders(requestStorage, zap.NewNop())
+		loaders.QuoteAccountLoader = newQuoteAccountLoaderWithLookup(
+			func(_ context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+				accountCalls.Add(1)
+				permissions := make(map[string]*models.QuotePermissions, len(usernames))
+				for _, username := range usernames {
+					permissions[username] = &models.QuotePermissions{
+						Username: username, AllowPublic: true, AllowFollowers: true, AllowMentioned: true,
+					}
+				}
+				return permissions, nil
+			},
+			zap.NewNop(),
+		)
+		return loaders
+	}
 
 	statuses := []*models.Status{
 		{StatusID: "public"}, {StatusID: "followers"}, {StatusID: "mentioned"},
@@ -62,7 +80,10 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 		{StatusID: "reply-child", InReplyToID: "reply-parent"},
 		{StatusID: "boost-wrapper", ReblogOfID: "boost-original"},
 	}
-	ctx := WithLoaders(context.Background(), NewLoaders(requestStorage, zap.NewNop()))
+	for _, status := range statuses {
+		status.AuthorUsername = "alice"
+	}
+	ctx := WithLoaders(context.Background(), newRequestLoaders())
 	resolver.prefetchQuoteControls(ctx, statuses)
 
 	expected := map[string]struct {
@@ -78,21 +99,23 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 		"boost-original": {false, model.QuotePermissionNone},
 	}
 	for statusID, want := range expected {
-		quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: statusID})
+		quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: statusID, AuthorUsername: "alice"})
 		require.Equal(t, want.quoteable, quoteable, statusID)
 		require.Equal(t, want.permission, permission, statusID)
 	}
 
 	require.Equal(t, int32(1), objectRepo.calls.Load(), "all root and recursive quote controls must use one batch")
-	require.Equal(t, int64(1), tracker.GetOperationCounts()["Read"], "the batch read must be cost-visible once")
+	require.Equal(t, int32(1), accountCalls.Load(), "all authors must use one account-permission batch")
+	require.Equal(t, int64(2), tracker.GetOperationCounts()["Read"], "both batch reads must be cost-visible once")
 
 	// NewLoaders is called once per GraphQL request by middleware. A second loader
 	// set must not reuse the first request's permission cache.
-	secondCtx := WithLoaders(context.Background(), NewLoaders(requestStorage, zap.NewNop()))
-	quoteable, permission := resolver.determineQuoteable(secondCtx, &models.Status{StatusID: "public"})
+	secondCtx := WithLoaders(context.Background(), newRequestLoaders())
+	quoteable, permission := resolver.determineQuoteable(secondCtx, &models.Status{StatusID: "public", AuthorUsername: "alice"})
 	require.True(t, quoteable)
 	require.Equal(t, model.QuotePermissionEveryone, permission)
 	require.Equal(t, int32(2), objectRepo.calls.Load())
+	require.Equal(t, int32(2), accountCalls.Load())
 }
 
 func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
@@ -104,7 +127,7 @@ func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
 			zap.NewNop(),
 		),
 	})
-	quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: "status-1"})
+	quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: "status-1", AuthorUsername: "alice"})
 	require.False(t, quoteable)
 	require.Equal(t, model.QuotePermissionNone, permission)
 
@@ -126,7 +149,7 @@ func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
 	}))
 
 	// Keep the non-loader fallback pinned for non-GraphQL conversion callers.
-	quoteable, permission = resolver.determineQuoteable(context.Background(), &models.Status{StatusID: "missing"})
+	quoteable, permission = resolver.determineQuoteable(context.Background(), &models.Status{StatusID: "missing", AuthorUsername: "alice"})
 	require.False(t, quoteable)
 	require.Equal(t, model.QuotePermissionNone, permission)
 	require.NotNil(t, storageRepo.Object())

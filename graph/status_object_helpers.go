@@ -85,6 +85,10 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 	if r == nil || status == nil || strings.TrimSpace(status.StatusID) == "" {
 		return false, model.QuotePermissionNone
 	}
+	authorUsername := resolveStatusAuthorUsername(status)
+	if authorUsername == "" {
+		return false, model.QuotePermissionNone
+	}
 
 	store := r.Storage
 	if r.Registry != nil && r.Registry.GetStorage() != nil {
@@ -95,6 +99,7 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 	}
 
 	quoteType := ""
+	var accountPermissions *models.QuotePermissions
 	var err error
 	if GetLoaders(ctx) != nil {
 		loaded, loadErr := loadQuoteControl(ctx, status.StatusID)
@@ -103,21 +108,55 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 			quoteType = loaded.quoteType
 			r.trackQuoteControlBatch(ctx, loaded.batch)
 		}
+		account, accountErr := loadQuoteAccount(ctx, authorUsername)
+		if err == nil {
+			err = accountErr
+		}
+		if account != nil {
+			accountPermissions = account.permissions
+			r.trackQuoteControlBatch(ctx, account.batch)
+		}
 	} else {
 		// Non-GraphQL callers and focused unit tests have no request loader. The
 		// production GraphQL middleware always installs a fresh loader set.
 		quoteType, err = store.Object().GetQuoteType(ctx, status.StatusID)
 		r.trackDynamoOperation(ctx, "read", 1)
+		if err == nil && r.Registry != nil && r.Registry.Quotes() != nil {
+			accountPermissions, err = r.Registry.Quotes().GetQuotePermissions(ctx, authorUsername)
+			r.trackDynamoOperation(ctx, "read", 1)
+		}
 	}
-	if err != nil {
+	if err != nil || accountPermissions == nil {
 		if r.Logger != nil {
-			r.Logger.Warn("per-note quote control projection failed closed",
+			r.Logger.Warn("effective quote control projection failed closed",
 				zap.String("status_id", status.StatusID),
 				zap.Error(err))
 		}
 		return false, model.QuotePermissionNone
 	}
-	return graphQLQuoteControl(quoteType)
+	return effectiveGraphQLQuoteControl(accountPermissions, quoteType)
+}
+
+func effectiveGraphQLQuoteControl(account *models.QuotePermissions, storedQuoteType string) (bool, model.QuotePermission) {
+	if account == nil {
+		return false, model.QuotePermissionNone
+	}
+	perNote := strings.ToLower(strings.TrimSpace(storedQuoteType))
+	publicAllowed := account.AllowPublic && perNote == models.VisibilityPublic
+	followersAllowed := (account.AllowPublic || account.AllowFollowers) &&
+		(perNote == models.VisibilityPublic || perNote == EventTypeFollowers)
+	mentionedAllowed := (account.AllowPublic || account.AllowMentioned) &&
+		(perNote == models.VisibilityPublic || perNote == "mentioned")
+	switch {
+	case publicAllowed:
+		return true, model.QuotePermissionEveryone
+	case followersAllowed:
+		return true, model.QuotePermissionFollowers
+	case mentionedAllowed:
+		return true, model.QuotePermissionMentioned
+	default:
+		return false, model.QuotePermissionNone
+	}
 }
 
 func (r *Resolver) trackQuoteControlBatch(ctx context.Context, batch *quoteControlBatch) {
@@ -152,6 +191,23 @@ func quoteControlPrefetchIDs(statuses []*models.Status) []string {
 	return ids
 }
 
+func quoteAccountPrefetchUsernames(statuses []*models.Status) []string {
+	seen := make(map[string]struct{}, len(statuses))
+	usernames := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		username := strings.TrimSpace(resolveStatusAuthorUsername(status))
+		if username == "" {
+			continue
+		}
+		if _, ok := seen[username]; ok {
+			continue
+		}
+		seen[username] = struct{}{}
+		usernames = append(usernames, username)
+	}
+	return usernames
+}
+
 func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models.Status) {
 	if GetLoaders(ctx) == nil {
 		return
@@ -162,6 +218,18 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 	}
 	loaded, _ := loadQuoteControls(ctx, ids)
 	for _, result := range loaded {
+		if result != nil {
+			r.trackQuoteControlBatch(ctx, result.batch)
+			break
+		}
+	}
+
+	usernames := quoteAccountPrefetchUsernames(statuses)
+	if len(usernames) == 0 {
+		return
+	}
+	accounts, _ := loadQuoteAccounts(ctx, usernames)
+	for _, result := range accounts {
 		if result != nil {
 			r.trackQuoteControlBatch(ctx, result.batch)
 			return

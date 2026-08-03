@@ -19,6 +19,7 @@ var (
 	errLoadersNotFound               = errors.New("graph dataloaders not found in context")
 	errQuoteTargetLoaderUnavailable  = errors.New("quote target loader unavailable")
 	errQuoteControlLoaderUnavailable = errors.New("quote control loader unavailable")
+	errQuoteAccountLoaderUnavailable = errors.New("quote account permission loader unavailable")
 )
 
 // Loaders holds all the dataloaders for the GraphQL server
@@ -28,6 +29,7 @@ type Loaders struct {
 	TrustScoreLoader   *dataloader.Loader
 	QuoteTargetLoader  *dataloader.Loader
 	QuoteControlLoader *dataloader.Loader
+	QuoteAccountLoader *dataloader.Loader
 
 	// Viewer interaction loaders (GraphQL fields on Object).
 	ViewerFavouritedLoader *dataloader.Loader
@@ -43,6 +45,7 @@ func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 		TrustScoreLoader:       newTrustScoreLoader(repos, logger),
 		QuoteTargetLoader:      newQuoteTargetLoader(repos, logger),
 		QuoteControlLoader:     newQuoteControlLoader(repos, logger),
+		QuoteAccountLoader:     newQuoteAccountLoader(repos, logger),
 		ViewerFavouritedLoader: newViewerFavouritedLoader(repos, logger),
 		ViewerBookmarkedLoader: newViewerBookmarkedLoader(repos, logger),
 		ViewerPinnedLoader:     newViewerPinnedLoader(repos, logger),
@@ -64,6 +67,13 @@ type quoteControlLoadResult struct {
 }
 
 type quoteControlBatchLookup func(context.Context, []string) (map[string]string, error)
+
+type quoteAccountLoadResult struct {
+	permissions *models.QuotePermissions
+	batch       *quoteControlBatch
+}
+
+type quoteAccountBatchLookup func(context.Context, []string) (map[string]*models.QuotePermissions, error)
 
 func newQuoteControlLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
 	var lookup quoteControlBatchLookup
@@ -132,6 +142,32 @@ func newQuoteProjectionLoader[T any](
 	return dataloader.NewBatchedLoader(batchFn,
 		dataloader.WithWait(2*time.Millisecond),
 		dataloader.WithBatchCapacity(100))
+}
+
+func newQuoteAccountLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup quoteAccountBatchLookup
+	if repos != nil {
+		lookup = func(ctx context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+			quoteRepo := repos.Quote()
+			if quoteRepo == nil {
+				return nil, errQuoteAccountLoaderUnavailable
+			}
+			return quoteRepo.GetQuotePermissionsBatch(ctx, usernames)
+		}
+	}
+	return newQuoteAccountLoaderWithLookup(lookup, logger)
+}
+
+func newQuoteAccountLoaderWithLookup(lookup quoteAccountBatchLookup, logger *zap.Logger) *dataloader.Loader {
+	return newQuoteProjectionLoader(
+		lookup,
+		errQuoteAccountLoaderUnavailable,
+		"quote account loader batch lookup failed",
+		func(permissions *models.QuotePermissions, batch *quoteControlBatch) any {
+			return &quoteAccountLoadResult{permissions: permissions, batch: batch}
+		},
+		logger,
+	)
 }
 
 // Actor loader functions
@@ -595,6 +631,34 @@ func loadQuoteControl(ctx context.Context, statusID string) (*quoteControlLoadRe
 	}
 	if len(results) == 0 || results[0] == nil {
 		return nil, errQuoteControlLoaderUnavailable
+	}
+	return results[0], nil
+}
+
+func loadQuoteAccounts(ctx context.Context, usernames []string) ([]*quoteAccountLoadResult, []error) {
+	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.QuoteAccountLoader == nil {
+		return nil, []error{errQuoteAccountLoaderUnavailable}
+	}
+	keys := make(dataloader.Keys, len(usernames))
+	for i, username := range usernames {
+		keys[i] = dataloader.StringKey(username)
+	}
+	raw, errs := loaders.QuoteAccountLoader.LoadMany(ctx, keys)()
+	results := make([]*quoteAccountLoadResult, len(raw))
+	for i, value := range raw {
+		results[i], _ = value.(*quoteAccountLoadResult)
+	}
+	return results, errs
+}
+
+func loadQuoteAccount(ctx context.Context, username string) (*quoteAccountLoadResult, error) {
+	results, errs := loadQuoteAccounts(ctx, []string{username})
+	if len(errs) > 0 && errs[0] != nil {
+		return nil, errs[0]
+	}
+	if len(results) == 0 || results[0] == nil || results[0].permissions == nil {
+		return nil, errQuoteAccountLoaderUnavailable
 	}
 	return results[0], nil
 }
