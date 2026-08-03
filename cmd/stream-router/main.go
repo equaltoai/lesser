@@ -736,18 +736,10 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 		return FailedToMarshalStatus(err)
 	}
 
-	// Route to appropriate streams based on visibility
-	wsStreams := []string{}
-
-	// Public timelines
-	if status.Visibility == "public" {
-		wsStreams = append(wsStreams, streaming.PublicStream, streaming.PublicLocalStream)
-	}
-
-	// User stream for the author
-	if status.AuthorUsername != "" {
-		wsStreams = append(wsStreams, streaming.UserStreamName(status.AuthorUsername))
-	}
+	// Route to appropriate streams based on visibility. The public actor and
+	// hashtag streams are populated only inside the public-visibility guard;
+	// the private user stream remains separate and authenticated/self-only.
+	wsStreams := h.buildWebSocketStatusStreams(&status)
 
 	// Send to all relevant streams
 	eventType := streamEventUpdate
@@ -781,6 +773,46 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 	}
 
 	return nil
+}
+
+func (h *StreamRouterHandler) buildWebSocketStatusStreams(status *models.Status) []string {
+	if status == nil {
+		return []string{}
+	}
+
+	streams := make([]string, 0, 5+len(status.Hashtags))
+	if status.Visibility == models.VisibilityPublic {
+		streams = append(streams, streaming.PublicStream)
+
+		isLocalAuthor := h.isLocalActorID(status.AuthorID)
+		if isLocalAuthor {
+			streams = append(streams, streaming.PublicLocalStream)
+			if status.AuthorUsername != "" {
+				streams = append(streams, streaming.PublicActorStreamName(status.AuthorUsername))
+			}
+		} else {
+			streams = append(streams, streaming.PublicRemoteStream)
+		}
+
+		for _, hashtag := range status.Hashtags {
+			normalized, err := streaming.NormalizeHashtagStreamValue(hashtag)
+			if err != nil {
+				h.logger.Warn("skipping invalid hashtag stream value",
+					zap.String("hashtag", hashtag),
+					zap.Error(err))
+				continue
+			}
+			streams = append(streams, streaming.HashtagStreamName(normalized))
+		}
+	}
+
+	// The author receives all of their own statuses, including non-public ones,
+	// on the private user stream.
+	if status.AuthorUsername != "" {
+		streams = append(streams, streaming.UserStreamName(status.AuthorUsername))
+	}
+
+	return streams
 }
 
 // processNotificationEvent processes notification events using TableTheory stream utilities

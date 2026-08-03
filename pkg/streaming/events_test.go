@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEventBuilder_NewEvent(t *testing.T) {
@@ -233,6 +234,23 @@ func TestUserNotificationStreamName(t *testing.T) {
 func TestHashtagStreamName(t *testing.T) {
 	assert.Equal(t, "hashtag:golang", HashtagStreamName("golang"))
 	assert.Equal(t, "hashtag:activitypub", HashtagStreamName("activitypub"))
+}
+
+func TestNormalizeHashtagStreamValueValidatesExactKeyMaterial(t *testing.T) {
+	value, err := NormalizeHashtagStreamValue(" #GoLang ")
+	require.NoError(t, err)
+	require.Equal(t, "golang", value)
+
+	_, err = NormalizeHashtagStreamValue("##golang")
+	require.Error(t, err)
+	_, err = NormalizeHashtagStreamValue("go:lang")
+	require.Error(t, err)
+}
+
+func TestPublicActorStreamNameIsDistinctFromPrivateUserStream(t *testing.T) {
+	require.Equal(t, "public:actor:alice", PublicActorStreamName("alice"))
+	require.NotEqual(t, UserStreamName("alice"), PublicActorStreamName("alice"))
+	require.True(t, IsValidStreamName(PublicActorStreamName("alice")))
 }
 
 func TestListStreamName(t *testing.T) {
