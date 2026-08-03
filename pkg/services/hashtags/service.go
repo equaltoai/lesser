@@ -482,7 +482,9 @@ func (s *Service) relatedHashtags(ctx context.Context, hashtag string, limit int
 	return result
 }
 
-// publishUserEvent notifies websocket clients about hashtag follow-related operations.
+// publishUserEvent notifies only the user who changed their hashtag settings.
+// Follow, unfollow, and mute state is private and must not be published onto
+// the shared hashtag stream used by anonymous timeline subscribers.
 func (s *Service) publishUserEvent(ctx context.Context, eventType, userID, hashtag string) {
 	if s.publisher == nil {
 		return
@@ -498,14 +500,6 @@ func (s *Service) publishUserEvent(ctx context.Context, eventType, userID, hasht
 		s.logger.Warn("failed to publish user hashtag event",
 			zap.String("type", eventType),
 			zap.String("user_id", userID),
-			zap.String("hashtag", hashtag),
-			zap.Error(err))
-	}
-
-	// Broadcast to hashtag stream as well so hashtag timelines receive updates.
-	if err := s.publisher.PublishToStream(ctx, streaming.HashtagStreamName(hashtag), event); err != nil {
-		s.logger.Debug("failed to publish hashtag stream event",
-			zap.String("type", eventType),
 			zap.String("hashtag", hashtag),
 			zap.Error(err))
 	}
