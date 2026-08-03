@@ -331,7 +331,6 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 		ReviewStatus:       derefString(input.ReviewStatus),
 		ReadingTimeMinutes: 0,
 		WordCount:          0,
-		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
 

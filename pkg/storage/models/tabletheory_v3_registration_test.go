@@ -23,7 +23,7 @@ func TestArticleRegistersWithSingleCreatedAtMapping(t *testing.T) {
 	want := time.Now().UTC()
 	article := Article{Object: Object{CreatedAt: want}}
 	require.Equal(t, want, article.Object.CreatedAt)
-	require.True(t, article.CreatedAt.IsZero())
+	require.Equal(t, want, article.CreatedAt)
 }
 
 func TestDNSCacheRegistersWithV2TTLPrecedence(t *testing.T) {

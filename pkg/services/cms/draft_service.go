@@ -426,7 +426,6 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 		},
 		Slug:          slug,
 		ContentFormat: draft.ContentFormat,
-		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, false)
