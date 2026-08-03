@@ -9,6 +9,7 @@ import (
 )
 
 func TestArticleRegistersWithSingleCreatedAtMapping(t *testing.T) {
+	// TableTheory v2 persisted embedded Object.CreatedAt under the createdAt attribute.
 	registry := tablemodel.NewRegistry()
 	require.NoError(t, registry.Register(&Article{}))
 
@@ -27,6 +28,7 @@ func TestArticleRegistersWithSingleCreatedAtMapping(t *testing.T) {
 }
 
 func TestDNSCacheRegistersWithV2TTLPrecedence(t *testing.T) {
+	// TableTheory v2 persisted ExpiresAt under the ttl attribute; ExpiresAt won over the Go TTL field.
 	registry := tablemodel.NewRegistry()
 	require.NoError(t, registry.Register(&DNSCache{}))
 
