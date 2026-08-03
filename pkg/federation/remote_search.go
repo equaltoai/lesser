@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -730,6 +731,13 @@ func normalizeActorDomain(value string) string {
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
 	if idx := strings.Index(value, "/"); idx >= 0 {
 		value = value[:idx]
+	}
+	value = strings.TrimPrefix(strings.TrimSuffix(value, "]"), "[")
+	if ip := net.ParseIP(value); ip != nil {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return ""
+		}
+		return value
 	}
 	if idx := strings.Index(value, ":"); idx >= 0 {
 		value = value[:idx]

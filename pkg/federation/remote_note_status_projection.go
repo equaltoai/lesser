@@ -87,6 +87,9 @@ func remoteNoteAttributionIsLocal(attributedTo, normalizedLocalDomain string) bo
 	if host == "" {
 		host = u.Host
 	}
+	if normalizeActorDomain(host) == "" {
+		return true // no usable domain anchor is never safe to project
+	}
 	return strings.EqualFold(strings.TrimSpace(host), normalizedLocalDomain)
 }
 
