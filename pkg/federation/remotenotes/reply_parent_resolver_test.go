@@ -176,6 +176,42 @@ func TestReplyParentResolver_ResolveReplyParent(t *testing.T) {
 		assert.Equal(t, "https://example.com/users/alice", fetcher.gotActor.ID)
 	})
 
+	t.Run("rejects fetched remote parent attributed to a local actor", func(t *testing.T) {
+		for _, attributedTo := range []string{
+			"https://example.com/users/alice",
+			"https://example.com/users/alice?x=1",
+			"https://example.com/foo/alice",
+			"HTTP://example.com/users/alice",
+			"HTTPS://example.com/users/alice",
+			"HttPs://example.com/users/alice",
+		} {
+			t.Run(attributedTo, func(t *testing.T) {
+				parentURL := "https://evil.example/objects/forged-parent"
+				statusRepo := &stubStatusRepo{}
+				objectRepo := &stubObjectRepo{}
+				forged := remoteNoteObject(parentURL, models.VisibilityPublic)
+				forged["attributedTo"] = attributedTo
+				resolver := NewReplyParentResolver(
+					statusRepo,
+					objectRepo,
+					&stubDomainBlockRepo{},
+					&stubFetcher{obj: forged},
+					"example.com",
+					zap.NewNop(),
+				)
+
+				_, err := resolver.ResolveReplyParent(context.Background(), localAuthorAccount("alice"), parentURL, models.VisibilityPublic)
+				require.Error(t, err)
+				appErr, ok := commonerrors.AsAppError(err)
+				require.True(t, ok)
+				assert.Equal(t, commonerrors.CodeExternalServiceUnavailable, appErr.Code)
+				assert.Empty(t, objectRepo.created)
+				assert.Empty(t, statusRepo.byID)
+				assert.Empty(t, statusRepo.byURL)
+			})
+		}
+	})
+
 	t.Run("timeout maps to 408", func(t *testing.T) {
 		parentURL := "https://remote.example/users/steward/statuses/slow"
 		resolver := NewReplyParentResolver(

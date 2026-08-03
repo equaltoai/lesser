@@ -3298,7 +3298,7 @@ type ComplexityRoot struct {
 		QuoteActivity           func(childComplexity int, noteID string) int
 		RelationshipUpdates     func(childComplexity int, actorID *string) int
 		ThreatIntelligence      func(childComplexity int) int
-		TimelineUpdates         func(childComplexity int, typeArg model.TimelineType, listID *string) int
+		TimelineUpdates         func(childComplexity int, typeArg model.TimelineType, actorUsername *string, hashtag *string, listID *string) int
 		TrustUpdates            func(childComplexity int, actorID string) int
 	}
 
@@ -3963,7 +3963,7 @@ type QuoteContextResolver interface {
 }
 type SubscriptionResolver interface {
 	ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error)
-	TimelineUpdates(ctx context.Context, typeArg model.TimelineType, listID *string) (<-chan *model.Object, error)
+	TimelineUpdates(ctx context.Context, typeArg model.TimelineType, actorUsername *string, hashtag *string, listID *string) (<-chan *model.Object, error)
 	NotificationStream(ctx context.Context, types []string) (<-chan *model.Notification, error)
 	ConversationUpdates(ctx context.Context) (<-chan *model.Conversation, error)
 	ListUpdates(ctx context.Context, listID string) (<-chan *model.ListUpdate, error)
@@ -21673,7 +21673,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Subscription.TimelineUpdates(childComplexity, args["type"].(model.TimelineType), args["listId"].(*string)), true
+		return e.complexity.Subscription.TimelineUpdates(childComplexity, args["type"].(model.TimelineType), args["actorUsername"].(*string), args["hashtag"].(*string), args["listId"].(*string)), true
 
 	case "Subscription.trustUpdates":
 		if e.complexity.Subscription.TrustUpdates == nil {
@@ -27622,11 +27622,21 @@ func (ec *executionContext) field_Subscription_timelineUpdates_args(ctx context.
 		return nil, err
 	}
 	args["type"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "listId", ec.unmarshalOID2ᚖstring)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "actorUsername", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
-	args["listId"] = arg1
+	args["actorUsername"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "hashtag", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["hashtag"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "listId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["listId"] = arg3
 	return args, nil
 }
 
@@ -143477,7 +143487,7 @@ func (ec *executionContext) _Subscription_timelineUpdates(ctx context.Context, f
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Subscription().TimelineUpdates(rctx, fc.Args["type"].(model.TimelineType), fc.Args["listId"].(*string))
+		return ec.resolvers.Subscription().TimelineUpdates(rctx, fc.Args["type"].(model.TimelineType), fc.Args["actorUsername"].(*string), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

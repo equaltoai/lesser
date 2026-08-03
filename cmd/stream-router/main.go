@@ -736,18 +736,10 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 		return FailedToMarshalStatus(err)
 	}
 
-	// Route to appropriate streams based on visibility
-	wsStreams := []string{}
-
-	// Public timelines
-	if status.Visibility == "public" {
-		wsStreams = append(wsStreams, streaming.PublicStream, streaming.PublicLocalStream)
-	}
-
-	// User stream for the author
-	if status.AuthorUsername != "" {
-		wsStreams = append(wsStreams, streaming.UserStreamName(status.AuthorUsername))
-	}
+	// Route to appropriate streams based on visibility. The public actor and
+	// hashtag streams are populated only inside the public-visibility guard;
+	// the private user stream remains separate and authenticated/self-only.
+	wsStreams := h.buildWebSocketStatusStreams(&status)
 
 	// Send to all relevant streams
 	eventType := streamEventUpdate
@@ -781,6 +773,57 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 	}
 
 	return nil
+}
+
+func (h *StreamRouterHandler) buildWebSocketStatusStreams(status *models.Status) []string {
+	if status == nil {
+		return []string{}
+	}
+
+	streams := make([]string, 0, 5+len(status.Hashtags))
+	seen := make(map[string]struct{}, cap(streams))
+	add := func(stream string) {
+		if stream == "" {
+			return
+		}
+		if _, exists := seen[stream]; exists {
+			return
+		}
+		seen[stream] = struct{}{}
+		streams = append(streams, stream)
+	}
+	if status.Visibility == models.VisibilityPublic {
+		add(streaming.PublicStream)
+
+		isLocalAuthor := h.isLocalActorID(status.AuthorID)
+		if isLocalAuthor {
+			add(streaming.PublicLocalStream)
+			if status.AuthorUsername != "" {
+				add(streaming.PublicActorStreamName(status.AuthorUsername))
+			}
+		} else {
+			add(streaming.PublicRemoteStream)
+		}
+
+		for _, hashtag := range status.Hashtags {
+			normalized, err := streaming.NormalizeHashtagStreamValue(hashtag)
+			if err != nil {
+				h.logger.Warn("skipping invalid hashtag stream value",
+					zap.String("hashtag", hashtag),
+					zap.Error(err))
+				continue
+			}
+			add(streaming.HashtagStreamName(normalized))
+		}
+	}
+
+	// The author receives all of their own statuses, including non-public ones,
+	// on the private user stream.
+	if status.AuthorUsername != "" {
+		add(streaming.UserStreamName(status.AuthorUsername))
+	}
+
+	return streams
 }
 
 // processNotificationEvent processes notification events using TableTheory stream utilities
@@ -1597,16 +1640,20 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 
 	// Unmarshal the tombstone record
 	var recordModel struct {
-		ID               string    `json:"ID"`
-		IDLegacy         string    `json:"id"`
-		Type             string    `json:"Type"`
-		TypeLegacy       string    `json:"type"`
-		FormerType       string    `json:"FormerType"`
-		FormerTypeLegacy string    `json:"formerType"`
-		Deleted          time.Time `json:"Deleted"`
-		DeletedLegacy    time.Time `json:"deleted"`
-		DeletedBy        string    `json:"DeletedBy"`
-		DeletedByLegacy  string    `json:"deletedBy"`
+		ID                 string    `json:"ID"`
+		IDLegacy           string    `json:"id"`
+		Type               string    `json:"Type"`
+		TypeLegacy         string    `json:"type"`
+		FormerType         string    `json:"FormerType"`
+		FormerTypeLegacy   string    `json:"formerType"`
+		Deleted            time.Time `json:"Deleted"`
+		DeletedLegacy      time.Time `json:"deleted"`
+		DeletedBy          string    `json:"DeletedBy"`
+		DeletedByLegacy    string    `json:"deletedBy"`
+		AttributedTo       string    `json:"AttributedTo"`
+		AttributedToLegacy string    `json:"attributedTo"`
+		IsPublic           bool      `json:"IsPublic"`
+		IsPublicLegacy     bool      `json:"isPublic"`
 	}
 
 	if err := stream.UnmarshalItem(record, &recordModel); err != nil {
@@ -1634,13 +1681,19 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 	if deletedBy == "" {
 		deletedBy = recordModel.DeletedByLegacy
 	}
+	attributedTo := recordModel.AttributedTo
+	if attributedTo == "" {
+		attributedTo = recordModel.AttributedToLegacy
+	}
 
 	tombstone := models.Tombstone{
-		ID:         objectID,
-		Type:       objectType,
-		FormerType: formerType,
-		Deleted:    deletedAt,
-		DeletedBy:  deletedBy,
+		ID:           objectID,
+		Type:         objectType,
+		FormerType:   formerType,
+		Deleted:      deletedAt,
+		DeletedBy:    deletedBy,
+		AttributedTo: attributedTo,
+		IsPublic:     recordModel.IsPublic || recordModel.IsPublicLegacy,
 	}
 
 	if tombstone.ID == "" || tombstone.DeletedBy == "" || tombstone.FormerType == "" || tombstone.Deleted.IsZero() {
@@ -1680,8 +1733,15 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 		// Don't return error - this is not critical
 	}
 
-	// Remove the object from user timelines (followers of the deleter)
-	if err := h.removeFromFollowerTimelines(ctx, requestID, tombstone.DeletedBy, tombstone.ID); err != nil {
+	// Remove the object from the author's followers' home timelines. DeletedBy
+	// identifies the deleter (possibly a moderator) and is never an author
+	// fallback; without an explicitly recorded author we fail closed and skip
+	// this leg rather than guess.
+	authorID := strings.TrimSpace(tombstone.AttributedTo)
+	if authorID == "" {
+		logger.Warn("skipping follower timeline removal for deletion without attributed author",
+			zap.String("object_id", tombstone.ID))
+	} else if err := h.removeFromFollowerTimelines(ctx, requestID, authorID, tombstone.ID); err != nil {
 		logger.Warn("failed to remove from follower timelines", zap.Error(err))
 	}
 
@@ -1709,6 +1769,29 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx context.Context, re
 			h.logger.Warn("failed to broadcast deletion to local stream", zap.Error(err))
 		}
 		h.appendStreamEvent(ctx, requestID, streaming.PublicLocalStream, "delete", objectID)
+
+		// Public actor streams mirror create fanout: only public objects with an
+		// explicitly recorded local author may reach the anonymous per-actor key.
+		// DeletedBy identifies the deleter and is never an author fallback.
+		if tombstone.IsPublic {
+			authorID := strings.TrimSpace(tombstone.AttributedTo)
+			if h.isLocalActorID(authorID) {
+				username, err := common.ActorUsernameFromID(authorID)
+				if err != nil {
+					h.logger.Warn("failed to extract local actor username for deletion fanout",
+						zap.String("actor_id", authorID),
+						zap.Error(err))
+				} else {
+					actorStream := streaming.PublicActorStreamName(username)
+					message.Stream = actorStream
+					if err := h.broadcastMessage(ctx, requestID, message); err != nil {
+						h.logger.Warn("failed to broadcast deletion to public actor stream",
+							zap.String("stream", actorStream),
+							zap.Error(err))
+					}
+				}
+			}
+		}
 
 		// Hashtag streams - extract hashtags from the deleted object if available
 		if err := h.removeFromHashtagStreams(ctx, requestID, objectID); err != nil {

@@ -700,6 +700,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Resp
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
 		return nil, err
 	}
+	if err := ih.verifyCreateAuthorization(req.Activity); err != nil {
+		return nil, err
+	}
 	if err := ih.validateActorInboxAddressingAndPrivacy(req); err != nil {
 		return nil, err
 	}
@@ -709,6 +712,29 @@ func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Resp
 
 	ih.recordSuccessAndComplete(ctx, req)
 	return apptheory.Text(http.StatusAccepted, ""), nil
+}
+
+// verifyCreateAuthorization binds an embedded object's attribution to the
+// Activity actor whose key authenticated the request. It must run only after
+// verifyAuthentication so activity.Actor represents the verified signer.
+func (ih *InboxHandler) verifyCreateAuthorization(activity *activitypub.Activity) error {
+	if activity == nil || activity.Type != activitypub.CreateType {
+		return nil
+	}
+
+	object, ok := activity.Object.(map[string]any)
+	if !ok {
+		return nil
+	}
+	attributedTo, ok := object["attributedTo"].(string)
+	if !ok || strings.TrimSpace(attributedTo) == "" {
+		return nil
+	}
+	if !common.SameCanonicalActorID(activity.Actor, attributedTo) {
+		return errors.InsufficientPermissions("create object attribution")
+	}
+
+	return nil
 }
 
 // validateRequestBody validates the request body size and content
@@ -3376,12 +3402,11 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 	objType, _ := objMap["type"].(string)
 	switch strings.TrimSpace(objType) {
 	case activitypub.NoteType:
-		// Store edit history before updating supported Note objects.
-		if err := ih.storeEditHistory(ctx, objectID, existingObject, activity.Actor); err != nil {
-			log.Error("failed to store edit history",
-				zap.String("object_id", objectID),
-				zap.Error(err))
-			// Continue even if history storage fails
+		// Updates carry a complete Note just like Creates. Validate before edit
+		// history or object writes so missing attribution cannot blank the author.
+		if err := common.ValidateActivityPubNote(objMap); err != nil {
+			log.Warn("invalid note object in update activity", zap.Error(err))
+			return invalidNoteError()
 		}
 
 		// Convert to Note object
@@ -3393,6 +3418,19 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 		var note activitypub.Note
 		if err := common.ParseActivityPubObject(objJSON, &note); err != nil {
 			return err
+		}
+		// Remote projection owns the local-author invariant for every ingestion
+		// route. Check it before mutating the stored object or edit history.
+		if ih.buildCanonicalRemoteStatus(&note) == nil {
+			return invalidNoteError()
+		}
+
+		// Store edit history before updating supported Note objects.
+		if err := ih.storeEditHistory(ctx, objectID, existingObject, activity.Actor); err != nil {
+			log.Error("failed to store edit history",
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			// Continue even if history storage fails
 		}
 
 		// Set updated timestamp
@@ -4656,7 +4694,7 @@ func (ih *InboxHandler) verifyUpdateAuthorization(_ context.Context, activity *a
 	}
 
 	// Only the object owner can update it
-	if activity.Actor != objectOwner {
+	if !common.SameCanonicalActorID(activity.Actor, objectOwner) {
 		return unauthorizedUpdateError()
 	}
 
@@ -4771,7 +4809,7 @@ func (ih *InboxHandler) verifyDeleteAuthorization(_ context.Context, activity *a
 	}
 
 	// Only the object owner can delete it
-	if activity.Actor != objectOwner {
+	if !common.SameCanonicalActorID(activity.Actor, objectOwner) {
 		return unauthorizedDeleteError()
 	}
 

@@ -34,9 +34,9 @@ func TestRound12SubscriptionResolvers_ManagerGuardsAndTimelineValidation(t *test
 	require.False(t, ok)
 
 	// Timeline validations.
-	_, err = resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeHome, nil)
+	_, err = resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeHome, nil, nil, nil)
 	require.Error(t, err)
-	_, err = resolver.Subscription().TimelineUpdates(context.Background(), model.TimelineTypeList, nil)
+	_, err = resolver.Subscription().TimelineUpdates(context.Background(), model.TimelineTypeList, nil, nil, nil)
 	require.Error(t, err)
 }
 
@@ -59,7 +59,7 @@ func TestRound12SubscriptionResolvers_SuccessPaths(t *testing.T) {
 	_, err := resolver.Subscription().ActivityStream(authCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().TimelineUpdates(authCtx, model.TimelineTypeHome, nil)
+	_, err = resolver.Subscription().TimelineUpdates(authCtx, model.TimelineTypeHome, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, err = resolver.Subscription().RelationshipUpdates(authCtx, nil)

@@ -143,18 +143,18 @@ func TestUniqueNormalizedHashtags_DedupesAndNormalizes(t *testing.T) {
 	assert.Equal(t, []string{"golang", "testing"}, out)
 }
 
-func TestService_publishUserEvent_HandlesPublisherErrors(t *testing.T) {
+func TestService_publishUserEvent_RemainsUserScopedOnPublisherError(t *testing.T) {
 	t.Parallel()
 
 	publisher := new(mockPublisher)
 	service := NewService(nil, nil, nil, publisher, zap.NewNop())
 
 	publisher.On("PublishToUser", mock.Anything, "alice", mock.Anything).Return(errors.New("user publish failed")).Once()
-	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.Anything).Return(errors.New("stream publish failed")).Once()
 
 	service.publishUserEvent(context.Background(), streaming.HashtagFollowed, "alice", "golang")
 
 	publisher.AssertExpectations(t)
+	publisher.AssertNotCalled(t, "PublishToStream", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestService_publishInternalHashtagEvent_SkipsWithoutPublisher(t *testing.T) {

@@ -87,10 +87,12 @@ func TestInboxHandler_Round10_ProcessActivityByType_AllCases(t *testing.T) {
 				BaseObject: activitypub.BaseObject{Context: activitypub.Context, Type: activitypub.UpdateType, ID: env.cfg.BaseURL() + "/activities/update-bytype"},
 				Actor:      env.remoteActorID,
 				Object: map[string]any{
+					"@context":     "https://www.w3.org/ns/activitystreams",
 					"id":           objectID,
 					"type":         activitypub.NoteType,
 					"attributedTo": env.remoteActorID,
 					"content":      "updated bytype",
+					"to":           []any{activitypub.PublicAddress},
 				},
 			},
 		},

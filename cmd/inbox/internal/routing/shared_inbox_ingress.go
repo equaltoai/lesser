@@ -34,6 +34,9 @@ func (ih *InboxHandler) handlePostSharedInbox(ctx *apptheory.Context) (*apptheor
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
 		return nil, err
 	}
+	if err := ih.verifyCreateAuthorization(req.Activity); err != nil {
+		return nil, err
+	}
 	if err := ih.validateSharedInboxAddressingAndPrivacy(req); err != nil {
 		return nil, err
 	}

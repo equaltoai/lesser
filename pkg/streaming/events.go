@@ -93,9 +93,10 @@ const (
 // Stream name constants following Mastodon streaming API
 const (
 	// Public Streams
-	PublicStream       = "public"        // All public posts
-	PublicLocalStream  = "public:local"  // Local public posts only
-	PublicRemoteStream = "public:remote" // Remote public posts only
+	PublicStream            = "public"        // All public posts
+	PublicLocalStream       = "public:local"  // Local public posts only
+	PublicRemoteStream      = "public:remote" // Remote public posts only
+	PublicActorStreamPrefix = "public:actor"  // Public posts by one local actor
 
 	// User Streams
 	UserStream             = "user"              // User's home timeline and notifications
@@ -342,6 +343,33 @@ func UserNotificationStreamName(userID string) string {
 	return fmt.Sprintf("%s:%s", UserNotificationStream, userID)
 }
 
+// PublicActorStreamName returns the public-only stream name for a local actor.
+// Unlike UserStreamName, this stream must never carry home, notification, or
+// non-public status fanout.
+func PublicActorStreamName(username string) string {
+	return fmt.Sprintf("%s:%s", PublicActorStreamPrefix, strings.ToLower(strings.TrimSpace(username)))
+}
+
+// NormalizeHashtagStreamValue normalizes and validates the exact hashtag value
+// used in a stream key. One boundary '#' is accepted; any residual '#' is
+// rejected rather than constructing a dead hashtag stream.
+func NormalizeHashtagStreamValue(hashtag string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(hashtag))
+	normalized = strings.TrimPrefix(normalized, "#")
+
+	if err := common.ValidateHashtag(normalized); err != nil {
+		return "", err
+	}
+	if !common.HashtagPattern.MatchString(normalized) {
+		return "", common.ValidationError{
+			Field:   "hashtag",
+			Message: "can only contain letters, numbers, and underscores",
+		}
+	}
+
+	return normalized, nil
+}
+
 // HashtagStreamName returns the hashtag stream name for a specific hashtag
 func HashtagStreamName(hashtag string) string {
 	return fmt.Sprintf("%s:%s", HashtagStreamPrefix, hashtag)
@@ -422,6 +450,7 @@ func IsValidStreamName(streamName string) bool {
 
 	// Check prefixes (streams with IDs)
 	prefixes := []string{
+		PublicActorStreamPrefix + ":",
 		HashtagStreamPrefix + ":",
 		ListStreamPrefix + ":",
 		UserStream + ":",
