@@ -700,6 +700,9 @@ func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Resp
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
 		return nil, err
 	}
+	if err := ih.verifyCreateAuthorization(req.Activity); err != nil {
+		return nil, err
+	}
 	if err := ih.validateActorInboxAddressingAndPrivacy(req); err != nil {
 		return nil, err
 	}
@@ -709,6 +712,29 @@ func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Resp
 
 	ih.recordSuccessAndComplete(ctx, req)
 	return apptheory.Text(http.StatusAccepted, ""), nil
+}
+
+// verifyCreateAuthorization binds an embedded object's attribution to the
+// Activity actor whose key authenticated the request. It must run only after
+// verifyAuthentication so activity.Actor represents the verified signer.
+func (ih *InboxHandler) verifyCreateAuthorization(activity *activitypub.Activity) error {
+	if activity == nil || activity.Type != activitypub.CreateType {
+		return nil
+	}
+
+	object, ok := activity.Object.(map[string]any)
+	if !ok {
+		return nil
+	}
+	attributedTo, ok := object["attributedTo"].(string)
+	if !ok || strings.TrimSpace(attributedTo) == "" {
+		return nil
+	}
+	if !common.SameCanonicalActorID(activity.Actor, attributedTo) {
+		return errors.InsufficientPermissions("create object attribution")
+	}
+
+	return nil
 }
 
 // validateRequestBody validates the request body size and content
