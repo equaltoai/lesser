@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
+	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
 	"go.uber.org/zap"
 )
 

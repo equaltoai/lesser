@@ -11,9 +11,9 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/require"
-	apptheoryLimited "github.com/theory-cloud/apptheory/v2/pkg/limited"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	apptheoryLimited "github.com/theory-cloud/apptheory/v3/pkg/limited"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	tablecore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"

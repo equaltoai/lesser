@@ -17,7 +17,7 @@ type DNSCache struct {
 	Hostname   string    `theorydb:"attr:hostname" json:"hostname"`
 	IPs        []string  `theorydb:"attr:ips" json:"ips"`
 	ResolvedAt time.Time `theorydb:"attr:resolvedAt" json:"resolved_at"`
-	TTL        int       `theorydb:"attr:ttl" json:"ttl"`            // seconds
+	TTL        int       `theorydb:"-" json:"ttl"`                   // seconds; request metadata, not persisted in v2
 	ExpiresAt  int64     `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 }
 

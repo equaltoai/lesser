@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v2"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

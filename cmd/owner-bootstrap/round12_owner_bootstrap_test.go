@@ -16,8 +16,8 @@ import (
 	smstypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	testifyMock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	theoryMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	theoryMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 // PaginationParams represents standardized pagination parameters used across the application

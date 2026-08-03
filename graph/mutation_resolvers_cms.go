@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 

@@ -24,10 +24,10 @@ import (
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	"github.com/theory-cloud/tabletheory/v2"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/tabletheory/v3"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

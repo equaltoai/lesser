@@ -13,8 +13,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	theoryMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	theoryMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -661,7 +661,7 @@ func (m *MockDB) Model(model any) core.Query {
 	return args.Get(0).(core.Query)
 }
 
-// Transact returns a transaction builder for tests that exercise TableTheory v2
+// Transact returns a transaction builder for tests that exercise TableTheory v3
 // transaction APIs.
 func (m *MockDB) Transact() core.TransactionBuilder {
 	if m.hasExpectedCall("Transact") {
@@ -673,7 +673,7 @@ func (m *MockDB) Transact() core.TransactionBuilder {
 	return new(theoryMocks.MockTransactionBuilder)
 }
 
-// TransactWrite executes a function with a TableTheory v2 transaction builder.
+// TransactWrite executes a function with a TableTheory v3 transaction builder.
 func (m *MockDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
 	builder := new(theoryMocks.MockTransactionBuilder)
 	if m.hasExpectedCall("TransactWrite") {

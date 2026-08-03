@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	skillservice "github.com/equaltoai/lesser/pkg/services/skills"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 type skillHandlerService interface {

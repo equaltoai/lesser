@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/logging"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 
@@ -142,7 +142,7 @@ func legacyAppTheoryError(err error) (code string, message string, ok bool) {
 			continue
 		}
 		typ := elem.Type()
-		if typ.PkgPath() != "github.com/theory-cloud/apptheory/v2/runtime" || typ.Name() != "AppError" {
+		if typ.PkgPath() != "github.com/theory-cloud/apptheory/v3/runtime" || typ.Name() != "AppError" {
 			continue
 		}
 		codeField := elem.FieldByName("Code")

@@ -13,7 +13,7 @@ import (
 )
 
 const packagePathLift = "github.com/equaltoai/lesser/cmd/api/handlers"
-const packagePathAppTheory = "github.com/theory-cloud/apptheory/v2/runtime"
+const packagePathAppTheory = "github.com/theory-cloud/apptheory/v3/runtime"
 const selectorNameJSON = "JSON"
 
 type handlerPayloadInfo struct {

@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	ttquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
+	ttquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
 )
 
 func TestActivityHydrationContract_TableTheoryEmbeddedBaseObject(t *testing.T) {

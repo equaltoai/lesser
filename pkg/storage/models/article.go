@@ -42,8 +42,9 @@ type Article struct {
 	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
 	PublishedBy string `theorydb:"attr:publishedBy,omitempty" json:"published_by,omitempty"`
 
-	// Timestamps
-	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	// TableTheory persists Object.CreatedAt, matching the v2 embedded-field precedence.
+	// Keep the article-local field for Go/JSON compatibility, but exclude its duplicate DB mapping.
+	CreatedAt time.Time `theorydb:"-" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 

@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
-	apptheoryLimited "github.com/theory-cloud/apptheory/v2/pkg/limited"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	"github.com/theory-cloud/tabletheory/v2"
-	tablecore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	"github.com/theory-cloud/tabletheory/v2/pkg/session"
+	apptheoryLimited "github.com/theory-cloud/apptheory/v3/pkg/limited"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/tabletheory/v3"
+	tablecore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
 	"go.uber.org/zap"
 )
 

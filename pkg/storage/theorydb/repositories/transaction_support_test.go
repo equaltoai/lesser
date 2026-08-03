@@ -10,7 +10,7 @@ import (
 	repoTesting "github.com/equaltoai/lesser/pkg/storage/theorydb/repositories/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	githubMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	githubMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

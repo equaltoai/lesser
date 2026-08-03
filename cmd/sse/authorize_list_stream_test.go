@@ -10,7 +10,7 @@ import (
 	lesstesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorymocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	theorymocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

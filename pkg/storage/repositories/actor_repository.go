@@ -22,8 +22,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +45,7 @@ type ActorRepository struct {
 // actorProfileUpdateProjection is a write-only TableTheory projection for
 // actor profile updates. It intentionally leaves the actor attribute off the
 // theorydb:"json" path: ActivityPub actors contain JSON-LD keys such as
-// "@context", "@id", and "@type", and TableTheory v2.0.3's json-field update
+// "@context", "@id", and "@type", and TableTheory's json-field update
 // normalization validates the decoded map keys as expression field names before
 // generic DynamoDB conversion. The plain attr projection keeps the update on
 // TableTheory's supported UpdateBuilder path while preserving the same native

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 // TransactionFunc is a function that executes within a transaction
