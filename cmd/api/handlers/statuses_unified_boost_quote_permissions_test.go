@@ -23,8 +23,14 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	target := quotePermissionTarget("status-1", targetID)
 	comment := "permission-checked quote"
 
-	newHarness := func(t *testing.T, permissions *storagemodels.QuotePermissions, permissionErr error) (*Handler, *quotes.QuoteService) {
+	newHarness := func(
+		t *testing.T,
+		permissions *storagemodels.QuotePermissions,
+		permissionErr error,
+		configure func(*round10QueryState, *storagemodels.Status),
+	) (*Handler, *quotes.QuoteService) {
 		t.Helper()
+		targetForHarness := *target
 		state := &round10QueryState{
 			actorsByUser: map[string]storagemodels.Actor{
 				"mallory": {Username: "mallory", Actor: &activitypub.Actor{
@@ -33,16 +39,20 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 					Followers:         cfg.ActorURL("mallory") + "/followers",
 				}},
 			},
-			statusByID: map[string]storagemodels.Status{"status-1": *target},
+			statusByID: map[string]storagemodels.Status{"status-1": targetForHarness},
 			objectsByID: map[string]storagemodels.Object{
 				targetID: {
 					ID:           targetID,
 					Type:         activitypub.NoteType,
-					Content:      target.Content,
-					AttributedTo: target.AuthorID,
-					Published:    target.PublishedAt,
+					Content:      targetForHarness.Content,
+					AttributedTo: targetForHarness.AuthorID,
+					Published:    targetForHarness.PublishedAt,
 				},
 			},
+		}
+		if configure != nil {
+			configure(state, &targetForHarness)
+			state.statusByID["status-1"] = targetForHarness
 		}
 		if permissionErr != nil {
 			state.firstErrorPK = map[string]error{"USER#alice": permissionErr}
@@ -52,7 +62,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 			ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawQuoteTarget string) (*storagemodels.Status, error) {
 				require.Equal(t, "mallory", viewerID)
 				require.Equal(t, "status-1", rawQuoteTarget)
-				return target, nil
+				return &targetForHarness, nil
 			},
 		}}
 		handler, repos, _ := round11NewHandler(t, cfg, state, registry)
@@ -89,13 +99,8 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		return restQuoteResult{status: resp.Status, body: &body}
 	}
-
-	t.Run("blocked viewer receives the GraphQL denial class", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{
-			AllowPublic: true,
-			BlockList:   []string{"mallory"},
-		}, nil)
-
+	assertDeniedParity := func(t *testing.T, handler *Handler, quoteService *quotes.QuoteService) {
+		t.Helper()
 		_, graphQLErr := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
 			StatusID:       "mallory-quote",
 			AuthorUsername: "mallory",
@@ -109,10 +114,80 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		require.NotNil(t, rest.body)
 		require.Equal(t, graphQLAppErr.Message, rest.body.Error)
 		require.Equal(t, string(graphQLAppErr.Code), rest.body.Code)
+	}
+
+	t.Run("blocked viewer receives the GraphQL denial class", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{
+			AllowPublic: true,
+			BlockList:   []string{"mallory"},
+		}, nil, nil)
+
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("follower arm allows both REST and GraphQL quote creation", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.relationshipRecords = []storagemodels.RelationshipRecord{
+					{PK: "FOLLOW#mallory", SK: "FOLLOWING#alice", State: storagemodels.RelationshipAccepted},
+				}
+			})
+		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
+			StatusID: "mallory-follower-quote", AuthorUsername: "mallory",
+		}, "status-1")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
+	})
+
+	t.Run("follower arm denies non-followers identically", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil, nil)
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("follower lookup error fails closed as forbidden on both surfaces", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.firstErrorPK = map[string]error{"FOLLOW#mallory": stdErrors.New("relationship store unavailable")}
+			})
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("mentioned arm allows both REST and GraphQL quote creation", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
+			func(_ *round10QueryState, status *storagemodels.Status) {
+				status.Mentions = []string{cfg.ActorURL("mallory")}
+			})
+		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
+			StatusID: "mallory-mentioned-quote", AuthorUsername: "mallory",
+		}, "status-1")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
+	})
+
+	t.Run("mentioned arm denies unmentioned quoters identically", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil, nil)
+		assertDeniedParity(t, handler, quoteService)
+	})
+
+	t.Run("mentioned status read error fails closed as REST forbidden", func(t *testing.T) {
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
+			func(state *round10QueryState, _ *storagemodels.Status) {
+				state.firstErrorPK = map[string]error{"status#status-1": stdErrors.New("status store unavailable")}
+			})
+		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)
+		require.NoError(t, err)
+		require.False(t, allowed)
+
+		graphQLAppErr, ok := commonerrors.AsAppError(quotes.ErrNotAuthorizedToQuote)
+		require.True(t, ok)
+		rest := requestRESTQuote(t, handler)
+		require.Equal(t, http.StatusForbidden, rest.status)
+		require.Equal(t, graphQLAppErr.Message, rest.body.Error)
+		require.Equal(t, string(graphQLAppErr.Code), rest.body.Code)
 	})
 
 	t.Run("allowed viewer creates the REST quote unchanged", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil)
+		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, nil)
 		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)
 		require.NoError(t, err)
 		require.True(t, allowed)
@@ -122,7 +197,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("missing permissions row uses the GraphQL permissive default", func(t *testing.T) {
-		handler, quoteService := newHarness(t, nil, nil)
+		handler, quoteService := newHarness(t, nil, nil, nil)
 		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)
 		require.NoError(t, err)
 		require.True(t, allowed)
@@ -133,7 +208,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 
 	t.Run("storage failure is fail closed on both surfaces", func(t *testing.T) {
 		storageErr := stdErrors.New("quote permissions unavailable")
-		handler, quoteService := newHarness(t, nil, storageErr)
+		handler, quoteService := newHarness(t, nil, storageErr, nil)
 
 		_, graphQLErr := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
 			StatusID:       "mallory-quote",
@@ -155,7 +230,7 @@ func quotePermissionTarget(statusID, objectID string) *storagemodels.Status {
 	now := time.Now().UTC()
 	return &storagemodels.Status{
 		StatusID:       statusID,
-		AuthorID:       "alice",
+		AuthorID:       "https://example.com/users/alice",
 		AuthorUsername: "alice",
 		Content:        "original",
 		Visibility:     storagemodels.VisibilityPublic,
@@ -165,7 +240,7 @@ func quotePermissionTarget(statusID, objectID string) *storagemodels.Status {
 		ModifiedAt:     now,
 		Note: &activitypub.Note{
 			BaseObject:   activitypub.BaseObject{ID: objectID, Type: activitypub.NoteType},
-			AttributedTo: "alice",
+			AttributedTo: "https://example.com/users/alice",
 			Content:      "original",
 			Visibility:   storagemodels.VisibilityPublic,
 		},

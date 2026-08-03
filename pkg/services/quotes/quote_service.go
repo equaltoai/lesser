@@ -5,6 +5,8 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -40,9 +42,14 @@ type quoteRepository interface {
 	UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
 }
 
+type quoteRelationshipRepository interface {
+	IsFollowing(ctx context.Context, followerID, followingID string) (bool, error)
+}
+
 type quoteStorage interface {
 	Status() quoteStatusRepository
 	Quote() quoteRepository
+	Relationship() quoteRelationshipRepository
 }
 
 type quoteRepositoryStorageWrapper struct {
@@ -51,6 +58,9 @@ type quoteRepositoryStorageWrapper struct {
 
 func (w quoteRepositoryStorageWrapper) Status() quoteStatusRepository { return w.storage.Status() }
 func (w quoteRepositoryStorageWrapper) Quote() quoteRepository        { return w.storage.Quote() }
+func (w quoteRepositoryStorageWrapper) Relationship() quoteRelationshipRepository {
+	return w.storage.Relationship()
+}
 
 // NewQuoteService creates a new quote service
 func NewQuoteService(storage core.RepositoryStorage, logger *zap.Logger) *QuoteService {
@@ -425,7 +435,11 @@ func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsernam
 	if permissions.AllowFollowers {
 		isFollowing, err := qs.checkFollowRelationship(ctx, quoterUsername, targetStatus.AuthorUsername)
 		if err != nil {
-			return false, err
+			qs.logger.Warn("follower quote permission lookup failed closed",
+				zap.String("quoter", quoterUsername),
+				zap.String("target_author", targetStatus.AuthorUsername),
+				zap.Error(err))
+			return false, nil
 		}
 		if isFollowing {
 			return true, nil
@@ -434,7 +448,14 @@ func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsernam
 
 	// Check if quoter is mentioned in the original status
 	if permissions.AllowMentioned {
-		isMentioned := qs.checkMentioned(targetStatus, quoterUsername)
+		isMentioned, err := qs.checkMentioned(ctx, targetStatus, quoterUsername)
+		if err != nil {
+			qs.logger.Warn("mentioned quote permission lookup failed closed",
+				zap.String("quoter", quoterUsername),
+				zap.String("target_status_id", targetStatus.StatusID),
+				zap.Error(err))
+			return false, nil
+		}
 		if isMentioned {
 			return true, nil
 		}
@@ -587,17 +608,65 @@ func (qs *QuoteService) createQuoteNotification(_ context.Context, quoteStatus, 
 	return nil
 }
 
-func (qs *QuoteService) checkFollowRelationship(_ context.Context, _ string, _ string) (bool, error) {
-	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
-	// Registration assigns this arm to private-default accounts, so it currently denies every
-	// quoter, including an actual follower.
+func (qs *QuoteService) checkFollowRelationship(ctx context.Context, quoterUsername, targetAuthorUsername string) (bool, error) {
+	if qs.storage == nil || qs.storage.Relationship() == nil {
+		return false, fmt.Errorf("relationship repository unavailable")
+	}
+	return qs.storage.Relationship().IsFollowing(ctx, quoterUsername, targetAuthorUsername)
+}
+
+func (qs *QuoteService) checkMentioned(ctx context.Context, targetStatus *models.Status, quoterUsername string) (bool, error) {
+	if targetStatus == nil || strings.TrimSpace(targetStatus.StatusID) == "" {
+		return false, nil
+	}
+
+	// Re-read the canonical persisted status by its exact primary key. Quote creation can receive
+	// a caller-resolved Status value, but the permission decision must use the stored mention
+	// projection rather than request content or an ad-hoc content re-parse.
+	persisted, err := qs.storage.Status().GetStatus(ctx, targetStatus.StatusID)
+	if err != nil {
+		return false, err
+	}
+	if persisted == nil {
+		return false, nil
+	}
+
+	quoter := strings.TrimSpace(strings.TrimPrefix(quoterUsername, "@"))
+	if quoter == "" {
+		return false, nil
+	}
+	localDomain := common.ExtractDomainFromActorID(persisted.AuthorID)
+	for _, rawMention := range persisted.Mentions {
+		if storedMentionMatchesLocalUsername(rawMention, quoter, localDomain) {
+			return true, nil
+		}
+	}
 	return false, nil
 }
 
-func (qs *QuoteService) checkMentioned(_ *models.Status, _ string) bool {
-	// Placeholder returning false by design: fail closed until lesser#1317 implements this check.
-	// Registration assigns this arm to direct-default accounts, so it currently denies every
-	// quoter, including an actually mentioned account.
+func storedMentionMatchesLocalUsername(rawMention, username, localDomain string) bool {
+	mention := strings.TrimSpace(rawMention)
+	if mention == "" {
+		return false
+	}
+	if !strings.Contains(mention, "://") {
+		return strings.EqualFold(strings.TrimPrefix(mention, "@"), username)
+	}
+	if localDomain == "" || !common.IsLocalActorID(mention, localDomain) {
+		return false
+	}
+
+	parsed, err := url.Parse(mention)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 2 && strings.EqualFold(parts[0], "users") {
+		return strings.EqualFold(strings.TrimPrefix(parts[1], "@"), username)
+	}
+	if len(parts) == 1 && strings.HasPrefix(parts[0], "@") {
+		return strings.EqualFold(strings.TrimPrefix(parts[0], "@"), username)
+	}
 	return false
 }
 
