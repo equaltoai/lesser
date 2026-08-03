@@ -56,6 +56,15 @@ func TestScopedDelegationCredentialMintAndValidation(t *testing.T) {
 		require.ErrorIs(t, err, ErrInvalidDelegationCredential)
 	})
 
+	t.Run("credential minted for another agent fails closed", func(t *testing.T) {
+		claims, err := service.ValidateAccessToken(mint(time.Now().Add(time.Hour), "owner", "agent-a", DelegationContentClassNote))
+		require.NoError(t, err)
+		claims.Username = "agent-b"
+		_, present, err := ValidateDelegationAttestation(claims, DelegationContentClassNote)
+		require.True(t, present)
+		require.ErrorIs(t, err, ErrInvalidDelegationCredential)
+	})
+
 	t.Run("partial signed binding fails closed", func(t *testing.T) {
 		claims := &Claims{
 			RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
