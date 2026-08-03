@@ -181,6 +181,9 @@ func TestReplyParentResolver_ResolveReplyParent(t *testing.T) {
 			"https://example.com/users/alice",
 			"https://example.com/users/alice?x=1",
 			"https://example.com/foo/alice",
+			"HTTP://example.com/users/alice",
+			"HTTPS://example.com/users/alice",
+			"HttPs://example.com/users/alice",
 		} {
 			t.Run(attributedTo, func(t *testing.T) {
 				parentURL := "https://evil.example/objects/forged-parent"

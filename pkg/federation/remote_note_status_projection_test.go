@@ -51,6 +51,9 @@ func TestBuildCanonicalRemoteStatus_RejectsRemoteProjectionOfLocalAuthors(t *tes
 		"https://local.example/users/admin/alice",
 		"https://local.example/api/v1/accounts/alice",
 		"https://local.example/alice",
+		"HTTP://local.example/users/alice",
+		"HTTPS://local.example/users/alice",
+		"HttPs://local.example/users/alice",
 	} {
 		t.Run(attributedTo, func(t *testing.T) {
 			note := &activitypub.Note{
