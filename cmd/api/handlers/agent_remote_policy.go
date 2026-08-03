@@ -8,7 +8,7 @@ import (
 	"time"
 
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 const actorUsersPathSegment = "users"

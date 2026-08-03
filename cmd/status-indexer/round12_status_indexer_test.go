@@ -17,10 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
-	ttmodel "github.com/theory-cloud/tabletheory/v2/pkg/model"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	ttmodel "github.com/theory-cloud/tabletheory/v3/pkg/model"
 	"go.uber.org/zap"
 )
 

@@ -13,9 +13,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	dynamormquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
 )
 
 const (

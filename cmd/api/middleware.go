@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 

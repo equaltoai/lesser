@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 

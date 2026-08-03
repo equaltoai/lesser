@@ -7,8 +7,8 @@ import (
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 func cmsHostFromURL(value string) string {

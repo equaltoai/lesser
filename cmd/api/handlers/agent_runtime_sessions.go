@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagerepos "github.com/equaltoai/lesser/pkg/storage/repositories"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 

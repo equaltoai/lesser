@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

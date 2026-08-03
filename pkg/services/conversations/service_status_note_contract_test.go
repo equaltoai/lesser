@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

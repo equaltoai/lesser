@@ -35,7 +35,6 @@ func TestM4CMSConvertersExposeAuthoringAttribution(t *testing.T) {
 		GeneratedBy:   "https://example.com/users/agent-0",
 		ReviewedBy:    "https://example.com/users/alice",
 		PublishedBy:   "https://example.com/users/alice",
-		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
 

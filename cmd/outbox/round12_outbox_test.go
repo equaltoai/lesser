@@ -19,8 +19,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamock "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamock "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

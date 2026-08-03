@@ -17,8 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 

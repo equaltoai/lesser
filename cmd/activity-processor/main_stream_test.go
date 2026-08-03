@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamock "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamock "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

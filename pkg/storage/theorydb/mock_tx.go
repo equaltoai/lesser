@@ -3,11 +3,11 @@ package theorydb
 import (
 	"fmt"
 
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
-// MockTx adapts Lesser's transaction helper surface to the TableTheory v2
-// transaction builder. TableTheory v2 removed the legacy core.Tx callback API;
+// MockTx adapts Lesser's transaction helper surface to the TableTheory v3
+// transaction builder. TableTheory removed the legacy core.Tx callback API;
 // this shim exists only inside Lesser's storage helpers and does not recreate
 // or fork TableTheory's removed transaction implementation.
 type MockTx struct {
@@ -55,7 +55,7 @@ func (m *MockTx) Update(item any) error {
 }
 
 // UpdateWithExpression adds an Update operation with expression to the transaction.
-// Lesser's legacy helper accepted a raw expression; TableTheory v2 transactions
+// Lesser's legacy helper accepted a raw expression; TableTheory transactions
 // use typed update builders, so this falls back to the field-inference update path.
 func (m *MockTx) UpdateWithExpression(item any, _ string, _ ...any) error {
 	return m.Update(item)

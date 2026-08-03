@@ -10,7 +10,7 @@ import (
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 func setRunAsyncSynchronous(t *testing.T) {

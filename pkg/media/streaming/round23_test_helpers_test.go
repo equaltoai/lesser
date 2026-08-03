@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 type fakeDynamormDB struct {

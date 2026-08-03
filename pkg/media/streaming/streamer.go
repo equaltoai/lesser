@@ -28,7 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/google/uuid"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

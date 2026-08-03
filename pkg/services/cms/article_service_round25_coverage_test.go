@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

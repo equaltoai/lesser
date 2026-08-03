@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

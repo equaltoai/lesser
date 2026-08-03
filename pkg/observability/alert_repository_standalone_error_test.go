@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormtesting "github.com/theory-cloud/tabletheory/v2/pkg/testing"
+	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"

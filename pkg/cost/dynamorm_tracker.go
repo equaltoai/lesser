@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -217,7 +217,7 @@ func (ctdb *TrackingDB) Model(model any) core.Query {
 	}
 }
 
-// TransactWrite wraps the TableTheory v2 transaction method with enhanced operation estimation.
+// TransactWrite wraps the TableTheory transaction method with enhanced operation estimation.
 func (ctdb *TrackingDB) TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
 	client, ok := ctdb.DB.(interface {
 		TransactWrite(context.Context, func(core.TransactionBuilder) error) error
@@ -231,7 +231,7 @@ func (ctdb *TrackingDB) TransactWrite(ctx context.Context, fn func(core.Transact
 	return err
 }
 
-// Transact returns the underlying TableTheory v2 transaction builder.
+// Transact returns the underlying TableTheory transaction builder.
 func (ctdb *TrackingDB) Transact() core.TransactionBuilder {
 	client, ok := ctdb.DB.(interface {
 		Transact() core.TransactionBuilder

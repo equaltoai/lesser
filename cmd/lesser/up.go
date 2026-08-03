@@ -14,9 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/theory-cloud/tabletheory/v2"
-	theorydb "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	"github.com/theory-cloud/tabletheory/v2/pkg/session"
+	"github.com/theory-cloud/tabletheory/v3"
+	theorydb "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
 )
 
 type upArgs struct {

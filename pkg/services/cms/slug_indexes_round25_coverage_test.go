@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 func TestCMS_Round25_cmsHostFromURL(t *testing.T) {

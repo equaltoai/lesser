@@ -42,8 +42,6 @@ type Article struct {
 	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
 	PublishedBy string `theorydb:"attr:publishedBy,omitempty" json:"published_by,omitempty"`
 
-	// Timestamps
-	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 

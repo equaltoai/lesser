@@ -7,7 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 func TestPublicSurfaceMiddleware_ProtectedAPIUsesBearerContract(t *testing.T) {

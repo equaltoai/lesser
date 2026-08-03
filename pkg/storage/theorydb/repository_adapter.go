@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 // GenericRepository provides a generic repository implementation
