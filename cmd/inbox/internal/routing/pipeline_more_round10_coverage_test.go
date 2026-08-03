@@ -595,6 +595,49 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
 	})
 
+	t.Run("create then honest update preserves remote attribution", func(t *testing.T) {
+		objectRepo := inmemory.NewObjectRepository()
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		noteID := "https://remote.example/objects/honest-update"
+		create := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.CreateType, ID: "https://remote.example/activities/honest-create"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "before honest update",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+		require.NoError(t, handler.processRemoteCreateActivity(ctx, create, env.local))
+		require.Len(t, statusRepo.created, 1)
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/honest-update"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "after honest update",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.updated, 1)
+		require.Equal(t, env.remoteActorID, statusRepo.updated[0].AuthorID)
+		require.Equal(t, "bob@remote.example", statusRepo.updated[0].AuthorUsername)
+		require.Equal(t, "after honest update", statusRepo.updated[0].Content)
+	})
+
 	t.Run("update note requires complete ActivityPub attribution", func(t *testing.T) {
 		noteID := "https://remote.example/users/bob/statuses/update-missing-attribution"
 		objectRepo := inmemory.NewObjectRepository()
