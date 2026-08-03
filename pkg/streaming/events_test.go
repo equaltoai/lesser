@@ -249,6 +249,7 @@ func TestNormalizeHashtagStreamValueValidatesExactKeyMaterial(t *testing.T) {
 
 func TestPublicActorStreamNameIsDistinctFromPrivateUserStream(t *testing.T) {
 	require.Equal(t, "public:actor:alice", PublicActorStreamName("alice"))
+	require.Equal(t, "public:actor:alice", PublicActorStreamName(" Alice "))
 	require.NotEqual(t, UserStreamName("alice"), PublicActorStreamName("alice"))
 	require.True(t, IsValidStreamName(PublicActorStreamName("alice")))
 }

@@ -59,7 +59,7 @@ func TestBuildWebSocketStatusStreamsKeepsAnonymousAndPrivateKeysDisjoint(t *test
 	base := &models.Status{
 		AuthorID:       "https://example.com/users/alice",
 		AuthorUsername: "alice",
-		Hashtags:       []string{"#GoLang"},
+		Hashtags:       []string{"#GoLang", "golang"},
 	}
 
 	publicStatus := *base

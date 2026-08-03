@@ -60,7 +60,7 @@ func TestValidateTimelineRoutingInputsFailsClosed(t *testing.T) {
 }
 
 func TestTimelineStreamNameCanonicalizesNewRoutingInputs(t *testing.T) {
-	actor := " alice-1 "
+	actor := " Alice-1 "
 	hashtag := " #GoLang "
 	listID := " list_123 "
 

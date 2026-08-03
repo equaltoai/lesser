@@ -347,7 +347,7 @@ func UserNotificationStreamName(userID string) string {
 // Unlike UserStreamName, this stream must never carry home, notification, or
 // non-public status fanout.
 func PublicActorStreamName(username string) string {
-	return fmt.Sprintf("%s:%s", PublicActorStreamPrefix, username)
+	return fmt.Sprintf("%s:%s", PublicActorStreamPrefix, strings.ToLower(strings.TrimSpace(username)))
 }
 
 // NormalizeHashtagStreamValue normalizes and validates the exact hashtag value

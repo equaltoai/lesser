@@ -781,17 +781,28 @@ func (h *StreamRouterHandler) buildWebSocketStatusStreams(status *models.Status)
 	}
 
 	streams := make([]string, 0, 5+len(status.Hashtags))
+	seen := make(map[string]struct{}, cap(streams))
+	add := func(stream string) {
+		if stream == "" {
+			return
+		}
+		if _, exists := seen[stream]; exists {
+			return
+		}
+		seen[stream] = struct{}{}
+		streams = append(streams, stream)
+	}
 	if status.Visibility == models.VisibilityPublic {
-		streams = append(streams, streaming.PublicStream)
+		add(streaming.PublicStream)
 
 		isLocalAuthor := h.isLocalActorID(status.AuthorID)
 		if isLocalAuthor {
-			streams = append(streams, streaming.PublicLocalStream)
+			add(streaming.PublicLocalStream)
 			if status.AuthorUsername != "" {
-				streams = append(streams, streaming.PublicActorStreamName(status.AuthorUsername))
+				add(streaming.PublicActorStreamName(status.AuthorUsername))
 			}
 		} else {
-			streams = append(streams, streaming.PublicRemoteStream)
+			add(streaming.PublicRemoteStream)
 		}
 
 		for _, hashtag := range status.Hashtags {
@@ -802,14 +813,14 @@ func (h *StreamRouterHandler) buildWebSocketStatusStreams(status *models.Status)
 					zap.Error(err))
 				continue
 			}
-			streams = append(streams, streaming.HashtagStreamName(normalized))
+			add(streaming.HashtagStreamName(normalized))
 		}
 	}
 
 	// The author receives all of their own statuses, including non-public ones,
 	// on the private user stream.
 	if status.AuthorUsername != "" {
-		streams = append(streams, streaming.UserStreamName(status.AuthorUsername))
+		add(streaming.UserStreamName(status.AuthorUsername))
 	}
 
 	return streams
