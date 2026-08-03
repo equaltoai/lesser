@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -13,7 +14,9 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 	if note == nil {
 		return nil
 	}
-
+	if remoteNoteAttributionIsLocal(note.AttributedTo, localDomain) {
+		return nil
+	}
 	statusID := models.CanonicalStatusIDForDomain(note.ID, localDomain)
 	if statusID == "" {
 		return nil
@@ -36,6 +39,22 @@ func BuildCanonicalRemoteStatus(note *activitypub.Note, localDomain string) *mod
 	}
 
 	return status
+}
+
+// remoteNoteAttributionIsLocal applies the canonical actor-URL rules used by
+// inbox origin binding before comparing the attributed actor's host with this
+// instance. Remote projection is never a valid entry point for local actors.
+func remoteNoteAttributionIsLocal(attributedTo, localDomain string) bool {
+	canonicalActorID, err := common.CanonicalActorID(attributedTo)
+	if err != nil {
+		return false
+	}
+	if _, err := common.ActorUsernameFromID(canonicalActorID); err != nil {
+		return false
+	}
+
+	actorDomain := normalizeActorDomain(common.ExtractDomainFromActorID(canonicalActorID))
+	return actorDomain != "" && actorDomain == normalizeActorDomain(localDomain)
 }
 
 func remoteStatusAuthorUsername(note *activitypub.Note, localDomain string) string {

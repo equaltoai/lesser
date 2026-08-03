@@ -544,6 +544,91 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		assert.Equal(t, noteID, status.Note.ID)
 	})
 
+	t.Run("create then update cannot reattribute remote status to local actor", func(t *testing.T) {
+		objectRepo := inmemory.NewObjectRepository()
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		noteID := "https://remote.example/objects/reattribution-attack"
+		create := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.CreateType, ID: "https://remote.example/activities/reattribution-create"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "honest remote create",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+		require.NoError(t, handler.processRemoteCreateActivity(ctx, create, env.local))
+		require.Len(t, statusRepo.created, 1)
+		require.Equal(t, env.remoteActorID, statusRepo.created[0].AuthorID)
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/reattribution-update"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "forged local author",
+				"attributedTo": env.local.ID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.Error(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		// A status write is the DynamoDB Streams trigger for public:actor:alice and
+		// user:alice. Refusing the write proves neither stream can receive the attack.
+		require.Empty(t, statusRepo.updated)
+		require.Len(t, statusRepo.created, 1)
+		require.Equal(t, env.remoteActorID, statusRepo.created[0].AuthorID)
+
+		stored, err := objectRepo.GetObject(ctx, noteID)
+		require.NoError(t, err)
+		storedNote, ok := stored.(*activitypub.Note)
+		require.True(t, ok)
+		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
+	})
+
+	t.Run("update note requires complete ActivityPub attribution", func(t *testing.T) {
+		noteID := "https://remote.example/users/bob/statuses/update-missing-attribution"
+		objectRepo := inmemory.NewObjectRepository()
+		require.NoError(t, objectRepo.CreateObject(ctx, &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: noteID, Type: activitypub.NoteType},
+			AttributedTo: env.remoteActorID,
+			Content:      "before",
+		}))
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/update-missing-attribution"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context": []any{"https://www.w3.org/ns/activitystreams"},
+				"id":       noteID,
+				"type":     activitypub.NoteType,
+				"content":  "after",
+				"to":       []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.Error(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Empty(t, statusRepo.updated)
+		stored, err := objectRepo.GetObject(ctx, noteID)
+		require.NoError(t, err)
+		storedNote, ok := stored.(*activitypub.Note)
+		require.True(t, ok)
+		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
+	})
+
 	t.Run("update note preserves tombstone metadata", func(t *testing.T) {
 		noteID := "https://remote.example/users/bob/statuses/update-deleted-123"
 		deletedAt := time.Date(2025, 12, 28, 11, 0, 0, 0, time.UTC)

@@ -243,10 +243,12 @@ func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {
 			},
 			Actor: env.remoteActorID,
 			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
 				"id":           objectID,
 				"type":         activitypub.NoteType,
 				"attributedTo": env.remoteActorID,
 				"content":      "updated content",
+				"to":           []any{activitypub.PublicAddress},
 			},
 		}
 		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))

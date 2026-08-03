@@ -39,19 +39,27 @@ func TestBuildCanonicalRemoteStatus(t *testing.T) {
 	assert.Equal(t, "hello world", note.Content)
 }
 
-func TestBuildCanonicalRemoteStatus_LocalAndInvalidInputs(t *testing.T) {
-	localNote := &activitypub.Note{
-		BaseObject: activitypub.BaseObject{
-			ID:   "https://remote.example/users/alice/statuses/2",
-			Type: activitypub.NoteType,
-		},
-		AttributedTo: "https://local.example/users/alice",
+func TestBuildCanonicalRemoteStatus_RejectsRemoteProjectionOfLocalAuthors(t *testing.T) {
+	for _, attributedTo := range []string{
+		"https://local.example/users/alice",
+		"https://LOCAL.EXAMPLE/users/Alice/",
+		"https://local.example:443/@alice",
+	} {
+		t.Run(attributedTo, func(t *testing.T) {
+			note := &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/mallory/statuses/2",
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: attributedTo,
+			}
+
+			assert.Nil(t, BuildCanonicalRemoteStatus(note, "https://local.example"))
+		})
 	}
+}
 
-	status := BuildCanonicalRemoteStatus(localNote, "local.example")
-	require.NotNil(t, status)
-	assert.Equal(t, "alice", status.AuthorUsername)
-
+func TestBuildCanonicalRemoteStatus_InvalidInputs(t *testing.T) {
 	assert.Nil(t, BuildCanonicalRemoteStatus(nil, "local.example"))
 	assert.Nil(t, BuildCanonicalRemoteStatus(&activitypub.Note{}, "local.example"))
 }
