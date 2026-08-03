@@ -1640,16 +1640,20 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 
 	// Unmarshal the tombstone record
 	var recordModel struct {
-		ID               string    `json:"ID"`
-		IDLegacy         string    `json:"id"`
-		Type             string    `json:"Type"`
-		TypeLegacy       string    `json:"type"`
-		FormerType       string    `json:"FormerType"`
-		FormerTypeLegacy string    `json:"formerType"`
-		Deleted          time.Time `json:"Deleted"`
-		DeletedLegacy    time.Time `json:"deleted"`
-		DeletedBy        string    `json:"DeletedBy"`
-		DeletedByLegacy  string    `json:"deletedBy"`
+		ID                 string    `json:"ID"`
+		IDLegacy           string    `json:"id"`
+		Type               string    `json:"Type"`
+		TypeLegacy         string    `json:"type"`
+		FormerType         string    `json:"FormerType"`
+		FormerTypeLegacy   string    `json:"formerType"`
+		Deleted            time.Time `json:"Deleted"`
+		DeletedLegacy      time.Time `json:"deleted"`
+		DeletedBy          string    `json:"DeletedBy"`
+		DeletedByLegacy    string    `json:"deletedBy"`
+		AttributedTo       string    `json:"AttributedTo"`
+		AttributedToLegacy string    `json:"attributedTo"`
+		IsPublic           bool      `json:"IsPublic"`
+		IsPublicLegacy     bool      `json:"isPublic"`
 	}
 
 	if err := stream.UnmarshalItem(record, &recordModel); err != nil {
@@ -1677,13 +1681,19 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 	if deletedBy == "" {
 		deletedBy = recordModel.DeletedByLegacy
 	}
+	attributedTo := recordModel.AttributedTo
+	if attributedTo == "" {
+		attributedTo = recordModel.AttributedToLegacy
+	}
 
 	tombstone := models.Tombstone{
-		ID:         objectID,
-		Type:       objectType,
-		FormerType: formerType,
-		Deleted:    deletedAt,
-		DeletedBy:  deletedBy,
+		ID:           objectID,
+		Type:         objectType,
+		FormerType:   formerType,
+		Deleted:      deletedAt,
+		DeletedBy:    deletedBy,
+		AttributedTo: attributedTo,
+		IsPublic:     recordModel.IsPublic || recordModel.IsPublicLegacy,
 	}
 
 	if tombstone.ID == "" || tombstone.DeletedBy == "" || tombstone.FormerType == "" || tombstone.Deleted.IsZero() {
@@ -1752,6 +1762,34 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx context.Context, re
 			h.logger.Warn("failed to broadcast deletion to local stream", zap.Error(err))
 		}
 		h.appendStreamEvent(ctx, requestID, streaming.PublicLocalStream, "delete", objectID)
+
+		// Public actor streams mirror create fanout: only public objects from a
+		// local author may reach the anonymous per-actor key. Older tombstones may
+		// lack AttributedTo, so use the authorized deleter as a compatibility
+		// fallback while keeping missing IsPublic fail-closed.
+		if tombstone.IsPublic {
+			authorID := strings.TrimSpace(tombstone.AttributedTo)
+			if authorID == "" {
+				authorID = strings.TrimSpace(tombstone.DeletedBy)
+			}
+			if h.isLocalActorID(authorID) {
+				username, err := common.ActorUsernameFromID(authorID)
+				if err != nil {
+					h.logger.Warn("failed to extract local actor username for deletion fanout",
+						zap.String("actor_id", authorID),
+						zap.Error(err))
+				} else {
+					actorStream := streaming.PublicActorStreamName(username)
+					message.Stream = actorStream
+					if err := h.broadcastMessage(ctx, requestID, message); err != nil {
+						h.logger.Warn("failed to broadcast deletion to public actor stream",
+							zap.String("stream", actorStream),
+							zap.Error(err))
+					}
+					h.appendStreamEvent(ctx, requestID, actorStream, "delete", objectID)
+				}
+			}
+		}
 
 		// Hashtag streams - extract hashtags from the deleted object if available
 		if err := h.removeFromHashtagStreams(ctx, requestID, objectID); err != nil {

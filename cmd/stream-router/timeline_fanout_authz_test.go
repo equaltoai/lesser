@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -91,6 +92,61 @@ func TestBuildWebSocketStatusStreamsKeepsAnonymousAndPrivateKeysDisjoint(t *test
 	require.Contains(t, remoteStreams, streaming.PublicRemoteStream)
 	require.NotContains(t, remoteStreams, streaming.PublicLocalStream)
 	require.NotContains(t, remoteStreams, streaming.PublicActorStreamName("alice"))
+}
+
+func TestPublicActorDeletionFanoutRequiresPublicLocalAuthor(t *testing.T) {
+	const actorConnection = "anonymous-actor"
+
+	streamRepo := &fakeStreamRepo{
+		subsByStream: map[string][]models.WebSocketSubscription{
+			streaming.PublicActorStreamName("alice"): {{ConnectionID: actorConnection}},
+		},
+		getConnErrByID: make(map[string]error),
+	}
+	client := &fakeStreamerClient{}
+	handler := &StreamRouterHandler{
+		logger:        zap.NewNop(),
+		apiClient:     client,
+		streamingRepo: streamRepo,
+		accountRepo:   fakeFollowerRepo{},
+		statusRepo: fakeStatusRepo{statusByID: map[string]*models.Status{
+			"local-public":  {StatusID: "local-public"},
+			"local-private": {StatusID: "local-private"},
+			"remote-public": {StatusID: "remote-public"},
+		}},
+		domain: "example.com",
+	}
+
+	deletedAt := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	localPublic := newTombstoneRecord("local-public", "https://example.com/users/alice", true, deletedAt)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "local-public", localPublic))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
+
+	// Both remote and local projections use the bare username "alice". The
+	// remote actor ID must keep its deletion off public:actor:alice.
+	remotePublic := newTombstoneRecord("remote-public", "https://remote.example/users/alice", true, deletedAt)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "remote-public", remotePublic))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
+
+	localPrivate := newTombstoneRecord("local-private", "https://example.com/users/alice", false, deletedAt)
+	require.NoError(t, handler.processTombstoneEvent(context.Background(), "local-private", localPrivate))
+	require.Equal(t, 1, connectionCallCount(client.postCalls, actorConnection))
+}
+
+func newTombstoneRecord(id, authorID string, isPublic bool, deletedAt time.Time) events.DynamoDBEventRecord {
+	return events.DynamoDBEventRecord{
+		EventID:   "tombstone-" + id,
+		EventName: eventNameInsert,
+		Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+			"id":           events.NewStringAttribute(id),
+			"type":         events.NewStringAttribute("Tombstone"),
+			"formerType":   events.NewStringAttribute("Note"),
+			"deleted":      events.NewStringAttribute(deletedAt.Format(time.RFC3339)),
+			"deletedBy":    events.NewStringAttribute(authorID),
+			"attributedTo": events.NewStringAttribute(authorID),
+			"isPublic":     events.NewBooleanAttribute(isPublic),
+		}},
+	}
 }
 
 func statusRecordWithVisibility(record events.DynamoDBEventRecord, visibility string) events.DynamoDBEventRecord {
