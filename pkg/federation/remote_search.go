@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -732,17 +734,92 @@ func normalizeActorDomain(value string) string {
 	if idx := strings.Index(value, "/"); idx >= 0 {
 		value = value[:idx]
 	}
-	value = strings.TrimPrefix(strings.TrimSuffix(value, "]"), "[")
-	if ip := net.ParseIP(value); ip != nil {
-		if ip.IsLoopback() || ip.IsUnspecified() {
+
+	host := actorDomainHost(value)
+	if idx := strings.LastIndex(host, "%"); idx >= 0 {
+		host = host[:idx]
+	}
+	if ip, ok := parseActorDomainIP(host); ok {
+		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			return ""
 		}
-		return value
+		return ip.String()
 	}
-	if idx := strings.Index(value, ":"); idx >= 0 {
-		value = value[:idx]
+	if idx := strings.Index(host, ":"); idx >= 0 {
+		host = host[:idx]
 	}
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(host)
+}
+
+func actorDomainHost(value string) string {
+	if strings.HasPrefix(value, "[") {
+		closing := strings.Index(value, "]")
+		if closing < 0 {
+			return ""
+		}
+		suffix := value[closing+1:]
+		if suffix != "" && !strings.HasPrefix(suffix, ":") {
+			return ""
+		}
+		return value[1:closing]
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		return host
+	}
+	return value
+}
+
+func parseActorDomainIP(value string) (netip.Addr, bool) {
+	if ip, err := netip.ParseAddr(value); err == nil {
+		return ip.Unmap(), true
+	}
+	return parseLegacyIPv4(value)
+}
+
+// parseLegacyIPv4 recognizes the historical inet_aton numeric forms as one
+// family so alternate spellings cannot bypass IP classification or dedup.
+func parseLegacyIPv4(value string) (netip.Addr, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) > 4 {
+		return netip.Addr{}, false
+	}
+
+	values := make([]uint64, len(parts))
+	for i, part := range parts {
+		if part == "" {
+			return netip.Addr{}, false
+		}
+		parsed, err := strconv.ParseUint(part, 0, 32)
+		if err != nil {
+			return netip.Addr{}, false
+		}
+		values[i] = parsed
+	}
+
+	var raw uint64
+	switch len(values) {
+	case 1:
+		raw = values[0]
+	case 2:
+		if values[0] > 0xff || values[1] > 0xffffff {
+			return netip.Addr{}, false
+		}
+		raw = values[0]<<24 | values[1]
+	case 3:
+		if values[0] > 0xff || values[1] > 0xff || values[2] > 0xffff {
+			return netip.Addr{}, false
+		}
+		raw = values[0]<<24 | values[1]<<16 | values[2]
+	case 4:
+		for _, value := range values {
+			if value > 0xff {
+				return netip.Addr{}, false
+			}
+		}
+		raw = values[0]<<24 | values[1]<<16 | values[2]<<8 | values[3]
+	}
+
+	return netip.AddrFrom4([4]byte{byte(raw >> 24), byte(raw >> 16), byte(raw >> 8), byte(raw)}), true
 }
 
 func cachedRemoteActorMatchesHandle(actor *activitypub.Actor, handle string) bool {
