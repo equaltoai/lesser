@@ -335,15 +335,66 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 
 	t.Run("missing and invisible targets have one 404 shape", func(t *testing.T) {
 		var expectedBody []byte
-		for _, name := range []string{"missing", "invisible"} {
-			t.Run(name, func(t *testing.T) {
+		for _, test := range []struct {
+			name          string
+			seedInvisible bool
+		}{
+			{name: "missing"},
+			{name: "invisible", seedInvisible: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
 				listCalls := 0
-				deniedRegistry := &RegistryStub{
-					NotesSvc: &NotesServiceStub{
-						GetNoteWithViewerFunc: func(context.Context, *notes.GetNoteQuery) (*storagemodels.Status, error) {
-							return nil, notes.ErrStatusNotFound
+				statusRepo := testinginmemory.NewStatusRepository()
+				relationshipRepo := testingmocks.NewMockRelationshipRepository()
+				if test.seedInvisible {
+					now := time.Now().UTC()
+					require.NoError(t, statusRepo.CreateStatus(context.Background(), &storagemodels.Status{
+						StatusID:       "target-1",
+						AuthorID:       cfg.ActorURL("bob"),
+						AuthorUsername: "bob",
+						Visibility:     storagemodels.VisibilityPrivate,
+						ToRecipients:   []string{cfg.ActorURL("bob") + "/followers"},
+						PublishedAt:    now,
+						CreatedAt:      now,
+						UpdatedAt:      now,
+						ModifiedAt:     now,
+						Note: &activitypub.Note{
+							BaseObject: activitypub.BaseObject{
+								ID:   cfg.ActorURL("bob") + "/statuses/target-1",
+								Type: activitypub.NoteType,
+							},
+							AttributedTo: cfg.ActorURL("bob"),
+							Visibility:   storagemodels.VisibilityPrivate,
 						},
-					},
+					}))
+					seeded, seedErr := statusRepo.GetStatus(context.Background(), "target-1")
+					require.NoError(t, seedErr)
+					require.NotNil(t, seeded, "the invisible fixture must genuinely exist")
+				}
+				notesService := notes.NewService(
+					statusRepo,
+					nil,
+					nil,
+					relationshipRepo,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					zap.NewNop(),
+					cfg.Domain,
+				)
+				deniedRegistry := &RegistryStub{
+					NotesSvc: notesService,
 					QuotesSvc: &QuotesServiceStub{
 						GetQuoteRelationshipsForStatusFunc: func(context.Context, string, int, string) (*quotes.QuoteRelationshipPage, error) {
 							listCalls++
@@ -362,6 +413,7 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 				} else {
 					require.Equal(t, expectedBody, deniedResponse.Body)
 				}
+				relationshipRepo.AssertExpectations(t)
 			})
 		}
 	})
