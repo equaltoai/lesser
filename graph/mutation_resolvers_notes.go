@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -49,6 +50,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		}
 		if err := validateMutationChildReach("quote", quoteTarget, cmd.Visibility); err != nil {
 			return nil, err
+		}
+		if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+			return nil, quotes.ErrTargetStatusNotQuotable
 		}
 	}
 

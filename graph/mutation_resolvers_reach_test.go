@@ -116,6 +116,26 @@ func TestCreateNoteRejectsQuoteReachWidening(t *testing.T) {
 	requireStructuredReachRefusal(t, err)
 }
 
+func TestCreateNoteRejectsNonPublicQuoteTargetBeforePersistence(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	seedMutationReachParent(t, storageRepo.Status(), "parent", models.VisibilityPrivate)
+	quoteID := "parent"
+
+	_, err := resolver.Mutation().CreateNote(round12AuthContext("alice"), model.CreateNoteInput{
+		Content:    "bounded but non-quotable quote",
+		QuoteID:    &quoteID,
+		Visibility: model.VisibilityFollowers,
+	})
+	require.Error(t, err)
+	appErr, ok := apperrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, apperrors.CodeBusinessRuleViolated, appErr.Code)
+
+	count, countErr := storageRepo.Status().CountStatusesByAuthor(context.Background(), "alice")
+	require.NoError(t, countErr)
+	require.Zero(t, count, "the rejected quote must not persist a new status")
+}
+
 func TestCreateQuoteNoteInheritsReachAndRejectsWidening(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	seedMutationReachParent(t, storageRepo.Status(), "parent", models.VisibilityPrivate)
