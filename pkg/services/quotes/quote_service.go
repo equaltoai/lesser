@@ -94,6 +94,14 @@ type QuotePostResult struct {
 	TargetStatus      *models.Status
 }
 
+// QuoteRelationshipPage is one storage-backed page of quote relationships.
+// Callers apply viewer-aware status visibility through the notes service before
+// projecting the relationships onto a public API response.
+type QuoteRelationshipPage struct {
+	Relationships []*models.QuoteRelationship
+	NextCursor    string
+}
+
 // CreateQuotePost creates a new quote post
 func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteRequest) (*QuotePostResult, error) {
 	// Validate input
@@ -293,6 +301,29 @@ func (qs *QuoteService) GetQuotesForStatus(ctx context.Context, statusID string,
 	}
 
 	return quoteStatuses, nil
+}
+
+// GetQuoteRelationshipsForStatus returns one cursor page of active quote
+// relationships without attempting to make a viewer-visibility decision.
+// Visibility remains owned by the notes service's GetNoteWithViewer predicate.
+func (qs *QuoteService) GetQuoteRelationshipsForStatus(ctx context.Context, statusID string, limit int, cursor string) (*QuoteRelationshipPage, error) {
+	result, err := qs.storage.Quote().GetQuotesForStatus(ctx, statusID, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+	})
+	if err != nil {
+		qs.logger.Error("failed to get quote relationships", zap.String("status_id", statusID), zap.Error(err))
+		return nil, ErrGetQuoteRelationships(err)
+	}
+	if result == nil {
+		qs.logger.Error("quote repository returned no relationship page", zap.String("status_id", statusID))
+		return nil, ErrGetQuoteRelationships(apperrors.Internal("quote relationship page is unavailable"))
+	}
+
+	return &QuoteRelationshipPage{
+		Relationships: result.Items,
+		NextCursor:    result.NextCursor,
+	}, nil
 }
 
 // DeleteQuotePost removes a quote post and its relationship

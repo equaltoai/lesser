@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
@@ -53,6 +54,51 @@ func (r *RegistryStub) Quotes() QuotesService               { return r.QuotesSvc
 func (r *RegistryStub) Relationships() RelationshipsService { return r.RelationshipsSvc }
 func (r *RegistryStub) Scheduled() ScheduledService         { return r.ScheduledSvc }
 func (r *RegistryStub) Search() SearchService               { return r.SearchSvc }
+
+type QuotesServiceStub struct {
+	AttachQuoteToStatusFunc            func(ctx context.Context, quoteStatus *storagemodels.Status, targetStatusID string) (*quotes.QuotePostResult, error)
+	CheckQuotePermissionsFunc          func(ctx context.Context, quoterUsername string, targetStatus *storagemodels.Status) (bool, error)
+	GetQuotePermissionsFunc            func(ctx context.Context, username string) (*storagemodels.QuotePermissions, error)
+	GetQuoteRelationshipsForStatusFunc func(ctx context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error)
+	UpdateQuotePermissionsFunc         func(ctx context.Context, permissions *storagemodels.QuotePermissions) error
+}
+
+var _ QuotesService = (*QuotesServiceStub)(nil)
+
+func (s *QuotesServiceStub) AttachQuoteToStatus(ctx context.Context, quoteStatus *storagemodels.Status, targetStatusID string) (*quotes.QuotePostResult, error) {
+	if s != nil && s.AttachQuoteToStatusFunc != nil {
+		return s.AttachQuoteToStatusFunc(ctx, quoteStatus, targetStatusID)
+	}
+	return nil, missingStub("QuotesService.AttachQuoteToStatus")
+}
+
+func (s *QuotesServiceStub) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *storagemodels.Status) (bool, error) {
+	if s != nil && s.CheckQuotePermissionsFunc != nil {
+		return s.CheckQuotePermissionsFunc(ctx, quoterUsername, targetStatus)
+	}
+	return false, missingStub("QuotesService.CheckQuotePermissions")
+}
+
+func (s *QuotesServiceStub) GetQuotePermissions(ctx context.Context, username string) (*storagemodels.QuotePermissions, error) {
+	if s != nil && s.GetQuotePermissionsFunc != nil {
+		return s.GetQuotePermissionsFunc(ctx, username)
+	}
+	return nil, missingStub("QuotesService.GetQuotePermissions")
+}
+
+func (s *QuotesServiceStub) GetQuoteRelationshipsForStatus(ctx context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
+	if s != nil && s.GetQuoteRelationshipsForStatusFunc != nil {
+		return s.GetQuoteRelationshipsForStatusFunc(ctx, statusID, limit, cursor)
+	}
+	return nil, missingStub("QuotesService.GetQuoteRelationshipsForStatus")
+}
+
+func (s *QuotesServiceStub) UpdateQuotePermissions(ctx context.Context, permissions *storagemodels.QuotePermissions) error {
+	if s != nil && s.UpdateQuotePermissionsFunc != nil {
+		return s.UpdateQuotePermissionsFunc(ctx, permissions)
+	}
+	return missingStub("QuotesService.UpdateQuotePermissions")
+}
 
 type AccountsServiceStub struct {
 	CreateAuthorizationCodeFunc func(ctx context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error)

@@ -432,12 +432,12 @@ func TestHandleReblogLift_EnforcesQuoteReachAndViewerAccess(t *testing.T) {
 	}
 
 	for _, targetVisibility := range []string{storagemodels.VisibilityPrivate, storagemodels.VisibilityDirect} {
-		t.Run(targetVisibility+" target cannot be publicly quoted", func(t *testing.T) {
+		t.Run(targetVisibility+" target cannot be quoted at equal reach", func(t *testing.T) {
 			target := quoteBoostTarget("status-1", cfg.BaseURL()+"/objects/status-1", targetVisibility)
 			h := newQuoteHandler(t, target, nil)
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{
 				Comment:    &comment,
-				Visibility: storagemodels.VisibilityPublic,
+				Visibility: targetVisibility,
 			})
 			require.NoError(t, err)
 			ctx.Params["id"] = "status-1"
@@ -446,6 +446,7 @@ func TestHandleReblogLift_EnforcesQuoteReachAndViewerAccess(t *testing.T) {
 			var body common.StandardErrorResponse
 			require.NoError(t, json.Unmarshal(resp.Body, &body))
 			require.Equal(t, string(commonerrors.CodeUnprocessableEntity), body.Code)
+			require.Equal(t, restTargetNotQuotable, body.Error)
 		})
 	}
 
@@ -464,7 +465,6 @@ func TestHandleReblogLift_EnforcesQuoteReachAndViewerAccess(t *testing.T) {
 	}{
 		{name: "equal public", targetVisibility: storagemodels.VisibilityPublic, quoteVisibility: storagemodels.VisibilityPublic},
 		{name: "narrower private", targetVisibility: storagemodels.VisibilityPublic, quoteVisibility: storagemodels.VisibilityPrivate},
-		{name: "equal followers", targetVisibility: storagemodels.VisibilityPrivate, quoteVisibility: storagemodels.VisibilityPrivate},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

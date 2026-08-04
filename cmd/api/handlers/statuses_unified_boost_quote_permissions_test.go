@@ -28,7 +28,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		permissions *storagemodels.QuotePermissions,
 		permissionErr error,
 		configure func(*round10QueryState, *storagemodels.Status),
-	) (*Handler, *quotes.QuoteService) {
+	) (*Handler, *quotes.QuoteService, *round10QueryState) {
 		t.Helper()
 		targetForHarness := *target
 		state := &round10QueryState{
@@ -76,18 +76,22 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 			require.NoError(t, repos.Quote().CreateQuotePermissions(context.Background(), permissions))
 		}
 
-		return handler, quoteService
+		return handler, quoteService, state
 	}
 
 	type restQuoteResult struct {
 		status int
 		body   *common.StandardErrorResponse
 	}
-	requestRESTQuote := func(t *testing.T, handler *Handler) restQuoteResult {
+	requestRESTQuote := func(t *testing.T, handler *Handler, visibility ...string) restQuoteResult {
 		t.Helper()
 		token := round11SignAccessToken(t, cfg.JWTSecret, "mallory", []string{"write"})
+		request := models.ReblogRequest{Comment: &comment}
+		if len(visibility) > 0 {
+			request.Visibility = visibility[0]
+		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog",
-			map[string]string{"Authorization": "Bearer " + token}, nil, models.ReblogRequest{Comment: &comment})
+			map[string]string{"Authorization": "Bearer " + token}, nil, request)
 		require.NoError(t, err)
 		ctx.Params["id"] = "status-1"
 		resp, err := handler.HandleReblogLift(ctx)
@@ -117,7 +121,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	}
 
 	t.Run("blocked viewer receives the GraphQL denial class", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{
 			AllowPublic: true,
 			BlockList:   []string{"mallory"},
 		}, nil, nil)
@@ -125,8 +129,24 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		assertDeniedParity(t, handler, quoteService)
 	})
 
+	t.Run("followers-only target is rejected before any write", func(t *testing.T) {
+		handler, _, state := newHarness(t, nil, nil,
+			func(state *round10QueryState, status *storagemodels.Status) {
+				status.Visibility = storagemodels.VisibilityPrivate
+				state.createErrorOnce = stdErrors.New("quote boost persistence must not run")
+			})
+
+		result := requestRESTQuote(t, handler, storagemodels.VisibilityPrivate)
+		require.Equal(t, http.StatusUnprocessableEntity, result.status)
+		require.NotNil(t, result.body)
+		require.Equal(t, restTargetNotQuotable, result.body.Error)
+		require.Empty(t, state.quoteRelationships, "denial must not persist a quote relationship")
+		require.Empty(t, state.activitiesByID, "denial must not persist a federation activity")
+		require.Len(t, state.objectsByID, 1, "denial must not persist a quote note object")
+	})
+
 	t.Run("follower arm allows both REST and GraphQL quote creation", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.relationshipRecords = []storagemodels.RelationshipRecord{
 					{PK: "FOLLOW#mallory", SK: "FOLLOWING#alice", State: storagemodels.RelationshipAccepted},
@@ -140,12 +160,12 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("follower arm denies non-followers identically", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil, nil)
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil, nil)
 		assertDeniedParity(t, handler, quoteService)
 	})
 
 	t.Run("follower lookup error fails closed as forbidden on both surfaces", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowFollowers: true}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.firstErrorPK = map[string]error{"FOLLOW#mallory": stdErrors.New("relationship store unavailable")}
 			})
@@ -153,7 +173,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("mentioned arm allows both REST and GraphQL quote creation", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
 			func(_ *round10QueryState, status *storagemodels.Status) {
 				status.Mentions = []string{cfg.ActorURL("mallory")}
 			})
@@ -165,12 +185,12 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("mentioned arm denies unmentioned quoters identically", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil, nil)
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil, nil)
 		assertDeniedParity(t, handler, quoteService)
 	})
 
 	t.Run("mentioned status read error fails closed as REST forbidden", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowMentioned: true}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.firstErrorPK = map[string]error{"status#status-1": stdErrors.New("status store unavailable")}
 			})
@@ -187,7 +207,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("per-note none denies both surfaces after account allow", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
 					"status-1": {StatusID: "status-1", QuoteType: "disabled", AllowQuotes: false},
@@ -211,14 +231,14 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 			}
 		}
 
-		handler, quoteService := newHarness(t, permissions, nil, withFollowersControl(true))
+		handler, quoteService, _ := newHarness(t, permissions, nil, withFollowersControl(true))
 		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
 			StatusID: "mallory-note-follower-quote", AuthorUsername: "mallory",
 		}, "status-1")
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
 
-		handler, quoteService = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withFollowersControl(false))
+		handler, quoteService, _ = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withFollowersControl(false))
 		assertDeniedParity(t, handler, quoteService)
 	})
 
@@ -234,19 +254,19 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 			}
 		}
 
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(true))
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(true))
 		_, err := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
 			StatusID: "mallory-note-mentioned-quote", AuthorUsername: "mallory",
 		}, "status-1")
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, requestRESTQuote(t, handler).status)
 
-		handler, quoteService = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(false))
+		handler, quoteService, _ = newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, withMentionedControl(false))
 		assertDeniedParity(t, handler, quoteService)
 	})
 
 	t.Run("per-note storage error fails closed as forbidden on both surfaces", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.firstErrorPK = map[string]error{"STATUS_META#status-1": stdErrors.New("metadata unavailable")}
 			})
@@ -254,7 +274,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("per-note public cannot widen account denial", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{}, nil,
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{}, nil,
 			func(state *round10QueryState, _ *storagemodels.Status) {
 				state.statusMetadataByStatus = map[string]storagemodels.StatusMetadata{
 					"status-1": {StatusID: "status-1", QuoteType: storagemodels.VisibilityPublic, AllowQuotes: true},
@@ -264,7 +284,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("allowed viewer creates the REST quote unchanged", func(t *testing.T) {
-		handler, quoteService := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, nil)
+		handler, quoteService, _ := newHarness(t, &storagemodels.QuotePermissions{AllowPublic: true}, nil, nil)
 		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)
 		require.NoError(t, err)
 		require.True(t, allowed)
@@ -274,7 +294,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 	})
 
 	t.Run("missing permissions row uses the GraphQL permissive default", func(t *testing.T) {
-		handler, quoteService := newHarness(t, nil, nil, nil)
+		handler, quoteService, _ := newHarness(t, nil, nil, nil)
 		allowed, err := quoteService.CheckQuotePermissions(context.Background(), "mallory", target)
 		require.NoError(t, err)
 		require.True(t, allowed)
@@ -285,7 +305,7 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 
 	t.Run("storage failure is fail closed on both surfaces", func(t *testing.T) {
 		storageErr := stdErrors.New("quote permissions unavailable")
-		handler, quoteService := newHarness(t, nil, storageErr, nil)
+		handler, quoteService, _ := newHarness(t, nil, storageErr, nil)
 
 		_, graphQLErr := quoteService.AttachQuoteToStatus(context.Background(), &storagemodels.Status{
 			StatusID:       "mallory-quote",
