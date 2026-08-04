@@ -85,6 +85,9 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 	if r == nil || status == nil || strings.TrimSpace(status.StatusID) == "" {
 		return false, model.QuotePermissionNone
 	}
+	if !common.IsPubliclyVisible(status.Visibility) {
+		return false, model.QuotePermissionNone
+	}
 	authorUsername := resolveStatusAuthorUsername(status)
 	if authorUsername == "" {
 		return false, model.QuotePermissionNone
@@ -134,11 +137,11 @@ func (r *Resolver) determineQuoteable(ctx context.Context, status *models.Status
 		}
 		return false, model.QuotePermissionNone
 	}
-	return effectiveGraphQLQuoteControl(accountPermissions, quoteType)
+	return effectiveGraphQLQuoteControl(status, accountPermissions, quoteType)
 }
 
-func effectiveGraphQLQuoteControl(account *models.QuotePermissions, storedQuoteType string) (bool, model.QuotePermission) {
-	if account == nil {
+func effectiveGraphQLQuoteControl(status *models.Status, account *models.QuotePermissions, storedQuoteType string) (bool, model.QuotePermission) {
+	if status == nil || !common.IsPubliclyVisible(status.Visibility) || account == nil {
 		return false, model.QuotePermissionNone
 	}
 	perNote := strings.ToLower(strings.TrimSpace(storedQuoteType))

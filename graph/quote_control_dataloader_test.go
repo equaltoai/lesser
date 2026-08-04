@@ -104,6 +104,7 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 	}
 	for _, status := range statuses {
 		status.AuthorUsername = "alice"
+		status.Visibility = models.VisibilityPublic
 	}
 	ctx := WithLoaders(context.Background(), newRequestLoaders())
 	resolver.prefetchQuoteControls(ctx, statuses)
@@ -121,7 +122,9 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 		"boost-original": {false, model.QuotePermissionNone},
 	}
 	for statusID, want := range expected {
-		quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: statusID, AuthorUsername: "alice"})
+		quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{
+			StatusID: statusID, AuthorUsername: "alice", Visibility: models.VisibilityPublic,
+		})
 		require.Equal(t, want.quoteable, quoteable, statusID)
 		require.Equal(t, want.permission, permission, statusID)
 	}
@@ -133,7 +136,9 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 	// NewLoaders is called once per GraphQL request by middleware. A second loader
 	// set must not reuse the first request's permission cache.
 	secondCtx := WithLoaders(context.Background(), newRequestLoaders())
-	quoteable, permission := resolver.determineQuoteable(secondCtx, &models.Status{StatusID: "public", AuthorUsername: "alice"})
+	quoteable, permission := resolver.determineQuoteable(secondCtx, &models.Status{
+		StatusID: "public", AuthorUsername: "alice", Visibility: models.VisibilityPublic,
+	})
 	require.True(t, quoteable)
 	require.Equal(t, model.QuotePermissionEveryone, permission)
 	require.Equal(t, int32(2), objectRepo.calls.Load())
@@ -149,7 +154,9 @@ func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
 			zap.NewNop(),
 		),
 	})
-	quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{StatusID: "status-1", AuthorUsername: "alice"})
+	quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{
+		StatusID: "status-1", AuthorUsername: "alice", Visibility: models.VisibilityPublic,
+	})
 	require.False(t, quoteable)
 	require.Equal(t, model.QuotePermissionNone, permission)
 
@@ -180,7 +187,9 @@ func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
 	}))
 
 	// Keep the non-loader fallback pinned for non-GraphQL conversion callers.
-	quoteable, permission = resolver.determineQuoteable(context.Background(), &models.Status{StatusID: "missing", AuthorUsername: "alice"})
+	quoteable, permission = resolver.determineQuoteable(context.Background(), &models.Status{
+		StatusID: "missing", AuthorUsername: "alice", Visibility: models.VisibilityPublic,
+	})
 	require.False(t, quoteable)
 	require.Equal(t, model.QuotePermissionNone, permission)
 	require.NotNil(t, storageRepo.Object())
@@ -225,12 +234,14 @@ func TestQuoteControlLoaderBatchesBoostOriginalAuthors(t *testing.T) {
 		original := &models.Status{
 			StatusID:       originalID,
 			AuthorUsername: fmt.Sprintf("original-author-%02d", i),
+			Visibility:     models.VisibilityPublic,
 		}
 		require.NoError(t, storageRepo.Status().CreateStatus(ctx, original))
 		boosts = append(boosts, &models.Status{
 			StatusID:       boostID,
 			AuthorUsername: "boost-author",
 			ReblogOfID:     originalID,
+			Visibility:     models.VisibilityPublic,
 		})
 		originals = append(originals, original)
 		objectRepo.quoteTypes[boostID] = models.VisibilityPublic

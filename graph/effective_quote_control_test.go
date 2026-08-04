@@ -41,16 +41,73 @@ func TestEffectiveGraphQLQuoteControlMatchesEnforcementMatrix(t *testing.T) {
 					expectedPermission = model.QuotePermissionMentioned
 				}
 
-				quoteable, permission := effectiveGraphQLQuoteControl(&account.permissions, perNote)
+				quoteable, permission := effectiveGraphQLQuoteControl(
+					&models.Status{Visibility: models.VisibilityPublic}, &account.permissions, perNote,
+				)
 				require.Equal(t, expectedPermission != model.QuotePermissionNone, quoteable)
 				require.Equal(t, expectedPermission, permission)
 			})
 		}
 	}
 
-	quoteable, permission := effectiveGraphQLQuoteControl(nil, models.VisibilityPublic)
+	quoteable, permission := effectiveGraphQLQuoteControl(
+		&models.Status{Visibility: models.VisibilityPublic}, nil, models.VisibilityPublic,
+	)
 	require.False(t, quoteable)
 	require.Equal(t, model.QuotePermissionNone, permission)
+}
+
+func TestEffectiveGraphQLQuoteControlRejectsNonPublicStatusVisibility(t *testing.T) {
+	account := &models.QuotePermissions{AllowPublic: true}
+	for _, tt := range []struct {
+		visibility string
+		quoteable  bool
+		permission model.QuotePermission
+	}{
+		{visibility: models.VisibilityPrivate, permission: model.QuotePermissionNone},
+		{visibility: models.VisibilityDirect, permission: model.QuotePermissionNone},
+		{visibility: models.VisibilityPublic, quoteable: true, permission: model.QuotePermissionEveryone},
+		{visibility: models.VisibilityUnlisted, quoteable: true, permission: model.QuotePermissionEveryone},
+	} {
+		t.Run(tt.visibility, func(t *testing.T) {
+			quoteable, permission := effectiveGraphQLQuoteControl(
+				&models.Status{Visibility: tt.visibility}, account, models.VisibilityPublic,
+			)
+			require.Equal(t, tt.quoteable, quoteable)
+			require.Equal(t, tt.permission, permission)
+		})
+	}
+}
+
+func TestDetermineQuoteableRejectsNonPublicVisibilityBeforePermissionLoads(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	quoteCalls := 0
+	accountCalls := 0
+	loaders := &Loaders{
+		QuoteControlLoader: newQuoteControlLoaderWithLookup(
+			func(_ context.Context, statusIDs []string) (map[string]string, error) {
+				quoteCalls++
+				return map[string]string{statusIDs[0]: models.VisibilityPublic}, nil
+			}, zap.NewNop()),
+		QuoteAccountLoader: newQuoteAccountLoaderWithLookup(
+			func(_ context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+				accountCalls++
+				return map[string]*models.QuotePermissions{
+					usernames[0]: {Username: usernames[0], AllowPublic: true},
+				}, nil
+			}, zap.NewNop()),
+	}
+	ctx := WithLoaders(context.Background(), loaders)
+
+	for _, visibility := range []string{models.VisibilityPrivate, models.VisibilityDirect} {
+		quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{
+			StatusID: "non-public-" + visibility, AuthorUsername: "alice", Visibility: visibility,
+		})
+		require.False(t, quoteable)
+		require.Equal(t, model.QuotePermissionNone, permission)
+	}
+	require.Zero(t, quoteCalls)
+	require.Zero(t, accountCalls)
 }
 
 func TestDetermineQuoteableDoesNotOverPromisePrivateAccountDefault(t *testing.T) {
@@ -70,7 +127,7 @@ func TestDetermineQuoteableDoesNotOverPromisePrivateAccountDefault(t *testing.T)
 	ctx := WithLoaders(context.Background(), loaders)
 
 	quoteable, permission := resolver.determineQuoteable(ctx, &models.Status{
-		StatusID: "status-without-metadata", AuthorUsername: "private-author",
+		StatusID: "status-without-metadata", AuthorUsername: "private-author", Visibility: models.VisibilityPublic,
 	})
 	require.True(t, quoteable)
 	require.Equal(t, model.QuotePermissionFollowers, permission)

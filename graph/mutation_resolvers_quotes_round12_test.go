@@ -40,6 +40,7 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 		StatusID:       "status-1",
 		AuthorUsername: "alice",
 		Content:        "hello",
+		Visibility:     models.VisibilityPublic,
 		CreatedAt:      time.Now().Add(-time.Hour),
 		UpdatedAt:      time.Now(),
 	}))
