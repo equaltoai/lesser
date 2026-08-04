@@ -28,10 +28,14 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
 - Reply and quote reach is ordered `public < unlisted < private/followers < direct`, from widest to narrowest audience.
   REST status replies, GraphQL note/quote mutations, and `POST /api/v1/statuses/{id}/reblog` quote requests with a
   non-empty `comment` reject a child visibility wider than the referenced status with the structured
-  `UNPROCESSABLE_ENTITY` error. GraphQL quote inputs whose visibility is omitted inherit the target visibility; the REST
-  reblog-quote request retains its documented public default, which is therefore rejected when it would widen reach.
-  These paths never silently clamp an explicit author choice.
-- GraphQL quote mutations, the Quote Posts REST creation endpoint, and REST reblog-quotes resolve the target storage-first, fetch and materialize a canonical
+  `UNPROCESSABLE_ENTITY` error. For the public or unlisted targets that remain quotable, GraphQL quote inputs whose
+  visibility is omitted inherit the target visibility; the REST reblog-quote request retains its documented public
+  default, which is therefore rejected when it would widen reach. These paths never silently clamp an explicit author
+  choice.
+- A quote target must be public or unlisted to be quotable at all. This invariant applies to all four creation paths:
+  REST create-quote, REST boost-of-quote, GraphQL `createQuoteNote`, and GraphQL `createNote` with `quoteTargetID`. This is
+  an intentional GraphQL behavior tightening: quoting a followers-only target now returns `BUSINESS_RULE_VIOLATED`
+  rather than inheriting its reach. These paths resolve the target storage-first, fetch and materialize a canonical
   remote ActivityPub Note when absent locally, and then apply viewer-access and reach checks. Deleted or inaccessible
   targets remain indistinguishable from missing statuses. A fetched remote quote target may therefore remain persisted
   locally even when the requesting viewer is denied. This is intentional and mirrors reply-parent materialization
