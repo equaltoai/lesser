@@ -255,6 +255,9 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 		}
 		return common.RespondInternalServerError(ctx)
 	}
+	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+		return common.RespondUnprocessableEntity(ctx, quotes.ErrTargetStatusNotQuotable.Message)
+	}
 	quotesService := h.registry.Quotes()
 	if quotesService == nil {
 		h.logger.Error("quotes service unavailable while authorizing quote")
