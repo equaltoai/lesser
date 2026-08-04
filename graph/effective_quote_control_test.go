@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	quoteservice "github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -51,7 +52,13 @@ func TestEffectiveGraphQLQuoteControlMatchesEnforcementMatrix(t *testing.T) {
 		models.VisibilityPublic, " PUBLIC ",
 		EventTypeFollowers, " Followers ",
 		"mentioned", " MENTIONED ",
-		"disabled", "unknown",
+		"disabled", "unknown", "",
+	}
+	visibilities := []string{
+		models.VisibilityPublic,
+		models.VisibilityUnlisted,
+		models.VisibilityPrivate,
+		models.VisibilityDirect,
 	}
 	viewers := []struct {
 		name      string
@@ -65,80 +72,91 @@ func TestEffectiveGraphQLQuoteControlMatchesEnforcementMatrix(t *testing.T) {
 	}
 
 	cells := 0
-	for permissionMask := range 8 {
-		account := &models.QuotePermissions{
-			Username:       "bob",
-			AllowPublic:    permissionMask&1 != 0,
-			AllowFollowers: permissionMask&2 != 0,
-			AllowMentioned: permissionMask&4 != 0,
-		}
-		storageRepo.SeedQuotePermissions(account)
-		for perNoteIndex, perNote := range perNoteTypes {
-			t.Run(fmt.Sprintf("mask-%d/%q", permissionMask, perNote), func(t *testing.T) {
-				allowedByViewer := make(map[string]bool, len(viewers))
-				for viewerIndex, viewer := range viewers {
-					status := &models.Status{
-						StatusID:       fmt.Sprintf("oracle-%d-%d-%d", permissionMask, perNoteIndex, viewerIndex),
-						AuthorID:       "https://localhost/users/bob",
-						AuthorUsername: "bob",
-						Visibility:     models.VisibilityPublic,
-					}
-					if viewer.mentioned {
-						status.Mentions = []string{viewer.username}
-					}
-					require.NoError(t, storageRepo.Status().CreateStatus(ctx, status))
+	oracleCalls := 0
+	for visibilityIndex, visibility := range visibilities {
+		for permissionMask := range 8 {
+			account := &models.QuotePermissions{
+				Username:       "bob",
+				AllowPublic:    permissionMask&1 != 0,
+				AllowFollowers: permissionMask&2 != 0,
+				AllowMentioned: permissionMask&4 != 0,
+			}
+			storageRepo.SeedQuotePermissions(account)
+			for perNoteIndex, perNote := range perNoteTypes {
+				t.Run(fmt.Sprintf("%s/mask-%d/%q", visibility, permissionMask, perNote), func(t *testing.T) {
+					allowedByViewer := make(map[string]bool, len(viewers))
+					for viewerIndex, viewer := range viewers {
+						status := &models.Status{
+							StatusID: fmt.Sprintf(
+								"oracle-%d-%d-%d-%d", visibilityIndex, permissionMask, perNoteIndex, viewerIndex,
+							),
+							AuthorID:       "https://localhost/users/bob",
+							AuthorUsername: "bob",
+							Visibility:     visibility,
+						}
+						if viewer.mentioned {
+							status.Mentions = []string{viewer.username}
+						}
+						require.NoError(t, storageRepo.Status().CreateStatus(ctx, status))
 
-					oracleStorage := quoteControlOracleStorage{
-						RepositoryStorage: storageRepo,
-						object: quoteControlOracleObjectRepository{
-							ObjectRepository: storageRepo.Object(), quoteType: perNote,
-						},
-						relationship: quoteControlOracleRelationshipRepository{
-							ConcreteRelationshipRepository: storageRepo.Relationship(), following: viewer.following,
-						},
+						oracleStorage := quoteControlOracleStorage{
+							RepositoryStorage: storageRepo,
+							object: quoteControlOracleObjectRepository{
+								ObjectRepository: storageRepo.Object(), quoteType: perNote,
+							},
+							relationship: quoteControlOracleRelationshipRepository{
+								ConcreteRelationshipRepository: storageRepo.Relationship(), following: viewer.following,
+							},
+						}
+						allowed := false
+						if common.IsPubliclyVisible(status.Visibility) {
+							var err error
+							allowed, err = quoteservice.NewQuoteService(oracleStorage, zap.NewNop()).
+								CheckQuotePermissions(ctx, viewer.username, status)
+							require.NoError(t, err)
+						}
+						allowedByViewer[viewer.name] = allowed
+						oracleCalls++
 					}
-					allowed, err := quoteservice.NewQuoteService(oracleStorage, zap.NewNop()).
-						CheckQuotePermissions(ctx, viewer.username, status)
-					require.NoError(t, err)
-					allowedByViewer[viewer.name] = allowed
+
+					expectedPermission := model.QuotePermissionNone
+					switch {
+					case allowedByViewer["public"]:
+						expectedPermission = model.QuotePermissionEveryone
+					case allowedByViewer["follower"]:
+						expectedPermission = model.QuotePermissionFollowers
+					case allowedByViewer["mentioned"]:
+						expectedPermission = model.QuotePermissionMentioned
+					}
+					expectedQuoteable := expectedPermission != model.QuotePermissionNone
+					quoteable, permission := effectiveGraphQLQuoteControl(
+						&models.Status{Visibility: visibility}, account, perNote,
+					)
+					require.Equal(t, expectedQuoteable, quoteable, "projection must neither invent nor hide a real permission arm")
+					require.Equal(t, expectedPermission, permission, "projection must match the real service's tightest arm")
+
+					switch permission {
+					case model.QuotePermissionEveryone:
+						require.True(t, allowedByViewer["public"], "EVERYONE must not over-promise")
+					case model.QuotePermissionFollowers:
+						require.False(t, allowedByViewer["public"])
+						require.True(t, allowedByViewer["follower"], "FOLLOWERS must not over-promise")
+					case model.QuotePermissionMentioned:
+						require.False(t, allowedByViewer["public"])
+						require.False(t, allowedByViewer["follower"])
+						require.True(t, allowedByViewer["mentioned"], "MENTIONED must not over-promise")
+					case model.QuotePermissionNone:
+						require.False(t, allowedByViewer["public"])
+						require.False(t, allowedByViewer["follower"])
+						require.False(t, allowedByViewer["mentioned"], "NONE must not hide an allowed arm")
+					}
 					cells++
-				}
-
-				expectedPermission := model.QuotePermissionNone
-				switch {
-				case allowedByViewer["public"]:
-					expectedPermission = model.QuotePermissionEveryone
-				case allowedByViewer["follower"]:
-					expectedPermission = model.QuotePermissionFollowers
-				case allowedByViewer["mentioned"]:
-					expectedPermission = model.QuotePermissionMentioned
-				}
-				expectedQuoteable := expectedPermission != model.QuotePermissionNone
-				quoteable, permission := effectiveGraphQLQuoteControl(
-					&models.Status{Visibility: models.VisibilityPublic}, account, perNote,
-				)
-				require.Equal(t, expectedQuoteable, quoteable, "projection must neither invent nor hide a real permission arm")
-				require.Equal(t, expectedPermission, permission, "projection must match the real service's tightest arm")
-
-				switch permission {
-				case model.QuotePermissionEveryone:
-					require.True(t, allowedByViewer["public"], "EVERYONE must not over-promise")
-				case model.QuotePermissionFollowers:
-					require.False(t, allowedByViewer["public"])
-					require.True(t, allowedByViewer["follower"], "FOLLOWERS must not over-promise")
-				case model.QuotePermissionMentioned:
-					require.False(t, allowedByViewer["public"])
-					require.False(t, allowedByViewer["follower"])
-					require.True(t, allowedByViewer["mentioned"], "MENTIONED must not over-promise")
-				case model.QuotePermissionNone:
-					require.False(t, allowedByViewer["public"])
-					require.False(t, allowedByViewer["follower"])
-					require.False(t, allowedByViewer["mentioned"], "NONE must not hide an allowed arm")
-				}
-			})
+				})
+			}
 		}
 	}
-	require.Equal(t, 192, cells)
+	require.Equal(t, 288, cells)
+	require.Equal(t, 864, oracleCalls)
 
 	quoteable, permission := effectiveGraphQLQuoteControl(
 		&models.Status{Visibility: models.VisibilityPublic}, nil, models.VisibilityPublic,

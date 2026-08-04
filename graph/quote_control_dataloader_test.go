@@ -130,7 +130,7 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 	}
 
 	require.Equal(t, int32(1), objectRepo.calls.Load(), "all root and recursive quote controls must use one batch")
-	require.Equal(t, int32(1), accountCalls.Load(), "all authors must use one account-permission batch")
+	require.Equal(t, int32(1), accountCalls.Load(), "one repeated author must use one account-permission batch")
 	require.Equal(t, int64(3), tracker.GetOperationCounts()["Read"], "per-note, related-status, and account batches must each be cost-visible once")
 
 	// NewLoaders is called once per GraphQL request by middleware. A second loader
