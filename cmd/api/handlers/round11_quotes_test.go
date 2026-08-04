@@ -436,3 +436,31 @@ func TestQuotePermissionsRESTRoundTrips(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(failedHandler.HandleUpdateQuotePermissionsLift(ctx))
 	})
 }
+
+func TestQuoteRESTUnavailableServicesFailClosed(t *testing.T) {
+	cfg := round11TestConfig()
+	writeStatuses := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	readAccounts := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read:accounts"})
+	writeAccounts := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:accounts"})
+	handler, _, _ := round11NewHandler(t, cfg, &RegistryStub{})
+	handler.registry = &RegistryStub{}
+
+	createCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", map[string]string{"Authorization": "Bearer " + writeStatuses}, nil, apimodels.CreateQuotePostRequest{Status: "quote"})
+	require.NoError(t, err)
+	createCtx.Params["id"] = "target-1"
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateQuotePostLift(createCtx))
+
+	listCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, nil, nil)
+	require.NoError(t, err)
+	listCtx.Params["id"] = "target-1"
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleGetQuotesOfStatusLift(listCtx))
+
+	readCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", map[string]string{"Authorization": "Bearer " + readAccounts}, nil, nil)
+	require.NoError(t, err)
+	readCtx.Params["id"] = "alice"
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleGetQuotePermissionsLift(readCtx))
+
+	updateCtx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", map[string]string{"Authorization": "Bearer " + writeAccounts}, nil, apimodels.UpdateQuotePermissionsRequest{})
+	require.NoError(t, err)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateQuotePermissionsLift(updateCtx))
+}
