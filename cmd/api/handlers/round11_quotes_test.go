@@ -222,7 +222,10 @@ func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 		ctx.Params["id"] = "target-1"
 
 		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleCreateQuotePostLift(ctx))
-		require.Contains(t, string(resp.Body), string(commonerrors.CodeUnprocessableEntity))
+		var errorBody common.StandardErrorResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &errorBody))
+		require.Equal(t, restTargetNotQuotable, errorBody.Error)
+		require.Equal(t, string(commonerrors.CodeUnprocessableEntity), errorBody.Code)
 		require.Zero(t, permissionCalls)
 		require.Zero(t, createCalls)
 	})

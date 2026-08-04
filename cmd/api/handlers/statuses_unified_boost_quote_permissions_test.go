@@ -83,11 +83,15 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 		status int
 		body   *common.StandardErrorResponse
 	}
-	requestRESTQuote := func(t *testing.T, handler *Handler) restQuoteResult {
+	requestRESTQuote := func(t *testing.T, handler *Handler, visibility ...string) restQuoteResult {
 		t.Helper()
 		token := round11SignAccessToken(t, cfg.JWTSecret, "mallory", []string{"write"})
+		request := models.ReblogRequest{Comment: &comment}
+		if len(visibility) > 0 {
+			request.Visibility = visibility[0]
+		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog",
-			map[string]string{"Authorization": "Bearer " + token}, nil, models.ReblogRequest{Comment: &comment})
+			map[string]string{"Authorization": "Bearer " + token}, nil, request)
 		require.NoError(t, err)
 		ctx.Params["id"] = "status-1"
 		resp, err := handler.HandleReblogLift(ctx)
@@ -132,8 +136,10 @@ func TestRESTQuoteBoostMatchesGraphQLAccountPermissionEnforcement(t *testing.T) 
 				state.createErrorOnce = stdErrors.New("quote boost persistence must not run")
 			})
 
-		result := requestRESTQuote(t, handler)
+		result := requestRESTQuote(t, handler, storagemodels.VisibilityPrivate)
 		require.Equal(t, http.StatusUnprocessableEntity, result.status)
+		require.NotNil(t, result.body)
+		require.Equal(t, restTargetNotQuotable, result.body.Error)
 		require.Empty(t, state.quoteRelationships, "denial must not persist a quote relationship")
 		require.Empty(t, state.activitiesByID, "denial must not persist a federation activity")
 		require.Len(t, state.objectsByID, 1, "denial must not persist a quote note object")

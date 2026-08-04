@@ -131,6 +131,7 @@ func TestCreateNoteRejectsNonPublicQuoteTargetBeforePersistence(t *testing.T) {
 	appErr, ok := apperrors.AsAppError(err)
 	require.True(t, ok)
 	require.Equal(t, apperrors.CodeBusinessRuleViolated, appErr.Code)
+	require.Equal(t, quotes.ErrTargetStatusNotQuotable.Message, appErr.Message, "GraphQL keeps the bare business-rule error")
 
 	count, countErr := storageRepo.Status().CountStatusesByAuthor(context.Background(), "alice")
 	require.NoError(t, countErr)

@@ -20,6 +20,7 @@ import (
 const (
 	quoteListPageSize       = 80
 	quoteListScanMultiplier = 4
+	restTargetNotQuotable   = "target status is not quotable"
 )
 
 // HandleCreateQuotePostLift handles POST /api/v1/statuses/:id/quote.
@@ -67,7 +68,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.
 		return respondQuoteAppError(ctx, err)
 	}
 	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
-		return common.RespondUnprocessableEntity(ctx, quotes.ErrTargetStatusNotQuotable.Message)
+		return common.RespondUnprocessableEntity(ctx, restTargetNotQuotable)
 	}
 
 	quotesService := h.registry.Quotes()
