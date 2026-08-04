@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -247,7 +248,7 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 		QuotesSvc: &QuotesServiceStub{
 			GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
 				require.Equal(t, "target-1", statusID)
-				require.Equal(t, quoteListPageSize, limit)
+				require.Equal(t, quoteListScanMultiplier, limit)
 				require.Empty(t, cursor)
 				return &quotes.QuoteRelationshipPage{Relationships: []*storagemodels.QuoteRelationship{
 					{QuoterNoteID: "quote-hidden"},
@@ -299,6 +300,47 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("scan stops at bounded multiple when all quotes are hidden", func(t *testing.T) {
+		const requestedLimit = 2
+		quoteReads := 0
+		listCalls := 0
+		boundedRegistry := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					if query.StatusID == "target-1" {
+						return target, nil
+					}
+					quoteReads++
+					return nil, notes.ErrStatusNotFound
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
+					listCalls++
+					require.Equal(t, "target-1", statusID)
+					require.Equal(t, requestedLimit*quoteListScanMultiplier, limit)
+					require.Empty(t, cursor)
+					relationships := make([]*storagemodels.QuoteRelationship, limit)
+					for i := range relationships {
+						relationships[i] = &storagemodels.QuoteRelationship{QuoterNoteID: fmt.Sprintf("hidden-%d", i)}
+					}
+					return &quotes.QuoteRelationshipPage{Relationships: relationships, NextCursor: "more-relationships-exist"}, nil
+				},
+			},
+		}
+		boundedHandler, _, _ := round11NewHandler(t, cfg, boundedRegistry)
+		boundedCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, map[string]string{"limit": "2"}, nil)
+		require.NoError(t, err)
+		boundedCtx.Params["id"] = "target-1"
+
+		boundedResponse := requireStatus(t, http.StatusOK)(boundedHandler.HandleGetQuotesOfStatusLift(boundedCtx))
+		var boundedBody []apimodels.QuoteStatusSummary
+		require.NoError(t, json.Unmarshal(boundedResponse.Body, &boundedBody))
+		require.Empty(t, boundedBody)
+		require.Equal(t, requestedLimit*quoteListScanMultiplier, quoteReads)
+		require.Equal(t, 1, listCalls)
 	})
 
 	t.Run("relationship storage errors fail closed", func(t *testing.T) {

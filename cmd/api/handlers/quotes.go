@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	quoteListPageSize   = 80
-	quoteListMaxScanned = 10080
+	quoteListPageSize       = 80
+	quoteListScanMultiplier = 4
 )
 
 // HandleCreateQuotePostLift handles POST /api/v1/statuses/:id/quote.
@@ -336,10 +336,15 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 	cursor := ""
 	visible := 0
 	scanned := 0
+	maxScanned := limit * quoteListScanMultiplier
 	seenCursors := map[string]struct{}{}
 
-	for scanned < quoteListMaxScanned && len(items) < limit {
-		page, err := quotesService.GetQuoteRelationshipsForStatus(ctx, statusID, quoteListPageSize, cursor)
+	for scanned < maxScanned && len(items) < limit {
+		pageLimit := quoteListPageSize
+		if remaining := maxScanned - scanned; remaining < pageLimit {
+			pageLimit = remaining
+		}
+		page, err := quotesService.GetQuoteRelationshipsForStatus(ctx, statusID, pageLimit, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -348,10 +353,13 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 		}
 
 		for _, relationship := range page.Relationships {
-			if relationship == nil || scanned >= quoteListMaxScanned {
-				continue
+			if scanned >= maxScanned {
+				break
 			}
 			scanned++
+			if relationship == nil {
+				continue
+			}
 			summary, isVisible, err := visibleQuoteSummary(ctx, notesService, relationship, viewer)
 			if err != nil {
 				return nil, err
