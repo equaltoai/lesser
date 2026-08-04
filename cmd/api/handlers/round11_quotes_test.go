@@ -11,6 +11,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	commonerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/quotes"
@@ -319,6 +320,18 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Len(t, body, 1)
 	require.Equal(t, "quote-2", body[0].ID)
+
+	t.Run("offset beyond the servable scan bound is rejected", func(t *testing.T) {
+		boundedCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, map[string]string{"limit": "1", "offset": "4"}, nil)
+		require.NoError(t, err)
+		boundedCtx.Params["id"] = "target-1"
+
+		boundedResponse := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleGetQuotesOfStatusLift(boundedCtx))
+		var errorBody common.StandardErrorResponse
+		require.NoError(t, json.Unmarshal(boundedResponse.Body, &errorBody))
+		require.Contains(t, errorBody.Error, "3")
+		require.Equal(t, string(commonerrors.CodeUnprocessableEntity), errorBody.Code)
+	})
 
 	t.Run("missing and invisible targets have one 404 shape", func(t *testing.T) {
 		var expectedBody []byte

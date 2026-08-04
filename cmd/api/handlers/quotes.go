@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -120,9 +121,13 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *apptheory.Context) (*apptheor
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
-	offset, err := common.ParseAndValidateIntWithBounds("offset", queryValue(ctx, "offset"), -1, 10000, 0)
+	maxOffset := quoteListMaxOffset(limit)
+	offset, err := common.ParseAndValidateIntWithBounds("offset", queryValue(ctx, "offset"), -1, int(^uint(0)>>1), 0)
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
+	}
+	if offset > maxOffset {
+		return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("offset cannot be greater than %d for limit %d", maxOffset, limit))
 	}
 
 	if h.registry == nil || h.registry.Notes() == nil || h.registry.Quotes() == nil {
@@ -145,6 +150,10 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *apptheory.Context) (*apptheor
 		return h.respondVisibleQuoteStatusError(ctx, statusID, viewer, err)
 	}
 	return okJSON(items)
+}
+
+func quoteListMaxOffset(limit int) int {
+	return limit*quoteListScanMultiplier - 1
 }
 
 // HandleDeleteQuotePostLift handles DELETE /api/v1/statuses/:id/quote/:quote_id.

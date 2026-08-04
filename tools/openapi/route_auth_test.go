@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -28,7 +29,7 @@ func TestApplyOperationOverridesPublishesQuoteRESTResponses(t *testing.T) {
 			name:             "list quotes",
 			route:            routeDef{Method: methodGET, Path: "/api/v1/statuses/{id}/quotes"},
 			initialResponses: []string{"200", "400", "404", "500"},
-			wantResponses:    []string{"200", "400", "404", "500"},
+			wantResponses:    []string{"200", "400", "404", "422", "500"},
 			wantSchema:       "QuoteStatusSummaryList",
 		},
 		{
@@ -69,6 +70,30 @@ func TestApplyOperationOverridesPublishesQuoteRESTResponses(t *testing.T) {
 				t.Fatalf("200 response schema = %q, want %q", gotSchema, wantSchema)
 			}
 		})
+	}
+}
+
+func TestApplyQuoteListOverridePublishesDynamicOffsetBound(t *testing.T) {
+	t.Parallel()
+
+	op := &operation{
+		Parameters: []parameter{{Ref: "#/components/parameters/Offset"}},
+		Responses:  map[string]response{},
+	}
+	applyOperationOverrides(op, routeDef{Method: methodGET, Path: "/api/v1/statuses/{id}/quotes"})
+
+	if len(op.Parameters) != 1 {
+		t.Fatalf("parameters = %#v, want one route-specific offset parameter", op.Parameters)
+	}
+	offset := op.Parameters[0]
+	if offset.Name != "offset" || offset.In != "query" || offset.Ref != "" {
+		t.Fatalf("offset parameter = %#v, want an inline query parameter", offset)
+	}
+	if !strings.Contains(offset.Description, "(4 × the requested limit) - 1") {
+		t.Fatalf("offset description = %q, want the servable bound", offset.Description)
+	}
+	if _, ok := op.Responses["422"]; !ok {
+		t.Fatal("quote-list offset validation must publish a 422 response")
 	}
 }
 
