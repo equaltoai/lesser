@@ -16,7 +16,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	testinginmemory "github.com/equaltoai/lesser/pkg/testing/inmemory"
+	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
@@ -86,19 +90,63 @@ func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 
 	t.Run("missing and invisible targets have one 404 shape and no write", func(t *testing.T) {
 		var expectedBody []byte
-		for _, name := range []string{"missing", "invisible"} {
-			t.Run(name, func(t *testing.T) {
-				createCalls := 0
+		for _, test := range []struct {
+			name          string
+			seedInvisible bool
+		}{
+			{name: "missing"},
+			{name: "invisible", seedInvisible: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				statusRepo := testinginmemory.NewStatusRepository()
+				relationshipRepo := testingmocks.NewMockRelationshipRepository()
+				if test.seedInvisible {
+					now := time.Now().UTC()
+					relationshipRepo.On("IsFollowing", mock.Anything, "alice", "bob").Return(false, nil).Once()
+					require.NoError(t, statusRepo.CreateStatus(context.Background(), &storagemodels.Status{
+						StatusID:       "target-1",
+						AuthorID:       cfg.ActorURL("bob"),
+						AuthorUsername: "bob",
+						Visibility:     storagemodels.VisibilityPrivate,
+						ToRecipients:   []string{cfg.ActorURL("bob") + "/followers"},
+						PublishedAt:    now,
+						CreatedAt:      now,
+						UpdatedAt:      now,
+						ModifiedAt:     now,
+						Note: &activitypub.Note{
+							BaseObject: activitypub.BaseObject{
+								ID:   cfg.ActorURL("bob") + "/statuses/target-1",
+								Type: activitypub.NoteType,
+							},
+							AttributedTo: cfg.ActorURL("bob"),
+							Visibility:   storagemodels.VisibilityPrivate,
+						},
+					}))
+				}
+				notesService := notes.NewService(
+					statusRepo,
+					nil,
+					nil,
+					relationshipRepo,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					nil,
+					zap.NewNop(),
+					cfg.Domain,
+				)
 				reg := &RegistryStub{
-					NotesSvc: &NotesServiceStub{
-						ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) {
-							return nil, notes.ErrStatusNotFound
-						},
-						CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
-							createCalls++
-							return nil, nil
-						},
-					},
+					NotesSvc:  notesService,
 					QuotesSvc: &QuotesServiceStub{},
 				}
 				handler, _, _ := round11NewHandler(t, cfg, reg)
@@ -107,12 +155,15 @@ func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 				ctx.Params["id"] = "target-1"
 
 				resp := requireStatus(t, http.StatusNotFound)(handler.HandleCreateQuotePostLift(ctx))
-				require.Zero(t, createCalls)
 				if expectedBody == nil {
 					expectedBody = append([]byte(nil), resp.Body...)
 				} else {
 					require.Equal(t, expectedBody, resp.Body)
 				}
+				createdCount, countErr := statusRepo.CountStatusesByAuthor(context.Background(), "alice")
+				require.NoError(t, countErr)
+				require.Zero(t, createdCount)
+				relationshipRepo.AssertExpectations(t)
 			})
 		}
 	})
