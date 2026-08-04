@@ -610,7 +610,7 @@ func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status
 	return result.(*quoteTargetLoadResult).status, nil
 }
 
-func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) ([]*models.Status, []*quoteControlBatch) {
+func loadQuoteTargetStatusBatch(ctx context.Context, statusIDs []string) ([]*models.Status, []*quoteControlBatch) {
 	loaders := GetLoaders(ctx)
 	if loaders == nil || loaders.QuoteTargetLoader == nil || len(statusIDs) == 0 {
 		return nil, nil
@@ -632,6 +632,27 @@ func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) ([]*models
 		}
 	}
 	return statuses, batches
+}
+
+func loadQuoteTargetStatuses(
+	ctx context.Context,
+	statuses []*models.Status,
+	visited map[string]struct{},
+	maxDepth int,
+) (related []*models.Status, relatedIDs []string, batches []*quoteControlBatch) {
+	frontier := statuses
+	for range maxDepth {
+		statusIDs := quoteControlRelatedStatusIDs(frontier, visited)
+		if len(statusIDs) == 0 {
+			break
+		}
+		relatedIDs = append(relatedIDs, statusIDs...)
+		loaded, loadedBatches := loadQuoteTargetStatusBatch(ctx, statusIDs)
+		related = append(related, loaded...)
+		batches = append(batches, loadedBatches...)
+		frontier = loaded
+	}
+	return related, relatedIDs, batches
 }
 
 func loadQuoteControls(ctx context.Context, statusIDs []string) ([]*quoteControlLoadResult, []error) {

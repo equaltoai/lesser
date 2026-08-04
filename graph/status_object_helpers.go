@@ -169,9 +169,10 @@ func (r *Resolver) trackQuoteControlBatch(ctx context.Context, batch *quoteContr
 	r.trackDynamoOperation(ctx, "read", batch.readUnits)
 }
 
-func quoteControlPrefetchIDs(statuses []*models.Status) []string {
-	seen := make(map[string]struct{}, len(statuses)*3)
-	ids := make([]string, 0, len(statuses)*3)
+const quoteControlProjectionMaxDepth = 3
+
+func quoteControlStatusIDs(statuses []*models.Status, seen map[string]struct{}) []string {
+	ids := make([]string, 0, len(statuses))
 	add := func(raw string) {
 		id := strings.TrimSpace(raw)
 		if id == "" {
@@ -188,8 +189,6 @@ func quoteControlPrefetchIDs(statuses []*models.Status) []string {
 			continue
 		}
 		add(status.StatusID)
-		add(status.InReplyToID)
-		add(boostTargetStatusID(status))
 	}
 	return ids
 }
@@ -211,22 +210,11 @@ func quoteAccountPrefetchUsernames(statuses []*models.Status) []string {
 	return usernames
 }
 
-func quoteControlRelatedStatusIDs(statuses []*models.Status) []string {
-	rootIDs := make(map[string]struct{}, len(statuses))
-	for _, status := range statuses {
-		if status != nil && strings.TrimSpace(status.StatusID) != "" {
-			rootIDs[strings.TrimSpace(status.StatusID)] = struct{}{}
-		}
-	}
-
-	seen := make(map[string]struct{}, len(statuses)*2)
+func quoteControlRelatedStatusIDs(statuses []*models.Status, seen map[string]struct{}) []string {
 	ids := make([]string, 0, len(statuses)*2)
 	add := func(raw string) {
 		id := strings.TrimSpace(raw)
 		if id == "" {
-			return
-		}
-		if _, isRoot := rootIDs[id]; isRoot {
 			return
 		}
 		if _, exists := seen[id]; exists {
@@ -249,10 +237,15 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 	if GetLoaders(ctx) == nil {
 		return
 	}
-	ids := quoteControlPrefetchIDs(statuses)
+	visited := make(map[string]struct{}, len(statuses)*3)
+	ids := quoteControlStatusIDs(statuses, visited)
 	if len(ids) == 0 {
 		return
 	}
+	relatedStatuses, relatedIDs, statusBatches := loadQuoteTargetStatuses(
+		ctx, statuses, visited, quoteControlProjectionMaxDepth,
+	)
+	ids = append(ids, relatedIDs...)
 	loaded, _ := loadQuoteControls(ctx, ids)
 	for _, result := range loaded {
 		if result != nil {
@@ -260,7 +253,6 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 		}
 	}
 
-	relatedStatuses, statusBatches := loadQuoteTargetStatuses(ctx, quoteControlRelatedStatusIDs(statuses))
 	for _, batch := range statusBatches {
 		r.trackQuoteControlBatch(ctx, batch)
 	}
