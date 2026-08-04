@@ -740,7 +740,7 @@ func normalizeActorDomain(value string) string {
 	}
 
 	host := actorDomainHost(value)
-	if idx := strings.LastIndex(host, "%"); idx >= 0 {
+	if idx := strings.Index(host, "%"); idx >= 0 {
 		zoneHost := host[:idx]
 		if ip, err := netip.ParseAddr(zoneHost); err != nil || !ip.Is6() {
 			return ""
