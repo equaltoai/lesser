@@ -31,35 +31,23 @@ with the generated REST contract (`docs/contracts/openapi.yaml`) and generated G
   `UNPROCESSABLE_ENTITY` error. GraphQL quote inputs whose visibility is omitted inherit the target visibility; the REST
   reblog-quote request retains its documented public default, which is therefore rejected when it would widen reach.
   These paths never silently clamp an explicit author choice.
-- GraphQL quote mutations and REST reblog-quotes resolve the target storage-first, fetch and materialize a canonical
+- GraphQL quote mutations, the Quote Posts REST creation endpoint, and REST reblog-quotes resolve the target storage-first, fetch and materialize a canonical
   remote ActivityPub Note when absent locally, and then apply viewer-access and reach checks. Deleted or inaccessible
   targets remain indistinguishable from missing statuses. A fetched remote quote target may therefore remain persisted
   locally even when the requesting viewer is denied. This is intentional and mirrors reply-parent materialization
-  (operator ruling 2026-08-01); persistence does not grant the denied viewer access. The separate lesser-exclusive
-  `POST /api/v1/statuses/{id}/quote` extension returns **501 Not Implemented** before target lookup pending a real
-  authorization-, persistence-, and federation-aware implementation; it is not the Mastodon-compatible reblog-quote
-  creation path described above and does not disclose whether a target status exists. The companion
-  `GET /api/v1/statuses/{id}/quotes` extension likewise returns **501 Not Implemented** after parameter validation and
-  before storage access so neither target existence nor a real quote-row count is exposed. Authenticated
-  `PUT /api/v1/accounts/quote_permissions` returns **501 Not Implemented** after authentication and body validation
-  until permission persistence exists; it never echoes request values as though they were saved. The
-  `GET /api/v1/accounts/{id}/quote_permissions` extension requires bearer authentication, so anonymous callers receive
-  **401 Unauthorized**. Its handler performs no additional per-target authorization and returns **501 Not Implemented**
-  after path-parameter validation and before storage access for existent, missing, and hostile-text account IDs alike;
-  the route never fabricates all-permissive settings.
-- The REST account quote-permission preference surfaces are deliberately neither settable nor readable: their `PUT` and
-  `GET` handlers remain **501 Not Implemented** even though the authenticated GraphQL mutation persists account-level
-  preferences. REST reblog-with-comment and GraphQL relationship-minting paths enforce that persisted account-level row
-  through the shared `QuoteService.CheckQuotePermissions` predicate.
-- **Shipping decision:** REST reblog-with-comment enforcement ships with the block-list and `allow_public` arms live while
-  the `allow_followers` and `allow_mentioned` arms remain fail-closed placeholders tracked by lesser#1317.
-  `ApplyVisibilityDefaults` assigns those states at registration: private/followers-default accounts rely on
-  `allow_followers`, and direct-default accounts rely on `allow_mentioned`. Until lesser#1317 lands, every quoter—including
-  an actual follower or mentioned account—is denied for those account classes. This intentionally changes the affected
-  client response from **200** before `cf7c8ebdd` to **403 FORBIDDEN**; failing open a privacy control is not an acceptable
-  interim behavior.
-- Per-note quote controls are persisted by GraphQL but are not yet read by general `Status` projections or enforced by
-  production quote-relationship creation. That work needs explicit missing-row semantics and is tracked as lesser#1318.
+  (operator ruling 2026-08-01); persistence does not grant the denied viewer access. Quote Posts REST creation then uses
+  `Notes.CreateNote` and `QuoteService.AttachQuoteToStatus`, the same persistence and federation path as GraphQL quote
+  creation. Missing and invisible targets share the same **404 Not Found** response. Account-level and per-note quote
+  controls are both enforced through `QuoteService.CheckQuotePermissions`; follower, mentioned, and policy-storage error
+  arms fail closed.
+- `GET /api/v1/statuses/{id}/quotes` verifies the target and every returned quote through the notes service's viewer-aware
+  visibility predicate before applying the public `limit` and `offset` window. A missing and an invisible target share the
+  same **404 Not Found** response.
+- `PUT /api/v1/accounts/quote_permissions` updates only the authenticated account through the shared quote service and
+  validates all policy arms. `GET /api/v1/accounts/{id}/quote_permissions` requires `read:accounts` and returns the raw
+  policy only for that authenticated account. Other and missing account IDs share **404 Not Found**, preventing both a
+  block-list disclosure and an account-existence oracle. The GraphQL account quote-permission read remains uniformly
+  unavailable for self, other, and missing targets until its separate consumer contract is activated.
 - Quote deletion deliberately returns the same **404 Not Found** response for a missing relationship and one owned by a
   different account, preventing ownership from becoming an existence oracle; successful owner deletion is unchanged.
 - `UpdateStatus` does not accept or propagate a visibility field, so an existing status cannot be widened by editing it.
