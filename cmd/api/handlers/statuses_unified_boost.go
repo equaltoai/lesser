@@ -229,50 +229,9 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 		visibility = storageModels.VisibilityPublic
 	}
 
-	if h.registry == nil {
-		h.logger.Error("service registry unavailable while resolving quote target")
-		return common.RespondInternalServerError(ctx)
-	}
-	notesService := h.registry.Notes()
-	if notesService == nil {
-		h.logger.Error("notes service unavailable while resolving quote target")
-		return common.RespondInternalServerError(ctx)
-	}
-	quoteTarget, err := notesService.ResolveQuoteTarget(ctx.Context(), username, statusID)
-	if err != nil {
-		h.logger.Warn("quote target rejected",
-			zap.String("status_id", statusID),
-			zap.String("viewer", username),
-			zap.Error(err))
-		if appErr, ok := commonerrors.AsAppError(err); ok {
-			return common.RespondWithAppError(ctx, appErr)
-		}
-		return common.RespondInternalServerError(ctx)
-	}
-	if err := notes.ValidateChildReach("quote", quoteTarget, visibility); err != nil {
-		if appErr, ok := commonerrors.AsAppError(err); ok {
-			return common.RespondWithAppError(ctx, appErr)
-		}
-		return common.RespondInternalServerError(ctx)
-	}
-	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
-		return common.RespondUnprocessableEntity(ctx, restTargetNotQuotable)
-	}
-	quotesService := h.registry.Quotes()
-	if quotesService == nil {
-		h.logger.Error("quotes service unavailable while authorizing quote")
-		return common.RespondInternalServerError(ctx)
-	}
-	canQuote, err := quotesService.CheckQuotePermissions(ctx.Context(), username, quoteTarget)
-	if err != nil {
-		h.logger.Error("failed to check quote permissions",
-			zap.String("viewer", username),
-			zap.String("target_author", quoteTarget.AuthorUsername),
-			zap.Error(err))
-		return common.RespondWithAppError(ctx, quotes.ErrCheckQuotePermissions(err))
-	}
-	if !canQuote {
-		return common.RespondWithAppError(ctx, quotes.ErrNotAuthorizedToQuote)
+	quoteTarget, failure, err := h.authorizeQuoteBoostTarget(ctx, username, statusID, visibility)
+	if failure != nil || err != nil {
+		return failure, err
 	}
 	if quoteTarget.Note != nil && strings.TrimSpace(quoteTarget.Note.ID) != "" {
 		objectID = strings.TrimSpace(quoteTarget.Note.ID)
@@ -445,6 +404,65 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 	}
 
 	return okJSON(resp)
+}
+
+func (h *Handler) authorizeQuoteBoostTarget(ctx *apptheory.Context, username, statusID, visibility string) (*storageModels.Status, *apptheory.Response, error) {
+	if h.registry == nil {
+		h.logger.Error("service registry unavailable while resolving quote target")
+		resp, err := common.RespondInternalServerError(ctx)
+		return nil, resp, err
+	}
+	notesService := h.registry.Notes()
+	if notesService == nil {
+		h.logger.Error("notes service unavailable while resolving quote target")
+		resp, err := common.RespondInternalServerError(ctx)
+		return nil, resp, err
+	}
+	quoteTarget, err := notesService.ResolveQuoteTarget(ctx.Context(), username, statusID)
+	if err != nil {
+		h.logger.Warn("quote target rejected",
+			zap.String("status_id", statusID),
+			zap.String("viewer", username),
+			zap.Error(err))
+		if appErr, ok := commonerrors.AsAppError(err); ok {
+			resp, responseErr := common.RespondWithAppError(ctx, appErr)
+			return nil, resp, responseErr
+		}
+		resp, responseErr := common.RespondInternalServerError(ctx)
+		return nil, resp, responseErr
+	}
+	if err := notes.ValidateChildReach("quote", quoteTarget, visibility); err != nil {
+		if appErr, ok := commonerrors.AsAppError(err); ok {
+			resp, responseErr := common.RespondWithAppError(ctx, appErr)
+			return nil, resp, responseErr
+		}
+		resp, responseErr := common.RespondInternalServerError(ctx)
+		return nil, resp, responseErr
+	}
+	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+		resp, responseErr := common.RespondUnprocessableEntity(ctx, restTargetNotQuotable)
+		return nil, resp, responseErr
+	}
+	quotesService := h.registry.Quotes()
+	if quotesService == nil {
+		h.logger.Error("quotes service unavailable while authorizing quote")
+		resp, responseErr := common.RespondInternalServerError(ctx)
+		return nil, resp, responseErr
+	}
+	canQuote, err := quotesService.CheckQuotePermissions(ctx.Context(), username, quoteTarget)
+	if err != nil {
+		h.logger.Error("failed to check quote permissions",
+			zap.String("viewer", username),
+			zap.String("target_author", quoteTarget.AuthorUsername),
+			zap.Error(err))
+		resp, responseErr := common.RespondWithAppError(ctx, quotes.ErrCheckQuotePermissions(err))
+		return nil, resp, responseErr
+	}
+	if !canQuote {
+		resp, responseErr := common.RespondWithAppError(ctx, quotes.ErrNotAuthorizedToQuote)
+		return nil, resp, responseErr
+	}
+	return quoteTarget, nil, nil
 }
 
 // HandleUndoUnifiedBoostLift handles undoing both traditional boosts and quote boosts
