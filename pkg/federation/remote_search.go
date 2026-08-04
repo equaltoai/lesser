@@ -722,7 +722,11 @@ func parseLooseHandle(value string) (username string, domain string, err error) 
 	case 1:
 		return strings.TrimSpace(parts[0]), "", nil
 	case 2:
-		return strings.TrimSpace(parts[0]), normalizeActorDomain(parts[1]), nil
+		domain := normalizeActorDomain(parts[1])
+		if domain == "" {
+			return "", "", ErrInvalidDomainFormat
+		}
+		return strings.TrimSpace(parts[0]), domain, nil
 	default:
 		return "", "", ErrInvalidHandleFormat
 	}
@@ -737,7 +741,11 @@ func normalizeActorDomain(value string) string {
 
 	host := actorDomainHost(value)
 	if idx := strings.LastIndex(host, "%"); idx >= 0 {
-		host = host[:idx]
+		zoneHost := host[:idx]
+		if ip, err := netip.ParseAddr(zoneHost); err != nil || !ip.Is6() {
+			return ""
+		}
+		host = zoneHost
 	}
 	if ip, ok := parseActorDomainIP(host); ok {
 		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {

@@ -28,6 +28,7 @@ func TestNormalizeActorDomainCanonicalizesAndRejectsUnsafeIPForms(t *testing.T) 
 		{name: "loopback octal", input: "0177.0.0.1", want: ""},
 		{name: "unspecified", input: "0", want: ""},
 		{name: "zoned link local", input: "[fe80::1%eth0]", want: ""},
+		{name: "zoned global IPv6", input: "[2001:db8::1%eth0]", want: "2001:db8::1"},
 		{name: "link local multicast", input: "ff02::1", want: ""},
 		{name: "missing bracket", input: "[2001:db8::1", want: ""},
 		{name: "invalid bracket suffix", input: "[2001:db8::1]invalid", want: ""},
@@ -65,4 +66,28 @@ func TestActorDomainIPv6SpellingsDeduplicateAcrossDerivationPaths(t *testing.T) 
 
 	domains := map[string]struct{}{derived: {}, parsed: {}}
 	require.Equal(t, map[string]struct{}{"2001:db8::1": {}}, domains)
+}
+
+func TestNormalizeActorDomainRejectsPercentEncodedHostnames(t *testing.T) {
+	for _, value := range []string{
+		"evil.com%00.example.com",
+		"mastodon.social%x.attacker.example",
+		"exam%70le.com",
+		"100%.example.com",
+		"a%b%c.example.com",
+	} {
+		t.Run(value, func(t *testing.T) {
+			require.Empty(t, normalizeActorDomain(value))
+
+			_, _, err := parseLooseHandle("alice@" + value)
+			require.Error(t, err)
+		})
+	}
+
+	left := normalizeActorDomain("100%.a.example")
+	right := normalizeActorDomain("100%.b.example")
+	require.Empty(t, left)
+	require.Empty(t, right)
+	require.NotEqual(t, "0.0.0.100", left)
+	require.NotEqual(t, "0.0.0.100", right)
 }
