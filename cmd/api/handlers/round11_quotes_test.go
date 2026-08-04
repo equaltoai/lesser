@@ -1,65 +1,358 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	commonerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
-func TestQuotesHandlers(t *testing.T) {
+func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 	cfg := round11TestConfig()
-	state := &round10QueryState{
-		statusByID: map[string]storagemodels.Status{
-			"123": {StatusID: "123", AuthorUsername: "bob"},
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+	target := &storagemodels.Status{
+		StatusID:       "target-1",
+		AuthorID:       cfg.ActorURL("bob"),
+		AuthorUsername: "bob",
+		Visibility:     storagemodels.VisibilityPublic,
+	}
+	created := &storagemodels.Status{
+		StatusID:       "quote-1",
+		AuthorID:       cfg.ActorURL("alice"),
+		AuthorUsername: "alice",
+		Content:        "Quote text",
+		Visibility:     storagemodels.VisibilityPublic,
+		CreatedAt:      time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC),
+	}
+
+	t.Run("happy path uses notes creation and quote attachment", func(t *testing.T) {
+		var createCalls, attachCalls int
+		reg := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(_ context.Context, viewerID, rawTarget string) (*storagemodels.Status, error) {
+					require.Equal(t, "alice", viewerID)
+					require.Equal(t, "target-1", rawTarget)
+					return target, nil
+				},
+				CreateNoteFunc: func(_ context.Context, cmd *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					createCalls++
+					require.Equal(t, "alice", cmd.AuthorID)
+					require.Equal(t, "Quote text", cmd.Content)
+					require.Equal(t, storagemodels.VisibilityPublic, cmd.Visibility)
+					return &notes.NoteResult{Note: created}, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				CheckQuotePermissionsFunc: func(_ context.Context, quoter string, gotTarget *storagemodels.Status) (bool, error) {
+					require.Equal(t, "alice", quoter)
+					require.Same(t, target, gotTarget)
+					return true, nil
+				},
+				AttachQuoteToStatusFunc: func(_ context.Context, quoteStatus *storagemodels.Status, targetID string) (*quotes.QuotePostResult, error) {
+					attachCalls++
+					require.Same(t, created, quoteStatus)
+					require.Equal(t, "target-1", targetID)
+					return &quotes.QuotePostResult{QuoteStatus: created, TargetStatus: target}, nil
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, reg)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+		require.NoError(t, err)
+		ctx.Params["id"] = "target-1"
+
+		resp := requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctx))
+		require.Equal(t, 1, createCalls)
+		require.Equal(t, 1, attachCalls)
+		var body apimodels.QuoteStatusSummary
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "quote-1", body.ID)
+		require.Equal(t, "Quote text", body.Content)
+		require.Equal(t, cfg.ActorURL("alice"), body.Account.ID)
+	})
+
+	t.Run("missing and invisible targets have one 404 shape and no write", func(t *testing.T) {
+		var expectedBody []byte
+		for _, name := range []string{"missing", "invisible"} {
+			t.Run(name, func(t *testing.T) {
+				createCalls := 0
+				reg := &RegistryStub{
+					NotesSvc: &NotesServiceStub{
+						ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) {
+							return nil, notes.ErrStatusNotFound
+						},
+						CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+							createCalls++
+							return nil, nil
+						},
+					},
+					QuotesSvc: &QuotesServiceStub{},
+				}
+				handler, _, _ := round11NewHandler(t, cfg, reg)
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+				require.NoError(t, err)
+				ctx.Params["id"] = "target-1"
+
+				resp := requireStatus(t, http.StatusNotFound)(handler.HandleCreateQuotePostLift(ctx))
+				require.Zero(t, createCalls)
+				if expectedBody == nil {
+					expectedBody = append([]byte(nil), resp.Body...)
+				} else {
+					require.Equal(t, expectedBody, resp.Body)
+				}
+			})
+		}
+	})
+
+	t.Run("quoteability denial happens before note creation", func(t *testing.T) {
+		createCalls := 0
+		reg := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) { return target, nil },
+				CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					createCalls++
+					return nil, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				CheckQuotePermissionsFunc: func(context.Context, string, *storagemodels.Status) (bool, error) { return false, nil },
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, reg)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+		require.NoError(t, err)
+		ctx.Params["id"] = "target-1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleCreateQuotePostLift(ctx))
+		require.Zero(t, createCalls)
+	})
+
+	t.Run("quoteability storage errors fail closed before note creation", func(t *testing.T) {
+		createCalls := 0
+		reg := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) { return target, nil },
+				CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					createCalls++
+					return nil, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				CheckQuotePermissionsFunc: func(context.Context, string, *storagemodels.Status) (bool, error) {
+					return false, commonerrors.Internal("permission storage failed")
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, reg)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+		require.NoError(t, err)
+		ctx.Params["id"] = "target-1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateQuotePostLift(ctx))
+		require.Zero(t, createCalls)
+	})
+}
+
+func TestQuotePostRESTListRoundTrip(t *testing.T) {
+	cfg := round11TestConfig()
+	target := &storagemodels.Status{StatusID: "target-1", Visibility: storagemodels.VisibilityPublic}
+	visibleOne := &storagemodels.Status{StatusID: "quote-1", AuthorID: cfg.ActorURL("alice"), AuthorUsername: "alice", Content: "one", CreatedAt: time.Now()}
+	visibleTwo := &storagemodels.Status{StatusID: "quote-2", AuthorID: cfg.ActorURL("carol"), AuthorUsername: "carol", Content: "two", CreatedAt: time.Now()}
+
+	reg := &RegistryStub{
+		NotesSvc: &NotesServiceStub{
+			GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				switch query.StatusID {
+				case "target-1":
+					return target, nil
+				case "quote-hidden":
+					return nil, notes.ErrStatusNotFound
+				case "quote-1":
+					return visibleOne, nil
+				case "quote-2":
+					return visibleTwo, nil
+				default:
+					return nil, notes.ErrStatusNotFound
+				}
+			},
+		},
+		QuotesSvc: &QuotesServiceStub{
+			GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
+				require.Equal(t, "target-1", statusID)
+				require.Equal(t, quoteListPageSize, limit)
+				require.Empty(t, cursor)
+				return &quotes.QuoteRelationshipPage{Relationships: []*storagemodels.QuoteRelationship{
+					{QuoterNoteID: "quote-hidden"},
+					{QuoterNoteID: "quote-1"},
+					{QuoterNoteID: "quote-2"},
+				}}, nil
+			},
 		},
 	}
-	handler, _, _ := round11NewHandler(t, cfg, state)
-
-	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses", "read"})
-	headers := map[string]string{"Authorization": "Bearer " + token}
-
-	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+	handler, _, _ := round11NewHandler(t, cfg, reg)
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, map[string]string{"limit": "1", "offset": "1"}, nil)
 	require.NoError(t, err)
-	ctxCreate.Params["id"] = "123"
-	requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctxCreate))
+	ctx.Params["id"] = "target-1"
 
-	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/quotes", nil, map[string]string{"limit": "2", "offset": "0"}, nil)
-	require.NoError(t, err)
-	ctxList.Params["id"] = "123"
-	requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotesOfStatusLift(ctxList))
+	resp := requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctx))
+	var body []apimodels.QuoteStatusSummary
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Len(t, body, 1)
+	require.Equal(t, "quote-2", body[0].ID)
 
-	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/123/quote/q1", headers, nil, nil)
-	require.NoError(t, err)
-	ctxDelete.Params["id"] = "123"
-	ctxDelete.Params["quote_id"] = "q1"
-	requireStatus(t, http.StatusNotFound)(handler.HandleDeleteQuotePostLift(ctxDelete))
+	t.Run("missing and invisible targets have one 404 shape", func(t *testing.T) {
+		var expectedBody []byte
+		for _, name := range []string{"missing", "invisible"} {
+			t.Run(name, func(t *testing.T) {
+				listCalls := 0
+				deniedRegistry := &RegistryStub{
+					NotesSvc: &NotesServiceStub{
+						GetNoteWithViewerFunc: func(context.Context, *notes.GetNoteQuery) (*storagemodels.Status, error) {
+							return nil, notes.ErrStatusNotFound
+						},
+					},
+					QuotesSvc: &QuotesServiceStub{
+						GetQuoteRelationshipsForStatusFunc: func(context.Context, string, int, string) (*quotes.QuoteRelationshipPage, error) {
+							listCalls++
+							return nil, nil
+						},
+					},
+				}
+				deniedHandler, _, _ := round11NewHandler(t, cfg, deniedRegistry)
+				deniedCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, nil, nil)
+				require.NoError(t, err)
+				deniedCtx.Params["id"] = "target-1"
+				deniedResponse := requireStatus(t, http.StatusNotFound)(deniedHandler.HandleGetQuotesOfStatusLift(deniedCtx))
+				require.Zero(t, listCalls)
+				if expectedBody == nil {
+					expectedBody = append([]byte(nil), deniedResponse.Body...)
+				} else {
+					require.Equal(t, expectedBody, deniedResponse.Body)
+				}
+			})
+		}
+	})
 }
 
-func TestQuotesPermissions(t *testing.T) {
+func TestQuotePermissionsRESTRoundTrips(t *testing.T) {
 	cfg := round11TestConfig()
-	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
-
-	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
-	require.NoError(t, err)
-	ctxGet.Params["id"] = "alice"
-	requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotePermissionsLift(ctxGet))
-
-	updateToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:accounts"})
-	headers := map[string]string{"Authorization": "Bearer " + updateToken}
-	updateReq := apimodels.UpdateQuotePermissionsRequest{
-		AllowPublic:    boolPtr(true),
-		AllowFollowers: boolPtr(false),
-		AllowMentioned: boolPtr(true),
-		BlockList:      []string{"bob"},
+	readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read:accounts"})
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:accounts"})
+	actors := map[string]*activitypub.Actor{
+		"alice": {BaseObject: activitypub.BaseObject{ID: cfg.ActorURL("alice")}, PreferredUsername: "alice"},
+		"bob":   {BaseObject: activitypub.BaseObject{ID: cfg.ActorURL("bob")}, PreferredUsername: "bob"},
 	}
-	ctxUpdate, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", headers, nil, updateReq)
-	require.NoError(t, err)
-	requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctxUpdate))
-}
+	stored := map[string]*storagemodels.QuotePermissions{
+		"alice": {Username: "alice", AllowPublic: true, AllowFollowers: true, AllowMentioned: true, BlockList: []string{}},
+		"bob":   {Username: "bob", AllowFollowers: true, BlockList: []string{"mallory"}},
+	}
+	var updated *storagemodels.QuotePermissions
+	var readUsernames []string
+	reg := &RegistryStub{
+		AccountsSvc: &AccountsServiceStub{
+			GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+				actor := actors[username]
+				if actor == nil {
+					return nil, commonerrors.NotFound("account")
+				}
+				return &storage.Account{Actor: actor}, nil
+			},
+		},
+		QuotesSvc: &QuotesServiceStub{
+			GetQuotePermissionsFunc: func(_ context.Context, username string) (*storagemodels.QuotePermissions, error) {
+				readUsernames = append(readUsernames, username)
+				return stored[username], nil
+			},
+			UpdateQuotePermissionsFunc: func(_ context.Context, permissions *storagemodels.QuotePermissions) error {
+				copy := *permissions
+				copy.BlockList = append([]string(nil), permissions.BlockList...)
+				updated = &copy
+				return nil
+			},
+		},
+	}
+	handler, _, _ := round11NewHandler(t, cfg, reg)
 
-func boolPtr(v bool) *bool {
-	return &v
+	t.Run("authenticated self read uses persisted policy", func(t *testing.T) {
+		readUsernames = nil
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctx))
+		var body apimodels.QuotePermissionsResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, stored["alice"].AllowFollowers, body.AllowFollowers)
+		require.Equal(t, stored["alice"].BlockList, body.BlockList)
+		require.Equal(t, []string{"alice"}, readUsernames)
+	})
+
+	t.Run("other and missing accounts have one 404 shape without policy reads", func(t *testing.T) {
+		readUsernames = nil
+		var expectedBody []byte
+		for _, accountID := range []string{"bob", "missing"} {
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/"+accountID+"/quote_permissions", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = accountID
+			resp := requireStatus(t, http.StatusNotFound)(handler.HandleGetQuotePermissionsLift(ctx))
+			if expectedBody == nil {
+				expectedBody = append([]byte(nil), resp.Body...)
+			} else {
+				require.Equal(t, expectedBody, resp.Body)
+			}
+		}
+		require.Empty(t, readUsernames)
+	})
+
+	t.Run("permission read requires authentication and read scope", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetQuotePermissionsLift(ctx))
+
+		onlyWrite := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", map[string]string{"Authorization": "Bearer " + onlyWrite}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+		requireStatus(t, http.StatusForbidden)(handler.HandleGetQuotePermissionsLift(ctx))
+	})
+
+	t.Run("update validates and persists the full arm set", func(t *testing.T) {
+		allowPublic := false
+		allowFollowers := true
+		allowMentioned := true
+		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.UpdateQuotePermissionsRequest{
+			AllowPublic:    &allowPublic,
+			AllowFollowers: &allowFollowers,
+			AllowMentioned: &allowMentioned,
+			BlockList:      []string{" @bob ", "bob", "carol"},
+		})
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctx))
+		require.NotNil(t, updated)
+		require.False(t, updated.AllowPublic)
+		require.True(t, updated.AllowFollowers)
+		require.True(t, updated.AllowMentioned)
+		require.Equal(t, []string{"bob", "carol"}, updated.BlockList)
+		var body apimodels.QuotePermissionsResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, updated.BlockList, body.BlockList)
+	})
+
+	t.Run("invalid block-list member fails before persistence", func(t *testing.T) {
+		updated = nil
+		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.UpdateQuotePermissionsRequest{BlockList: []string{"../../root"}})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateQuotePermissionsLift(ctx))
+		require.Nil(t, updated)
+	})
 }
