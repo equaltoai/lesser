@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -927,6 +927,7 @@ func TestService_BaseURL_Branches(t *testing.T) {
 func TestIsLocalActor(t *testing.T) {
 	assert.False(t, isLocalActor(nil, "example.com"))
 	assert.True(t, isLocalActor(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, "example.com"))
+	assert.True(t, isLocalActor(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "HTTP://EXAMPLE.COM/users/alice"}}, "example.com"))
 }
 
 func TestService_StorageErrorBranches(t *testing.T) {

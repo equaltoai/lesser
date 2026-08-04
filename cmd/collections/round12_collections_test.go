@@ -18,11 +18,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
-	dynamormSchema "github.com/theory-cloud/tabletheory/v2/pkg/schema"
-	pkgtypes "github.com/theory-cloud/tabletheory/v2/pkg/types"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormSchema "github.com/theory-cloud/tabletheory/v3/pkg/schema"
+	pkgtypes "github.com/theory-cloud/tabletheory/v3/pkg/types"
 	"go.uber.org/zap"
 )
 

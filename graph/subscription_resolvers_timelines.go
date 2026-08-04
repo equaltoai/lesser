@@ -2,9 +2,11 @@ package graph
 
 import (
 	"context"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/services/lists"
 	"go.uber.org/zap"
 )
 
@@ -58,15 +60,34 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 }
 
 // TimelineUpdates is the resolver for the timelineUpdates field.
-func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType model.TimelineType, listID *string) (<-chan *model.Object, error) {
+func (r *subscriptionResolver) TimelineUpdates(
+	ctx context.Context,
+	timelineType model.TimelineType,
+	actorUsername *string,
+	hashtag *string,
+	listID *string,
+) (<-chan *model.Object, error) {
 	username := r.optionalAuth(ctx)
+	inputs := timelineRoutingInputs{actorUsername: actorUsername, hashtag: hashtag, listID: listID}
 
-	// Validate request
-	if timelineType == model.TimelineTypeList && listID == nil {
-		return nil, ErrListIDParameterRequired
+	// Validate routing before authorization so malformed operations fail closed
+	// without being mistaken for a credential problem.
+	if _, err := validateTimelineRoutingInputs(timelineType, inputs); err != nil {
+		return nil, err
 	}
 	if !timelineAllowsAnonymous(timelineType) && username == "" {
 		return nil, ErrAuthenticationRequired
+	}
+	if timelineType == model.TimelineTypeList {
+		if r.Registry == nil || r.Registry.Lists() == nil {
+			return nil, ErrListNotFoundOrAccessDenied
+		}
+		if _, err := r.Registry.Lists().GetList(ctx, &lists.GetListQuery{
+			ListID:   strings.TrimSpace(*listID),
+			ViewerID: username,
+		}); err != nil {
+			return nil, ErrListNotFoundOrAccessDenied
+		}
 	}
 
 	r.Logger.Info("Timeline updates subscription started",
@@ -92,7 +113,7 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 	// Ensure the WebSocket connection ID is attached so DynamoDB subscription records can be created.
 	ctx = WithConnectionID(ctx, r.getConnectionID(ctx))
 
-	timelineChan, err := sm.SubscribeToTimelineUpdates(ctx, username, timelineType)
+	timelineChan, err := sm.SubscribeToTimelineUpdates(ctx, username, timelineType, actorUsername, hashtag, listID)
 	if err != nil {
 		r.Logger.Error("failed to create timeline subscription",
 			zap.String("user", username),
@@ -110,7 +131,7 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 
 func timelineAllowsAnonymous(timelineType model.TimelineType) bool {
 	switch timelineType {
-	case model.TimelineTypePublic, model.TimelineTypeLocal:
+	case model.TimelineTypePublic, model.TimelineTypeLocal, model.TimelineTypeActor, model.TimelineTypeHashtag:
 		return true
 	default:
 		return false

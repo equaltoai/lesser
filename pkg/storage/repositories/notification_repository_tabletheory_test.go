@@ -6,8 +6,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	ttquery "github.com/theory-cloud/tabletheory/v2/pkg/query"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	ttquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
 )
 
 type notificationCompileMetadata struct{}

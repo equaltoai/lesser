@@ -96,7 +96,11 @@ func applyTimelineTypeFilter(username string, timelineType model.TimelineType, h
 		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
 			return ErrListIDParameterRequired
 		}
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return ErrAuthenticationRequired
+		}
 		query.TimelineType = TimelineTypeList
+		query.ListID = *listID
 		// List timeline is handled differently - need to get list members
 		// and fetch their posts
 	case model.TimelineTypeDirect:
@@ -128,6 +132,7 @@ func isAgentObject(obj *model.Object) bool {
 }
 
 func (r *queryResolver) timelineObjectEdges(ctx context.Context, notesIn []*models.Status, excludeAgents bool) []*model.ObjectEdge {
+	r.prefetchQuoteControls(ctx, notesIn)
 	edges := make([]*model.ObjectEdge, 0, len(notesIn))
 	for _, note := range notesIn {
 		obj := r.convertStatusToObject(ctx, note)
@@ -541,6 +546,7 @@ func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo int
 		current = parent
 	}
 
+	r.prefetchQuoteControls(ctx, ancestorStatuses)
 	for i := len(ancestorStatuses) - 1; i >= 0; i-- {
 		if obj := r.convertStatusToObject(ctx, ancestorStatuses[i]); obj != nil {
 			ancestors = append(ancestors, obj)
@@ -551,6 +557,7 @@ func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo int
 }
 
 func (r *queryResolver) convertStatusesToObjects(ctx context.Context, statuses []*models.Status) []*model.Object {
+	r.prefetchQuoteControls(ctx, statuses)
 	objects := make([]*model.Object, 0, len(statuses))
 	for _, status := range statuses {
 		if status == nil {

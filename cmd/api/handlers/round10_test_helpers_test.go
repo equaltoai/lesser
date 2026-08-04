@@ -15,9 +15,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -123,6 +123,8 @@ type round10QueryState struct {
 	agentAccessLeasesByKey    map[string]storagemodels.AgentAccessLease
 	agentAccessChallengesByID map[string]storagemodels.AgentAccessLeaseChallenge
 	agentGovernanceByUsername map[string]storagemodels.AgentGovernanceState
+	quotePermissionsByUser    map[string]storagemodels.QuotePermissions
+	statusMetadataByStatus    map[string]storagemodels.StatusMetadata
 	agentMemoryEventsByAgent  map[string][]storagemodels.AgentMemoryEvent
 	remoteActorsByPK          map[string]storagemodels.RemoteActor
 	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
@@ -581,6 +583,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
 			}
 			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.QuotePermissions:
+			if m == nil {
+				return
+			}
+			if state.quotePermissionsByUser == nil {
+				state.quotePermissionsByUser = map[string]storagemodels.QuotePermissions{}
+			}
+			state.quotePermissionsByUser[m.Username] = *m
 		case *storagemodels.OAuthClient:
 			if m == nil {
 				return
@@ -752,6 +762,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.agentGovernanceByUsername = map[string]storagemodels.AgentGovernanceState{}
 			}
 			state.agentGovernanceByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.QuotePermissions:
+			if m == nil {
+				return
+			}
+			if state.quotePermissionsByUser == nil {
+				state.quotePermissionsByUser = map[string]storagemodels.QuotePermissions{}
+			}
+			state.quotePermissionsByUser[m.Username] = *m
 		case *storagemodels.RefreshToken:
 			if m == nil {
 				return
@@ -789,6 +807,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		mockQuery.On("First", mock.AnythingOfType("*models.VAPIDKeyRecord")).Return(dynamormerrors.ErrItemNotFound).Maybe()
 	}
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.QuotePermissions); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK || !strings.HasPrefix(pk, "USER#") || sk != "QUOTE_PERMISSIONS" {
+			return false
+		}
+		if _, hasInjectedError := state.firstErrorPK[pk]; hasInjectedError {
+			return false
+		}
+		_, exists := state.quotePermissionsByUser[strings.TrimPrefix(pk, "USER#")]
+		return !exists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
 	if len(state.notFoundPKSK) > 0 {
 		mockQuery.On("First", mock.MatchedBy(func(_ any) bool {
 			pk, okPK := state.whereString("PK")
@@ -820,6 +854,19 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			return ok && value == pk
 		})).Return(err).Maybe()
 	}
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.StatusMetadata); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		if !okPK || !strings.HasPrefix(pk, "STATUS_META#") {
+			return false
+		}
+		statusID := strings.TrimPrefix(pk, "STATUS_META#")
+		_, exists := state.statusMetadataByStatus[statusID]
+		return !exists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
 	for gsi3pk, err := range state.firstErrorGSI3PK {
 		gsi3pk := gsi3pk
@@ -1032,6 +1079,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			return
 		}
 		switch d := dest.(type) {
+		case *storagemodels.QuotePermissions:
+			pk, _ := state.whereString("PK")
+			*d = state.quotePermissionsByUser[strings.TrimPrefix(pk, "USER#")]
 		case *storagemodels.AgentInstanceConfig:
 			if state.agentInstanceConfig != nil {
 				*d = *state.agentInstanceConfig
@@ -1350,6 +1400,16 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 
 			*d = storagemodels.RelationshipRecord{PK: pk, SK: sk, State: storagemodels.RelationshipPending}
+		case *storagemodels.StatusMetadata:
+			statusID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "STATUS_META#") {
+				statusID = strings.TrimPrefix(pk, "STATUS_META#")
+			}
+			if metadata, ok := state.statusMetadataByStatus[statusID]; ok {
+				*d = metadata
+				return
+			}
+			*d = storagemodels.StatusMetadata{StatusID: statusID}
 		case *storagemodels.QuoteRelationship:
 			pk, _ := state.whereString("PK")
 			sk, _ := state.whereString("SK")

@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	"github.com/theory-cloud/tabletheory/v2"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/tabletheory/v3"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 	"go.uber.org/zap"
@@ -559,6 +559,24 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 				Method: http.MethodPost,
 				Path:   "/graphql",
 				Body:   []byte(`{"query":"{ viewer { id } }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
+	t.Run("rejects_account_quote_permissions_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for anonymous quote permission reads")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"{ accountQuotePermissions(username: \"alice\") { username allowPublic } }"}`),
 			},
 		}
 

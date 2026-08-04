@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 type skGetter interface {

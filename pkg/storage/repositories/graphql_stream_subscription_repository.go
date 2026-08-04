@@ -8,8 +8,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +21,11 @@ type GraphQLStreamSubscriptionRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+}
+
+type graphqlStreamSubscriptionTransactionalDB interface {
+	core.DB
+	TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
 // NewGraphQLStreamSubscriptionRepository creates a new GraphQLStreamSubscriptionRepository.
@@ -49,6 +54,40 @@ func (r *GraphQLStreamSubscriptionRepository) Put(ctx context.Context, record *m
 	}
 
 	return r.db.WithContext(ctx).Model(record).Create()
+}
+
+// PutAll stores every stream registration in one transaction. A subscription
+// spanning multiple streams must never become partially visible to publishers.
+func (r *GraphQLStreamSubscriptionRepository) PutAll(ctx context.Context, records []*models.GraphQLStreamSubscription) error {
+	if len(records) == 0 {
+		return storage.ErrInvalidInput
+	}
+
+	now := time.Now().UTC()
+	for _, record := range records {
+		if record == nil {
+			return storage.ErrInvalidInput
+		}
+		record.CreatedAt = now
+		if record.TTL == 0 {
+			record.TTL = now.Add(24 * time.Hour).Unix()
+		}
+		if err := record.UpdateKeys(); err != nil {
+			return err
+		}
+	}
+
+	txDB, ok := r.db.(graphqlStreamSubscriptionTransactionalDB)
+	if !ok {
+		return fmt.Errorf("graphql stream subscription repository requires transactional writes")
+	}
+
+	return txDB.TransactWrite(ctx, func(tx core.TransactionBuilder) error {
+		for _, record := range records {
+			tx.Put(record)
+		}
+		return nil
+	})
 }
 
 // ListByStream returns all GraphQL subscriptions registered for a stream.

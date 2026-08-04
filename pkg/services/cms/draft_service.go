@@ -208,21 +208,15 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
-	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	approved, principalApproved, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return approvalErr
 	}
 	if !approved {
 		return ErrDraftReviewApprovalRequired
 	}
-	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
-		if principalErr != nil {
-			return principalErr
-		}
-		if !principalApproved {
-			return ErrDraftReviewPrincipalApprovalRequired
-		}
+	if !principalApproved {
+		return ErrDraftReviewPrincipalApprovalRequired
 	}
 	draft.ScheduledAt = &scheduledAt
 	draft.Status = draftStatusScheduled
@@ -248,21 +242,15 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
 	}
-	approved, approvalErr := s.HasUnanimousActiveApproval(ctx, authorID, draftID)
+	approved, principalApproved, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return nil, approvalErr
 	}
 	if !approved {
 		return nil, ErrDraftReviewApprovalRequired
 	}
-	if strings.TrimSpace(draft.GeneratedBy) != "" {
-		principalApproved, principalErr := s.HasPrincipalApproval(ctx, authorID, draftID)
-		if principalErr != nil {
-			return nil, principalErr
-		}
-		if !principalApproved {
-			return nil, ErrDraftReviewPrincipalApprovalRequired
-		}
+	if !principalApproved {
+		return nil, ErrDraftReviewPrincipalApprovalRequired
 	}
 
 	if s.isPublishedDraftCleanup(draft) {
@@ -438,7 +426,6 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 		},
 		Slug:          slug,
 		ContentFormat: draft.ContentFormat,
-		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, false)

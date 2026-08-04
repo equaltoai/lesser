@@ -902,9 +902,25 @@ func (r *ObjectRepository) GetQuoteType(_ context.Context, statusID string) (str
 
 	quoteType, exists := r.quoteTypes[statusID]
 	if !exists {
-		return quoteTypeDisabled, nil
+		return models.VisibilityPublic, nil
 	}
 	return quoteType, nil
+}
+
+// GetQuoteTypes returns quote controls for a request-local batch.
+func (r *ObjectRepository) GetQuoteTypes(_ context.Context, statusIDs []string) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	quoteTypes := make(map[string]string, len(statusIDs))
+	for _, statusID := range statusIDs {
+		quoteType, ok := r.quoteTypes[statusID]
+		if !ok {
+			quoteType = models.VisibilityPublic
+		}
+		quoteTypes[statusID] = quoteType
+	}
+	return quoteTypes, nil
 }
 
 // IsWithdrawnFromQuotes checks if a status is withdrawn from quotes

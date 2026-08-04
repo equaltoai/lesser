@@ -255,6 +255,9 @@ func runVerifyCIWorkflow(includeSecurity bool, cmdPrefix, pkgPrefix string) erro
 	if err := runLint([]string{"--disable-gosec"}); err != nil {
 		return err
 	}
+	if err := runVerifyAuthUICSP(); err != nil {
+		return err
+	}
 	if err := runVerifyAudit(nil); err != nil {
 		return err
 	}
@@ -273,8 +276,18 @@ func runVerifyCIWorkflow(includeSecurity bool, cmdPrefix, pkgPrefix string) erro
 		return err
 	}
 
-	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify suite, strict contracts, overall/pkg/cmd coverage gates)")
+	fmt.Println("✓ verify ci complete (auth UI CSP, lint, security, supply chain, verify suite, strict contracts, overall/pkg/cmd coverage gates)")
 	return nil
+}
+
+func runVerifyAuthUICSP() error {
+	repoRoot, err := findRepoRootFn()
+	if err != nil {
+		return err
+	}
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_auth_ui_csp.sh"}, execOptions{
+		Dir: repoRoot,
+	})
 }
 
 func runVerifyCIContractsAndCoverage(cmdPrefix, pkgPrefix string) error {

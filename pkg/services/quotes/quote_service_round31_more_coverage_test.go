@@ -276,9 +276,11 @@ func TestQuoteService_PlaceholderHelpers_Coverage(t *testing.T) {
 	require.NoError(t, qs.updateQuoteCounts(context.Background(), "t1", 1))
 	require.NoError(t, qs.createQuoteNotification(context.Background(), &models.Status{AuthorUsername: "alice"}, &models.Status{AuthorUsername: "bob"}))
 	ok, err := qs.checkFollowRelationship(context.Background(), "alice", "bob")
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.False(t, ok)
-	require.False(t, qs.checkMentioned(&models.Status{Content: "hi"}, "alice"))
+	mentioned, err := qs.checkMentioned(context.Background(), &models.Status{Content: "hi"}, "alice")
+	require.NoError(t, err)
+	require.False(t, mentioned)
 
 	_ = generateStatusID()
 	_ = interfaces.PaginationOptions{Limit: 1}

@@ -2,16 +2,18 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -81,6 +83,36 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	}
 
 	return r.db.WithContext(ctx).Model(draft).Update()
+}
+
+// UpdateDraftReviewFields atomically updates only the mutable review summary.
+// Content and other owner-controlled fields are deliberately excluded so a
+// concurrent owner edit cannot be overwritten by review submission.
+func (r *DraftRepository) UpdateDraftReviewFields(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteOwner(authorID, draft); err != nil {
+		return err
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+
+	builder := r.db.WithContext(ctx).
+		Model(draft).
+		Where("PK", "=", draft.PK).
+		Where("SK", "=", draft.SK).
+		UpdateBuilder()
+	builder.Set("ReviewedBy", draft.ReviewedBy)
+	builder.Set("ReviewStatus", draft.ReviewStatus)
+	builder.Set("EditorNotes", draft.EditorNotes)
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("draft", draft.ID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, "draft", draft.ID)
+	}
+	return nil
 }
 
 // DeleteDraft deletes a draft
@@ -172,9 +204,13 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 // CreateDraftReviewGrant creates a first-time review grant.
 func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
-	return r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
+	err := r.db.WithContext(ctx).Model(grant).IfNotExists().Create()
+	if dynamormerrors.IsConditionFailed(err) {
+		return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
+	}
+	return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 }
 
 // RegrantDraftReviewGrant clears revocation and restores the sparse queue keys.
@@ -183,7 +219,7 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 		return fmt.Errorf("active draft review grant is required")
 	}
 	if err := grant.UpdateKeys(); err != nil {
-		return err
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 
 	nextVersion := grant.Version + 1
@@ -202,7 +238,10 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 	builder.ConditionVersion(int64(grant.Version))
 	builder.Set("Version", nextVersion)
 	if err := builder.Execute(); err != nil {
-		return err
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.DynamoDBConditionalCheckFailed("").WithInternalError(err)
+		}
+		return ErrorHandler.HandleCreateError(err, "draft review grant", grant.SK)
 	}
 	grant.Version = nextVersion
 	return nil

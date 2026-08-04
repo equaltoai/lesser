@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
@@ -31,6 +32,7 @@ type ServiceRegistry interface {
 	Media() MediaService
 	Notes() NotesService
 	Notifications() NotificationsService
+	Quotes() QuotesService
 	Relationships() RelationshipsService
 	Scheduled() ScheduledService
 	Search() SearchService
@@ -139,6 +141,13 @@ type NotesService interface {
 	UnbookmarkNote(ctx context.Context, cmd *notes.UnbookmarkNoteCommand) (*notes.BookmarkResult, error)
 	UnreblogNote(ctx context.Context, cmd *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
 }
+
+// QuotesService defines the quote authorization operation shared with GraphQL quote creation.
+type QuotesService interface {
+	CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *storagemodels.Status) (bool, error)
+}
+
+var _ QuotesService = (*quotes.QuoteService)(nil)
 
 // NotificationsService defines the subset of notification-related operations used by the Lift API
 type NotificationsService interface {
@@ -284,6 +293,17 @@ func (a *servicesRegistryAdapter) Notifications() NotificationsService {
 		return nil
 	}
 	svc := a.registry.Notifications()
+	if svc == nil {
+		return nil
+	}
+	return svc
+}
+
+func (a *servicesRegistryAdapter) Quotes() QuotesService {
+	if a == nil || a.registry == nil {
+		return nil
+	}
+	svc := a.registry.Quotes()
 	if svc == nil {
 		return nil
 	}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -196,7 +197,7 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 
 		claims := &auth.Claims{Username: "agent", IsAgent: true}
 		req := &apimodels.CreateStatusRequest{
-			AgentAttribution: &apimodels.AgentPostAttribution{TriggerDetails: strings.Repeat("x", agentMaxTriggerDetails+1)},
+			AgentAttribution: &apimodels.AgentPostAttributionInput{TriggerDetails: strings.Repeat("x", agentMaxTriggerDetails+1)},
 		}
 		_, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, req)
 		require.NoError(t, respErr)
@@ -215,14 +216,14 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 			citations = append(citations, "status-"+strconv.Itoa(i))
 		}
 		req := &apimodels.CreateStatusRequest{
-			AgentAttribution: &apimodels.AgentPostAttribution{MemoryCitations: citations},
+			AgentAttribution: &apimodels.AgentPostAttributionInput{MemoryCitations: citations},
 		}
 		_, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, req)
 		require.NoError(t, respErr)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusBadRequest, resp.Status)
 
-		req.AgentAttribution = &apimodels.AgentPostAttribution{MemoryCitations: []string{"%"}}
+		req.AgentAttribution = &apimodels.AgentPostAttributionInput{MemoryCitations: []string{"%"}}
 		_, resp, respErr = h.buildAgentStatusAttribution(ctx, claims, req)
 		require.NoError(t, respErr)
 		require.NotNil(t, resp)
@@ -235,7 +236,7 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 		require.NoError(t, err)
 
 		claims := &auth.Claims{Username: "agent", IsAgent: true}
-		req := &apimodels.CreateStatusRequest{AgentAttribution: &apimodels.AgentPostAttribution{TriggerType: "unsupported"}}
+		req := &apimodels.CreateStatusRequest{AgentAttribution: &apimodels.AgentPostAttributionInput{TriggerType: "unsupported"}}
 		_, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, req)
 		require.NoError(t, respErr)
 		require.NotNil(t, resp)
@@ -266,6 +267,57 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 		require.Equal(t, "Drone", attribution.IdentityLabel)
 		require.Equal(t, agents.DroneContinuityStatePlanned, attribution.ContinuityState)
 		require.Equal(t, "Drone", attribution.ModerationLabel)
+		require.Empty(t, attribution.ApprovedBy)
+	})
+
+	t.Run("valid scoped credential records server verified approval", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, makeAgentState())
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", nil, nil, nil)
+		require.NoError(t, err)
+
+		claims := &auth.Claims{
+			Username:               "agent",
+			Scopes:                 []string{"write:statuses"},
+			IsAgent:                true,
+			DelegatedBy:            "@owner",
+			DelegationPrincipal:    "owner",
+			DelegationAgent:        "agent",
+			DelegationContentClass: auth.DelegationContentClassNote,
+		}
+		attribution, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, &apimodels.CreateStatusRequest{})
+		require.NoError(t, respErr)
+		require.Nil(t, resp)
+		require.Equal(t, cfg.ActorURL("owner"), attribution.DelegatedBy)
+		require.Equal(t, cfg.ActorURL("owner"), attribution.ApprovedBy)
+	})
+
+	t.Run("client asserted delegation without credential is ignored", func(t *testing.T) {
+		var req apimodels.CreateStatusRequest
+		require.NoError(t, json.Unmarshal([]byte(`{"status":"hello","agent_attribution":{"trigger_type":"manual","delegated_by":"@mallory","approved_by":"@mallory"}}`), &req))
+		h, _, _ := round11NewHandler(t, cfg, makeAgentState())
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", nil, nil, nil)
+		require.NoError(t, err)
+
+		attribution, resp, respErr := h.buildAgentStatusAttribution(ctx, &auth.Claims{Username: "agent", IsAgent: true}, &req)
+		require.NoError(t, respErr)
+		require.Nil(t, resp)
+		require.Equal(t, cfg.ActorURL("owner"), attribution.DelegatedBy)
+		require.Empty(t, attribution.ApprovedBy)
+	})
+
+	t.Run("wrong scoped credential is forbidden", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, makeAgentState())
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", nil, nil, nil)
+		require.NoError(t, err)
+		claims := &auth.Claims{
+			Username: "agent", IsAgent: true, DelegatedBy: "@owner",
+			DelegationPrincipal: "owner", DelegationAgent: "agent",
+			DelegationContentClass: auth.DelegationContentClassDirectMessage,
+		}
+		_, resp, respErr := h.buildAgentStatusAttribution(ctx, claims, &apimodels.CreateStatusRequest{})
+		require.NoError(t, respErr)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("includes souled identity metadata when present", func(t *testing.T) {

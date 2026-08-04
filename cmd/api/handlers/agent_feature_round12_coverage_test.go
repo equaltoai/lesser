@@ -120,6 +120,7 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		req := apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
 			Scopes:        []string{"write:statuses"},
+			ContentClass:  auth.DelegationContentClassNote,
 		}
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, req)
@@ -131,6 +132,13 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.NotEmpty(t, out.Token.AccessToken)
 		require.Equal(t, "Bearer", out.Token.TokenType)
+		oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil)
+		claims, err := oauthService.ValidateAccessToken(out.Token.AccessToken)
+		require.NoError(t, err)
+		principal, present, err := auth.ValidateDelegationAttestation(claims, auth.DelegationContentClassNote)
+		require.NoError(t, err)
+		require.True(t, present)
+		require.Equal(t, "@owner", principal)
 	})
 
 	t.Run("registration disabled still allows delegating to existing agent", func(t *testing.T) {
@@ -187,6 +195,53 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 	})
 }
 
+func TestScopedDelegationCredentialRequiresAgentOwner(t *testing.T) {
+	cfg := round10TestConfig()
+	cfg.AllowAgents = true
+	policy := storagemodels.NewAgentInstanceConfig()
+	policy.AllowAgents = true
+	now := time.Now()
+	state := &round10QueryState{
+		agentInstanceConfig: policy,
+		usersByUsername: map[string]storagemodels.User{
+			"owner": {Username: "owner", Role: "user", Approved: true, CreatedAt: now.Add(-time.Hour)},
+			"admin": {Username: "admin", Role: roleAdmin, Approved: true, CreatedAt: now.Add(-time.Hour)},
+			"agent1": {
+				Username: "agent1", Role: "user", Approved: true, CreatedAt: now.Add(-time.Hour),
+				IsAgent: true, AgentOwner: "@owner", AgentType: agentTypeCustom,
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {Username: "agent1", DelegatedScopes: []string{auth.ScopeRead}, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+	req := apimodels.AgentDelegationRequest{
+		AgentUsername: "agent1", Scopes: []string{auth.ScopeRead}, ContentClass: auth.DelegationContentClassNote,
+	}
+
+	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin, auth.ScopeWrite, auth.ScopeRead})
+	adminCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate",
+		map[string]string{"Authorization": "Bearer " + adminToken}, nil, req)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(adminCtx))
+
+	ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeWrite, auth.ScopeRead})
+	ownerCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate",
+		map[string]string{"Authorization": "Bearer " + ownerToken}, nil, req)
+	require.NoError(t, err)
+	resp := requireStatus(t, http.StatusOK)(h.HandleDelegateAgentLift(ownerCtx))
+	var delegation apimodels.AgentDelegationResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &delegation))
+	claims, err := auth.NewOAuthService(cfg.JWTSecret, cfg, nil, nil).ValidateAccessToken(delegation.Token.AccessToken)
+	require.NoError(t, err)
+	principal, present, err := auth.ValidateDelegationAttestation(claims, auth.DelegationContentClassNote)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, "@owner", principal)
+}
+
 func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
@@ -240,8 +295,18 @@ func TestAgentFeaturesRound12_AdminPolicyAndVerification(t *testing.T) {
 	h, _, _ := round11NewHandler(t, cfg, state)
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 
-	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin})
+	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin, auth.ScopeRead})
 	headers := map[string]string{"Authorization": "Bearer " + adminToken}
+
+	t.Run("admin cannot attest as the agent principal", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			Scopes:        []string{auth.ScopeRead},
+			ContentClass:  auth.DelegationContentClassNote,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
+	})
 
 	t.Run("update_policy", func(t *testing.T) {
 		req := apimodels.UpdateAdminAgentPolicyRequest{
@@ -359,7 +424,7 @@ func TestAgentFeaturesRound12_StatusAttributionAndMemoryEvents(t *testing.T) {
 	require.Nil(t, resp)
 	require.Equal(t, "orig1", req.InReplyToID)
 
-	req.AgentAttribution = &apimodels.AgentPostAttribution{
+	req.AgentAttribution = &apimodels.AgentPostAttributionInput{
 		TriggerType:    "mention",
 		TriggerDetails: "hello",
 		MemoryCitations: []string{

@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -392,32 +391,25 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 }
 
 // SubscribeToTimeline subscribes to timeline updates via DynamoDB-backed subscriptions
-func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, username string, timelineType model.TimelineType) (<-chan *model.Object, error) {
+func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(
+	ctx context.Context,
+	username string,
+	timelineType model.TimelineType,
+	actorUsername *string,
+	hashtag *string,
+	listID *string,
+) (<-chan *model.Object, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	// Determine stream name based on timeline type
-	var streamName string
-	switch timelineType {
-	case model.TimelineTypeHome:
-		username = strings.TrimSpace(username)
-		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, ErrUsernameCannotBeEmpty
-		}
-		streamName = fmt.Sprintf("user:%s", username)
-	case model.TimelineTypePublic:
-		streamName = StreamNamePublic
-	case model.TimelineTypeLocal:
-		streamName = "public:local"
-	case model.TimelineTypeDirect:
-		username = strings.TrimSpace(username)
-		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, ErrUsernameCannotBeEmpty
-		}
-		streamName = fmt.Sprintf("direct:%s", username)
-	default:
-		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)
+	streamName, err := timelineStreamName(username, timelineType, timelineRoutingInputs{
+		actorUsername: actorUsername,
+		hashtag:       hashtag,
+		listID:        listID,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	streams := []string{streamName}

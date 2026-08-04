@@ -184,6 +184,96 @@ func TestServiceInteractionIdentity_RemoteUnreblogQueuesUndoAnnounce(t *testing.
 	assert.Equal(t, remoteURL, original.Object)
 }
 
+func TestServiceInteractionIdentity_NonFederatingActionsDoNotRequireCanonicalObjectID(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _, _ := newNotesServiceHarness(t)
+	remoteStatus := remoteInteractionStatusWithoutObjectID()
+	originalRepo := service.noteRepo
+	service.noteRepo = &delegatingStatusRepo{
+		StatusRepository: originalRepo,
+		getStatus: func(ctx context.Context, statusID string) (*models.Status, error) {
+			if statusID == remoteStatus.StatusID {
+				return remoteStatus, nil
+			}
+			return originalRepo.GetStatus(ctx, statusID)
+		},
+	}
+
+	bookmark, err := service.BookmarkNote(ctx, &BookmarkNoteCommand{
+		StatusID:     remoteStatus.StatusID,
+		BookmarkerID: "alice",
+	})
+	require.NoError(t, err)
+	require.Same(t, remoteStatus, bookmark.Status)
+
+	unbookmark, err := service.UnbookmarkNote(ctx, &UnbookmarkNoteCommand{
+		StatusID:       remoteStatus.StatusID,
+		UnbookmarkerID: "alice",
+	})
+	require.NoError(t, err)
+	require.Same(t, remoteStatus, unbookmark.Status)
+
+	mute, err := service.MuteNote(ctx, &MuteNoteCommand{
+		StatusID: remoteStatus.StatusID,
+		MuterID:  "bob",
+	})
+	require.NoError(t, err)
+	require.Same(t, remoteStatus, mute.Status)
+
+	unmute, err := service.UnmuteNote(ctx, &UnmuteNoteCommand{
+		StatusID: remoteStatus.StatusID,
+		MuterID:  "bob",
+	})
+	require.NoError(t, err)
+	require.Same(t, remoteStatus, unmute.Status)
+}
+
+func TestServiceInteractionIdentity_FederatingActionsStillRequireCanonicalObjectID(t *testing.T) {
+	ctx := context.Background()
+	remoteStatus := remoteInteractionStatusWithoutObjectID()
+	tests := []struct {
+		name string
+		run  func(*Service) error
+	}{
+		{name: "like", run: func(service *Service) error {
+			_, err := service.LikeNote(ctx, &LikeNoteCommand{StatusID: remoteStatus.StatusID, LikerID: "alice"})
+			return err
+		}},
+		{name: "unlike", run: func(service *Service) error {
+			_, err := service.UnlikeNote(ctx, &UnlikeNoteCommand{StatusID: remoteStatus.StatusID, UnlikerID: "alice"})
+			return err
+		}},
+		{name: "reblog", run: func(service *Service) error {
+			_, err := service.ReblogNote(ctx, &ReblogNoteCommand{StatusID: remoteStatus.StatusID, RebloggerID: "bob"})
+			return err
+		}},
+		{name: "unreblog", run: func(service *Service) error {
+			_, err := service.UnreblogNote(ctx, &UnreblogNoteCommand{StatusID: remoteStatus.StatusID, UnrebloggerID: "bob"})
+			return err
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _, _, _, _ := newNotesServiceHarness(t)
+			originalRepo := service.noteRepo
+			service.noteRepo = &delegatingStatusRepo{
+				StatusRepository: originalRepo,
+				getStatus: func(ctx context.Context, statusID string) (*models.Status, error) {
+					if statusID == remoteStatus.StatusID {
+						return remoteStatus, nil
+					}
+					return originalRepo.GetStatus(ctx, statusID)
+				},
+			}
+
+			err := tt.run(service)
+			require.ErrorIs(t, err, ErrExecuteAction)
+			require.ErrorContains(t, err, "canonical ActivityPub object id is required")
+		})
+	}
+}
+
 func TestServiceInteractionIdentity_HelperFallbackBranches(t *testing.T) {
 	service := &Service{domainName: "example.com", logger: zap.NewNop()}
 
@@ -278,5 +368,19 @@ func remoteInteractionStatus(remoteURL string) *models.Status {
 			Content:      "remote seed",
 			Visibility:   models.VisibilityPublic,
 		},
+	}
+}
+
+func remoteInteractionStatusWithoutObjectID() *models.Status {
+	now := time.Now().UTC()
+	return &models.Status{
+		StatusID:       "remote-without-object-id",
+		AuthorUsername: "steward@remote.example",
+		Visibility:     models.VisibilityPublic,
+		ToRecipients:   []string{activitypub.PublicAddress},
+		PublishedAt:    now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ModifiedAt:     now,
 	}
 }

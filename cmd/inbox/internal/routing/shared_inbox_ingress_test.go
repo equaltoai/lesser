@@ -16,7 +16,7 @@ import (
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -74,6 +74,83 @@ func TestInboxHandler_SharedInboxPublicCreateResolvesFollowerTargets(t *testing.
 	stored, err := env.handler.activityRepository.GetActivity(context.Background(), env.cfg.BaseURL()+"/activities/shared-create-public")
 	require.NoError(t, err)
 	require.Equal(t, env.remoteActorID, stored.Actor)
+}
+
+func TestInboxHandler_SharedInboxCreateAttributionMustMatchVerifiedSigner(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		slug          string
+		attributedTo  func(*inboxTestEnv) string
+		wantForbidden bool
+	}{
+		{
+			name:         "honest remote attribution",
+			slug:         "honest",
+			attributedTo: func(env *inboxTestEnv) string { return env.remoteActorID },
+		},
+		{
+			name:          "forged local attribution",
+			slug:          "forged-local",
+			attributedTo:  func(env *inboxTestEnv) string { return env.local.ID },
+			wantForbidden: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newInboxTestEnv(t)
+			setRunAsyncSynchronous(t)
+
+			relationshipRepo := inmemory.NewRelationshipRepository()
+			require.NoError(t, relationshipRepo.CreateRelationship(context.Background(), "alice", "bob@remote.example", env.remoteActorID+"/activities/follow"))
+			require.NoError(t, relationshipRepo.AcceptFollowRequest(context.Background(), "alice", "bob@remote.example"))
+			env.handler.relationshipRepository = relationshipRepo
+			env.handler.activityRepository = inmemory.NewActivityRepository()
+
+			activityID := "https://remote.example/activities/shared-attribution-" + tc.slug
+			activity := map[string]any{
+				"@context": activitypub.Context,
+				"type":     activitypub.CreateType,
+				"id":       activityID,
+				"actor":    env.remoteActorID,
+				"to":       []string{activitypub.PublicAddress},
+				"cc":       []string{env.remoteActorID + "/followers"},
+				"object": map[string]any{
+					"@context":     activitypub.Context,
+					"id":           "https://remote.example/objects/shared-attribution-" + tc.slug,
+					"type":         activitypub.NoteType,
+					"attributedTo": tc.attributedTo(env),
+					"content":      "shared inbox attribution check",
+					"to":           []string{activitypub.PublicAddress},
+					"cc":           []string{env.remoteActorID + "/followers"},
+				},
+			}
+			body, err := json.Marshal(activity)
+			require.NoError(t, err)
+
+			ctx := newAppTheoryContext(http.MethodPost, "/inbox", map[string]string{
+				"Host":         "localhost",
+				"Content-Type": "application/activity+json",
+				"User-Agent":   "Mastodon/4.0.0",
+			}, nil, body)
+			signAppTheoryRequest(t, env, ctx, body)
+
+			resp, err := env.handler.handlePostSharedInbox(ctx)
+			if tc.wantForbidden {
+				require.Nil(t, resp)
+				require.Error(t, err)
+				require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden), "unexpected error: %v", err)
+				_, storedErr := env.handler.activityRepository.GetActivity(context.Background(), activityID)
+				require.Error(t, storedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.Equal(t, http.StatusAccepted, resp.Status)
+			stored, err := env.handler.activityRepository.GetActivity(context.Background(), activityID)
+			require.NoError(t, err)
+			require.Equal(t, env.remoteActorID, stored.Actor)
+		})
+	}
 }
 
 func TestInboxHandler_SharedInboxFollowersOnlyCreateResolvesFollowerTargets(t *testing.T) {

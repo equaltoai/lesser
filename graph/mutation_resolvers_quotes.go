@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	stdErrors "errors"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -58,6 +59,10 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 			storagePermissions.AllowPublic = false
 			storagePermissions.AllowFollowers = true
 			storagePermissions.AllowMentioned = true
+		case model.QuotePermissionMentioned:
+			storagePermissions.AllowPublic = false
+			storagePermissions.AllowFollowers = false
+			storagePermissions.AllowMentioned = true
 		case model.QuotePermissionNone:
 			storagePermissions.AllowPublic = false
 			storagePermissions.AllowFollowers = false
@@ -84,8 +89,22 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 	// Track cost using centralized tracker
 	r.trackDynamoOperation(ctx, "write", 1)
 
+	// Read the stored control back rather than echoing the request. Status metadata is the
+	// authoritative per-note record, and the mutation payload must describe that record.
+	storedQuoteType, err := objectRepo.GetQuoteType(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("failed to read updated quote permissions",
+			zap.String("user", username),
+			zap.String("note_id", noteID),
+			zap.Error(err))
+		return nil, stdErrors.Join(stdErrors.New("processing failed"), err)
+	}
+	storedQuoteable, storedPermission := graphQLQuoteControl(storedQuoteType)
+
 	// Get the note to return
 	note := r.convertStatusToObject(ctx, status)
+	note.Quoteable = storedQuoteable
+	note.QuotePermissions = storedPermission
 
 	r.Logger.Info("quote permissions updated",
 		zap.String("user", username),
@@ -98,4 +117,17 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 		Note:           note,
 		AffectedQuotes: 0, // Would require complex query to calculate
 	}, nil
+}
+
+func graphQLQuoteControl(storedQuoteType string) (bool, model.QuotePermission) {
+	switch strings.ToLower(strings.TrimSpace(storedQuoteType)) {
+	case "public":
+		return true, model.QuotePermissionEveryone
+	case EventTypeFollowers:
+		return true, model.QuotePermissionFollowers
+	case "mentioned":
+		return true, model.QuotePermissionMentioned
+	default:
+		return false, model.QuotePermissionNone
+	}
 }

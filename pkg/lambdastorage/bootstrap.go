@@ -12,7 +12,7 @@ import (
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
 

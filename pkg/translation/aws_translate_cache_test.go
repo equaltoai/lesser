@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/translate"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	theorydbmocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	theorydbmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

@@ -56,7 +56,7 @@ func (sm *SubscriptionManager) IsRunning() bool {
 // NOTE: This method creates ActivityPub activities, not GraphQL Objects
 func (sm *SubscriptionManager) SubscribeToActivityStream(ctx context.Context, username string, activityTypes []model.ActivityType) (<-chan *activitypub.Activity, error) {
 	// For now, convert timeline subscription to activities
-	objectsCh, err := sm.manager.SubscribeToTimeline(ctx, username, model.TimelineTypeHome)
+	objectsCh, err := sm.manager.SubscribeToTimeline(ctx, username, model.TimelineTypeHome, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +104,15 @@ func (sm *SubscriptionManager) SubscribeToActivityStream(ctx context.Context, us
 }
 
 // SubscribeToTimelineUpdates creates a channel for timeline updates using event bus
-func (sm *SubscriptionManager) SubscribeToTimelineUpdates(ctx context.Context, username string, timelineType model.TimelineType) (<-chan *model.Object, error) {
-	return sm.manager.SubscribeToTimeline(ctx, username, timelineType)
+func (sm *SubscriptionManager) SubscribeToTimelineUpdates(
+	ctx context.Context,
+	username string,
+	timelineType model.TimelineType,
+	actorUsername *string,
+	hashtag *string,
+	listID *string,
+) (<-chan *model.Object, error) {
+	return sm.manager.SubscribeToTimeline(ctx, username, timelineType, actorUsername, hashtag, listID)
 }
 
 // SubscribeToCostUpdates creates a channel for cost updates using event bus

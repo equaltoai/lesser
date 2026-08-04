@@ -3,14 +3,15 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -218,6 +219,43 @@ func (r *QuoteRepository) GetQuotePermissions(ctx context.Context, username stri
 	}
 
 	return permissions, nil
+}
+
+// GetQuotePermissionsBatch returns account quote defaults with one batch read.
+// Missing rows use the same public defaults as QuoteService.GetQuotePermissions.
+func (r *QuoteRepository) GetQuotePermissionsBatch(ctx context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+	permissionsByUser := make(map[string]*models.QuotePermissions, len(usernames))
+	keys := make([]struct{ PK, SK string }, 0, len(usernames))
+	seen := make(map[string]struct{}, len(usernames))
+	for _, rawUsername := range usernames {
+		username := strings.TrimSpace(rawUsername)
+		if username == "" {
+			continue
+		}
+		defaults := &models.QuotePermissions{Username: username}
+		defaults.SetDefaults()
+		permissionsByUser[username] = defaults
+		if _, ok := seen[username]; ok {
+			continue
+		}
+		seen[username] = struct{}{}
+		keys = append(keys, struct{ PK, SK string }{PK: "USER#" + username, SK: "QUOTE_PERMISSIONS"})
+	}
+	if len(keys) == 0 {
+		return permissionsByUser, nil
+	}
+
+	permissions, err := r.permissionsRepo.BatchGet(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrQuotePermissionsGetFailed, err)
+	}
+	for _, permission := range permissions {
+		if permission == nil || strings.TrimSpace(permission.Username) == "" {
+			continue
+		}
+		permissionsByUser[permission.Username] = permission
+	}
+	return permissionsByUser, nil
 }
 
 // UpdateQuotePermissions updates existing quote permissions

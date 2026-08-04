@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 // ArticleRepository defines the interface for article operations.

@@ -10,7 +10,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 func TestAdminFederationLift_Round12(t *testing.T) {

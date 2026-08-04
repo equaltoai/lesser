@@ -19,7 +19,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v3"
 )
 
 func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {

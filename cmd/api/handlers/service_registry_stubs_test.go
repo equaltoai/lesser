@@ -33,6 +33,7 @@ type RegistryStub struct {
 	MediaSvc         MediaService
 	NotesSvc         NotesService
 	NotificationsSvc NotificationsService
+	QuotesSvc        QuotesService
 	RelationshipsSvc RelationshipsService
 	ScheduledSvc     ScheduledService
 	SearchSvc        SearchService
@@ -48,6 +49,7 @@ func (r *RegistryStub) Lists() ListsService                 { return r.ListsSvc 
 func (r *RegistryStub) Media() MediaService                 { return r.MediaSvc }
 func (r *RegistryStub) Notes() NotesService                 { return r.NotesSvc }
 func (r *RegistryStub) Notifications() NotificationsService { return r.NotificationsSvc }
+func (r *RegistryStub) Quotes() QuotesService               { return r.QuotesSvc }
 func (r *RegistryStub) Relationships() RelationshipsService { return r.RelationshipsSvc }
 func (r *RegistryStub) Scheduled() ScheduledService         { return r.ScheduledSvc }
 func (r *RegistryStub) Search() SearchService               { return r.SearchSvc }

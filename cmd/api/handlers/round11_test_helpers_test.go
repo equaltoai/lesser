@@ -7,6 +7,7 @@ import (
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -151,6 +152,10 @@ func round11NewHandler(t *testing.T, args ...any) (*Handler, *MockRepositoryStor
 	repos.On("GetDB").Return(harness.db).Maybe()
 	repos.On("GetTableName").Return(cfg.DynamoTableName).Maybe()
 	repos.On("GetLogger").Return(logger).Maybe()
+
+	if stub, ok := reg.(*RegistryStub); ok && stub.QuotesSvc == nil {
+		stub.QuotesSvc = quotes.NewQuoteService(repos, logger)
+	}
 
 	handler := &Handler{
 		cfg:       cfg,

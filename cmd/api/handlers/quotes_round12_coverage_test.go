@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -107,7 +107,7 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		ctxLower, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/quote", map[string]string{"authorization": "Bearer " + writeToken}, nil, apimodels.CreateQuotePostRequest{Status: "hi"})
 		require.NoError(t, err)
 		ctxLower.Params["id"] = "s1"
-		requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctxLower))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctxLower))
 
 		ctxDirect, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/quote", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateQuotePostRequest{Status: "hi"})
 		require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "missing"
 
-		requireStatus(t, http.StatusNotFound)(handler.HandleCreateQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctx))
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -167,8 +167,171 @@ func TestQuotes_Round12_CreateQuotePost_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "s1"
 
-		requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctx))
 	})
+}
+
+func TestCreateQuotePostReturnsNotImplementedWithoutStatusLookup(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+
+	tests := []struct {
+		name   string
+		id     string
+		status *storagemodels.Status
+	}{
+		{name: "existent", id: "public", status: &storagemodels.Status{StatusID: "public", Visibility: storagemodels.VisibilityPublic}},
+		{name: "followers only", id: "followers", status: &storagemodels.Status{StatusID: "followers", Visibility: storagemodels.VisibilityPrivate}},
+		{name: "nonexistent", id: "missing"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{statusByID: map[string]storagemodels.Status{}}
+			if tt.status != nil {
+				state.statusByID[tt.id] = *tt.status
+			}
+			handler, _, _ := round11NewHandler(t, cfg, state)
+			ctx, err := round10NewLiftContext(
+				http.MethodPost,
+				"/api/v1/statuses/"+tt.id+"/quote",
+				headers,
+				nil,
+				apimodels.CreateQuotePostRequest{Status: "quote text"},
+			)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
+
+			resp, err := handler.HandleCreateQuotePostLift(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotImplemented, resp.Status)
+
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "quote endpoint is not implemented", body["error"])
+			require.NotContains(t, body, "id")
+			require.NotContains(t, body, "content")
+			require.NotContains(t, body, "quoted_status")
+
+			for _, where := range state.wheres {
+				require.NotEqual(t, "status#"+tt.id, where.value, "501 path must not look up the target status")
+			}
+		})
+	}
+}
+
+func TestGetQuotePermissionsReturnsNotImplementedWithoutStorageLookup(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "existent account shape", id: "alice"},
+		{name: "nonexistent account", id: "definitely-not-a-real-account-9f2b"},
+		{name: "path traversal text", id: "../../root"},
+		{name: "sql injection text", id: "'; DROP--"},
+	}
+
+	var expectedBody []byte
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{}
+			handler, _, _ := round11NewHandler(t, round11TestConfig(), state)
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
+
+			resp, err := handler.HandleGetQuotePermissionsLift(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotImplemented, resp.Status)
+			if expectedBody == nil {
+				expectedBody = append([]byte(nil), resp.Body...)
+			} else {
+				require.Equal(t, expectedBody, resp.Body, "all account IDs must receive an identical response")
+			}
+			require.JSONEq(t, `{"error":"quote permissions endpoint is not implemented"}`, string(resp.Body))
+			require.Empty(t, state.wheres, "501 path must not perform a storage query")
+		})
+	}
+}
+
+func TestDeleteQuoteAcceptsOnlyCanonicalOrLegacyOwnerIdentity(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+	tests := []struct {
+		name     string
+		quoterID string
+		want     int
+	}{
+		{name: "production actor URI owner", quoterID: common.GenerateActorID(cfg.Domain, "alice"), want: http.StatusOK},
+		{name: "local actor URI non-owner", quoterID: common.GenerateActorID(cfg.Domain, "bob"), want: http.StatusNotFound},
+		{name: "remote actor URI", quoterID: "https://remote.example/users/alice", want: http.StatusNotFound},
+		{name: "legacy bare username owner", quoterID: "alice", want: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel := storagemodels.QuoteRelationship{
+				QuoterNoteID: "q1",
+				TargetNoteID: "s1",
+				QuoterID:     tt.quoterID,
+				Timestamp:    time.Now().Add(-10 * time.Minute),
+			}
+			rel.GenerateID()
+			require.NoError(t, rel.UpdateKeys())
+			handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+				quoteRelationships: []storagemodels.QuoteRelationship{rel},
+			})
+			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", headers, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = "s1"
+			ctx.Params["quote_id"] = "q1"
+
+			requireStatus(t, tt.want)(handler.HandleDeleteQuotePostLift(ctx))
+		})
+	}
+}
+
+func TestDeleteQuoteReturnsUniformNotFoundForMissingAndNonOwner(t *testing.T) {
+	cfg := round11TestConfig()
+	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:statuses"})
+	headers := map[string]string{"Authorization": "Bearer " + writeToken}
+
+	nonOwner := storagemodels.QuoteRelationship{
+		QuoterNoteID: "q1",
+		TargetNoteID: "s1",
+		QuoterID:     common.GenerateActorID(cfg.Domain, "bob"),
+		Timestamp:    time.Now().Add(-10 * time.Minute),
+	}
+	nonOwner.GenerateID()
+	require.NoError(t, nonOwner.UpdateKeys())
+
+	tests := []struct {
+		name          string
+		relationships []storagemodels.QuoteRelationship
+	}{
+		{name: "missing relationship"},
+		{name: "relationship owned by another account", relationships: []storagemodels.QuoteRelationship{nonOwner}},
+	}
+	var expectedBody []byte
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{quoteRelationships: tt.relationships})
+			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", headers, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = "s1"
+			ctx.Params["quote_id"] = "q1"
+
+			resp := requireStatus(t, http.StatusNotFound)(handler.HandleDeleteQuotePostLift(ctx))
+			if expectedBody == nil {
+				expectedBody = append([]byte(nil), resp.Body...)
+			}
+			require.Equal(t, expectedBody, resp.Body)
+			require.JSONEq(t, `{"error":"quote not found","error_code":"NOT_FOUND"}`, string(resp.Body))
+		})
+	}
 }
 
 func TestQuotes_Round12_GetQuotesOfStatus_Coverage(t *testing.T) {
@@ -197,49 +360,52 @@ func TestQuotes_Round12_GetQuotesOfStatus_Coverage(t *testing.T) {
 
 		requireStatus(t, http.StatusBadRequest)(handler.HandleGetQuotesOfStatusLift(ctx))
 	})
+}
 
-	t.Run("ok_empty", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
+func TestGetQuotesReturnsNotImplementedWithoutStorageRead(t *testing.T) {
+	cfg := round11TestConfig()
+	tests := []struct {
+		name   string
+		id     string
+		status *storagemodels.Status
+	}{
+		{name: "existent", id: "public", status: &storagemodels.Status{StatusID: "public", Visibility: storagemodels.VisibilityPublic}},
+		{name: "followers only", id: "followers", status: &storagemodels.Status{StatusID: "followers", Visibility: storagemodels.VisibilityPrivate}},
+		{name: "nonexistent", id: "missing"},
+	}
 
-		requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctx))
-	})
+	var contractBody []byte
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			state := &round10QueryState{statusByID: map[string]storagemodels.Status{}}
+			if tt.status != nil {
+				state.statusByID[tt.id] = *tt.status
+			}
+			handler, _, _ := round11NewHandler(t, cfg, state)
+			ctx, err := round10NewLiftContext(
+				http.MethodGet,
+				"/api/v1/statuses/"+tt.id+"/quotes",
+				nil,
+				map[string]string{"limit": "10", "offset": "0"},
+				nil,
+			)
+			require.NoError(t, err)
+			ctx.Params["id"] = tt.id
 
-	t.Run("ok_non_empty", func(t *testing.T) {
-		rel := storagemodels.QuoteRelationship{
-			QuoterNoteID: "q1",
-			TargetNoteID: "s1",
-			QuoterID:     "alice",
-			Timestamp:    time.Now().Add(-10 * time.Minute),
-		}
-		rel.GenerateID()
-		require.NoError(t, rel.UpdateKeys())
+			resp := requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotesOfStatusLift(ctx))
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "quotes endpoint is not implemented", body["error"])
+			require.Empty(t, state.wheres, "501 path must not perform a storage query")
 
-		state := &round10QueryState{quoteRelationships: []storagemodels.QuoteRelationship{rel}}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
-
-		resp := requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctx))
-		var summaries []apimodels.QuoteStatusSummary
-		require.NoError(t, json.Unmarshal(resp.Body, &summaries))
-		require.Len(t, summaries, 1)
-	})
-
-	t.Run("service_error", func(t *testing.T) {
-		allErrType := reflect.TypeOf(&[]storagemodels.QuoteRelationship{}).String()
-		state := &round10QueryState{allErrorByType: map[string]error{allErrType: stdErrors.New("query failed")}}
-		handler, _, _ := round11NewHandler(t, cfg, state)
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/quotes", nil, map[string]string{"limit": "10", "offset": "0"}, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "s1"
-
-		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetQuotesOfStatusLift(ctx))
-	})
+			if contractBody == nil {
+				contractBody = append([]byte(nil), resp.Body...)
+			} else {
+				require.Equal(t, contractBody, resp.Body, "all valid target IDs must have the same 501 body")
+			}
+		})
+	}
 }
 
 func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
@@ -312,7 +478,7 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 		ctx.Params["id"] = "s1"
 		ctx.Params["quote_id"] = "q1"
 
-		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteQuotePostLift(ctx))
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteQuotePostLift(ctx))
 
 		state2 := &round10QueryState{quoteRelationships: []storagemodels.QuoteRelationship{
 			func() storagemodels.QuoteRelationship {
@@ -368,19 +534,13 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handlerDel.HandleDeleteQuotePostLift(ctxDel))
 	})
 
-	t.Run("get_quote_permissions_validation_and_ok", func(t *testing.T) {
+	t.Run("get_quote_permissions_validation_and_not_implemented", func(t *testing.T) {
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts//quote_permissions", nil, nil, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusBadRequest)(handler.HandleGetQuotePermissionsLift(ctxMissing))
-
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
-		require.NoError(t, err)
-		ctx.Params["id"] = "alice"
-
-		requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctx))
 	})
 
-	t.Run("update_quote_permissions_unauthorized_scope_and_ok", func(t *testing.T) {
+	t.Run("update_quote_permissions_auth_validation_and_not_implemented", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", nil, nil, apimodels.UpdateQuotePermissionsRequest{})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleUpdateQuotePermissionsLift(ctx))
@@ -405,23 +565,20 @@ func TestQuotes_Round12_DeleteAndPermissions_Coverage(t *testing.T) {
 			BlockList:      []string{"bob"},
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctx3))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctx3))
 
 		ctx4 := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/accounts/quote_permissions",
 			map[string]string{"Authorization": "Bearer " + writeToken, "Content-Type": "application/x-www-form-urlencoded"},
 			nil,
 			[]byte(`{"allow_followers":true,"allow_mentioned":false}`),
 		)
-		requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctx4))
+		requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctx4))
 	})
 
 	t.Run("helper_functions", func(t *testing.T) {
-		_ = handler.convertQuoteToAPI(nil, map[string]any{"id": "q"})
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1/quote/q1", nil, nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, handler.deleteQuoteRelationship(ctx, &storagemodels.QuoteRelationship{QuoterNoteID: "q1", TargetNoteID: "s1"}))
 		require.NoError(t, handler.deleteQuoteRelationship(ctx, nil))
-		_, err = handler.getQuotesForStatus(ctx, "s1", 0, 0)
-		require.NoError(t, err)
 	})
 }

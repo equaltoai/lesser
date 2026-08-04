@@ -1,7 +1,7 @@
 # lesser: Lift + DynamORM Sunset → AppTheory + TableTheory Replacement Plan
 
 Generated: 2026-01-31
-Updated: 2026-02-02
+Updated: 2026-08-01 (historical pin guidance clarified)
 
 This document defines the complete, codebase-wide replacement of:
 
@@ -53,36 +53,17 @@ and tests cleanly with Lift/DynamORM absent.
   - `./lesser test` passes
   - `make verify` passes
 
-## Destination (pinned)
+## Historical destination snapshot (2026-02-02)
 
-These are the pinned destination frameworks for this repo. Keep these versions pinned until an intentional upgrade.
+This section records the framework targets used during the completed Lift/DynamORM migration. It is not live pin or
+copy/paste installation guidance. The original targets were AppTheory `v1.6.0` and TableTheory `v1.8.3`, using their
+pre-v2 module paths.
 
-### AppTheory (pinned)
-- Go module: `github.com/theory-cloud/apptheory@v1.6.0`
-- Go runtime import: `github.com/theory-cloud/apptheory/runtime`
-- Docs entrypoints:
-  - `docs/getting-started.md`
-  - `docs/migration/from-lift.md`
-- Copy/paste:
-  - `go get github.com/theory-cloud/apptheory@v1.6.0`
-- Pinned docs:
-  - `https://github.com/theory-cloud/AppTheory/blob/v1.6.0/docs/getting-started.md`
-  - `https://github.com/theory-cloud/AppTheory/blob/v1.6.0/docs/migration/from-lift.md`
-
-### TableTheory (pinned)
-- Go module: `github.com/theory-cloud/tabletheory@v1.8.3`
-- Docs entrypoints:
-  - `docs/getting-started.md`
-  - `docs/api-reference.md`
-  - `docs/migration-guide.md`
-  - `docs/struct-definition-guide.md` (tag rules)
-- Copy/paste:
-  - `go get github.com/theory-cloud/tabletheory@v1.8.3`
-- Pinned docs:
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/getting-started.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/api-reference.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/migration-guide.md`
-  - `https://github.com/theory-cloud/TableTheory/blob/v1.8.3/docs/struct-definition-guide.md`
+For current dependency truth, use the repository's `go.mod` and `infra/cdk/go.mod`. As of 2026-08-01, the root module
+pins AppTheory `github.com/theory-cloud/apptheory/v3` at `v3.0.1` and TableTheory
+`github.com/theory-cloud/tabletheory/v3` at `v3.0.2`; the CDK module has its own AppTheory CDK pin. See
+`docs/planning/theory-cloud-framework-leverage-roadmap.md` for ongoing framework guidance. Any future upgrade must be
+intentional and update the module manifests rather than reuse commands from this historical migration plan.
 
 ## Repo inventory (historical snapshot, 2026-01-31)
 
@@ -215,7 +196,10 @@ Known import sites at time of drafting (pre-migration):
 
 Status (as of 2026-02-02): `rg -n "github.com/aws/aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .` returns 0 results.
 
-## Execution steps (single branch / single PR)
+## Historical execution steps (2026-01-31; completed)
+
+These steps preserve the original migration record only; use `go.mod` and `infra/cdk/go.mod` as the source of truth for
+current module paths and pins, and do not apply the pre-v2 versions below to today's tree.
 
 ### 0) Pre-flight
 1. Create a branch dedicated to the replacement.

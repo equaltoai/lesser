@@ -15,8 +15,8 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	theorydbErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	theorymocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	theorymocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 )
 
 func TestEnsureWalletNotLinkedElsewhere_AllowsNotFound(t *testing.T) {

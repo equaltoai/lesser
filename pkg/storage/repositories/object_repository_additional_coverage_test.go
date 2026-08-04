@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -114,6 +114,46 @@ func TestObjectRepository_GetOrCreateStatusMetadata_CreatesOnNotFound(t *testing
 	metadata, err := repo.getOrCreateStatusMetadata(ctx, "note-1")
 	require.NoError(t, err)
 	require.NotNil(t, metadata)
+}
+
+func TestObjectRepositoryGetQuoteTypesUsesOneBatchRead(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.StatusMetadata")).Return(mockQuery).Once()
+	mockQuery.On("BatchGet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		keys := args.Get(0).([]any)
+		require.Len(t, keys, 3)
+		rows := args.Get(1).(*[]*models.StatusMetadata)
+		*rows = []*models.StatusMetadata{
+			{StatusID: "one", QuoteType: "followers"},
+			{StatusID: "two", QuoteType: "disabled"},
+			nil,
+			{},
+		}
+	}).Return(nil).Once()
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	quoteTypes, err := repo.GetQuoteTypes(context.Background(), []string{"one", "two", "missing", "one"})
+	require.NoError(t, err)
+	require.Equal(t, "followers", quoteTypes["one"])
+	require.Equal(t, "disabled", quoteTypes["two"])
+	require.Equal(t, models.VisibilityPublic, quoteTypes["missing"])
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+
+	empty, err := repo.GetQuoteTypes(context.Background(), []string{"", " "})
+	require.NoError(t, err)
+	require.Empty(t, empty)
+
+	errorDB := new(mocks.MockDB)
+	errorQuery := new(mocks.MockQuery)
+	errorDB.On("WithContext", mock.Anything).Return(errorDB).Once()
+	errorDB.On("Model", mock.AnythingOfType("*models.StatusMetadata")).Return(errorQuery).Once()
+	errorQuery.On("BatchGet", mock.Anything, mock.Anything).Return(dynamormErrors.ErrInvalidModel).Once()
+	errorRepo := NewObjectRepository(errorDB, "test-table", "example.com", zap.NewNop())
+	_, err = errorRepo.GetQuoteTypes(context.Background(), []string{"one"})
+	require.Error(t, err)
 }
 
 func TestObjectRepository_CreateObject_PreservesRemoteNoteFields(t *testing.T) {
@@ -438,7 +478,7 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 		require.NoError(t, repo.WithdrawQuote(ctx, "missing-quote-note"))
 	})
 
-	t.Run("GetQuoteType not found returns disabled", func(t *testing.T) {
+	t.Run("GetQuoteType not found applies no per-note restriction", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("First", mock.AnythingOfType("*models.StatusMetadata")).Return(dynamormErrors.ErrItemNotFound).Once()
@@ -448,7 +488,7 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 
 		quoteType, err := repo.GetQuoteType(ctx, "note-1")
 		require.NoError(t, err)
-		require.Equal(t, "disabled", quoteType)
+		require.Equal(t, models.VisibilityPublic, quoteType)
 	})
 
 	t.Run("IsWithdrawnFromQuotes not found returns false", func(t *testing.T) {

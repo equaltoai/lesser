@@ -22,9 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -1894,6 +1894,63 @@ func TestService_round15_view_permissions_and_timelines(t *testing.T) {
 	canView, err := service.checkViewPermissions(ctx, &models.Status{Visibility: "weird"}, "bob")
 	require.NoError(t, err)
 	assert.False(t, canView)
+}
+
+func TestService_round15_reblog_enforces_viewer_access(t *testing.T) {
+	service, _, _, _, _ := newNotesServiceHarness(t)
+	ctx := context.Background()
+	originalRepo := service.noteRepo
+	service.noteRepo = &delegatingStatusRepo{
+		StatusRepository: originalRepo,
+		getStatus: func(ctx context.Context, statusID string) (*models.Status, error) {
+			if statusID == "missing-status" {
+				return nil, pkgerrors.ItemNotFound("status")
+			}
+			return originalRepo.GetStatus(ctx, statusID)
+		},
+	}
+
+	relationships := testingmocks.NewMockRelationshipRepository()
+	service.relationshipRepo = relationships
+
+	relationships.On("IsFollowing", mock.Anything, "mallory", "alice").Return(false, nil).Once()
+	result, err := service.ReblogNote(ctx, &ReblogNoteCommand{
+		StatusID:    "private-status",
+		RebloggerID: "mallory",
+	})
+	require.ErrorIs(t, err, ErrStatusNotFound)
+	require.Nil(t, result, "visibility denial must not return the protected status content")
+
+	relationships.On("IsFollowing", mock.Anything, "bob", "alice").Return(true, nil).Once()
+	result, err = service.ReblogNote(ctx, &ReblogNoteCommand{
+		StatusID:    "private-status",
+		RebloggerID: "bob",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "hello", result.Status.Content)
+
+	result, err = service.ReblogNote(ctx, &ReblogNoteCommand{
+		StatusID:    "direct-mentionbob",
+		RebloggerID: "bob",
+	})
+	require.ErrorIs(t, err, ErrReblogStatus)
+	require.Nil(t, result)
+
+	deletedResult, deletedErr := service.ReblogNote(ctx, &ReblogNoteCommand{
+		StatusID:    "deleted-status",
+		RebloggerID: "bob",
+	})
+	missingResult, missingErr := service.ReblogNote(ctx, &ReblogNoteCommand{
+		StatusID:    "missing-status",
+		RebloggerID: "bob",
+	})
+	require.ErrorIs(t, deletedErr, ErrStatusNotFound)
+	require.ErrorIs(t, missingErr, ErrStatusNotFound)
+	require.Nil(t, deletedResult)
+	require.Nil(t, missingResult)
+
+	relationships.AssertExpectations(t)
 }
 
 func TestService_round15_engagements_bookmarks_pins_mutes(t *testing.T) {

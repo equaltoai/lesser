@@ -27,7 +27,7 @@ func TestRound12SubscriptionManagerWrapper_StartStopAndDelegates(t *testing.T) {
 
 	ctx = WithConnectionID(ctx, "conn-1")
 
-	_, err := sm.SubscribeToTimelineUpdates(ctx, "alice", model.TimelineTypeHome)
+	_, err := sm.SubscribeToTimelineUpdates(ctx, "alice", model.TimelineTypeHome, nil, nil, nil)
 	require.NoError(t, err)
 
 	threshold := 10

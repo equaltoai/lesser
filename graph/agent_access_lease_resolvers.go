@@ -24,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 const (

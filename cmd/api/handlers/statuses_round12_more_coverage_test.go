@@ -91,7 +91,7 @@ func TestStatusesRound12_CreateStatusAsAgent(t *testing.T) {
 			OriginalID: "orig1",
 			Reason:     "fix",
 		},
-		AgentAttribution: &apimodels.AgentPostAttribution{
+		AgentAttribution: &apimodels.AgentPostAttributionInput{
 			TriggerType:    "mention",
 			TriggerDetails: "why",
 			MemoryCitations: []string{

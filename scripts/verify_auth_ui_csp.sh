@@ -2,107 +2,128 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${ROOT_DIR}"
+AUTH_UI_DIR="${ROOT_DIR}/auth-ui"
+CSP_SOURCE="${ROOT_DIR}/infra/cdk/constructs/frontend_response_headers.go"
 
-AUTH_UI_SOURCE_PATHS=(
-  auth-ui/src
-  auth-ui/public
-  auth-ui/package.json
-  auth-ui/pnpm-lock.yaml
-  auth-ui/astro.config.mjs
-  auth-ui/tsconfig.json
-  auth-ui/components.json
-)
-
-CSP_HASH_PATHS=(
-  infra/cdk/constructs/frontend_response_headers.go
-)
-
-format_commit() {
-  git log -1 --format='%h %cs %s' -- "$@"
-}
-
-latest_commit() {
-  git log -1 --format='%H' -- "$@"
-}
-
-untracked_auth_ui_sources() {
-  git ls-files --others --exclude-standard -- "${AUTH_UI_SOURCE_PATHS[@]}"
-}
-
-ensure_history_for_ancestry_check() {
-  if [[ "$(git rev-parse --is-shallow-repository)" != "true" ]]; then
-    return
+for tool in node corepack; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "${tool} is required to build auth-ui and verify its CSP hashes" >&2
+    exit 1
   fi
+done
 
-  echo "Repository is shallow; fetching history for auth UI CSP freshness check"
-  git fetch --unshallow --quiet || git fetch --depth=1000 --quiet
+node -e '
+  const major = Number(process.versions.node.split(".")[0]);
+  if (major < 20) {
+    console.error(`auth-ui requires Node >=20 (found ${process.version})`);
+    process.exit(1);
+  }
+'
+
+node --test "${ROOT_DIR}/scripts/verify_auth_ui_csp.test.mjs"
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "${tmp_dir}"' EXIT
+expected_hashes="${tmp_dir}/expected"
+built_hashes="${tmp_dir}/built"
+
+echo "==> Building auth UI from the pinned pnpm lockfile"
+rm -rf "${AUTH_UI_DIR}/dist"
+(
+  cd "${AUTH_UI_DIR}"
+  corepack pnpm install --frozen-lockfile
+  corepack pnpm build
+)
+
+echo "==> Comparing emitted inline content with CloudFront CSP hashes"
+node - "${ROOT_DIR}" "${CSP_SOURCE}" "${expected_hashes}" "${built_hashes}" <<'NODE'
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const [rootDir, cspSourcePath, expectedPath, builtPath] = process.argv.slice(2);
+
+function uniqueSorted(values) {
+  return [...new Set(values)].sort();
 }
 
-fail_stale_hashes() {
-  cat >&2 <<EOF
-auth UI source is newer than the CloudFront CSP hash definitions.
-
-Latest auth UI source change:
-  $(format_commit "${AUTH_UI_SOURCE_PATHS[@]}")
-
-Latest CSP hash definition change:
-  $(format_commit "${CSP_HASH_PATHS[@]}")
-
-Refresh the auth UI CSP hash definitions in:
-  ${CSP_HASH_PATHS[*]}
-
-Then rerun:
-  bash scripts/verify_auth_ui_csp.sh
-EOF
-  exit 1
+function hashesFromGoFunction(source, functionName) {
+  const signature = `func ${functionName}() []string {`;
+  const start = source.indexOf(signature);
+  if (start === -1) {
+    throw new Error(`could not find ${functionName} in ${cspSourcePath}`);
+  }
+  const end = source.indexOf("\n}\n", start);
+  if (end === -1) {
+    throw new Error(`could not find the end of ${functionName} in ${cspSourcePath}`);
+  }
+  return uniqueSorted(source.slice(start, end).match(/sha256-[A-Za-z0-9+/]+={0,2}/g) || []);
 }
 
-echo "==> Verifying auth UI CSP hash freshness"
+function htmlFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return htmlFiles(entryPath);
+    }
+    return entry.isFile() && entry.name.endsWith(".html") ? [entryPath] : [];
+  });
+}
 
-ensure_history_for_ancestry_check
+function sha256CSP(content) {
+  return `sha256-${crypto.createHash("sha256").update(content, "utf8").digest("base64")}`;
+}
 
-auth_ui_commit="$(latest_commit "${AUTH_UI_SOURCE_PATHS[@]}")"
-csp_commit="$(latest_commit "${CSP_HASH_PATHS[@]}")"
+const goSource = fs.readFileSync(cspSourcePath, "utf8");
+const expected = [
+  ...hashesFromGoFunction(goSource, "authUIInlineScriptHashes").map((hash) => `script\t${hash}`),
+  ...hashesFromGoFunction(goSource, "authUIInlineStyleHashes").map((hash) => `style\t${hash}`),
+].sort();
 
-if [[ -z "${auth_ui_commit}" ]]; then
-  echo "could not find a git commit for auth UI source paths" >&2
-  exit 1
-fi
-if [[ -z "${csp_commit}" ]]; then
-  echo "could not find a git commit for auth UI CSP hash paths" >&2
-  exit 1
-fi
+const distDir = path.join(rootDir, "auth-ui", "dist");
+if (!fs.existsSync(distDir)) {
+  throw new Error(`auth-ui build did not create ${distDir}`);
+}
 
-if ! git merge-base --is-ancestor "${auth_ui_commit}" "${csp_commit}"; then
-  fail_stale_hashes
-fi
+const scripts = [];
+const styles = [];
+for (const htmlPath of htmlFiles(distDir)) {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (!/(^|\s)src\s*=/i.test(match[1])) {
+      scripts.push(sha256CSP(match[2]));
+    }
+  }
+  for (const match of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    styles.push(sha256CSP(match[1]));
+  }
+}
 
-untracked_sources="$(untracked_auth_ui_sources)"
-if [[ -n "${untracked_sources}" ]]; then
-  cat >&2 <<EOF
-Untracked auth UI source/config files are present, so CSP freshness cannot be proven:
-${untracked_sources}
+const built = [
+  ...uniqueSorted(scripts).map((hash) => `script\t${hash}`),
+  ...uniqueSorted(styles).map((hash) => `style\t${hash}`),
+].sort();
 
-Track or remove these files, and refresh CSP hash definitions if they can affect generated inline script/style snippets.
+if (built.length === 0) {
+  throw new Error("auth-ui build emitted no inline script or style content to verify");
+}
+
+fs.writeFileSync(expectedPath, `${expected.join("\n")}\n`);
+fs.writeFileSync(builtPath, `${built.join("\n")}\n`);
+NODE
+
+if ! diff -u \
+  --label "CloudFront CSP hashes (frontend_response_headers.go)" \
+  --label "auth-ui production build hashes" \
+  "${expected_hashes}" "${built_hashes}"; then
+  cat >&2 <<'EOF'
+
+auth-ui's production build does not match the CloudFront CSP allowlist.
+Update authUIInlineScriptHashes/authUIInlineStyleHashes in
+infra/cdk/constructs/frontend_response_headers.go to exactly match the build,
+then rerun: bash scripts/verify_auth_ui_csp.sh
 EOF
   exit 1
 fi
 
-if {
-  ! git diff --quiet -- "${AUTH_UI_SOURCE_PATHS[@]}" ||
-    ! git diff --cached --quiet -- "${AUTH_UI_SOURCE_PATHS[@]}"
-} && {
-  git diff --quiet -- "${CSP_HASH_PATHS[@]}" &&
-    git diff --cached --quiet -- "${CSP_HASH_PATHS[@]}"
-}; then
-  cat >&2 <<EOF
-Uncommitted auth UI source changes are present without corresponding CSP hash definition changes.
-
-If these auth UI changes can affect generated inline script/style snippets, refresh:
-  ${CSP_HASH_PATHS[*]}
-EOF
-  exit 1
-fi
-
-echo "✅ Auth UI CSP hashes are at least as new as auth-ui source"
+echo "✅ Auth UI production build matches the CloudFront CSP hash allowlist"

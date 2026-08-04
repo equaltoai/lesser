@@ -12,7 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -69,15 +69,18 @@ func testAppTheoryClaims() *Claims {
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject: "subject-1",
 		},
-		Username:       "Alice",
-		Scopes:         []string{"read", "write"},
-		ClientID:       "web",
-		ClientClass:    "cli",
-		SessionID:      "session-1",
-		AgentSessionID: "agent-session-1",
-		IsAgent:        true,
-		AgentType:      "assistant",
-		DelegatedBy:    "@owner",
+		Username:               "Alice",
+		Scopes:                 []string{"read", "write"},
+		ClientID:               "web",
+		ClientClass:            "cli",
+		SessionID:              "session-1",
+		AgentSessionID:         "agent-session-1",
+		IsAgent:                true,
+		AgentType:              "assistant",
+		DelegatedBy:            "@owner",
+		DelegationPrincipal:    "owner",
+		DelegationAgent:        "Alice",
+		DelegationContentClass: DelegationContentClassNote,
 	}
 }
 

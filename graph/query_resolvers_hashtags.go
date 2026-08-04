@@ -115,6 +115,11 @@ func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, fir
 	}
 
 	statusByID := r.hydrateHashtagTimelineStatuses(ctx, statusRepo, posts, hashtag)
+	statuses := make([]*models.Status, 0, len(statusByID))
+	for _, status := range statusByID {
+		statuses = append(statuses, status)
+	}
+	r.prefetchQuoteControls(ctx, statuses)
 	requireMedia := mediaOnly != nil && *mediaOnly && statusRepo != nil
 	edges := r.buildHashtagTimelineEdges(ctx, posts, statusByID, requireMedia)
 

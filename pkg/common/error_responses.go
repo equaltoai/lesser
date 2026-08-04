@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 // StandardErrorResponse represents a standardized API error response

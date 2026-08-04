@@ -8,7 +8,9 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -108,6 +110,60 @@ func TestRound12MutationResolvers_Notes_CreateDeleteAndSchedule(t *testing.T) {
 	require.NotNil(t, storageRepo.Status())
 }
 
+func TestCreateNoteDelegationContentClassMatchesEffectiveVisibility(t *testing.T) {
+	tests := []struct {
+		name         string
+		visibility   model.Visibility
+		contentClass string
+		allowed      bool
+	}{
+		{name: "note credential cannot attest direct message", visibility: model.VisibilityDirect, contentClass: auth.DelegationContentClassNote},
+		{name: "direct message credential attests direct message", visibility: model.VisibilityDirect, contentClass: auth.DelegationContentClassDirectMessage, allowed: true},
+		{name: "note credential attests public note", visibility: model.VisibilityPublic, contentClass: auth.DelegationContentClassNote, allowed: true},
+		{name: "note credential attests unlisted note", visibility: model.VisibilityUnlisted, contentClass: auth.DelegationContentClassNote, allowed: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver, storageRepo := newRound12GraphResolver(t)
+			require.NoError(t, storageRepo.User().CreateUser(context.Background(), &storage.User{
+				Username: "agent", IsAgent: true, AgentOwner: "owner",
+			}))
+
+			claims := &auth.Claims{
+				Username: "agent", IsAgent: true, DelegatedBy: "@owner",
+				DelegationPrincipal: "owner", DelegationAgent: "agent",
+				DelegationContentClass: test.contentClass,
+			}
+			ctx := context.WithValue(context.Background(), common.ContextKeyClaims, claims)
+			payload, err := resolver.Mutation().CreateNote(ctx, model.CreateNoteInput{
+				Content: "delegation visibility parity", Visibility: test.visibility,
+			})
+
+			restContentClass := auth.DelegationContentClassForVisibility(postingVisibilityFromGraphQL(test.visibility))
+			_, _, restDecisionErr := auth.ValidateDelegationAttestation(claims, restContentClass)
+			require.Equal(t, test.allowed, restDecisionErr == nil, "REST and GraphQL must classify the same operation identically")
+			if !test.allowed {
+				require.ErrorIs(t, restDecisionErr, auth.ErrInvalidDelegationCredential)
+				require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+				require.Nil(t, payload)
+				count, countErr := storageRepo.Status().CountStatusesByAuthor(ctx, "agent")
+				require.NoError(t, countErr)
+				require.Zero(t, count, "a rejected credential must not persist approved_by or any status")
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, payload)
+			status, ok := payload.Activity.Object.(*models.Status)
+			require.True(t, ok)
+			require.NotNil(t, status.Note)
+			require.NotNil(t, status.Note.AgentAttribution)
+			require.Equal(t, resolver.Config.ActorURL("owner"), status.Note.AgentAttribution.ApprovedBy)
+		})
+	}
+}
+
 func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) {
 	metadata, err := agents.SetDroneWorkflowMetadata(nil, &agents.DroneWorkflowState{
 		CurrentPhase: agents.DroneWorkflowPhaseReview,
@@ -125,7 +181,7 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 		AgentCapabilities: &agents.Capabilities{
 			RequiresApproval: true,
 		},
-	}, nil).Once()
+	}, nil).Twice()
 
 	resolver := &mutationResolver{&Resolver{
 		Config:  &config.Config{Domain: "example.com"},
@@ -143,7 +199,7 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 		TriggerType:     &triggerType,
 		TriggerDetails:  &triggerDetails,
 		MemoryCitations: []string{"status-1", "status-1"},
-	})
+	}, auth.DelegationContentClassNote)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Equal(t, "mention", got.TriggerType)
@@ -159,5 +215,19 @@ func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) 
 	require.Equal(t, agents.DroneContinuityStatePlanned, got.ContinuityState)
 	require.Contains(t, got.ContinuitySummary, "@agent")
 	require.Equal(t, "Graduating", got.ModerationLabel)
+	require.Empty(t, got.ApprovedBy)
+
+	verified, err := resolver.buildAgentPostAttribution(context.Background(), &auth.Claims{
+		Username:               "agent",
+		IsAgent:                true,
+		DelegatedBy:            "@owner",
+		Scopes:                 []string{"write"},
+		DelegationPrincipal:    "owner",
+		DelegationAgent:        "agent",
+		DelegationContentClass: auth.DelegationContentClassNote,
+	}, nil, auth.DelegationContentClassNote)
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/users/owner", verified.DelegatedBy)
+	require.Equal(t, "https://example.com/users/owner", verified.ApprovedBy)
 	mockUserRepo.AssertExpectations(t)
 }

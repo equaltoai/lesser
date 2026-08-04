@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -10,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -224,6 +225,8 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 
 		updateActivity.Actor = owner
 		require.NoError(t, env.handler.verifyUpdateAuthorization(context.Background(), updateActivity, note))
+		updateActivity.Actor = strings.ToUpper("https://remote.example") + "/users/bob/"
+		require.NoError(t, env.handler.verifyUpdateAuthorization(context.Background(), updateActivity, note))
 		require.NoError(t, env.handler.verifyUpdateAuthorization(context.Background(), updateActivity, &activitypub.Article{
 			Note: activitypub.Note{AttributedTo: owner},
 		}))
@@ -233,6 +236,8 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 		require.Error(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, note))
 
 		deleteActivity.Actor = owner
+		require.NoError(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, note))
+		deleteActivity.Actor = strings.ToUpper("https://remote.example") + "/users/bob/"
 		require.NoError(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, note))
 		require.NoError(t, env.handler.verifyDeleteAuthorization(context.Background(), deleteActivity, &activitypub.Article{
 			Note: activitypub.Note{AttributedTo: owner},

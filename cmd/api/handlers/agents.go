@@ -18,7 +18,7 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 const (
@@ -110,9 +110,15 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	if resp != nil || err != nil {
 		return resp, err
 	}
+	if req.ContentClass != "" && !strings.EqualFold(
+		strings.TrimPrefix(strings.TrimSpace(account.User.AgentOwner), "@"),
+		strings.TrimSpace(ownerClaims.Username),
+	) {
+		return common.RespondForbidden(ctx, "only the agent principal may issue a scoped delegation credential")
+	}
 
 	userAgent, _ := h.getDeviceInfo(ctx)
-	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL, req.DeviceLabel, userAgent)
+	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL, req.DeviceLabel, userAgent, ownerClaims.Username, req.ContentClass)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
@@ -143,6 +149,7 @@ func parseAgentDelegationRequest(ctx *apptheory.Context) (*apimodels.AgentDelega
 	req.AgentUsername = strings.TrimSpace(req.AgentUsername)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
 	req.DeviceLabel = strings.TrimSpace(req.DeviceLabel)
+	req.ContentClass = strings.ToLower(strings.TrimSpace(req.ContentClass))
 
 	return &req, nil, nil
 }
@@ -150,6 +157,12 @@ func parseAgentDelegationRequest(ctx *apptheory.Context) (*apimodels.AgentDelega
 func (h *Handler) validateAgentDelegationRequest(ctx *apptheory.Context, req *apimodels.AgentDelegationRequest) (*apptheory.Response, error) {
 	if err := common.ValidateUsernameParamID(req.AgentUsername); err != nil {
 		return common.RespondValidationError(ctx, err)
+	}
+	if _, err := auth.NormalizeDelegationContentClass(req.ContentClass); err != nil {
+		return common.RespondValidationError(ctx, common.ValidationError{
+			Field:   "content_class",
+			Message: "must be one of: note, direct_message",
+		})
 	}
 
 	if h.mastodonLogic != nil {
@@ -392,9 +405,17 @@ func (h *Handler) createDelegatedAgentAccount(
 	return account, nil, nil
 }
 
-func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration, deviceLabel, userAgent string) (apimodels.OAuthTokenResponse, error) {
+func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration, deviceLabel, userAgent, principal, contentClass string) (apimodels.OAuthTokenResponse, error) {
 	if strings.TrimSpace(deviceLabel) == "" {
 		deviceLabel = userAgent
+	}
+	delegation := auth.DelegationCredentialClaims{}
+	if strings.TrimSpace(contentClass) != "" {
+		delegation = auth.DelegationCredentialClaims{
+			Principal:    principal,
+			Agent:        agentUsername,
+			ContentClass: contentClass,
+		}
 	}
 	bundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
 		Username:           agentUsername,
@@ -404,6 +425,7 @@ func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername
 		RefreshIdleTTL:     accessTTL,
 		RefreshAbsoluteTTL: accessTTL,
 		DeviceLabel:        deviceLabel,
+		Delegation:         delegation,
 	})
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err

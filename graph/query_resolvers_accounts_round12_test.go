@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 )
@@ -39,11 +40,6 @@ func TestRound12QueryResolvers_Accounts_Basics(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 
-	perms, err := q.AccountQuotePermissions(context.Background(), "alice")
-	require.NoError(t, err)
-	require.NotNil(t, perms)
-	require.NotNil(t, perms.BlockList)
-
 	emojis, err := q.CustomEmojis(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, emojis)
@@ -64,6 +60,45 @@ func TestRound12QueryResolvers_Accounts_Basics(t *testing.T) {
 	endorsements, err := q.Endorsements(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, endorsements)
+}
+
+func TestAccountQuotePermissionsAlwaysReturnsIdenticalNotImplementedError(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	q := resolver.Query()
+	ctx := round12AuthContext("alice")
+
+	targets := []string{
+		"alice",          // viewer's own account
+		"bob",            // another account
+		"does-not-exist", // nonexistent account
+	}
+	var expectedShape struct {
+		message string
+		code    apperrors.ErrorCode
+		status  int
+	}
+	for i, target := range targets {
+		t.Run(target, func(t *testing.T) {
+			permissions, err := q.AccountQuotePermissions(ctx, target)
+			require.Nil(t, permissions)
+			require.Error(t, err)
+
+			appErr, ok := apperrors.AsAppError(err)
+			require.True(t, ok)
+			actualShape := struct {
+				message string
+				code    apperrors.ErrorCode
+				status  int
+			}{appErr.Message, appErr.Code, appErr.HTTPStatusCode}
+			if i == 0 {
+				expectedShape = actualShape
+			}
+			require.Equal(t, expectedShape, actualShape)
+			require.Equal(t, "account quote permissions are not implemented", appErr.Message)
+			require.Equal(t, apperrors.CodeInternal, appErr.Code)
+			require.Equal(t, 500, appErr.HTTPStatusCode)
+		})
+	}
 }
 
 func TestRound12QueryResolvers_Accounts_RemoteActorLookupUsesExactResolution(t *testing.T) {

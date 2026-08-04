@@ -17,10 +17,11 @@ import (
 	commonerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 
@@ -254,6 +255,22 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 		}
 		return common.RespondInternalServerError(ctx)
 	}
+	quotesService := h.registry.Quotes()
+	if quotesService == nil {
+		h.logger.Error("quotes service unavailable while authorizing quote")
+		return common.RespondInternalServerError(ctx)
+	}
+	canQuote, err := quotesService.CheckQuotePermissions(ctx.Context(), username, quoteTarget)
+	if err != nil {
+		h.logger.Error("failed to check quote permissions",
+			zap.String("viewer", username),
+			zap.String("target_author", quoteTarget.AuthorUsername),
+			zap.Error(err))
+		return common.RespondWithAppError(ctx, quotes.ErrCheckQuotePermissions(err))
+	}
+	if !canQuote {
+		return common.RespondWithAppError(ctx, quotes.ErrNotAuthorizedToQuote)
+	}
 	if quoteTarget.Note != nil && strings.TrimSpace(quoteTarget.Note.ID) != "" {
 		objectID = strings.TrimSpace(quoteTarget.Note.ID)
 	}
@@ -267,9 +284,11 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 			ID:   fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), noteID),
 			Type: "Note",
 		},
-		Content:            comment,
-		AttributedTo:       actor.ID,
-		QuoteURL:           objectID,
+		Content:      comment,
+		AttributedTo: actor.ID,
+		QuoteURL:     objectID,
+		// Account and per-note quote permissions were authorized above through the same
+		// QuoteService.CheckQuotePermissions predicate used by GraphQL quote creation.
 		Quoteable:          true,
 		QuoteNotifications: true,
 	}

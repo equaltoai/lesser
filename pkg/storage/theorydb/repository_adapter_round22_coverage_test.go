@@ -8,7 +8,7 @@ import (
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 )
 
 type round22Entity struct {

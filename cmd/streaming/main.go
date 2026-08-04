@@ -23,11 +23,12 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/theory-cloud/apptheory/v2/pkg/streamer"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -751,6 +752,13 @@ func (sh *StreamingHandler) resolveCanonicalStreamSubscription(ctx context.Conte
 	case "public":
 		if stream == streaming.PublicStream || stream == streaming.PublicLocalStream || stream == streaming.PublicRemoteStream {
 			return stream, nil
+		}
+		if len(parts) == 3 && parts[1] == "actor" {
+			username := strings.TrimSpace(parts[2])
+			if err := activitypub.ValidateUsername(username); err != nil {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			return streaming.PublicActorStreamName(username), nil
 		}
 		return "", pkgErrors.StreamingInvalidStream()
 	case streaming.HashtagStreamPrefix:

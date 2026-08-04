@@ -1184,6 +1184,8 @@ components:
                     type: string
                 bio:
                     type: string
+                content_class:
+                    type: string
                 device_label:
                     type: string
                 display_name:
@@ -1403,6 +1405,8 @@ components:
         AgentPostAttribution:
             additionalProperties: false
             properties:
+                approved_by:
+                    type: string
                 constraints:
                     items:
                         type: string
@@ -1435,6 +1439,18 @@ components:
                     type: array
                 soul_agent_id:
                     type: string
+                trigger_details:
+                    type: string
+                trigger_type:
+                    type: string
+            type: object
+        AgentPostAttributionInput:
+            additionalProperties: false
+            properties:
+                memory_citations:
+                    items:
+                        type: string
+                    type: array
                 trigger_details:
                     type: string
                 trigger_type:
@@ -2370,7 +2386,7 @@ components:
             properties:
                 agent_attribution:
                     anyOf:
-                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - $ref: '#/components/schemas/AgentPostAttributionInput'
                         - type: "null"
                 in_reply_to_id:
                     description: Reply parent reference. Accepts a local status ID or a canonical remote status URL. Canonical remote URLs are resolved locally first and materialized on the create path when needed. Direct replies remain conversations-owned.
@@ -4620,58 +4636,6 @@ components:
                 - data
                 - subscription
             type: object
-        QuotePermissionsResponse:
-            additionalProperties: false
-            properties:
-                allow_followers:
-                    type: boolean
-                allow_mentioned:
-                    type: boolean
-                allow_public:
-                    type: boolean
-                block_list:
-                    items:
-                        type: string
-                    type: array
-            required:
-                - allow_followers
-                - allow_mentioned
-                - allow_public
-                - block_list
-            type: object
-        QuoteStatusAccount:
-            additionalProperties: false
-            properties:
-                id:
-                    type: string
-                username:
-                    anyOf:
-                        - type: string
-                        - type: "null"
-            required:
-                - id
-            type: object
-        QuoteStatusSummary:
-            additionalProperties: false
-            properties:
-                account:
-                    $ref: '#/components/schemas/QuoteStatusAccount'
-                content:
-                    type: string
-                created_at:
-                    type: string
-                id:
-                    type: string
-            required:
-                - account
-                - content
-                - created_at
-                - id
-            type: object
-        QuoteStatusSummaryList:
-            items:
-                $ref: '#/components/schemas/QuoteStatusSummary'
-            type: array
         RFC3339DateTime:
             format: date-time
             type: string
@@ -7688,6 +7652,8 @@ components:
                                 anyOf:
                                     - additionalProperties: false
                                       properties:
+                                        approved_by:
+                                            type: string
                                         constraints:
                                             items:
                                                 type: string
@@ -9734,22 +9700,14 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote permission reads are not implemented and no settings are retrieved.
             x-lesser-handler: HandleGetQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -10027,22 +9985,14 @@ paths:
                         schema:
                             $ref: '#/components/schemas/UpdateQuotePermissionsRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote permission updates are not implemented and no settings are persisted.
             x-lesser-handler: HandleUpdateQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -18211,42 +18161,16 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateQuotePostRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuoteStatusSummary'
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote creation is not implemented; target IDs are not looked up.
             x-lesser-handler: HandleCreateQuotePostLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -18308,18 +18232,10 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/QuoteStatusSummaryList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "404":
-                    $ref: '#/components/responses/NotFound'
-                "500":
-                    $ref: '#/components/responses/InternalServerError'
+                "501":
+                    description: Quote listing is not implemented; target IDs and quote counts are not looked up.
             x-lesser-handler: HandleGetQuotesOfStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:

@@ -37,25 +37,28 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 
 ### Upstream framework facts verified
 
-- AppTheory latest stable release/tag: `v1.7.0`.
+- On 2026-05-18, the latest stable AppTheory release/tag verified for this investigation was `v1.7.0`.
   - Relevant capabilities: AppSync Lambda resolver support, strict route registration helpers, multi-language CDK/jsii
     constructs including `AppTheoryFunction`, `AppTheoryFunctionAlarms`, `AppTheoryQueueProcessor`,
     `AppTheorySsrSite`, `AppTheoryPathRoutedFrontend`, and existing Rest API / queue / table constructs.
-- TableTheory latest stable release/tag: `v1.8.3`.
+- On 2026-05-18, the latest stable TableTheory release/tag verified for this investigation was `v1.8.3`.
   - Relevant capabilities: Lambda timeout configuration and hardening, encrypted batch retry fixes, audit/security guard
     hardening, pointer `omitempty` preservation.
-- FaceTheory latest stable release: `v3.2.2`.
+- On 2026-05-18, the latest stable FaceTheory release verified for this investigation was `v3.2.2`.
   - Relevant capabilities: dependency pin alignment and Svelte vulnerable peer range exclusions.
-- There is no newer stable framework release beyond the pins applied by the 2026-05-18 AppTheory / FaceTheory
-  refresh.
+- On 2026-05-18, no newer stable framework release had been identified beyond that dated AppTheory / TableTheory /
+  FaceTheory snapshot. These are historical findings; lesser's current pins and client guidance have since advanced as
+  listed below.
 
 ### What is definitely true in lesser today
 
 - post-refresh pins:
-  - root `go.mod`: AppTheory `v1.7.0`, TableTheory `v1.8.3`;
-  - `infra/cdk/go.mod`: AppTheory `v1.7.0`, AWS CDK Go `v2.254.0`, jsii runtime `v1.129.0`;
-  - FaceTheory client-install tests/docs: `v3.2.2` GitHub release asset;
-  - auth UI: Astro `6.3.3`, Svelte `5.55.7`, devalue override `5.8.1`.
+  - root `go.mod`: AppTheory `v2.0.1`, TableTheory `v2.0.5`;
+  - `infra/cdk/go.mod`: AppTheory `cdk-go` `v0.0.0-20260708194537-63e44cc6b4fc`, AWS CDK Go `v2.261.0`,
+    jsii runtime `v1.133.0`;
+  - FaceTheory client-install docs recommend the `v4.0.1` GitHub release asset; client-install validation/tests require
+    dependency presence but do not enforce an exact version or URL;
+  - auth UI: Astro `7.1.0`, Svelte `5.55.7`, devalue override `5.8.1`.
 - The baseline already fixed one CDK/jsii surfaced issue by canonicalizing `LambdaAssetRoot` to an absolute path
   before `Code_FromAsset`.
 - `pkg/storage/theorydb.GetLambdaClient(ctx)` uses `tabletheory.NewLambdaOptimized()` and applies
@@ -109,7 +112,7 @@ local adoption proceeds.
      creates functions directly with native AWS CDK.
    - Verification: synth a representative function behind tests and compare generated CloudFormation for function name,
      architecture, runtime, timeout, memory, role, env, asset path, DLQ, and permissions before broader migration.
-4. **FaceTheory v3.2.2 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
+4. **FaceTheory v4.0.1 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
    - Evidence: `lesser client install` validates that a FaceTheory dependency exists; enforcing an exact dependency URL
      would break local workspace/client development.
    - Verification: docs/tests are enough in lesser; any client-app enforcement belongs in client repos or a non-blocking
@@ -197,7 +200,8 @@ Dependency-maintenance, operational-reliability, framework-consumption, docs. Po
 - Strict AppTheory route registration is adopted for selected surfaces without OpenAPI/GraphQL/federation route drift.
 - CDK function construct adoption either lands with template-parity proof or produces a framework-feedback signal instead
   of a local workaround.
-- FaceTheory v3.2.2 guidance remains backward-compatible for client app authors.
+- FaceTheory client guidance remains backward-compatible as release pins advance (the current recommendation is
+  `v4.0.1`); lesser continues to require dependency presence without enforcing an exact version or URL.
 
 ### Specialist routing
 

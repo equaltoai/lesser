@@ -227,7 +227,7 @@ func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
 	require.NoError(t, err)
 
-	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, 5*time.Minute, "", "")
+	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, 5*time.Minute, "", "", "", "")
 	require.Error(t, mintErr)
 	require.Empty(t, token.AccessToken)
 	require.Empty(t, token.RefreshToken)
@@ -245,7 +245,7 @@ func TestAgentsRound20_MintDelegatedAgentTokens_BoundsRefreshByRequestedTTL(t *t
 	require.NoError(t, err)
 
 	requestedTTL := 10 * time.Minute
-	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, requestedTTL, "test-runtime", "")
+	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, requestedTTL, "test-runtime", "", "", "")
 	require.NoError(t, mintErr)
 	require.NotEmpty(t, token.RefreshToken)
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/theory-cloud/tabletheory/v2"
+	"github.com/theory-cloud/tabletheory/v3"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"

@@ -23,7 +23,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 
@@ -1253,6 +1253,7 @@ func statusAgentAttributionFromNote(noteAttr *activitypub.AgentPostAttribution) 
 	out.TriggerDetails = strings.TrimSpace(noteAttr.TriggerDetails)
 	out.MemoryCitations = append([]string(nil), noteAttr.MemoryCitations...)
 	out.DelegatedBy = strings.TrimSpace(noteAttr.DelegatedBy)
+	out.ApprovedBy = strings.TrimSpace(noteAttr.ApprovedBy)
 	out.DelegatedByDID = strings.TrimSpace(noteAttr.DelegatedByDID)
 	out.Scopes = append([]string(nil), noteAttr.Scopes...)
 	out.Constraints = append([]string(nil), noteAttr.Constraints...)

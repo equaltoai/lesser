@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 )
 
 // ArticleRepository is a thread-safe in-memory implementation of interfaces.ArticleRepository.

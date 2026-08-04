@@ -155,6 +155,7 @@ type AgentPostAttribution {
   triggerDetails: String
   memoryCitations: [String!]
   delegatedBy: String
+  approvedBy: String
   delegatedByDid: String
   scopes: [String!]
   constraints: [String!]
@@ -172,12 +173,6 @@ input AgentPostAttributionInput {
   triggerType: String
   triggerDetails: String
   memoryCitations: [String!]
-  delegatedBy: String
-  delegatedByDid: String
-  scopes: [String!]
-  constraints: [String!]
-  schemaVersion: String
-  modelId: String
 }
 
 type ContentMap {
@@ -687,6 +682,7 @@ type QuoteContext {
 enum QuotePermission {
   EVERYONE
   FOLLOWERS
+  MENTIONED
   NONE
 }
 
@@ -747,6 +743,7 @@ type SendMessagePayload {
 
 type Conversation {
   id: ID!
+  cursor: Cursor
   lastStatus: Object
   unread: Boolean!
   accounts: [Actor!]!
@@ -1470,7 +1467,8 @@ type UploadMediaPayload {
 type Subscription {
   # Activity streams
   activityStream(types: [ActivityType!]): Activity!
-  timelineUpdates(type: TimelineType!, listId: ID): Object!
+  # ACTOR uses a local actor username and publishes public statuses only.
+  timelineUpdates(type: TimelineType!, actorUsername: String, hashtag: String, listId: ID): Object!
   
   # Notification stream
   notificationStream(types: [String!]): Notification!

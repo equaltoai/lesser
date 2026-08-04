@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/mock"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 )
 
 func newCMSMockDB(t *testing.T) (*dynamormMocks.MockDB, *dynamormMocks.MockQuery) {

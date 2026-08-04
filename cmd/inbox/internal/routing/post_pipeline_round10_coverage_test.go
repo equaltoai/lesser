@@ -8,9 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 )
 
 func setRunAsyncSynchronous(t *testing.T) {
@@ -97,6 +98,50 @@ func TestInboxHandler_Round10_PostPipeline_CreateActivity(t *testing.T) {
 	resp, err := env.handler.handlePostInbox(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 202, resp.Status)
+}
+
+func TestInboxHandler_CreateAttributionMustMatchVerifiedSigner(t *testing.T) {
+	env := newInboxTestEnv(t)
+	setRunAsyncSynchronous(t)
+
+	targetActor, err := env.handler.actorRepository.GetActorByUsername(context.Background(), "alice")
+	require.NoError(t, err)
+
+	activity := map[string]any{
+		"@context": activitypub.Context,
+		"type":     activitypub.CreateType,
+		"id":       "https://remote.example/activities/forged-local-attribution",
+		"actor":    env.remoteActorID,
+		"to":       []string{targetActor.ID},
+		"object": map[string]any{
+			"@context":     activitypub.Context,
+			"id":           "https://remote.example/objects/forged-local-attribution",
+			"type":         activitypub.NoteType,
+			"attributedTo": targetActor.ID,
+			"content":      "forged local author",
+			"to":           []string{targetActor.ID},
+			"cc":           []string{},
+		},
+	}
+	body, err := json.Marshal(activity)
+	require.NoError(t, err)
+
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
+		"Host":            "localhost",
+		"Content-Type":    "application/activity+json",
+		"User-Agent":      "Mastodon/4.0.0",
+		"X-Forwarded-For": "203.0.113.10",
+	}, nil, body)
+	ctx.Params["username"] = "alice"
+
+	// The request is cryptographically signed by the remote actor. The forged
+	// local attributedTo must still be rejected after signature verification.
+	signAppTheoryRequest(t, env, ctx, body)
+
+	resp, err := env.handler.handlePostInbox(ctx)
+	require.Nil(t, resp)
+	require.Error(t, err)
+	require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeForbidden), "unexpected error: %v", err)
 }
 
 func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {
@@ -198,10 +243,12 @@ func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {
 			},
 			Actor: env.remoteActorID,
 			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
 				"id":           objectID,
 				"type":         activitypub.NoteType,
 				"attributedTo": env.remoteActorID,
 				"content":      "updated content",
+				"to":           []any{activitypub.PublicAddress},
 			},
 		}
 		require.NoError(t, env.handler.processRemoteUpdateActivity(ctx, update, env.local))

@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -114,6 +114,60 @@ func TestRound34_ConversationRepository_ListUserConversationStatesByFolderModels
 	require.Len(t, states, 2)
 	require.True(t, hasMore)
 	require.Equal(t, states[1].LegacyListCursor(), nextCursor)
+}
+
+func TestRound34_ConversationRepository_ListUserConversationStatesByFolderModels_MultiPageWalk(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	firstQuery := new(mocks.MockQuery)
+	secondQuery := new(mocks.MockQuery)
+	newest := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+	older := newest.Add(-time.Hour)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(firstQuery).Once()
+	firstQuery.On("Index", "gsi1").Return(firstQuery).Once()
+	firstQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(firstQuery).Once()
+	firstQuery.On("OrderBy", "gsi1SK", "DESC").Return(firstQuery).Once()
+	firstQuery.On("Limit", 2).Return(firstQuery).Once()
+	firstQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.UserConversationState)
+		*dest = []*models.UserConversationState{
+			{ViewerID: "alice", ConversationID: "conv-new", Folder: models.UserConversationFolderInbox, SortAt: newest},
+			{ViewerID: "alice", ConversationID: "conv-old", Folder: models.UserConversationFolderInbox, SortAt: older},
+		}
+	}).Return(nil).Once()
+
+	firstCursor := newest.Format(time.RFC3339Nano) + "#conv-new"
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(secondQuery).Once()
+	secondQuery.On("Index", "gsi1").Return(secondQuery).Once()
+	secondQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(secondQuery).Once()
+	secondQuery.On("OrderBy", "gsi1SK", "DESC").Return(secondQuery).Once()
+	secondQuery.On("Limit", 2).Return(secondQuery).Once()
+	secondQuery.On("Where", "gsi1SK", "<", firstCursor).Return(secondQuery).Once()
+	secondQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.UserConversationState)
+		*dest = []*models.UserConversationState{
+			{ViewerID: "alice", ConversationID: "conv-old", Folder: models.UserConversationFolderInbox, SortAt: older},
+		}
+	}).Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	firstPage, cursor, hasMore, err := repo.listUserConversationStatesByFolderModels(ctx, "alice", models.UserConversationFolderInbox, interfaces.PaginationOptions{Limit: 1})
+	require.NoError(t, err)
+	require.True(t, hasMore)
+	require.Equal(t, firstCursor, cursor)
+	require.Equal(t, []string{"conv-new"}, []string{firstPage[0].ConversationID})
+
+	secondPage, nextCursor, hasMore, err := repo.listUserConversationStatesByFolderModels(ctx, "alice", models.UserConversationFolderInbox, interfaces.PaginationOptions{Limit: 1, Cursor: cursor})
+	require.NoError(t, err)
+	require.False(t, hasMore)
+	require.Empty(t, nextCursor)
+	require.Equal(t, []string{"conv-new", "conv-old"}, []string{firstPage[0].ConversationID, secondPage[0].ConversationID})
+
+	mockDB.AssertExpectations(t)
+	firstQuery.AssertExpectations(t)
+	secondQuery.AssertExpectations(t)
 }
 
 func TestRound34_ConversationRepository_ListUserConversationStatesByFolderModels_MissingAndError(t *testing.T) {

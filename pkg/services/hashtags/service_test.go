@@ -216,11 +216,8 @@ func TestFollowHashtag(t *testing.T) {
 		return event != nil && event.Type == streaming.HashtagFollowed
 	})).Return(nil).Once()
 	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
-		if event == nil {
-			return false
-		}
-		return event.Type == streaming.HashtagFollowed || event.Type == string(streaming.EventTypeHashtagUpdate)
-	})).Return(nil).Twice()
+		return event != nil && event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Once()
 
 	service := newTestService(repo, publisher)
 
@@ -237,6 +234,9 @@ func TestFollowHashtag(t *testing.T) {
 
 	repo.AssertExpectations(t)
 	publisher.AssertExpectations(t)
+	publisher.AssertNotCalled(t, "PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		return event != nil && event.Type == streaming.HashtagFollowed
+	}))
 }
 
 func TestUnfollowHashtag(t *testing.T) {
@@ -267,11 +267,8 @@ func TestUnfollowHashtag(t *testing.T) {
 		return event != nil && event.Type == "hashtag.unfollowed"
 	})).Return(nil).Once()
 	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
-		if event == nil {
-			return false
-		}
-		return event.Type == "hashtag.unfollowed" || event.Type == string(streaming.EventTypeHashtagUpdate)
-	})).Return(nil).Twice()
+		return event != nil && event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Once()
 
 	service := newTestService(repo, publisher)
 
@@ -283,6 +280,9 @@ func TestUnfollowHashtag(t *testing.T) {
 
 	repo.AssertExpectations(t)
 	publisher.AssertExpectations(t)
+	publisher.AssertNotCalled(t, "PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		return event != nil && event.Type == "hashtag.unfollowed"
+	}))
 }
 
 func TestGetFollowedHashtags(t *testing.T) {
@@ -369,11 +369,8 @@ func TestMuteHashtag(t *testing.T) {
 		return event != nil && event.Type == "hashtag.muted"
 	})).Return(nil).Once()
 	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
-		if event == nil {
-			return false
-		}
-		return event.Type == "hashtag.muted" || event.Type == string(streaming.EventTypeHashtagUpdate)
-	})).Return(nil).Twice()
+		return event != nil && event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Once()
 
 	service := newTestService(repo, publisher)
 	result, err := service.MuteHashtag(ctx, "alice", "golang", nil)
@@ -383,6 +380,9 @@ func TestMuteHashtag(t *testing.T) {
 
 	repo.AssertExpectations(t)
 	publisher.AssertExpectations(t)
+	publisher.AssertNotCalled(t, "PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		return event != nil && event.Type == "hashtag.muted"
+	}))
 }
 
 // TestGetHashtagActivity verifies the deprecated GetHashtagActivity method returns empty channel

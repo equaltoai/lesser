@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -28,6 +28,42 @@ func newTestQuoteRepository(mockDB *mocks.MockDB) *QuoteRepository {
 	repo.permissionsRepo.SetCachingService(nil)
 	repo.permissionsRepo.SetEventService(nil)
 	return repo
+}
+
+func TestQuoteRepositoryGetQuotePermissionsBatch(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	repo := newTestQuoteRepository(mockDB)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.QuotePermissions")).Return(mockQuery).Once()
+	mockQuery.On("BatchGet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		require.Len(t, args.Get(0).([]any), 2)
+		rows := args.Get(1).(*[]*models.QuotePermissions)
+		*rows = []*models.QuotePermissions{
+			{Username: "private", AllowFollowers: true, AllowMentioned: true}, nil, {},
+		}
+	}).Return(nil).Once()
+
+	permissions, err := repo.GetQuotePermissionsBatch(context.Background(), []string{"private", "missing", "private", ""})
+	require.NoError(t, err)
+	require.False(t, permissions["private"].AllowPublic)
+	require.True(t, permissions["private"].AllowFollowers)
+	require.True(t, permissions["missing"].AllowPublic)
+	require.True(t, permissions["missing"].AllowFollowers)
+	require.True(t, permissions["missing"].AllowMentioned)
+
+	empty, err := repo.GetQuotePermissionsBatch(context.Background(), []string{"", " "})
+	require.NoError(t, err)
+	require.Empty(t, empty)
+
+	errorDB := new(mocks.MockDB)
+	errorQuery := new(mocks.MockQuery)
+	errorRepo := newTestQuoteRepository(errorDB)
+	errorDB.On("WithContext", mock.Anything).Return(errorDB).Once()
+	errorDB.On("Model", mock.AnythingOfType("*models.QuotePermissions")).Return(errorQuery).Once()
+	errorQuery.On("BatchGet", mock.Anything, mock.Anything).Return(dynamormerrors.ErrInvalidModel).Once()
+	_, err = errorRepo.GetQuotePermissionsBatch(context.Background(), []string{"alice"})
+	require.ErrorIs(t, err, ErrQuotePermissionsGetFailed)
 }
 
 func TestQuoteRepository_round09_relationship_crud_and_queries(t *testing.T) {

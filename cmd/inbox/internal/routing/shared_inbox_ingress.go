@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	apptheory "github.com/theory-cloud/apptheory/v2/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +32,9 @@ func (ih *InboxHandler) handlePostSharedInbox(ctx *apptheory.Context) (*apptheor
 		return nil, err
 	}
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
+		return nil, err
+	}
+	if err := ih.verifyCreateAuthorization(req.Activity); err != nil {
 		return nil, err
 	}
 	if err := ih.validateSharedInboxAddressingAndPrivacy(req); err != nil {

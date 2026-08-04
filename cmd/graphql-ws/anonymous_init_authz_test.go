@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	appTheory "github.com/theory-cloud/apptheory/v2/runtime"
+	appTheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
@@ -333,16 +334,24 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
-	for _, timelineType := range []string{"PUBLIC", "LOCAL"} {
-		t.Run(timelineType, func(t *testing.T) {
-			connectionID := "safe-conn-" + timelineType
-			subscriptionID := "safe-" + timelineType
+	anonymousSafe := map[string]string{
+		"PUBLIC":  "timelineUpdates(type: PUBLIC) { id }",
+		"LOCAL":   "timelineUpdates(type: LOCAL) { id }",
+		"ACTOR":   `timelineUpdates(type: ACTOR, actorUsername: "alice") { id }`,
+		"HASHTAG": `timelineUpdates(type: HASHTAG, hashtag: "golang") { id }`,
+	}
+	for name, field := range anonymousSafe {
+		t.Run(name, func(t *testing.T) {
+			connectionID := "safe-conn-" + name
+			subscriptionID := "safe-" + name
 			server, messages := newAnonymousOperationTestServer(t, resolver, exec, connectionID)
 			wsCtx := &appTheory.WebSocketContext{ConnectionID: connectionID}
+			payload, err := json.Marshal(subscribePayload{Query: "subscription { " + field + " }"})
+			require.NoError(t, err)
 			server.handleSubscribe(context.Background(), wsMessage{
 				ID:      subscriptionID,
 				Type:    "subscribe",
-				Payload: json.RawMessage(`{"query":"subscription { timelineUpdates(type: ` + timelineType + `) { id } }"}`),
+				Payload: payload,
 			}, wsCtx)
 
 			require.Eventually(t, func() bool {
@@ -362,9 +371,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	}
 
 	gated := map[string]string{
-		"ACTOR timeline":            "timelineUpdates(type: ACTOR) { id }",
 		"HOME timeline":             "timelineUpdates(type: HOME) { id }",
-		"HASHTAG timeline":          "timelineUpdates(type: HASHTAG) { id }",
 		"LIST timeline":             `timelineUpdates(type: LIST, listId: "list-1") { id }`,
 		"DIRECT timeline":           "timelineUpdates(type: DIRECT) { id }",
 		"activity stream":           "activityStream { __typename }",
@@ -419,7 +426,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedConnectionStillStreamsGatedSubscription(t *testing.T) {
+func TestAuthenticatedConnectionStreamsTimelineAuthorizationSet(t *testing.T) {
 	manager := graph.NewSubscriptionManager(
 		inmemory.NewStreamingConnectionRepository(),
 		streaming.NewMockPublisher(),
@@ -461,19 +468,33 @@ func TestAuthenticatedConnectionStillStreamsGatedSubscription(t *testing.T) {
 	require.Equal(t, "connection_ack", ack.Type)
 	require.True(t, connectionACKAuthenticated(t, ack.Payload))
 
-	server.handleSubscribe(context.Background(), wsMessage{
-		ID:      "home-subscription",
-		Type:    "subscribe",
-		Payload: json.RawMessage(`{"query":"subscription { timelineUpdates(type: HOME) { id } }"}`),
-	}, wsCtx)
-	require.Eventually(t, func() bool {
-		server.mu.RLock()
-		defer server.mu.RUnlock()
-		_, ok := server.connections["authenticated-conn"].subscriptions["home-subscription"]
-		return ok
-	}, time.Second, 10*time.Millisecond)
-	require.True(t, server.cancelSubscription(context.Background(), "authenticated-conn", "home-subscription"))
-	require.Equal(t, "complete", receiveWSMessage(t, messages).Type)
+	authenticated := map[string]string{
+		"HOME":    "timelineUpdates(type: HOME) { id }",
+		"DIRECT":  "timelineUpdates(type: DIRECT) { id }",
+		"ACTOR":   `timelineUpdates(type: ACTOR, actorUsername: "alice") { id }`,
+		"HASHTAG": `timelineUpdates(type: HASHTAG, hashtag: "golang") { id }`,
+		"LIST":    `timelineUpdates(type: LIST, listId: "list-1") { id }`,
+	}
+	for name, field := range authenticated {
+		t.Run(name, func(t *testing.T) {
+			subscriptionID := strings.ToLower(name) + "-subscription"
+			payload, marshalErr := json.Marshal(subscribePayload{Query: "subscription { " + field + " }"})
+			require.NoError(t, marshalErr)
+			server.handleSubscribe(context.Background(), wsMessage{
+				ID:      subscriptionID,
+				Type:    "subscribe",
+				Payload: payload,
+			}, wsCtx)
+			require.Eventually(t, func() bool {
+				server.mu.RLock()
+				defer server.mu.RUnlock()
+				_, ok := server.connections["authenticated-conn"].subscriptions[subscriptionID]
+				return ok
+			}, time.Second, 10*time.Millisecond)
+			require.True(t, server.cancelSubscription(context.Background(), "authenticated-conn", subscriptionID))
+			require.Equal(t, "complete", receiveWSMessage(t, messages).Type)
+		})
+	}
 }
 
 func TestAuthenticatedNonAdminAuthorizationFailureIsTerminalError(t *testing.T) {

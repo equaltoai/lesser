@@ -707,6 +707,7 @@ type ComplexityRoot struct {
 	}
 
 	AgentPostAttribution struct {
+		ApprovedBy        func(childComplexity int) int
 		Constraints       func(childComplexity int) int
 		ContinuityState   func(childComplexity int) int
 		ContinuitySummary func(childComplexity int) int
@@ -828,6 +829,7 @@ type ComplexityRoot struct {
 		Content            func(childComplexity int) int
 		ContentFormat      func(childComplexity int) int
 		CreatedAt          func(childComplexity int) int
+		DeletedAt          func(childComplexity int) int
 		EditorNotes        func(childComplexity int) int
 		Excerpt            func(childComplexity int) int
 		FeaturedImage      func(childComplexity int) int
@@ -1011,6 +1013,7 @@ type ComplexityRoot struct {
 	Conversation struct {
 		Accounts       func(childComplexity int) int
 		CreatedAt      func(childComplexity int) int
+		Cursor         func(childComplexity int) int
 		ID             func(childComplexity int) int
 		LastStatus     func(childComplexity int) int
 		Unread         func(childComplexity int) int
@@ -1213,10 +1216,11 @@ type ComplexityRoot struct {
 	}
 
 	DraftReviewVerdictRecord struct {
-		Notes      func(childComplexity int) int
-		RecordedAt func(childComplexity int) int
-		Reviewer   func(childComplexity int) int
-		Verdict    func(childComplexity int) int
+		ContentHash func(childComplexity int) int
+		Notes       func(childComplexity int) int
+		RecordedAt  func(childComplexity int) int
+		Reviewer    func(childComplexity int) int
+		Verdict     func(childComplexity int) int
 	}
 
 	Driver struct {
@@ -3295,7 +3299,7 @@ type ComplexityRoot struct {
 		QuoteActivity           func(childComplexity int, noteID string) int
 		RelationshipUpdates     func(childComplexity int, actorID *string) int
 		ThreatIntelligence      func(childComplexity int) int
-		TimelineUpdates         func(childComplexity int, typeArg model.TimelineType, listID *string) int
+		TimelineUpdates         func(childComplexity int, typeArg model.TimelineType, actorUsername *string, hashtag *string, listID *string) int
 		TrustUpdates            func(childComplexity int, actorID string) int
 	}
 
@@ -3960,7 +3964,7 @@ type QuoteContextResolver interface {
 }
 type SubscriptionResolver interface {
 	ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error)
-	TimelineUpdates(ctx context.Context, typeArg model.TimelineType, listID *string) (<-chan *model.Object, error)
+	TimelineUpdates(ctx context.Context, typeArg model.TimelineType, actorUsername *string, hashtag *string, listID *string) (<-chan *model.Object, error)
 	NotificationStream(ctx context.Context, types []string) (<-chan *model.Notification, error)
 	ConversationUpdates(ctx context.Context) (<-chan *model.Conversation, error)
 	ListUpdates(ctx context.Context, listID string) (<-chan *model.ListUpdate, error)
@@ -6989,6 +6993,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AgentMCPAccess.Scopes(childComplexity), true
 
+	case "AgentPostAttribution.approvedBy":
+		if e.complexity.AgentPostAttribution.ApprovedBy == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.ApprovedBy(childComplexity), true
+
 	case "AgentPostAttribution.constraints":
 		if e.complexity.AgentPostAttribution.Constraints == nil {
 			break
@@ -7625,6 +7636,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Article.CreatedAt(childComplexity), true
+
+	case "Article.deletedAt":
+		if e.complexity.Article.DeletedAt == nil {
+			break
+		}
+
+		return e.complexity.Article.DeletedAt(childComplexity), true
 
 	case "Article.editorNotes":
 		if e.complexity.Article.EditorNotes == nil {
@@ -8465,6 +8483,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Conversation.CreatedAt(childComplexity), true
+
+	case "Conversation.cursor":
+		if e.complexity.Conversation.Cursor == nil {
+			break
+		}
+
+		return e.complexity.Conversation.Cursor(childComplexity), true
 
 	case "Conversation.id":
 		if e.complexity.Conversation.ID == nil {
@@ -9375,6 +9400,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftReviewGrant.Reviewer(childComplexity), true
+
+	case "DraftReviewVerdictRecord.contentHash":
+		if e.complexity.DraftReviewVerdictRecord.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewVerdictRecord.ContentHash(childComplexity), true
 
 	case "DraftReviewVerdictRecord.notes":
 		if e.complexity.DraftReviewVerdictRecord.Notes == nil {
@@ -21649,7 +21681,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Subscription.TimelineUpdates(childComplexity, args["type"].(model.TimelineType), args["listId"].(*string)), true
+		return e.complexity.Subscription.TimelineUpdates(childComplexity, args["type"].(model.TimelineType), args["actorUsername"].(*string), args["hashtag"].(*string), args["listId"].(*string)), true
 
 	case "Subscription.trustUpdates":
 		if e.complexity.Subscription.TrustUpdates == nil {
@@ -27598,11 +27630,21 @@ func (ec *executionContext) field_Subscription_timelineUpdates_args(ctx context.
 		return nil, err
 	}
 	args["type"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "listId", ec.unmarshalOID2ᚖstring)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "actorUsername", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
-	args["listId"] = arg1
+	args["actorUsername"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "hashtag", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["hashtag"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "listId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["listId"] = arg3
 	return args, nil
 }
 
@@ -47837,6 +47879,47 @@ func (ec *executionContext) fieldContext_AgentPostAttribution_delegatedBy(_ cont
 	return fc, nil
 }
 
+func (ec *executionContext) _AgentPostAttribution_approvedBy(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_approvedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ApprovedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_approvedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AgentPostAttribution_delegatedByDid(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_AgentPostAttribution_delegatedByDid(ctx, field)
 	if err != nil {
@@ -51557,6 +51640,47 @@ func (ec *executionContext) fieldContext_Article_id(_ context.Context, field gra
 	return fc, nil
 }
 
+func (ec *executionContext) _Article_deletedAt(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Article_deletedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeletedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Article_deletedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Article",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Article_slug(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Article_slug(ctx, field)
 	if err != nil {
@@ -53164,6 +53288,8 @@ func (ec *executionContext) fieldContext_ArticleEdge_node(_ context.Context, fie
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -57597,6 +57723,47 @@ func (ec *executionContext) fieldContext_Conversation_id(_ context.Context, fiel
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Conversation_cursor(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Conversation_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Cursor)
+	fc.Result = res
+	return ec.marshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Conversation_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Conversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
 		},
 	}
 	return fc, nil
@@ -63600,6 +63767,8 @@ func (ec *executionContext) fieldContext_DraftReview_verdicts(_ context.Context,
 				return ec.fieldContext_DraftReviewVerdictRecord_verdict(ctx, field)
 			case "notes":
 				return ec.fieldContext_DraftReviewVerdictRecord_notes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReviewVerdictRecord_contentHash(ctx, field)
 			case "reviewer":
 				return ec.fieldContext_DraftReviewVerdictRecord_reviewer(ctx, field)
 			case "recordedAt":
@@ -64086,6 +64255,47 @@ func (ec *executionContext) _DraftReviewVerdictRecord_notes(ctx context.Context,
 }
 
 func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewVerdictRecord_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewVerdictRecord_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DraftReviewVerdictRecord",
 		Field:      field,
@@ -92092,6 +92302,8 @@ func (ec *executionContext) fieldContext_Mutation_createConversation(ctx context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -92285,6 +92497,8 @@ func (ec *executionContext) fieldContext_Mutation_acceptMessageRequest(ctx conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -92411,6 +92625,8 @@ func (ec *executionContext) fieldContext_Mutation_markConversationAsRead(ctx con
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -96177,6 +96393,8 @@ func (ec *executionContext) fieldContext_Mutation_publishDraft(ctx context.Conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96701,6 +96919,8 @@ func (ec *executionContext) fieldContext_Mutation_createArticle(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96814,6 +97034,8 @@ func (ec *executionContext) fieldContext_Mutation_updateArticle(ctx context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -96982,6 +97204,8 @@ func (ec *executionContext) fieldContext_Mutation_restoreRevision(ctx context.Co
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -97748,6 +97972,8 @@ func (ec *executionContext) fieldContext_Mutation_addArticleToCategory(ctx conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -97861,6 +98087,8 @@ func (ec *executionContext) fieldContext_Mutation_removeArticleFromCategory(ctx 
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -105958,6 +106186,8 @@ func (ec *executionContext) fieldContext_Object_agentAttribution(_ context.Conte
 				return ec.fieldContext_AgentPostAttribution_memoryCitations(ctx, field)
 			case "delegatedBy":
 				return ec.fieldContext_AgentPostAttribution_delegatedBy(ctx, field)
+			case "approvedBy":
+				return ec.fieldContext_AgentPostAttribution_approvedBy(ctx, field)
 			case "delegatedByDid":
 				return ec.fieldContext_AgentPostAttribution_delegatedByDid(ctx, field)
 			case "scopes":
@@ -114087,6 +114317,8 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -114155,6 +114387,8 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -118232,6 +118466,8 @@ func (ec *executionContext) fieldContext_Query_article(ctx context.Context, fiel
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -118342,6 +118578,8 @@ func (ec *executionContext) fieldContext_Query_articleBySlug(ctx context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Article_id(ctx, field)
+			case "deletedAt":
+				return ec.fieldContext_Article_deletedAt(ctx, field)
 			case "slug":
 				return ec.fieldContext_Article_slug(ctx, field)
 			case "authorId":
@@ -130017,6 +130255,8 @@ func (ec *executionContext) fieldContext_SendMessagePayload_conversation(_ conte
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -143298,7 +143538,7 @@ func (ec *executionContext) _Subscription_timelineUpdates(ctx context.Context, f
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Subscription().TimelineUpdates(rctx, fc.Args["type"].(model.TimelineType), fc.Args["listId"].(*string))
+		return ec.resolvers.Subscription().TimelineUpdates(rctx, fc.Args["type"].(model.TimelineType), fc.Args["actorUsername"].(*string), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -143565,6 +143805,8 @@ func (ec *executionContext) fieldContext_Subscription_conversationUpdates(_ cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
 			case "lastStatus":
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
@@ -154618,7 +154860,7 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations", "delegatedBy", "delegatedByDid", "scopes", "constraints", "schemaVersion", "modelId"}
+	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -154646,48 +154888,6 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 				return it, err
 			}
 			it.MemoryCitations = data
-		case "delegatedBy":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedBy"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.DelegatedBy = data
-		case "delegatedByDid":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedByDid"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.DelegatedByDid = data
-		case "scopes":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scopes"))
-			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Scopes = data
-		case "constraints":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("constraints"))
-			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Constraints = data
-		case "schemaVersion":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("schemaVersion"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.SchemaVersion = data
-		case "modelId":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelId"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.ModelID = data
 		}
 	}
 
@@ -165099,6 +165299,8 @@ func (ec *executionContext) _AgentPostAttribution(ctx context.Context, sel ast.S
 			out.Values[i] = ec._AgentPostAttribution_memoryCitations(ctx, field, obj)
 		case "delegatedBy":
 			out.Values[i] = ec._AgentPostAttribution_delegatedBy(ctx, field, obj)
+		case "approvedBy":
+			out.Values[i] = ec._AgentPostAttribution_approvedBy(ctx, field, obj)
 		case "delegatedByDid":
 			out.Values[i] = ec._AgentPostAttribution_delegatedByDid(ctx, field, obj)
 		case "scopes":
@@ -165724,6 +165926,8 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "deletedAt":
+			out.Values[i] = ec._Article_deletedAt(ctx, field, obj)
 		case "slug":
 			out.Values[i] = ec._Article_slug(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -167119,6 +167323,8 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "cursor":
+			out.Values[i] = ec._Conversation_cursor(ctx, field, obj)
 		case "lastStatus":
 			out.Values[i] = ec._Conversation_lastStatus(ctx, field, obj)
 		case "unread":
@@ -168516,6 +168722,8 @@ func (ec *executionContext) _DraftReviewVerdictRecord(ctx context.Context, sel a
 			}
 		case "notes":
 			out.Values[i] = ec._DraftReviewVerdictRecord_notes(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._DraftReviewVerdictRecord_contentHash(ctx, field, obj)
 		case "reviewer":
 			out.Values[i] = ec._DraftReviewVerdictRecord_reviewer(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

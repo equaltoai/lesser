@@ -24,12 +24,12 @@ func TestQuotesHandlers(t *testing.T) {
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
 	require.NoError(t, err)
 	ctxCreate.Params["id"] = "123"
-	requireStatus(t, http.StatusOK)(handler.HandleCreateQuotePostLift(ctxCreate))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleCreateQuotePostLift(ctxCreate))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/quotes", nil, map[string]string{"limit": "2", "offset": "0"}, nil)
 	require.NoError(t, err)
 	ctxList.Params["id"] = "123"
-	requireStatus(t, http.StatusOK)(handler.HandleGetQuotesOfStatusLift(ctxList))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotesOfStatusLift(ctxList))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/123/quote/q1", headers, nil, nil)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestQuotesPermissions(t *testing.T) {
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", nil, nil, nil)
 	require.NoError(t, err)
 	ctxGet.Params["id"] = "alice"
-	requireStatus(t, http.StatusOK)(handler.HandleGetQuotePermissionsLift(ctxGet))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleGetQuotePermissionsLift(ctxGet))
 
 	updateToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:accounts"})
 	headers := map[string]string{"Authorization": "Bearer " + updateToken}
@@ -57,7 +57,7 @@ func TestQuotesPermissions(t *testing.T) {
 	}
 	ctxUpdate, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", headers, nil, updateReq)
 	require.NoError(t, err)
-	requireStatus(t, http.StatusOK)(handler.HandleUpdateQuotePermissionsLift(ctxUpdate))
+	requireStatus(t, http.StatusNotImplemented)(handler.HandleUpdateQuotePermissionsLift(ctxUpdate))
 }
 
 func boolPtr(v bool) *bool {

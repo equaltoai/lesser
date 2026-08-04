@@ -14,8 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v2/pkg/core"
-	"github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -1755,10 +1755,11 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 	metadata, err := r.getStatusMetadata(ctx, statusID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No metadata means default to disabled (restrictive)
-			r.logger.Debug("no metadata found for status, defaulting to disabled quotes",
+			// Absence means the author has not applied a per-note tightening control. Preserve
+			// the legacy account-level decision; an explicit NONE control persists "disabled".
+			r.logger.Debug("no metadata found for status, applying no per-note quote restriction",
 				zap.String("status_id", statusID))
-			return "disabled", nil
+			return models.VisibilityPublic, nil
 		}
 		return "", ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
@@ -1768,6 +1769,43 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 		zap.String("quote_type", metadata.QuoteType))
 
 	return metadata.QuoteType, nil
+}
+
+// GetQuoteTypes returns per-status quote controls with one BatchGetItem-style read.
+// Missing metadata means no per-note tightening and therefore defaults to public.
+func (r *ObjectRepository) GetQuoteTypes(ctx context.Context, statusIDs []string) (map[string]string, error) {
+	quoteTypes := make(map[string]string, len(statusIDs))
+	keyModels := make([]any, 0, len(statusIDs))
+	seen := make(map[string]struct{}, len(statusIDs))
+	for _, rawID := range statusIDs {
+		statusID := strings.TrimSpace(rawID)
+		if statusID == "" {
+			continue
+		}
+		quoteTypes[statusID] = models.VisibilityPublic
+		if _, ok := seen[statusID]; ok {
+			continue
+		}
+		seen[statusID] = struct{}{}
+		metadata := models.NewStatusMetadata(statusID)
+		keyModels = append(keyModels, metadata)
+	}
+	if len(keyModels) == 0 {
+		return quoteTypes, nil
+	}
+
+	var metadataRows []*models.StatusMetadata
+	err := r.db.WithContext(ctx).Model(&models.StatusMetadata{}).BatchGet(keyModels, &metadataRows)
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "status_metadata_batch")
+	}
+	for _, metadata := range metadataRows {
+		if metadata == nil || strings.TrimSpace(metadata.StatusID) == "" {
+			continue
+		}
+		quoteTypes[metadata.StatusID] = metadata.QuoteType
+	}
+	return quoteTypes, nil
 }
 
 // IsWithdrawnFromQuotes checks if a status is withdrawn from quotes

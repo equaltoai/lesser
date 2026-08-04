@@ -131,6 +131,7 @@ func TestM4ArticleUpdateRecordsRevisionAttributionAndFederatesUpdate(t *testing.
 			AttributedTo: "https://example.com/users/alice",
 			Published:    published,
 			Updated:      published,
+			CreatedAt:    published,
 			To:           []string{activitypub.PublicAddress},
 		},
 		Slug:          "hello",
@@ -138,7 +139,6 @@ func TestM4ArticleUpdateRecordsRevisionAttributionAndFederatesUpdate(t *testing.
 		GeneratedBy:   "https://example.com/users/agent-0",
 		ReviewedBy:    "https://example.com/users/alice",
 		PublishedBy:   "https://example.com/users/alice",
-		CreatedAt:     published,
 		UpdatedAt:     published,
 	}
 

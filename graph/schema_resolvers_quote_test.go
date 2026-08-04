@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -161,12 +162,26 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 
 	obj := resolver.convertStatusToObject(context.Background(), status)
 	require.NotNil(t, obj)
-	require.True(t, obj.Quoteable)
+	require.False(t, obj.Quoteable)
 	require.NotNil(t, obj.QuoteURL)
 	require.Equal(t, target.Note.ID, *obj.QuoteURL)
 	require.NotNil(t, obj.QuoteContext)
 	require.Equal(t, status.QuoteTargetStatusID, obj.QuoteContext.OriginalNoteID)
 	require.Equal(t, target.AuthorID, obj.QuoteContext.OriginalAuthor)
+}
+
+func TestDetermineQuoteableFailsClosedWithoutPersistedReader(t *testing.T) {
+	resolver := &Resolver{Logger: zap.NewNop()}
+	for _, status := range []*models.Status{
+		nil,
+		{},
+		{StatusID: "one", Note: &activitypub.Note{Quoteable: false}},
+		{StatusID: "two", Note: &activitypub.Note{Quoteable: true}},
+	} {
+		quoteable, permission := resolver.determineQuoteable(context.Background(), status)
+		require.False(t, quoteable)
+		require.Equal(t, model.QuotePermissionNone, permission)
+	}
 }
 
 func TestQuoteContextResolverOriginalAuthorUsesLoader(t *testing.T) {

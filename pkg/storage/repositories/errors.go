@@ -6,7 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 // ErrorUtils provides utilities for standardizing error handling across repositories

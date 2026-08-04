@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v2/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -567,6 +567,8 @@ func TestArticleService_M2ArticleDeleteFederationAndTombstone(t *testing.T) {
 	require.Equal(t, canonicalArticle.ID, capturedTombstone.ID)
 	require.Equal(t, activitypub.ArticleType, capturedTombstone.FormerType)
 	require.Equal(t, "https://example.com/users/alice", capturedTombstone.DeletedBy)
+	require.Equal(t, "https://example.com/users/alice", capturedTombstone.AttributedTo)
+	require.True(t, capturedTombstone.IsPublic)
 	require.Equal(t, "Tombstone", capturedTombstone.Type)
 	require.Equal(t, "OBJECT#"+canonicalArticle.ID, capturedTombstone.PK)
 	require.Equal(t, "TOMBSTONE", capturedTombstone.SK)
@@ -712,6 +714,43 @@ func TestArticleService_DeleteArticle_TombstoneErrorBranches(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "article tombstone is required")
 	})
+}
+
+func TestArticleService_BuildArticleTombstonePinsPublicAddressingPredicate(t *testing.T) {
+	t.Parallel()
+
+	svc := NewArticleService(&fakeArticleRepo{}, fakeActorRepo{}, nil, nil, nil, &fakeFederation{}, zap.NewNop())
+	tests := []struct {
+		name     string
+		to       []string
+		cc       []string
+		isPublic bool
+	}{
+		{name: "legacy empty addressing defaults public", isPublic: true},
+		{name: "canonical public in to", to: []string{activitypub.PublicAddress}, isPublic: true},
+		{name: "canonical public in cc", cc: []string{"https://example.com/users/alice/followers", activitypub.PublicAddress}, isPublic: true},
+		{name: "compact public in to", to: []string{"as:Public"}, isPublic: true},
+		{name: "bare public in cc", cc: []string{" Public "}, isPublic: true},
+		{name: "case variant is not public", to: []string{"public"}, isPublic: false},
+		{name: "empty recipient is not public", to: []string{""}, isPublic: false},
+		{name: "private recipients", to: []string{"https://example.com/users/bob"}},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tombstone, err := svc.buildArticleTombstone(&models.Article{Object: models.Object{
+				ID:           "https://example.com/articles/addressed",
+				Type:         activitypub.ArticleType,
+				AttributedTo: "https://example.com/users/alice",
+				To:           tt.to,
+				CC:           tt.cc,
+			}})
+			require.NoError(t, err)
+			require.Equal(t, tt.isPublic, tombstone.IsPublic)
+		})
+	}
 }
 
 func assertArticleWriteActivity(t *testing.T, activity *activitypub.Activity, activityType string, articleID string) {

@@ -18,28 +18,20 @@ func TestSubscriptionResolvers_AnonymousAuthorizationMatrix(t *testing.T) {
 	listID := "list-1"
 
 	gated := map[string]func() error{
-		"actor timeline": func() error {
-			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeActor, nil)
-			return err
-		},
 		"activity stream": func() error {
 			_, err := resolver.Subscription().ActivityStream(ctx, nil)
 			return err
 		},
 		"home timeline": func() error {
-			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeHome, nil)
-			return err
-		},
-		"hashtag timeline": func() error {
-			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeHashtag, nil)
+			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeHome, nil, nil, nil)
 			return err
 		},
 		"list timeline": func() error {
-			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeList, &listID)
+			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeList, nil, nil, &listID)
 			return err
 		},
 		"direct timeline": func() error {
-			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeDirect, nil)
+			_, err := resolver.Subscription().TimelineUpdates(ctx, model.TimelineTypeDirect, nil, nil, nil)
 			return err
 		},
 		"notification stream": func() error {
@@ -144,11 +136,20 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	t.Cleanup(func() { _ = manager.Stop() })
 
-	for _, timelineType := range []model.TimelineType{
-		model.TimelineTypePublic,
-		model.TimelineTypeLocal,
+	actorUsername := " alice "
+	hashtag := " #GoLang "
+	for _, test := range []struct {
+		timelineType  model.TimelineType
+		actorUsername *string
+		hashtag       *string
+		wantStream    string
+	}{
+		{timelineType: model.TimelineTypePublic, wantStream: StreamNamePublic},
+		{timelineType: model.TimelineTypeLocal, wantStream: streaming.PublicLocalStream},
+		{timelineType: model.TimelineTypeActor, actorUsername: &actorUsername, wantStream: streaming.PublicActorStreamName("alice")},
+		{timelineType: model.TimelineTypeHashtag, hashtag: &hashtag, wantStream: streaming.HashtagStreamName("golang")},
 	} {
-		t.Run(string(timelineType), func(t *testing.T) {
+		t.Run(string(test.timelineType), func(t *testing.T) {
 			manager.manager.subscriptionsMux.RLock()
 			before := make(map[string]struct{}, len(manager.manager.subscriptions))
 			for id := range manager.manager.subscriptions {
@@ -156,7 +157,7 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 			manager.manager.subscriptionsMux.RUnlock()
 
-			updates, err := resolver.Subscription().TimelineUpdates(ctx, timelineType, nil)
+			updates, err := resolver.Subscription().TimelineUpdates(ctx, test.timelineType, test.actorUsername, test.hashtag, nil)
 			require.NoError(t, err)
 			require.NotNil(t, updates)
 
@@ -170,10 +171,11 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 			manager.manager.subscriptionsMux.RUnlock()
 			require.NotNil(t, subscription)
+			require.Equal(t, []string{test.wantStream}, subscription.Streams)
 
 			objectChannel, ok := subscription.OutputChannel.(chan *model.Object)
 			require.True(t, ok)
-			want := &model.Object{ID: "object-" + string(timelineType), Type: model.ObjectTypeNote}
+			want := &model.Object{ID: "object-" + string(test.timelineType), Type: model.ObjectTypeNote}
 			objectChannel <- want
 
 			select {
@@ -184,6 +186,13 @@ func TestTimelineUpdates_AnonymousSafeTypesStream(t *testing.T) {
 			}
 		})
 	}
+
+	actorSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.PublicActorStreamName("alice"))
+	require.NoError(t, err)
+	require.Len(t, actorSubscriptions, 1)
+	privateUserSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, streaming.UserStreamName("alice"))
+	require.NoError(t, err)
+	require.Empty(t, privateUserSubscriptions)
 }
 
 func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {
@@ -194,25 +203,25 @@ func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	t.Cleanup(func() { _ = manager.Stop() })
 
-	_, err := manager.SubscribeToTimeline(ctx, "", model.TimelineTypePublic)
+	_, err := manager.SubscribeToTimeline(ctx, "", model.TimelineTypePublic, nil, nil, nil)
 	require.NoError(t, err)
 	publicSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, StreamNamePublic)
 	require.NoError(t, err)
 	require.Len(t, publicSubscriptions, 1)
 
-	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeLocal)
+	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeLocal, nil, nil, nil)
 	require.NoError(t, err)
 	localSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "public:local")
 	require.NoError(t, err)
 	require.Len(t, localSubscriptions, 1)
 
-	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeActor)
+	_, err = manager.SubscribeToTimeline(ctx, "", model.TimelineTypeActor, nil, nil, nil)
 	require.Error(t, err)
 	emptyUserSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "user:")
 	require.NoError(t, err)
 	require.Empty(t, emptyUserSubscriptions)
 
-	_, err = manager.SubscribeToTimeline(ctx, "alice", model.TimelineTypeHome)
+	_, err = manager.SubscribeToTimeline(ctx, "alice", model.TimelineTypeHome, nil, nil, nil)
 	require.NoError(t, err)
 	homeSubscriptions, err := connRepo.GetSubscriptionsForStream(ctx, "user:alice")
 	require.NoError(t, err)
@@ -229,7 +238,7 @@ func TestSubscribeToTimeline_RoutesOnlyImplementedStreams(t *testing.T) {
 		{name: "direct spaces", username: "   ", typeValue: model.TimelineTypeDirect, streamName: "direct:   "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, subscribeErr := manager.SubscribeToTimeline(ctx, tc.username, tc.typeValue)
+			_, subscribeErr := manager.SubscribeToTimeline(ctx, tc.username, tc.typeValue, nil, nil, nil)
 			require.ErrorIs(t, subscribeErr, ErrUsernameCannotBeEmpty)
 			subscriptions, lookupErr := connRepo.GetSubscriptionsForStream(ctx, tc.streamName)
 			require.NoError(t, lookupErr)

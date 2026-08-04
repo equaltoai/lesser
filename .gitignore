@@ -123,6 +123,8 @@ INCOMPLETE_IMPLEMENTATIONS.md
 .agents/
 .claude/
 .codex/
+.kimi-code/
+.theorymcp/
 .mcp/
 .mcp.json
 GEMINI.md

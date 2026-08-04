@@ -11,8 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	dynamormtesting "github.com/theory-cloud/tabletheory/v2/pkg/testing"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
 	"go.uber.org/zap"
 )
 
@@ -73,6 +74,38 @@ func TestGraphQLStreamSubscriptionRepository_Put(t *testing.T) {
 
 		testDB.AssertExpectations(t)
 	})
+}
+
+func TestGraphQLStreamSubscriptionRepository_PutAllIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	db := new(dynamormmocks.MockExtendedDB)
+	tx := new(dynamormmocks.MockTransactionBuilder)
+	db.TransactWriteBuilder = tx
+	db.On("TransactWrite", ctx, mock.Anything).Return(nil).Once()
+
+	var staged int
+	tx.On("Put", mock.MatchedBy(func(record any) bool {
+		subscription, ok := record.(*models.GraphQLStreamSubscription)
+		if ok {
+			staged++
+			require.NotEmpty(t, subscription.PK)
+			require.NotEmpty(t, subscription.SK)
+		}
+		return ok
+	}), mock.Anything).Return(tx).Twice()
+	tx.On("Execute").Return(errors.New("fault after staging first stream")).Once()
+
+	repo := NewGraphQLStreamSubscriptionRepository(db, "table", zap.NewNop())
+	records := []*models.GraphQLStreamSubscription{
+		{Stream: "dm:inbox:alice", ConnectionID: "conn-1", SubscriptionID: "sub-1", Field: "conversationUpdates", UserID: "alice"},
+		{Stream: "dm:requests:alice", ConnectionID: "conn-1", SubscriptionID: "sub-1", Field: "conversationUpdates", UserID: "alice"},
+	}
+
+	err := repo.PutAll(ctx, records)
+	require.ErrorContains(t, err, "fault after staging first stream")
+	require.Equal(t, 2, staged, "both stream writes must be staged in one transaction")
+	db.AssertExpectations(t)
+	tx.AssertExpectations(t)
 }
 
 func TestGraphQLStreamSubscriptionRepository_ListByStream(t *testing.T) {

@@ -16,16 +16,20 @@ import (
 )
 
 var (
-	errLoadersNotFound              = errors.New("graph dataloaders not found in context")
-	errQuoteTargetLoaderUnavailable = errors.New("quote target loader unavailable")
+	errLoadersNotFound               = errors.New("graph dataloaders not found in context")
+	errQuoteTargetLoaderUnavailable  = errors.New("quote target loader unavailable")
+	errQuoteControlLoaderUnavailable = errors.New("quote control loader unavailable")
+	errQuoteAccountLoaderUnavailable = errors.New("quote account permission loader unavailable")
 )
 
 // Loaders holds all the dataloaders for the GraphQL server
 type Loaders struct {
-	ActorLoader       *dataloader.Loader
-	ObjectLoader      *dataloader.Loader
-	TrustScoreLoader  *dataloader.Loader
-	QuoteTargetLoader *dataloader.Loader
+	ActorLoader        *dataloader.Loader
+	ObjectLoader       *dataloader.Loader
+	TrustScoreLoader   *dataloader.Loader
+	QuoteTargetLoader  *dataloader.Loader
+	QuoteControlLoader *dataloader.Loader
+	QuoteAccountLoader *dataloader.Loader
 
 	// Viewer interaction loaders (GraphQL fields on Object).
 	ViewerFavouritedLoader *dataloader.Loader
@@ -40,10 +44,135 @@ func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 		ObjectLoader:           newObjectLoader(repos, logger),
 		TrustScoreLoader:       newTrustScoreLoader(repos, logger),
 		QuoteTargetLoader:      newQuoteTargetLoader(repos, logger),
+		QuoteControlLoader:     newQuoteControlLoader(repos, logger),
+		QuoteAccountLoader:     newQuoteAccountLoader(repos, logger),
 		ViewerFavouritedLoader: newViewerFavouritedLoader(repos, logger),
 		ViewerBookmarkedLoader: newViewerBookmarkedLoader(repos, logger),
 		ViewerPinnedLoader:     newViewerPinnedLoader(repos, logger),
 	}
+}
+
+type quoteControlBatchReader interface {
+	GetQuoteTypes(context.Context, []string) (map[string]string, error)
+}
+
+type quoteControlBatch struct {
+	readUnits int64
+	tracked   atomic.Bool
+}
+
+type quoteControlLoadResult struct {
+	quoteType string
+	batch     *quoteControlBatch
+}
+
+type quoteControlBatchLookup func(context.Context, []string) (map[string]string, error)
+
+type quoteAccountLoadResult struct {
+	permissions *models.QuotePermissions
+	batch       *quoteControlBatch
+}
+
+type quoteTargetLoadResult struct {
+	status *models.Status
+	batch  *quoteControlBatch
+}
+
+type quoteAccountBatchLookup func(context.Context, []string) (map[string]*models.QuotePermissions, error)
+
+func newQuoteControlLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup quoteControlBatchLookup
+	if repos != nil {
+		lookup = func(ctx context.Context, statusIDs []string) (map[string]string, error) {
+			objectRepo := repos.Object()
+			if reader, ok := objectRepo.(quoteControlBatchReader); ok {
+				return reader.GetQuoteTypes(ctx, statusIDs)
+			}
+			return nil, errQuoteControlLoaderUnavailable
+		}
+	}
+	return newQuoteControlLoaderWithLookup(lookup, logger)
+}
+
+func newQuoteControlLoaderWithLookup(lookup quoteControlBatchLookup, logger *zap.Logger) *dataloader.Loader {
+	return newQuoteProjectionLoader(
+		lookup,
+		errQuoteControlLoaderUnavailable,
+		"quote control loader batch lookup failed",
+		func(quoteType string, batch *quoteControlBatch) any {
+			return &quoteControlLoadResult{quoteType: quoteType, batch: batch}
+		},
+		logger,
+	)
+}
+
+func newQuoteProjectionLoader[T any](
+	lookup func(context.Context, []string) (map[string]T, error),
+	unavailableError error,
+	warning string,
+	result func(T, *quoteControlBatch) any,
+	logger *zap.Logger,
+) *dataloader.Loader {
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+		if lookup == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Error: unavailableError}
+			}
+			return results
+		}
+
+		lookupKeys := make([]string, len(keys))
+		for i, key := range keys {
+			lookupKeys[i] = key.String()
+		}
+		values, err := lookup(ctx, lookupKeys)
+		if err != nil {
+			if logger != nil {
+				logger.Warn(warning, zap.Int("requested", len(keys)), zap.Error(err))
+			}
+			for i := range results {
+				results[i] = &dataloader.Result{Error: err}
+			}
+			return results
+		}
+
+		batch := &quoteControlBatch{readUnits: int64(len(lookupKeys))}
+		for i, key := range keys {
+			results[i] = &dataloader.Result{Data: result(values[key.String()], batch)}
+		}
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn,
+		dataloader.WithWait(2*time.Millisecond),
+		dataloader.WithBatchCapacity(100))
+}
+
+func newQuoteAccountLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup quoteAccountBatchLookup
+	if repos != nil {
+		lookup = func(ctx context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+			quoteRepo := repos.Quote()
+			if quoteRepo == nil {
+				return nil, errQuoteAccountLoaderUnavailable
+			}
+			return quoteRepo.GetQuotePermissionsBatch(ctx, usernames)
+		}
+	}
+	return newQuoteAccountLoaderWithLookup(lookup, logger)
+}
+
+func newQuoteAccountLoaderWithLookup(lookup quoteAccountBatchLookup, logger *zap.Logger) *dataloader.Loader {
+	return newQuoteProjectionLoader(
+		lookup,
+		errQuoteAccountLoaderUnavailable,
+		"quote account loader batch lookup failed",
+		func(permissions *models.QuotePermissions, batch *quoteControlBatch) any {
+			return &quoteAccountLoadResult{permissions: permissions, batch: batch}
+		},
+		logger,
+	)
 }
 
 // Actor loader functions
@@ -348,18 +477,20 @@ func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dat
 			statusMap[status.StatusID] = status
 		}
 
+		batch := &quoteControlBatch{readUnits: int64(len(statusIDs))}
 		for i, key := range keys {
-			if status, ok := statusMap[key.String()]; ok {
-				results[i] = &dataloader.Result{Data: status}
-			} else {
-				results[i] = &dataloader.Result{Data: (*models.Status)(nil)}
-			}
+			results[i] = &dataloader.Result{Data: &quoteTargetLoadResult{
+				status: statusMap[key.String()],
+				batch:  batch,
+			}}
 		}
 
 		return results
 	}
 
-	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+	return dataloader.NewBatchedLoader(batchFn,
+		dataloader.WithWait(2*time.Millisecond),
+		dataloader.WithBatchCapacity(100))
 }
 
 // Middleware to attach loaders to context
@@ -478,6 +609,111 @@ func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status
 	if result == nil {
 		return nil, nil
 	}
-	status, _ := result.(*models.Status)
-	return status, nil
+	loaded, _ := result.(*quoteTargetLoadResult)
+	if loaded == nil {
+		return nil, nil
+	}
+	return loaded.status, nil
+}
+
+func loadQuoteTargetStatusBatch(ctx context.Context, statusIDs []string) ([]*models.Status, []*quoteControlBatch) {
+	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.QuoteTargetLoader == nil || len(statusIDs) == 0 {
+		return nil, nil
+	}
+
+	keys := make(dataloader.Keys, len(statusIDs))
+	for i, statusID := range statusIDs {
+		keys[i] = dataloader.StringKey(statusID)
+	}
+	raw, _ := loaders.QuoteTargetLoader.LoadMany(ctx, keys)()
+	statuses := make([]*models.Status, 0, len(raw))
+	batches := make([]*quoteControlBatch, 0, len(raw))
+	for _, value := range raw {
+		if result, ok := value.(*quoteTargetLoadResult); ok {
+			batches = append(batches, result.batch)
+			if result.status != nil {
+				statuses = append(statuses, result.status)
+			}
+		}
+	}
+	return statuses, batches
+}
+
+func loadQuoteTargetStatuses(
+	ctx context.Context,
+	statuses []*models.Status,
+	visited map[string]struct{},
+	maxDepth int,
+) (related []*models.Status, relatedIDs []string, batches []*quoteControlBatch) {
+	frontier := statuses
+	for range maxDepth {
+		statusIDs := quoteControlRelatedStatusIDs(frontier, visited)
+		if len(statusIDs) == 0 {
+			break
+		}
+		relatedIDs = append(relatedIDs, statusIDs...)
+		loaded, loadedBatches := loadQuoteTargetStatusBatch(ctx, statusIDs)
+		related = append(related, loaded...)
+		batches = append(batches, loadedBatches...)
+		frontier = loaded
+	}
+	return related, relatedIDs, batches
+}
+
+func loadQuoteControls(ctx context.Context, statusIDs []string) ([]*quoteControlLoadResult, []error) {
+	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.QuoteControlLoader == nil {
+		return nil, []error{errQuoteControlLoaderUnavailable}
+	}
+
+	keys := make(dataloader.Keys, len(statusIDs))
+	for i, statusID := range statusIDs {
+		keys[i] = dataloader.StringKey(statusID)
+	}
+	raw, errs := loaders.QuoteControlLoader.LoadMany(ctx, keys)()
+	results := make([]*quoteControlLoadResult, len(raw))
+	for i, value := range raw {
+		results[i], _ = value.(*quoteControlLoadResult)
+	}
+	return results, errs
+}
+
+func loadQuoteControl(ctx context.Context, statusID string) (*quoteControlLoadResult, error) {
+	results, errs := loadQuoteControls(ctx, []string{statusID})
+	if len(errs) > 0 && errs[0] != nil {
+		return nil, errs[0]
+	}
+	if len(results) == 0 || results[0] == nil {
+		return nil, errQuoteControlLoaderUnavailable
+	}
+	return results[0], nil
+}
+
+func loadQuoteAccounts(ctx context.Context, usernames []string) ([]*quoteAccountLoadResult, []error) {
+	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.QuoteAccountLoader == nil {
+		return nil, []error{errQuoteAccountLoaderUnavailable}
+	}
+	keys := make(dataloader.Keys, len(usernames))
+	for i, username := range usernames {
+		keys[i] = dataloader.StringKey(username)
+	}
+	raw, errs := loaders.QuoteAccountLoader.LoadMany(ctx, keys)()
+	results := make([]*quoteAccountLoadResult, len(raw))
+	for i, value := range raw {
+		results[i], _ = value.(*quoteAccountLoadResult)
+	}
+	return results, errs
+}
+
+func loadQuoteAccount(ctx context.Context, username string) (*quoteAccountLoadResult, error) {
+	results, errs := loadQuoteAccounts(ctx, []string{username})
+	if len(errs) > 0 && errs[0] != nil {
+		return nil, errs[0]
+	}
+	if len(results) == 0 || results[0] == nil || results[0].permissions == nil {
+		return nil, errQuoteAccountLoaderUnavailable
+	}
+	return results[0], nil
 }

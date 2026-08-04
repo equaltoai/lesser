@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dmerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
+	dmerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 

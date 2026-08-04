@@ -5,6 +5,8 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -40,9 +42,19 @@ type quoteRepository interface {
 	UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
 }
 
+type quoteRelationshipRepository interface {
+	IsFollowing(ctx context.Context, followerID, followingID string) (bool, error)
+}
+
+type quoteObjectRepository interface {
+	GetQuoteType(ctx context.Context, statusID string) (string, error)
+}
+
 type quoteStorage interface {
 	Status() quoteStatusRepository
 	Quote() quoteRepository
+	Relationship() quoteRelationshipRepository
+	Object() quoteObjectRepository
 }
 
 type quoteRepositoryStorageWrapper struct {
@@ -51,6 +63,10 @@ type quoteRepositoryStorageWrapper struct {
 
 func (w quoteRepositoryStorageWrapper) Status() quoteStatusRepository { return w.storage.Status() }
 func (w quoteRepositoryStorageWrapper) Quote() quoteRepository        { return w.storage.Quote() }
+func (w quoteRepositoryStorageWrapper) Relationship() quoteRelationshipRepository {
+	return w.storage.Relationship()
+}
+func (w quoteRepositoryStorageWrapper) Object() quoteObjectRepository { return w.storage.Object() }
 
 // NewQuoteService creates a new quote service
 func NewQuoteService(storage core.RepositoryStorage, logger *zap.Logger) *QuoteService {
@@ -102,7 +118,7 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 	}
 
 	// Check quote permissions
-	canQuote, err := qs.checkQuotePermissions(ctx, req.QuoterUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, req.QuoterUsername, targetStatus)
 	if err != nil {
 		qs.logger.Error("failed to check quote permissions",
 			zap.String("quoter", req.QuoterUsername),
@@ -182,7 +198,7 @@ func (qs *QuoteService) AttachQuoteToStatus(ctx context.Context, quoteStatus *mo
 		return nil, ErrTargetStatusNotQuotable
 	}
 
-	canQuote, err := qs.checkQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
+	canQuote, err := qs.CheckQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
 	if err != nil {
 		return nil, ErrCheckQuotePermissions(err)
 	}
@@ -398,7 +414,21 @@ func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	return common.IsPubliclyVisible(status.Visibility)
 }
 
-func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+// CheckQuotePermissions applies account authorization first, then the persisted per-note control,
+// to both relationship-minting paths: GraphQL quote creation and REST reblog-with-comment. A
+// per-note control may only tighten an account-level allow and can never widen an account denial.
+// GraphQL createQuoteNote only embeds a URL without minting a relationship and is outside this
+// control by design; a blocked user can always paste a URL into ordinary post text.
+func (qs *QuoteService) CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+	accountAllowed, err := qs.checkAccountQuotePermissions(ctx, quoterUsername, targetStatus)
+	if err != nil || !accountAllowed {
+		return accountAllowed, err
+	}
+
+	return qs.checkPerNoteQuotePermissions(ctx, quoterUsername, targetStatus)
+}
+
+func (qs *QuoteService) checkAccountQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
 	// Get quote permissions for the target status author
 	permissions, err := qs.GetQuotePermissions(ctx, targetStatus.AuthorUsername)
 	if err != nil {
@@ -421,7 +451,11 @@ func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsernam
 	if permissions.AllowFollowers {
 		isFollowing, err := qs.checkFollowRelationship(ctx, quoterUsername, targetStatus.AuthorUsername)
 		if err != nil {
-			return false, err
+			qs.logger.Warn("follower quote permission lookup failed closed",
+				zap.String("quoter", quoterUsername),
+				zap.String("target_author", targetStatus.AuthorUsername),
+				zap.Error(err))
+			return false, nil
 		}
 		if isFollowing {
 			return true, nil
@@ -430,13 +464,54 @@ func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsernam
 
 	// Check if quoter is mentioned in the original status
 	if permissions.AllowMentioned {
-		isMentioned := qs.checkMentioned(targetStatus, quoterUsername)
+		isMentioned, err := qs.checkMentioned(ctx, targetStatus, quoterUsername)
+		if err != nil {
+			qs.logger.Warn("mentioned quote permission lookup failed closed",
+				zap.String("quoter", quoterUsername),
+				zap.String("target_status_id", targetStatus.StatusID),
+				zap.Error(err))
+			return false, nil
+		}
 		if isMentioned {
 			return true, nil
 		}
 	}
 
 	return false, nil
+}
+
+func (qs *QuoteService) checkPerNoteQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {
+	if targetStatus == nil || strings.TrimSpace(targetStatus.StatusID) == "" || qs.storage == nil || qs.storage.Object() == nil {
+		return false, nil
+	}
+
+	quoteType, err := qs.storage.Object().GetQuoteType(ctx, targetStatus.StatusID)
+	if err != nil {
+		qs.logger.Warn("per-note quote control lookup failed closed",
+			zap.String("quoter", quoterUsername),
+			zap.String("target_status_id", targetStatus.StatusID),
+			zap.Error(err))
+		return false, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(quoteType)) {
+	case models.VisibilityPublic:
+		return true, nil
+	case "followers":
+		allowed, lookupErr := qs.checkFollowRelationship(ctx, quoterUsername, targetStatus.AuthorUsername)
+		if lookupErr != nil {
+			return false, nil
+		}
+		return allowed, nil
+	case "mentioned":
+		allowed, lookupErr := qs.checkMentioned(ctx, targetStatus, quoterUsername)
+		if lookupErr != nil {
+			return false, nil
+		}
+		return allowed, nil
+	default:
+		return false, nil
+	}
 }
 
 func (qs *QuoteService) createQuoteStatus(ctx context.Context, req *CreateQuoteRequest, _ *models.Status) (*models.Status, error) {
@@ -583,15 +658,66 @@ func (qs *QuoteService) createQuoteNotification(_ context.Context, quoteStatus, 
 	return nil
 }
 
-func (qs *QuoteService) checkFollowRelationship(_ context.Context, _ string, _ string) (bool, error) {
-	// Placeholder implementation
-	// In reality, this would check if follower follows followee
+func (qs *QuoteService) checkFollowRelationship(ctx context.Context, quoterUsername, targetAuthorUsername string) (bool, error) {
+	if qs.storage == nil || qs.storage.Relationship() == nil {
+		return false, fmt.Errorf("relationship repository unavailable")
+	}
+	return qs.storage.Relationship().IsFollowing(ctx, quoterUsername, targetAuthorUsername)
+}
+
+func (qs *QuoteService) checkMentioned(ctx context.Context, targetStatus *models.Status, quoterUsername string) (bool, error) {
+	if targetStatus == nil || strings.TrimSpace(targetStatus.StatusID) == "" {
+		return false, nil
+	}
+
+	// Re-read the canonical persisted status by its exact primary key. Quote creation can receive
+	// a caller-resolved Status value, but the permission decision must use the stored mention
+	// projection rather than request content or an ad-hoc content re-parse.
+	persisted, err := qs.storage.Status().GetStatus(ctx, targetStatus.StatusID)
+	if err != nil {
+		return false, err
+	}
+	if persisted == nil {
+		return false, nil
+	}
+
+	quoter := strings.TrimSpace(strings.TrimPrefix(quoterUsername, "@"))
+	if quoter == "" {
+		return false, nil
+	}
+	localDomain := common.ExtractDomainFromActorID(persisted.AuthorID)
+	for _, rawMention := range persisted.Mentions {
+		if storedMentionMatchesLocalUsername(rawMention, quoter, localDomain) {
+			return true, nil
+		}
+	}
 	return false, nil
 }
 
-func (qs *QuoteService) checkMentioned(_ *models.Status, _ string) bool {
-	// Simple check if username is mentioned in the status content
-	return false // Placeholder
+func storedMentionMatchesLocalUsername(rawMention, username, localDomain string) bool {
+	mention := strings.TrimSpace(rawMention)
+	if mention == "" {
+		return false
+	}
+	if !strings.Contains(mention, "://") {
+		return strings.EqualFold(strings.TrimPrefix(mention, "@"), username)
+	}
+	if localDomain == "" || !common.IsLocalActorID(mention, localDomain) {
+		return false
+	}
+
+	parsed, err := url.Parse(mention)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 2 && strings.EqualFold(parts[0], "users") {
+		return strings.EqualFold(strings.TrimPrefix(parts[1], "@"), username)
+	}
+	if len(parts) == 1 && strings.HasPrefix(parts[0], "@") {
+		return strings.EqualFold(strings.TrimPrefix(parts[0], "@"), username)
+	}
+	return false
 }
 
 func generateStatusID() string {

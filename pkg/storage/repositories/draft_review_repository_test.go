@@ -2,20 +2,22 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v2"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v2/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v2/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/v2/pkg/session"
-	"github.com/theory-cloud/tabletheory/v2/pkg/testing/fakedb"
+	"github.com/theory-cloud/tabletheory/v3"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +25,55 @@ type draftReviewRecordingDynamo struct {
 	*fakedb.Fake
 	putInputs    []*dynamodb.PutItemInput
 	updateInputs []*dynamodb.UpdateItemInput
+}
+
+func TestDraftRepositoryUpdateDraftReviewFieldsDoesNotClobberOwnerContent(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	persisted := &models.Draft{
+		AuthorID:      "owner",
+		ID:            "draft-1",
+		ContentType:   "Article",
+		Title:         "owner title",
+		Slug:          "owner-slug",
+		Content:       "owner late edit",
+		ContentFormat: "markdown",
+		Status:        "draft",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	staleReviewSnapshot := *persisted
+	staleReviewSnapshot.Title = "stale title"
+	staleReviewSnapshot.Slug = "stale-slug"
+	staleReviewSnapshot.Content = "stale reviewed body"
+	staleReviewSnapshot.ReviewedBy = "reviewer"
+	staleReviewSnapshot.ReviewStatus = "APPROVED"
+	staleReviewSnapshot.EditorNotes = "ready"
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.UpdateDraftReviewFields(ctx, "owner", &staleReviewSnapshot))
+
+	got, err := repo.GetDraft(ctx, "owner", "draft-1")
+	require.NoError(t, err)
+	require.Equal(t, "owner title", got.Title)
+	require.Equal(t, "owner-slug", got.Slug)
+	require.Equal(t, "owner late edit", got.Content)
+	require.Equal(t, "reviewer", got.ReviewedBy)
+	require.Equal(t, "APPROVED", got.ReviewStatus)
+	require.Equal(t, "ready", got.EditorNotes)
+	require.Len(t, client.updateInputs, 1)
+	require.Contains(t, aws.ToString(client.updateInputs[0].ConditionExpression), "attribute_exists")
+
+	missing := staleReviewSnapshot
+	missing.ID = "missing"
+	require.ErrorIs(t, repo.UpdateDraftReviewFields(ctx, "owner", &missing), storage.ErrNotFound)
 }
 
 func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
@@ -57,6 +108,17 @@ func TestDraftRepositoryCreateDraftReviewGrantUsesCreateBuilder(t *testing.T) {
 		"first-time grants must use a conditional PutItem")
 	require.Contains(t, client.putInputs[0].ExpressionAttributeNames, "#n1")
 	require.Equal(t, "PK", client.putInputs[0].ExpressionAttributeNames["#n1"])
+}
+
+func TestDraftRepositoryCreateDraftReviewGrantCodesKeyPreparationFailure(t *testing.T) {
+	repo := NewDraftRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+
+	err := repo.CreateDraftReviewGrant(context.Background(), &models.DraftReviewGrant{})
+	require.Error(t, err)
+	var appErr *apperrors.AppError
+	require.True(t, errors.As(err, &appErr))
+	require.Equal(t, apperrors.CodeInternal, appErr.Code)
+	require.Equal(t, "Failed to create draft review grant", appErr.Message)
 }
 
 func TestDraftRepositoryCreateDraftReviewGrantRejectsStaleCreateAfterRevoke(t *testing.T) {

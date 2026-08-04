@@ -1339,7 +1339,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	attachments := cloneNoteAttachments(status)
 	tags := cloneNoteTags(status)
 	quoteURL, quoteContext := r.resolveQuoteMetadata(ctx, status)
-	quoteable := determineQuoteable(status)
+	quoteable, quotePermission := r.determineQuoteable(ctx, status)
 	mentions := r.buildMentions(status)
 	inReplyTo := r.resolveInReplyToObject(ctx, status, convertLogger)
 	summary := extractStatusSummary(status)
@@ -1367,7 +1367,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		QuoteURL:         quoteURL,
 		QuoteContext:     quoteContext,
 		Quoteable:        quoteable,
-		QuotePermissions: model.QuotePermissionEveryone,
+		QuotePermissions: quotePermission,
 		QuoteCount:       status.QuoteCount,
 		Quotes: &model.QuoteConnection{
 			Edges:      []*model.QuoteEdge{},
