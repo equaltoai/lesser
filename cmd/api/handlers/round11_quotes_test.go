@@ -161,6 +161,28 @@ func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateQuotePostLift(ctx))
 		require.Zero(t, createCalls)
 	})
+
+	t.Run("target storage errors fail closed before note creation", func(t *testing.T) {
+		createCalls := 0
+		reg := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) {
+					return nil, commonerrors.Internal("target storage failed")
+				},
+				CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					createCalls++
+					return nil, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, reg)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{Status: "Quote text"})
+		require.NoError(t, err)
+		ctx.Params["id"] = "target-1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateQuotePostLift(ctx))
+		require.Zero(t, createCalls)
+	})
 }
 
 func TestQuotePostRESTListRoundTrip(t *testing.T) {
@@ -241,6 +263,26 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("relationship storage errors fail closed", func(t *testing.T) {
+		failedRegistry := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				GetNoteWithViewerFunc: func(context.Context, *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					return target, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				GetQuoteRelationshipsForStatusFunc: func(context.Context, string, int, string) (*quotes.QuoteRelationshipPage, error) {
+					return nil, commonerrors.Internal("relationship storage failed")
+				},
+			},
+		}
+		failedHandler, _, _ := round11NewHandler(t, cfg, failedRegistry)
+		failedCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, nil, nil)
+		require.NoError(t, err)
+		failedCtx.Params["id"] = "target-1"
+		requireStatus(t, http.StatusInternalServerError)(failedHandler.HandleGetQuotesOfStatusLift(failedCtx))
 	})
 }
 
@@ -354,5 +396,43 @@ func TestQuotePermissionsRESTRoundTrips(t *testing.T) {
 		require.NoError(t, err)
 		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateQuotePermissionsLift(ctx))
 		require.Nil(t, updated)
+	})
+
+	t.Run("permission storage errors fail closed", func(t *testing.T) {
+		failedRegistry := &RegistryStub{
+			AccountsSvc: reg.AccountsSvc,
+			QuotesSvc: &QuotesServiceStub{
+				GetQuotePermissionsFunc: func(context.Context, string) (*storagemodels.QuotePermissions, error) {
+					return nil, commonerrors.Internal("permission storage failed")
+				},
+			},
+		}
+		failedHandler, _, _ := round11NewHandler(t, cfg, failedRegistry)
+
+		readCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/quote_permissions", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
+		require.NoError(t, err)
+		readCtx.Params["id"] = "alice"
+		requireStatus(t, http.StatusInternalServerError)(failedHandler.HandleGetQuotePermissionsLift(readCtx))
+
+		updateCtx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.UpdateQuotePermissionsRequest{})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusInternalServerError)(failedHandler.HandleUpdateQuotePermissionsLift(updateCtx))
+	})
+
+	t.Run("permission save errors fail closed", func(t *testing.T) {
+		failedRegistry := &RegistryStub{
+			QuotesSvc: &QuotesServiceStub{
+				GetQuotePermissionsFunc: func(context.Context, string) (*storagemodels.QuotePermissions, error) {
+					return stored["alice"], nil
+				},
+				UpdateQuotePermissionsFunc: func(context.Context, *storagemodels.QuotePermissions) error {
+					return commonerrors.Internal("permission save failed")
+				},
+			},
+		}
+		failedHandler, _, _ := round11NewHandler(t, cfg, failedRegistry)
+		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/accounts/quote_permissions", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.UpdateQuotePermissionsRequest{})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusInternalServerError)(failedHandler.HandleUpdateQuotePermissionsLift(ctx))
 	})
 }
