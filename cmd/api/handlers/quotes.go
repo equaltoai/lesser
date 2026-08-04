@@ -337,17 +337,16 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 	visible := 0
 	scanned := 0
 	maxScanned := limit * quoteListScanMultiplier
+	maxFetches := (maxScanned + quoteListPageSize - 1) / quoteListPageSize
+	fetches := 0
 	seenCursors := map[string]struct{}{}
 
-	for scanned < maxScanned && len(items) < limit {
-		pageLimit := quoteListPageSize
-		if remaining := maxScanned - scanned; remaining < pageLimit {
-			pageLimit = remaining
-		}
-		page, err := quotesService.GetQuoteRelationshipsForStatus(ctx, statusID, pageLimit, cursor)
+	for fetches < maxFetches && scanned < maxScanned && len(items) < limit {
+		page, err := quotesService.GetQuoteRelationshipsForStatus(ctx, statusID, quoteListPageSize, cursor)
 		if err != nil {
 			return nil, err
 		}
+		fetches++
 		if page == nil {
 			return nil, commonerrors.Internal("quote relationship page is unavailable")
 		}

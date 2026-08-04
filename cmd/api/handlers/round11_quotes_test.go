@@ -299,7 +299,7 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 		QuotesSvc: &QuotesServiceStub{
 			GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
 				require.Equal(t, "target-1", statusID)
-				require.Equal(t, quoteListScanMultiplier, limit)
+				require.Equal(t, quoteListPageSize, limit)
 				require.Empty(t, cursor)
 				return &quotes.QuoteRelationshipPage{Relationships: []*storagemodels.QuoteRelationship{
 					{QuoterNoteID: "quote-hidden"},
@@ -371,9 +371,9 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 				GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
 					listCalls++
 					require.Equal(t, "target-1", statusID)
-					require.Equal(t, requestedLimit*quoteListScanMultiplier, limit)
+					require.Equal(t, quoteListPageSize, limit)
 					require.Empty(t, cursor)
-					relationships := make([]*storagemodels.QuoteRelationship, limit)
+					relationships := make([]*storagemodels.QuoteRelationship, requestedLimit*quoteListScanMultiplier)
 					for i := range relationships {
 						relationships[i] = &storagemodels.QuoteRelationship{QuoterNoteID: fmt.Sprintf("hidden-%d", i)}
 					}
@@ -392,6 +392,49 @@ func TestQuotePostRESTListRoundTrip(t *testing.T) {
 		require.Empty(t, boundedBody)
 		require.Equal(t, requestedLimit*quoteListScanMultiplier, quoteReads)
 		require.Equal(t, 1, listCalls)
+	})
+
+	t.Run("withdrawn relationship pages terminate at the fetch cap", func(t *testing.T) {
+		const requestedLimit = 80
+		fetchCap := (requestedLimit*quoteListScanMultiplier + quoteListPageSize - 1) / quoteListPageSize
+		listCalls := 0
+		withdrawnRegistry := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					require.Empty(t, query.ViewerID, "the termination path must remain safe for unauthenticated callers")
+					if query.StatusID == "target-1" {
+						return target, nil
+					}
+					t.Fatalf("withdrawn relationships must not reach visibility projection: %s", query.StatusID)
+					return nil, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				GetQuoteRelationshipsForStatusFunc: func(_ context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error) {
+					listCalls++
+					require.Equal(t, "target-1", statusID)
+					require.Equal(t, quoteListPageSize, limit)
+					if listCalls == 1 {
+						require.Empty(t, cursor)
+					} else {
+						require.Equal(t, fmt.Sprintf("withdrawn-page-%d", listCalls-1), cursor)
+					}
+					// QuoteRepository filters withdrawn rows after each raw storage page,
+					// so the handler sees no survivors alongside a live cursor.
+					return &quotes.QuoteRelationshipPage{NextCursor: fmt.Sprintf("withdrawn-page-%d", listCalls)}, nil
+				},
+			},
+		}
+		withdrawnHandler, _, _ := round11NewHandler(t, cfg, withdrawnRegistry)
+		withdrawnCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/target-1/quotes", nil, map[string]string{"limit": "80"}, nil)
+		require.NoError(t, err)
+		withdrawnCtx.Params["id"] = "target-1"
+
+		withdrawnResponse := requireStatus(t, http.StatusOK)(withdrawnHandler.HandleGetQuotesOfStatusLift(withdrawnCtx))
+		var withdrawnBody []apimodels.QuoteStatusSummary
+		require.NoError(t, json.Unmarshal(withdrawnResponse.Body, &withdrawnBody))
+		require.Empty(t, withdrawnBody)
+		require.Equal(t, fetchCap, listCalls)
 	})
 
 	t.Run("relationship storage errors fail closed", func(t *testing.T) {
