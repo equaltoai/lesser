@@ -902,7 +902,7 @@ func (r *ObjectRepository) GetQuoteType(_ context.Context, statusID string) (str
 
 	quoteType, exists := r.quoteTypes[statusID]
 	if !exists {
-		return quoteTypeDisabled, nil
+		return models.VisibilityPublic, nil
 	}
 	return quoteType, nil
 }
@@ -916,7 +916,7 @@ func (r *ObjectRepository) GetQuoteTypes(_ context.Context, statusIDs []string) 
 	for _, statusID := range statusIDs {
 		quoteType, ok := r.quoteTypes[statusID]
 		if !ok {
-			quoteType = quoteTypeDisabled
+			quoteType = models.VisibilityPublic
 		}
 		quoteTypes[statusID] = quoteType
 	}

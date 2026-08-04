@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,9 +169,12 @@ func TestObjectRepository_round22_helper_storage_paths(t *testing.T) {
 func TestObjectRepositoryGetQuoteTypes(t *testing.T) {
 	repo := NewObjectRepository()
 	repo.quoteTypes["public"] = "public"
+	quoteType, err := repo.GetQuoteType(context.Background(), "missing")
+	require.NoError(t, err)
+	require.Equal(t, models.VisibilityPublic, quoteType)
 
 	quoteTypes, err := repo.GetQuoteTypes(context.Background(), []string{"public", "missing"})
 	require.NoError(t, err)
 	require.Equal(t, "public", quoteTypes["public"])
-	require.Equal(t, quoteTypeDisabled, quoteTypes["missing"])
+	require.Equal(t, models.VisibilityPublic, quoteTypes["missing"])
 }
