@@ -141,7 +141,7 @@ func (r *mutationResolver) buildGraphQLDirectMessageCommand(
 	inReplyToID *string,
 	agentAttributionInput *model.AgentPostAttributionInput,
 ) (*conversations.SendDirectMessageCommand, error) {
-	agentAttribution, err := r.buildAgentPostAttribution(ctx, claims, agentAttributionInput)
+	agentAttribution, err := r.buildAgentPostAttribution(ctx, claims, agentAttributionInput, auth.DelegationContentClassDirectMessage)
 	if err != nil {
 		return nil, err
 	}

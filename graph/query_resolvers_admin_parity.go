@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -605,6 +606,7 @@ func (r *queryResolver) AdminStatuses(ctx context.Context, filter *model.AdminSt
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to list statuses"), err)
 	}
+	r.prefetchQuoteControls(ctx, statuses)
 
 	out := make([]*model.Object, 0, len(statuses))
 	for _, status := range statuses {
@@ -944,7 +946,7 @@ func (r *queryResolver) loadReportStatuses(ctx context.Context, statusIDs []stri
 		return []*model.Object{}
 	}
 
-	out := make([]*model.Object, 0, len(statusIDs))
+	statuses := make([]*storageModels.Status, 0, len(statusIDs))
 	for _, statusID := range statusIDs {
 		statusID = strings.TrimSpace(statusID)
 		if statusID == "" {
@@ -954,6 +956,11 @@ func (r *queryResolver) loadReportStatuses(ctx context.Context, statusIDs []stri
 		if err != nil || status == nil {
 			continue
 		}
+		statuses = append(statuses, status)
+	}
+	r.prefetchQuoteControls(ctx, statuses)
+	out := make([]*model.Object, 0, len(statuses))
+	for _, status := range statuses {
 		out = append(out, r.convertStatusToObject(ctx, status))
 	}
 	return out

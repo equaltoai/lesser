@@ -10,6 +10,7 @@ type AgentPostAttribution struct {
 	MemoryCitations []string `json:"memory_citations,omitempty"`
 
 	DelegatedBy    string   `json:"delegated_by,omitempty"`
+	ApprovedBy     string   `json:"approved_by,omitempty"`
 	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
 	Scopes         []string `json:"scopes,omitempty"`
 
@@ -22,4 +23,12 @@ type AgentPostAttribution struct {
 	ContinuitySummary string   `json:"continuity_summary,omitempty"`
 	SoulAgentID       string   `json:"soul_agent_id,omitempty"`
 	ModerationLabel   string   `json:"moderation_label,omitempty"`
+}
+
+// AgentPostAttributionInput contains only client-provided provenance details. Delegation and
+// approval identities are deliberately absent because Lesser derives them from signed credentials.
+type AgentPostAttributionInput struct {
+	TriggerType     string   `json:"trigger_type,omitempty"`
+	TriggerDetails  string   `json:"trigger_details,omitempty"`
+	MemoryCitations []string `json:"memory_citations,omitempty"`
 }

@@ -287,7 +287,7 @@ func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, username, statusI
 		Content:      comment,
 		AttributedTo: actor.ID,
 		QuoteURL:     objectID,
-		// Account-level quote permissions were authorized above through the same
+		// Account and per-note quote permissions were authorized above through the same
 		// QuoteService.CheckQuotePermissions predicate used by GraphQL quote creation.
 		Quoteable:          true,
 		QuoteNotifications: true,

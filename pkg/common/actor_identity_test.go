@@ -15,6 +15,8 @@ func TestIsLocalActorID(t *testing.T) {
 	}{
 		{"exact match", "https://example.com/users/alice", "example.com", true},
 		{"case insensitive", "https://EXAMPLE.COM/users/alice", "example.com", true},
+		{"uppercase http scheme", "HTTP://EXAMPLE.COM/users/alice", "example.com", true},
+		{"mixed https scheme", "HttPs://EXAMPLE.COM/users/alice", "example.com", true},
 		{"different domain", "https://remote.example/users/alice", "example.com", false},
 		{"substring trap", "https://evil-example.com/users/alice", "example.com", false},
 		{"subdomain", "https://social.example.com/users/alice", "example.com", false},
@@ -47,6 +49,10 @@ func TestExtractDomainFromActorID(t *testing.T) {
 	}{
 		{"standard URL", "https://example.com/users/alice", "example.com"},
 		{"http URL", "http://example.com/users/alice", "example.com"},
+		{"uppercase HTTP scheme", "HTTP://EXAMPLE.COM/users/alice", "example.com"},
+		{"uppercase HTTPS scheme", "HTTPS://EXAMPLE.COM/users/alice", "example.com"},
+		{"mixed HttPs scheme", "HttPs://EXAMPLE.COM/users/alice", "example.com"},
+		{"mixed HtTp scheme", "HtTp://EXAMPLE.COM/users/alice", "example.com"},
 		{"mixed case", "https://Example.COM/users/alice", "example.com"},
 		{"with path", "https://example.com/users/alice/inbox", "example.com"},
 		{"trailing slash", "https://example.com/users/alice/", "example.com"},
@@ -66,6 +72,31 @@ func TestExtractDomainFromActorID(t *testing.T) {
 			got := ExtractDomainFromActorID(tt.actorID)
 			if got != tt.want {
 				t.Errorf("ExtractDomainFromActorID(%q) = %q, want %q", tt.actorID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsHTTPActorID(t *testing.T) {
+	t.Parallel()
+
+	for _, actorID := range []string{
+		"HTTP://EXAMPLE.COM/users/alice",
+		"HTTPS://EXAMPLE.COM/users/alice",
+		"HttPs://EXAMPLE.COM/users/alice",
+		"HtTp://EXAMPLE.COM/users/alice",
+	} {
+		t.Run(actorID, func(t *testing.T) {
+			if !IsHTTPActorID(actorID) {
+				t.Fatalf("IsHTTPActorID(%q) = false, want true", actorID)
+			}
+		})
+	}
+
+	for _, actorID := range []string{"", "alice", "ftp://example.com/users/alice", "https://%ZZ/path"} {
+		t.Run("rejects "+actorID, func(t *testing.T) {
+			if IsHTTPActorID(actorID) {
+				t.Fatalf("IsHTTPActorID(%q) = true, want false", actorID)
 			}
 		})
 	}

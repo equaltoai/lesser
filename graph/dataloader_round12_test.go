@@ -152,6 +152,22 @@ func TestRound12Dataloader_MissingLoadersAndMetrics(t *testing.T) {
 	require.Equal(t, int64(1), misses)
 }
 
+func TestLoadQuoteTargetStatusWrongLoaderResultFailsClosed(t *testing.T) {
+	loader := dataloader.NewBatchedLoader(func(_ context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+		for i := range results {
+			results[i] = &dataloader.Result{Data: "wrong-result-type"}
+		}
+		return results
+	})
+	ctx := WithLoaders(context.Background(), &Loaders{QuoteTargetLoader: loader})
+	require.NotPanics(t, func() {
+		status, err := LoadQuoteTargetStatus(ctx, "status-1")
+		require.NoError(t, err)
+		require.Nil(t, status)
+	})
+}
+
 func TestRound12Dataloader_TrustScoreNilFallsBackToNeutral(t *testing.T) {
 	_, storageRepo := newRound12GraphResolver(t)
 	ctx := WithLoaders(context.Background(), NewLoaders(round12TrustNilStorage{RepositoryStorage: storageRepo}, zap.NewNop()))

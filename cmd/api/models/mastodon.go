@@ -108,7 +108,7 @@ type CreateStatusRequest struct {
 	ScheduledAt *string  `json:"scheduled_at,omitempty"`   // ISO 8601 datetime for scheduling
 
 	// Lesser extension: optional transparency metadata for agent-authored posts.
-	AgentAttribution *AgentPostAttribution `json:"agent_attribution,omitempty"`
+	AgentAttribution *AgentPostAttributionInput `json:"agent_attribution,omitempty"`
 
 	// Lesser extension: optional memory event metadata for corrections/retractions.
 	MemoryEvent *AgentMemoryEventRequest `json:"memory_event,omitempty"`

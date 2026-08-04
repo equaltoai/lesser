@@ -552,6 +552,8 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 			"HTTP://" + localHostAndPath,
 			"HTTPS://" + localHostAndPath,
 			"HttPs://" + localHostAndPath,
+			"https://[::1]/users/alice",
+			"http://:8443/users/alice",
 		} {
 			t.Run(attributedTo, func(t *testing.T) {
 				objectRepo := inmemory.NewObjectRepository()
@@ -649,6 +651,44 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.Equal(t, "after honest update", statusRepo.updated[0].Content)
 	})
 
+	t.Run("update with global IPv6 attribution preserves the complete remote acct", func(t *testing.T) {
+		noteID := "https://remote.example/objects/ipv6-update"
+		objectRepo := inmemory.NewObjectRepository()
+		require.NoError(t, objectRepo.CreateObject(ctx, &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: noteID, Type: activitypub.NoteType},
+			AttributedTo: env.remoteActorID,
+			Content:      "before",
+		}))
+		statusRepo := &recordingStatusRepository{statuses: map[string]*models.Status{
+			models.CanonicalStatusID(noteID): {
+				StatusID:       models.CanonicalStatusID(noteID),
+				AuthorID:       env.remoteActorID,
+				AuthorUsername: "bob@remote.example",
+			},
+		}}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/ipv6-update"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "after ipv6 update",
+				"attributedTo": "https://[2001:db8::1]/users/alice",
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.NoError(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Len(t, statusRepo.updated, 1)
+		require.Equal(t, "alice@2001:db8::1", statusRepo.updated[0].AuthorUsername)
+		require.NotEqual(t, "alice@2001", statusRepo.updated[0].AuthorUsername)
+	})
+
 	t.Run("update note requires complete ActivityPub attribution", func(t *testing.T) {
 		noteID := "https://remote.example/users/bob/statuses/update-missing-attribution"
 		objectRepo := inmemory.NewObjectRepository()
@@ -680,6 +720,43 @@ func TestInboxHandler_Round10_RemoteCreateUpdateDelete_ErrorBranches(t *testing.
 		require.NoError(t, err)
 		storedNote, ok := stored.(*activitypub.Note)
 		require.True(t, ok)
+		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
+	})
+
+	t.Run("update note validation rejects malformed id independently of attribution guard", func(t *testing.T) {
+		noteID := "not-an-activitypub-url"
+		objectRepo := inmemory.NewObjectRepository()
+		require.NoError(t, objectRepo.CreateObject(ctx, &activitypub.Note{
+			BaseObject:   activitypub.BaseObject{ID: noteID, Type: activitypub.NoteType},
+			AttributedTo: env.remoteActorID,
+			Content:      "before",
+		}))
+		statusRepo := &recordingStatusRepository{}
+		handler := *env.handler
+		handler.objectRepository = objectRepo
+		handler.statusRepository = statusRepo
+
+		update := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{Type: activitypub.UpdateType, ID: "https://remote.example/activities/update-malformed-note-id"},
+			Actor:      env.remoteActorID,
+			Object: map[string]any{
+				"@context":     []any{"https://www.w3.org/ns/activitystreams"},
+				"id":           noteID,
+				"type":         activitypub.NoteType,
+				"content":      "after",
+				"attributedTo": env.remoteActorID,
+				"to":           []any{activitypub.PublicAddress},
+			},
+		}
+
+		require.Error(t, handler.processRemoteUpdateActivity(ctx, update, env.local))
+		require.Empty(t, statusRepo.updated)
+		require.Empty(t, statusRepo.created)
+		stored, err := objectRepo.GetObject(ctx, noteID)
+		require.NoError(t, err)
+		storedNote, ok := stored.(*activitypub.Note)
+		require.True(t, ok)
+		require.Equal(t, "before", storedNote.Content)
 		require.Equal(t, env.remoteActorID, storedNote.AttributedTo)
 	})
 

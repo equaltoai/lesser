@@ -55,6 +55,7 @@ type AgentRuntimeTokenIssueParams struct {
 	RefreshIdleTTL     time.Duration
 	RefreshAbsoluteTTL time.Duration
 	DeviceLabel        string
+	Delegation         DelegationCredentialClaims
 }
 
 // AgentRuntimeTokenBundle contains the issued OAuth tokens and stored refresh-session metadata.
@@ -122,7 +123,7 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		return nil, err
 	}
 	oauthSvc := NewOAuthService(jwtSecret, cfg, repos, nil)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation(
 		ctx,
 		params.Username,
 		params.ClientID,
@@ -131,6 +132,7 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		accessTTL,
 		ClientClassAgent,
 		sessionID,
+		params.Delegation,
 	)
 	if err != nil {
 		return nil, err

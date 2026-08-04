@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+func TestAccountsLocalityAcceptsCaseVariantHTTPScheme(t *testing.T) {
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg}
+	require.False(t, h.isRemoteURL("HTTP://"+strings.ToUpper(cfg.Domain)+"/users/alice"))
+	require.True(t, h.isRemoteURL("HTTP://REMOTE.EXAMPLE/users/alice"))
+}
 
 type accountsRound20EnsuringActorRepo struct {
 	interfaces.ActorRepository

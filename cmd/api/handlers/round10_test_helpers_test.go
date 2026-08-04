@@ -124,6 +124,7 @@ type round10QueryState struct {
 	agentAccessChallengesByID map[string]storagemodels.AgentAccessLeaseChallenge
 	agentGovernanceByUsername map[string]storagemodels.AgentGovernanceState
 	quotePermissionsByUser    map[string]storagemodels.QuotePermissions
+	statusMetadataByStatus    map[string]storagemodels.StatusMetadata
 	agentMemoryEventsByAgent  map[string][]storagemodels.AgentMemoryEvent
 	remoteActorsByPK          map[string]storagemodels.RemoteActor
 	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
@@ -854,6 +855,19 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		})).Return(err).Maybe()
 	}
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.StatusMetadata); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		if !okPK || !strings.HasPrefix(pk, "STATUS_META#") {
+			return false
+		}
+		statusID := strings.TrimPrefix(pk, "STATUS_META#")
+		_, exists := state.statusMetadataByStatus[statusID]
+		return !exists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
 	for gsi3pk, err := range state.firstErrorGSI3PK {
 		gsi3pk := gsi3pk
 		err := err
@@ -1386,6 +1400,16 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 
 			*d = storagemodels.RelationshipRecord{PK: pk, SK: sk, State: storagemodels.RelationshipPending}
+		case *storagemodels.StatusMetadata:
+			statusID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "STATUS_META#") {
+				statusID = strings.TrimPrefix(pk, "STATUS_META#")
+			}
+			if metadata, ok := state.statusMetadataByStatus[statusID]; ok {
+				*d = metadata
+				return
+			}
+			*d = storagemodels.StatusMetadata{StatusID: statusID}
 		case *storagemodels.QuoteRelationship:
 			pk, _ := state.whereString("PK")
 			sk, _ := state.whereString("SK")

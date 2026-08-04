@@ -53,6 +53,7 @@ type round12PermissiveQueryState struct {
 	seededAccountUsers     map[string]*storagepkg.User
 	seededGovernanceStates map[string]*storagepkg.AgentGovernanceState
 	seededImportBudgets    map[string]*models.ImportBudget
+	seededQuotePermissions map[string]*models.QuotePermissions
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
 }
@@ -344,6 +345,15 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		v.State = models.RelationshipAccepted
 		v.CreatedAt = time.Now().Add(-time.Hour)
 		v.UpdatedAt = time.Now().Add(-time.Minute)
+		return
+	case *models.QuotePermissions:
+		username := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(state.lastPK, "USER#")))
+		if permissions := state.seededQuotePermissions[username]; permissions != nil {
+			*v = *permissions
+			v.BlockList = append([]string(nil), permissions.BlockList...)
+			return
+		}
+		v.Username = username
 		return
 	case *models.Export:
 		exportID := "export-1"
@@ -1585,6 +1595,23 @@ func (s *round12GraphStorage) SeedAgentGovernanceState(state *storagepkg.AgentGo
 	cloned := state.Clone()
 	cloned.Username = username
 	s.queryState.seededGovernanceStates[username] = cloned
+}
+
+func (s *round12GraphStorage) SeedQuotePermissions(permissions *models.QuotePermissions) {
+	if s == nil || s.queryState == nil || permissions == nil {
+		return
+	}
+	username := strings.ToLower(strings.TrimSpace(permissions.Username))
+	if username == "" {
+		return
+	}
+	if s.queryState.seededQuotePermissions == nil {
+		s.queryState.seededQuotePermissions = map[string]*models.QuotePermissions{}
+	}
+	cloned := *permissions
+	cloned.Username = username
+	cloned.BlockList = append([]string(nil), permissions.BlockList...)
+	s.queryState.seededQuotePermissions[username] = &cloned
 }
 
 func newRound12GraphResolver(t *testing.T) (*Resolver, *round12GraphStorage) {

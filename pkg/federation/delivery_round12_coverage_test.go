@@ -27,6 +27,7 @@ func TestDeliveryHelpers_RecipientsAndDomains(t *testing.T) {
 	assert.False(t, d.isExplicitRecipient(activity, "https://example.com/users/bob"))
 
 	assert.True(t, isLocalActor("https://example.com/users/bob", "https://example.com/users/alice"))
+	assert.True(t, isLocalActor("HTTP://EXAMPLE.COM/users/bob", "https://example.com/users/alice"))
 	assert.False(t, isLocalActor("https://remote.example/users/bob", "https://example.com/users/alice"))
 	assert.False(t, isLocalActor("https://example.com/users/bob", ""))
 

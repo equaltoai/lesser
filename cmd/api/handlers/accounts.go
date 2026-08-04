@@ -339,7 +339,7 @@ func (h *Handler) publicAccountFromActor(ctx context.Context, actor *activitypub
 // looked up as local usernames.
 func (h *Handler) isRemoteURL(accountID string) bool {
 	// Bare usernames and @handles are local lookups, not remote URLs.
-	if !strings.HasPrefix(accountID, "http://") && !strings.HasPrefix(accountID, "https://") {
+	if !common.IsHTTPActorID(accountID) {
 		return false
 	}
 	domain := ""

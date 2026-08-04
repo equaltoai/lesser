@@ -17,6 +17,8 @@ import (
 type fakeQuoteStatusRepo struct {
 	statuses  map[string]*models.Status
 	getErr    error
+	getErrAt  int
+	getCalls  int
 	createErr error
 	updateErr error
 	updates   int
@@ -34,7 +36,8 @@ func (f *fakeQuoteStatusRepo) CreateStatus(_ context.Context, status *models.Sta
 }
 
 func (f *fakeQuoteStatusRepo) GetStatus(_ context.Context, statusID string) (*models.Status, error) {
-	if f.getErr != nil {
+	f.getCalls++
+	if f.getErr != nil && (f.getErrAt == 0 || f.getCalls == f.getErrAt) {
 		return nil, f.getErr
 	}
 	if f.statuses == nil {
@@ -165,12 +168,23 @@ func (f *fakeQuoteRepo) UpdateQuotePermissions(_ context.Context, permissions *m
 }
 
 type fakeQuoteStorage struct {
-	status quoteStatusRepository
-	quote  quoteRepository
+	status       quoteStatusRepository
+	quote        quoteRepository
+	relationship quoteRelationshipRepository
+	object       quoteObjectRepository
 }
 
 func (f fakeQuoteStorage) Status() quoteStatusRepository { return f.status }
 func (f fakeQuoteStorage) Quote() quoteRepository        { return f.quote }
+func (f fakeQuoteStorage) Relationship() quoteRelationshipRepository {
+	return f.relationship
+}
+func (f fakeQuoteStorage) Object() quoteObjectRepository {
+	if f.object != nil {
+		return f.object
+	}
+	return &fakeQuoteObjectRepo{quoteType: models.VisibilityPublic}
+}
 
 func TestQuoteService_Round25_CreateQuotePost(t *testing.T) {
 	t.Parallel()

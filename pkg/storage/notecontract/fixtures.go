@@ -62,6 +62,7 @@ func PublicFixtureNote() *activitypub.Note {
 			TriggerDetails:  "status-contract fixture",
 			MemoryCitations: []string{"memory-1"},
 			DelegatedBy:     "https://lesser.example/users/operator",
+			ApprovedBy:      "https://lesser.example/users/operator",
 			DelegatedByDID:  "did:example:operator",
 			Scopes:          []string{"post:public"},
 			Constraints:     []string{"no_external_side_effects"},

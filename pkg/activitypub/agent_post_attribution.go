@@ -23,6 +23,7 @@ type AgentPostAttribution struct {
 	MemoryCitations []string `json:"memory_citations,omitempty"`
 
 	DelegatedBy    string   `json:"delegated_by,omitempty"`
+	ApprovedBy     string   `json:"approved_by,omitempty"`
 	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
 	Scopes         []string `json:"scopes,omitempty"`
 
@@ -95,5 +96,6 @@ func normalizeAgentPostAttributionForActor(attr *AgentPostAttribution, actorIRI 
 
 	normalized := *attr
 	normalized.DelegatedBy = normalizeDelegatedByActorURI(normalized.DelegatedBy, actorIRI)
+	normalized.ApprovedBy = normalizeDelegatedByActorURI(normalized.ApprovedBy, actorIRI)
 	return &normalized
 }

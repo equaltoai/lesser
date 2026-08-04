@@ -80,6 +80,7 @@ func TestBuildCanonicalRemoteStatus_AllowsHonestRemoteActorPaths(t *testing.T) {
 		{name: "profile path", attributedTo: "https://remote.example/profile/carol", authorUsername: "carol@remote.example"},
 		{name: "actor path", attributedTo: "https://remote.example/actor", authorUsername: "actor@remote.example"},
 		{name: "api account path", attributedTo: "https://remote.example/api/v1/accounts/dave", authorUsername: "dave@remote.example"},
+		{name: "IPv6 actor", attributedTo: "https://[2001:db8::1]/users/alice", authorUsername: "alice@2001:db8::1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			note := &activitypub.Note{
@@ -94,6 +95,24 @@ func TestBuildCanonicalRemoteStatus_AllowsHonestRemoteActorPaths(t *testing.T) {
 			require.NotNil(t, status)
 			assert.Equal(t, test.attributedTo, status.AuthorID)
 			assert.Equal(t, test.authorUsername, status.AuthorUsername)
+		})
+	}
+}
+
+func TestBuildCanonicalRemoteStatus_RejectsAttributionWithoutUsableDomainAnchor(t *testing.T) {
+	for _, attributedTo := range []string{
+		"https://[::1]/users/alice",
+		"http://:8443/users/alice",
+	} {
+		t.Run(attributedTo, func(t *testing.T) {
+			note := &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/objects/unanchored-attribution",
+					Type: activitypub.NoteType,
+				},
+				AttributedTo: attributedTo,
+			}
+			assert.Nil(t, BuildCanonicalRemoteStatus(note, "local.example"))
 		})
 	}
 }

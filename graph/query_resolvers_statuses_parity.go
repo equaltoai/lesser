@@ -215,6 +215,7 @@ func (r *queryResolver) LinkTimeline(ctx context.Context, url string, first *int
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to search statuses for link timeline"), err)
 	}
+	r.prefetchQuoteControls(ctx, results.Items)
 
 	edges := make([]*model.ObjectEdge, 0, len(results.Items))
 	for _, status := range results.Items {

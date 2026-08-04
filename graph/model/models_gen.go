@@ -676,12 +676,6 @@ type AgentPostAttributionInput struct {
 	TriggerType     *string  `json:"triggerType,omitempty"`
 	TriggerDetails  *string  `json:"triggerDetails,omitempty"`
 	MemoryCitations []string `json:"memoryCitations,omitempty"`
-	DelegatedBy     *string  `json:"delegatedBy,omitempty"`
-	DelegatedByDid  *string  `json:"delegatedByDid,omitempty"`
-	Scopes          []string `json:"scopes,omitempty"`
-	Constraints     []string `json:"constraints,omitempty"`
-	SchemaVersion   *string  `json:"schemaVersion,omitempty"`
-	ModelID         *string  `json:"modelId,omitempty"`
 }
 
 type AgentRuntimeSession struct {
@@ -5887,18 +5881,20 @@ type QuotePermission string
 const (
 	QuotePermissionEveryone  QuotePermission = "EVERYONE"
 	QuotePermissionFollowers QuotePermission = "FOLLOWERS"
+	QuotePermissionMentioned QuotePermission = "MENTIONED"
 	QuotePermissionNone      QuotePermission = "NONE"
 )
 
 var AllQuotePermission = []QuotePermission{
 	QuotePermissionEveryone,
 	QuotePermissionFollowers,
+	QuotePermissionMentioned,
 	QuotePermissionNone,
 }
 
 func (e QuotePermission) IsValid() bool {
 	switch e {
-	case QuotePermissionEveryone, QuotePermissionFollowers, QuotePermissionNone:
+	case QuotePermissionEveryone, QuotePermissionFollowers, QuotePermissionMentioned, QuotePermissionNone:
 		return true
 	}
 	return false
