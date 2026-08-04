@@ -349,17 +349,11 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 				continue
 			}
 			scanned++
-			status, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-				StatusID: relationship.QuoterNoteID,
-				ViewerID: viewer,
-			})
+			summary, isVisible, err := visibleQuoteSummary(ctx, notesService, relationship, viewer)
 			if err != nil {
-				if commonerrors.HasCode(err, commonerrors.CodeNotFound) {
-					continue
-				}
 				return nil, err
 			}
-			if status == nil {
+			if !isVisible {
 				continue
 			}
 			if visible < offset {
@@ -367,7 +361,7 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 				continue
 			}
 			visible++
-			items = append(items, quoteStatusSummary(status))
+			items = append(items, summary)
 			if len(items) == limit {
 				break
 			}
@@ -385,6 +379,23 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 	}
 
 	return items, nil
+}
+
+func visibleQuoteSummary(ctx context.Context, notesService NotesService, relationship *storageModels.QuoteRelationship, viewer string) (apimodels.QuoteStatusSummary, bool, error) {
+	status, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: relationship.QuoterNoteID,
+		ViewerID: viewer,
+	})
+	if err != nil {
+		if commonerrors.HasCode(err, commonerrors.CodeNotFound) {
+			return apimodels.QuoteStatusSummary{}, false, nil
+		}
+		return apimodels.QuoteStatusSummary{}, false, err
+	}
+	if status == nil {
+		return apimodels.QuoteStatusSummary{}, false, nil
+	}
+	return quoteStatusSummary(status), true, nil
 }
 
 func quoteStatusSummary(status *storageModels.Status) apimodels.QuoteStatusSummary {
