@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -136,7 +137,7 @@ func TestCreateNoteRejectsNonPublicQuoteTargetBeforePersistence(t *testing.T) {
 	require.Zero(t, count, "the rejected quote must not persist a new status")
 }
 
-func TestCreateQuoteNoteInheritsReachAndRejectsWidening(t *testing.T) {
+func TestCreateQuoteNoteRejectsNonPublicTargetsBeforePersistence(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 	seedMutationReachParent(t, storageRepo.Status(), "parent", models.VisibilityPrivate)
 
@@ -147,14 +148,54 @@ func TestCreateQuoteNoteInheritsReachAndRejectsWidening(t *testing.T) {
 	})
 	requireStructuredReachRefusal(t, err)
 
-	payload, err := resolver.Mutation().CreateQuoteNote(round12AuthContext("alice"), model.CreateQuoteNoteInput{
+	_, err = resolver.Mutation().CreateQuoteNote(round12AuthContext("alice"), model.CreateQuoteNoteInput{
 		Content:  "inherited quote",
+		QuoteURL: "parent",
+	})
+	require.Error(t, err)
+	appErr, ok := apperrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, apperrors.CodeBusinessRuleViolated, appErr.Code)
+
+	count, countErr := storageRepo.Status().CountStatusesByAuthor(context.Background(), "alice")
+	require.NoError(t, countErr)
+	require.Zero(t, count, "a followers-only quote target must be rejected before status persistence")
+}
+
+func TestCreateQuoteNoteRejectsBlockedQuoterBeforePersistence(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	seedMutationReachParent(t, storageRepo.Status(), "parent", models.VisibilityPublic)
+	storageRepo.SeedQuotePermissions(&models.QuotePermissions{
+		Username:    "alice",
+		AllowPublic: true,
+		BlockList:   []string{"mallory"},
+	})
+
+	_, err := resolver.Mutation().CreateQuoteNote(round12AuthContext("mallory"), model.CreateQuoteNoteInput{
+		Content:  "blocked quote",
+		QuoteURL: "parent",
+	})
+	require.ErrorIs(t, err, quotes.ErrNotAuthorizedToQuote)
+
+	count, countErr := storageRepo.Status().CountStatusesByAuthor(context.Background(), "mallory")
+	require.NoError(t, countErr)
+	require.Zero(t, count, "a blocked quoter must be rejected before status persistence")
+}
+
+func TestCreateQuoteNoteAttachesAuthorizedPublicQuote(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	seedMutationReachParent(t, storageRepo.Status(), "parent", models.VisibilityPublic)
+	storageRepo.SeedQuotePermissions(&models.QuotePermissions{Username: "alice", AllowPublic: true})
+
+	payload, err := resolver.Mutation().CreateQuoteNote(round12AuthContext("alice"), model.CreateQuoteNoteInput{
+		Content:  "public quote",
 		QuoteURL: "parent",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, payload)
 	require.NotNil(t, payload.Object)
-	require.Equal(t, model.VisibilityFollowers, payload.Object.Visibility)
+	require.NotNil(t, payload.Object.QuoteURL, "CreateQuoteNote must attach through QuoteService")
+	require.Equal(t, "https://localhost/users/alice/statuses/parent", *payload.Object.QuoteURL)
 }
 
 func ptrVisibility(v model.Visibility) *model.Visibility { return &v }
