@@ -65,6 +65,9 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.
 	if err := notes.ValidateChildReach("quote", quoteTarget, statusRequest.Visibility); err != nil {
 		return respondQuoteAppError(ctx, err)
 	}
+	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+		return common.RespondUnprocessableEntity(ctx, quotes.ErrTargetStatusNotQuotable.Message)
+	}
 
 	quotesService := h.registry.Quotes()
 	allowed, err := quotesService.CheckQuotePermissions(ctx.Context(), claims.Username, quoteTarget)

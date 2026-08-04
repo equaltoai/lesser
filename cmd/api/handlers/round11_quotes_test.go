@@ -138,6 +138,42 @@ func TestQuotePostRESTCreateRoundTrip(t *testing.T) {
 		require.Zero(t, createCalls)
 	})
 
+	t.Run("non-public target fails with 422 before note creation", func(t *testing.T) {
+		createCalls := 0
+		permissionCalls := 0
+		followersOnlyTarget := *target
+		followersOnlyTarget.Visibility = storagemodels.VisibilityPrivate
+		reg := &RegistryStub{
+			NotesSvc: &NotesServiceStub{
+				ResolveQuoteTargetFunc: func(context.Context, string, string) (*storagemodels.Status, error) {
+					return &followersOnlyTarget, nil
+				},
+				CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					createCalls++
+					return nil, nil
+				},
+			},
+			QuotesSvc: &QuotesServiceStub{
+				CheckQuotePermissionsFunc: func(context.Context, string, *storagemodels.Status) (bool, error) {
+					permissionCalls++
+					return true, nil
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, reg)
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/target-1/quote", headers, nil, apimodels.CreateQuotePostRequest{
+			Status:     "Quote text",
+			Visibility: storagemodels.VisibilityPrivate,
+		})
+		require.NoError(t, err)
+		ctx.Params["id"] = "target-1"
+
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleCreateQuotePostLift(ctx))
+		require.Contains(t, string(resp.Body), string(commonerrors.CodeUnprocessableEntity))
+		require.Zero(t, permissionCalls)
+		require.Zero(t, createCalls)
+	})
+
 	t.Run("quoteability storage errors fail closed before note creation", func(t *testing.T) {
 		createCalls := 0
 		reg := &RegistryStub{
