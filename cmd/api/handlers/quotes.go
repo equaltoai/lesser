@@ -352,10 +352,7 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 			return nil, commonerrors.Internal("quote relationship page is unavailable")
 		}
 
-		for _, relationship := range page.Relationships {
-			if scanned >= maxScanned {
-				break
-			}
+		for _, relationship := range boundedQuoteRelationships(page.Relationships, maxScanned-scanned) {
 			scanned++
 			if relationship == nil {
 				continue
@@ -390,6 +387,16 @@ func (h *Handler) listVisibleQuoteSummaries(ctx context.Context, notesService No
 	}
 
 	return items, nil
+}
+
+func boundedQuoteRelationships(relationships []*storageModels.QuoteRelationship, remaining int) []*storageModels.QuoteRelationship {
+	if remaining <= 0 {
+		return nil
+	}
+	if len(relationships) > remaining {
+		return relationships[:remaining]
+	}
+	return relationships
 }
 
 func visibleQuoteSummary(ctx context.Context, notesService NotesService, relationship *storageModels.QuoteRelationship, viewer string) (apimodels.QuoteStatusSummary, bool, error) {
