@@ -212,9 +212,18 @@ func quoteAccountPrefetchUsernames(statuses []*models.Status) []string {
 
 func quoteControlRelatedStatusIDs(statuses []*models.Status, seen map[string]struct{}) []string {
 	ids := make([]string, 0, len(statuses)*2)
+	rootIDs := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		if status != nil && strings.TrimSpace(status.StatusID) != "" {
+			rootIDs[strings.TrimSpace(status.StatusID)] = struct{}{}
+		}
+	}
 	add := func(raw string) {
 		id := strings.TrimSpace(raw)
 		if id == "" {
+			return
+		}
+		if _, root := rootIDs[id]; root {
 			return
 		}
 		if _, exists := seen[id]; exists {
@@ -392,7 +401,7 @@ func (r *Resolver) resolveInReplyToObject(ctx context.Context, status *models.St
 	}
 
 	depth := r.getConversionDepth(ctx)
-	if depth >= 3 {
+	if depth >= quoteControlProjectionMaxDepth {
 		return nil
 	}
 
@@ -434,7 +443,7 @@ func (r *Resolver) resolveBoostedObject(ctx context.Context, status *models.Stat
 	}
 
 	depth := r.getConversionDepth(ctx)
-	if depth >= 3 {
+	if depth >= quoteControlProjectionMaxDepth {
 		return nil
 	}
 

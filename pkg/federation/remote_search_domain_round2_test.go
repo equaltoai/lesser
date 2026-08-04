@@ -27,6 +27,8 @@ func TestNormalizeActorDomainCanonicalizesAndRejectsUnsafeIPForms(t *testing.T) 
 		{name: "loopback hex", input: "0x7f.0.0.1", want: ""},
 		{name: "loopback octal", input: "0177.0.0.1", want: ""},
 		{name: "unspecified", input: "0", want: ""},
+		{name: "doubled zone unspecified bracketed", input: "[::%eth0%x]", want: ""},
+		{name: "doubled zone unspecified bare", input: "::%eth0%x", want: ""},
 		{name: "zoned link local", input: "[fe80::1%eth0]", want: ""},
 		{name: "zoned global IPv6", input: "[2001:db8::1%eth0]", want: "2001:db8::1"},
 		{name: "doubled zone bracketed", input: "[2001:db8::1%eth0%evil.com]", want: "2001:db8::1"},

@@ -488,7 +488,9 @@ func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dat
 		return results
 	}
 
-	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+	return dataloader.NewBatchedLoader(batchFn,
+		dataloader.WithWait(2*time.Millisecond),
+		dataloader.WithBatchCapacity(100))
 }
 
 // Middleware to attach loaders to context
@@ -607,7 +609,11 @@ func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status
 	if result == nil {
 		return nil, nil
 	}
-	return result.(*quoteTargetLoadResult).status, nil
+	loaded, _ := result.(*quoteTargetLoadResult)
+	if loaded == nil {
+		return nil, nil
+	}
+	return loaded.status, nil
 }
 
 func loadQuoteTargetStatusBatch(ctx context.Context, statusIDs []string) ([]*models.Status, []*quoteControlBatch) {

@@ -110,13 +110,13 @@ func TestEffectiveGraphQLQuoteControlMatchesEnforcementMatrix(t *testing.T) {
 						}
 						allowed := false
 						if common.IsPubliclyVisible(status.Visibility) {
+							oracleCalls++
 							var err error
 							allowed, err = quoteservice.NewQuoteService(oracleStorage, zap.NewNop()).
 								CheckQuotePermissions(ctx, viewer.username, status)
 							require.NoError(t, err)
 						}
 						allowedByViewer[viewer.name] = allowed
-						oracleCalls++
 					}
 
 					expectedPermission := model.QuotePermissionNone
@@ -156,7 +156,7 @@ func TestEffectiveGraphQLQuoteControlMatchesEnforcementMatrix(t *testing.T) {
 		}
 	}
 	require.Equal(t, 288, cells)
-	require.Equal(t, 864, oracleCalls)
+	require.Equal(t, 432, oracleCalls)
 
 	quoteable, permission := effectiveGraphQLQuoteControl(
 		&models.Status{Visibility: models.VisibilityPublic}, nil, models.VisibilityPublic,

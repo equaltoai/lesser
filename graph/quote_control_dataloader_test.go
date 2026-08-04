@@ -192,6 +192,7 @@ func TestQuoteControlLoaderFailureAndPrefetchEdges(t *testing.T) {
 	cycleSeen := make(map[string]struct{})
 	require.Equal(t, []string{"one", "parent"}, quoteControlStatusIDs(cycleStatuses, cycleSeen))
 	require.Equal(t, []string{"boost"}, quoteControlRelatedStatusIDs(cycleStatuses, cycleSeen))
+	require.Equal(t, []string{"boost"}, quoteControlRelatedStatusIDs(cycleStatuses, make(map[string]struct{})))
 
 	// Keep the non-loader fallback pinned for non-GraphQL conversion callers.
 	quoteable, permission = resolver.determineQuoteable(context.Background(), &models.Status{
@@ -308,7 +309,7 @@ func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
 	)
 	ctx := WithLoaders(context.Background(), loaders)
 
-	const count = 60
+	const count = 120
 	roots := make([]*models.Status, 0, count)
 	for i := range count {
 		rootID := fmt.Sprintf("capacity-root-%02d", i)
@@ -331,11 +332,32 @@ func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
 
 	resolver.prefetchQuoteControls(ctx, roots)
 
-	require.Equal(t, int32(2), objectRepo.calls.Load(), "120 per-note keys must split into two batches")
-	require.Equal(t, int32(1), statusRepo.calls.Load(), "60 parents must use one status batch")
-	require.Equal(t, int32(2), accountCalls.Load(), "120 author keys must split into two batches")
-	require.Equal(t, int32(5), objectRepo.calls.Load()+statusRepo.calls.Load()+accountCalls.Load())
-	require.Equal(t, int64(5), tracker.GetOperationCounts()["Read"], "tail batches must be tracked before projection")
+	require.Equal(t, int32(3), objectRepo.calls.Load(), "240 per-note keys must split into three batches")
+	require.Equal(t, int32(2), statusRepo.calls.Load(), "120 parents must split into two status batches")
+	require.Equal(t, int32(3), accountCalls.Load(), "240 author keys must split into three batches")
+	require.Equal(t, int32(8), objectRepo.calls.Load()+statusRepo.calls.Load()+accountCalls.Load())
+	require.Equal(t, int64(8), tracker.GetOperationCounts()["Read"], "tail batches must be tracked before projection")
+}
+
+func TestQuoteControlProjectionDepthBoundsRelatedResolvers(t *testing.T) {
+	ctx := (&Resolver{}).setConversionDepth(context.Background(), quoteControlProjectionMaxDepth)
+
+	t.Run("reply", func(t *testing.T) {
+		resolver := &Resolver{}
+		require.NotPanics(t, func() {
+			require.Nil(t, resolver.resolveInReplyToObject(ctx, &models.Status{InReplyToID: "parent"}, nil))
+		})
+	})
+
+	t.Run("boost", func(t *testing.T) {
+		called := false
+		resolver := &Resolver{notesClient: &stubNotesService{getNoteFunc: func(context.Context, string) (*models.Status, error) {
+			called = true
+			return &models.Status{StatusID: "original"}, nil
+		}}}
+		require.Nil(t, resolver.resolveBoostedObject(ctx, &models.Status{ReblogOfID: "original"}, nil))
+		require.False(t, called)
+	})
 }
 
 func TestQuoteControlLoaderPrefetchesDepthThreeReplyChains(t *testing.T) {
