@@ -257,11 +257,13 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 	for _, result := range loaded {
 		if result != nil {
 			r.trackQuoteControlBatch(ctx, result.batch)
-			break
 		}
 	}
 
-	relatedStatuses := loadQuoteTargetStatuses(ctx, quoteControlRelatedStatusIDs(statuses))
+	relatedStatuses, statusBatches := loadQuoteTargetStatuses(ctx, quoteControlRelatedStatusIDs(statuses))
+	for _, batch := range statusBatches {
+		r.trackQuoteControlBatch(ctx, batch)
+	}
 	accountStatuses := make([]*models.Status, 0, len(statuses)+len(relatedStatuses))
 	accountStatuses = append(accountStatuses, statuses...)
 	accountStatuses = append(accountStatuses, relatedStatuses...)
@@ -273,7 +275,6 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 	for _, result := range accounts {
 		if result != nil {
 			r.trackQuoteControlBatch(ctx, result.batch)
-			return
 		}
 	}
 }

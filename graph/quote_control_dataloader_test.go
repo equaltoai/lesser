@@ -131,7 +131,7 @@ func TestQuoteControlLoaderBatchesRequestProjectionAndTracksCost(t *testing.T) {
 
 	require.Equal(t, int32(1), objectRepo.calls.Load(), "all root and recursive quote controls must use one batch")
 	require.Equal(t, int32(1), accountCalls.Load(), "all authors must use one account-permission batch")
-	require.Equal(t, int64(2), tracker.GetOperationCounts()["Read"], "both batch reads must be cost-visible once")
+	require.Equal(t, int64(3), tracker.GetOperationCounts()["Read"], "per-note, related-status, and account batches must each be cost-visible once")
 
 	// NewLoaders is called once per GraphQL request by middleware. A second loader
 	// set must not reuse the first request's permission cache.
@@ -207,6 +207,10 @@ func TestQuoteControlLoaderBatchesBoostOriginalAuthors(t *testing.T) {
 		object:            objectRepo,
 		status:            statusRepo,
 	}
+	tracker := cost.NewUnifiedTracker(nil, zap.NewNop(), "alice", "quote-control-boost-request")
+	t.Cleanup(func() { require.NoError(t, tracker.Close(context.Background())) })
+	resolver.UnifiedTracker = tracker
+	resolver.TableName = "lesser-test"
 
 	var accountCalls atomic.Int32
 	var accountKeys atomic.Int32
@@ -261,6 +265,70 @@ func TestQuoteControlLoaderBatchesBoostOriginalAuthors(t *testing.T) {
 	require.Equal(t, int32(41), accountKeys.Load())
 	require.Equal(t, int32(1), statusRepo.calls.Load(), "all boost originals must use one status batch")
 	require.Equal(t, int32(40), statusRepo.keys.Load())
+	require.Equal(t, int32(3), objectRepo.calls.Load()+statusRepo.calls.Load()+accountCalls.Load())
+	require.Equal(t, int64(3), tracker.GetOperationCounts()["Read"], "every repository batch must be cost-visible once")
+}
+
+func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	objectRepo := &quoteControlCountingRepository{
+		ObjectRepository: storageRepo.Object(),
+		quoteTypes:       make(map[string]string, 120),
+	}
+	statusRepo := &quoteControlCountingStatusRepository{StatusRepository: storageRepo.Status()}
+	requestStorage := quoteControlCountingStorage{
+		RepositoryStorage: storageRepo,
+		object:            objectRepo,
+		status:            statusRepo,
+	}
+	tracker := cost.NewUnifiedTracker(nil, zap.NewNop(), "alice", "quote-control-capacity-request")
+	t.Cleanup(func() { require.NoError(t, tracker.Close(context.Background())) })
+	resolver.UnifiedTracker = tracker
+	resolver.TableName = "lesser-test"
+
+	var accountCalls atomic.Int32
+	loaders := NewLoaders(requestStorage, zap.NewNop())
+	loaders.QuoteAccountLoader = newQuoteAccountLoaderWithLookup(
+		func(_ context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
+			accountCalls.Add(1)
+			permissions := make(map[string]*models.QuotePermissions, len(usernames))
+			for _, username := range usernames {
+				permissions[username] = &models.QuotePermissions{Username: username, AllowPublic: true}
+			}
+			return permissions, nil
+		},
+		zap.NewNop(),
+	)
+	ctx := WithLoaders(context.Background(), loaders)
+
+	const count = 60
+	roots := make([]*models.Status, 0, count)
+	for i := range count {
+		rootID := fmt.Sprintf("capacity-root-%02d", i)
+		parentID := fmt.Sprintf("capacity-parent-%02d", i)
+		parent := &models.Status{
+			StatusID:       parentID,
+			AuthorUsername: fmt.Sprintf("capacity-parent-author-%02d", i),
+			Visibility:     models.VisibilityPublic,
+		}
+		require.NoError(t, storageRepo.Status().CreateStatus(ctx, parent))
+		roots = append(roots, &models.Status{
+			StatusID:       rootID,
+			AuthorUsername: fmt.Sprintf("capacity-root-author-%02d", i),
+			InReplyToID:    parentID,
+			Visibility:     models.VisibilityPublic,
+		})
+		objectRepo.quoteTypes[rootID] = models.VisibilityPublic
+		objectRepo.quoteTypes[parentID] = models.VisibilityPublic
+	}
+
+	resolver.prefetchQuoteControls(ctx, roots)
+
+	require.Equal(t, int32(2), objectRepo.calls.Load(), "120 per-note keys must split into two batches")
+	require.Equal(t, int32(1), statusRepo.calls.Load(), "60 parents must use one status batch")
+	require.Equal(t, int32(2), accountCalls.Load(), "120 author keys must split into two batches")
+	require.Equal(t, int32(5), objectRepo.calls.Load()+statusRepo.calls.Load()+accountCalls.Load())
+	require.Equal(t, int64(5), tracker.GetOperationCounts()["Read"], "tail batches must be tracked before projection")
 }
 
 func TestThreadAncestorQuoteControlsPrefetchBeforeProjection(t *testing.T) {

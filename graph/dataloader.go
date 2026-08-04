@@ -73,6 +73,11 @@ type quoteAccountLoadResult struct {
 	batch       *quoteControlBatch
 }
 
+type quoteTargetLoadResult struct {
+	status *models.Status
+	batch  *quoteControlBatch
+}
+
 type quoteAccountBatchLookup func(context.Context, []string) (map[string]*models.QuotePermissions, error)
 
 func newQuoteControlLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
@@ -472,12 +477,12 @@ func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dat
 			statusMap[status.StatusID] = status
 		}
 
+		batch := &quoteControlBatch{readUnits: int64(len(statusIDs))}
 		for i, key := range keys {
-			if status, ok := statusMap[key.String()]; ok {
-				results[i] = &dataloader.Result{Data: status}
-			} else {
-				results[i] = &dataloader.Result{Data: (*models.Status)(nil)}
-			}
+			results[i] = &dataloader.Result{Data: &quoteTargetLoadResult{
+				status: statusMap[key.String()],
+				batch:  batch,
+			}}
 		}
 
 		return results
@@ -602,14 +607,13 @@ func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status
 	if result == nil {
 		return nil, nil
 	}
-	status, _ := result.(*models.Status)
-	return status, nil
+	return result.(*quoteTargetLoadResult).status, nil
 }
 
-func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) []*models.Status {
+func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) ([]*models.Status, []*quoteControlBatch) {
 	loaders := GetLoaders(ctx)
 	if loaders == nil || loaders.QuoteTargetLoader == nil || len(statusIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	keys := make(dataloader.Keys, len(statusIDs))
@@ -618,12 +622,16 @@ func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) []*models.
 	}
 	raw, _ := loaders.QuoteTargetLoader.LoadMany(ctx, keys)()
 	statuses := make([]*models.Status, 0, len(raw))
+	batches := make([]*quoteControlBatch, 0, len(raw))
 	for _, value := range raw {
-		if status, ok := value.(*models.Status); ok && status != nil {
-			statuses = append(statuses, status)
+		if result, ok := value.(*quoteTargetLoadResult); ok {
+			batches = append(batches, result.batch)
+			if result.status != nil {
+				statuses = append(statuses, result.status)
+			}
 		}
 	}
-	return statuses
+	return statuses, batches
 }
 
 func loadQuoteControls(ctx context.Context, statusIDs []string) ([]*quoteControlLoadResult, []error) {
