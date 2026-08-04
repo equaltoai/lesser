@@ -546,6 +546,7 @@ func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo int
 		current = parent
 	}
 
+	r.prefetchQuoteControls(ctx, ancestorStatuses)
 	for i := len(ancestorStatuses) - 1; i >= 0; i-- {
 		if obj := r.convertStatusToObject(ctx, ancestorStatuses[i]); obj != nil {
 			ancestors = append(ancestors, obj)

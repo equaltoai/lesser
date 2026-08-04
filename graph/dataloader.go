@@ -606,6 +606,26 @@ func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status
 	return status, nil
 }
 
+func loadQuoteTargetStatuses(ctx context.Context, statusIDs []string) []*models.Status {
+	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.QuoteTargetLoader == nil || len(statusIDs) == 0 {
+		return nil
+	}
+
+	keys := make(dataloader.Keys, len(statusIDs))
+	for i, statusID := range statusIDs {
+		keys[i] = dataloader.StringKey(statusID)
+	}
+	raw, _ := loaders.QuoteTargetLoader.LoadMany(ctx, keys)()
+	statuses := make([]*models.Status, 0, len(raw))
+	for _, value := range raw {
+		if status, ok := value.(*models.Status); ok && status != nil {
+			statuses = append(statuses, status)
+		}
+	}
+	return statuses
+}
+
 func loadQuoteControls(ctx context.Context, statusIDs []string) ([]*quoteControlLoadResult, []error) {
 	loaders := GetLoaders(ctx)
 	if loaders == nil || loaders.QuoteControlLoader == nil {

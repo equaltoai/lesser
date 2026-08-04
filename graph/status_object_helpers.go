@@ -208,6 +208,40 @@ func quoteAccountPrefetchUsernames(statuses []*models.Status) []string {
 	return usernames
 }
 
+func quoteControlRelatedStatusIDs(statuses []*models.Status) []string {
+	rootIDs := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		if status != nil && strings.TrimSpace(status.StatusID) != "" {
+			rootIDs[strings.TrimSpace(status.StatusID)] = struct{}{}
+		}
+	}
+
+	seen := make(map[string]struct{}, len(statuses)*2)
+	ids := make([]string, 0, len(statuses)*2)
+	add := func(raw string) {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			return
+		}
+		if _, isRoot := rootIDs[id]; isRoot {
+			return
+		}
+		if _, exists := seen[id]; exists {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	for _, status := range statuses {
+		if status == nil {
+			continue
+		}
+		add(status.InReplyToID)
+		add(boostTargetStatusID(status))
+	}
+	return ids
+}
+
 func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models.Status) {
 	if GetLoaders(ctx) == nil {
 		return
@@ -224,7 +258,11 @@ func (r *Resolver) prefetchQuoteControls(ctx context.Context, statuses []*models
 		}
 	}
 
-	usernames := quoteAccountPrefetchUsernames(statuses)
+	relatedStatuses := loadQuoteTargetStatuses(ctx, quoteControlRelatedStatusIDs(statuses))
+	accountStatuses := make([]*models.Status, 0, len(statuses)+len(relatedStatuses))
+	accountStatuses = append(accountStatuses, statuses...)
+	accountStatuses = append(accountStatuses, relatedStatuses...)
+	usernames := quoteAccountPrefetchUsernames(accountStatuses)
 	if len(usernames) == 0 {
 		return
 	}
