@@ -22,6 +22,7 @@ func TestRunCLI_DispatchAndExitCodes(t *testing.T) {
 		require.Equal(t, 0, code)
 		require.Contains(t, buf.String(), "Usage:")
 		require.Contains(t, buf.String(), "--release-dir <path>")
+		require.Contains(t, buf.String(), "base-domain <example.com> [--aws-profile <profile>]")
 	})
 
 	t.Run("version prints version and returns 0", func(t *testing.T) {

@@ -203,9 +203,6 @@ func normalizeClientInstallInputs(args clientInstallArgs) (string, string, strin
 	}
 
 	awsProfile := strings.TrimSpace(args.AWSProfile)
-	if awsProfile == "" {
-		return "", "", "", errors.New("aws profile is required")
-	}
 
 	return app, baseDomain, awsProfile, nil
 }
@@ -281,7 +278,7 @@ func resolveClientInstallReceipt(app, baseDomain string, args clientInstallArgs)
 }
 
 func newClientInstallAWSClients(awsProfile string) (*s3.Client, *cloudfront.Client, error) {
-	awsCfg, err := loadAWSConfigFromProfileFn(context.Background(), awsProfile)
+	awsCfg, _, err := loadAWSConfigForCLIFn(context.Background(), awsProfile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -390,7 +387,7 @@ func parseClientInstallArgs(argv []string) (clientInstallArgs, error) {
 	var args clientInstallArgs
 	fs.StringVar(&args.App, "app", "", "app name slug (e.g. my-lesser)")
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
-	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile override (optional; defaults to the ambient AWS credential chain)")
 	fs.StringVar(&args.Stage, "stage", "both", "stage to install (dev|live|staging|both|all)")
 	fs.StringVar(&args.StatePath, "state", "", "path to deployment receipt (defaults to ~/.lesser/<app>/<base-domain>/state.json)")
 	fs.StringVar(&args.ConfigPath, "config", "", "path to facetheory.lesser.json (defaults to searching from cwd upward)")
@@ -400,8 +397,8 @@ func parseClientInstallArgs(argv []string) (clientInstallArgs, error) {
 		return clientInstallArgs{}, err
 	}
 
-	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" || strings.TrimSpace(args.AWSProfile) == "" {
-		return clientInstallArgs{}, errors.New("required flags: --app, --base-domain, --aws-profile")
+	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" {
+		return clientInstallArgs{}, errors.New("required flags: --app, --base-domain")
 	}
 
 	return args, nil

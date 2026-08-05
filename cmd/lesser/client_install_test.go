@@ -31,6 +31,19 @@ func TestParseClientInstallArgs_RequiresFlags(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseClientInstallArgs_AllowsAmbientCredentials(t *testing.T) {
+	args, err := parseClientInstallArgs([]string{
+		"--app", "app",
+		"--base-domain", "example.com",
+		"--stage", "dev",
+		"--skip-build",
+	})
+	require.NoError(t, err)
+	require.Empty(t, args.AWSProfile)
+	require.Equal(t, "dev", args.Stage)
+	require.True(t, args.SkipBuild)
+}
+
 func TestPrepareClientInstallPackage_BuildsManifest(t *testing.T) {
 	appRoot := t.TempDir()
 	serverDir := filepath.Join(appRoot, "build", "server")
@@ -77,13 +90,13 @@ func TestPrepareClientInstallPackage_BuildsManifest(t *testing.T) {
 }
 
 func TestRunClientInstall_RecordsInstallInReceiptAndPublishesManifest(t *testing.T) {
-	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousLoadAWS := loadAWSConfigForCLIFn
 	previousUploadDir := uploadDirWithPrefixFn
 	previousPutObjectString := putObjectStringFn
 	previousInvalidate := invalidateClientPathsFn
 	previousWriteReceipt := writeReceiptFn
 	t.Cleanup(func() {
-		loadAWSConfigFromProfileFn = previousLoadAWS
+		loadAWSConfigForCLIFn = previousLoadAWS
 		uploadDirWithPrefixFn = previousUploadDir
 		putObjectStringFn = previousPutObjectString
 		invalidateClientPathsFn = previousInvalidate
@@ -162,8 +175,9 @@ func TestRunClientInstall_RecordsInstallInReceiptAndPublishesManifest(t *testing
 	var invalidations []string
 	var wroteReceipt *upReceipt
 
-	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
-		return aws.Config{Region: "us-east-1"}, nil
+	loadAWSConfigForCLIFn = func(_ context.Context, profile string) (aws.Config, string, error) {
+		require.Equal(t, "profile", profile)
+		return aws.Config{Region: "us-east-1"}, profile, nil
 	}
 	uploadDirWithPrefixFn = func(_ context.Context, _ s3PutObjectAPI, bucket, prefix, dir string) error {
 		uploads = append(uploads, uploadCall{Bucket: bucket, Prefix: prefix, Dir: dir})
@@ -256,13 +270,13 @@ func TestRunClientInstall_PropagatesErrors(t *testing.T) {
 	})
 
 	t.Run("publish stage", func(t *testing.T) {
-		previousLoadAWS := loadAWSConfigFromProfileFn
+		previousLoadAWS := loadAWSConfigForCLIFn
 		previousUploadDir := uploadDirWithPrefixFn
 		previousPutObjectString := putObjectStringFn
 		previousInvalidate := invalidateClientPathsFn
 		previousWriteReceipt := writeReceiptFn
 		t.Cleanup(func() {
-			loadAWSConfigFromProfileFn = previousLoadAWS
+			loadAWSConfigForCLIFn = previousLoadAWS
 			uploadDirWithPrefixFn = previousUploadDir
 			putObjectStringFn = previousPutObjectString
 			invalidateClientPathsFn = previousInvalidate
@@ -271,8 +285,8 @@ func TestRunClientInstall_PropagatesErrors(t *testing.T) {
 
 		appRoot, configPath, statePath := writeClientInstallFixture(t)
 		_ = appRoot
-		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
-			return aws.Config{Region: "us-east-1"}, nil
+		loadAWSConfigForCLIFn = func(_ context.Context, profile string) (aws.Config, string, error) {
+			return aws.Config{Region: "us-east-1"}, profile, nil
 		}
 		uploadDirWithPrefixFn = func(context.Context, s3PutObjectAPI, string, string, string) error {
 			return errSentinel
@@ -361,13 +375,13 @@ func TestNewClientInstallCommand_PropagatesErrors(t *testing.T) {
 	})
 
 	t.Run("aws client creation", func(t *testing.T) {
-		previousLoadAWS := loadAWSConfigFromProfileFn
-		t.Cleanup(func() { loadAWSConfigFromProfileFn = previousLoadAWS })
+		previousLoadAWS := loadAWSConfigForCLIFn
+		t.Cleanup(func() { loadAWSConfigForCLIFn = previousLoadAWS })
 
 		appRoot, configPath, statePath := writeClientInstallFixture(t)
 		_ = appRoot
-		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
-			return aws.Config{}, errSentinel
+		loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
+			return aws.Config{}, "", errSentinel
 		}
 
 		_, err := newClientInstallCommand(clientInstallArgs{
@@ -448,15 +462,17 @@ func TestNormalizeClientInstallInputs_ValidatesAndTrims(t *testing.T) {
 	})
 	require.Error(t, err)
 
-	_, _, _, err = normalizeClientInstallInputs(clientInstallArgs{
+	app, baseDomain, awsProfile, err := normalizeClientInstallInputs(clientInstallArgs{
 		App:        "demo-app",
-		BaseDomain: "example.com",
+		BaseDomain: "Example.COM.",
 		AWSProfile: "   ",
 	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "aws profile is required")
+	require.NoError(t, err)
+	require.Equal(t, "demo-app", app)
+	require.Equal(t, "example.com", baseDomain)
+	require.Empty(t, awsProfile)
 
-	app, baseDomain, awsProfile, err := normalizeClientInstallInputs(clientInstallArgs{
+	app, baseDomain, awsProfile, err = normalizeClientInstallInputs(clientInstallArgs{
 		App:        " Demo-App ",
 		BaseDomain: " Example.COM. ",
 		AWSProfile: " profile ",
@@ -887,15 +903,30 @@ func TestResolveClientInstallReceipt_ErrorsOnInvalidStage(t *testing.T) {
 }
 
 func TestNewClientInstallAWSClients_PropagatesLoadError(t *testing.T) {
-	previousLoadAWS := loadAWSConfigFromProfileFn
-	t.Cleanup(func() { loadAWSConfigFromProfileFn = previousLoadAWS })
+	previousLoadAWS := loadAWSConfigForCLIFn
+	t.Cleanup(func() { loadAWSConfigForCLIFn = previousLoadAWS })
 
-	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
-		return aws.Config{}, errSentinel
+	loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
+		return aws.Config{}, "", errSentinel
 	}
 
 	_, _, err := newClientInstallAWSClients("profile")
 	require.ErrorIs(t, err, errSentinel)
+}
+
+func TestNewClientInstallAWSClients_UsesAmbientCredentialChain(t *testing.T) {
+	previousLoadAWS := loadAWSConfigForCLIFn
+	t.Cleanup(func() { loadAWSConfigForCLIFn = previousLoadAWS })
+
+	loadAWSConfigForCLIFn = func(_ context.Context, profile string) (aws.Config, string, error) {
+		require.Empty(t, profile)
+		return aws.Config{Region: "us-east-1"}, "", nil
+	}
+
+	s3Client, cfClient, err := newClientInstallAWSClients("")
+	require.NoError(t, err)
+	require.NotNil(t, s3Client)
+	require.NotNil(t, cfClient)
 }
 
 func TestPublishClientInstallStage_PropagatesManifestAndInvalidationErrors(t *testing.T) {
