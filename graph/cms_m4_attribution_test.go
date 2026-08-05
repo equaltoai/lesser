@@ -35,6 +35,8 @@ func TestM4CMSConvertersExposeAuthoringAttribution(t *testing.T) {
 		GeneratedBy:   "https://example.com/users/agent-0",
 		ReviewedBy:    "https://example.com/users/alice",
 		PublishedBy:   "https://example.com/users/alice",
+		EditorNotes:   "internal editorial note",
+		ReviewStatus:  "approved",
 		UpdatedAt:     time.Now(),
 	}
 
@@ -47,6 +49,8 @@ func TestM4CMSConvertersExposeAuthoringAttribution(t *testing.T) {
 		assert.Nil(t, article.GeneratedBy, "CSR-049: public viewer must not see GeneratedBy")
 		assert.Nil(t, article.ReviewedBy, "CSR-049: public viewer must not see ReviewedBy")
 		assert.Nil(t, article.PublishedBy, "CSR-049: public viewer must not see PublishedBy")
+		assert.Nil(t, article.EditorNotes, "public viewer must not see private editorial notes")
+		assert.Nil(t, article.ReviewStatus, "public viewer must not see private review status")
 	})
 
 	// With auth as the article author, private CMS attribution actors are visible.
@@ -69,6 +73,10 @@ func TestM4CMSConvertersExposeAuthoringAttribution(t *testing.T) {
 		if article.PublishedBy != nil {
 			assert.Equal(t, "https://example.com/users/alice", article.PublishedBy.ID)
 		}
+		require.NotNil(t, article.EditorNotes)
+		assert.Equal(t, "internal editorial note", *article.EditorNotes)
+		require.NotNil(t, article.ReviewStatus)
+		assert.Equal(t, "approved", *article.ReviewStatus)
 	})
 
 	// Draft and Revision converters are not gated by CSR-049 (their resolvers

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
@@ -75,6 +77,9 @@ func (r *ArticleRepository) GetArticle(ctx context.Context, id string) (*models.
 	err := r.Get(ctx, pk, sk, &article)
 	if err != nil {
 		return nil, err
+	}
+	if article.Type != activitypub.ArticleType {
+		return nil, errors.ItemNotFoundWithID("article", id).WithInternalError(storage.ErrNotFound)
 	}
 	return &article, nil
 }
@@ -251,7 +256,7 @@ func (r *ArticleRepository) batchGetArticlesOrdered(ctx context.Context, article
 
 	byID := make(map[string]*models.Article, len(items))
 	for _, item := range items {
-		if item == nil {
+		if item == nil || item.Type != activitypub.ArticleType {
 			continue
 		}
 		byID[strings.TrimSpace(item.ID)] = item
