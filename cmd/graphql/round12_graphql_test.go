@@ -668,6 +668,32 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
+
+	for name, body := range map[string][]byte{
+		"private query body": []byte(`{"query":"{ viewer { id } }"}`),
+		"mutation body":      []byte(`{"query":"mutation { deleteStatus(id: \"status-1\") }"}`),
+	} {
+		t.Run("rejects_public_query_string_with_"+name, func(t *testing.T) {
+			graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				require.Fail(t, "graphql handler should not be invoked when the POST body is private")
+			})
+
+			ctx := &apptheory.Context{
+				Request: apptheory.Request{
+					Method: http.MethodPost,
+					Path:   "/graphql",
+					Query: map[string][]string{
+						"query": {`{ instance { domain } }`},
+					},
+					Body: body,
+				},
+			}
+
+			resp, err := handleGraphQL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusUnauthorized, resp.Status)
+		})
+	}
 }
 
 func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
@@ -684,6 +710,7 @@ func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
 	t.Run("graphqlExtractOperation", func(t *testing.T) {
 		ctxQuery := &apptheory.Context{
 			Request: apptheory.Request{
+				Method: http.MethodGet,
 				Query: map[string][]string{
 					"query":         {" query FromQuery { instance { domain } } "},
 					"operationName": {" FromQuery "},
@@ -696,6 +723,11 @@ func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
 
 		ctxJSON := &apptheory.Context{
 			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Query: map[string][]string{
+					"query":         {"query FromQuery { viewer { id } }"},
+					"operationName": {"FromQuery"},
+				},
 				Body: []byte(`{"query":"query FromBody { instance { domain } }","operationName":"FromBody"}`),
 			},
 		}
@@ -705,14 +737,19 @@ func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
 
 		ctxRaw := &apptheory.Context{
 			Request: apptheory.Request{
-				Body: []byte(`query RawBody { instance { domain } }`),
+				Method: http.MethodPost,
+				Body:   []byte(`query RawBody { instance { domain } }`),
 			},
 		}
 		query, operationName = graphqlExtractOperation(ctxRaw)
-		require.Equal(t, "query RawBody { instance { domain } }", query)
+		require.Empty(t, query)
 		require.Empty(t, operationName)
 
-		query, operationName = graphqlExtractOperation(&apptheory.Context{Request: apptheory.Request{Body: []byte("   ")}})
+		query, operationName = graphqlExtractOperation(&apptheory.Context{Request: apptheory.Request{Method: http.MethodPost, Body: []byte("   ")}})
+		require.Empty(t, query)
+		require.Empty(t, operationName)
+
+		query, operationName = graphqlExtractOperation(&apptheory.Context{Request: apptheory.Request{Method: http.MethodPatch, Body: ctxJSON.Request.Body}})
 		require.Empty(t, query)
 		require.Empty(t, operationName)
 	})
@@ -784,17 +821,18 @@ func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
 		require.False(t, graphqlAnonymousRequestAllowed(&apptheory.Context{}))
 
 		invalidCtx := &apptheory.Context{
-			Request: apptheory.Request{Body: []byte(`{"query":"query { instance( }"}`)},
+			Request: apptheory.Request{Method: http.MethodPost, Body: []byte(`{"query":"query { instance( }"}`)},
 		}
 		require.False(t, graphqlAnonymousRequestAllowed(invalidCtx))
 
 		multipleOpsCtx := &apptheory.Context{
-			Request: apptheory.Request{Body: []byte(`{"query":"query One { instance { domain } } query Two { announcements { id } }"}`)},
+			Request: apptheory.Request{Method: http.MethodPost, Body: []byte(`{"query":"query One { instance { domain } } query Two { announcements { id } }"}`)},
 		}
 		require.False(t, graphqlAnonymousRequestAllowed(multipleOpsCtx))
 
 		allowedCtx := &apptheory.Context{
 			Request: apptheory.Request{
+				Method: http.MethodGet,
 				Query: map[string][]string{
 					"query":         {`query PublicOp { actor(username: "alice") { id } } query PrivateOp { viewer { id } }`},
 					"operationName": {"PublicOp"},
@@ -805,7 +843,8 @@ func TestGraphQLAnonymousRequestHelpers_Round12(t *testing.T) {
 
 		disallowedCtx := &apptheory.Context{
 			Request: apptheory.Request{
-				Body: []byte(`{"query":"query { instance { domain } viewer { id } }"}`),
+				Method: http.MethodPost,
+				Body:   []byte(`{"query":"query { instance { domain } viewer { id } }"}`),
 			},
 		}
 		require.False(t, graphqlAnonymousRequestAllowed(disallowedCtx))
