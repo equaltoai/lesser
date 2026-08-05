@@ -7,6 +7,7 @@ import (
 	"time"
 
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -76,10 +77,24 @@ func TestArticleRepository_round09_crud_and_listing(t *testing.T) {
 		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.Article)
 			dest.ID = "a1"
+			dest.Type = "Article"
 		}).Return(nil).Once()
 		got, err := repo.GetArticle(ctx, "a1")
 		require.NoError(t, err)
 		assert.Equal(t, "a1", got.ID)
+
+		mockQuery.On("Where", "PK", "=", "object#note-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "object#note-1").Return(mockQuery).Once()
+		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.Article)
+			dest.ID = "note-1"
+			dest.Type = "Note"
+			dest.Content = "private federated note"
+		}).Return(nil).Once()
+		got, err = repo.GetArticle(ctx, "note-1")
+		require.Error(t, err)
+		require.ErrorIs(t, err, storage.ErrNotFound)
+		require.Nil(t, got)
 
 		mockQuery.On("Update", mock.Anything).Return(nil).Once()
 		err = repo.UpdateArticle(ctx, &models.Article{Object: models.Object{ID: "a1"}})
@@ -167,8 +182,8 @@ func TestArticleRepository_round09_crud_and_listing(t *testing.T) {
 		mockQuery.On("BatchGet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(1).(*[]*models.Article)
 			*out = []*models.Article{
-				{Object: models.Object{ID: "a2", PK: "object#a2", SK: "object#a2"}},
-				{Object: models.Object{ID: "a1", PK: "object#a1", SK: "object#a1"}},
+				{Object: models.Object{ID: "a2", Type: "Article", PK: "object#a2", SK: "object#a2"}},
+				{Object: models.Object{ID: "a1", Type: "Article", PK: "object#a1", SK: "object#a1"}},
 			}
 		}).Return(nil).Once()
 
@@ -188,7 +203,7 @@ func TestArticleRepository_round09_crud_and_listing(t *testing.T) {
 		}).Return(nil).Once()
 		mockQuery.On("BatchGet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(1).(*[]*models.Article)
-			*out = []*models.Article{{Object: models.Object{ID: "a1"}}}
+			*out = []*models.Article{{Object: models.Object{ID: "a1", Type: "Article"}}}
 		}).Return(nil).Once()
 		arts, _, err = repo.ListArticlesByAuthorPaginated(ctx, "actor-1", 1, "")
 		require.NoError(t, err)

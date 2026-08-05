@@ -396,6 +396,50 @@ func TestRound12CMS_AnonymousReadsExposeOnlyPublishedArticles(t *testing.T) {
 	}
 }
 
+func TestRound12CMS_ArticleByIDRejectsForeignObjectRows(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	foreignID := "https://remote.example/users/mallory/statuses/private-note"
+	foreign := &models.Object{
+		ID:           foreignID,
+		Type:         "Note",
+		AttributedTo: "https://remote.example/users/mallory",
+		Content:      "private federated note",
+		Visibility:   models.VisibilityPrivate,
+		Published:    time.Now().UTC(),
+	}
+	require.NoError(t, foreign.UpdateKeys())
+
+	articleRepo, ok := storage.Article().(*round12ArticleRepoWithDB)
+	require.True(t, ok)
+	require.NoError(t, articleRepo.SeedObjectRow(foreign))
+
+	tombstoneDB := new(dynamormmocks.MockDB)
+	tombstoneQuery := new(dynamormmocks.MockQuery)
+	storage.db = tombstoneDB
+	tombstoneDB.On("WithContext", mock.Anything).Return(tombstoneDB).Twice()
+	tombstoneDB.On("Model", mock.AnythingOfType("*models.Tombstone")).Return(tombstoneQuery).Twice()
+	tombstoneQuery.On("Where", "PK", "=", "OBJECT#"+foreignID).Return(tombstoneQuery).Twice()
+	tombstoneQuery.On("Where", "SK", "=", "TOMBSTONE").Return(tombstoneQuery).Twice()
+	tombstoneQuery.On("First", mock.AnythingOfType("*models.Tombstone")).Return(dynamormerrors.ErrItemNotFound).Twice()
+
+	for _, tt := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "anonymous", ctx: context.Background()},
+		{name: "authenticated non-author", ctx: round12AuthContext("bob")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			article, err := resolver.Query().Article(tt.ctx, foreignID)
+			require.NoError(t, err)
+			require.Nil(t, article)
+		})
+	}
+
+	tombstoneDB.AssertExpectations(t)
+	tombstoneQuery.AssertExpectations(t)
+}
+
 func TestRound12CMS_AnonymousSeriesAndCategoriesExcludeScheduledDraftCounts(t *testing.T) {
 	resolver, storage := newRound12GraphResolver(t)
 	ctx := context.Background()
