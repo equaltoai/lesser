@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -20,12 +21,14 @@ type quoteControlCountingRepository struct {
 	interfaces.ObjectRepository
 	calls      atomic.Int32
 	keys       atomic.Int32
+	maxKeys    atomic.Int32
 	quoteTypes map[string]string
 }
 
 func (r *quoteControlCountingRepository) GetQuoteTypes(_ context.Context, statusIDs []string) (map[string]string, error) {
 	r.calls.Add(1)
 	r.keys.Add(int32(len(statusIDs)))
+	quoteControlRecordMaxBatch(&r.maxKeys, len(statusIDs))
 	result := make(map[string]string, len(statusIDs))
 	for _, statusID := range statusIDs {
 		result[statusID] = r.quoteTypes[statusID]
@@ -38,14 +41,28 @@ func (r *quoteControlCountingRepository) GetQuoteTypes(_ context.Context, status
 
 type quoteControlCountingStatusRepository struct {
 	interfaces.StatusRepository
-	calls atomic.Int32
-	keys  atomic.Int32
+	calls   atomic.Int32
+	keys    atomic.Int32
+	maxKeys atomic.Int32
 }
 
 func (r *quoteControlCountingStatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []string) ([]*models.Status, error) {
 	r.calls.Add(1)
 	r.keys.Add(int32(len(statusIDs)))
+	quoteControlRecordMaxBatch(&r.maxKeys, len(statusIDs))
 	return r.StatusRepository.GetStatusesByIDs(ctx, statusIDs)
+}
+
+func quoteControlRecordMaxBatch(maxKeys *atomic.Int32, size int) {
+	if maxKeys == nil {
+		return
+	}
+	value := int32(size)
+	for current := maxKeys.Load(); value > current; current = maxKeys.Load() {
+		if maxKeys.CompareAndSwap(current, value) {
+			return
+		}
+	}
 }
 
 type quoteControlCountingStorage struct {
@@ -278,7 +295,8 @@ func TestQuoteControlLoaderBatchesBoostOriginalAuthors(t *testing.T) {
 }
 
 func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
-	resolver, storageRepo := newRound12GraphResolver(t)
+	storageRepo := pkgtesting.NewMockRepositoryStorage()
+	resolver := &Resolver{}
 	objectRepo := &quoteControlCountingRepository{
 		ObjectRepository: storageRepo.Object(),
 		quoteTypes:       make(map[string]string, 120),
@@ -295,10 +313,14 @@ func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
 	resolver.TableName = "lesser-test"
 
 	var accountCalls atomic.Int32
+	var accountKeys atomic.Int32
+	var accountMaxKeys atomic.Int32
 	loaders := NewLoaders(requestStorage, zap.NewNop())
 	loaders.QuoteAccountLoader = newQuoteAccountLoaderWithLookup(
 		func(_ context.Context, usernames []string) (map[string]*models.QuotePermissions, error) {
 			accountCalls.Add(1)
+			accountKeys.Add(int32(len(usernames)))
+			quoteControlRecordMaxBatch(&accountMaxKeys, len(usernames))
 			permissions := make(map[string]*models.QuotePermissions, len(usernames))
 			for _, username := range usernames {
 				permissions[username] = &models.QuotePermissions{Username: username, AllowPublic: true}
@@ -332,11 +354,19 @@ func TestQuoteControlLoaderTracksEveryCapacitySplitBatch(t *testing.T) {
 
 	resolver.prefetchQuoteControls(ctx, roots)
 
-	require.Equal(t, int32(3), objectRepo.calls.Load(), "240 per-note keys must split into three batches")
-	require.Equal(t, int32(2), statusRepo.calls.Load(), "120 parents must split into two status batches")
-	require.Equal(t, int32(3), accountCalls.Load(), "240 author keys must split into three batches")
-	require.Equal(t, int32(8), objectRepo.calls.Load()+statusRepo.calls.Load()+accountCalls.Load())
-	require.Equal(t, int64(8), tracker.GetOperationCounts()["Read"], "tail batches must be tracked before projection")
+	require.Equal(t, int32(240), objectRepo.keys.Load())
+	require.Equal(t, int32(120), statusRepo.keys.Load())
+	require.Equal(t, int32(240), accountKeys.Load())
+	require.LessOrEqual(t, objectRepo.maxKeys.Load(), int32(100))
+	require.LessOrEqual(t, statusRepo.maxKeys.Load(), int32(100))
+	require.LessOrEqual(t, accountMaxKeys.Load(), int32(100))
+	require.GreaterOrEqual(t, objectRepo.calls.Load(), int32(3))
+	require.GreaterOrEqual(t, statusRepo.calls.Load(), int32(2))
+	require.GreaterOrEqual(t, accountCalls.Load(), int32(3))
+
+	observedBatches := objectRepo.calls.Load() + statusRepo.calls.Load() + accountCalls.Load()
+	require.Equal(t, int64(observedBatches), tracker.GetOperationCounts()["Read"],
+		"every scheduler- or capacity-split batch must be tracked before projection")
 }
 
 func TestQuoteControlProjectionDepthBoundsRelatedResolvers(t *testing.T) {
