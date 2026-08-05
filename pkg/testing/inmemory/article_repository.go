@@ -19,6 +19,10 @@ type ArticleRepository struct {
 
 	// Articles by ID
 	articlesByID map[string]*models.Article
+	// Foreign ActivityPub object rows by ID. Production shares the object#{id}
+	// keyspace across object types, so tests may seed a non-CMS row that must not
+	// be readable through the article repository.
+	foreignObjectsByID map[string]*models.Object
 
 	// Articles by author: authorActorID -> []articleID
 	articlesByAuthor map[string][]string
@@ -34,6 +38,7 @@ type ArticleRepository struct {
 func NewArticleRepository() *ArticleRepository {
 	return &ArticleRepository{
 		articlesByID:       make(map[string]*models.Article),
+		foreignObjectsByID: make(map[string]*models.Object),
 		articlesByAuthor:   make(map[string][]string),
 		articlesBySeries:   make(map[string][]string),
 		articlesByCategory: make(map[string][]string),
@@ -50,6 +55,9 @@ func (r *ArticleRepository) CreateArticle(_ context.Context, article *models.Art
 	}
 
 	if _, exists := r.articlesByID[article.ID]; exists {
+		return storage.ErrAlreadyExists
+	}
+	if _, exists := r.foreignObjectsByID[article.ID]; exists {
 		return storage.ErrAlreadyExists
 	}
 
@@ -79,12 +87,40 @@ func (r *ArticleRepository) GetArticle(_ context.Context, id string) (*models.Ar
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	if _, exists := r.foreignObjectsByID[id]; exists {
+		return nil, storage.ErrNotFound
+	}
+
 	article, exists := r.articlesByID[id]
-	if !exists {
+	if !exists || article.Type != "Article" {
 		return nil, storage.ErrNotFound
 	}
 
 	return article, nil
+}
+
+// SeedObjectRow plants a non-CMS ActivityPub object in the shared object#{id}
+// keyspace represented by this fake. It exists so cross-entity read tests can
+// model production single-table collisions instead of relying on the
+// type-segregated article map alone.
+func (r *ArticleRepository) SeedObjectRow(object *models.Object) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if object == nil || strings.TrimSpace(object.ID) == "" {
+		return storage.ErrInvalidInput
+	}
+	if _, exists := r.articlesByID[object.ID]; exists {
+		return storage.ErrAlreadyExists
+	}
+
+	cloned := *object
+	cloned.To = append([]string(nil), object.To...)
+	cloned.CC = append([]string(nil), object.CC...)
+	cloned.BTo = append([]string(nil), object.BTo...)
+	cloned.BCC = append([]string(nil), object.BCC...)
+	r.foreignObjectsByID[object.ID] = &cloned
+	return nil
 }
 
 // UpdateArticle updates an existing article

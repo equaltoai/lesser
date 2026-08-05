@@ -4,10 +4,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"slices"
+	"strings"
 	"testing"
 )
 
-func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
+func TestApplyOperationOverridesPublishesQuoteRESTResponses(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -15,35 +16,35 @@ func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
 		route            routeDef
 		initialResponses []string
 		wantResponses    []string
-		wantDescription  string
+		wantSchema       string
 	}{
 		{
 			name:             "create quote",
 			route:            routeDef{Method: methodPOST, Path: "/api/v1/statuses/{id}/quote"},
 			initialResponses: []string{"200", "400", "401", "403", "404", "422", "429", "500"},
-			wantResponses:    []string{"400", "401", "403", "429", "501"},
-			wantDescription:  "Quote creation is not implemented; target IDs are not looked up.",
+			wantResponses:    []string{"200", "400", "401", "403", "404", "422", "429", "500"},
+			wantSchema:       "QuoteStatusSummary",
 		},
 		{
 			name:             "list quotes",
 			route:            routeDef{Method: methodGET, Path: "/api/v1/statuses/{id}/quotes"},
 			initialResponses: []string{"200", "400", "404", "500"},
-			wantResponses:    []string{"400", "501"},
-			wantDescription:  "Quote listing is not implemented; target IDs and quote counts are not looked up.",
+			wantResponses:    []string{"200", "400", "404", "422", "500"},
+			wantSchema:       "QuoteStatusSummaryList",
 		},
 		{
 			name:             "get quote permissions",
 			route:            routeDef{Method: methodGET, Path: "/api/v1/accounts/{id}/quote_permissions"},
 			initialResponses: []string{"200", "400", "401", "403", "404", "500"},
-			wantResponses:    []string{"400", "401", "403", "501"},
-			wantDescription:  "Quote permission reads are not implemented and no settings are retrieved.",
+			wantResponses:    []string{"200", "400", "401", "403", "404", "500"},
+			wantSchema:       "QuotePermissionsResponse",
 		},
 		{
 			name:             "update quote permissions",
 			route:            routeDef{Method: methodPUT, Path: "/api/v1/accounts/quote_permissions"},
 			initialResponses: []string{"200", "400", "401", "403", "422", "500"},
-			wantResponses:    []string{"400", "401", "403", "501"},
-			wantDescription:  "Quote permission updates are not implemented and no settings are persisted.",
+			wantResponses:    []string{"200", "400", "401", "403", "422", "500"},
+			wantSchema:       "QuotePermissionsResponse",
 		},
 	}
 
@@ -63,10 +64,36 @@ func TestApplyOperationOverridesMakesQuoteStubsNotImplemented(t *testing.T) {
 			if !slices.Equal(gotResponses, tt.wantResponses) {
 				t.Fatalf("responses = %v, want only reachable %v", gotResponses, tt.wantResponses)
 			}
-			if got := op.Responses["501"].Description; got != tt.wantDescription {
-				t.Fatalf("501 description = %q", got)
+			gotSchema := op.Responses["200"].Content["application/json"].Schema.Ref
+			wantSchema := "#/components/schemas/" + tt.wantSchema
+			if gotSchema != wantSchema {
+				t.Fatalf("200 response schema = %q, want %q", gotSchema, wantSchema)
 			}
 		})
+	}
+}
+
+func TestApplyQuoteListOverridePublishesDynamicOffsetBound(t *testing.T) {
+	t.Parallel()
+
+	op := &operation{
+		Parameters: []parameter{{Ref: "#/components/parameters/Offset"}},
+		Responses:  map[string]response{},
+	}
+	applyOperationOverrides(op, routeDef{Method: methodGET, Path: "/api/v1/statuses/{id}/quotes"})
+
+	if len(op.Parameters) != 1 {
+		t.Fatalf("parameters = %#v, want one route-specific offset parameter", op.Parameters)
+	}
+	offset := op.Parameters[0]
+	if offset.Name != "offset" || offset.In != "query" || offset.Ref != "" {
+		t.Fatalf("offset parameter = %#v, want an inline query parameter", offset)
+	}
+	if !strings.Contains(offset.Description, "(4 × the requested limit) - 1") {
+		t.Fatalf("offset description = %q, want the servable bound", offset.Description)
+	}
+	if _, ok := op.Responses["422"]; !ok {
+		t.Fatal("quote-list offset validation must publish a 422 response")
 	}
 }
 

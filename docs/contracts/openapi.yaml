@@ -4636,6 +4636,58 @@ components:
                 - data
                 - subscription
             type: object
+        QuotePermissionsResponse:
+            additionalProperties: false
+            properties:
+                allow_followers:
+                    type: boolean
+                allow_mentioned:
+                    type: boolean
+                allow_public:
+                    type: boolean
+                block_list:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - allow_followers
+                - allow_mentioned
+                - allow_public
+                - block_list
+            type: object
+        QuoteStatusAccount:
+            additionalProperties: false
+            properties:
+                id:
+                    type: string
+                username:
+                    anyOf:
+                        - type: string
+                        - type: "null"
+            required:
+                - id
+            type: object
+        QuoteStatusSummary:
+            additionalProperties: false
+            properties:
+                account:
+                    $ref: '#/components/schemas/QuoteStatusAccount'
+                content:
+                    type: string
+                created_at:
+                    type: string
+                id:
+                    type: string
+            required:
+                - account
+                - content
+                - created_at
+                - id
+            type: object
+        QuoteStatusSummaryList:
+            items:
+                $ref: '#/components/schemas/QuoteStatusSummary'
+            type: array
         RFC3339DateTime:
             format: date-time
             type: string
@@ -9700,14 +9752,22 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "501":
-                    description: Quote permission reads are not implemented and no settings are retrieved.
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleGetQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -9985,14 +10045,22 @@ paths:
                         schema:
                             $ref: '#/components/schemas/UpdateQuotePermissionsRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QuotePermissionsResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
-                "501":
-                    description: Quote permission updates are not implemented and no settings are persisted.
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleUpdateQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -18161,16 +18229,42 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateQuotePostRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QuoteStatusSummary'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
                     $ref: '#/components/responses/Unauthorized'
                 "403":
                     $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
-                "501":
-                    description: Quote creation is not implemented; target IDs are not looked up.
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleCreateQuotePostLift
             x-lesser-lambda: api
             x-lesser-routeSources:
@@ -18223,23 +18317,48 @@ paths:
             operationId: get_api_v1_statuses_by_id_quotes
             tags:
                 - statuses
+            security:
+                - {}
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
-                - $ref: '#/components/parameters/Offset'
                 - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+                - name: offset
+                  in: query
+                  description: Visible-quote offset. Must not exceed (4 × the requested limit) - 1; larger offsets return 422 rather than a silently truncated empty page.
+                  schema:
+                    type: integer
+                    format: int32
+                    minimum: 0
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QuoteStatusSummaryList'
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "501":
-                    description: Quote listing is not implemented; target IDs and quote counts are not looked up.
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleGetQuotesOfStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read:statuses
     /api/v1/statuses/{id}/reblog:
         post:
             operationId: post_api_v1_statuses_by_id_reblog

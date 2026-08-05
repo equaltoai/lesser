@@ -100,12 +100,18 @@ var anonymousGraphQLPublicQueryFields = map[string]struct{}{
 	"__typename":       {},
 	"actor":            {},
 	"announcements":    {},
+	"article":          {},
+	"articleBySlug":    {},
+	"articles":         {},
+	"categories":       {},
 	"customEmojis":     {},
 	"instance":         {},
 	"instanceActivity": {},
 	"instancePeers":    {},
 	"object":           {},
 	"search":           {},
+	"series":           {},
+	"seriesBySlug":     {},
 	"threadContext":    {},
 	"timeline":         {},
 }
@@ -602,21 +608,19 @@ func graphqlAnonymousRequestAllowed(ctx *apptheory.Context) bool {
 func graphqlExtractOperation(ctx *apptheory.Context) (query string, operationName string) {
 	parts := graphqlExtractRequestParts(ctx)
 
-	if query = graphqlFirstRequestValue(parts.query, "query"); query != "" {
+	switch strings.ToUpper(strings.TrimSpace(parts.method)) {
+	case http.MethodGet:
+		query = graphqlFirstRequestValue(parts.query, "query")
 		return strings.TrimSpace(query), strings.TrimSpace(graphqlFirstRequestValue(parts.query, "operationName"))
-	}
-
-	body := strings.TrimSpace(string(parts.body))
-	if body == "" {
+	case http.MethodPost:
+		var request graphqlOperationRequest
+		if err := json.Unmarshal(parts.body, &request); err != nil {
+			return "", ""
+		}
+		return strings.TrimSpace(request.Query), strings.TrimSpace(request.OperationName)
+	default:
 		return "", ""
 	}
-
-	var request graphqlOperationRequest
-	if err := json.Unmarshal(parts.body, &request); err == nil {
-		return strings.TrimSpace(request.Query), strings.TrimSpace(request.OperationName)
-	}
-
-	return body, ""
 }
 
 func graphqlFirstRequestValue(values map[string][]string, key string) string {

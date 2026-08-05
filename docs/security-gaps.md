@@ -339,22 +339,19 @@ content.
 
 Account-level quote permissions are live: the authenticated GraphQL mutation `updateAccountQuotePermissions` persists
 them, and the GraphQL quote path enforces them through `QuoteService.CheckQuotePermissions` in
-`pkg/services/quotes/quote_service.go`. The REST quote-permission GET and PUT routes return `501 Not Implemented` because
-their REST implementation genuinely does not exist; they do not fabricate or persist preferences.
+`pkg/services/quotes/quote_service.go`. The REST update route persists through that same service. The REST read route
+returns a raw policy only to its authenticated owner; other and missing account IDs share `404 Not Found`, so the block
+list is not exposed and the response does not disclose whether another account exists.
 
 The authenticated GraphQL `accountQuotePermissions(username: ...)` read also returns a not-implemented error for every
 target. It fails closed without fabricating defaults while a real read is pending an explicit authorization decision:
 whether an account owner, another viewer, or both may read the raw block list is a product decision, not a safe default.
-The REST quote-creation twin now uses the same account-level `QuoteService.CheckQuotePermissions` predicate and maps its
-denial and storage-error classes into the established REST error contract.
+The REST quote-creation twin uses the same account-level and per-note `QuoteService.CheckQuotePermissions` predicate and
+maps its denial and storage-error classes into the established REST error contract.
 
-**Shipping decision:** REST reblog-with-comment enforcement ships with the block-list and `allow_public` arms live while
-the `allow_followers` and `allow_mentioned` arms remain fail-closed placeholders tracked by lesser#1317.
+Follower and mentioned account-policy arms are implemented and fail closed on relationship or mention lookup errors.
 `ApplyVisibilityDefaults` assigns those states at registration: private/followers-default accounts rely on
-`allow_followers`, and direct-default accounts rely on `allow_mentioned`. Until lesser#1317 lands, every quoter—including
-an actual follower or mentioned account—is denied for those account classes. This intentionally changes the affected
-client response from `200` before `cf7c8ebdd` to `403 FORBIDDEN`; failing open a privacy control is not an acceptable
-interim behavior.
+`allow_followers`, and direct-default accounts rely on `allow_mentioned`.
 
 Per-note quote controls are separate from those account-level permissions. The GraphQL `updateQuotePermissions` mutation
 persists its control in `StatusMetadata` and now reads that row back so its own payload reflects the stored `quoteable`

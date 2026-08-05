@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -49,6 +50,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		}
 		if err := validateMutationChildReach("quote", quoteTarget, cmd.Visibility); err != nil {
 			return nil, err
+		}
+		if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+			return nil, quotes.ErrTargetStatusNotQuotable
 		}
 	}
 
@@ -578,6 +582,21 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	if err := validateMutationChildReach("quote", quoteTarget, visibility); err != nil {
 		return nil, err
 	}
+	if !common.IsPubliclyVisible(quoteTarget.Visibility) {
+		return nil, quotes.ErrTargetStatusNotQuotable
+	}
+
+	quotesService := r.Registry.Quotes()
+	if quotesService == nil {
+		return nil, errors.New("quotes service is not available")
+	}
+	canQuote, err := quotesService.CheckQuotePermissions(ctx, username, quoteTarget)
+	if err != nil {
+		return nil, quotes.ErrCheckQuotePermissions(err)
+	}
+	if !canQuote {
+		return nil, quotes.ErrNotAuthorizedToQuote
+	}
 
 	// Create the quote note using the notes service
 	// Note: QuoteURL would need to be parsed to extract the note ID for quoting
@@ -601,6 +620,9 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	// Convert result to GraphQL model
 	if result.Note == nil {
 		return nil, ErrNoteCreationReturnedNoNote
+	}
+	if err := r.attachQuoteToTarget(ctx, username, quoteTarget.StatusID, result.Note); err != nil {
+		return nil, err
 	}
 
 	return &model.CreateNotePayload{

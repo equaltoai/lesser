@@ -303,6 +303,12 @@ Anonymous/public-read GraphQL contract:
 - No token required for:
   - `actor(id|username)`
   - `object(id)`
+  - `article(id)`
+  - `articleBySlug(slug)`
+  - `articles(authorId|seriesId|categoryId, ...)`
+  - `series(id)`
+  - `seriesBySlug(slug)`
+  - `categories(parentId)`
   - `timeline(type: PUBLIC | LOCAL | HASHTAG | ACTOR, ...)`
   - `search(query, ...)`
   - `instance`
@@ -311,6 +317,7 @@ Anonymous/public-read GraphQL contract:
   - `announcements`
   - `customEmojis`
   - `threadContext(noteId)`
+- Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
 - Anonymous note and thread reads only return `public` and `unlisted` content.
 - Everything else, including `viewer`, notifications, private timelines, moderation/admin queries, mutations, and
   subscriptions, still requires authorization.

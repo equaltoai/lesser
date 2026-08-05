@@ -195,6 +195,12 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
 - **Public** `POST/GET /graphql`, `POST/GET /api/graphql` for the anonymous public-read subset only:
   - `actor(id|username)`
   - `object(id)`
+  - `article(id)`
+  - `articleBySlug(slug)`
+  - `articles(authorId|seriesId|categoryId, ...)`
+  - `series(id)`
+  - `seriesBySlug(slug)`
+  - `categories(parentId)`
   - `timeline(type: PUBLIC | LOCAL | HASHTAG | ACTOR, ...)`
   - `search(query, ...)`
   - `instance`
@@ -203,6 +209,7 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
   - `announcements`
   - `customEmojis`
   - `threadContext(noteId)`
+  - Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
   - Anonymous note/thread/status queries must only expose `public` and `unlisted` content.
   - `timeline(type: HOME | DIRECT | LIST, ...)` remains auth-only even though `timeline` is part of the public query allowlist.
 - **Auth** `POST/GET /graphql`, `POST/GET /api/graphql`, `GET /subscriptions` for every other GraphQL operation

@@ -142,9 +142,14 @@ type NotesService interface {
 	UnreblogNote(ctx context.Context, cmd *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
 }
 
-// QuotesService defines the quote authorization operation shared with GraphQL quote creation.
+// QuotesService defines quote operations shared with GraphQL quote creation and
+// account quote-permission storage.
 type QuotesService interface {
+	AttachQuoteToStatus(ctx context.Context, quoteStatus *storagemodels.Status, targetStatusID string) (*quotes.QuotePostResult, error)
 	CheckQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *storagemodels.Status) (bool, error)
+	GetQuotePermissions(ctx context.Context, username string) (*storagemodels.QuotePermissions, error)
+	GetQuoteRelationshipsForStatus(ctx context.Context, statusID string, limit int, cursor string) (*quotes.QuoteRelationshipPage, error)
+	UpdateQuotePermissions(ctx context.Context, permissions *storagemodels.QuotePermissions) error
 }
 
 var _ QuotesService = (*quotes.QuoteService)(nil)

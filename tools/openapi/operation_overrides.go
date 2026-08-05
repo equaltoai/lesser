@@ -26,34 +26,37 @@ func applyQuoteOverrides(op *operation, route routeDef) {
 
 	switch {
 	case route.Method == methodPOST && route.Path == "/api/v1/statuses/{id}/quote":
-		delete(op.Responses, "200")
-		delete(op.Responses, "404")
-		delete(op.Responses, "422")
-		delete(op.Responses, "500")
-		op.Responses["501"] = response{
-			Description: "Quote creation is not implemented; target IDs are not looked up.",
-		}
+		delete(op.Responses, "501")
+		ensureJSONResponseSchema(op, "200", "QuoteStatusSummary")
+		ensureResponseRef(op.Responses, "404", "NotFound")
+		ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+		ensureResponseRef(op.Responses, "500", "InternalServerError")
 	case route.Method == methodGET && route.Path == "/api/v1/statuses/{id}/quotes":
-		delete(op.Responses, "200")
-		delete(op.Responses, "404")
-		delete(op.Responses, "500")
-		op.Responses["501"] = response{
-			Description: "Quote listing is not implemented; target IDs and quote counts are not looked up.",
-		}
+		delete(op.Responses, "501")
+		ensureJSONResponseSchema(op, "200", "QuoteStatusSummaryList")
+		ensureResponseRef(op.Responses, "404", "NotFound")
+		ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+		ensureResponseRef(op.Responses, "500", "InternalServerError")
+		replaceQueryParam(op, parameter{
+			Name:        "offset",
+			In:          "query",
+			Required:    false,
+			Description: "Visible-quote offset. Must not exceed (4 × the requested limit) - 1; larger offsets return 422 rather than a silently truncated empty page.",
+			Schema: schemaRef{
+				Type:    "integer",
+				Format:  "int32",
+				Minimum: intPtr(0),
+			},
+		})
 	case route.Method == methodGET && route.Path == "/api/v1/accounts/{id}/quote_permissions":
-		delete(op.Responses, "200")
-		delete(op.Responses, "404")
-		delete(op.Responses, "500")
-		op.Responses["501"] = response{
-			Description: "Quote permission reads are not implemented and no settings are retrieved.",
-		}
+		delete(op.Responses, "501")
+		ensureJSONResponseSchema(op, "200", "QuotePermissionsResponse")
+		ensureResponseRef(op.Responses, "404", "NotFound")
+		ensureResponseRef(op.Responses, "500", "InternalServerError")
 	case route.Method == methodPUT && route.Path == "/api/v1/accounts/quote_permissions":
-		delete(op.Responses, "200")
-		delete(op.Responses, "422")
-		delete(op.Responses, "500")
-		op.Responses["501"] = response{
-			Description: "Quote permission updates are not implemented and no settings are persisted.",
-		}
+		delete(op.Responses, "501")
+		ensureJSONResponseSchema(op, "200", "QuotePermissionsResponse")
+		ensureResponseRef(op.Responses, "500", "InternalServerError")
 	}
 }
 
@@ -668,6 +671,25 @@ func ensureQueryParam(op *operation, p parameter) {
 		}
 	}
 	op.Parameters = append(op.Parameters, p)
+}
+
+func replaceQueryParam(op *operation, p parameter) {
+	if op == nil || strings.TrimSpace(p.Name) == "" || !strings.EqualFold(p.In, "query") {
+		return
+	}
+
+	parameters := op.Parameters[:0]
+	for _, existing := range op.Parameters {
+		if strings.EqualFold(existing.In, "query") && strings.EqualFold(existing.Name, p.Name) {
+			continue
+		}
+		if queryName, ok := componentQueryParamNames[componentNameFromRef(existing.Ref)]; ok && strings.EqualFold(queryName, p.Name) {
+			continue
+		}
+		parameters = append(parameters, existing)
+	}
+	op.Parameters = append(parameters, p)
+	sortOperationParameters(op)
 }
 
 func ensureRedirectResponse(op *operation, statusCode, description, locationHeader string) {

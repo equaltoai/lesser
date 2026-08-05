@@ -105,9 +105,34 @@ Recommended command:
 ./lesser client install \
   --app <slug> \
   --base-domain <example.com> \
-  --aws-profile <profile> \
+  --stage dev \
   --config ./facetheory.lesser.json
 ```
+
+The command uses the AWS SDK credential chain by default. In a managed CodeBuild job, the ambient project role and
+`AWS_REGION`/`AWS_DEFAULT_REGION` are therefore sufficient; no interactive login or named profile is required. Pass
+`--aws-profile <profile>` only as an explicit local/operator override.
+
+Automation must always select exactly one concrete stage with `--stage dev`, `--stage staging`, or `--stage live`.
+Do not omit `--stage` and do not use `both` or `all` in managed automation: the default/operator convenience selections
+can update more than one stage.
+
+Noninteractive ambient-credential smoke path (run inside CodeBuild after the app artifacts and Lesser receipt have been
+materialized; this performs real S3 uploads and a CloudFront invalidation):
+
+```bash
+env -u AWS_PROFILE ./lesser client install \
+  --app "$LESSER_APP" \
+  --base-domain "$LESSER_BASE_DOMAIN" \
+  --stage dev \
+  --state "$LESSER_STATE_PATH" \
+  --config ./facetheory.lesser.json \
+  --skip-build </dev/null
+```
+
+`--skip-build` makes this an install-only smoke path: the server bundle and browser assets named by
+`facetheory.lesser.json` must already exist. The command still makes live AWS calls, so run it only against the intended
+dev stage and account.
 
 Useful flags:
 
@@ -128,12 +153,17 @@ What the command does:
 
 ## Receipt and stack outputs
 
-The stage receipt now carries the values the install flow needs:
+For every explicitly selected stage, managed automation requires these four values in
+`stages.<stage>.stack_outputs` of the deployment receipt:
 
-- `ClientBucketName`
-- `ClientArtifactBucketName`
-- `ClientInstallManifestKey`
-- `FrontendDistributionId`
+- `ClientBucketName`: bucket that receives browser assets under `l/_assets/*`.
+- `ClientArtifactBucketName`: private bucket that receives versioned server bundles and manifests under `installs/*`.
+- `ClientInstallManifestKey`: active manifest object key; the managed contract value is `install/current.json`.
+- `FrontendDistributionId`: distribution invalidated after the active manifest is updated.
+
+Treat all four outputs as required receipt inputs for managed installs. The CLI retains naming defaults for compatibility
+with older operator receipts, but managed automation must not reconstruct or guess resource names. Scope each job from
+the outputs of the same selected stage; never combine bucket outputs from one stage with a distribution ID from another.
 
 After an install, Lesser also records the active release under:
 
@@ -143,6 +173,40 @@ After an install, Lesser also records the active release under:
 - `stages.<stage>.client_install.manifest_key`
 - `stages.<stage>.client_install.server_root`
 - `stages.<stage>.client_install.assets_root`
+
+## Install-only IAM policy
+
+The role running `lesser client install` does not need CloudFormation, CDK, bucket-listing, object-read, object-delete, or
+deployment permissions. Substitute the selected stage receipt outputs and account ID into this install-only policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PutClientInstallObjects",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": [
+        "arn:aws:s3:::<ClientArtifactBucketName>/installs/*",
+        "arn:aws:s3:::<ClientArtifactBucketName>/install/current.json",
+        "arn:aws:s3:::<ClientBucketName>/l/_assets/*"
+      ]
+    },
+    {
+      "Sid": "InvalidateClientDistribution",
+      "Effect": "Allow",
+      "Action": "cloudfront:CreateInvalidation",
+      "Resource": "arn:aws:cloudfront::<account-id>:distribution/<FrontendDistributionId>"
+    }
+  ]
+}
+```
+
+This is the complete install operation shape: `s3:PutObject` for immutable server bundles and history manifests under
+`installs/*`, the active `install/current.json` manifest, and assets under `l/_assets/*`; plus
+`cloudfront:CreateInvalidation` on exactly the selected stage distribution. If a receipt intentionally publishes a
+different `ClientInstallManifestKey`, replace only the active-manifest resource with that exact object ARN.
 
 ## Verification checklist
 

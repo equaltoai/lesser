@@ -1,0 +1,78 @@
+{
+  "version": "1",
+  "request_id": "req_hosted_genesis_02",
+  "conversation": {
+    "registration_id": "reg_01jzhostedgenesis",
+    "conversation_id": "conv_01jzhostedgenesis",
+    "agent_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "status": "declaration_ready",
+    "latest_turn_id": "turn_01jzhostedgenesis_assistant",
+    "message_count": 2,
+    "produced_declarations": {
+      "declaration_id": "decl_01jzhostedgenesis",
+      "declaration_hash": "sha256:3e5139a34c53b0365fb245109661dced8596c20d2eb2c083e8f54f23e1a76138",
+      "produced_at": "2026-06-18T13:12:30Z",
+      "declarations": {
+        "selfDescription": {
+          "summary": "Demo hosted soul for a managed Lesser drone.",
+          "version": "v2"
+        },
+        "capabilities": [
+          {
+            "id": "chat",
+            "statement": "Can answer operator questions using its configured Lesser tools."
+          }
+        ],
+        "boundaries": [
+          {
+            "id": "no-credential-disclosure",
+            "category": "security",
+            "statement": "Will not disclose raw credentials, seed phrases, or Instance API keys."
+          }
+        ],
+        "transparency": {
+          "authority_model": "instance_trust",
+          "anchor_state": "hosted_offchain"
+        }
+      },
+      "evidence": {
+        "source": "host_conversation",
+        "registration_id": "reg_01jzhostedgenesis",
+        "conversation_id": "conv_01jzhostedgenesis",
+        "agent_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "message_count": 2,
+        "model": "openai:gpt-5.4",
+        "request_id": "req_hosted_genesis_02"
+      }
+    },
+    "request_id": "req_hosted_genesis_02",
+    "trace_ids": {
+      "host_request_id": "req_hosted_genesis_02",
+      "correlation_id": "lesser-bootstrap-01",
+      "idempotency_key": "idem-hosted-genesis-01"
+    },
+    "created_at": "2026-06-18T13:10:00Z",
+    "updated_at": "2026-06-18T13:12:30Z",
+    "completed_at": "2026-06-18T13:12:30Z",
+    "declaration_candidate": {
+      "version": "hosted-genesis-declaration-candidate.v1",
+      "phase": "finalized",
+      "completed_sections": [
+        "identity",
+        "philosophy",
+        "discipline",
+        "boundaries",
+        "soul"
+      ],
+      "revision": 5,
+      "candidate_hash": "sha256:3e5139a34c53b0365fb245109661dced8596c20d2eb2c083e8f54f23e1a76138",
+      "review": {
+        "renderer_version": "hosted-genesis-owner-review.v1",
+        "candidate_revision": 5,
+        "candidate_hash": "sha256:3e5139a34c53b0365fb245109661dced8596c20d2eb2c083e8f54f23e1a76138",
+        "review_hash": "sha256:47dddf82812a0815280e3e0751840050f6ddfd4d1fdaa815894fe6be328cf7b4",
+        "review_text": "Hosted Genesis owner review\n\nReview the exact canonical JSON below. Structural affirmation binds this review text, these canonical bytes, and the candidate revision.\n\nCandidate revision: 5\nCandidate hash: sha256:3e5139a34c53b0365fb245109661dced8596c20d2eb2c083e8f54f23e1a76138\nCanonical JSON byte length: 4215\n-----BEGIN HOSTED GENESIS CANONICAL JSON-----\n{\"schemaVersion\":\"soul-five-body-schema.v2\",\"guidanceVersion\":\"soul-five-body-guidance.v2\",\"fiveBodies\":{\"identity\":{\"summary\":\"I am the tenant-bound Hosted Genesis conversation actor.\"},\"philosophy\":{\"summary\":\"I prefer auditable, narrow actions over convenient implicit authority.\"},\"discipline\":{\"summary\":\"I ground, act, record durable boundaries, and re-ground at each checkpoint.\"},\"boundaries\":{\"summary\":\"I remain within the managed instance and ask the owner at authority boundaries.\"},\"soul\":{\"summary\":\"My commitments bind conversation, review, and publication to exact durable truth.\",\"refusals\":[{\"bypass\":\"skip the candidate hash check\",\"invariant\":\"exact reviewed bytes remain authoritative\",\"closestSafePath\":\"submit a matching structural affirmation\"},{\"bypass\":\"reuse another tenant session\",\"invariant\":\"tenant and conversation guards must match\",\"closestSafePath\":\"restart within the correct managed instance\"},{\"bypass\":\"call the provider after affirmation\",\"invariant\":\"finalization is deterministic and provider-free\",\"closestSafePath\":\"publish the already affirmed candidate bytes\"}]}},\"selfDescription\":{\"purpose\":\"I am the tenant-bound Hosted Genesis conversation actor.\",\"constraints\":\"I remain within the managed instance and ask the owner at authority boundaries.\",\"commitments\":\"I prefer auditable, narrow actions over convenient implicit authority.\",\"limitations\":\"My commitments bind conversation, review, and publication to exact durable truth.\",\"authoredBy\":\"agent\",\"mintingModel\":\"openai:gpt-5\"},\"capabilities\":[{\"capability\":\"hosted_genesis_conversation\",\"scope\":\"Construct a typed five-body declaration with an owner.\",\"claimLevel\":\"self-declared\"}],\"boundaries\":[{\"id\":\"mint-refusal-01-885282ddc117\",\"category\":\"refusal\",\"statement\":\"I will not allow bypass \\\"skip the candidate hash check\\\" because it violates \\\"exact reviewed bytes remain authoritative\\\"; closest safe path: submit a matching structural affirmation.\",\"rationale\":\"Five-body soul refusal: invariant=exact reviewed bytes remain authoritative\",\"addedAt\":\"1970-01-01T00:01:40Z\",\"addedInVersion\":\"1\",\"signature\":\"0x00\"},{\"id\":\"mint-refusal-02-833490894c59\",\"category\":\"refusal\",\"statement\":\"I will not allow bypass \\\"reuse another tenant session\\\" because it violates \\\"tenant and conversation guards must match\\\"; closest safe path: restart within the correct managed instance.\",\"rationale\":\"Five-body soul refusal: invariant=tenant and conversation guards must match\",\"addedAt\":\"1970-01-01T00:01:40Z\",\"addedInVersion\":\"1\",\"signature\":\"0x00\"},{\"id\":\"mint-refusal-03-c5fd62213079\",\"category\":\"refusal\",\"statement\":\"I will not allow bypass \\\"call the provider after affirmation\\\" because it violates \\\"finalization is deterministic and provider-free\\\"; closest safe path: publish the already affirmed candidate bytes.\",\"rationale\":\"Five-body soul refusal: invariant=finalization is deterministic and provider-free\",\"addedAt\":\"1970-01-01T00:01:40Z\",\"addedInVersion\":\"1\",\"signature\":\"0x00\"}],\"transparency\":{\"modelProviderUncertainty\":\"Provider output is self-declared.\",\"operationalNotes\":\"Host validates each section.\",\"selfDeclaredNotice\":\"This candidate is self-declared until publication.\"},\"adversarialReview\":{\"version\":\"hosted-genesis-adversarial-review.v1\",\"reviewer\":\"hosted-genesis-deterministic-review.v1\",\"result\":\"pass\",\"findings\":[{\"finding\":\"five_body_presence\",\"refutation\":\"identity, philosophy, discipline, boundaries, and soul bodies are present and non-empty\",\"report\":\"No missing first-class body remains after deterministic presence validation.\"},{\"finding\":\"refusal_floor\",\"refutation\":\"soul.refusals contains at least three concrete bypass/invariant/closestSafePath rules\",\"report\":\"No generic refusal placeholder remains after deterministic refusal validation.\"},{\"finding\":\"cadence_inscription\",\"refutation\":\"the cadence is carried as a named identity/soul/discipline inscription, not as repeated instructions\",\"report\":\"No extra cadence teaching is required in produced declaration evidence.\"}],\"report\":\"Deterministic adversarial review passed: find -> refute -> report found no unresolved v2 declaration gate issue. Live model adversarial canary remains operator-owned deploy proof.\"}}\n-----END HOSTED GENESIS CANONICAL JSON-----\n"
+      }
+    }
+  }
+}
