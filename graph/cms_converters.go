@@ -251,6 +251,13 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		slug = cmsExtractSlugFromURL(article.ID)
 	}
 
+	var editorNotes *string
+	var reviewStatus *string
+	if r.canViewCMSPrivateAttribution(ctx, article.AttributedTo) {
+		editorNotes = cmsOptionalString(strings.TrimSpace(article.EditorNotes))
+		reviewStatus = cmsOptionalString(strings.TrimSpace(article.ReviewStatus))
+	}
+
 	result := &model.Article{
 		ID:       article.ID,
 		Slug:     slug,
@@ -278,8 +285,8 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		CanonicalURL:   cmsOptionalString(strings.TrimSpace(article.CanonicalURL)),
 		OGImage:        cmsOptionalString(strings.TrimSpace(article.OGImage)),
 
-		EditorNotes:  cmsOptionalString(strings.TrimSpace(article.EditorNotes)),
-		ReviewStatus: cmsOptionalString(strings.TrimSpace(article.ReviewStatus)),
+		EditorNotes:  editorNotes,
+		ReviewStatus: reviewStatus,
 
 		// CSR-049: generatedBy / reviewedBy / publishedBy are private CMS workflow
 		// attribution actors distinct from the public Author (attributedTo) byline.
