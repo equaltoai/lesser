@@ -507,6 +507,36 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 
 	logger = zap.NewNop()
 
+	for name, query := range map[string]string{
+		"article":       `query { article(id: "https://example.com/articles/published") { id } }`,
+		"articleBySlug": `query { articleBySlug(slug: "published") { id } }`,
+		"articles":      `query { articles(first: 10) { totalCount } }`,
+		"categories":    `query { categories { id } }`,
+		"series":        `query { series(id: "alice|series-1") { id } }`,
+		"seriesBySlug":  `query { seriesBySlug(slug: "series-1") { id } }`,
+	} {
+		t.Run("allows_anonymous_CMS_query_"+name, func(t *testing.T) {
+			graphQLHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			})
+
+			body, err := json.Marshal(map[string]string{"query": query})
+			require.NoError(t, err)
+			ctx := &apptheory.Context{
+				Request: apptheory.Request{
+					Method: http.MethodPost,
+					Path:   "/graphql",
+					Body:   body,
+				},
+			}
+
+			resp, err := handleGraphQL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.Status)
+		})
+	}
+
 	t.Run("allows_public_query_without_auth", func(t *testing.T) {
 		graphQLHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, readErr := io.ReadAll(r.Body)
@@ -595,6 +625,42 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 				Method: http.MethodPost,
 				Path:   "/graphql",
 				Body:   []byte(`{"query":"mutation { dismissAnnouncement(id: \"ann-1\") }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
+	t.Run("rejects_multiple_operations_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for anonymous multi-operation requests")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"query Articles { articles { totalCount } } query Categories { categories { id } }"}`),
+			},
+		}
+
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
+	})
+
+	t.Run("rejects_mixed_public_and_private_fields_without_auth", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for mixed anonymous requests")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Body:   []byte(`{"query":"query { articles { totalCount } viewer { id } }"}`),
 			},
 		}
 

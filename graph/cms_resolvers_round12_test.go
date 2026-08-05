@@ -275,6 +275,205 @@ func TestRound12CMS_AnonymousViewerCannotSeeAttributedArticleTombstone(t *testin
 	require.False(t, query.cmsArticleTombstoneVisible(context.Background(), tombstone))
 }
 
+func TestRound12CMS_AnonymousReadsExposeOnlyPublishedArticles(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	authorID := cmsLocalActorID(resolver.getDomain(), "alice")
+
+	published := &models.Article{
+		Object: models.Object{
+			ID:           cmsArticleID(resolver.getDomain(), "published"),
+			Type:         "Article",
+			Name:         "Published",
+			Content:      "published body",
+			AttributedTo: authorID,
+			Published:    now.Add(-time.Minute),
+			Updated:      now,
+			CreatedAt:    now.Add(-time.Hour),
+		},
+		Slug:          "published",
+		ContentFormat: "markdown",
+		EditorNotes:   "private editorial note",
+		ReviewStatus:  "approved",
+		UpdatedAt:     now,
+	}
+	require.NoError(t, published.UpdateKeys())
+	require.NoError(t, storage.Article().CreateArticle(ctx, published))
+
+	draft := &models.Draft{
+		ID:            "draft-unpublished",
+		AuthorID:      "alice",
+		ContentType:   "Article",
+		Title:         "Draft",
+		Slug:          "draft-unpublished",
+		Content:       "draft body",
+		ContentFormat: "markdown",
+		Status:        "draft",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	require.NoError(t, draft.UpdateKeys())
+	require.NoError(t, storage.Draft().CreateDraft(ctx, draft))
+
+	scheduledAt := now.Add(time.Hour)
+	scheduled := &models.Draft{
+		ID:            "scheduled-unpublished",
+		AuthorID:      "alice",
+		ContentType:   "Article",
+		Title:         "Scheduled",
+		Slug:          "scheduled-unpublished",
+		Content:       "scheduled body",
+		ContentFormat: "markdown",
+		Status:        "scheduled",
+		ScheduledAt:   &scheduledAt,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	require.NoError(t, scheduled.UpdateKeys())
+	require.NoError(t, storage.Draft().CreateDraft(ctx, scheduled))
+
+	deleted := &models.Article{
+		Object: models.Object{
+			ID:           cmsArticleID(resolver.getDomain(), "deleted"),
+			Type:         "Article",
+			Name:         "Deleted",
+			Content:      "deleted body",
+			AttributedTo: authorID,
+			Published:    now.Add(-2 * time.Minute),
+			Updated:      now,
+			CreatedAt:    now.Add(-time.Hour),
+		},
+		Slug:          "deleted",
+		ContentFormat: "markdown",
+		UpdatedAt:     now,
+	}
+	require.NoError(t, deleted.UpdateKeys())
+	require.NoError(t, storage.Article().CreateArticle(ctx, deleted))
+	require.NoError(t, storage.Article().DeleteArticle(ctx, deleted.ID))
+
+	first := 20
+	articles, err := resolver.Query().Articles(ctx, nil, nil, nil, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, articles.Edges, 1)
+	require.Equal(t, published.ID, articles.Edges[0].Node.ID)
+	require.Nil(t, articles.Edges[0].Node.EditorNotes)
+	require.Nil(t, articles.Edges[0].Node.ReviewStatus)
+
+	byID, err := resolver.Query().Article(ctx, published.ID)
+	require.NoError(t, err)
+	require.NotNil(t, byID)
+	require.Nil(t, byID.EditorNotes)
+	require.Nil(t, byID.ReviewStatus)
+
+	bySlug, err := resolver.Query().ArticleBySlug(ctx, published.Slug)
+	require.NoError(t, err)
+	require.NotNil(t, bySlug)
+	require.Equal(t, published.ID, bySlug.ID)
+
+	for name, read := range map[string]func() (*model.Article, error){
+		"draft by id": func() (*model.Article, error) {
+			return resolver.Query().Article(ctx, draft.ID)
+		},
+		"draft by slug": func() (*model.Article, error) {
+			return resolver.Query().ArticleBySlug(ctx, draft.Slug)
+		},
+		"scheduled by id": func() (*model.Article, error) {
+			return resolver.Query().Article(ctx, scheduled.ID)
+		},
+		"scheduled by slug": func() (*model.Article, error) {
+			return resolver.Query().ArticleBySlug(ctx, scheduled.Slug)
+		},
+		"deleted by id": func() (*model.Article, error) {
+			return resolver.Query().Article(ctx, deleted.ID)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			article, readErr := read()
+			require.NoError(t, readErr)
+			require.Nil(t, article)
+		})
+	}
+}
+
+func TestRound12CMS_AnonymousSeriesAndCategoriesExcludeScheduledDraftCounts(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	series := &models.Series{
+		ID:        "public-series",
+		AuthorID:  "alice",
+		Tenant:    "localhost",
+		Title:     "Public Series",
+		Slug:      "public-series",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	require.NoError(t, series.UpdateKeys())
+	require.NoError(t, storage.Series().CreateSeries(ctx, series))
+
+	category := &models.Category{
+		ID:        "public-category",
+		Name:      "Public Category",
+		Slug:      "public-category",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	require.NoError(t, category.UpdateKeys())
+	require.NoError(t, storage.Category().CreateCategory(ctx, category))
+
+	scheduledAt := now.Add(time.Hour)
+	scheduled := &models.Draft{
+		ID:            "scheduled-with-taxonomy",
+		AuthorID:      "alice",
+		ContentType:   "Article",
+		Title:         "Scheduled with taxonomy",
+		Slug:          "scheduled-with-taxonomy",
+		Content:       "scheduled body",
+		ContentFormat: "markdown",
+		Status:        "scheduled",
+		ScheduledAt:   &scheduledAt,
+		MetadataJSON:  `{"seriesId":"alice|public-series","categoryIds":["public-category"]}`,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	require.NoError(t, scheduled.UpdateKeys())
+	require.NoError(t, storage.Draft().CreateDraft(ctx, scheduled))
+
+	byID, err := resolver.Query().Series(ctx, cmsSeriesGraphQLID(series.AuthorID, series.ID))
+	require.NoError(t, err)
+	require.NotNil(t, byID)
+	require.Zero(t, byID.ArticleCount)
+
+	indexDB := new(dynamormmocks.MockDB)
+	indexQuery := new(dynamormmocks.MockQuery)
+	storage.db = indexDB
+	indexDB.On("WithContext", mock.Anything).Return(indexDB).Once()
+	indexDB.On("Model", mock.AnythingOfType("*models.CMSSeriesSlugIndex")).Return(indexQuery).Once()
+	indexQuery.On("Where", "PK", "=", models.CMSTenantSeriesSlugIndexPK("localhost", series.Slug)).Return(indexQuery).Once()
+	indexQuery.On("Where", "SK", "=", models.CMSSeriesSlugIndexSK()).Return(indexQuery).Once()
+	indexQuery.On("First", mock.AnythingOfType("*models.CMSSeriesSlugIndex")).Run(func(args mock.Arguments) {
+		idx := args.Get(0).(*models.CMSSeriesSlugIndex)
+		idx.AuthorID = series.AuthorID
+		idx.SeriesID = series.ID
+	}).Return(nil).Once()
+
+	bySlug, err := resolver.Query().SeriesBySlug(ctx, series.Slug)
+	require.NoError(t, err)
+	require.NotNil(t, bySlug)
+	require.Zero(t, bySlug.ArticleCount)
+
+	categories, err := resolver.Query().Categories(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, categories, 1)
+	require.Equal(t, category.ID, categories[0].ID)
+	require.Zero(t, categories[0].ArticleCount)
+
+	indexDB.AssertExpectations(t)
+	indexQuery.AssertExpectations(t)
+}
+
 func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -283,6 +482,7 @@ func TestRound12CMS_ArticleBySlugTombstoneDisclosure(t *testing.T) {
 	}{
 		{name: "original author sees non-public tombstone", ctx: round12AuthContext("alice"), wantVisible: true},
 		{name: "other viewer does not see non-public tombstone", ctx: round12AuthContext("bob")},
+		{name: "anonymous viewer does not see non-public tombstone", ctx: context.Background()},
 	}
 
 	for _, tt := range tests {
