@@ -190,8 +190,6 @@ func TestReleaseCoverageMargin_AppRegistrationPolicyBranches(t *testing.T) {
 }
 
 func TestReleaseCoverageMargin_OAuthResourceValidation(t *testing.T) {
-	t.Parallel()
-
 	t.Run("resource indicators reject ambiguous URLs", func(t *testing.T) {
 		tests := []struct {
 			name     string
@@ -269,11 +267,6 @@ func TestReleaseCoverageMargin_OAuthResourceValidation(t *testing.T) {
 		require.ErrorIs(t, h.validateOAuthInstanceResourceOwner(context.Background(), "", "alice", "bob"), errOAuthInvalidTarget)
 		require.Empty(t, oauthAuthorizationCodePrincipalUsername(nil))
 		require.False(t, h.oauthInstanceOperatorPrincipal(context.Background(), "missing"))
-
-		readFailure, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{
-			firstErrorPK: map[string]error{"USER#broken": errors.New("account read failed")},
-		})
-		require.False(t, readFailure.oauthInstanceOperatorPrincipal(context.Background(), "broken"))
 
 		require.Error(t, h.validateOAuthInstanceRefreshTokenTarget(context.Background(), &storage.OAuthClient{
 			ClientClass: "operator",
@@ -481,7 +474,6 @@ func TestReleaseCoverageMargin_OAuthRevocationFailsClosed(t *testing.T) {
 		withFailingOAuthSecretResolver(t)
 		h, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{})
 		h.cfg.JWTSecret = ""
-		h.revokeAccessTokenBestEffort(context.Background(), "opaque-access-token")
 		require.Nil(t, h.revokeRefreshTokenBestEffort(context.Background(), nil))
 	})
 

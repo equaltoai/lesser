@@ -117,10 +117,12 @@ type fakeGraphQLSubRepo struct {
 	subsByStream map[string][]models.GraphQLStreamSubscription
 	listErr      error
 
+	listCalls      []string
 	deleteAllCalls []string
 }
 
 func (r *fakeGraphQLSubRepo) ListByStream(_ context.Context, stream string) ([]models.GraphQLStreamSubscription, error) {
+	r.listCalls = append(r.listCalls, stream)
 	if r.listErr != nil {
 		return nil, r.listErr
 	}

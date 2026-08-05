@@ -91,6 +91,7 @@ func TestReleaseCoverageMargin_ConversationUpdateRejectsIncompleteRecords(t *tes
 		})
 	}
 	require.Empty(t, validClient.postCalls)
+	require.Empty(t, validSubs.listCalls, "rejected records must not reach the subscription lookup")
 }
 
 func TestReleaseCoverageMargin_ConversationUpdateRemovesStaleConnections(t *testing.T) {
