@@ -256,7 +256,7 @@ func TestPatternCacheManager_cleanup_RemovesExpiredFromBothCaches(t *testing.T) 
 	repo := newFakePatternCacheRepository()
 	cfg := &CacheConfig{
 		MaxMemoryPatterns:      10,
-		MemoryCacheTimeout:     time.Millisecond,
+		MemoryCacheTimeout:     time.Hour,
 		PersistentCacheTimeout: time.Hour,
 		EnableStatistics:       false,
 		CleanupInterval:        0,
