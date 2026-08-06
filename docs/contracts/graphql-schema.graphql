@@ -2355,6 +2355,8 @@ type Article {
 
   content: String!
   contentFormat: ContentFormat!
+  """Canonical sanitized HTML. Never fall back to rendering content when this field is unavailable."""
+  renderedHtml: String
 
   featuredImage: Media
   tableOfContents: [TOCEntry!]!

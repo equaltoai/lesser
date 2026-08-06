@@ -145,6 +145,17 @@ Canonical output policy:
 3. Table of contents, word count, reading time, link normalization, media embedding, and unsafe-content handling belong to the same server-side rendering boundary.
 4. Renderer output must be deterministic for the same source, metadata, and media inputs so preview/review/public/federated views can be compared.
 
+### Published Article GraphQL contract
+
+Public CMS Article reads expose both the stored authoring source and its canonical presentation form:
+
+- `Article.content` remains the stored source and must be interpreted according to `Article.contentFormat`;
+- `Article.renderedHtml` is the sanitized HTML produced on demand by `cmsrender.RenderArticleContent`, the same renderer used by draft preview and ActivityPub serialization;
+- `renderedHtml` is nullable so a renderer failure fails closed instead of exposing stored source as browser-ready HTML. GraphQL also reports the renderer error to the caller;
+- clients must never render Markdown independently or insert `Article.content` into an HTML sink as a fallback.
+
+This additive field lets page clients perform SSR, SSG, or ISR for the complete article page without creating a competing source-to-HTML renderer. Public-page chrome and caching remain client-plane concerns; the canonical article body remains server-owned.
+
 ### Draft preview API contract
 
 M4.5 exposes the canonical Article preview renderer to body and other authenticated GraphQL consumers through:
