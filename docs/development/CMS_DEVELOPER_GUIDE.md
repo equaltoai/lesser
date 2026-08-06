@@ -39,13 +39,25 @@ Nested business objects still count toward the limit; agents should prefer scala
 
 ## CMS read-path renderer boundary
 
-For the ordinary CMS GraphQL read paths (`article`, `articleBySlug`, and Article connections), Lesser is the authority for
-the stored raw source and its declared `contentFormat`; `Article.content` is not a promise of presentation-ready HTML.
-Rendering and sanitizing that source for browser presentation belongs to the FaceTheory/greater-components client plane.
-Consumers must select the renderer for the declared format and must not insert raw Article source into an HTML sink.
+For the ordinary CMS GraphQL read paths (`article`, `articleBySlug`, and Article connections), Lesser exposes both sides
+of the canonical renderer boundary:
 
-This boundary is intentional (operator ruling 2026-08-01) and makes the read-path behavior tracked in #1287 by-design.
-It does not change the separate server-rendered draft-preview, public-page, or ActivityPub publication contracts.
+- `Article.content` is the stored source and remains available for authoring-aware consumers;
+- `Article.contentFormat` declares that source format;
+- `Article.renderedHtml` is presentation-ready, sanitized HTML generated on demand by
+  `cmsrender.RenderArticleContent`, the same authority used by draft previews and ActivityPub serialization.
+
+`renderedHtml` is nullable and returns a GraphQL field error when canonical rendering fails. Browser clients must fail
+closed in that case: they must not render Markdown themselves or insert `Article.content` into an HTML sink. The
+FaceTheory/greater-components client plane may own SSR, SSG, ISR, page chrome, and defense-in-depth sanitization after it
+receives this canonical HTML; it does not own source-to-HTML conversion.
+
+`graph.NewConfig` installs resource-sensitive complexity pricing for this field on both HTTP and WebSocket executors.
+Do not construct production schemas with a bare `graph.Config`: doing so would return `renderedHtml` to gqlgen's default
+scalar cost and reopen unauthenticated CPU amplification through large Article connections. The connection price uses
+the same default and maximum page sizes as the resolver, so validation and execution cannot disagree about cardinality.
+Its weight keeps the default 25-Article page below the default 500-unit ceiling while rejecting oversized rendered-HTML
+pages.
 
 ## Service ownership (canonical responsibilities)
 
