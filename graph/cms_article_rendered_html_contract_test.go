@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -61,5 +62,21 @@ func TestCMSArticleRenderedHTMLFailsClosedOnRendererError(t *testing.T) {
 	require.NotNil(t, article)
 	renderedHTML, err := resolver.Article().RenderedHTML(context.Background(), article)
 	require.Error(t, err)
+	require.Nil(t, renderedHTML)
+}
+
+func TestCMSArticleRenderedHTMLHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	renderedHTML, err := (&Resolver{}).Article().RenderedHTML(ctx, &model.Article{
+		ID:               "https://example.com/articles/canceled",
+		Content:          "# must not render",
+		ContentFormat:    model.ContentFormatMarkdown,
+		RawContentFormat: "markdown",
+	})
+	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, renderedHTML)
 }

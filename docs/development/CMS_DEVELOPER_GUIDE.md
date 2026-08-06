@@ -52,6 +52,11 @@ closed in that case: they must not render Markdown themselves or insert `Article
 FaceTheory/greater-components client plane may own SSR, SSG, ISR, page chrome, and defense-in-depth sanitization after it
 receives this canonical HTML; it does not own source-to-HTML conversion.
 
+`graph.NewConfig` installs resource-sensitive complexity pricing for this field on both HTTP and WebSocket executors.
+Do not construct production schemas with a bare `graph.Config`: doing so would return `renderedHtml` to gqlgen's default
+scalar cost and reopen unauthenticated CPU amplification through large Article connections. The connection price uses
+the same default and maximum page sizes as the resolver, so validation and execution cannot disagree about cardinality.
+
 ## Service ownership (canonical responsibilities)
 
 ### `ArticleService` (`pkg/services/cms/article_service.go`)

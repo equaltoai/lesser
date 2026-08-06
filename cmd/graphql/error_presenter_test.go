@@ -146,7 +146,7 @@ func newDraftReviewWireHarness(t *testing.T, client *failingGrantCreateDynamo) *
 		Storage:  storage,
 		Logger:   zap.NewNop(),
 	}
-	server := handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+	server := handler.NewDefaultServer(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	server.SetErrorPresenter(graphQLErrorPresenter)
 	server.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 		return next(auth.WithClaims(ctx, &auth.Claims{Username: "owner"}))

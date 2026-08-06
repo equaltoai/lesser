@@ -44,7 +44,7 @@ func (*faultingAtomicGraphQLSubscriptionRepo) DeleteAllForConnection(context.Con
 
 func TestConversationUpdatesPersistFailureLeavesNoHalfOpenPublication(t *testing.T) {
 	resolver := &graph.Resolver{Logger: zap.NewNop()}
-	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+	exec := executor.New(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
 	server, messages := newAnonymousOperationTestServer(t, resolver, exec, "conversation-conn")

@@ -331,7 +331,7 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	t.Cleanup(func() { _ = manager.Stop() })
 
 	resolver := &graph.Resolver{Logger: zap.NewNop(), SubscriptionManager: manager}
-	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+	exec := executor.New(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
 	anonymousSafe := map[string]string{
@@ -438,7 +438,7 @@ func TestAuthenticatedConnectionStreamsTimelineAuthorizationSet(t *testing.T) {
 	t.Cleanup(func() { _ = manager.Stop() })
 
 	resolver := &graph.Resolver{Logger: zap.NewNop(), SubscriptionManager: manager}
-	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+	exec := executor.New(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 
 	validator := &fakeTokenValidator{claims: &auth.Claims{
@@ -608,7 +608,7 @@ func TestAnonymousConversationServerlessFastPathRefusesBeforePersistence(t *test
 	t.Cleanup(func() { _ = manager.Stop() })
 
 	resolver := &graph.Resolver{Logger: zap.NewNop(), SubscriptionManager: manager}
-	exec := executor.New(graph.NewExecutableSchema(graph.Config{Resolvers: resolver}))
+	exec := executor.New(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 	server, messages := newAnonymousOperationTestServer(t, resolver, exec, "conversation-conn")
 	server.gqlSubRepo = &repositories.GraphQLStreamSubscriptionRepository{}
