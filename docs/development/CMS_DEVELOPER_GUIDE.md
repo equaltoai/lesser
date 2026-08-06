@@ -56,6 +56,8 @@ receives this canonical HTML; it does not own source-to-HTML conversion.
 Do not construct production schemas with a bare `graph.Config`: doing so would return `renderedHtml` to gqlgen's default
 scalar cost and reopen unauthenticated CPU amplification through large Article connections. The connection price uses
 the same default and maximum page sizes as the resolver, so validation and execution cannot disagree about cardinality.
+Its weight keeps the default 25-Article page below the default 500-unit ceiling while rejecting oversized rendered-HTML
+pages.
 
 ## Service ownership (canonical responsibilities)
 

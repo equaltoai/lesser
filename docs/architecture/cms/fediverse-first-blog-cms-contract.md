@@ -156,11 +156,11 @@ Public CMS Article reads expose both the stored authoring source and its canonic
 
 This additive field lets page clients perform SSR, SSG, or ISR for the complete article page without creating a competing source-to-HTML renderer. Public-page chrome and caching remain client-plane concerns; the canonical article body remains server-owned.
 
-Because canonical rendering parses and sanitizes up to the full Article source limit, GraphQL prices `renderedHtml` at 64
+Because canonical rendering parses and sanitizes up to the full Article source limit, GraphQL prices `renderedHtml` at 16
 complexity units per requested Article. The `articles` connection multiplies that cost by its effective `first` value
-(default 25, maximum 200), while single-Article queries and Article-returning mutations price one render. With the
-operator-safe default complexity limit of 500, clients should fetch canonical HTML through `article` or
-`articleBySlug`; large connection requests that select `renderedHtml` are rejected before resolvers execute.
+(default 25, maximum 200), while single-Article queries and Article-returning mutations price one render. The ordinary
+25-Article page fits the operator-safe default complexity limit of 500, while oversized rendered-HTML connections are
+rejected before resolvers execute. Clients rendering one article page should still prefer `article` or `articleBySlug`.
 
 ### Draft preview API contract
 

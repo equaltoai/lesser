@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +22,31 @@ func TestArticleRenderedHTMLComplexityPricesConnectionCardinality(t *testing.T) 
 
 	defaultCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, nil)
 	require.Equal(t, 5+defaultCMSPageSize*articleRenderedHTMLComplexityCost, defaultCost)
+	require.LessOrEqual(t, defaultCost, config.DefaultGraphQLMaxComplexity,
+		"the default Article page must fit the default GraphQL complexity ceiling")
+
+	maximumCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &first, nil)
+	require.Greater(t, maximumCost, config.DefaultGraphQLMaxComplexity,
+		"the maximum Article page must still be rejected at the default ceiling")
+}
+
+func TestArticleRenderedHTMLComplexityLeavesUsefulHeadroomAboveDefaultPage(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig(&Resolver{})
+	markedChild := cfg.Complexity.Article.RenderedHTML(5)
+
+	lastAdmitted := 30
+	require.LessOrEqual(t,
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &lastAdmitted, nil),
+		config.DefaultGraphQLMaxComplexity,
+	)
+
+	firstRejected := lastAdmitted + 1
+	require.Greater(t,
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &firstRejected, nil),
+		config.DefaultGraphQLMaxComplexity,
+	)
 }
 
 func TestArticleRenderedHTMLComplexityPreservesCheapQueriesAndPricesAllArticleRoots(t *testing.T) {

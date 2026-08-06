@@ -7,9 +7,9 @@ const (
 	// rendering once it knows the requested connection cardinality. The marker
 	// is far above any query admitted by the parser and ordinary complexity gate.
 	articleRenderedHTMLComplexityMarker = 1 << 40
-	// One worst-case Article render is intentionally expensive enough that the
-	// default complexity limit admits only a small connection page.
-	articleRenderedHTMLComplexityCost = 64
+	// One Article render costs enough to reject oversized rendered connections
+	// while leaving the ordinary 25-Article page usable under the default limit.
+	articleRenderedHTMLComplexityCost = 16
 )
 
 // NewConfig returns the executable-schema configuration with Lesser's custom
