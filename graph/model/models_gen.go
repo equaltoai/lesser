@@ -945,14 +945,26 @@ type ContinuityPanel struct {
 }
 
 type Conversation struct {
-	ID             string                      `json:"id"`
-	Cursor         *Cursor                     `json:"cursor,omitempty"`
-	LastStatus     *Object                     `json:"lastStatus,omitempty"`
-	Unread         bool                        `json:"unread"`
+	ID         string  `json:"id"`
+	Cursor     *Cursor `json:"cursor,omitempty"`
+	LastStatus *Object `json:"lastStatus,omitempty"`
+	Unread     bool    `json:"unread"`
+	// Number of messages unread by the current viewer.
+	UnreadCount    int                         `json:"unreadCount"`
 	Accounts       []*activitypub.Actor        `json:"accounts"`
 	ViewerMetadata *ConversationViewerMetadata `json:"viewerMetadata"`
 	CreatedAt      Time                        `json:"createdAt"`
 	UpdatedAt      Time                        `json:"updatedAt"`
+}
+
+type ConversationConnection struct {
+	Edges    []*ConversationEdge `json:"edges"`
+	PageInfo *PageInfo           `json:"pageInfo"`
+}
+
+type ConversationEdge struct {
+	Node   *Conversation `json:"node"`
+	Cursor Cursor        `json:"cursor"`
 }
 
 type ConversationViewerMetadata struct {

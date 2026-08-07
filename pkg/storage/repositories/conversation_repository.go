@@ -620,6 +620,7 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
 	}
 	state.Unread = false
+	state.UnreadCount = 0
 	state.LastReadAt = &now
 	state.UpdatedAt = now
 	if err := state.BeforeUpdate(); err != nil {
@@ -763,6 +764,9 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
 	}
 	state.Unread = true
+	if state.UnreadCount == 0 {
+		state.UnreadCount = 1
+	}
 	state.LastReadAt = nil
 	state.UpdatedAt = time.Now().UTC()
 	if err := state.BeforeUpdate(); err != nil {

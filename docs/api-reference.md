@@ -325,6 +325,13 @@ Anonymous/public-read GraphQL contract:
 - Everything else, including `viewer`, notifications, private timelines, moderation/admin queries, mutations, and
   subscriptions, still requires authorization.
 
+Authenticated messaging clients should use `conversationConnection(folder, first, after)` for cursor pagination; the
+legacy list-valued `conversations` field remains available for compatibility. `conversationMessages` edges are ordered
+oldest to newest. Each conversation exposes both `unread` and the viewer-specific `unreadCount`, and conversation
+subscription updates carry the list cursor, unread state/count, preview status ID, and timestamps needed to update list
+state without a probe fetch. `conversation(id)` deliberately returns the same access-denied envelope for missing and
+non-participant IDs so it cannot be used as an existence oracle.
+
 ### Pattern: call GraphQL with JSON + variables
 
 ✅ CORRECT: use a JSON body with `query` + `variables`.

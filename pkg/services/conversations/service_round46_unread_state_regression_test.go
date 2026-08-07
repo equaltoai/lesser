@@ -23,6 +23,7 @@ func TestBuildDirectMessageParticipantStatesForSend_SetsSenderReadStateImmediate
 	require.Len(t, states, 2)
 	senderState := states[0]
 	require.False(t, senderState.Unread)
+	require.Zero(t, senderState.UnreadCount)
 	require.NotNil(t, senderState.LastReadAt)
 	require.Equal(t, publishedAt, *senderState.LastReadAt)
 }
@@ -35,13 +36,14 @@ func TestBuildDirectMessageParticipantStatesForSend_SetsRecipientUnreadStateImme
 		"alice",
 		"bob",
 		&models.UserConversationState{},
-		&models.UserConversationState{},
+		&models.UserConversationState{Unread: true, UnreadCount: 2},
 		false,
 	)
 
 	require.Len(t, states, 2)
 	recipientState := states[1]
 	require.True(t, recipientState.Unread)
+	require.Equal(t, 3, recipientState.UnreadCount)
 	require.Nil(t, recipientState.LastReadAt)
 	require.Equal(t, "status-unread", recipientState.PreviewStatusID)
 	require.Equal(t, publishedAt, recipientState.SortAt)

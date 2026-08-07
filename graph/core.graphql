@@ -746,10 +746,22 @@ type Conversation {
   cursor: Cursor
   lastStatus: Object
   unread: Boolean!
+  """Number of messages unread by the current viewer."""
+  unreadCount: Int!
   accounts: [Actor!]!
   viewerMetadata: ConversationViewerMetadata!
   createdAt: Time!
   updatedAt: Time!
+}
+
+type ConversationEdge {
+  node: Conversation!
+  cursor: Cursor!
+}
+
+type ConversationConnection {
+  edges: [ConversationEdge!]!
+  pageInfo: PageInfo!
 }
 
 # List type
@@ -1203,7 +1215,10 @@ type Query {
   
   # Conversations
   conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!
+  """Paginated conversation list. Prefer this over the legacy list-valued conversations field."""
+  conversationConnection(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): ConversationConnection!
   conversation(id: ID!): Conversation
+  """Messages ordered oldest to newest by their stable conversation cursor."""
   conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!
   
   # Lists

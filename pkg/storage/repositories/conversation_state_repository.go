@@ -161,6 +161,7 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
 		Unread:                   state.Unread,
+		UnreadCount:              state.UnreadCount,
 		LastReadAt:               state.LastReadAt,
 		DeletedAt:                state.DeletedAt,
 		RequestedAt:              state.RequestedAt,

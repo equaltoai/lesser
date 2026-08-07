@@ -49,6 +49,7 @@ type UserConversationState struct {
 	PreviewStatusPublishedAt time.Time                   `theorydb:"attr:previewStatusPublishedAt,omitempty" json:"preview_status_published_at,omitempty"`
 	SortAt                   time.Time                   `theorydb:"attr:sortAt" json:"sort_at"`
 	Unread                   bool                        `theorydb:"attr:unread" json:"unread"`
+	UnreadCount              int                         `theorydb:"attr:unreadCount" json:"unread_count"`
 	LastReadAt               *time.Time                  `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
 	DeletedAt                *time.Time                  `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
 	RequestedAt              *time.Time                  `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`

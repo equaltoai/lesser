@@ -558,11 +558,25 @@ func (h *StreamRouterHandler) processUserConversationStateEvent(ctx context.Cont
 		return nil
 	}
 
+	unreadCount := state.UnreadCount
+	if state.Unread && unreadCount == 0 {
+		unreadCount = 1
+	}
+	conversationUpdate := map[string]any{
+		"id":          conversationID,
+		"cursor":      state.LegacyListCursor(),
+		"unread":      state.Unread,
+		"unreadCount": unreadCount,
+		"createdAt":   state.CreatedAt,
+		"updatedAt":   state.UpdatedAt,
+	}
+	if state.PreviewStatusID != "" {
+		conversationUpdate["lastStatus"] = map[string]any{"id": state.PreviewStatusID}
+	}
+
 	envelopePayload := map[string]any{
 		"data": map[string]any{
-			"conversationUpdates": map[string]any{
-				"id": conversationID,
-			},
+			"conversationUpdates": conversationUpdate,
 		},
 	}
 

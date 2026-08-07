@@ -43,6 +43,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 			RequestedAt:     &requestedAt,
 			PreviewStatusID: "status-preview",
 			Unread:          true,
+			UnreadCount:     3,
 			SortAt:          sortAt,
 		},
 	}
@@ -87,6 +88,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 	require.Equal(t, "bob", gqlConversation.Accounts[0].PreferredUsername)
 	require.NotNil(t, gqlConversation.LastStatus)
 	require.Equal(t, "status-preview", gqlConversation.LastStatus.ID)
+	require.Equal(t, 3, gqlConversation.UnreadCount)
 }
 
 func TestRound12_ConvertConversationListToGraphQL_FallsBackWhenPrefetchMisses(t *testing.T) {

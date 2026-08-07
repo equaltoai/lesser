@@ -2879,6 +2879,10 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 	conversation.Participants = models.ConversationParticipantIDsFromRefs(conversation.ParticipantRefs)
 
 	remoteRef := inboundDirectRemoteParticipantRef(info)
+	unreadCount := 1
+	if existing, err := ih.conversationRepository.GetUserConversationState(ctx, info.localParticipantID, conversation.ID); err == nil && existing != nil {
+		unreadCount = existing.UnreadCount + 1
+	}
 	stateSortAt := publishedAt
 	if skipConversationMetadata && !conversation.LastMessageTime.IsZero() {
 		// When the incoming message is older, still record the state but
@@ -2899,6 +2903,7 @@ func (ih *InboxHandler) persistInboundDirectConversation(
 		PreviewStatusPublishedAt: publishedAt,
 		SortAt:                   stateSortAt,
 		Unread:                   true,
+		UnreadCount:              unreadCount,
 		CreatedAt:                conversation.CreatedAt,
 		UpdatedAt:                publishedAt,
 	}

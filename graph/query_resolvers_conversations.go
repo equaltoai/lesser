@@ -60,6 +60,64 @@ func (r *queryResolver) Conversations(ctx context.Context, folder *model.Convers
 	return convos, nil
 }
 
+// ConversationConnection is the resolver for the conversationConnection field.
+func (r *queryResolver) ConversationConnection(ctx context.Context, folder *model.ConversationFolder, first *int, after *model.Cursor) (*model.ConversationConnection, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pagination := interfaces.PaginationOptions{Limit: 20}
+	if first != nil && *first > 0 && *first <= 100 {
+		pagination.Limit = *first
+	}
+	if after != nil {
+		pagination.Cursor = string(*after)
+	}
+
+	folderArg := conversations.ConversationFolderInbox
+	if folder != nil && *folder == model.ConversationFolderRequests {
+		folderArg = conversations.ConversationFolderRequests
+	}
+
+	result, err := r.Registry.Conversations().ListConversations(ctx, &conversations.ListConversationsQuery{
+		UserID: username, Pagination: pagination, Folder: folderArg,
+	})
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to list conversations"), err)
+	}
+
+	edges := make([]*model.ConversationEdge, 0)
+	if result != nil && result.Conversations != nil {
+		prefetch := r.loadConversationListPrefetch(ctx, username, result.Conversations.Items)
+		for _, conv := range result.Conversations.Items {
+			node := r.convertConversationListToGraphQL(ctx, conv, prefetch)
+			if node == nil {
+				continue
+			}
+			cursor := model.Cursor(node.ID)
+			if node.Cursor != nil && *node.Cursor != "" {
+				cursor = *node.Cursor
+			}
+			edges = append(edges, &model.ConversationEdge{Node: node, Cursor: cursor})
+		}
+	}
+
+	pageInfo := &model.PageInfo{HasPreviousPage: after != nil}
+	if result != nil && result.Conversations != nil {
+		pageInfo.HasNextPage = result.Conversations.HasMore
+	}
+	if len(edges) > 0 {
+		start, end := edges[0].Cursor, edges[len(edges)-1].Cursor
+		pageInfo.StartCursor, pageInfo.EndCursor = &start, &end
+	} else if result != nil && result.Conversations != nil && result.Conversations.NextCursor != "" {
+		end := model.Cursor(result.Conversations.NextCursor)
+		pageInfo.EndCursor = &end
+	}
+
+	return &model.ConversationConnection{Edges: edges, PageInfo: pageInfo}, nil
+}
+
 // Conversation is the resolver for the conversation field.
 func (r *queryResolver) Conversation(ctx context.Context, id string) (*model.Conversation, error) {
 	username, err := r.requireAuth(ctx)
@@ -72,8 +130,8 @@ func (r *queryResolver) Conversation(ctx context.Context, id string) (*model.Con
 		ConversationID: id,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, nil
+		if conversationLookupMustHideExistence(err) {
+			return nil, ErrAccessDenied
 		}
 		r.Logger.Error("Failed to get conversation",
 			zap.String("user", username),
@@ -94,6 +152,11 @@ func (r *queryResolver) Conversation(ctx context.Context, id string) (*model.Con
 	}
 
 	return r.convertConversationToGraphQL(ctx, result.Conversation), nil
+}
+
+func conversationLookupMustHideExistence(err error) bool {
+	return err != nil && (strings.Contains(strings.ToLower(err.Error()), "not found") ||
+		errors.Is(err, conversations.ErrNotConversationParticipant))
 }
 
 // ConversationMessages is the resolver for the conversationMessages field.
