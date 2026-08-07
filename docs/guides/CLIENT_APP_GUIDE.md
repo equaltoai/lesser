@@ -91,6 +91,11 @@ Contract requirements:
 The Lesser SSR host imports the installed server bundle in-process and invokes the configured export. The exported
 handler may return a standard `Response` or a Lambda-style response object.
 
+Each `install_id` is unpacked beneath its own install-scoped directory, and that filesystem path is the server module's
+cache identity. The host imports the entry file using its plain `file:` URL without adding a query or fragment. This is
+load-bearing for Svelte 5 SSR: query-suffixed specifiers can instantiate a second copy of module-global framework state
+and detach the rendered component from its SSR context.
+
 ## Install workflow
 
 Prerequisites:

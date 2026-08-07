@@ -120,7 +120,7 @@ async function loadInstalledModule(manifest) {
   }
 
   const entryPath = path.join(targetRoot, entry);
-  loadedModule = await import(`${pathToFileURL(entryPath).href}?install=${encodeURIComponent(installId)}`);
+  loadedModule = await import(pathToFileURL(entryPath).href);
   loadedInstallId = installId;
   return loadedModule;
 }
