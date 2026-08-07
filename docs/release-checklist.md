@@ -18,9 +18,9 @@ This checklist is for maintainers preparing a release/deployable build.
 ## Theory Cloud framework baseline
 
 - [ ] Confirm release notes name the pinned framework baseline:
-  - AppTheory `v2.0.1`
-  - TableTheory `v2.0.5`
-  - FaceTheory `v4.0.1` for client-app guidance
+  - AppTheory runtime and CDK `v3.0.2`
+  - TableTheory `v3.0.4`
+  - FaceTheory `v4.0.6` for client-app guidance
 - [ ] Confirm auth UI dependency remediation remains intact (`cd auth-ui && corepack pnpm audit --prod` when touching
       `auth-ui/package.json` or `auth-ui/pnpm-lock.yaml`)
 - [ ] Confirm the auth UI CSP freshness gate passed before release asset build. It verifies the CloudFront CSP hash
