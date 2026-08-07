@@ -59,9 +59,9 @@ This section records the framework targets used during the completed Lift/DynamO
 copy/paste installation guidance. The original targets were AppTheory `v1.6.0` and TableTheory `v1.8.3`, using their
 pre-v2 module paths.
 
-For current dependency truth, use the repository's `go.mod` and `infra/cdk/go.mod`. As of 2026-08-01, the root module
-pins AppTheory `github.com/theory-cloud/apptheory/v3` at `v3.0.1` and TableTheory
-`github.com/theory-cloud/tabletheory/v3` at `v3.0.2`; the CDK module has its own AppTheory CDK pin. See
+For current dependency truth, use the repository's `go.mod` and `infra/cdk/go.mod`. As of 2026-08-07, the root module
+pins AppTheory `github.com/theory-cloud/apptheory/v3` at `v3.0.2` and TableTheory
+`github.com/theory-cloud/tabletheory/v3` at `v3.0.4`; the CDK module pins AppTheory CDK at `v3.0.2`. See
 `docs/planning/theory-cloud-framework-leverage-roadmap.md` for ongoing framework guidance. Any future upgrade must be
 intentional and update the module manifests rather than reuse commands from this historical migration plan.
 

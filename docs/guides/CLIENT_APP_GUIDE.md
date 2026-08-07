@@ -74,7 +74,7 @@ Contract requirements:
   ```json
   {
     "dependencies": {
-      "@theory-cloud/facetheory": "https://github.com/theory-cloud/FaceTheory/releases/download/v4.0.1/theory-cloud-facetheory-4.0.1.tgz"
+      "@theory-cloud/facetheory": "https://github.com/theory-cloud/FaceTheory/releases/download/v4.0.6/theory-cloud-facetheory-4.0.6.tgz"
     }
   }
   ```
