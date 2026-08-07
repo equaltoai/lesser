@@ -330,9 +330,7 @@ func initializeGraphQLSpecificServices() {
 	}
 
 	// Create GraphQL schema
-	schema := graph.NewExecutableSchema(graph.Config{
-		Resolvers: resolver,
-	})
+	schema := graph.NewExecutableSchema(graph.NewConfig(resolver))
 
 	// Create GraphQL handler
 	server := handler.New(schema)

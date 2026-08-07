@@ -49,6 +49,7 @@ type ResolverRoot interface {
 	Activity() ActivityResolver
 	Actor() ActorResolver
 	Agent() AgentResolver
+	Article() ArticleResolver
 	Attachment() AttachmentResolver
 	Driver() DriverResolver
 	ImageAnalysis() ImageAnalysisResolver
@@ -839,6 +840,7 @@ type ComplexityRoot struct {
 		PublishedAt        func(childComplexity int) int
 		PublishedBy        func(childComplexity int) int
 		ReadingTimeMinutes func(childComplexity int) int
+		RenderedHTML       func(childComplexity int) int
 		ReviewStatus       func(childComplexity int) int
 		ReviewedBy         func(childComplexity int) int
 		SEODescription     func(childComplexity int) int
@@ -3552,6 +3554,9 @@ type ActorResolver interface {
 type AgentResolver interface {
 	IdentitySemantics(ctx context.Context, obj *model.Agent) (*model.AgentIdentitySemantics, error)
 	Workflow(ctx context.Context, obj *model.Agent) (*model.AgentWorkflowSurface, error)
+}
+type ArticleResolver interface {
+	RenderedHTML(ctx context.Context, obj *model.Article) (*string, error)
 }
 type AttachmentResolver interface {
 	ID(ctx context.Context, obj *activitypub.Attachment) (string, error)
@@ -7706,6 +7711,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Article.ReadingTimeMinutes(childComplexity), true
+
+	case "Article.renderedHtml":
+		if e.complexity.Article.RenderedHTML == nil {
+			break
+		}
+
+		return e.complexity.Article.RenderedHTML(childComplexity), true
 
 	case "Article.reviewStatus":
 		if e.complexity.Article.ReviewStatus == nil {
@@ -52073,6 +52085,47 @@ func (ec *executionContext) fieldContext_Article_contentFormat(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Article_renderedHtml(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Article_renderedHtml(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Article().RenderedHTML(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Article_renderedHtml(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Article",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Article_featuredImage(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Article_featuredImage(ctx, field)
 	if err != nil {
@@ -53306,6 +53359,8 @@ func (ec *executionContext) fieldContext_ArticleEdge_node(_ context.Context, fie
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -96411,6 +96466,8 @@ func (ec *executionContext) fieldContext_Mutation_publishDraft(ctx context.Conte
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -96937,6 +96994,8 @@ func (ec *executionContext) fieldContext_Mutation_createArticle(ctx context.Cont
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -97052,6 +97111,8 @@ func (ec *executionContext) fieldContext_Mutation_updateArticle(ctx context.Cont
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -97222,6 +97283,8 @@ func (ec *executionContext) fieldContext_Mutation_restoreRevision(ctx context.Co
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -97990,6 +98053,8 @@ func (ec *executionContext) fieldContext_Mutation_addArticleToCategory(ctx conte
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -98105,6 +98170,8 @@ func (ec *executionContext) fieldContext_Mutation_removeArticleFromCategory(ctx 
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -118484,6 +118551,8 @@ func (ec *executionContext) fieldContext_Query_article(ctx context.Context, fiel
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -118596,6 +118665,8 @@ func (ec *executionContext) fieldContext_Query_articleBySlug(ctx context.Context
 				return ec.fieldContext_Article_content(ctx, field)
 			case "contentFormat":
 				return ec.fieldContext_Article_contentFormat(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_Article_renderedHtml(ctx, field)
 			case "featuredImage":
 				return ec.fieldContext_Article_featuredImage(ctx, field)
 			case "tableOfContents":
@@ -165924,29 +165995,29 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 		case "id":
 			out.Values[i] = ec._Article_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "deletedAt":
 			out.Values[i] = ec._Article_deletedAt(ctx, field, obj)
 		case "slug":
 			out.Values[i] = ec._Article_slug(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "authorId":
 			out.Values[i] = ec._Article_authorId(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "author":
 			out.Values[i] = ec._Article_author(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "title":
 			out.Values[i] = ec._Article_title(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "subtitle":
 			out.Values[i] = ec._Article_subtitle(ctx, field, obj)
@@ -165955,29 +166026,62 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 		case "content":
 			out.Values[i] = ec._Article_content(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "contentFormat":
 			out.Values[i] = ec._Article_contentFormat(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "renderedHtml":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Article_renderedHtml(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "featuredImage":
 			out.Values[i] = ec._Article_featuredImage(ctx, field, obj)
 		case "tableOfContents":
 			out.Values[i] = ec._Article_tableOfContents(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "readingTimeMinutes":
 			out.Values[i] = ec._Article_readingTimeMinutes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "wordCount":
 			out.Values[i] = ec._Article_wordCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "series":
 			out.Values[i] = ec._Article_series(ctx, field, obj)
@@ -165986,7 +166090,7 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 		case "categories":
 			out.Values[i] = ec._Article_categories(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "seoTitle":
 			out.Values[i] = ec._Article_seoTitle(ctx, field, obj)
@@ -166009,17 +166113,17 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 		case "publishedAt":
 			out.Values[i] = ec._Article_publishedAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "createdAt":
 			out.Values[i] = ec._Article_createdAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "updatedAt":
 			out.Values[i] = ec._Article_updatedAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))

@@ -1539,7 +1539,7 @@ func initializeResolver() (*graph.Resolver, *executor.Executor) {
 		logger,
 	)
 
-	schema := graph.NewExecutableSchema(graph.Config{Resolvers: resolver})
+	schema := graph.NewExecutableSchema(graph.NewConfig(resolver))
 	exec := executor.New(schema)
 	configureGraphQLExecutor(exec, cfg)
 

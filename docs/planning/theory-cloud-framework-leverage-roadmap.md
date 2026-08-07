@@ -1,7 +1,7 @@
 # Theory Cloud Framework Leverage Roadmap
 
-Status: Phase 4 docs closeout in progress; Phases 0 through 3b are merged to `main`; framework pins refreshed on 2026-05-18
-Current maintenance focus: 2026-05-18 AppTheory / FaceTheory pin refresh.
+Status: Phase 4 docs closeout in progress; Phases 0 through 3b are merged to `main`; latest framework pins refreshed on 2026-08-07
+Current maintenance focus: AppTheory `v3.0.2`, TableTheory `v3.0.4`, and FaceTheory `v4.0.6` pin maintenance.
 
 ## Reported need
 
@@ -53,10 +53,9 @@ moving to the next milestone. Aron additionally authorized work requested by Arc
 ### What is definitely true in lesser today
 
 - post-refresh pins:
-  - root `go.mod`: AppTheory `v2.0.1`, TableTheory `v2.0.5`;
-  - `infra/cdk/go.mod`: AppTheory `cdk-go` `v0.0.0-20260708194537-63e44cc6b4fc`, AWS CDK Go `v2.261.0`,
-    jsii runtime `v1.133.0`;
-  - FaceTheory client-install docs recommend the `v4.0.1` GitHub release asset; client-install validation/tests require
+  - root `go.mod`: AppTheory `v3.0.2`, TableTheory `v3.0.4`;
+  - `infra/cdk/go.mod`: AppTheory `cdk-go` `v3.0.2`, AWS CDK Go `v2.263.0`, jsii runtime `v1.139.0`;
+  - FaceTheory client-install docs recommend the `v4.0.6` GitHub release asset; client-install validation/tests require
     dependency presence but do not enforce an exact version or URL;
   - auth UI: Astro `7.1.0`, Svelte `5.55.7`, devalue override `5.8.1`.
 - The baseline already fixed one CDK/jsii surfaced issue by canonicalizing `LambdaAssetRoot` to an absolute path
@@ -112,7 +111,7 @@ local adoption proceeds.
      creates functions directly with native AWS CDK.
    - Verification: synth a representative function behind tests and compare generated CloudFormation for function name,
      architecture, runtime, timeout, memory, role, env, asset path, DLQ, and permissions before broader migration.
-4. **FaceTheory v4.0.1 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
+4. **FaceTheory v4.0.6 is best consumed as guidance/provenance, not a hard client-app gate inside lesser.**
    - Evidence: `lesser client install` validates that a FaceTheory dependency exists; enforcing an exact dependency URL
      would break local workspace/client development.
    - Verification: docs/tests are enough in lesser; any client-app enforcement belongs in client repos or a non-blocking
@@ -201,7 +200,7 @@ Dependency-maintenance, operational-reliability, framework-consumption, docs. Po
 - CDK function construct adoption either lands with template-parity proof or produces a framework-feedback signal instead
   of a local workaround.
 - FaceTheory client guidance remains backward-compatible as release pins advance (the current recommendation is
-  `v4.0.1`); lesser continues to require dependency presence without enforcing an exact version or URL.
+  `v4.0.6`); lesser continues to require dependency presence without enforcing an exact version or URL.
 
 ### Specialist routing
 

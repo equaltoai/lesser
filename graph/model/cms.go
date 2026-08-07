@@ -81,6 +81,9 @@ type Article struct {
 
 	Content       string        `json:"content"`
 	ContentFormat ContentFormat `json:"contentFormat"`
+	// RawContentFormat preserves the storage declaration for the canonical renderer.
+	// It is internal resolver state and is never serialized as a GraphQL field.
+	RawContentFormat string `json:"-"`
 
 	FeaturedImage   *Media      `json:"featuredImage"`
 	TableOfContents []*TOCEntry `json:"tableOfContents"`

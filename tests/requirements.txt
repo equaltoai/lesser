@@ -5,7 +5,7 @@ requests>=2.32.4
 websocket-client>=1.6.1
 
 # Federation testing
-cryptography>=48.0.1
+cryptography>=50.0.0
 
 # Media testing
 Pillow>=12.1.1

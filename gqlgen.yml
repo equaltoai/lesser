@@ -102,6 +102,9 @@ models:
   Article:
     model:
       - github.com/equaltoai/lesser/graph/model.Article
+    fields:
+      renderedHtml:
+        resolver: true
   ArticleEdge:
     model:
       - github.com/equaltoai/lesser/graph/model.ArticleEdge

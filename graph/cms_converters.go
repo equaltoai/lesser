@@ -268,8 +268,9 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		Subtitle: cmsOptionalString(strings.TrimSpace(article.Subtitle)),
 		Excerpt:  cmsOptionalString(strings.TrimSpace(article.Excerpt)),
 
-		Content:       article.Content,
-		ContentFormat: cmsContentFormatFromStorage(article.ContentFormat),
+		Content:          article.Content,
+		ContentFormat:    cmsContentFormatFromStorage(article.ContentFormat),
+		RawContentFormat: article.ContentFormat,
 
 		FeaturedImage:   r.convertMediaToGraphQL(article.FeaturedImage),
 		TableOfContents: toc,
