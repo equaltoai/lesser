@@ -197,7 +197,7 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
   - `object(id)`
   - `article(id)`
   - `articleBySlug(slug)`
-  - `articles(authorId|seriesId|categoryId, ...)`
+  - `articles(authorId|seriesId|categoryId|search, ...)`
   - `series(id)`
   - `seriesBySlug(slug)`
   - `categories(parentId)`
@@ -210,6 +210,7 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
   - `customEmojis`
   - `threadContext(noteId)`
   - Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
+  - Article search is limited to public Article text; private editor notes and review state cannot affect result membership.
   - Anonymous note/thread/status queries must only expose `public` and `unlisted` content.
   - `timeline(type: HOME | DIRECT | LIST, ...)` remains auth-only even though `timeline` is part of the public query allowlist.
 - **Auth** `POST/GET /graphql`, `POST/GET /api/graphql`, `GET /subscriptions` for every other GraphQL operation

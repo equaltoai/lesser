@@ -828,7 +828,7 @@ extend type Query {
     authorId: ID
     seriesId: ID
     categoryId: ID
-    tag: String
+    search: String
     first: Int
     after: Cursor
   ): ArticleConnection!

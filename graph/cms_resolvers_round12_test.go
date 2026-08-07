@@ -353,7 +353,7 @@ func TestRound12CMS_AnonymousReadsExposeOnlyPublishedArticles(t *testing.T) {
 	require.NoError(t, storage.Article().DeleteArticle(ctx, deleted.ID))
 
 	first := 20
-	articles, err := resolver.Query().Articles(ctx, nil, nil, nil, &first, nil)
+	articles, err := resolver.Query().Articles(ctx, nil, nil, nil, nil, &first, nil)
 	require.NoError(t, err)
 	require.Len(t, articles.Edges, 1)
 	require.Equal(t, published.ID, articles.Edges[0].Node.ID)
@@ -394,6 +394,63 @@ func TestRound12CMS_AnonymousReadsExposeOnlyPublishedArticles(t *testing.T) {
 			require.Nil(t, article)
 		})
 	}
+}
+
+func TestRound12CMS_PublicArticleSearchFiltersPublishedArticles(t *testing.T) {
+	resolver, storage := newRound12GraphResolver(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	authorID := cmsLocalActorID(resolver.getDomain(), "alice")
+
+	articles := []*models.Article{
+		{
+			Object: models.Object{
+				ID:           cmsArticleID(resolver.getDomain(), "federation-guide"),
+				Type:         "Article",
+				Name:         "Federation Guide",
+				Content:      "How ActivityPub delivery works",
+				AttributedTo: authorID,
+				Published:    now,
+				Updated:      now,
+				CreatedAt:    now,
+			},
+			Slug:          "federation-guide",
+			ContentFormat: "markdown",
+			EditorNotes:   "private launch phrase",
+			UpdatedAt:     now,
+		},
+		{
+			Object: models.Object{
+				ID:           cmsArticleID(resolver.getDomain(), "gardening-guide"),
+				Type:         "Article",
+				Name:         "Gardening Guide",
+				Content:      "How to grow tomatoes",
+				AttributedTo: authorID,
+				Published:    now.Add(-time.Minute),
+				Updated:      now,
+				CreatedAt:    now,
+			},
+			Slug:          "gardening-guide",
+			ContentFormat: "markdown",
+			UpdatedAt:     now,
+		},
+	}
+	for _, article := range articles {
+		require.NoError(t, article.UpdateKeys())
+		require.NoError(t, storage.Article().CreateArticle(ctx, article))
+	}
+
+	first := 20
+	search := "ACTIVITYPUB"
+	result, err := resolver.Query().Articles(ctx, nil, nil, nil, &search, &first, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Edges, 1)
+	require.Equal(t, articles[0].ID, result.Edges[0].Node.ID)
+
+	privateSearch := "private launch phrase"
+	result, err = resolver.Query().Articles(ctx, nil, nil, nil, &privateSearch, &first, nil)
+	require.NoError(t, err)
+	require.Empty(t, result.Edges, "private editorial metadata must not be searchable")
 }
 
 func TestRound12CMS_ArticleByIDRejectsForeignObjectRows(t *testing.T) {
@@ -1027,13 +1084,13 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 	author := "alice"
 	seriesFilter := series.ID
 	categoryFilter := category.ID
-	articlesByAuthor, err := qry.Articles(ctx, &author, &seriesFilter, &categoryFilter, &first, nil)
+	articlesByAuthor, err := qry.Articles(ctx, &author, &seriesFilter, &categoryFilter, nil, &first, nil)
 	require.NoError(t, err)
 	if len(articlesByAuthor.Edges) > 0 {
 		require.NotEmpty(t, articlesByAuthor.Edges[0].Node.AuthorID)
 	}
 
-	_, err = qry.Articles(ctx, nil, nil, nil, &first, nil)
+	_, err = qry.Articles(ctx, nil, nil, nil, nil, &first, nil)
 	require.NoError(t, err)
 
 	// Slug-based helpers: seed legacy rows so the fallback path is exercised.

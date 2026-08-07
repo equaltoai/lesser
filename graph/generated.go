@@ -2534,7 +2534,7 @@ type ComplexityRoot struct {
 		Announcements                  func(childComplexity int) int
 		Article                        func(childComplexity int, id string) int
 		ArticleBySlug                  func(childComplexity int, slug string) int
-		Articles                       func(childComplexity int, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) int
+		Articles                       func(childComplexity int, authorID *string, seriesID *string, categoryID *string, search *string, first *int, after *model.Cursor) int
 		BandwidthUsage                 func(childComplexity int, period model.TimePeriod) int
 		Blocks                         func(childComplexity int, first *int, after *model.Cursor) int
 		Bookmarks                      func(childComplexity int, first *int, after *model.Cursor) int
@@ -3896,7 +3896,7 @@ type QueryResolver interface {
 	Revision(ctx context.Context, objectID string, version int) (*model.Revision, error)
 	Article(ctx context.Context, id string) (*model.Article, error)
 	ArticleBySlug(ctx context.Context, slug string) (*model.Article, error)
-	Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) (*model.ArticleConnection, error)
+	Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, search *string, first *int, after *model.Cursor) (*model.ArticleConnection, error)
 	Series(ctx context.Context, id string) (*model.Series, error)
 	SeriesBySlug(ctx context.Context, slug string) (*model.Series, error)
 	AllSeries(ctx context.Context, authorID *string, first *int, after *model.Cursor) (*model.SeriesConnection, error)
@@ -17131,7 +17131,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Articles(childComplexity, args["authorId"].(*string), args["seriesId"].(*string), args["categoryId"].(*string), args["first"].(*int), args["after"].(*model.Cursor)), true
+		return e.complexity.Query.Articles(childComplexity, args["authorId"].(*string), args["seriesId"].(*string), args["categoryId"].(*string), args["search"].(*string), args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.bandwidthUsage":
 		if e.complexity.Query.BandwidthUsage == nil {
@@ -25942,16 +25942,21 @@ func (ec *executionContext) field_Query_articles_args(ctx context.Context, rawAr
 		return nil, err
 	}
 	args["categoryId"] = arg2
-	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "search", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
-	args["first"] = arg3
-	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	args["search"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
 	if err != nil {
 		return nil, err
 	}
-	args["after"] = arg4
+	args["first"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg5
 	return args, nil
 }
 
@@ -118737,7 +118742,7 @@ func (ec *executionContext) _Query_articles(ctx context.Context, field graphql.C
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Articles(rctx, fc.Args["authorId"].(*string), fc.Args["seriesId"].(*string), fc.Args["categoryId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+		return ec.resolvers.Query().Articles(rctx, fc.Args["authorId"].(*string), fc.Args["seriesId"].(*string), fc.Args["categoryId"].(*string), fc.Args["search"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

@@ -305,7 +305,7 @@ Anonymous/public-read GraphQL contract:
   - `object(id)`
   - `article(id)`
   - `articleBySlug(slug)`
-  - `articles(authorId|seriesId|categoryId, ...)`
+  - `articles(authorId|seriesId|categoryId|search, ...)`
   - `series(id)`
   - `seriesBySlug(slug)`
   - `categories(parentId)`
@@ -318,6 +318,7 @@ Anonymous/public-read GraphQL contract:
   - `customEmojis`
   - `threadContext(noteId)`
 - Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
+- `articles(search: ...)` applies a case-insensitive substring match to public Article text and composes with the existing author, series, category, and cursor arguments. It never searches private editorial workflow fields.
 - Anonymous note and thread reads only return `public` and `unlisted` content.
 - Everything else, including `viewer`, notifications, private timelines, moderation/admin queries, mutations, and
   subscriptions, still requires authorization.
