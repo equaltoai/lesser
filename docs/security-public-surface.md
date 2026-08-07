@@ -193,6 +193,8 @@ These routes are intentionally gate-reachable but are **not** anonymous in the g
 ## GraphQL (`cmd/graphql`)
 
 - **Public** `POST/GET /graphql`, `POST/GET /api/graphql` for the anonymous public-read subset only:
+  - `agent(username)`
+  - `agents(...)`
   - `actor(id|username)`
   - `object(id)`
   - `article(id)`

@@ -99,6 +99,8 @@ var (
 var anonymousGraphQLPublicQueryFields = map[string]struct{}{
 	"__typename":       {},
 	"actor":            {},
+	"agent":            {},
+	"agents":           {},
 	"announcements":    {},
 	"article":          {},
 	"articleBySlug":    {},

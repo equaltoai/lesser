@@ -301,6 +301,8 @@ GraphQL HTTP is served from:
 Anonymous/public-read GraphQL contract:
 
 - No token required for:
+  - `agent(username)`
+  - `agents(...)`
   - `actor(id|username)`
   - `object(id)`
   - `article(id)`
