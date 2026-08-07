@@ -58,7 +58,7 @@ func (r *queryResolver) cmsCollectArticleEdges(
 	ctx context.Context,
 	list cmsArticleListFn,
 	cursorFn cmsArticleEdgeCursorFn,
-	authorFilter, seriesFilter, categoryFilter string,
+	authorFilter, seriesFilter, categoryFilter, searchFilter string,
 	limit int,
 	cursor string,
 ) ([]*model.ArticleEdge, bool, string, error) {
@@ -84,7 +84,8 @@ func (r *queryResolver) cmsCollectArticleEdges(
 
 		stoppedEarly := false
 		for i, article := range items {
-			if !cmsArticleMatchesFilters(article, authorFilter, seriesFilter, categoryFilter) {
+			if !cmsArticleMatchesFilters(article, authorFilter, seriesFilter, categoryFilter) ||
+				!cmsArticleMatchesSearch(article, searchFilter) {
 				continue
 			}
 			node := r.convertCMSArticle(ctx, article, false)

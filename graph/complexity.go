@@ -40,6 +40,7 @@ func configureArticleRenderingComplexity(complexity *ComplexityRoot) {
 		_ *string,
 		_ *string,
 		_ *string,
+		_ *string,
 		first *int,
 		_ *model.Cursor,
 	) int {

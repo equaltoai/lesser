@@ -276,6 +276,39 @@ func cmsArticleMatchesFilters(article *models.Article, authorFilter string, seri
 	return true
 }
 
+// cmsArticleMatchesSearch performs the intentionally simple public article
+// search promised by the GraphQL contract. Keep this list limited to fields
+// already exposed on the public Article type: editorial workflow metadata must
+// never influence anonymous search results.
+func cmsArticleMatchesSearch(article *models.Article, search string) bool {
+	if article == nil {
+		return false
+	}
+
+	search = strings.ToLower(strings.TrimSpace(search))
+	if search == "" {
+		return true
+	}
+
+	publicText := []string{
+		article.Name,
+		article.Summary,
+		article.Content,
+		article.Slug,
+		article.Subtitle,
+		article.Excerpt,
+		article.SEOTitle,
+		article.SEODescription,
+	}
+	for _, value := range publicText {
+		if strings.Contains(strings.ToLower(value), search) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func cmsArticleCursor(article *models.Article, fallback string) model.Cursor {
 	if article != nil {
 		value := strings.TrimSpace(article.GSI2SK)
@@ -710,7 +743,7 @@ func cmsArticleNotFound(err error) bool {
 	return common.IsNotFound(err) || errors.Is(err, storage.ErrNotFound) || dynamormerrors.IsNotFound(err)
 }
 
-func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) (*model.ArticleConnection, error) {
+func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, search *string, first *int, after *model.Cursor) (*model.ArticleConnection, error) {
 	if err := r.requireCMSLongFormEnabled(); err != nil {
 		return nil, err
 	}
@@ -729,6 +762,7 @@ func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID
 	authorFilter := trimStringPtr(authorID)
 	seriesFilter := trimStringPtr(seriesID)
 	categoryFilter := trimStringPtr(categoryID)
+	searchFilter := trimStringPtr(search)
 
 	if seriesFilter != "" && !r.cmsSeriesEnabled() {
 		return nil, errCMSSeriesDisabled
@@ -738,7 +772,7 @@ func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID
 	}
 
 	list, cursorFn := r.cmsArticlesListStrategy(ctx, store, authorFilter, seriesFilter, categoryFilter)
-	edges, hasMore, nextCursor, err := r.cmsCollectArticleEdges(ctx, list, cursorFn, authorFilter, seriesFilter, categoryFilter, limit, cursor)
+	edges, hasMore, nextCursor, err := r.cmsCollectArticleEdges(ctx, list, cursorFn, authorFilter, seriesFilter, categoryFilter, searchFilter, limit, cursor)
 	if err != nil {
 		return nil, err
 	}

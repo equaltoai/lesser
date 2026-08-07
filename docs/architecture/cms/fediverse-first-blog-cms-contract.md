@@ -154,6 +154,11 @@ Public CMS Article reads expose both the stored authoring source and its canonic
 - `renderedHtml` is nullable so a renderer failure fails closed instead of exposing stored source as browser-ready HTML. GraphQL also reports the renderer error to the caller;
 - clients must never render Markdown independently or insert `Article.content` into an HTML sink as a fallback.
 
+The public `articles` connection also accepts an additive `search` argument. Lesser applies a case-insensitive substring
+match across public Article text (title, summary, source content, slug, subtitle, excerpt, and public SEO text) after the
+existing author/series/category selection. Empty or whitespace-only search values preserve the unfiltered query. Private
+editor notes and review state are deliberately excluded so anonymous result membership cannot disclose workflow data.
+
 This additive field lets page clients perform SSR, SSG, or ISR for the complete article page without creating a competing source-to-HTML renderer. Public-page chrome and caching remain client-plane concerns; the canonical article body remains server-owned.
 
 Because canonical rendering parses and sanitizes up to the full Article source limit, GraphQL prices `renderedHtml` at 16
@@ -401,7 +406,7 @@ The MVP does not include:
 - Simulacrum retrofit or client redesign;
 - newsletter delivery;
 - comments system changes;
-- search product work beyond existing indexed Article queries required by the MVP;
+- ranked/full-text search infrastructure beyond the bounded public Article substring filter;
 - RSS/Atom feeds;
 - home timeline, trending, or social-feed coupling;
 - general document hosting outside ActivityPub Article publishing;
