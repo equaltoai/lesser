@@ -105,7 +105,7 @@ func TestRound09_AccountRepository_OAuthClientOps(t *testing.T) {
 	})
 	require.Error(t, err)
 
-	client := &storage.OAuthClient{Name: "app", RedirectURIs: []string{"https://example.com/cb"}}
+	client := &storage.OAuthClient{Name: "app", RedirectURIs: []string{"https://example.com/cb"}, Confidential: true}
 	require.NoError(t, repo.CreateOAuthClient(ctx, client))
 	require.NotEmpty(t, client.ClientID)
 	require.NotEmpty(t, client.ClientSecret)

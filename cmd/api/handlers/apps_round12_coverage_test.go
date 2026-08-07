@@ -277,6 +277,34 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		}
 	})
 
+	t.Run("public_registration_returns_no_client_secret", func(t *testing.T) {
+		state := &round10QueryState{}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:              "Browser App",
+			RedirectURIs:            "https://example.com/callback",
+			Scopes:                  "read write",
+			ClientClass:             auth.ClientClassWeb,
+			GrantTypes:              auth.GrantTypeAuthorizationCode + " " + auth.GrantTypeRefreshToken,
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+		}
+		resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+		var body apimodels.AppRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, oauthTokenEndpointAuthMethodNone, body.TokenEndpointAuthMethod)
+		require.Empty(t, body.ClientSecret)
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.False(t, client.Confidential)
+			require.Empty(t, client.ClientSecret)
+		}
+	})
+
 	t.Run("public_registration_rejects_client_credentials", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 

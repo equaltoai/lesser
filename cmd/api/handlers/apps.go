@@ -460,10 +460,13 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 		Website:                 client.Website,
 		RedirectURI:             redirectURIs[0], // Return first redirect URI for compatibility
 		ClientID:                client.ClientID,
-		ClientSecret:            client.ClientSecret,
+		ClientSecret:            "",
 		VapidKey:                vapidKey,
 		GrantTypes:              append([]string(nil), client.GrantTypes...),
 		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+	}
+	if confidential {
+		resp.ClientSecret = client.ClientSecret
 	}
 
 	h.logger.Info("returning app registration response",

@@ -301,18 +301,28 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 		client.ClientID = clientID
 	}
 
-	// Generate client secret if not provided.
-	if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
-		clientSecret, err := generateClientSecret()
-		if err != nil {
-			return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_generation")
+	storedSecret := ""
+	if client.Confidential {
+		// Confidential clients authenticate at the token endpoint and therefore
+		// require a generated secret when the caller did not provide one.
+		if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
+			clientSecret, err := generateClientSecret()
+			if err != nil {
+				return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_generation")
+			}
+			client.ClientSecret = clientSecret
 		}
-		client.ClientSecret = clientSecret
-	}
 
-	storedSecret, err := common.HashOAuthClientSecret(client.ClientSecret)
-	if err != nil {
-		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_hashing")
+		var err error
+		storedSecret, err = common.HashOAuthClientSecret(client.ClientSecret)
+		if err != nil {
+			return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_hashing")
+		}
+	} else {
+		// Public clients use token_endpoint_auth_method=none. Do not mint or
+		// retain a credential that they cannot safely keep.
+		client.ClientSecret = ""
+		client.ClientSecretHash = ""
 	}
 
 	// Create DynamORM model
@@ -352,7 +362,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	}
 
 	// Create the item with condition that it doesn't exist
-	err = r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		// Check if it's a duplicate key error
 		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
