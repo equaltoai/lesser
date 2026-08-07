@@ -17,15 +17,15 @@ func TestArticleRenderedHTMLComplexityPricesConnectionCardinality(t *testing.T) 
 
 	markedChild := cfg.Complexity.Article.RenderedHTML(5)
 	first := maxCMSPageSize
-	cost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &first, nil)
+	cost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &first, nil)
 	require.Equal(t, 5+maxCMSPageSize*articleRenderedHTMLComplexityCost, cost)
 
-	defaultCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, nil)
+	defaultCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, nil, nil)
 	require.Equal(t, 5+defaultCMSPageSize*articleRenderedHTMLComplexityCost, defaultCost)
 	require.LessOrEqual(t, defaultCost, config.DefaultGraphQLMaxComplexity,
 		"the default Article page must fit the default GraphQL complexity ceiling")
 
-	maximumCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &first, nil)
+	maximumCost := cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &first, nil)
 	require.Greater(t, maximumCost, config.DefaultGraphQLMaxComplexity,
 		"the maximum Article page must still be rejected at the default ceiling")
 }
@@ -38,13 +38,13 @@ func TestArticleRenderedHTMLComplexityLeavesUsefulHeadroomAboveDefaultPage(t *te
 
 	lastAdmitted := 30
 	require.LessOrEqual(t,
-		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &lastAdmitted, nil),
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &lastAdmitted, nil),
 		config.DefaultGraphQLMaxComplexity,
 	)
 
 	firstRejected := lastAdmitted + 1
 	require.Greater(t,
-		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &firstRejected, nil),
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &firstRejected, nil),
 		config.DefaultGraphQLMaxComplexity,
 	)
 }
@@ -77,9 +77,9 @@ func TestArticleRenderedHTMLComplexityClampsConnectionPageSize(t *testing.T) {
 
 	zero := 0
 	require.Equal(t, defaultCMSPageSize*articleRenderedHTMLComplexityCost,
-		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &zero, nil))
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &zero, nil))
 
 	tooLarge := maxCMSPageSize + 500
 	require.Equal(t, maxCMSPageSize*articleRenderedHTMLComplexityCost,
-		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, &tooLarge, nil))
+		cfg.Complexity.Query.Articles(markedChild, nil, nil, nil, nil, &tooLarge, nil))
 }

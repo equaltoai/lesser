@@ -2591,7 +2591,8 @@ extend type Query {
   # Article queries
   article(id: ID!): Article
   articleBySlug(slug: String!): Article
-  articles(authorId: ID, seriesId: ID, categoryId: ID, first: Int, after: Cursor): ArticleConnection!
+  """List published articles, optionally filtering public article text with a case-insensitive substring search."""
+  articles(authorId: ID, seriesId: ID, categoryId: ID, search: String, first: Int, after: Cursor): ArticleConnection!
 
   # Series
   series(id: ID!): Series
