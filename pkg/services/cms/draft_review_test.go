@@ -24,6 +24,9 @@ type reviewMemRepo struct {
 	regrantGrantCalls       int
 	revokeGrantCalls        int
 	getGrantErr             error
+	listGrantErr            error
+	revokeGrantErr          error
+	listVerdictErr          error
 	callLog                 []string
 	getDraftCalls           int
 	listGrantCalls          int
@@ -80,6 +83,9 @@ func (r *reviewMemRepo) RegrantDraftReviewGrant(_ context.Context, g *models.Dra
 func (r *reviewMemRepo) RevokeDraftReviewGrant(_ context.Context, g *models.DraftReviewGrant) error {
 	r.callLog = append(r.callLog, "revoke")
 	r.revokeGrantCalls++
+	if r.revokeGrantErr != nil {
+		return r.revokeGrantErr
+	}
 	return r.storeGrant(g)
 }
 func (r *reviewMemRepo) GetDraftReviewGrant(_ context.Context, owner, draft, reviewer string) (*models.DraftReviewGrant, error) {
@@ -127,6 +133,9 @@ func (r *reviewMemRepo) CountActiveDraftReviewGrants(_ context.Context, reviewer
 }
 func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft string) ([]*models.DraftReviewGrant, error) {
 	r.listGrantCalls++
+	if r.listGrantErr != nil {
+		return nil, r.listGrantErr
+	}
 	out := []*models.DraftReviewGrant{}
 	for _, g := range r.grants {
 		if g.OwnerID == owner && g.DraftID == draft {
@@ -159,6 +168,9 @@ func (r *reviewMemRepo) CreateDraftReviewVerdict(_ context.Context, v *models.Dr
 }
 func (r *reviewMemRepo) ListDraftReviewVerdicts(_ context.Context, owner, draft string) ([]*models.DraftReviewVerdict, error) {
 	r.listVerdictCalls++
+	if r.listVerdictErr != nil {
+		return nil, r.listVerdictErr
+	}
 	out := []*models.DraftReviewVerdict{}
 	for _, v := range r.verdicts {
 		if v.OwnerID == owner && v.DraftID == draft {
@@ -385,6 +397,69 @@ func TestDeleteDraftRevokesActiveReviewGrants(t *testing.T) {
 	require.NotNil(t, repo.grants[reviewKey("owner", "d1", "reviewer")].RevokedAt)
 	_, err = repo.GetDraft(ctx, "owner", "d1")
 	require.Error(t, err)
+}
+
+func TestDraftReviewVerdictsListsHistoryAndPropagatesFailures(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	repo.verdicts = append(repo.verdicts,
+		&models.DraftReviewVerdict{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer", Verdict: DraftReviewApproved},
+		&models.DraftReviewVerdict{OwnerID: "other", DraftID: "d1", Reviewer: "reviewer", Verdict: DraftReviewChangesRequested},
+	)
+
+	verdicts, err := svc.DraftReviewVerdicts(ctx, "owner", "d1")
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "reviewer", verdicts[0].Reviewer)
+	require.Equal(t, 1, repo.listVerdictCalls)
+
+	repo.listVerdictErr = errors.New("list verdicts failed")
+	verdicts, err = svc.DraftReviewVerdicts(ctx, "owner", "d1")
+	require.ErrorContains(t, err, "list verdicts failed")
+	require.Nil(t, verdicts)
+
+	withoutReviews := NewDraftService(newMemDraftRepo(), nil, "example.test", false, zap.NewNop())
+	verdicts, err = withoutReviews.DraftReviewVerdicts(ctx, "owner", "d1")
+	require.ErrorIs(t, err, errDraftReviewStorageUnavailable)
+	require.Nil(t, verdicts)
+}
+
+func TestDeleteDraftValidatesAndPropagatesReviewCleanupFailures(t *testing.T) {
+	ctx := context.Background()
+
+	svc, _ := newReviewService(t)
+	require.ErrorContains(t, svc.DeleteDraft(ctx, " ", "d1"), "authorID is required")
+	require.ErrorContains(t, svc.DeleteDraft(ctx, "owner", " "), "draftID is required")
+
+	t.Run("list grants", func(t *testing.T) {
+		svc, repo := newReviewService(t)
+		repo.listGrantErr = errors.New("list grants failed")
+		require.ErrorContains(t, svc.DeleteDraft(ctx, "owner", "d1"), "list grants failed")
+		_, err := repo.GetDraft(ctx, "owner", "d1")
+		require.NoError(t, err)
+	})
+
+	t.Run("revoke grant", func(t *testing.T) {
+		svc, repo := newReviewService(t)
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer"}))
+		repo.revokeGrantErr = errors.New("revoke grant failed")
+		require.ErrorContains(t, svc.DeleteDraft(ctx, "owner", "d1"), "revoke grant failed")
+		_, err := repo.GetDraft(ctx, "owner", "d1")
+		require.NoError(t, err)
+	})
+
+	t.Run("skip revoked grants", func(t *testing.T) {
+		svc, repo := newReviewService(t)
+		revokedAt := time.Now().UTC()
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer", RevokedAt: &revokedAt,
+		}))
+
+		require.NoError(t, svc.DeleteDraft(ctx, "owner", "d1"))
+		require.Zero(t, repo.revokeGrantCalls)
+		_, err := repo.GetDraft(ctx, "owner", "d1")
+		require.ErrorContains(t, err, "draft not found")
+	})
 }
 
 func TestDraftReviewDraftFetchFailuresFailClosed(t *testing.T) {

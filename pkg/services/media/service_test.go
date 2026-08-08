@@ -1153,6 +1153,33 @@ func TestService_GenerateS3Key(t *testing.T) {
 	assert.Regexp(t, `media/\d{4}/\d{2}/\d{2}/test-media-123\.jpg`, key)
 }
 
+func TestService_EmitMediaEventsFailClosed(t *testing.T) {
+	service, _, _, publisher := createTestService(t)
+	ctx := context.Background()
+	media := &models.Media{MediaID: "media-1", UserID: "alice"}
+
+	service.publisher = nil
+	assert.Nil(t, service.emitMediaDeletedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaUploadedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaUpdatedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaProcessedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaFailedEvents(ctx, media, "processing failed"))
+
+	service.publisher = publisher
+	assert.Nil(t, service.emitMediaDeletedEvents(ctx, nil))
+
+	errorPublisher, ok := publisher.(interface{ SetError(bool, string) })
+	if !assert.True(t, ok) {
+		return
+	}
+	errorPublisher.SetError(true, "publish failed")
+	assert.Nil(t, service.emitMediaDeletedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaUploadedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaUpdatedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaProcessedEvents(ctx, media))
+	assert.Empty(t, service.emitMediaFailedEvents(ctx, media, "processing failed"))
+}
+
 // Test service configuration
 
 func TestService_SetMaxFileSize(t *testing.T) {
