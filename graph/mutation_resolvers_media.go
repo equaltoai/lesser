@@ -56,6 +56,27 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 	return r.convertMediaToGraphQL(result.Media), nil
 }
 
+// DeleteMedia is the resolver for the deleteMedia field.
+func (r *mutationResolver) DeleteMedia(ctx context.Context, id string) (bool, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return false, ErrMediaServiceUnavailable
+	}
+	if err := mediaService.DeleteMedia(ctx, &mediasvc.DeleteMediaCommand{UserID: username, MediaID: strings.TrimSpace(id)}); err != nil {
+		r.Logger.Error("failed to delete media",
+			zap.String("user", username),
+			zap.String("media", id),
+			zap.Error(err))
+		return false, errors.Join(errors.New("failed to delete media"), err)
+	}
+	r.trackDynamoOperation(ctx, "delete", 1)
+	return true, nil
+}
+
 // UploadMedia is the resolver for the uploadMedia field.
 func (r *mutationResolver) UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error) {
 	username, err := r.requireAuth(ctx)

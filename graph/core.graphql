@@ -1409,6 +1409,8 @@ type Mutation {
   # Media operations
   uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
+  """Delete media owned by the authenticated account."""
+  deleteMedia(id: ID!): Boolean!
   
   # Notification operations
   dismissNotification(id: ID!): Boolean!

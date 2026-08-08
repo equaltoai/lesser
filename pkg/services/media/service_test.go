@@ -796,6 +796,21 @@ func TestService_UpdateMedia_Unauthorized(t *testing.T) {
 	mediaRepo.AssertExpectations(t)
 }
 
+func TestService_DeleteMediaEnforcesOwnership(t *testing.T) {
+	service, mediaRepo, _, _ := createTestService(t)
+	ctx := context.Background()
+	media := createTestMedia()
+	mediaRepo.On("GetMedia", ctx, media.MediaID).Return(media, nil).Twice()
+
+	err := service.DeleteMedia(ctx, &DeleteMediaCommand{MediaID: media.MediaID, UserID: "other"})
+	assert.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+
+	mediaRepo.On("DeleteMedia", ctx, media.MediaID).Return(nil).Once()
+	err = service.DeleteMedia(ctx, &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+	assert.NoError(t, err)
+	mediaRepo.AssertExpectations(t)
+}
+
 // Test GetMedia method
 
 func TestService_GetMedia_Success(t *testing.T) {

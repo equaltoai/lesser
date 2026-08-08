@@ -102,6 +102,10 @@ func TestRound12MediaResolver_UploadUpdateAndStreaming(t *testing.T) {
 	require.NotNil(t, updated.Description)
 	require.Equal(t, newDesc, *updated.Description)
 
+	deleted, err := mut.DeleteMedia(ctx, payload.UploadID)
+	require.NoError(t, err)
+	require.True(t, deleted)
+
 	stream, err := mut.RequestStreamingURL(ctx, payload.UploadID, nil)
 	require.Error(t, err)
 	require.Nil(t, stream)
