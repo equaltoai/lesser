@@ -793,6 +793,10 @@ func TestDirectMessageMigrationScalarHelpers_CoverFalseyInputs(t *testing.T) {
 	require.False(t, firstConversationBool(map[string]types.AttributeValue{}, "missing"))
 	require.EqualValues(t, 42, firstConversationInt64(item, "missing", "intValue"))
 	require.Zero(t, firstConversationInt64(map[string]types.AttributeValue{}, "missing"))
+	require.Equal(t, 42, firstConversationInt(item, "missing", "intValue"))
+	require.Equal(t, 7, firstConversationInt(map[string]types.AttributeValue{"stringValue": sAttr("7")}, "stringValue"))
+	require.Zero(t, firstConversationInt(map[string]types.AttributeValue{"negative": &types.AttributeValueMemberN{Value: "-1"}}, "negative"))
+	require.Zero(t, firstConversationInt(map[string]types.AttributeValue{"overflow": &types.AttributeValueMemberN{Value: "999999999999999999999999999999"}}, "overflow"))
 	require.Nil(t, conversationTimePtr(time.Time{}))
 }
 

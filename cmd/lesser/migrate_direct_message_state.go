@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -996,7 +997,7 @@ func buildDirectMessageCanonicalStateRecord(item map[string]types.AttributeValue
 		PreviewStatusPublishedAt: firstConversationTime(item, "previewStatusPublishedAt"),
 		SortAt:                   firstConversationTime(item, "sortAt"),
 		Unread:                   firstConversationBool(item, "unread"),
-		UnreadCount:              int(firstConversationInt64(item, "unreadCount")),
+		UnreadCount:              firstConversationInt(item, "unreadCount"),
 		LastReadAt:               optionalConversationTime(item, "lastReadAt"),
 		DeletedAt:                optionalConversationTime(item, "deletedAt"),
 		RequestedAt:              optionalConversationTime(item, "requestedAt"),
@@ -1347,6 +1348,25 @@ func firstConversationInt64(item map[string]types.AttributeValue, keys ...string
 	for _, key := range keys {
 		if value, ok := attributeInt64(item[key]); ok {
 			return value
+		}
+	}
+	return 0
+}
+
+func firstConversationInt(item map[string]types.AttributeValue, keys ...string) int {
+	for _, key := range keys {
+		var raw string
+		switch value := item[key].(type) {
+		case *types.AttributeValueMemberN:
+			raw = value.Value
+		case *types.AttributeValueMemberS:
+			raw = value.Value
+		default:
+			continue
+		}
+		parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err == nil && parsed >= 0 {
+			return parsed
 		}
 	}
 	return 0
