@@ -65,9 +65,6 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		cmd.AgentAttribution = attribution
 	}
 
-	// Handle mentions and tags
-	// These would be parsed from content in the service
-
 	var requestLogger *zap.Logger
 	if r.Logger != nil {
 		requestLogger = r.Logger
@@ -340,6 +337,20 @@ func (r *mutationResolver) attachQuoteToTarget(ctx context.Context, username, ta
 func (r *mutationResolver) buildCreateNoteCommand(username string, input model.CreateNoteInput) (*notes.CreateNoteCommand, string, error) {
 	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
 		return nil, "", err
+	}
+	if len(input.Mentions) > 0 {
+		return nil, "", apperrors.NewAppError(
+			apperrors.CodeValidation,
+			apperrors.CategoryValidation,
+			"explicit mentions are not supported; include @mentions in content",
+		)
+	}
+	if len(input.Tags) > 0 {
+		return nil, "", apperrors.NewAppError(
+			apperrors.CodeValidation,
+			apperrors.CategoryValidation,
+			"explicit tags are not supported; include #hashtags in content",
+		)
 	}
 
 	quoteTargetID := ""

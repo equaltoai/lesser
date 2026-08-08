@@ -1076,15 +1076,17 @@ type CreateListInput struct {
 }
 
 type CreateNoteInput struct {
-	Content          string                     `json:"content"`
-	ContentMap       []*ContentMapInput         `json:"contentMap,omitempty"`
-	InReplyToID      *string                    `json:"inReplyToId,omitempty"`
-	QuoteID          *string                    `json:"quoteId,omitempty"`
-	Visibility       Visibility                 `json:"visibility"`
-	Sensitive        *bool                      `json:"sensitive,omitempty"`
-	SpoilerText      *string                    `json:"spoilerText,omitempty"`
-	AttachmentIds    []string                   `json:"attachmentIds,omitempty"`
-	Mentions         []string                   `json:"mentions,omitempty"`
+	Content       string             `json:"content"`
+	ContentMap    []*ContentMapInput `json:"contentMap,omitempty"`
+	InReplyToID   *string            `json:"inReplyToId,omitempty"`
+	QuoteID       *string            `json:"quoteId,omitempty"`
+	Visibility    Visibility         `json:"visibility"`
+	Sensitive     *bool              `json:"sensitive,omitempty"`
+	SpoilerText   *string            `json:"spoilerText,omitempty"`
+	AttachmentIds []string           `json:"attachmentIds,omitempty"`
+	// Reserved for explicit mentions. Non-empty input is rejected; include @mentions in content.
+	Mentions []string `json:"mentions,omitempty"`
+	// Reserved for explicit hashtags. Non-empty input is rejected; include #hashtags in content.
 	Tags             []string                   `json:"tags,omitempty"`
 	Poll             *PollParamsInput           `json:"poll,omitempty"`
 	AgentAttribution *AgentPostAttributionInput `json:"agentAttribution,omitempty"`

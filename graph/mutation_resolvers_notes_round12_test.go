@@ -56,6 +56,20 @@ func TestRound12MutationResolvers_Notes_BuildCommandAndPollValidation(t *testing
 	require.Error(t, err)
 }
 
+func TestBuildCreateNoteCommandRejectsUnimplementedStructuredTags(t *testing.T) {
+	resolver, _ := newRound12GraphResolver(t)
+	mutation := &mutationResolver{resolver}
+
+	for _, input := range []model.CreateNoteInput{
+		{Content: "hello", Visibility: model.VisibilityPublic, Mentions: []string{"alice"}},
+		{Content: "hello", Visibility: model.VisibilityPublic, Tags: []string{"fediverse"}},
+	} {
+		_, _, err := mutation.buildCreateNoteCommand("owner", input)
+		require.Error(t, err)
+		require.True(t, apperrors.HasCode(err, apperrors.CodeValidation))
+	}
+}
+
 func TestRound12MutationResolvers_Notes_CreateDeleteAndSchedule(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
 

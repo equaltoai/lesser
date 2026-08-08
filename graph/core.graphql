@@ -962,7 +962,9 @@ input CreateNoteInput {
   sensitive: Boolean
   spoilerText: String
   attachmentIds: [ID!]
+  """Reserved for explicit mentions. Non-empty input is rejected; include @mentions in content."""
   mentions: [String!]
+  """Reserved for explicit hashtags. Non-empty input is rejected; include #hashtags in content."""
   tags: [String!]
   poll: PollParamsInput
   agentAttribution: AgentPostAttributionInput

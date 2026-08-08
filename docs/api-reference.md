@@ -412,6 +412,8 @@ Then pass `pageInfo.endCursor` back as `$after` to fetch the next page.
 ### Pattern: create a post (mutation)
 
 The `createNote` mutation accepts a `CreateNoteInput` with `content` and `visibility`.
+Mentions and hashtags are extracted canonically from `content`. Non-empty `mentions` or `tags` arrays are rejected with
+`extensions.code = VALIDATION` rather than being silently discarded.
 
 ```graphql
 mutation Create($input: CreateNoteInput!) {
