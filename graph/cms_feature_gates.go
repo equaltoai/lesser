@@ -1,18 +1,17 @@
 package graph
 
 import (
-	"errors"
-
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
 var (
-	errCMSDisabled           = errors.New("cms is disabled")
-	errCMSDraftsDisabled     = errors.New("cms drafts are disabled")
-	errCMSRevisionsDisabled  = errors.New("cms revision history is disabled")
-	errCMSSchedulingDisabled = errors.New("cms scheduled publishing is disabled")
-	errCMSSeriesDisabled     = errors.New("cms series is disabled")
-	errCMSCategoriesDisabled = errors.New("cms categories is disabled")
+	errCMSDisabled           = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms is disabled")
+	errCMSDraftsDisabled     = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms drafts are disabled")
+	errCMSRevisionsDisabled  = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms revision history is disabled")
+	errCMSSchedulingDisabled = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms scheduled publishing is disabled")
+	errCMSSeriesDisabled     = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms series is disabled")
+	errCMSCategoriesDisabled = apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms categories is disabled")
 )
 
 func (r *Resolver) cmsConfig() *config.Config {

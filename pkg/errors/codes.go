@@ -16,6 +16,7 @@ const (
 	CodeInternal            ErrorCode = "INTERNAL_ERROR"
 	CodeGone                ErrorCode = "GONE"
 	CodeUnprocessableEntity ErrorCode = "UNPROCESSABLE_ENTITY"
+	CodeFeatureDisabled     ErrorCode = "FEATURE_DISABLED"
 )
 
 // Authentication and authorization error codes
@@ -60,6 +61,7 @@ const (
 // Validation error codes
 const (
 	CodeValidationFailed         ErrorCode = "VALIDATION_FAILED"
+	CodeValidation               ErrorCode = "VALIDATION"
 	CodeRequiredFieldMissing     ErrorCode = "REQUIRED_FIELD_MISSING"
 	CodeFieldTooLong             ErrorCode = "FIELD_TOO_LONG"
 	CodeFieldTooShort            ErrorCode = "FIELD_TOO_SHORT"
@@ -154,7 +156,7 @@ func (c ErrorCode) GetHTTPStatusCode() int {
 		return 404
 	case CodeUnauthorized, CodeAuthFailed, CodeTokenExpired, CodeTokenInvalid, CodeTokenRevoked:
 		return 401
-	case CodeForbidden, CodeInsufficientScope, CodeAccountSuspended:
+	case CodeForbidden, CodeInsufficientScope, CodeAccountSuspended, CodeFeatureDisabled:
 		return 403
 	case CodeAlreadyExists, CodeConflict:
 		return 409
@@ -162,7 +164,7 @@ func (c ErrorCode) GetHTTPStatusCode() int {
 		return 410
 	case CodeUnprocessableEntity:
 		return 422
-	case CodeInvalidInput, CodeValidationFailed, CodeRequiredFieldMissing, CodeFieldTooLong,
+	case CodeInvalidInput, CodeValidation, CodeValidationFailed, CodeRequiredFieldMissing, CodeFieldTooLong,
 		CodeFieldTooShort, CodeInvalidFormat, CodeInvalidCharacters, CodeValueOutOfRange,
 		CodeDirectSelfPostNotAllowed, CodeBadRequest, CodeContentTooLarge:
 		return 400

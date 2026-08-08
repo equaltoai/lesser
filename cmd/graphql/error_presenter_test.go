@@ -173,6 +173,36 @@ func TestGraphQLErrorPresenter_AttachesExtensionsForAppError(t *testing.T) {
 	require.Equal(t, appErr.HTTPStatusCode, status.(int))
 }
 
+func TestGraphQLErrorPresenter_ClassifiesCMSErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   apperrors.ErrorCode
+		wantStatus int
+	}{
+		{name: "feature disabled", err: apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms is disabled"), wantCode: apperrors.CodeFeatureDisabled, wantStatus: http.StatusForbidden},
+		{name: "not found", err: errors.New("draft review not found"), wantCode: apperrors.CodeNotFound, wantStatus: http.StatusNotFound},
+		{name: "forbidden", err: errors.New("insufficient privileges for CMS write"), wantCode: apperrors.CodeForbidden, wantStatus: http.StatusForbidden},
+		{name: "validation", err: errors.New("draft id is required"), wantCode: apperrors.CodeValidation, wantStatus: http.StatusBadRequest},
+		{name: "typed validation normalized", err: apperrors.NewAppError(apperrors.CodeRequiredFieldMissing, apperrors.CategoryValidation, "title is required"), wantCode: apperrors.CodeValidation, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := graphql.WithPathContext(context.Background(), graphql.NewPathWithField("draft"))
+			got := graphQLErrorPresenter(ctx, tt.err)
+			require.Equal(t, string(tt.wantCode), got.Extensions["code"])
+			require.Equal(t, tt.wantStatus, got.Extensions["http_status"])
+		})
+	}
+}
+
+func TestGraphQLErrorPresenter_DoesNotClassifyNonCMSErrors(t *testing.T) {
+	ctx := graphql.WithPathContext(context.Background(), graphql.NewPathWithField("status"))
+	got := graphQLErrorPresenter(ctx, errors.New("status not found"))
+	require.NotContains(t, got.Extensions, "code")
+}
+
 func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 	ctx := context.Background()
 	client := &failingGrantCreateDynamo{Fake: fakedb.New()}

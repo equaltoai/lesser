@@ -402,6 +402,9 @@ func initializeGraphQLSpecificServices() {
 
 func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
 	gqlErr := graphql.DefaultErrorPresenter(ctx, err)
+	if root := graphQLErrorRootField(ctx, gqlErr); isCMSGraphQLRootField(root) {
+		err = classifyCMSGraphQLError(err)
+	}
 	if appErr, ok := apperrors.AsAppError(err); ok {
 		if gqlErr.Extensions == nil {
 			gqlErr.Extensions = map[string]any{}
@@ -411,6 +414,74 @@ func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
 		gqlErr.Message = appErr.Message
 	}
 	return gqlErr
+}
+
+func graphQLErrorRootField(ctx context.Context, gqlErr *gqlerror.Error) string {
+	path := graphql.GetPath(ctx)
+	if len(path) == 0 && gqlErr != nil {
+		path = gqlErr.Path
+	}
+	if len(path) == 0 {
+		return ""
+	}
+	name, ok := path[0].(ast.PathName)
+	if !ok {
+		return ""
+	}
+	return string(name)
+}
+
+func isCMSGraphQLRootField(field string) bool {
+	switch field {
+	case "draft", "draftPreview", "myDrafts", "sharedDraftReviews", "draftReview",
+		"revisions", "revision", "article", "articleBySlug", "articles",
+		"series", "seriesBySlug", "allSeries", "category", "categoryBySlug",
+		"categories", "rootCategories", "publication", "publicationBySlug", "myPublications",
+		"createDraft", "updateDraft", "autosaveDraft", "deleteDraft", "publishDraft",
+		"scheduleDraft", "cancelScheduledDraft", "shareDraftForReview", "revokeDraftReview",
+		"submitDraftReview", "createArticle", "updateArticle", "deleteArticle", "restoreRevision",
+		"createSeries", "updateSeries", "deleteSeries", "addArticleToSeries", "removeArticleFromSeries",
+		"reorderSeriesArticles", "createCategory", "updateCategory", "deleteCategory",
+		"addArticleToCategory", "removeArticleFromCategory", "createPublication", "updatePublication",
+		"invitePublicationMember", "removePublicationMember", "updatePublicationMemberRole":
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyCMSGraphQLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		if appErr.Category != apperrors.CategoryValidation {
+			return err
+		}
+		classified := appErr.Clone()
+		classified.Code = apperrors.CodeValidation
+		classified.HTTPStatusCode = apperrors.CodeValidation.GetHTTPStatusCode()
+		return classified
+	}
+
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "not found"):
+		return apperrors.WrapError(err, apperrors.CodeNotFound, apperrors.CategoryBusiness, "CMS resource not found")
+	case strings.Contains(message, "insufficient privileges"),
+		strings.Contains(message, "access denied"),
+		strings.Contains(message, "does not belong"),
+		strings.Contains(message, "cannot review"),
+		strings.Contains(message, "only publication owners"):
+		return apperrors.WrapError(err, apperrors.CodeForbidden, apperrors.CategoryAuth, "CMS operation is forbidden")
+	case strings.Contains(message, "required"),
+		strings.Contains(message, "invalid"),
+		strings.Contains(message, "must "),
+		strings.Contains(message, "already in use"):
+		return apperrors.WrapError(err, apperrors.CodeValidation, apperrors.CategoryValidation, err.Error())
+	default:
+		return apperrors.WrapError(err, apperrors.CodeInternal, apperrors.CategoryBusiness, "CMS operation failed")
+	}
 }
 
 type graphQLHTTPRequestParts struct {
