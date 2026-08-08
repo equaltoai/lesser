@@ -47,6 +47,7 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 
 	agent := resolver.convertStorageUserToAgent(user, governance)
 	require.NotNil(t, agent)
+	require.True(t, agent.ViewerCanSeePrivateFields)
 	require.Equal(t, "lowkey", agent.Username)
 	require.True(t, agent.Verified)
 	require.Contains(t, agent.DelegatedScopes, "read")
@@ -126,6 +127,7 @@ func TestRedactGraphAgentPrivateFields(t *testing.T) {
 	}
 
 	redactGraphAgentPrivateFields(agent)
+	require.False(t, agent.ViewerCanSeePrivateFields)
 	require.Nil(t, agent.AgentOwner)
 	require.Empty(t, agent.DelegatedScopes)
 	require.Equal(t, model.SoulBindingStateUnbound, agent.IdentitySemantics.SoulBindingState)

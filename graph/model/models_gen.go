@@ -557,33 +557,35 @@ type AffectedRelationshipEdge struct {
 }
 
 type Agent struct {
-	ID                   string                         `json:"id"`
-	Username             string                         `json:"username"`
-	DisplayName          string                         `json:"displayName"`
-	Bio                  *string                        `json:"bio,omitempty"`
-	IdentitySemantics    *AgentIdentitySemantics        `json:"identitySemantics"`
-	Workflow             *AgentWorkflowSurface          `json:"workflow,omitempty"`
-	AgentType            AgentType                      `json:"agentType"`
-	AgentVersion         string                         `json:"agentVersion"`
-	AgentCapabilities    *activitypub.AgentCapabilities `json:"agentCapabilities"`
-	AgentOwner           *string                        `json:"agentOwner,omitempty"`
-	DelegatedScopes      []string                       `json:"delegatedScopes"`
-	McpAccess            *AgentMCPAccess                `json:"mcpAccess"`
-	Verified             bool                           `json:"verified"`
-	VerifiedAt           *Time                          `json:"verifiedAt,omitempty"`
-	QuarantineStatus     *string                        `json:"quarantineStatus,omitempty"`
-	QuarantineStart      *Time                          `json:"quarantineStart,omitempty"`
-	QuarantineEnd        *Time                          `json:"quarantineEnd,omitempty"`
-	QuarantineApprovedBy *string                        `json:"quarantineApprovedBy,omitempty"`
-	QuarantineApprovedAt *Time                          `json:"quarantineApprovedAt,omitempty"`
-	QuarantineActive     bool                           `json:"quarantineActive"`
-	OwnerActor           *activitypub.Actor             `json:"ownerActor,omitempty"`
-	Type                 AgentType                      `json:"type"`
-	Version              string                         `json:"version"`
-	Capabilities         *activitypub.AgentCapabilities `json:"capabilities"`
-	Owner                *activitypub.Actor             `json:"owner,omitempty"`
-	CreatedAt            Time                           `json:"createdAt"`
-	ActivityCount        int                            `json:"activityCount"`
+	ID                string                         `json:"id"`
+	Username          string                         `json:"username"`
+	DisplayName       string                         `json:"displayName"`
+	Bio               *string                        `json:"bio,omitempty"`
+	IdentitySemantics *AgentIdentitySemantics        `json:"identitySemantics"`
+	Workflow          *AgentWorkflowSurface          `json:"workflow,omitempty"`
+	AgentType         AgentType                      `json:"agentType"`
+	AgentVersion      string                         `json:"agentVersion"`
+	AgentCapabilities *activitypub.AgentCapabilities `json:"agentCapabilities"`
+	AgentOwner        *string                        `json:"agentOwner,omitempty"`
+	DelegatedScopes   []string                       `json:"delegatedScopes"`
+	// Whether private ownership, delegation, and soul-binding fields are visible to this viewer.
+	ViewerCanSeePrivateFields bool                           `json:"viewerCanSeePrivateFields"`
+	McpAccess                 *AgentMCPAccess                `json:"mcpAccess"`
+	Verified                  bool                           `json:"verified"`
+	VerifiedAt                *Time                          `json:"verifiedAt,omitempty"`
+	QuarantineStatus          *string                        `json:"quarantineStatus,omitempty"`
+	QuarantineStart           *Time                          `json:"quarantineStart,omitempty"`
+	QuarantineEnd             *Time                          `json:"quarantineEnd,omitempty"`
+	QuarantineApprovedBy      *string                        `json:"quarantineApprovedBy,omitempty"`
+	QuarantineApprovedAt      *Time                          `json:"quarantineApprovedAt,omitempty"`
+	QuarantineActive          bool                           `json:"quarantineActive"`
+	OwnerActor                *activitypub.Actor             `json:"ownerActor,omitempty"`
+	Type                      AgentType                      `json:"type"`
+	Version                   string                         `json:"version"`
+	Capabilities              *activitypub.AgentCapabilities `json:"capabilities"`
+	Owner                     *activitypub.Actor             `json:"owner,omitempty"`
+	CreatedAt                 Time                           `json:"createdAt"`
+	ActivityCount             int                            `json:"activityCount"`
 }
 
 type AgentActivityConnection struct {

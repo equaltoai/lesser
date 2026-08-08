@@ -84,26 +84,62 @@ func agentListLimit(first *int, maxLimit int) int {
 	return limit
 }
 
-func agentListLimit32(first *int, maxLimit int32) int32 {
-	limit := int32(20)
-	if first != nil && *first > 0 {
-		value := *first
-		if maxLimit > 0 && value > int(maxLimit) {
-			value = int(maxLimit)
-		}
-		limit = int32(value) // #nosec G115 -- value is clamped above before converting
-	}
-	if maxLimit > 0 && limit > maxLimit {
-		limit = maxLimit
-	}
-	return limit
-}
-
 func agentListCursor(after *model.Cursor) string {
 	if after == nil {
 		return ""
 	}
 	return strings.TrimSpace(string(*after))
+}
+
+type agentUserLister interface {
+	ListAgents(context.Context, int32, string) ([]*storage.User, string, error)
+}
+
+func listAllGraphAgentUsers(ctx context.Context, repo agentUserLister) ([]*storage.User, error) {
+	const pageSize int32 = 100
+	cursor := ""
+	users := make([]*storage.User, 0)
+	seen := make(map[string]struct{})
+	for {
+		page, nextCursor, err := repo.ListAgents(ctx, pageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) > int(pageSize) {
+			page = page[:pageSize]
+		}
+		for _, user := range page {
+			key := string(agentCursorForUser(user))
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			users = append(users, user)
+		}
+		if nextCursor == "" {
+			return users, nil
+		}
+		if nextCursor == cursor {
+			return nil, apperrors.Internal("agent pagination did not advance")
+		}
+		cursor = nextCursor
+	}
+}
+
+func paginateGraphAgentUsers(users []*storage.User, limit int, cursor string) ([]*storage.User, bool) {
+	cursor = strings.TrimSpace(cursor)
+	start := 0
+	for start < len(users) && string(agentCursorForUser(users[start])) <= cursor {
+		start++
+	}
+	end := start + limit
+	if end > len(users) {
+		end = len(users)
+	}
+	return users[start:end], end < len(users)
 }
 
 func agentUserMatchesListFilters(user *storage.User, governance *storage.AgentGovernanceState, filters agentListFilters) bool {
@@ -187,16 +223,12 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		}
 	}
 
-	limit32 := agentListLimit32(first, 100)
-	limit := int(limit32)
+	limit := agentListLimit(first, 100)
 	cursor := agentListCursor(after)
 
-	users, nextCursor, err := r.Storage.User().ListAgents(ctx, limit32, cursor)
+	users, err := listAllGraphAgentUsers(ctx, r.Storage.User())
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to list agents")
-	}
-	if len(users) > limit {
-		users = users[:limit]
 	}
 	governanceStates, err := r.loadAgentGovernanceStates(ctx, collectGraphAgentUsernames(users))
 	if err != nil {
@@ -210,12 +242,20 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		ownerFilter: ownerFilter,
 	}
 
-	edges := make([]*model.AgentEdge, 0, len(users))
+	matchingUsers := make([]*storage.User, 0, len(users))
 	for _, user := range users {
 		governance := governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]
 		if !agentUserMatchesListFilters(user, governance, filters) {
 			continue
 		}
+		matchingUsers = append(matchingUsers, user)
+	}
+	totalCount := len(matchingUsers)
+	page, hasNextPage := paginateGraphAgentUsers(matchingUsers, limit, cursor)
+
+	edges := make([]*model.AgentEdge, 0, len(page))
+	for _, user := range page {
+		governance := governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]
 
 		agent := r.convertStorageUserToAgent(user, governance)
 		if agent == nil {
@@ -240,12 +280,12 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 	return &model.AgentConnection{
 		Edges: edges,
 		PageInfo: &model.PageInfo{
-			HasNextPage:     nextCursor != "",
-			HasPreviousPage: after != nil,
+			HasNextPage:     hasNextPage,
+			HasPreviousPage: cursor != "",
 			StartCursor:     startCursor,
 			EndCursor:       endCursor,
 		},
-		TotalCount: len(edges),
+		TotalCount: totalCount,
 	}, nil
 }
 

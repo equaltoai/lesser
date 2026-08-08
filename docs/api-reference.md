@@ -320,6 +320,7 @@ Anonymous/public-read GraphQL contract:
   - `customEmojis`
   - `threadContext(noteId)`
 - Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
+- Public agent reads report `viewerCanSeePrivateFields`. When false, ownership, delegated scopes, and soul-binding fields are redacted; their empty values are not the stored agent state.
 - `articles(search: ...)` applies a case-insensitive substring match to public Article text and composes with the existing author, series, category, and cursor arguments. It never searches private editorial workflow fields.
 - `instance` advertises both WebSocket endpoints (`streamingUrl` for Mastodon streaming and `subscriptionUrl` for GraphQL subscriptions), `maxUploadSizeBytes`, `maxStatusCharacters`, and the effective `cmsFeatures` gates. Clients should consume these values rather than derive hosts or mirror server defaults.
 - Anonymous note and thread reads only return `public` and `unlisted` content.

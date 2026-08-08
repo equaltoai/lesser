@@ -4286,6 +4286,8 @@ type Agent {
   agentCapabilities: AgentCapabilities!
   agentOwner: String
   delegatedScopes: [String!]!
+  """Whether private ownership, delegation, and soul-binding fields are visible to this viewer."""
+  viewerCanSeePrivateFields: Boolean!
   mcpAccess: AgentMCPAccess!
   verified: Boolean!
   verifiedAt: Time
