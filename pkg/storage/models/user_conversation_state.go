@@ -49,6 +49,7 @@ type UserConversationState struct {
 	PreviewStatusPublishedAt time.Time                   `theorydb:"attr:previewStatusPublishedAt,omitempty" json:"preview_status_published_at,omitempty"`
 	SortAt                   time.Time                   `theorydb:"attr:sortAt" json:"sort_at"`
 	Unread                   bool                        `theorydb:"attr:unread" json:"unread"`
+	UnreadCount              int                         `theorydb:"attr:unreadCount" json:"unread_count"`
 	LastReadAt               *time.Time                  `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
 	DeletedAt                *time.Time                  `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
 	RequestedAt              *time.Time                  `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
@@ -173,7 +174,7 @@ func (s *UserConversationState) UpdateKeys() error {
 	s.PK = fmt.Sprintf("USER_CONVERSATION_STATE#%s", s.ViewerID)
 	s.SK = fmt.Sprintf("CONVERSATION#%s", s.ConversationID)
 	s.GSI1PK = fmt.Sprintf("USER_CONVERSATION_FOLDER#%s#%s", s.ViewerID, s.Folder)
-	s.GSI1SK = fmt.Sprintf("%s#%s", s.SortAt.Format(time.RFC3339Nano), s.ConversationID)
+	s.GSI1SK = fmt.Sprintf("%s#%s", formatSortableTimestamp(s.SortAt), s.ConversationID)
 
 	if s.Unread && s.UnreadQueryVisible() {
 		s.GSI2PK = fmt.Sprintf("USER_CONVERSATION_UNREAD#%s", s.ViewerID)
@@ -215,5 +216,5 @@ func (s *UserConversationState) LegacyListCursor() string {
 	if s == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s#%s", s.SortAt.Format(time.RFC3339Nano), s.ConversationID)
+	return fmt.Sprintf("%s#%s", formatSortableTimestamp(s.SortAt), s.ConversationID)
 }

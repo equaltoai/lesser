@@ -17,6 +17,8 @@ type cursorRecordingDraftRepository struct {
 	*inmemory.DraftRepository
 	myDraftsCursor           string
 	sharedDraftReviewsCursor string
+	ownedDraftReviews        []*models.DraftReviewGrant
+	sharedDraftReviews       []*models.DraftReviewGrant
 }
 
 func (r *cursorRecordingDraftRepository) ListDraftsByAuthorPaginated(_ context.Context, _ string, _ int, cursor string) ([]*models.Draft, string, error) {
@@ -42,15 +44,42 @@ func (*cursorRecordingDraftRepository) GetDraftReviewGrant(context.Context, stri
 
 func (r *cursorRecordingDraftRepository) ListActiveDraftReviewGrants(_ context.Context, _ string, _ int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	r.sharedDraftReviewsCursor = cursor
-	return nil, "", nil
+	return r.sharedDraftReviews, "", nil
 }
 
-func (*cursorRecordingDraftRepository) CountActiveDraftReviewGrants(context.Context, string) (int, error) {
-	return 0, nil
+func (r *cursorRecordingDraftRepository) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
+	count := 0
+	for _, grant := range r.sharedDraftReviews {
+		if grant != nil && grant.Reviewer == reviewer && grant.RevokedAt == nil {
+			count++
+		}
+	}
+	return count, nil
 }
 
-func (*cursorRecordingDraftRepository) ListDraftReviewGrants(context.Context, string, string) ([]*models.DraftReviewGrant, error) {
-	return nil, nil
+func (r *cursorRecordingDraftRepository) ListDraftReviewGrants(_ context.Context, owner, draftID string) ([]*models.DraftReviewGrant, error) {
+	out := make([]*models.DraftReviewGrant, 0)
+	seen := map[string]struct{}{}
+	for _, source := range [][]*models.DraftReviewGrant{r.ownedDraftReviews, r.sharedDraftReviews} {
+		for _, grant := range source {
+			key := ""
+			if grant != nil {
+				key = grant.OwnerID + "\x00" + grant.DraftID + "\x00" + grant.Reviewer
+			}
+			if grant != nil && grant.OwnerID == owner && grant.DraftID == draftID {
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+				out = append(out, grant)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (r *cursorRecordingDraftRepository) ListDraftReviewGrantsByOwner(context.Context, string) ([]*models.DraftReviewGrant, error) {
+	return r.ownedDraftReviews, nil
 }
 
 func (*cursorRecordingDraftRepository) CreateDraftReviewVerdict(context.Context, *models.DraftReviewVerdict) error {

@@ -161,6 +161,7 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
 		Unread:                   state.Unread,
+		UnreadCount:              state.UnreadCount,
 		LastReadAt:               state.LastReadAt,
 		DeletedAt:                state.DeletedAt,
 		RequestedAt:              state.RequestedAt,
@@ -258,6 +259,7 @@ func (r *ConversationRepository) initializeUserConversationStates(ctx context.Co
 			state.Folder = existing.Folder
 			state.RequestState = existing.RequestState
 			state.Unread = existing.Unread
+			state.UnreadCount = existing.UnreadCount
 			state.LastReadAt = existing.LastReadAt
 			state.DeletedAt = existing.DeletedAt
 			state.RequestedAt = existing.RequestedAt

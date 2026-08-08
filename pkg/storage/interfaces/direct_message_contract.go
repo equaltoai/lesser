@@ -40,6 +40,7 @@ type UserConversationStateContract struct {
 	PreviewStatusPublishedAt time.Time
 	SortAt                   time.Time
 	Unread                   bool
+	UnreadCount              int
 	LastReadAt               *time.Time
 	DeletedAt                *time.Time
 	RequestedAt              *time.Time

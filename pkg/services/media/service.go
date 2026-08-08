@@ -15,6 +15,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	mediaprocessor "github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/services/media/transcoding"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -37,6 +38,8 @@ type Service struct {
 	transcoder        transcoderService
 	manifestService   manifestService
 	cloudfrontService cloudfrontService
+	objectDeleter     ObjectDeleter
+	metadataDeleter   MetadataDeleter
 }
 
 type transcoderService interface {
@@ -51,6 +54,16 @@ type manifestService interface {
 
 type cloudfrontService interface {
 	SignStreamingURL(mediaID, format string, quality *string, ttl time.Duration) (string, error)
+}
+
+// ObjectDeleter removes one physical media object from its backing store.
+type ObjectDeleter interface {
+	DeleteMediaObject(ctx context.Context, bucket, key string) error
+}
+
+// MetadataDeleter removes processor metadata associated with a media ID.
+type MetadataDeleter interface {
+	DeleteMediaMetadata(ctx context.Context, mediaID string) error
 }
 
 var (
@@ -129,6 +142,12 @@ func (s *Service) SetCloudFrontService(cloudfrontService cloudfrontService) {
 	s.cloudfrontService = cloudfrontService
 }
 
+// SetDeletionDependencies wires physical-object and processor-metadata cleanup.
+func (s *Service) SetDeletionDependencies(objectDeleter ObjectDeleter, metadataDeleter MetadataDeleter) {
+	s.objectDeleter = objectDeleter
+	s.metadataDeleter = metadataDeleter
+}
+
 // SetMaxFileSize sets the maximum allowed file size
 func (s *Service) SetMaxFileSize(maxSize int64) {
 	s.maxFileSize = maxSize
@@ -155,6 +174,12 @@ type UpdateMediaCommand struct {
 	UserID      string `json:"user_id" validate:"required"`     // Must be the media owner
 	Description string `json:"description" validate:"max=1500"` // Alt text
 	Focus       string `json:"focus"`                           // Focus point for cropping (x,y)
+}
+
+// DeleteMediaCommand identifies media and the owner requesting its removal.
+type DeleteMediaCommand struct {
+	MediaID string `json:"media_id" validate:"required"`
+	UserID  string `json:"user_id" validate:"required"`
 }
 
 // GetMediaQuery contains parameters for retrieving media
@@ -307,7 +332,7 @@ func (s *Service) UpdateMedia(ctx context.Context, cmd *UpdateMediaCommand) (*Up
 	}
 
 	// Verify ownership
-	if media.UserID != cmd.UserID {
+	if media == nil || media.UserID != cmd.UserID {
 		return nil, ErrMediaUnauthorizedAccess
 	}
 
@@ -330,6 +355,94 @@ func (s *Service) UpdateMedia(ctx context.Context, cmd *UpdateMediaCommand) (*Up
 		Media:  media,
 		Events: events,
 	}, nil
+}
+
+// DeleteMedia deletes an owned media record and notifies the owner's stream.
+func (s *Service) DeleteMedia(ctx context.Context, cmd *DeleteMediaCommand) error {
+	if cmd == nil {
+		return errors.Join(ErrMediaValidationFailed, errors.New("delete media command cannot be nil"))
+	}
+	cmd.MediaID = strings.TrimSpace(cmd.MediaID)
+	cmd.UserID = strings.TrimSpace(cmd.UserID)
+	if err := common.ValidateRequiredParam("media_id", cmd.MediaID); err != nil {
+		return errors.Join(ErrMediaValidationFailed, err)
+	}
+	if err := common.ValidateRequiredParam("user_id", cmd.UserID); err != nil {
+		return errors.Join(ErrMediaValidationFailed, err)
+	}
+
+	media, err := s.mediaRepo.GetMedia(ctx, cmd.MediaID)
+	if err != nil {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return hiddenMediaDeleteError()
+		}
+		return errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || media.UserID != cmd.UserID {
+		return hiddenMediaDeleteError()
+	}
+	if media.UsageCount > 0 {
+		return apperrors.NewAppError(apperrors.CodeConflict, apperrors.CategoryBusiness, "media is still referenced").
+			WithInternalError(ErrMediaInUse)
+	}
+	if err := s.deleteMediaObjects(ctx, media); err != nil {
+		return errors.Join(ErrMediaDeleteFailed, err)
+	}
+	if s.metadataDeleter != nil {
+		if err := s.metadataDeleter.DeleteMediaMetadata(ctx, media.MediaID); err != nil {
+			return errors.Join(ErrMediaDeleteFailed, err)
+		}
+	}
+	if err := s.mediaRepo.DeleteMedia(ctx, cmd.MediaID); err != nil {
+		return errors.Join(ErrMediaDeleteFailed, err)
+	}
+	s.emitMediaDeletedEvents(ctx, media)
+	s.logger.Info("deleted media successfully", zap.String("media_id", cmd.MediaID), zap.String("user_id", cmd.UserID))
+	return nil
+}
+
+func hiddenMediaDeleteError() error {
+	return apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "media not found").
+		WithInternalError(ErrMediaUnauthorizedAccess)
+}
+
+func (s *Service) deleteMediaObjects(ctx context.Context, media *models.Media) error {
+	if media == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(media.Variants)+1)
+	seen := make(map[string]struct{}, len(media.Variants)+1)
+	appendKey := func(key string) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	appendKey(media.S3Key)
+	for _, variant := range media.Variants {
+		appendKey(variant.S3Key)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	if s.objectDeleter == nil {
+		return errors.New("media object deletion is unavailable")
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	if bucket == "" {
+		return errors.New("media storage bucket is unavailable")
+	}
+	for _, key := range keys {
+		if err := s.objectDeleter.DeleteMediaObject(ctx, bucket, key); err != nil {
+			return fmt.Errorf("delete media object %q: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // GetMedia retrieves media with privacy checks
@@ -688,6 +801,25 @@ func (s *Service) emitMediaUpdatedEvents(ctx context.Context, media *models.Medi
 	}
 
 	return events
+}
+
+func (s *Service) emitMediaDeletedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
+	if s.publisher == nil || media == nil {
+		return nil
+	}
+	event := &streaming.Event{
+		Type:      streaming.MediaDeleted,
+		Stream:    fmt.Sprintf("user:%s", media.UserID),
+		Timestamp: time.Now(),
+		Payload: map[string]interface{}{
+			"media_id": media.MediaID,
+		},
+	}
+	if err := s.publisher.PublishToUser(ctx, media.UserID, event); err != nil {
+		s.logger.Error("failed to publish media deletion to user stream", zap.Error(err))
+		return nil
+	}
+	return []*streaming.Event{event}
 }
 
 func (s *Service) emitMediaProcessedEvents(ctx context.Context, media *models.Media) []*streaming.Event {

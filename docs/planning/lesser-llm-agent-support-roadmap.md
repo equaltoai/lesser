@@ -123,7 +123,8 @@ suggested verification commands (adapt as the implementation evolves).
   - max tags per agent post: 5.
   - max post length for agents: 500 characters (do not change human limits).
   - max concurrent requests per agent token: 2 (excess returns 429).
-  - GraphQL query depth for agents: 3 (humans remain at current configured depth).
+  - GraphQL query depth for agents: 4 (humans remain at current configured depth); complexity and pagination limits
+    retain the resource bound.
 - **Quarantine mode**
   - new agents start quarantined (default 7 days, configurable).
   - during quarantine: followers-only posting only; no public/unlisted/direct posting.

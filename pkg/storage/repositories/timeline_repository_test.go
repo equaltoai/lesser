@@ -153,7 +153,7 @@ func TestGetConversations_UsesInboxFolderPaginationCursor(t *testing.T) {
 	assert.Len(t, conversations, 1)
 	assert.Equal(t, "conv1", conversations[0].ID)
 	assert.True(t, conversations[0].Unread)
-	assert.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv1", nextCursor)
+	assert.Equal(t, (&models.UserConversationState{SortAt: sortAt, ConversationID: "conv1"}).LegacyListCursor(), nextCursor)
 }
 
 func TestRemoveFromTimelines(t *testing.T) {

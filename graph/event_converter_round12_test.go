@@ -345,11 +345,13 @@ func TestRound12EventConverter_AlertAndMiscConversions(t *testing.T) {
 		Data: map[string]interface{}{
 			"conversation_id": "c1",
 			"unread":          true,
+			"unread_count":    float64(4),
 			"last_status_id":  "status-1",
 		},
 	})
 	require.NotNil(t, conversation)
 	require.True(t, conversation.Unread)
+	require.Equal(t, 4, conversation.UnreadCount)
 
 	// Federation health update.
 	fed := ec.ConvertToFederationHealthUpdate(&streaming.InternalEvent{

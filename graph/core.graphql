@@ -575,6 +575,11 @@ type InstanceInfo {
   version: String!
   sourceUrl: String
   streamingUrl: String
+  """GraphQL subscription endpoint using the graphql-transport-ws protocol."""
+  subscriptionUrl: String!
+  maxUploadSizeBytes: Int!
+  maxStatusCharacters: Int!
+  cmsFeatures: CMSFeatures!
   thumbnailUrl: String
   languages: [String!]!
   registrationsOpen: Boolean!
@@ -586,6 +591,15 @@ type InstanceInfo {
   contactAccount: Actor
   rules: [InstanceRule!]!
   tips: TipsConfig!
+}
+
+type CMSFeatures {
+  longForm: Boolean!
+  drafts: Boolean!
+  revisions: Boolean!
+  scheduling: Boolean!
+  series: Boolean!
+  categories: Boolean!
 }
 
 type InstanceActivityEntry {
@@ -746,10 +760,22 @@ type Conversation {
   cursor: Cursor
   lastStatus: Object
   unread: Boolean!
+  """Number of messages unread by the current viewer."""
+  unreadCount: Int!
   accounts: [Actor!]!
   viewerMetadata: ConversationViewerMetadata!
   createdAt: Time!
   updatedAt: Time!
+}
+
+type ConversationEdge {
+  node: Conversation!
+  cursor: Cursor!
+}
+
+type ConversationConnection {
+  edges: [ConversationEdge!]!
+  pageInfo: PageInfo!
 }
 
 # List type
@@ -936,7 +962,9 @@ input CreateNoteInput {
   sensitive: Boolean
   spoilerText: String
   attachmentIds: [ID!]
+  """Reserved for explicit mentions. Non-empty input is rejected; include @mentions in content."""
   mentions: [String!]
+  """Reserved for explicit hashtags. Non-empty input is rejected; include #hashtags in content."""
   tags: [String!]
   poll: PollParamsInput
   agentAttribution: AgentPostAttributionInput
@@ -1203,7 +1231,10 @@ type Query {
   
   # Conversations
   conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!
+  """Paginated conversation list. Prefer this over the legacy list-valued conversations field."""
+  conversationConnection(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): ConversationConnection!
   conversation(id: ID!): Conversation
+  """Messages ordered oldest to newest by their stable conversation cursor."""
   conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!
   
   # Lists
@@ -1378,6 +1409,8 @@ type Mutation {
   # Media operations
   uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
+  """Delete media owned by the authenticated account."""
+  deleteMedia(id: ID!): Boolean!
   
   # Notification operations
   dismissNotification(id: ID!): Boolean!

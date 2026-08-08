@@ -933,6 +933,7 @@ func userConversationStateFromContract(conversation *models.Conversation, viewer
 	state.DeclinedAt = stateContract.DeclinedAt
 	state.DeletedAt = stateContract.DeletedAt
 	state.Unread = stateContract.Unread
+	state.UnreadCount = stateContract.UnreadCount
 	state.LastReadAt = stateContract.LastReadAt
 	if stateContract.PreviewStatusID != "" {
 		state.PreviewStatusID = stateContract.PreviewStatusID
@@ -970,6 +971,7 @@ func userConversationStateContractFromModel(state *models.UserConversationState)
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
 		Unread:                   state.Unread,
+		UnreadCount:              state.UnreadCount,
 		LastReadAt:               state.LastReadAt,
 		DeletedAt:                state.DeletedAt,
 		RequestedAt:              state.RequestedAt,
@@ -1087,6 +1089,7 @@ func buildDirectMessageParticipantStatesForSend(
 	senderState.DeclinedAt = nil
 	senderState.DeletedAt = nil
 	senderState.Unread = false
+	senderState.UnreadCount = 0
 	senderState.LastReadAt = &now
 	if senderState.AcceptedAt == nil {
 		t := now
@@ -1105,6 +1108,7 @@ func buildDirectMessageParticipantStatesForSend(
 	applyConversationCounterpartRef(recipientState, conversationParticipantRefByID(conversation, senderID))
 	recipientState.DeletedAt = nil
 	recipientState.Unread = true
+	recipientState.UnreadCount++
 	recipientState.LastReadAt = nil
 
 	switch recipientState.RequestState {

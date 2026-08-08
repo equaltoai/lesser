@@ -578,6 +578,11 @@ type InstanceInfo {
   version: String!
   sourceUrl: String
   streamingUrl: String
+  """GraphQL subscription endpoint using the graphql-transport-ws protocol."""
+  subscriptionUrl: String!
+  maxUploadSizeBytes: Int!
+  maxStatusCharacters: Int!
+  cmsFeatures: CMSFeatures!
   thumbnailUrl: String
   languages: [String!]!
   registrationsOpen: Boolean!
@@ -589,6 +594,15 @@ type InstanceInfo {
   contactAccount: Actor
   rules: [InstanceRule!]!
   tips: TipsConfig!
+}
+
+type CMSFeatures {
+  longForm: Boolean!
+  drafts: Boolean!
+  revisions: Boolean!
+  scheduling: Boolean!
+  series: Boolean!
+  categories: Boolean!
 }
 
 type InstanceActivityEntry {
@@ -749,10 +763,22 @@ type Conversation {
   cursor: Cursor
   lastStatus: Object
   unread: Boolean!
+  """Number of messages unread by the current viewer."""
+  unreadCount: Int!
   accounts: [Actor!]!
   viewerMetadata: ConversationViewerMetadata!
   createdAt: Time!
   updatedAt: Time!
+}
+
+type ConversationEdge {
+  node: Conversation!
+  cursor: Cursor!
+}
+
+type ConversationConnection {
+  edges: [ConversationEdge!]!
+  pageInfo: PageInfo!
 }
 
 # List type
@@ -939,7 +965,9 @@ input CreateNoteInput {
   sensitive: Boolean
   spoilerText: String
   attachmentIds: [ID!]
+  """Reserved for explicit mentions. Non-empty input is rejected; include @mentions in content."""
   mentions: [String!]
+  """Reserved for explicit hashtags. Non-empty input is rejected; include #hashtags in content."""
   tags: [String!]
   poll: PollParamsInput
   agentAttribution: AgentPostAttributionInput
@@ -1206,7 +1234,10 @@ type Query {
   
   # Conversations
   conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!
+  """Paginated conversation list. Prefer this over the legacy list-valued conversations field."""
+  conversationConnection(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): ConversationConnection!
   conversation(id: ID!): Conversation
+  """Messages ordered oldest to newest by their stable conversation cursor."""
   conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!
   
   # Lists
@@ -1381,6 +1412,8 @@ type Mutation {
   # Media operations
   uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
+  """Delete media owned by the authenticated account."""
+  deleteMedia(id: ID!): Boolean!
   
   # Notification operations
   dismissNotification(id: ID!): Boolean!
@@ -2413,6 +2446,13 @@ type Draft {
 
   generatedBy: Actor
   reviewedBy: Actor
+  """Latest review verdict for the current draft content, or null when it has not been reviewed."""
+  reviewVerdict: DraftReviewVerdict
+
+  """Canonical digest used to bind review verdicts to this exact draft content."""
+  contentHash: String!
+  """Monotonic draft revision; increments for updates and autosaves."""
+  revision: Int!
 
   autosaveVersion: Int!
   lastSavedAt: Time!
@@ -2438,21 +2478,47 @@ enum DraftReviewVerdict {
 }
 
 type DraftReviewGrant {
+  reviewerId: ID!
   reviewer: Actor!
   grantedAt: Time!
+  status: DraftReviewGrantStatus!
+  revokedAt: Time
+}
+
+enum DraftReviewGrantStatus {
+  ACTIVE
+  REVOKED
 }
 
 type DraftReviewVerdictRecord {
   verdict: DraftReviewVerdict!
   notes: String
   contentHash: String
+  reviewerId: ID!
   reviewer: Actor!
   recordedAt: Time!
+  """True only when this verdict is valid for the current draft revision and active grant."""
+  current: Boolean!
+  stale: Boolean!
+}
+
+type DraftPublishEligibility {
+  eligible: Boolean!
+  blockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
 }
 
 type DraftReview {
   draftId: ID!
+  ownerId: ID!
   title: String
+  slug: String
+  content: String!
+  """Canonical sanitized preview for the exact source and contentHash in this response."""
+  renderedHtml: String
+  renderErrors: [String!]!
   subtitle: String
   excerpt: String
   contentFormat: ContentFormat!
@@ -2464,8 +2530,21 @@ type DraftReview {
   reviewedBy: Actor
   reviewStatus: String
   editorNotes: String
+  contentHash: String!
+  revision: Int!
+  activeReviewerIds: [ID!]!
+  publishEligible: Boolean!
+  publishBlockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
+  grantCount: Int!
+  grantsTruncated: Boolean!
+  grants: [DraftReviewGrant!]!
+  """Caller-specific grant retained for backwards compatibility."""
   grant: DraftReviewGrant
   verdicts: [DraftReviewVerdictRecord!]!
+  publishEligibility: DraftPublishEligibility!
 }
 
 type DraftReviewEdge { node: DraftReview!, cursor: Cursor! }
@@ -2581,6 +2660,8 @@ extend type Query {
   draft(id: ID!): Draft
   draftPreview(id: ID!): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
+  """Review assignments created by the authenticated draft owner."""
+  myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   draftReview(id: ID!): DraftReview
 
@@ -4249,6 +4330,8 @@ type Agent {
   agentCapabilities: AgentCapabilities!
   agentOwner: String
   delegatedScopes: [String!]!
+  """Whether private ownership, delegation, and soul-binding fields are visible to this viewer."""
+  viewerCanSeePrivateFields: Boolean!
   mcpAccess: AgentMCPAccess!
   verified: Boolean!
   verifiedAt: Time

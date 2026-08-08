@@ -62,7 +62,23 @@ This model uses GSIs to track media transcoding jobs.
     -   **gsi1PK:** `USER_TRANSCODING#{userID}`
     -   **gsi2PK:** `MEDIA_TRANSCODING#{mediaID}`
 
-### d. Skill authority models (`pkg/storage/models/skill.go`)
+### d. `UserConversationState` (`pkg/storage/models/user_conversation_state.go`)
+
+- **GSI1: viewer folder listing**
+  - `gsi1PK`: `USER_CONVERSATION_FOLDER#{viewerID}#{folder}`
+  - `gsi1SK`: `{UTC timestamp with exactly 9 fractional digits}#{conversationID}`
+- **GSI2: sparse unread listing**
+  - `gsi2PK`: `USER_CONVERSATION_UNREAD#{viewerID}`
+  - `gsi2SK`: identical to `gsi1SK`
+- **GSI3: participants by conversation**
+  - `gsi3PK`: `CONVERSATION#{conversationID}`
+  - `gsi3SK`: `USER#{viewerID}`
+
+The fixed-width timestamp (`2006-01-02T15:04:05.000000000Z`) is load-bearing: `RFC3339Nano` trims trailing zeroes and
+does not preserve chronological lexicographic order within a second. Existing rows must be rewritten with
+`lesser migrate-direct-message-state`; see `docs/deployment.md`.
+
+### e. Skill authority models (`pkg/storage/models/skill.go`)
 
 These models use sparse GSI keys to support later approval, catalog, digest, and assignment queries without adding a new physical index.
 

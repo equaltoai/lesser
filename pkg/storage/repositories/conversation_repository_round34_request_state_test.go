@@ -138,7 +138,7 @@ func TestRound34_ConversationRepository_ListUserConversationStatesByFolderModels
 		}
 	}).Return(nil).Once()
 
-	firstCursor := newest.Format(time.RFC3339Nano) + "#conv-new"
+	firstCursor := (&models.UserConversationState{SortAt: newest, ConversationID: "conv-new"}).LegacyListCursor()
 	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(secondQuery).Once()
 	secondQuery.On("Index", "gsi1").Return(secondQuery).Once()
 	secondQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(secondQuery).Once()
@@ -620,7 +620,7 @@ func TestRound34_ConversationRepository_GetUserConversations_UsesInboxFolderQuer
 	require.Equal(t, "conv-2", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
 	require.True(t, result.HasMore)
-	require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-2", result.NextCursor)
+	require.Equal(t, (&models.UserConversationState{SortAt: sortAt, ConversationID: "conv-2"}).LegacyListCursor(), result.NextCursor)
 }
 
 func TestRound34_ConversationRepository_LoadConversationsForStates_SkipsNilAndMissing(t *testing.T) {
@@ -688,7 +688,7 @@ func TestRound34_ConversationRepository_ListUnreadUserConversationStates(t *test
 		require.NoError(t, err)
 		require.Len(t, result.Items, 2)
 		require.True(t, result.HasMore)
-		require.Equal(t, sortAt.Add(-time.Hour).Format(time.RFC3339Nano)+"#conv-2", result.NextCursor)
+		require.Equal(t, (&models.UserConversationState{SortAt: sortAt.Add(-time.Hour), ConversationID: "conv-2"}).LegacyListCursor(), result.NextCursor)
 		require.Equal(t, "alice", result.Items[0].ViewerID)
 		require.True(t, result.Items[0].Unread)
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestRound11_ConvertConversationToAPIWithPrefetch_UsesViewerStatePreview(t *testing.T) {
@@ -64,6 +65,28 @@ func TestRound11_ConvertConversationToAPIWithPrefetch_UsesViewerStatePreview(t *
 	require.Equal(t, "bob", apiConversation.Accounts[0].Username)
 	require.NotNil(t, apiConversation.LastStatus)
 	require.Equal(t, "status-preview", apiConversation.LastStatus.ID)
+}
+
+func TestConversationAPIAccountsBackfillFollowableLocalNumericID(t *testing.T) {
+	cfg := round11TestConfig()
+	repos := &MockRepositoryStorage{}
+	actorRepo := &accountsRound20EnsuringActorRepo{}
+	repos.On("Actor").Return(actorRepo).Once()
+	handler := &Handler{cfg: cfg, repos: repos, logger: zap.NewNop()}
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/bob", Type: activitypub.PersonType},
+		PreferredUsername: "bob",
+	}
+	conversation := &storageModels.Conversation{ID: "conv-1", Participants: []string{"alice", "bob"}}
+	prefetch := &conversationAPIPrefetch{accountsByKey: map[string]*storage.Account{
+		"bob": {User: &storage.User{Username: "bob"}, Actor: actor},
+	}}
+
+	accounts := handler.conversationAPIAccounts(context.Background(), conversation, "alice", prefetch)
+
+	require.Len(t, accounts, 1)
+	require.Equal(t, []string{"bob"}, actorRepo.usernames)
+	repos.AssertExpectations(t)
 }
 
 func TestRound11_ConvertConversationToAPIWithPrefetch_FallsBackWhenPrefetchMisses(t *testing.T) {

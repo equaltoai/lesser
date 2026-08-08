@@ -64,4 +64,7 @@ var (
 
 	// ErrMediaUnauthorizedAccess is returned when user is not authorized to access/modify media
 	ErrMediaUnauthorizedAccess = errors.InsufficientPermissions("media access")
+
+	// ErrMediaInUse prevents deletion while a status, draft, or other object still references the media.
+	ErrMediaInUse = errors.NewAppError(errors.CodeConflict, errors.CategoryMedia, "media is still referenced")
 )

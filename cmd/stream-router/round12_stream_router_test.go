@@ -206,20 +206,23 @@ func newUserConversationStateRecord(username, conversationID, requestState strin
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
 			NewImage: map[string]events.DynamoDBAttributeValue{
-				"PK":             events.NewStringAttribute("USER_CONVERSATION_STATE#" + username),
-				"SK":             events.NewStringAttribute("CONVERSATION#" + conversationID),
-				"gsi1PK":         events.NewStringAttribute("CONVERSATION#" + conversationID),
-				"gsi1SK":         events.NewStringAttribute("2026-02-19T00:00:00Z#" + conversationID),
-				"gsi3PK":         events.NewStringAttribute("CONVERSATION#" + conversationID),
-				"gsi3SK":         events.NewStringAttribute("USER#" + username),
-				"viewerID":       events.NewStringAttribute(username),
-				"conversationID": events.NewStringAttribute(conversationID),
-				"counterpartID":  events.NewStringAttribute("bob"),
-				"folder":         events.NewStringAttribute("INBOX"),
-				"requestState":   events.NewStringAttribute(requestState),
-				"sortAt":         events.NewStringAttribute("2026-02-19T00:00:00Z"),
-				"createdAt":      events.NewStringAttribute("2026-02-19T00:00:00Z"),
-				"updatedAt":      events.NewStringAttribute("2026-02-19T00:00:00Z"),
+				"PK":              events.NewStringAttribute("USER_CONVERSATION_STATE#" + username),
+				"SK":              events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi1PK":          events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi1SK":          events.NewStringAttribute("2026-02-19T00:00:00Z#" + conversationID),
+				"gsi3PK":          events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi3SK":          events.NewStringAttribute("USER#" + username),
+				"viewerID":        events.NewStringAttribute(username),
+				"conversationID":  events.NewStringAttribute(conversationID),
+				"counterpartID":   events.NewStringAttribute("bob"),
+				"folder":          events.NewStringAttribute("INBOX"),
+				"requestState":    events.NewStringAttribute(requestState),
+				"previewStatusID": events.NewStringAttribute("status-1"),
+				"unread":          events.NewBooleanAttribute(true),
+				"unreadCount":     events.NewNumberAttribute("3"),
+				"sortAt":          events.NewStringAttribute("2026-02-19T00:00:00Z"),
+				"createdAt":       events.NewStringAttribute("2026-02-19T00:00:00Z"),
+				"updatedAt":       events.NewStringAttribute("2026-02-19T00:00:00Z"),
 			},
 		},
 	}
@@ -1073,6 +1076,11 @@ func TestStreamRouterHandler_ProcessConversationParticipantEvent_BroadcastsGraph
 			updates, ok := data["conversationUpdates"].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, "conv-1", updates["id"])
+			require.Equal(t, true, updates["unread"])
+			require.Equal(t, float64(3), updates["unreadCount"])
+			lastStatus, ok := updates["lastStatus"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "status-1", lastStatus["id"])
 		})
 	}
 }

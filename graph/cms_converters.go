@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/cmsrender"
+	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -65,10 +66,26 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		ObjectID:        objectID,
 		GeneratedBy:     r.resolveActorByID(ctx, draft.GeneratedBy),
 		ReviewedBy:      r.resolveActorByID(ctx, draft.ReviewedBy),
+		ReviewVerdict:   cmsDraftReviewVerdict(draft.ReviewStatus),
+		ContentHash:     cms.DraftReviewContentHash(draft),
+		Revision:        draft.AutosaveVersion,
 		AutosaveVersion: draft.AutosaveVersion,
 		LastSavedAt:     model.Time(draft.LastSavedAt),
 		CreatedAt:       model.Time(draft.CreatedAt),
 		UpdatedAt:       model.Time(draft.UpdatedAt),
+	}
+}
+
+func cmsDraftReviewVerdict(value string) *model.DraftReviewVerdict {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case string(model.DraftReviewVerdictApproved):
+		verdict := model.DraftReviewVerdictApproved
+		return &verdict
+	case string(model.DraftReviewVerdictChangesRequested):
+		verdict := model.DraftReviewVerdictChangesRequested
+		return &verdict
+	default:
+		return nil
 	}
 }
 
@@ -523,9 +540,25 @@ func (r *Resolver) canViewCMSPrivateAttribution(ctx context.Context, attributedT
 	return strings.EqualFold(cmsNormalizeUsername(attributedTo), claims.Username)
 }
 
-func (r *Resolver) convertCMSDraftReview(ctx context.Context, draft *models.Draft, grant *models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict) *model.DraftReview {
+func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft, grant *models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict) (*model.DraftReview, error) {
 	if draft == nil {
-		return nil
+		return nil, nil
+	}
+	service := r.Registry.Drafts()
+	if service == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	rendered, renderErr := cms.RenderDraftPreview(draft)
+	var renderedHTML *string
+	renderErrors := make([]string, 0, 1)
+	if renderErr != nil {
+		renderErrors = append(renderErrors, renderErr.Error())
+	} else {
+		renderedHTML = &rendered.HTML
+	}
+	state, err := service.DraftReviewState(ctx, draft.AuthorID, draft.ID, draft)
+	if err != nil {
+		return nil, err
 	}
 	var scheduledAt *model.Time
 	if draft.ScheduledAt != nil {
@@ -534,20 +567,76 @@ func (r *Resolver) convertCMSDraftReview(ctx context.Context, draft *models.Draf
 	}
 	var reviewGrant *model.DraftReviewGrant
 	if grant != nil {
-		reviewGrant = &model.DraftReviewGrant{Reviewer: r.resolveActorByID(ctx, grant.Reviewer), GrantedAt: model.Time(grant.GrantedAt)}
+		reviewGrant = r.convertCMSDraftReviewGrant(ctx, grant)
+	}
+	viewer := strings.TrimSpace(getUsernameFromContext(ctx))
+	grants := make([]*model.DraftReviewGrant, 0, len(state.Grants))
+	activeReviewerIDs := make([]string, 0, len(state.Grants))
+	viewerIsOwner := strings.EqualFold(viewer, draft.AuthorID)
+	for _, item := range state.Grants {
+		if item == nil || (!viewerIsOwner && !strings.EqualFold(item.Reviewer, viewer)) {
+			continue
+		}
+		grants = append(grants, r.convertCMSDraftReviewGrant(ctx, item))
+		if item.RevokedAt == nil {
+			activeReviewerIDs = append(activeReviewerIDs, item.Reviewer)
+		}
+	}
+	grantCount := state.GrantCount
+	grantsTruncated := state.GrantsTruncated
+	if !viewerIsOwner {
+		grantCount = len(grants)
+		grantsTruncated = false
 	}
 	out := make([]*model.DraftReviewVerdictRecord, 0, len(verdicts))
 	for _, v := range verdicts {
 		if v == nil {
 			continue
 		}
+		current := state.CurrentVerdicts[v.Reviewer]
+		isCurrent := current != nil && current.RecordedAt.Equal(v.RecordedAt) && current.ContentHash == v.ContentHash
 		out = append(out, &model.DraftReviewVerdictRecord{
 			Verdict:     model.DraftReviewVerdict(v.Verdict),
 			Notes:       cmsOptionalString(v.Notes),
 			ContentHash: cmsOptionalString(v.ContentHash),
+			ReviewerID:  v.Reviewer,
 			Reviewer:    r.resolveActorByID(ctx, v.Reviewer),
 			RecordedAt:  model.Time(v.RecordedAt),
+			Current:     isCurrent,
+			Stale:       !isCurrent,
 		})
 	}
-	return &model.DraftReview{DraftID: draft.ID, Title: cmsOptionalString(draft.Title), ContentFormat: cmsContentFormatFromStorage(draft.ContentFormat), Status: cmsDraftStatusFromStorage(draft.Status), ScheduledAt: scheduledAt, UpdatedAt: model.Time(draft.UpdatedAt), CreatedAt: model.Time(draft.CreatedAt), GeneratedBy: r.resolveActorByID(ctx, draft.GeneratedBy), ReviewedBy: r.resolveActorByID(ctx, draft.ReviewedBy), ReviewStatus: cmsOptionalString(draft.ReviewStatus), EditorNotes: cmsOptionalString(draft.EditorNotes), Grant: reviewGrant, Verdicts: out}
+	return &model.DraftReview{
+		DraftID: draft.ID, OwnerID: draft.AuthorID, Title: cmsOptionalString(draft.Title), Slug: cmsOptionalString(draft.Slug),
+		Content: draft.Content, RenderedHTML: renderedHTML, RenderErrors: renderErrors, ContentFormat: cmsContentFormatFromStorage(draft.ContentFormat),
+		Status: cmsDraftStatusFromStorage(draft.Status), ScheduledAt: scheduledAt, UpdatedAt: model.Time(draft.UpdatedAt),
+		CreatedAt: model.Time(draft.CreatedAt), GeneratedBy: r.resolveActorByID(ctx, draft.GeneratedBy),
+		ReviewedBy: r.resolveActorByID(ctx, draft.ReviewedBy), ReviewStatus: cmsOptionalString(draft.ReviewStatus),
+		EditorNotes: cmsOptionalString(draft.EditorNotes), ContentHash: state.ContentHash, Revision: draft.AutosaveVersion,
+		ActiveReviewerIds: activeReviewerIDs, PublishEligible: state.PublishEligible,
+		PublishBlockingReasons: state.BlockingReasons, ReviewersApproved: state.ReviewersApproved,
+		PrincipalApprovalRequired: state.PrincipalApprovalRequired, PrincipalApproved: state.PrincipalApproved,
+		GrantCount: grantCount, GrantsTruncated: grantsTruncated,
+		Grants: grants, Grant: reviewGrant, Verdicts: out,
+		PublishEligibility: &model.DraftPublishEligibility{
+			Eligible: state.PublishEligible, BlockingReasons: state.BlockingReasons, ReviewersApproved: state.ReviewersApproved,
+			PrincipalApprovalRequired: state.PrincipalApprovalRequired, PrincipalApproved: state.PrincipalApproved,
+		},
+	}, nil
+}
+
+func (r *Resolver) convertCMSDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) *model.DraftReviewGrant {
+	if grant == nil {
+		return nil
+	}
+	status := model.DraftReviewGrantStatusActive
+	var revokedAt *model.Time
+	if grant.RevokedAt != nil {
+		status = model.DraftReviewGrantStatusRevoked
+		value := model.Time(*grant.RevokedAt)
+		revokedAt = &value
+	}
+	return &model.DraftReviewGrant{
+		ReviewerID: grant.Reviewer, Reviewer: r.resolveActorByID(ctx, grant.Reviewer), GrantedAt: model.Time(grant.GrantedAt), Status: status, RevokedAt: revokedAt,
+	}
 }

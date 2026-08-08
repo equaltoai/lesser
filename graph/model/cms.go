@@ -141,8 +141,11 @@ type Draft struct {
 	ScheduledAt *Time       `json:"scheduledAt"`
 	ObjectID    *string     `json:"objectId"`
 
-	GeneratedBy *activitypub.Actor `json:"generatedBy"`
-	ReviewedBy  *activitypub.Actor `json:"reviewedBy"`
+	GeneratedBy   *activitypub.Actor  `json:"generatedBy"`
+	ReviewedBy    *activitypub.Actor  `json:"reviewedBy"`
+	ReviewVerdict *DraftReviewVerdict `json:"reviewVerdict"`
+	ContentHash   string              `json:"contentHash"`
+	Revision      int                 `json:"revision"`
 
 	AutosaveVersion int  `json:"autosaveVersion"`
 	LastSavedAt     Time `json:"lastSavedAt"`

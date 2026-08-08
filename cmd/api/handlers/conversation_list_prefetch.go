@@ -356,6 +356,9 @@ func (h *Handler) conversationAPIAccounts(ctx context.Context, conv *storageMode
 		if account == nil || account.Actor == nil {
 			continue
 		}
+		if h.actorAppearsLocal(account.Actor) {
+			h.ensureLocalNumericIDMapping(ctx, account.Actor.PreferredUsername)
+		}
 		accounts = append(accounts, transformations.ActorToAccountBase(account.Actor, h.cfg.BaseURL()))
 	}
 	return accounts

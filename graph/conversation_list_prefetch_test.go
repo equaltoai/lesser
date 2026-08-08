@@ -43,6 +43,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 			RequestedAt:     &requestedAt,
 			PreviewStatusID: "status-preview",
 			Unread:          true,
+			UnreadCount:     3,
 			SortAt:          sortAt,
 		},
 	}
@@ -79,7 +80,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 	require.NotNil(t, gqlConversation)
 	require.Equal(t, "conv-1", gqlConversation.ID)
 	require.NotNil(t, gqlConversation.Cursor)
-	require.Equal(t, model.Cursor(sortAt.Format(time.RFC3339Nano)+"#conv-1"), *gqlConversation.Cursor)
+	require.Equal(t, model.Cursor(conversation.ViewerState.LegacyListCursor()), *gqlConversation.Cursor)
 	require.NotNil(t, gqlConversation.ViewerMetadata)
 	require.Equal(t, "PENDING", string(gqlConversation.ViewerMetadata.RequestState))
 	require.NotNil(t, gqlConversation.ViewerMetadata.RequestedAt)
@@ -87,6 +88,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 	require.Equal(t, "bob", gqlConversation.Accounts[0].PreferredUsername)
 	require.NotNil(t, gqlConversation.LastStatus)
 	require.Equal(t, "status-preview", gqlConversation.LastStatus.ID)
+	require.Equal(t, 3, gqlConversation.UnreadCount)
 }
 
 func TestRound12_ConvertConversationListToGraphQL_FallsBackWhenPrefetchMisses(t *testing.T) {

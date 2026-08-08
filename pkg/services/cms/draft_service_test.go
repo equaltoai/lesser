@@ -203,6 +203,10 @@ func TestDraftServicePreviewUsesPublicationRenderer(t *testing.T) {
 		Status:        "draft",
 	}
 	require.NoError(t, svc.CreateDraft(context.Background(), draft))
+	draft.Title = "Preview updated"
+	require.NoError(t, svc.UpdateDraft(context.Background(), "alice", draft),
+		"create and update must apply the same source-storage policy")
+	require.Contains(t, draft.Content, "<script>", "canonical source remains Markdown; rendering owns sanitization")
 
 	preview, err := svc.PreviewDraft(context.Background(), "alice", "draft-preview")
 	require.NoError(t, err)

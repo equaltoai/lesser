@@ -39,10 +39,11 @@ func TestCreateOAuthClientAndRespond_DoesNotLogClientSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	req := &apimodels.AppRegistrationRequest{
-		ClientName:   "Test App",
-		RedirectURIs: "https://example.com/callback",
-		Scopes:       "read",
-		Website:      "https://example.com",
+		ClientName:              "Test App",
+		RedirectURIs:            "https://example.com/callback",
+		Scopes:                  "read",
+		Website:                 "https://example.com",
+		TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodClientSecretPost,
 	}
 
 	resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))

@@ -68,31 +68,32 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 	quarantineStatus, quarantineStart, quarantineEnd, quarantineApprovedBy, quarantineApprovedAt, quarantineActive := graphAgentQuarantineFields(governance)
 
 	return &model.Agent{
-		ID:                   id,
-		Username:             username,
-		DisplayName:          displayName,
-		Bio:                  bio,
-		AgentType:            agentType,
-		AgentVersion:         agentVersion,
-		AgentCapabilities:    capabilities,
-		AgentOwner:           agentOwner,
-		DelegatedScopes:      delegatedScopes,
-		McpAccess:            graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
-		Verified:             verified,
-		VerifiedAt:           verifiedAt,
-		QuarantineStatus:     quarantineStatus,
-		QuarantineStart:      quarantineStart,
-		QuarantineEnd:        quarantineEnd,
-		QuarantineApprovedBy: quarantineApprovedBy,
-		QuarantineApprovedAt: quarantineApprovedAt,
-		QuarantineActive:     quarantineActive,
-		OwnerActor:           nil,
-		Type:                 agentType,
-		Version:              agentVersion,
-		Capabilities:         capabilities,
-		Owner:                nil,
-		CreatedAt:            model.Time(createdAt),
-		ActivityCount:        0,
+		ID:                        id,
+		Username:                  username,
+		DisplayName:               displayName,
+		Bio:                       bio,
+		AgentType:                 agentType,
+		AgentVersion:              agentVersion,
+		AgentCapabilities:         capabilities,
+		AgentOwner:                agentOwner,
+		DelegatedScopes:           delegatedScopes,
+		ViewerCanSeePrivateFields: true,
+		McpAccess:                 graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
+		Verified:                  verified,
+		VerifiedAt:                verifiedAt,
+		QuarantineStatus:          quarantineStatus,
+		QuarantineStart:           quarantineStart,
+		QuarantineEnd:             quarantineEnd,
+		QuarantineApprovedBy:      quarantineApprovedBy,
+		QuarantineApprovedAt:      quarantineApprovedAt,
+		QuarantineActive:          quarantineActive,
+		OwnerActor:                nil,
+		Type:                      agentType,
+		Version:                   agentVersion,
+		Capabilities:              capabilities,
+		Owner:                     nil,
+		CreatedAt:                 model.Time(createdAt),
+		ActivityCount:             0,
 	}
 }
 
@@ -102,6 +103,7 @@ func redactGraphAgentPrivateFields(agent *model.Agent) {
 	}
 	agent.AgentOwner = nil
 	agent.DelegatedScopes = []string{}
+	agent.ViewerCanSeePrivateFields = false
 	redactGraphAgentIdentitySemantics(agent.IdentitySemantics)
 }
 

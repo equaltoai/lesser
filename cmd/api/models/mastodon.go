@@ -72,7 +72,7 @@ type AppRegistrationResponse struct {
 	Website                 string   `json:"website,omitempty"`
 	RedirectURI             string   `json:"redirect_uri"`
 	ClientID                string   `json:"client_id"`
-	ClientSecret            string   `json:"client_secret,omitempty"`
+	ClientSecret            string   `json:"client_secret"`
 	VapidKey                string   `json:"vapid_key,omitempty"` // For push notifications
 	GrantTypes              []string `json:"grant_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`

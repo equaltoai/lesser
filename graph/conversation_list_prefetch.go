@@ -456,6 +456,7 @@ func (r *Resolver) convertConversationListToGraphQL(ctx context.Context, conv *s
 		Cursor:         cursor,
 		LastStatus:     lastStatus,
 		Unread:         conv.Unread,
+		UnreadCount:    conversationUnreadCount(conv),
 		Accounts:       accounts,
 		ViewerMetadata: viewerMetadata,
 		CreatedAt:      model.Time(conv.CreatedAt),

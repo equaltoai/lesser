@@ -508,6 +508,8 @@ func TestHandleGraphQL_AnonymousPublicQueryAllowlist(t *testing.T) {
 	logger = zap.NewNop()
 
 	for name, query := range map[string]string{
+		"agent":         `query { agent(username: "helper") { id mcpAccess { endpoint } } }`,
+		"agents":        `query { agents(first: 2) { edges { node { id } } } }`,
 		"article":       `query { article(id: "https://example.com/articles/published") { id } }`,
 		"articleBySlug": `query { articleBySlug(slug: "published") { id } }`,
 		"articles":      `query { articles(first: 10) { totalCount } }`,

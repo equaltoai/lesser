@@ -767,8 +767,9 @@ func (ec *EventConverter) ConvertToConversation(event *streaming.InternalEvent) 
 	// This would be enhanced based on the actual event payload structure
 	lastStatusID := extractStringFromData(event.Data, "last_status_id")
 	return &model.Conversation{
-		ID:     extractStringFromData(event.Data, "conversation_id"),
-		Unread: extractBoolFromData(event.Data, "unread"),
+		ID:          extractStringFromData(event.Data, "conversation_id"),
+		Unread:      extractBoolFromData(event.Data, "unread"),
+		UnreadCount: extractIntFromData(event.Data, "unread_count"),
 		LastStatus: &model.Object{
 			ID:          lastStatusID,
 			ContentHash: contentHashForObjectID(lastStatusID),
@@ -776,6 +777,27 @@ func (ec *EventConverter) ConvertToConversation(event *streaming.InternalEvent) 
 		Accounts:  []*activitypub.Actor{},
 		CreatedAt: model.Time(event.Timestamp),
 	}
+}
+
+func extractIntFromData(data interface{}, key string) int {
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	switch value := m[key].(type) {
+	case int:
+		return value
+	case int64:
+		converted, ok := safeIntFromInt64(value)
+		if ok {
+			return converted
+		}
+	case float64:
+		if value <= math.MaxInt32 && value >= math.MinInt32 {
+			return int(value)
+		}
+	}
+	return 0
 }
 
 // ConvertToFederationHealthUpdate converts a streaming event to a GraphQL FederationHealthUpdate
