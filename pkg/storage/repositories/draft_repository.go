@@ -354,6 +354,29 @@ func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, dr
 	return out, nil
 }
 
+// ListDraftReviewGrantsByOwner returns every review assignment created by one draft owner.
+// Callers apply active-state filtering before pagination so revoked grants cannot shrink pages.
+func (r *DraftRepository) ListDraftReviewGrantsByOwner(ctx context.Context, ownerID string) ([]*models.DraftReviewGrant, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if err := common.ValidateRequiredParam("ownerID", ownerID); err != nil {
+		return nil, err
+	}
+	var rows []models.DraftReviewGrant
+	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+		Where("SK", "begins_with", "GRANT#").
+		OrderBy("SK", "ASC").
+		All(&rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*models.DraftReviewGrant, len(rows))
+	for i := range rows {
+		out[i] = &rows[i]
+	}
+	return out, nil
+}
+
 // CreateDraftReviewVerdict records an immutable verdict.
 func (r *DraftRepository) CreateDraftReviewVerdict(ctx context.Context, verdict *models.DraftReviewVerdict) error {
 	if err := verdict.UpdateKeys(); err != nil {

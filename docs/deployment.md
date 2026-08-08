@@ -48,6 +48,21 @@ Release and rollback considerations:
 - Roll back by deploying the previous release/commit through `./lesser up`. No schema migration is part of this framework
   baseline, and prior Lambda versions must remain available as rollback targets.
 
+## Direct-message cursor-key migration
+
+Releases that use fixed-width direct-message sort timestamps require existing canonical conversation-state rows to be
+rewritten before clients paginate them. The existing migration command performs that rewrite while preserving viewer
+state, including unread counts. Run a dry-run and then apply at each deployed stage after the new code is deployed and
+before ending that stage's soak:
+
+```bash
+AWS_PROFILE=<profile> ./lesser migrate-direct-message-state --app <slug> --env <dev|staging|live>
+AWS_PROFILE=<profile> ./lesser migrate-direct-message-state --app <slug> --env <dev|staging|live> --apply
+```
+
+The apply path freezes direct-message writes while rebuilding rows. Treat a non-zero `validation_errors` result as a
+failed rollout and do not advance stages. Do not run the live apply without explicit operator authorization.
+
 ## Prerequisites
 
 - A public Route53 hosted zone that exactly matches your `base-domain` (for example: `example.com`)

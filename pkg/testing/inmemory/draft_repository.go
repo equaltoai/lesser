@@ -30,6 +30,12 @@ type DraftRepository struct {
 	draftsByStatus map[string][]string
 }
 
+// ListDraftReviewGrantsByOwner satisfies the owner review projection used by CMS GraphQL.
+// This lightweight draft repository does not persist review assignments.
+func (r *DraftRepository) ListDraftReviewGrantsByOwner(_ context.Context, _ string) ([]*models.DraftReviewGrant, error) {
+	return []*models.DraftReviewGrant{}, nil
+}
+
 // NewDraftRepository creates a new in-memory draft repository
 func NewDraftRepository() *DraftRepository {
 	return &DraftRepository{

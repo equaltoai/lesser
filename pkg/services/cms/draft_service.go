@@ -125,9 +125,11 @@ func (s *DraftService) UpdateDraft(ctx context.Context, authorID string, draft *
 		return err
 	}
 	cmsNormalizeDraftAttribution(draft)
+	invalidateDraftReviewSummary(draft)
 	now := time.Now()
 	draft.UpdatedAt = now
 	draft.LastSavedAt = now
+	draft.AutosaveVersion++
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
@@ -141,12 +143,22 @@ func (s *DraftService) Autosave(ctx context.Context, authorID string, draft *mod
 		return err
 	}
 	cmsNormalizeDraftAttribution(draft)
+	invalidateDraftReviewSummary(draft)
 	s.logger.Debug("autosaving draft", zap.String("id", draft.ID))
 	now := time.Now()
 	draft.LastSavedAt = now
 	draft.UpdatedAt = now
 	draft.AutosaveVersion++
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
+}
+
+func invalidateDraftReviewSummary(draft *models.Draft) {
+	if draft == nil {
+		return
+	}
+	draft.ReviewedBy = ""
+	draft.ReviewStatus = ""
+	draft.EditorNotes = ""
 }
 
 // GetDraft retrieves a draft
@@ -193,6 +205,22 @@ func (s *DraftService) DeleteDraft(ctx context.Context, authorID, draftID string
 	}
 	if draftID == "" {
 		return stdErrors.New("draftID is required")
+	}
+	if repo, ok := s.draftRepo.(draftReviewRepository); ok && repo != nil {
+		grants, err := repo.ListDraftReviewGrants(ctx, authorID, draftID)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		for _, grant := range grants {
+			if grant == nil || grant.RevokedAt != nil {
+				continue
+			}
+			grant.RevokedAt = &now
+			if err := repo.RevokeDraftReviewGrant(ctx, grant); err != nil {
+				return err
+			}
+		}
 	}
 	return s.draftRepo.DeleteDraft(ctx, authorID, draftID)
 }

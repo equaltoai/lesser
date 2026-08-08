@@ -198,6 +198,7 @@ type Config struct {
 	AlertWebhookVerifySSL     bool   // Verify TLS certificates for alert webhooks (default true)
 	AlertEmail                string // Email address for alerts
 	WebSocketEndpoint         string // WebSocket endpoint for real-time updates
+	GraphQLWebSocketEndpoint  string // GraphQL subscription WebSocket endpoint
 	NotificationRetryQueueURL string // Notification retry queue URL
 
 	// WebSocket & Streaming
@@ -465,6 +466,7 @@ func loadConfig() *Config {
 		AlertWebhookVerifySSL:     getEnvAsBoolOrDefault("ALERT_WEBHOOK_VERIFY_SSL", true),
 		AlertEmail:                getEnvOrDefault("ALERT_EMAIL", ""),
 		WebSocketEndpoint:         resolveWebsocketEndpoint(),
+		GraphQLWebSocketEndpoint:  resolveEnvFirst("GRAPHQL_WEBSOCKET_ENDPOINT"),
 		NotificationRetryQueueURL: getEnvOrDefault("NOTIFICATION_RETRY_QUEUE_URL", ""),
 
 		// WebSocket & Streaming

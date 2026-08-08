@@ -536,33 +536,34 @@ type ComplexityRoot struct {
 	}
 
 	Agent struct {
-		ActivityCount        func(childComplexity int) int
-		AgentCapabilities    func(childComplexity int) int
-		AgentOwner           func(childComplexity int) int
-		AgentType            func(childComplexity int) int
-		AgentVersion         func(childComplexity int) int
-		Bio                  func(childComplexity int) int
-		Capabilities         func(childComplexity int) int
-		CreatedAt            func(childComplexity int) int
-		DelegatedScopes      func(childComplexity int) int
-		DisplayName          func(childComplexity int) int
-		ID                   func(childComplexity int) int
-		IdentitySemantics    func(childComplexity int) int
-		McpAccess            func(childComplexity int) int
-		Owner                func(childComplexity int) int
-		OwnerActor           func(childComplexity int) int
-		QuarantineActive     func(childComplexity int) int
-		QuarantineApprovedAt func(childComplexity int) int
-		QuarantineApprovedBy func(childComplexity int) int
-		QuarantineEnd        func(childComplexity int) int
-		QuarantineStart      func(childComplexity int) int
-		QuarantineStatus     func(childComplexity int) int
-		Type                 func(childComplexity int) int
-		Username             func(childComplexity int) int
-		Verified             func(childComplexity int) int
-		VerifiedAt           func(childComplexity int) int
-		Version              func(childComplexity int) int
-		Workflow             func(childComplexity int) int
+		ActivityCount             func(childComplexity int) int
+		AgentCapabilities         func(childComplexity int) int
+		AgentOwner                func(childComplexity int) int
+		AgentType                 func(childComplexity int) int
+		AgentVersion              func(childComplexity int) int
+		Bio                       func(childComplexity int) int
+		Capabilities              func(childComplexity int) int
+		CreatedAt                 func(childComplexity int) int
+		DelegatedScopes           func(childComplexity int) int
+		DisplayName               func(childComplexity int) int
+		ID                        func(childComplexity int) int
+		IdentitySemantics         func(childComplexity int) int
+		McpAccess                 func(childComplexity int) int
+		Owner                     func(childComplexity int) int
+		OwnerActor                func(childComplexity int) int
+		QuarantineActive          func(childComplexity int) int
+		QuarantineApprovedAt      func(childComplexity int) int
+		QuarantineApprovedBy      func(childComplexity int) int
+		QuarantineEnd             func(childComplexity int) int
+		QuarantineStart           func(childComplexity int) int
+		QuarantineStatus          func(childComplexity int) int
+		Type                      func(childComplexity int) int
+		Username                  func(childComplexity int) int
+		Verified                  func(childComplexity int) int
+		VerifiedAt                func(childComplexity int) int
+		Version                   func(childComplexity int) int
+		ViewerCanSeePrivateFields func(childComplexity int) int
+		Workflow                  func(childComplexity int) int
 	}
 
 	AgentAccessLease struct {
@@ -907,6 +908,15 @@ type ComplexityRoot struct {
 		Timestamp          func(childComplexity int) int
 	}
 
+	CMSFeatures struct {
+		Categories func(childComplexity int) int
+		Drafts     func(childComplexity int) int
+		LongForm   func(childComplexity int) int
+		Revisions  func(childComplexity int) int
+		Scheduling func(childComplexity int) int
+		Series     func(childComplexity int) int
+	}
+
 	Category struct {
 		ArticleCount func(childComplexity int) int
 		Children     func(childComplexity int) int
@@ -1019,8 +1029,19 @@ type ComplexityRoot struct {
 		ID             func(childComplexity int) int
 		LastStatus     func(childComplexity int) int
 		Unread         func(childComplexity int) int
+		UnreadCount    func(childComplexity int) int
 		UpdatedAt      func(childComplexity int) int
 		ViewerMetadata func(childComplexity int) int
+	}
+
+	ConversationConnection struct {
+		Edges    func(childComplexity int) int
+		PageInfo func(childComplexity int) int
+	}
+
+	ConversationEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
 	}
 
 	ConversationViewerMetadata struct {
@@ -1148,13 +1169,16 @@ type ComplexityRoot struct {
 		AutosaveVersion func(childComplexity int) int
 		Content         func(childComplexity int) int
 		ContentFormat   func(childComplexity int) int
+		ContentHash     func(childComplexity int) int
 		ContentType     func(childComplexity int) int
 		CreatedAt       func(childComplexity int) int
 		GeneratedBy     func(childComplexity int) int
 		ID              func(childComplexity int) int
 		LastSavedAt     func(childComplexity int) int
 		ObjectID        func(childComplexity int) int
+		ReviewVerdict   func(childComplexity int) int
 		ReviewedBy      func(childComplexity int) int
+		Revision        func(childComplexity int) int
 		ScheduledAt     func(childComplexity int) int
 		Slug            func(childComplexity int) int
 		Status          func(childComplexity int) int
@@ -1183,22 +1207,47 @@ type ComplexityRoot struct {
 		Success       func(childComplexity int) int
 	}
 
+	DraftPublishEligibility struct {
+		BlockingReasons           func(childComplexity int) int
+		Eligible                  func(childComplexity int) int
+		PrincipalApprovalRequired func(childComplexity int) int
+		PrincipalApproved         func(childComplexity int) int
+		ReviewersApproved         func(childComplexity int) int
+	}
+
 	DraftReview struct {
-		ContentFormat func(childComplexity int) int
-		CreatedAt     func(childComplexity int) int
-		DraftID       func(childComplexity int) int
-		EditorNotes   func(childComplexity int) int
-		Excerpt       func(childComplexity int) int
-		GeneratedBy   func(childComplexity int) int
-		Grant         func(childComplexity int) int
-		ReviewStatus  func(childComplexity int) int
-		ReviewedBy    func(childComplexity int) int
-		ScheduledAt   func(childComplexity int) int
-		Status        func(childComplexity int) int
-		Subtitle      func(childComplexity int) int
-		Title         func(childComplexity int) int
-		UpdatedAt     func(childComplexity int) int
-		Verdicts      func(childComplexity int) int
+		ActiveReviewerIds         func(childComplexity int) int
+		Content                   func(childComplexity int) int
+		ContentFormat             func(childComplexity int) int
+		ContentHash               func(childComplexity int) int
+		CreatedAt                 func(childComplexity int) int
+		DraftID                   func(childComplexity int) int
+		EditorNotes               func(childComplexity int) int
+		Excerpt                   func(childComplexity int) int
+		GeneratedBy               func(childComplexity int) int
+		Grant                     func(childComplexity int) int
+		GrantCount                func(childComplexity int) int
+		Grants                    func(childComplexity int) int
+		GrantsTruncated           func(childComplexity int) int
+		OwnerID                   func(childComplexity int) int
+		PrincipalApprovalRequired func(childComplexity int) int
+		PrincipalApproved         func(childComplexity int) int
+		PublishBlockingReasons    func(childComplexity int) int
+		PublishEligibility        func(childComplexity int) int
+		PublishEligible           func(childComplexity int) int
+		RenderErrors              func(childComplexity int) int
+		RenderedHTML              func(childComplexity int) int
+		ReviewStatus              func(childComplexity int) int
+		ReviewedBy                func(childComplexity int) int
+		ReviewersApproved         func(childComplexity int) int
+		Revision                  func(childComplexity int) int
+		ScheduledAt               func(childComplexity int) int
+		Slug                      func(childComplexity int) int
+		Status                    func(childComplexity int) int
+		Subtitle                  func(childComplexity int) int
+		Title                     func(childComplexity int) int
+		UpdatedAt                 func(childComplexity int) int
+		Verdicts                  func(childComplexity int) int
 	}
 
 	DraftReviewConnection struct {
@@ -1213,15 +1262,21 @@ type ComplexityRoot struct {
 	}
 
 	DraftReviewGrant struct {
-		GrantedAt func(childComplexity int) int
-		Reviewer  func(childComplexity int) int
+		GrantedAt  func(childComplexity int) int
+		Reviewer   func(childComplexity int) int
+		ReviewerID func(childComplexity int) int
+		RevokedAt  func(childComplexity int) int
+		Status     func(childComplexity int) int
 	}
 
 	DraftReviewVerdictRecord struct {
 		ContentHash func(childComplexity int) int
+		Current     func(childComplexity int) int
 		Notes       func(childComplexity int) int
 		RecordedAt  func(childComplexity int) int
 		Reviewer    func(childComplexity int) int
+		ReviewerID  func(childComplexity int) int
+		Stale       func(childComplexity int) int
 		Verdict     func(childComplexity int) int
 	}
 
@@ -1691,25 +1746,29 @@ type ComplexityRoot struct {
 	}
 
 	InstanceInfo struct {
-		ApprovalRequired  func(childComplexity int) int
-		ContactAccount    func(childComplexity int) int
-		Description       func(childComplexity int) int
-		Domain            func(childComplexity int) int
-		DomainCount       func(childComplexity int) int
-		Email             func(childComplexity int) int
-		InvitesEnabled    func(childComplexity int) int
-		Languages         func(childComplexity int) int
-		RegistrationsOpen func(childComplexity int) int
-		Rules             func(childComplexity int) int
-		ShortDescription  func(childComplexity int) int
-		SourceURL         func(childComplexity int) int
-		StatusCount       func(childComplexity int) int
-		StreamingURL      func(childComplexity int) int
-		ThumbnailURL      func(childComplexity int) int
-		Tips              func(childComplexity int) int
-		Title             func(childComplexity int) int
-		UserCount         func(childComplexity int) int
-		Version           func(childComplexity int) int
+		ApprovalRequired    func(childComplexity int) int
+		CmsFeatures         func(childComplexity int) int
+		ContactAccount      func(childComplexity int) int
+		Description         func(childComplexity int) int
+		Domain              func(childComplexity int) int
+		DomainCount         func(childComplexity int) int
+		Email               func(childComplexity int) int
+		InvitesEnabled      func(childComplexity int) int
+		Languages           func(childComplexity int) int
+		MaxStatusCharacters func(childComplexity int) int
+		MaxUploadSizeBytes  func(childComplexity int) int
+		RegistrationsOpen   func(childComplexity int) int
+		Rules               func(childComplexity int) int
+		ShortDescription    func(childComplexity int) int
+		SourceURL           func(childComplexity int) int
+		StatusCount         func(childComplexity int) int
+		StreamingURL        func(childComplexity int) int
+		SubscriptionURL     func(childComplexity int) int
+		ThumbnailURL        func(childComplexity int) int
+		Tips                func(childComplexity int) int
+		Title               func(childComplexity int) int
+		UserCount           func(childComplexity int) int
+		Version             func(childComplexity int) int
 	}
 
 	InstanceMetadata struct {
@@ -2112,6 +2171,7 @@ type ComplexityRoot struct {
 		DeleteFilterKeyword                       func(childComplexity int, filterID string, keywordID string) int
 		DeleteFilterStatus                        func(childComplexity int, filterID string, filterStatusID string) int
 		DeleteList                                func(childComplexity int, id string) int
+		DeleteMedia                               func(childComplexity int, id string) int
 		DeleteMessage                             func(childComplexity int, messageID string) int
 		DeleteModerationPattern                   func(childComplexity int, id string) int
 		DeleteObject                              func(childComplexity int, id string) int
@@ -2543,6 +2603,7 @@ type ComplexityRoot struct {
 		CategoryBySlug                 func(childComplexity int, slug string) int
 		CommunityNotesByAuthor         func(childComplexity int, username string, first *int, after *model.Cursor) int
 		Conversation                   func(childComplexity int, id string) int
+		ConversationConnection         func(childComplexity int, folder *model.ConversationFolder, first *int, after *model.Cursor) int
 		ConversationMessages           func(childComplexity int, conversationID string, first *int, after *model.Cursor) int
 		Conversations                  func(childComplexity int, folder *model.ConversationFolder, first *int, after *model.Cursor) int
 		CostBreakdown                  func(childComplexity int, period *model.Period) int
@@ -2604,6 +2665,7 @@ type ComplexityRoot struct {
 		MultiHashtagTimeline           func(childComplexity int, hashtags []string, mode model.HashtagMode, first *int, after *string) int
 		Mutes                          func(childComplexity int, first *int, after *model.Cursor) int
 		MyAgents                       func(childComplexity int) int
+		MyDraftReviews                 func(childComplexity int, first *int, after *model.Cursor) int
 		MyDrafts                       func(childComplexity int, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) int
 		MyDroneRequests                func(childComplexity int) int
 		MyDroneReviews                 func(childComplexity int) int
@@ -3652,6 +3714,7 @@ type MutationResolver interface {
 	DeleteMessage(ctx context.Context, messageID string) (bool, error)
 	UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error)
 	UpdateMedia(ctx context.Context, id string, input model.UpdateMediaInput) (*model.Media, error)
+	DeleteMedia(ctx context.Context, id string) (bool, error)
 	DismissNotification(ctx context.Context, id string) (bool, error)
 	ClearNotifications(ctx context.Context) (bool, error)
 	MarkNotificationGroupAsRead(ctx context.Context, groupID string) (bool, error)
@@ -3835,6 +3898,7 @@ type QueryResolver interface {
 	Bookmarks(ctx context.Context, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	CommunityNotesByAuthor(ctx context.Context, username string, first *int, after *model.Cursor) (*model.CommunityNoteConnection, error)
 	Conversations(ctx context.Context, folder *model.ConversationFolder, first *int, after *model.Cursor) ([]*model.Conversation, error)
+	ConversationConnection(ctx context.Context, folder *model.ConversationFolder, first *int, after *model.Cursor) (*model.ConversationConnection, error)
 	Conversation(ctx context.Context, id string) (*model.Conversation, error)
 	ConversationMessages(ctx context.Context, conversationID string, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	Lists(ctx context.Context) ([]*model.List, error)
@@ -3890,6 +3954,7 @@ type QueryResolver interface {
 	Draft(ctx context.Context, id string) (*model.Draft, error)
 	DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error)
 	MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error)
+	MyDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	DraftReview(ctx context.Context, id string) (*model.DraftReview, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
@@ -6270,6 +6335,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Agent.Version(childComplexity), true
 
+	case "Agent.viewerCanSeePrivateFields":
+		if e.complexity.Agent.ViewerCanSeePrivateFields == nil {
+			break
+		}
+
+		return e.complexity.Agent.ViewerCanSeePrivateFields(childComplexity), true
+
 	case "Agent.workflow":
 		if e.complexity.Agent.Workflow == nil {
 			break
@@ -8041,6 +8113,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.BudgetAlert.Timestamp(childComplexity), true
 
+	case "CMSFeatures.categories":
+		if e.complexity.CMSFeatures.Categories == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Categories(childComplexity), true
+
+	case "CMSFeatures.drafts":
+		if e.complexity.CMSFeatures.Drafts == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Drafts(childComplexity), true
+
+	case "CMSFeatures.longForm":
+		if e.complexity.CMSFeatures.LongForm == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.LongForm(childComplexity), true
+
+	case "CMSFeatures.revisions":
+		if e.complexity.CMSFeatures.Revisions == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Revisions(childComplexity), true
+
+	case "CMSFeatures.scheduling":
+		if e.complexity.CMSFeatures.Scheduling == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Scheduling(childComplexity), true
+
+	case "CMSFeatures.series":
+		if e.complexity.CMSFeatures.Series == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Series(childComplexity), true
+
 	case "Category.articleCount":
 		if e.complexity.Category.ArticleCount == nil {
 			break
@@ -8524,6 +8638,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Conversation.Unread(childComplexity), true
 
+	case "Conversation.unreadCount":
+		if e.complexity.Conversation.UnreadCount == nil {
+			break
+		}
+
+		return e.complexity.Conversation.UnreadCount(childComplexity), true
+
 	case "Conversation.updatedAt":
 		if e.complexity.Conversation.UpdatedAt == nil {
 			break
@@ -8537,6 +8658,34 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Conversation.ViewerMetadata(childComplexity), true
+
+	case "ConversationConnection.edges":
+		if e.complexity.ConversationConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.ConversationConnection.Edges(childComplexity), true
+
+	case "ConversationConnection.pageInfo":
+		if e.complexity.ConversationConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.ConversationConnection.PageInfo(childComplexity), true
+
+	case "ConversationEdge.cursor":
+		if e.complexity.ConversationEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.ConversationEdge.Cursor(childComplexity), true
+
+	case "ConversationEdge.node":
+		if e.complexity.ConversationEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.ConversationEdge.Node(childComplexity), true
 
 	case "ConversationViewerMetadata.acceptedAt":
 		if e.complexity.ConversationViewerMetadata.AcceptedAt == nil {
@@ -9091,6 +9240,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Draft.ContentFormat(childComplexity), true
 
+	case "Draft.contentHash":
+		if e.complexity.Draft.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.Draft.ContentHash(childComplexity), true
+
 	case "Draft.contentType":
 		if e.complexity.Draft.ContentType == nil {
 			break
@@ -9133,12 +9289,26 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Draft.ObjectID(childComplexity), true
 
+	case "Draft.reviewVerdict":
+		if e.complexity.Draft.ReviewVerdict == nil {
+			break
+		}
+
+		return e.complexity.Draft.ReviewVerdict(childComplexity), true
+
 	case "Draft.reviewedBy":
 		if e.complexity.Draft.ReviewedBy == nil {
 			break
 		}
 
 		return e.complexity.Draft.ReviewedBy(childComplexity), true
+
+	case "Draft.revision":
+		if e.complexity.Draft.Revision == nil {
+			break
+		}
+
+		return e.complexity.Draft.Revision(childComplexity), true
 
 	case "Draft.scheduledAt":
 		if e.complexity.Draft.ScheduledAt == nil {
@@ -9259,12 +9429,68 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftPreview.Success(childComplexity), true
 
+	case "DraftPublishEligibility.blockingReasons":
+		if e.complexity.DraftPublishEligibility.BlockingReasons == nil {
+			break
+		}
+
+		return e.complexity.DraftPublishEligibility.BlockingReasons(childComplexity), true
+
+	case "DraftPublishEligibility.eligible":
+		if e.complexity.DraftPublishEligibility.Eligible == nil {
+			break
+		}
+
+		return e.complexity.DraftPublishEligibility.Eligible(childComplexity), true
+
+	case "DraftPublishEligibility.principalApprovalRequired":
+		if e.complexity.DraftPublishEligibility.PrincipalApprovalRequired == nil {
+			break
+		}
+
+		return e.complexity.DraftPublishEligibility.PrincipalApprovalRequired(childComplexity), true
+
+	case "DraftPublishEligibility.principalApproved":
+		if e.complexity.DraftPublishEligibility.PrincipalApproved == nil {
+			break
+		}
+
+		return e.complexity.DraftPublishEligibility.PrincipalApproved(childComplexity), true
+
+	case "DraftPublishEligibility.reviewersApproved":
+		if e.complexity.DraftPublishEligibility.ReviewersApproved == nil {
+			break
+		}
+
+		return e.complexity.DraftPublishEligibility.ReviewersApproved(childComplexity), true
+
+	case "DraftReview.activeReviewerIds":
+		if e.complexity.DraftReview.ActiveReviewerIds == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.ActiveReviewerIds(childComplexity), true
+
+	case "DraftReview.content":
+		if e.complexity.DraftReview.Content == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.Content(childComplexity), true
+
 	case "DraftReview.contentFormat":
 		if e.complexity.DraftReview.ContentFormat == nil {
 			break
 		}
 
 		return e.complexity.DraftReview.ContentFormat(childComplexity), true
+
+	case "DraftReview.contentHash":
+		if e.complexity.DraftReview.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.ContentHash(childComplexity), true
 
 	case "DraftReview.createdAt":
 		if e.complexity.DraftReview.CreatedAt == nil {
@@ -9308,6 +9534,83 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftReview.Grant(childComplexity), true
 
+	case "DraftReview.grantCount":
+		if e.complexity.DraftReview.GrantCount == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.GrantCount(childComplexity), true
+
+	case "DraftReview.grants":
+		if e.complexity.DraftReview.Grants == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.Grants(childComplexity), true
+
+	case "DraftReview.grantsTruncated":
+		if e.complexity.DraftReview.GrantsTruncated == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.GrantsTruncated(childComplexity), true
+
+	case "DraftReview.ownerId":
+		if e.complexity.DraftReview.OwnerID == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.OwnerID(childComplexity), true
+
+	case "DraftReview.principalApprovalRequired":
+		if e.complexity.DraftReview.PrincipalApprovalRequired == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.PrincipalApprovalRequired(childComplexity), true
+
+	case "DraftReview.principalApproved":
+		if e.complexity.DraftReview.PrincipalApproved == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.PrincipalApproved(childComplexity), true
+
+	case "DraftReview.publishBlockingReasons":
+		if e.complexity.DraftReview.PublishBlockingReasons == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.PublishBlockingReasons(childComplexity), true
+
+	case "DraftReview.publishEligibility":
+		if e.complexity.DraftReview.PublishEligibility == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.PublishEligibility(childComplexity), true
+
+	case "DraftReview.publishEligible":
+		if e.complexity.DraftReview.PublishEligible == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.PublishEligible(childComplexity), true
+
+	case "DraftReview.renderErrors":
+		if e.complexity.DraftReview.RenderErrors == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.RenderErrors(childComplexity), true
+
+	case "DraftReview.renderedHtml":
+		if e.complexity.DraftReview.RenderedHTML == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.RenderedHTML(childComplexity), true
+
 	case "DraftReview.reviewStatus":
 		if e.complexity.DraftReview.ReviewStatus == nil {
 			break
@@ -9322,12 +9625,33 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftReview.ReviewedBy(childComplexity), true
 
+	case "DraftReview.reviewersApproved":
+		if e.complexity.DraftReview.ReviewersApproved == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.ReviewersApproved(childComplexity), true
+
+	case "DraftReview.revision":
+		if e.complexity.DraftReview.Revision == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.Revision(childComplexity), true
+
 	case "DraftReview.scheduledAt":
 		if e.complexity.DraftReview.ScheduledAt == nil {
 			break
 		}
 
 		return e.complexity.DraftReview.ScheduledAt(childComplexity), true
+
+	case "DraftReview.slug":
+		if e.complexity.DraftReview.Slug == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.Slug(childComplexity), true
 
 	case "DraftReview.status":
 		if e.complexity.DraftReview.Status == nil {
@@ -9413,12 +9737,40 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftReviewGrant.Reviewer(childComplexity), true
 
+	case "DraftReviewGrant.reviewerId":
+		if e.complexity.DraftReviewGrant.ReviewerID == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewGrant.ReviewerID(childComplexity), true
+
+	case "DraftReviewGrant.revokedAt":
+		if e.complexity.DraftReviewGrant.RevokedAt == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewGrant.RevokedAt(childComplexity), true
+
+	case "DraftReviewGrant.status":
+		if e.complexity.DraftReviewGrant.Status == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewGrant.Status(childComplexity), true
+
 	case "DraftReviewVerdictRecord.contentHash":
 		if e.complexity.DraftReviewVerdictRecord.ContentHash == nil {
 			break
 		}
 
 		return e.complexity.DraftReviewVerdictRecord.ContentHash(childComplexity), true
+
+	case "DraftReviewVerdictRecord.current":
+		if e.complexity.DraftReviewVerdictRecord.Current == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewVerdictRecord.Current(childComplexity), true
 
 	case "DraftReviewVerdictRecord.notes":
 		if e.complexity.DraftReviewVerdictRecord.Notes == nil {
@@ -9440,6 +9792,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftReviewVerdictRecord.Reviewer(childComplexity), true
+
+	case "DraftReviewVerdictRecord.reviewerId":
+		if e.complexity.DraftReviewVerdictRecord.ReviewerID == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewVerdictRecord.ReviewerID(childComplexity), true
+
+	case "DraftReviewVerdictRecord.stale":
+		if e.complexity.DraftReviewVerdictRecord.Stale == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewVerdictRecord.Stale(childComplexity), true
 
 	case "DraftReviewVerdictRecord.verdict":
 		if e.complexity.DraftReviewVerdictRecord.Verdict == nil {
@@ -11518,6 +11884,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.InstanceInfo.ApprovalRequired(childComplexity), true
 
+	case "InstanceInfo.cmsFeatures":
+		if e.complexity.InstanceInfo.CmsFeatures == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.CmsFeatures(childComplexity), true
+
 	case "InstanceInfo.contactAccount":
 		if e.complexity.InstanceInfo.ContactAccount == nil {
 			break
@@ -11567,6 +11940,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.InstanceInfo.Languages(childComplexity), true
 
+	case "InstanceInfo.maxStatusCharacters":
+		if e.complexity.InstanceInfo.MaxStatusCharacters == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.MaxStatusCharacters(childComplexity), true
+
+	case "InstanceInfo.maxUploadSizeBytes":
+		if e.complexity.InstanceInfo.MaxUploadSizeBytes == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.MaxUploadSizeBytes(childComplexity), true
+
 	case "InstanceInfo.registrationsOpen":
 		if e.complexity.InstanceInfo.RegistrationsOpen == nil {
 			break
@@ -11608,6 +11995,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.InstanceInfo.StreamingURL(childComplexity), true
+
+	case "InstanceInfo.subscriptionUrl":
+		if e.complexity.InstanceInfo.SubscriptionURL == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.SubscriptionURL(childComplexity), true
 
 	case "InstanceInfo.thumbnailUrl":
 		if e.complexity.InstanceInfo.ThumbnailURL == nil {
@@ -14123,6 +14517,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.DeleteList(childComplexity, args["id"].(string)), true
+
+	case "Mutation.deleteMedia":
+		if e.complexity.Mutation.DeleteMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DeleteMedia(childComplexity, args["id"].(string)), true
 
 	case "Mutation.deleteMessage":
 		if e.complexity.Mutation.DeleteMessage == nil {
@@ -17229,6 +17635,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Conversation(childComplexity, args["id"].(string)), true
 
+	case "Query.conversationConnection":
+		if e.complexity.Query.ConversationConnection == nil {
+			break
+		}
+
+		args, err := ec.field_Query_conversationConnection_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ConversationConnection(childComplexity, args["folder"].(*model.ConversationFolder), args["first"].(*int), args["after"].(*model.Cursor)), true
+
 	case "Query.conversationMessages":
 		if e.complexity.Query.ConversationMessages == nil {
 			break
@@ -17920,6 +18338,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.MyAgents(childComplexity), true
+
+	case "Query.myDraftReviews":
+		if e.complexity.Query.MyDraftReviews == nil {
+			break
+		}
+
+		args, err := ec.field_Query_myDraftReviews_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.MyDraftReviews(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.myDrafts":
 		if e.complexity.Query.MyDrafts == nil {
@@ -23860,6 +24290,17 @@ func (ec *executionContext) field_Mutation_deleteList_args(ctx context.Context, 
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_deleteMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_deleteMessage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -26057,6 +26498,27 @@ func (ec *executionContext) field_Query_communityNotesByAuthor_args(ctx context.
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_conversationConnection_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "folder", ec.unmarshalOConversationFolder2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationFolder)
+	if err != nil {
+		return nil, err
+	}
+	args["folder"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_conversationMessages_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -26811,6 +27273,22 @@ func (ec *executionContext) field_Query_multiHashtagTimeline_args(ctx context.Co
 }
 
 func (ec *executionContext) field_Query_mutes_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_myDraftReviews_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
@@ -31533,6 +32011,8 @@ func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, fiel
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -42338,6 +42818,50 @@ func (ec *executionContext) fieldContext_Agent_delegatedScopes(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_viewerCanSeePrivateFields(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ViewerCanSeePrivateFields, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_viewerCanSeePrivateFields(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_mcpAccess(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_mcpAccess(ctx, field)
 	if err != nil {
@@ -46246,6 +46770,8 @@ func (ec *executionContext) fieldContext_AgentEdge_node(_ context.Context, field
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -54726,6 +55252,270 @@ func (ec *executionContext) fieldContext_BudgetAlert_timestamp(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _CMSFeatures_longForm(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_longForm(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LongForm, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_longForm(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_drafts(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_drafts(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Drafts, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_drafts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_revisions(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_revisions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Revisions, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_revisions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_scheduling(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_scheduling(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scheduling, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_scheduling(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_series(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_series(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Series, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_series(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_categories(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_categories(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Categories, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_categories(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Category_id(ctx context.Context, field graphql.CollectedField, obj *model.Category) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Category_id(ctx, field)
 	if err != nil {
@@ -57986,6 +58776,50 @@ func (ec *executionContext) fieldContext_Conversation_unread(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Conversation_unreadCount(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Conversation_unreadCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UnreadCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Conversation_unreadCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Conversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Conversation_accounts(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Conversation_accounts(ctx, field)
 	if err != nil {
@@ -58213,6 +59047,218 @@ func (ec *executionContext) fieldContext_Conversation_updatedAt(_ context.Contex
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.ConversationConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.ConversationEdge)
+	fc.Result = res
+	return ec.marshalNConversationEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_ConversationEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_ConversationEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ConversationEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.ConversationConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.ConversationEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Conversation)
+	fc.Result = res
+	return ec.marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversation(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Conversation_id(ctx, field)
+			case "cursor":
+				return ec.fieldContext_Conversation_cursor(ctx, field)
+			case "lastStatus":
+				return ec.fieldContext_Conversation_lastStatus(ctx, field)
+			case "unread":
+				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
+			case "accounts":
+				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Conversation_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Conversation_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.ConversationEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
 		},
 	}
 	return fc, nil
@@ -61088,6 +62134,8 @@ func (ec *executionContext) fieldContext_DelegationPayload_agent(_ context.Conte
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -62344,6 +63392,135 @@ func (ec *executionContext) fieldContext_Draft_reviewedBy(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Draft_reviewVerdict(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_reviewVerdict(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewVerdict, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.DraftReviewVerdict)
+	fc.Result = res
+	return ec.marshalODraftReviewVerdict2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewVerdict(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_reviewVerdict(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type DraftReviewVerdict does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Draft_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Draft_revision(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_revision(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Revision, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_revision(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Draft_autosaveVersion(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Draft_autosaveVersion(ctx, field)
 	if err != nil {
@@ -62733,6 +63910,12 @@ func (ec *executionContext) fieldContext_DraftEdge_node(_ context.Context, field
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -63097,6 +64280,226 @@ func (ec *executionContext) fieldContext_DraftPreview_errors(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftPublishEligibility_eligible(ctx context.Context, field graphql.CollectedField, obj *model.DraftPublishEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPublishEligibility_eligible(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Eligible, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPublishEligibility_eligible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPublishEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPublishEligibility_blockingReasons(ctx context.Context, field graphql.CollectedField, obj *model.DraftPublishEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPublishEligibility_blockingReasons(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BlockingReasons, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPublishEligibility_blockingReasons(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPublishEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPublishEligibility_reviewersApproved(ctx context.Context, field graphql.CollectedField, obj *model.DraftPublishEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPublishEligibility_reviewersApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewersApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPublishEligibility_reviewersApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPublishEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPublishEligibility_principalApprovalRequired(ctx context.Context, field graphql.CollectedField, obj *model.DraftPublishEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPublishEligibility_principalApprovalRequired(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApprovalRequired, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPublishEligibility_principalApprovalRequired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPublishEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPublishEligibility_principalApproved(ctx context.Context, field graphql.CollectedField, obj *model.DraftPublishEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPublishEligibility_principalApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPublishEligibility_principalApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPublishEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReview_draftId(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReview_draftId(ctx, field)
 	if err != nil {
@@ -63141,6 +64544,50 @@ func (ec *executionContext) fieldContext_DraftReview_draftId(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftReview_ownerId(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_ownerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_ownerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReview_title(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReview_title(ctx, field)
 	if err != nil {
@@ -63170,6 +64617,176 @@ func (ec *executionContext) _DraftReview_title(ctx context.Context, field graphq
 }
 
 func (ec *executionContext) fieldContext_DraftReview_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_slug(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_slug(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Slug, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_slug(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_content(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_content(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Content, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_renderedHtml(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_renderedHtml(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RenderedHTML, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_renderedHtml(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_renderErrors(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_renderErrors(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RenderErrors, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_renderErrors(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DraftReview",
 		Field:      field,
@@ -63737,6 +65354,502 @@ func (ec *executionContext) fieldContext_DraftReview_editorNotes(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftReview_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_revision(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_revision(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Revision, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_revision(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_activeReviewerIds(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_activeReviewerIds(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ActiveReviewerIds, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNID2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_activeReviewerIds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_publishEligible(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_publishEligible(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishEligible, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_publishEligible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_publishBlockingReasons(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_publishBlockingReasons(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishBlockingReasons, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_publishBlockingReasons(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_reviewersApproved(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_reviewersApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewersApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_reviewersApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_principalApprovalRequired(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_principalApprovalRequired(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApprovalRequired, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_principalApprovalRequired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_principalApproved(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_principalApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_principalApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_grantCount(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_grantCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_grantCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_grantsTruncated(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_grantsTruncated(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantsTruncated, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_grantsTruncated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_grants(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_grants(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Grants, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.DraftReviewGrant)
+	fc.Result = res
+	return ec.marshalNDraftReviewGrant2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrantᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_grants(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "reviewerId":
+				return ec.fieldContext_DraftReviewGrant_reviewerId(ctx, field)
+			case "reviewer":
+				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "status":
+				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_DraftReviewGrant_revokedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type DraftReviewGrant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReview_grant(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReview_grant(ctx, field)
 	if err != nil {
@@ -63773,10 +65886,16 @@ func (ec *executionContext) fieldContext_DraftReview_grant(_ context.Context, fi
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "reviewerId":
+				return ec.fieldContext_DraftReviewGrant_reviewerId(ctx, field)
 			case "reviewer":
 				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
 			case "grantedAt":
 				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "status":
+				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_DraftReviewGrant_revokedAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReviewGrant", field.Name)
 		},
@@ -63829,12 +65948,74 @@ func (ec *executionContext) fieldContext_DraftReview_verdicts(_ context.Context,
 				return ec.fieldContext_DraftReviewVerdictRecord_notes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReviewVerdictRecord_contentHash(ctx, field)
+			case "reviewerId":
+				return ec.fieldContext_DraftReviewVerdictRecord_reviewerId(ctx, field)
 			case "reviewer":
 				return ec.fieldContext_DraftReviewVerdictRecord_reviewer(ctx, field)
 			case "recordedAt":
 				return ec.fieldContext_DraftReviewVerdictRecord_recordedAt(ctx, field)
+			case "current":
+				return ec.fieldContext_DraftReviewVerdictRecord_current(ctx, field)
+			case "stale":
+				return ec.fieldContext_DraftReviewVerdictRecord_stale(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReviewVerdictRecord", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReview_publishEligibility(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_publishEligibility(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishEligibility, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.DraftPublishEligibility)
+	fc.Result = res
+	return ec.marshalNDraftPublishEligibility2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftPublishEligibility(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_publishEligibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "eligible":
+				return ec.fieldContext_DraftPublishEligibility_eligible(ctx, field)
+			case "blockingReasons":
+				return ec.fieldContext_DraftPublishEligibility_blockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_DraftPublishEligibility_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_DraftPublishEligibility_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_DraftPublishEligibility_principalApproved(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type DraftPublishEligibility", field.Name)
 		},
 	}
 	return fc, nil
@@ -64029,8 +66210,18 @@ func (ec *executionContext) fieldContext_DraftReviewEdge_node(_ context.Context,
 			switch field.Name {
 			case "draftId":
 				return ec.fieldContext_DraftReview_draftId(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_DraftReview_ownerId(ctx, field)
 			case "title":
 				return ec.fieldContext_DraftReview_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_DraftReview_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_DraftReview_content(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_DraftReview_renderedHtml(ctx, field)
+			case "renderErrors":
+				return ec.fieldContext_DraftReview_renderErrors(ctx, field)
 			case "subtitle":
 				return ec.fieldContext_DraftReview_subtitle(ctx, field)
 			case "excerpt":
@@ -64053,10 +66244,34 @@ func (ec *executionContext) fieldContext_DraftReviewEdge_node(_ context.Context,
 				return ec.fieldContext_DraftReview_reviewStatus(ctx, field)
 			case "editorNotes":
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_DraftReview_revision(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_DraftReview_activeReviewerIds(ctx, field)
+			case "publishEligible":
+				return ec.fieldContext_DraftReview_publishEligible(ctx, field)
+			case "publishBlockingReasons":
+				return ec.fieldContext_DraftReview_publishBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_DraftReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_DraftReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_DraftReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_DraftReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_DraftReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_DraftReview_grants(ctx, field)
 			case "grant":
 				return ec.fieldContext_DraftReview_grant(ctx, field)
 			case "verdicts":
 				return ec.fieldContext_DraftReview_verdicts(ctx, field)
+			case "publishEligibility":
+				return ec.fieldContext_DraftReview_publishEligibility(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReview", field.Name)
 		},
@@ -64103,6 +66318,50 @@ func (ec *executionContext) fieldContext_DraftReviewEdge_cursor(_ context.Contex
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewGrant_reviewerId(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewGrant_reviewerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewGrant_reviewerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	return fc, nil
@@ -64242,6 +66501,91 @@ func (ec *executionContext) fieldContext_DraftReviewGrant_grantedAt(_ context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftReviewGrant_status(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewGrant_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.DraftReviewGrantStatus)
+	fc.Result = res
+	return ec.marshalNDraftReviewGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrantStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewGrant_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type DraftReviewGrantStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewGrant_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewGrant_revokedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewGrant_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReviewVerdictRecord_verdict(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReviewVerdictRecord_verdict(ctx, field)
 	if err != nil {
@@ -64363,6 +66707,50 @@ func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_contentHash(_ 
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewVerdictRecord_reviewerId(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewVerdictRecord_reviewerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_reviewerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	return fc, nil
@@ -64497,6 +66885,94 @@ func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_recordedAt(_ c
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewVerdictRecord_current(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewVerdictRecord_current(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Current, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_current(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewVerdictRecord_stale(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewVerdictRecord_stale(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Stale, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewVerdictRecord_stale(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -64780,6 +67256,8 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_agent(_ co
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -78560,6 +81038,196 @@ func (ec *executionContext) fieldContext_InstanceInfo_streamingUrl(_ context.Con
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_subscriptionUrl(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_subscriptionUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SubscriptionURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_subscriptionUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_maxUploadSizeBytes(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_maxUploadSizeBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxUploadSizeBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_maxUploadSizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_maxStatusCharacters(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_maxStatusCharacters(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxStatusCharacters, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_maxStatusCharacters(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_cmsFeatures(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_cmsFeatures(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CmsFeatures, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.CMSFeatures)
+	fc.Result = res
+	return ec.marshalNCMSFeatures2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCMSFeatures(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_cmsFeatures(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "longForm":
+				return ec.fieldContext_CMSFeatures_longForm(ctx, field)
+			case "drafts":
+				return ec.fieldContext_CMSFeatures_drafts(ctx, field)
+			case "revisions":
+				return ec.fieldContext_CMSFeatures_revisions(ctx, field)
+			case "scheduling":
+				return ec.fieldContext_CMSFeatures_scheduling(ctx, field)
+			case "series":
+				return ec.fieldContext_CMSFeatures_series(ctx, field)
+			case "categories":
+				return ec.fieldContext_CMSFeatures_categories(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CMSFeatures", field.Name)
 		},
 	}
 	return fc, nil
@@ -92368,6 +95036,8 @@ func (ec *executionContext) fieldContext_Mutation_createConversation(ctx context
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -92563,6 +95233,8 @@ func (ec *executionContext) fieldContext_Mutation_acceptMessageRequest(ctx conte
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -92691,6 +95363,8 @@ func (ec *executionContext) fieldContext_Mutation_markConversationAsRead(ctx con
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -92973,6 +95647,61 @@ func (ec *executionContext) fieldContext_Mutation_updateMedia(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_deleteMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().DeleteMedia(rctx, fc.Args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -96149,6 +98878,12 @@ func (ec *executionContext) fieldContext_Mutation_createDraft(ctx context.Contex
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -96240,6 +98975,12 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -96331,6 +99072,12 @@ func (ec *executionContext) fieldContext_Mutation_autosaveDraft(ctx context.Cont
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -96594,6 +99341,12 @@ func (ec *executionContext) fieldContext_Mutation_scheduleDraft(ctx context.Cont
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -96685,6 +99438,12 @@ func (ec *executionContext) fieldContext_Mutation_cancelScheduledDraft(ctx conte
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -96752,8 +99511,18 @@ func (ec *executionContext) fieldContext_Mutation_shareDraftForReview(ctx contex
 			switch field.Name {
 			case "draftId":
 				return ec.fieldContext_DraftReview_draftId(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_DraftReview_ownerId(ctx, field)
 			case "title":
 				return ec.fieldContext_DraftReview_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_DraftReview_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_DraftReview_content(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_DraftReview_renderedHtml(ctx, field)
+			case "renderErrors":
+				return ec.fieldContext_DraftReview_renderErrors(ctx, field)
 			case "subtitle":
 				return ec.fieldContext_DraftReview_subtitle(ctx, field)
 			case "excerpt":
@@ -96776,10 +99545,34 @@ func (ec *executionContext) fieldContext_Mutation_shareDraftForReview(ctx contex
 				return ec.fieldContext_DraftReview_reviewStatus(ctx, field)
 			case "editorNotes":
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_DraftReview_revision(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_DraftReview_activeReviewerIds(ctx, field)
+			case "publishEligible":
+				return ec.fieldContext_DraftReview_publishEligible(ctx, field)
+			case "publishBlockingReasons":
+				return ec.fieldContext_DraftReview_publishBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_DraftReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_DraftReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_DraftReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_DraftReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_DraftReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_DraftReview_grants(ctx, field)
 			case "grant":
 				return ec.fieldContext_DraftReview_grant(ctx, field)
 			case "verdicts":
 				return ec.fieldContext_DraftReview_verdicts(ctx, field)
+			case "publishEligibility":
+				return ec.fieldContext_DraftReview_publishEligibility(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReview", field.Name)
 		},
@@ -96894,8 +99687,18 @@ func (ec *executionContext) fieldContext_Mutation_submitDraftReview(ctx context.
 			switch field.Name {
 			case "draftId":
 				return ec.fieldContext_DraftReview_draftId(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_DraftReview_ownerId(ctx, field)
 			case "title":
 				return ec.fieldContext_DraftReview_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_DraftReview_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_DraftReview_content(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_DraftReview_renderedHtml(ctx, field)
+			case "renderErrors":
+				return ec.fieldContext_DraftReview_renderErrors(ctx, field)
 			case "subtitle":
 				return ec.fieldContext_DraftReview_subtitle(ctx, field)
 			case "excerpt":
@@ -96918,10 +99721,34 @@ func (ec *executionContext) fieldContext_Mutation_submitDraftReview(ctx context.
 				return ec.fieldContext_DraftReview_reviewStatus(ctx, field)
 			case "editorNotes":
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_DraftReview_revision(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_DraftReview_activeReviewerIds(ctx, field)
+			case "publishEligible":
+				return ec.fieldContext_DraftReview_publishEligible(ctx, field)
+			case "publishBlockingReasons":
+				return ec.fieldContext_DraftReview_publishBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_DraftReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_DraftReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_DraftReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_DraftReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_DraftReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_DraftReview_grants(ctx, field)
 			case "grant":
 				return ec.fieldContext_DraftReview_grant(ctx, field)
 			case "verdicts":
 				return ec.fieldContext_DraftReview_verdicts(ctx, field)
+			case "publishEligibility":
+				return ec.fieldContext_DraftReview_publishEligibility(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReview", field.Name)
 		},
@@ -100948,6 +103775,8 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -101059,6 +103888,8 @@ func (ec *executionContext) fieldContext_Mutation_deleteAgent(ctx context.Contex
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -102214,6 +105045,8 @@ func (ec *executionContext) fieldContext_Mutation_adminVerifyAgent(ctx context.C
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -102325,6 +105158,8 @@ func (ec *executionContext) fieldContext_Mutation_adminUnverifyAgent(ctx context
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -102436,6 +105271,8 @@ func (ec *executionContext) fieldContext_Mutation_adminSuspendAgent(ctx context.
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -113359,6 +116196,14 @@ func (ec *executionContext) fieldContext_Query_instance(_ context.Context, field
 				return ec.fieldContext_InstanceInfo_sourceUrl(ctx, field)
 			case "streamingUrl":
 				return ec.fieldContext_InstanceInfo_streamingUrl(ctx, field)
+			case "subscriptionUrl":
+				return ec.fieldContext_InstanceInfo_subscriptionUrl(ctx, field)
+			case "maxUploadSizeBytes":
+				return ec.fieldContext_InstanceInfo_maxUploadSizeBytes(ctx, field)
+			case "maxStatusCharacters":
+				return ec.fieldContext_InstanceInfo_maxStatusCharacters(ctx, field)
+			case "cmsFeatures":
+				return ec.fieldContext_InstanceInfo_cmsFeatures(ctx, field)
 			case "thumbnailUrl":
 				return ec.fieldContext_InstanceInfo_thumbnailUrl(ctx, field)
 			case "languages":
@@ -114395,6 +117240,8 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -114415,6 +117262,67 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_conversations_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_conversationConnection(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_conversationConnection(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().ConversationConnection(rctx, fc.Args["folder"].(*model.ConversationFolder), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ConversationConnection)
+	fc.Result = res
+	return ec.marshalNConversationConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_conversationConnection(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_ConversationConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_ConversationConnection_pageInfo(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ConversationConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_conversationConnection_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -114465,6 +117373,8 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -118052,6 +120962,12 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
 			case "autosaveVersion":
 				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
 			case "lastSavedAt":
@@ -118212,6 +121128,69 @@ func (ec *executionContext) fieldContext_Query_myDrafts(ctx context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_myDraftReviews(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_myDraftReviews(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().MyDraftReviews(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.DraftReviewConnection)
+	fc.Result = res
+	return ec.marshalNDraftReviewConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_myDraftReviews(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_DraftReviewConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_DraftReviewConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_DraftReviewConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type DraftReviewConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_myDraftReviews_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_sharedDraftReviews(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_sharedDraftReviews(ctx, field)
 	if err != nil {
@@ -118313,8 +121292,18 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 			switch field.Name {
 			case "draftId":
 				return ec.fieldContext_DraftReview_draftId(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_DraftReview_ownerId(ctx, field)
 			case "title":
 				return ec.fieldContext_DraftReview_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_DraftReview_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_DraftReview_content(ctx, field)
+			case "renderedHtml":
+				return ec.fieldContext_DraftReview_renderedHtml(ctx, field)
+			case "renderErrors":
+				return ec.fieldContext_DraftReview_renderErrors(ctx, field)
 			case "subtitle":
 				return ec.fieldContext_DraftReview_subtitle(ctx, field)
 			case "excerpt":
@@ -118337,10 +121326,34 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 				return ec.fieldContext_DraftReview_reviewStatus(ctx, field)
 			case "editorNotes":
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_DraftReview_revision(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_DraftReview_activeReviewerIds(ctx, field)
+			case "publishEligible":
+				return ec.fieldContext_DraftReview_publishEligible(ctx, field)
+			case "publishBlockingReasons":
+				return ec.fieldContext_DraftReview_publishBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_DraftReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_DraftReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_DraftReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_DraftReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_DraftReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_DraftReview_grants(ctx, field)
 			case "grant":
 				return ec.fieldContext_DraftReview_grant(ctx, field)
 			case "verdicts":
 				return ec.fieldContext_DraftReview_verdicts(ctx, field)
+			case "publishEligibility":
+				return ec.fieldContext_DraftReview_publishEligibility(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftReview", field.Name)
 		},
@@ -122253,6 +125266,8 @@ func (ec *executionContext) fieldContext_Query_agent(ctx context.Context, field 
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -122427,6 +125442,8 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -125508,6 +128525,8 @@ func (ec *executionContext) fieldContext_RegisterAgentPayload_agent(_ context.Co
 				return ec.fieldContext_Agent_agentOwner(ctx, field)
 			case "delegatedScopes":
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "viewerCanSeePrivateFields":
+				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -130337,6 +133356,8 @@ func (ec *executionContext) fieldContext_SendMessagePayload_conversation(_ conte
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -143887,6 +146908,8 @@ func (ec *executionContext) fieldContext_Subscription_conversationUpdates(_ cont
 				return ec.fieldContext_Conversation_lastStatus(ctx, field)
 			case "unread":
 				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "unreadCount":
+				return ec.fieldContext_Conversation_unreadCount(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
 			case "viewerMetadata":
@@ -164386,6 +167409,11 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "viewerCanSeePrivateFields":
+			out.Values[i] = ec._Agent_viewerCanSeePrivateFields(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "mcpAccess":
 			out.Values[i] = ec._Agent_mcpAccess(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -166661,6 +169689,70 @@ func (ec *executionContext) _BudgetAlert(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var cMSFeaturesImplementors = []string{"CMSFeatures"}
+
+func (ec *executionContext) _CMSFeatures(ctx context.Context, sel ast.SelectionSet, obj *model.CMSFeatures) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, cMSFeaturesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CMSFeatures")
+		case "longForm":
+			out.Values[i] = ec._CMSFeatures_longForm(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "drafts":
+			out.Values[i] = ec._CMSFeatures_drafts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revisions":
+			out.Values[i] = ec._CMSFeatures_revisions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scheduling":
+			out.Values[i] = ec._CMSFeatures_scheduling(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "series":
+			out.Values[i] = ec._CMSFeatures_series(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "categories":
+			out.Values[i] = ec._CMSFeatures_categories(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var categoryImplementors = []string{"Category"}
 
 func (ec *executionContext) _Category(ctx context.Context, sel ast.SelectionSet, obj *model.Category) graphql.Marshaler {
@@ -167441,6 +170533,11 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "unreadCount":
+			out.Values[i] = ec._Conversation_unreadCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "accounts":
 			out.Values[i] = ec._Conversation_accounts(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -167458,6 +170555,94 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			}
 		case "updatedAt":
 			out.Values[i] = ec._Conversation_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var conversationConnectionImplementors = []string{"ConversationConnection"}
+
+func (ec *executionContext) _ConversationConnection(ctx context.Context, sel ast.SelectionSet, obj *model.ConversationConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, conversationConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ConversationConnection")
+		case "edges":
+			out.Values[i] = ec._ConversationConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._ConversationConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var conversationEdgeImplementors = []string{"ConversationEdge"}
+
+func (ec *executionContext) _ConversationEdge(ctx context.Context, sel ast.SelectionSet, obj *model.ConversationEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, conversationEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ConversationEdge")
+		case "node":
+			out.Values[i] = ec._ConversationEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._ConversationEdge_cursor(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -168392,6 +171577,18 @@ func (ec *executionContext) _Draft(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Draft_generatedBy(ctx, field, obj)
 		case "reviewedBy":
 			out.Values[i] = ec._Draft_reviewedBy(ctx, field, obj)
+		case "reviewVerdict":
+			out.Values[i] = ec._Draft_reviewVerdict(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._Draft_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revision":
+			out.Values[i] = ec._Draft_revision(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "autosaveVersion":
 			out.Values[i] = ec._Draft_autosaveVersion(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -168594,6 +171791,65 @@ func (ec *executionContext) _DraftPreview(ctx context.Context, sel ast.Selection
 	return out
 }
 
+var draftPublishEligibilityImplementors = []string{"DraftPublishEligibility"}
+
+func (ec *executionContext) _DraftPublishEligibility(ctx context.Context, sel ast.SelectionSet, obj *model.DraftPublishEligibility) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, draftPublishEligibilityImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DraftPublishEligibility")
+		case "eligible":
+			out.Values[i] = ec._DraftPublishEligibility_eligible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blockingReasons":
+			out.Values[i] = ec._DraftPublishEligibility_blockingReasons(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "reviewersApproved":
+			out.Values[i] = ec._DraftPublishEligibility_reviewersApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApprovalRequired":
+			out.Values[i] = ec._DraftPublishEligibility_principalApprovalRequired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApproved":
+			out.Values[i] = ec._DraftPublishEligibility_principalApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var draftReviewImplementors = []string{"DraftReview"}
 
 func (ec *executionContext) _DraftReview(ctx context.Context, sel ast.SelectionSet, obj *model.DraftReview) graphql.Marshaler {
@@ -168610,8 +171866,27 @@ func (ec *executionContext) _DraftReview(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "ownerId":
+			out.Values[i] = ec._DraftReview_ownerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "title":
 			out.Values[i] = ec._DraftReview_title(ctx, field, obj)
+		case "slug":
+			out.Values[i] = ec._DraftReview_slug(ctx, field, obj)
+		case "content":
+			out.Values[i] = ec._DraftReview_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "renderedHtml":
+			out.Values[i] = ec._DraftReview_renderedHtml(ctx, field, obj)
+		case "renderErrors":
+			out.Values[i] = ec._DraftReview_renderErrors(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "subtitle":
 			out.Values[i] = ec._DraftReview_subtitle(ctx, field, obj)
 		case "excerpt":
@@ -168646,10 +171921,70 @@ func (ec *executionContext) _DraftReview(ctx context.Context, sel ast.SelectionS
 			out.Values[i] = ec._DraftReview_reviewStatus(ctx, field, obj)
 		case "editorNotes":
 			out.Values[i] = ec._DraftReview_editorNotes(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._DraftReview_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revision":
+			out.Values[i] = ec._DraftReview_revision(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeReviewerIds":
+			out.Values[i] = ec._DraftReview_activeReviewerIds(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publishEligible":
+			out.Values[i] = ec._DraftReview_publishEligible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publishBlockingReasons":
+			out.Values[i] = ec._DraftReview_publishBlockingReasons(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "reviewersApproved":
+			out.Values[i] = ec._DraftReview_reviewersApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApprovalRequired":
+			out.Values[i] = ec._DraftReview_principalApprovalRequired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApproved":
+			out.Values[i] = ec._DraftReview_principalApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantCount":
+			out.Values[i] = ec._DraftReview_grantCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantsTruncated":
+			out.Values[i] = ec._DraftReview_grantsTruncated(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grants":
+			out.Values[i] = ec._DraftReview_grants(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "grant":
 			out.Values[i] = ec._DraftReview_grant(ctx, field, obj)
 		case "verdicts":
 			out.Values[i] = ec._DraftReview_verdicts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publishEligibility":
+			out.Values[i] = ec._DraftReview_publishEligibility(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -168780,6 +172115,11 @@ func (ec *executionContext) _DraftReviewGrant(ctx context.Context, sel ast.Selec
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("DraftReviewGrant")
+		case "reviewerId":
+			out.Values[i] = ec._DraftReviewGrant_reviewerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "reviewer":
 			out.Values[i] = ec._DraftReviewGrant_reviewer(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -168790,6 +172130,13 @@ func (ec *executionContext) _DraftReviewGrant(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "status":
+			out.Values[i] = ec._DraftReviewGrant_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._DraftReviewGrant_revokedAt(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -168833,6 +172180,11 @@ func (ec *executionContext) _DraftReviewVerdictRecord(ctx context.Context, sel a
 			out.Values[i] = ec._DraftReviewVerdictRecord_notes(ctx, field, obj)
 		case "contentHash":
 			out.Values[i] = ec._DraftReviewVerdictRecord_contentHash(ctx, field, obj)
+		case "reviewerId":
+			out.Values[i] = ec._DraftReviewVerdictRecord_reviewerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "reviewer":
 			out.Values[i] = ec._DraftReviewVerdictRecord_reviewer(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -168840,6 +172192,16 @@ func (ec *executionContext) _DraftReviewVerdictRecord(ctx context.Context, sel a
 			}
 		case "recordedAt":
 			out.Values[i] = ec._DraftReviewVerdictRecord_recordedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "current":
+			out.Values[i] = ec._DraftReviewVerdictRecord_current(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stale":
+			out.Values[i] = ec._DraftReviewVerdictRecord_stale(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -172571,6 +175933,26 @@ func (ec *executionContext) _InstanceInfo(ctx context.Context, sel ast.Selection
 			out.Values[i] = ec._InstanceInfo_sourceUrl(ctx, field, obj)
 		case "streamingUrl":
 			out.Values[i] = ec._InstanceInfo_streamingUrl(ctx, field, obj)
+		case "subscriptionUrl":
+			out.Values[i] = ec._InstanceInfo_subscriptionUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxUploadSizeBytes":
+			out.Values[i] = ec._InstanceInfo_maxUploadSizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxStatusCharacters":
+			out.Values[i] = ec._InstanceInfo_maxStatusCharacters(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cmsFeatures":
+			out.Values[i] = ec._InstanceInfo_cmsFeatures(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "thumbnailUrl":
 			out.Values[i] = ec._InstanceInfo_thumbnailUrl(ctx, field, obj)
 		case "languages":
@@ -175549,6 +178931,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "updateMedia":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateMedia(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteMedia":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteMedia(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -179219,6 +182608,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "conversationConnection":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_conversationConnection(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "conversation":
 			field := field
 
@@ -180378,6 +183789,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_myDrafts(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "myDraftReviews":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_myDraftReviews(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -190535,6 +193968,16 @@ func (ec *executionContext) marshalNBudgetAlert2ᚖgithubᚗcomᚋequaltoaiᚋle
 	return ec._BudgetAlert(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNCMSFeatures2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCMSFeatures(ctx context.Context, sel ast.SelectionSet, v *model.CMSFeatures) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CMSFeatures(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNCategory2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v model.Category) graphql.Marshaler {
 	return ec._Category(ctx, sel, &v)
 }
@@ -191091,6 +194534,74 @@ func (ec *executionContext) marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋl
 	return ec._Conversation(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNConversationConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationConnection(ctx context.Context, sel ast.SelectionSet, v model.ConversationConnection) graphql.Marshaler {
+	return ec._ConversationConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNConversationConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationConnection(ctx context.Context, sel ast.SelectionSet, v *model.ConversationConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ConversationConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNConversationEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.ConversationEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNConversationEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNConversationEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationEdge(ctx context.Context, sel ast.SelectionSet, v *model.ConversationEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ConversationEdge(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNConversationViewerMetadata2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationViewerMetadata(ctx context.Context, sel ast.SelectionSet, v *model.ConversationViewerMetadata) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -191620,6 +195131,16 @@ func (ec *executionContext) marshalNDraftPreview2ᚖgithubᚗcomᚋequaltoaiᚋl
 	return ec._DraftPreview(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNDraftPublishEligibility2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftPublishEligibility(ctx context.Context, sel ast.SelectionSet, v *model.DraftPublishEligibility) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DraftPublishEligibility(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNDraftReview2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReview(ctx context.Context, sel ast.SelectionSet, v model.DraftReview) graphql.Marshaler {
 	return ec._DraftReview(ctx, sel, &v)
 }
@@ -191700,6 +195221,70 @@ func (ec *executionContext) marshalNDraftReviewEdge2ᚖgithubᚗcomᚋequaltoai�
 		return graphql.Null
 	}
 	return ec._DraftReviewEdge(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNDraftReviewGrant2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrantᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.DraftReviewGrant) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNDraftReviewGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrant(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNDraftReviewGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrant(ctx context.Context, sel ast.SelectionSet, v *model.DraftReviewGrant) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DraftReviewGrant(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNDraftReviewGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrantStatus(ctx context.Context, v any) (model.DraftReviewGrantStatus, error) {
+	var res model.DraftReviewGrantStatus
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNDraftReviewGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewGrantStatus(ctx context.Context, sel ast.SelectionSet, v model.DraftReviewGrantStatus) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNDraftReviewVerdict2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewVerdict(ctx context.Context, v any) (model.DraftReviewVerdict, error) {
@@ -199990,6 +203575,22 @@ func (ec *executionContext) marshalODraftReviewGrant2ᚖgithubᚗcomᚋequaltoai
 		return graphql.Null
 	}
 	return ec._DraftReviewGrant(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalODraftReviewVerdict2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewVerdict(ctx context.Context, v any) (*model.DraftReviewVerdict, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.DraftReviewVerdict)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalODraftReviewVerdict2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftReviewVerdict(ctx context.Context, sel ast.SelectionSet, v *model.DraftReviewVerdict) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalODraftStatus2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraftStatus(ctx context.Context, v any) (*model.DraftStatus, error) {

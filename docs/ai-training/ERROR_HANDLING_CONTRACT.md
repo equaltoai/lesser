@@ -65,6 +65,9 @@ GraphQL responses must attach:
 
 This is implemented via the gqlgen `ErrorPresenter`.
 
+CMS, draft, and review operations use a stable client-facing subset: `FEATURE_DISABLED`, `NOT_FOUND`, `FORBIDDEN`,
+and `VALIDATION`. Unknown CMS failures are reported as `INTERNAL_ERROR`; clients must not match error-message text.
+
 ### Lambda
 
 Prefer `pkg/lambda.ErrorPattern` middleware; it maps `*pkg/errors.AppError` directly and converts legacy error types without losing status/code intent.
@@ -75,9 +78,9 @@ Status is derived from `pkg/errors.ErrorCode.GetHTTPStatusCode()` (single-source
 
 - `NOT_FOUND` → `404`
 - `ALREADY_EXISTS` / `CONFLICT` → `409`
-- `VALIDATION_FAILED` / `BAD_REQUEST` / `INVALID_INPUT` → `400`
+- `VALIDATION` / `VALIDATION_FAILED` / `BAD_REQUEST` / `INVALID_INPUT` → `400`
 - `UNAUTHORIZED` / `AUTH_FAILED` / `TOKEN_*` → `401`
-- `FORBIDDEN` / `INSUFFICIENT_SCOPE` → `403`
+- `FORBIDDEN` / `FEATURE_DISABLED` / `INSUFFICIENT_SCOPE` → `403`
 - `GONE` → `410`
 - `UNPROCESSABLE_ENTITY` → `422`
 
@@ -94,4 +97,3 @@ Every new “expected error” behavior must have at least one golden test asser
 - Writing an HTTP response and also returning a non-nil error (double-response risk).
 - Wrapping an already-canonical `*pkg/errors.AppError` into `CodeInternal`.
 - Changing behavior to increase coverage (moving logic into new files, “coverage gaming”).
-

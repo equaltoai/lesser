@@ -557,33 +557,35 @@ type AffectedRelationshipEdge struct {
 }
 
 type Agent struct {
-	ID                   string                         `json:"id"`
-	Username             string                         `json:"username"`
-	DisplayName          string                         `json:"displayName"`
-	Bio                  *string                        `json:"bio,omitempty"`
-	IdentitySemantics    *AgentIdentitySemantics        `json:"identitySemantics"`
-	Workflow             *AgentWorkflowSurface          `json:"workflow,omitempty"`
-	AgentType            AgentType                      `json:"agentType"`
-	AgentVersion         string                         `json:"agentVersion"`
-	AgentCapabilities    *activitypub.AgentCapabilities `json:"agentCapabilities"`
-	AgentOwner           *string                        `json:"agentOwner,omitempty"`
-	DelegatedScopes      []string                       `json:"delegatedScopes"`
-	McpAccess            *AgentMCPAccess                `json:"mcpAccess"`
-	Verified             bool                           `json:"verified"`
-	VerifiedAt           *Time                          `json:"verifiedAt,omitempty"`
-	QuarantineStatus     *string                        `json:"quarantineStatus,omitempty"`
-	QuarantineStart      *Time                          `json:"quarantineStart,omitempty"`
-	QuarantineEnd        *Time                          `json:"quarantineEnd,omitempty"`
-	QuarantineApprovedBy *string                        `json:"quarantineApprovedBy,omitempty"`
-	QuarantineApprovedAt *Time                          `json:"quarantineApprovedAt,omitempty"`
-	QuarantineActive     bool                           `json:"quarantineActive"`
-	OwnerActor           *activitypub.Actor             `json:"ownerActor,omitempty"`
-	Type                 AgentType                      `json:"type"`
-	Version              string                         `json:"version"`
-	Capabilities         *activitypub.AgentCapabilities `json:"capabilities"`
-	Owner                *activitypub.Actor             `json:"owner,omitempty"`
-	CreatedAt            Time                           `json:"createdAt"`
-	ActivityCount        int                            `json:"activityCount"`
+	ID                string                         `json:"id"`
+	Username          string                         `json:"username"`
+	DisplayName       string                         `json:"displayName"`
+	Bio               *string                        `json:"bio,omitempty"`
+	IdentitySemantics *AgentIdentitySemantics        `json:"identitySemantics"`
+	Workflow          *AgentWorkflowSurface          `json:"workflow,omitempty"`
+	AgentType         AgentType                      `json:"agentType"`
+	AgentVersion      string                         `json:"agentVersion"`
+	AgentCapabilities *activitypub.AgentCapabilities `json:"agentCapabilities"`
+	AgentOwner        *string                        `json:"agentOwner,omitempty"`
+	DelegatedScopes   []string                       `json:"delegatedScopes"`
+	// Whether private ownership, delegation, and soul-binding fields are visible to this viewer.
+	ViewerCanSeePrivateFields bool                           `json:"viewerCanSeePrivateFields"`
+	McpAccess                 *AgentMCPAccess                `json:"mcpAccess"`
+	Verified                  bool                           `json:"verified"`
+	VerifiedAt                *Time                          `json:"verifiedAt,omitempty"`
+	QuarantineStatus          *string                        `json:"quarantineStatus,omitempty"`
+	QuarantineStart           *Time                          `json:"quarantineStart,omitempty"`
+	QuarantineEnd             *Time                          `json:"quarantineEnd,omitempty"`
+	QuarantineApprovedBy      *string                        `json:"quarantineApprovedBy,omitempty"`
+	QuarantineApprovedAt      *Time                          `json:"quarantineApprovedAt,omitempty"`
+	QuarantineActive          bool                           `json:"quarantineActive"`
+	OwnerActor                *activitypub.Actor             `json:"ownerActor,omitempty"`
+	Type                      AgentType                      `json:"type"`
+	Version                   string                         `json:"version"`
+	Capabilities              *activitypub.AgentCapabilities `json:"capabilities"`
+	Owner                     *activitypub.Actor             `json:"owner,omitempty"`
+	CreatedAt                 Time                           `json:"createdAt"`
+	ActivityCount             int                            `json:"activityCount"`
 }
 
 type AgentActivityConnection struct {
@@ -826,6 +828,15 @@ type BudgetAlert struct {
 	Timestamp          Time       `json:"timestamp"`
 }
 
+type CMSFeatures struct {
+	LongForm   bool `json:"longForm"`
+	Drafts     bool `json:"drafts"`
+	Revisions  bool `json:"revisions"`
+	Scheduling bool `json:"scheduling"`
+	Series     bool `json:"series"`
+	Categories bool `json:"categories"`
+}
+
 type CategoryStats struct {
 	Category string  `json:"category"`
 	Count    int     `json:"count"`
@@ -945,14 +956,26 @@ type ContinuityPanel struct {
 }
 
 type Conversation struct {
-	ID             string                      `json:"id"`
-	Cursor         *Cursor                     `json:"cursor,omitempty"`
-	LastStatus     *Object                     `json:"lastStatus,omitempty"`
-	Unread         bool                        `json:"unread"`
+	ID         string  `json:"id"`
+	Cursor     *Cursor `json:"cursor,omitempty"`
+	LastStatus *Object `json:"lastStatus,omitempty"`
+	Unread     bool    `json:"unread"`
+	// Number of messages unread by the current viewer.
+	UnreadCount    int                         `json:"unreadCount"`
 	Accounts       []*activitypub.Actor        `json:"accounts"`
 	ViewerMetadata *ConversationViewerMetadata `json:"viewerMetadata"`
 	CreatedAt      Time                        `json:"createdAt"`
 	UpdatedAt      Time                        `json:"updatedAt"`
+}
+
+type ConversationConnection struct {
+	Edges    []*ConversationEdge `json:"edges"`
+	PageInfo *PageInfo           `json:"pageInfo"`
+}
+
+type ConversationEdge struct {
+	Node   *Conversation `json:"node"`
+	Cursor Cursor        `json:"cursor"`
 }
 
 type ConversationViewerMetadata struct {
@@ -1055,15 +1078,17 @@ type CreateListInput struct {
 }
 
 type CreateNoteInput struct {
-	Content          string                     `json:"content"`
-	ContentMap       []*ContentMapInput         `json:"contentMap,omitempty"`
-	InReplyToID      *string                    `json:"inReplyToId,omitempty"`
-	QuoteID          *string                    `json:"quoteId,omitempty"`
-	Visibility       Visibility                 `json:"visibility"`
-	Sensitive        *bool                      `json:"sensitive,omitempty"`
-	SpoilerText      *string                    `json:"spoilerText,omitempty"`
-	AttachmentIds    []string                   `json:"attachmentIds,omitempty"`
-	Mentions         []string                   `json:"mentions,omitempty"`
+	Content       string             `json:"content"`
+	ContentMap    []*ContentMapInput `json:"contentMap,omitempty"`
+	InReplyToID   *string            `json:"inReplyToId,omitempty"`
+	QuoteID       *string            `json:"quoteId,omitempty"`
+	Visibility    Visibility         `json:"visibility"`
+	Sensitive     *bool              `json:"sensitive,omitempty"`
+	SpoilerText   *string            `json:"spoilerText,omitempty"`
+	AttachmentIds []string           `json:"attachmentIds,omitempty"`
+	// Reserved for explicit mentions. Non-empty input is rejected; include @mentions in content.
+	Mentions []string `json:"mentions,omitempty"`
+	// Reserved for explicit hashtags. Non-empty input is rejected; include #hashtags in content.
 	Tags             []string                   `json:"tags,omitempty"`
 	Poll             *PollParamsInput           `json:"poll,omitempty"`
 	AgentAttribution *AgentPostAttributionInput `json:"agentAttribution,omitempty"`
@@ -1188,22 +1213,49 @@ type DraftPreview struct {
 	Errors        []string `json:"errors"`
 }
 
+type DraftPublishEligibility struct {
+	Eligible                  bool     `json:"eligible"`
+	BlockingReasons           []string `json:"blockingReasons"`
+	ReviewersApproved         bool     `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool     `json:"principalApprovalRequired"`
+	PrincipalApproved         bool     `json:"principalApproved"`
+}
+
 type DraftReview struct {
-	DraftID       string                      `json:"draftId"`
-	Title         *string                     `json:"title,omitempty"`
-	Subtitle      *string                     `json:"subtitle,omitempty"`
-	Excerpt       *string                     `json:"excerpt,omitempty"`
-	ContentFormat ContentFormat               `json:"contentFormat"`
-	Status        DraftStatus                 `json:"status"`
-	ScheduledAt   *Time                       `json:"scheduledAt,omitempty"`
-	UpdatedAt     Time                        `json:"updatedAt"`
-	CreatedAt     Time                        `json:"createdAt"`
-	GeneratedBy   *activitypub.Actor          `json:"generatedBy,omitempty"`
-	ReviewedBy    *activitypub.Actor          `json:"reviewedBy,omitempty"`
-	ReviewStatus  *string                     `json:"reviewStatus,omitempty"`
-	EditorNotes   *string                     `json:"editorNotes,omitempty"`
-	Grant         *DraftReviewGrant           `json:"grant,omitempty"`
-	Verdicts      []*DraftReviewVerdictRecord `json:"verdicts"`
+	DraftID string  `json:"draftId"`
+	OwnerID string  `json:"ownerId"`
+	Title   *string `json:"title,omitempty"`
+	Slug    *string `json:"slug,omitempty"`
+	Content string  `json:"content"`
+	// Canonical sanitized preview for the exact source and contentHash in this response.
+	RenderedHTML              *string             `json:"renderedHtml,omitempty"`
+	RenderErrors              []string            `json:"renderErrors"`
+	Subtitle                  *string             `json:"subtitle,omitempty"`
+	Excerpt                   *string             `json:"excerpt,omitempty"`
+	ContentFormat             ContentFormat       `json:"contentFormat"`
+	Status                    DraftStatus         `json:"status"`
+	ScheduledAt               *Time               `json:"scheduledAt,omitempty"`
+	UpdatedAt                 Time                `json:"updatedAt"`
+	CreatedAt                 Time                `json:"createdAt"`
+	GeneratedBy               *activitypub.Actor  `json:"generatedBy,omitempty"`
+	ReviewedBy                *activitypub.Actor  `json:"reviewedBy,omitempty"`
+	ReviewStatus              *string             `json:"reviewStatus,omitempty"`
+	EditorNotes               *string             `json:"editorNotes,omitempty"`
+	ContentHash               string              `json:"contentHash"`
+	Revision                  int                 `json:"revision"`
+	ActiveReviewerIds         []string            `json:"activeReviewerIds"`
+	PublishEligible           bool                `json:"publishEligible"`
+	PublishBlockingReasons    []string            `json:"publishBlockingReasons"`
+	ReviewersApproved         bool                `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool                `json:"principalApprovalRequired"`
+	PrincipalApproved         bool                `json:"principalApproved"`
+	GrantCount                int                 `json:"grantCount"`
+	GrantsTruncated           bool                `json:"grantsTruncated"`
+	Grants                    []*DraftReviewGrant `json:"grants"`
+	// Caller-specific grant retained for backwards compatibility.
+	Grant              *DraftReviewGrant           `json:"grant,omitempty"`
+	Verdicts           []*DraftReviewVerdictRecord `json:"verdicts"`
+	PublishEligibility *DraftPublishEligibility    `json:"publishEligibility"`
 }
 
 type DraftReviewConnection struct {
@@ -1218,16 +1270,23 @@ type DraftReviewEdge struct {
 }
 
 type DraftReviewGrant struct {
-	Reviewer  *activitypub.Actor `json:"reviewer"`
-	GrantedAt Time               `json:"grantedAt"`
+	ReviewerID string                 `json:"reviewerId"`
+	Reviewer   *activitypub.Actor     `json:"reviewer"`
+	GrantedAt  Time                   `json:"grantedAt"`
+	Status     DraftReviewGrantStatus `json:"status"`
+	RevokedAt  *Time                  `json:"revokedAt,omitempty"`
 }
 
 type DraftReviewVerdictRecord struct {
 	Verdict     DraftReviewVerdict `json:"verdict"`
 	Notes       *string            `json:"notes,omitempty"`
 	ContentHash *string            `json:"contentHash,omitempty"`
+	ReviewerID  string             `json:"reviewerId"`
 	Reviewer    *activitypub.Actor `json:"reviewer"`
 	RecordedAt  Time               `json:"recordedAt"`
+	// True only when this verdict is valid for the current draft revision and active grant.
+	Current bool `json:"current"`
+	Stale   bool `json:"stale"`
 }
 
 type DroneWorkflowMutationPayload struct {
@@ -1735,25 +1794,30 @@ type InstanceHealthReport struct {
 }
 
 type InstanceInfo struct {
-	Domain            string             `json:"domain"`
-	Title             string             `json:"title"`
-	ShortDescription  *string            `json:"shortDescription,omitempty"`
-	Description       string             `json:"description"`
-	Email             *string            `json:"email,omitempty"`
-	Version           string             `json:"version"`
-	SourceURL         *string            `json:"sourceUrl,omitempty"`
-	StreamingURL      *string            `json:"streamingUrl,omitempty"`
-	ThumbnailURL      *string            `json:"thumbnailUrl,omitempty"`
-	Languages         []string           `json:"languages"`
-	RegistrationsOpen bool               `json:"registrationsOpen"`
-	ApprovalRequired  bool               `json:"approvalRequired"`
-	InvitesEnabled    bool               `json:"invitesEnabled"`
-	UserCount         int                `json:"userCount"`
-	StatusCount       int                `json:"statusCount"`
-	DomainCount       int                `json:"domainCount"`
-	ContactAccount    *activitypub.Actor `json:"contactAccount,omitempty"`
-	Rules             []*InstanceRule    `json:"rules"`
-	Tips              *TipsConfig        `json:"tips"`
+	Domain           string  `json:"domain"`
+	Title            string  `json:"title"`
+	ShortDescription *string `json:"shortDescription,omitempty"`
+	Description      string  `json:"description"`
+	Email            *string `json:"email,omitempty"`
+	Version          string  `json:"version"`
+	SourceURL        *string `json:"sourceUrl,omitempty"`
+	StreamingURL     *string `json:"streamingUrl,omitempty"`
+	// GraphQL subscription endpoint using the graphql-transport-ws protocol.
+	SubscriptionURL     string             `json:"subscriptionUrl"`
+	MaxUploadSizeBytes  int                `json:"maxUploadSizeBytes"`
+	MaxStatusCharacters int                `json:"maxStatusCharacters"`
+	CmsFeatures         *CMSFeatures       `json:"cmsFeatures"`
+	ThumbnailURL        *string            `json:"thumbnailUrl,omitempty"`
+	Languages           []string           `json:"languages"`
+	RegistrationsOpen   bool               `json:"registrationsOpen"`
+	ApprovalRequired    bool               `json:"approvalRequired"`
+	InvitesEnabled      bool               `json:"invitesEnabled"`
+	UserCount           int                `json:"userCount"`
+	StatusCount         int                `json:"statusCount"`
+	DomainCount         int                `json:"domainCount"`
+	ContactAccount      *activitypub.Actor `json:"contactAccount,omitempty"`
+	Rules               []*InstanceRule    `json:"rules"`
+	Tips                *TipsConfig        `json:"tips"`
 }
 
 type InstanceMetadata struct {
@@ -4329,6 +4393,61 @@ func (e *DmRequestState) UnmarshalJSON(b []byte) error {
 }
 
 func (e DmRequestState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type DraftReviewGrantStatus string
+
+const (
+	DraftReviewGrantStatusActive  DraftReviewGrantStatus = "ACTIVE"
+	DraftReviewGrantStatusRevoked DraftReviewGrantStatus = "REVOKED"
+)
+
+var AllDraftReviewGrantStatus = []DraftReviewGrantStatus{
+	DraftReviewGrantStatusActive,
+	DraftReviewGrantStatusRevoked,
+}
+
+func (e DraftReviewGrantStatus) IsValid() bool {
+	switch e {
+	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked:
+		return true
+	}
+	return false
+}
+
+func (e DraftReviewGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *DraftReviewGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DraftReviewGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DraftReviewGrantStatus", str)
+	}
+	return nil
+}
+
+func (e DraftReviewGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DraftReviewGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DraftReviewGrantStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

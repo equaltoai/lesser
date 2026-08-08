@@ -173,6 +173,36 @@ func TestGraphQLErrorPresenter_AttachesExtensionsForAppError(t *testing.T) {
 	require.Equal(t, appErr.HTTPStatusCode, status.(int))
 }
 
+func TestGraphQLErrorPresenter_ClassifiesCMSErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   apperrors.ErrorCode
+		wantStatus int
+	}{
+		{name: "feature disabled", err: apperrors.NewAppError(apperrors.CodeFeatureDisabled, apperrors.CategoryBusiness, "cms is disabled"), wantCode: apperrors.CodeFeatureDisabled, wantStatus: http.StatusForbidden},
+		{name: "not found", err: errors.New("draft review not found"), wantCode: apperrors.CodeNotFound, wantStatus: http.StatusNotFound},
+		{name: "forbidden", err: errors.New("insufficient privileges for CMS write"), wantCode: apperrors.CodeForbidden, wantStatus: http.StatusForbidden},
+		{name: "validation", err: errors.New("draft id is required"), wantCode: apperrors.CodeValidation, wantStatus: http.StatusBadRequest},
+		{name: "typed validation normalized", err: apperrors.NewAppError(apperrors.CodeRequiredFieldMissing, apperrors.CategoryValidation, "title is required"), wantCode: apperrors.CodeValidation, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := graphql.WithPathContext(context.Background(), graphql.NewPathWithField("draft"))
+			got := graphQLErrorPresenter(ctx, tt.err)
+			require.Equal(t, string(tt.wantCode), got.Extensions["code"])
+			require.Equal(t, tt.wantStatus, got.Extensions["http_status"])
+		})
+	}
+}
+
+func TestGraphQLErrorPresenter_DoesNotClassifyNonCMSErrors(t *testing.T) {
+	ctx := graphql.WithPathContext(context.Background(), graphql.NewPathWithField("status"))
+	got := graphQLErrorPresenter(ctx, errors.New("status not found"))
+	require.NotContains(t, got.Extensions, "code")
+}
+
 func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 	ctx := context.Background()
 	client := &failingGrantCreateDynamo{Fake: fakedb.New()}
@@ -213,6 +243,43 @@ func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 	require.NotNil(t, persisted.RevokedAt, "the failed duplicate must not resurrect the revoked grant")
 	require.Empty(t, persisted.GSI2PK, "the revoked grant must stay out of the reviewer queue")
 	require.Empty(t, persisted.GSI2SK, "the revoked grant must stay out of the reviewer queue")
+}
+
+func TestGraphQLOwnerCanListDraftReviewAssignments(t *testing.T) {
+	ctx := context.Background()
+	harness := newDraftReviewWireHarness(t, &failingGrantCreateDynamo{Fake: fakedb.New()})
+	require.NoError(t, harness.repository.CreateDraftReviewGrant(ctx, &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC(),
+	}))
+
+	requestBody := []byte(`{"query":"query { myDraftReviews(first: 10) { totalCount edges { node { draftId grant { reviewer { username } } } } } }"}`)
+	request := httptest.NewRequest(http.MethodPost, "/graphql", bytes.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	harness.server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	var payload struct {
+		Data struct {
+			MyDraftReviews struct {
+				TotalCount int `json:"totalCount"`
+				Edges      []struct {
+					Node struct {
+						DraftID string `json:"draftId"`
+					} `json:"node"`
+				} `json:"edges"`
+			} `json:"myDraftReviews"`
+		} `json:"data"`
+		Errors []any `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
+	require.Empty(t, payload.Errors, response.Body.String())
+	require.Equal(t, 1, payload.Data.MyDraftReviews.TotalCount)
+	require.Len(t, payload.Data.MyDraftReviews.Edges, 1)
+	require.Equal(t, "draft-1", payload.Data.MyDraftReviews.Edges[0].Node.DraftID)
 }
 
 func TestGraphQLDraftReviewGrantCreateFailureReturnsInternalCode(t *testing.T) {

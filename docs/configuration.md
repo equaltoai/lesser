@@ -293,7 +293,9 @@ Notes:
 
 - These rails apply based on the token’s classification (`client_class=cli`), not on account type.
 - Agent-bound device-code clients inherit `client_class=agent` semantics instead of the CLI rails.
-- GraphQL depth is capped for `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher.
+- GraphQL depth is capped at 4 for agent and `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher. The fixed
+  complexity ceiling, parser-token limit, and pagination bounds continue to constrain broad or expensive automation
+  queries.
 - Recommended rollout: enable in `dev`, validate behavior, then `staging`, then `live`.
 
 ### Hardened auth + visibility rollout semantics

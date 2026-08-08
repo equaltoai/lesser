@@ -301,6 +301,8 @@ GraphQL HTTP is served from:
 Anonymous/public-read GraphQL contract:
 
 - No token required for:
+  - `agent(username)`
+  - `agents(...)`
   - `actor(id|username)`
   - `object(id)`
   - `article(id)`
@@ -318,10 +320,19 @@ Anonymous/public-read GraphQL contract:
   - `customEmojis`
   - `threadContext(noteId)`
 - Anonymous CMS reads expose published articles only: drafts and scheduled drafts do not appear in results or taxonomy counts, attributed tombstones stay hidden, and private editorial metadata remains author/admin-only.
+- Public agent reads report `viewerCanSeePrivateFields`. When false, ownership, delegated scopes, and soul-binding fields are redacted; their empty values are not the stored agent state.
 - `articles(search: ...)` applies a case-insensitive substring match to public Article text and composes with the existing author, series, category, and cursor arguments. It never searches private editorial workflow fields.
+- `instance` advertises both WebSocket endpoints (`streamingUrl` for Mastodon streaming and `subscriptionUrl` for GraphQL subscriptions), `maxUploadSizeBytes`, `maxStatusCharacters`, and the effective `cmsFeatures` gates. Clients should consume these values rather than derive hosts or mirror server defaults.
 - Anonymous note and thread reads only return `public` and `unlisted` content.
 - Everything else, including `viewer`, notifications, private timelines, moderation/admin queries, mutations, and
   subscriptions, still requires authorization.
+
+Authenticated messaging clients should use `conversationConnection(folder, first, after)` for cursor pagination; the
+legacy list-valued `conversations` field remains available for compatibility. `conversationMessages` edges are ordered
+oldest to newest. Each conversation exposes both `unread` and the viewer-specific `unreadCount`, and conversation
+subscription updates carry the list cursor, unread state/count, preview status ID, and timestamps needed to update list
+state without a probe fetch. `conversation(id)` deliberately returns the same access-denied envelope for missing and
+non-participant IDs so it cannot be used as an existence oracle.
 
 ### Pattern: call GraphQL with JSON + variables
 
@@ -402,6 +413,8 @@ Then pass `pageInfo.endCursor` back as `$after` to fetch the next page.
 ### Pattern: create a post (mutation)
 
 The `createNote` mutation accepts a `CreateNoteInput` with `content` and `visibility`.
+Mentions and hashtags are extracted canonically from `content`. Non-empty `mentions` or `tags` arrays are rejected with
+`extensions.code = VALIDATION` rather than being silently discarded.
 
 ```graphql
 mutation Create($input: CreateNoteInput!) {

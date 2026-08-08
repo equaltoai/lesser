@@ -25,8 +25,9 @@ This diff doc enumerates the schema extensions needed to deliver those requireme
 - Add a folder argument to the existing `conversations` query so clients can request Inbox vs Requests without inventing parallel query shapes:
   - `enum ConversationFolder { INBOX, REQUESTS }`
   - `conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!`
+  - `conversationConnection(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): ConversationConnection!` (preferred paginated read)
 - Add a dedicated messages query for thread views:
-  - `conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!` (or a dedicated `MessageConnection!`)
+  - `conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!` (oldest-to-newest edge order)
 - Optional but useful:
   - `messageRequestsCount: Int!`
   - `searchParticipants(query: String!, first: Int = 20, after: Cursor): ActorListPage!` (or a dedicated connection)

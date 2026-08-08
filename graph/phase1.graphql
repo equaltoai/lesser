@@ -103,6 +103,13 @@ type Draft {
 
   generatedBy: Actor
   reviewedBy: Actor
+  """Latest review verdict for the current draft content, or null when it has not been reviewed."""
+  reviewVerdict: DraftReviewVerdict
+
+  """Canonical digest used to bind review verdicts to this exact draft content."""
+  contentHash: String!
+  """Monotonic draft revision; increments for updates and autosaves."""
+  revision: Int!
 
   autosaveVersion: Int!
   lastSavedAt: Time!
@@ -128,21 +135,47 @@ enum DraftReviewVerdict {
 }
 
 type DraftReviewGrant {
+  reviewerId: ID!
   reviewer: Actor!
   grantedAt: Time!
+  status: DraftReviewGrantStatus!
+  revokedAt: Time
+}
+
+enum DraftReviewGrantStatus {
+  ACTIVE
+  REVOKED
 }
 
 type DraftReviewVerdictRecord {
   verdict: DraftReviewVerdict!
   notes: String
   contentHash: String
+  reviewerId: ID!
   reviewer: Actor!
   recordedAt: Time!
+  """True only when this verdict is valid for the current draft revision and active grant."""
+  current: Boolean!
+  stale: Boolean!
+}
+
+type DraftPublishEligibility {
+  eligible: Boolean!
+  blockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
 }
 
 type DraftReview {
   draftId: ID!
+  ownerId: ID!
   title: String
+  slug: String
+  content: String!
+  """Canonical sanitized preview for the exact source and contentHash in this response."""
+  renderedHtml: String
+  renderErrors: [String!]!
   subtitle: String
   excerpt: String
   contentFormat: ContentFormat!
@@ -154,8 +187,21 @@ type DraftReview {
   reviewedBy: Actor
   reviewStatus: String
   editorNotes: String
+  contentHash: String!
+  revision: Int!
+  activeReviewerIds: [ID!]!
+  publishEligible: Boolean!
+  publishBlockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
+  grantCount: Int!
+  grantsTruncated: Boolean!
+  grants: [DraftReviewGrant!]!
+  """Caller-specific grant retained for backwards compatibility."""
   grant: DraftReviewGrant
   verdicts: [DraftReviewVerdictRecord!]!
+  publishEligibility: DraftPublishEligibility!
 }
 
 type DraftReviewEdge { node: DraftReview!, cursor: Cursor! }
@@ -271,6 +317,8 @@ extend type Query {
   draft(id: ID!): Draft
   draftPreview(id: ID!): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
+  """Review assignments created by the authenticated draft owner."""
+  myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   draftReview(id: ID!): DraftReview
 

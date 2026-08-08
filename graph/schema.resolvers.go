@@ -600,11 +600,25 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 		ID:             conv.ID,
 		LastStatus:     lastStatus,
 		Unread:         conv.Unread,
+		UnreadCount:    conversationUnreadCount(conv),
 		Accounts:       accounts,
 		ViewerMetadata: viewerMetadata,
 		CreatedAt:      model.Time(conv.CreatedAt),
 		UpdatedAt:      model.Time(conv.UpdatedAt),
 	}
+}
+
+func conversationUnreadCount(conv *models.Conversation) int {
+	if conv == nil {
+		return 0
+	}
+	if conv.ViewerState != nil && conv.ViewerState.UnreadCount > 0 {
+		return conv.ViewerState.UnreadCount
+	}
+	if conv.Unread {
+		return 1
+	}
+	return 0
 }
 
 func (r *Resolver) conversationAccounts(ctx context.Context, participantIDs []string) []*activitypub.Actor {
@@ -3298,7 +3312,11 @@ func (r *actorResolver) AgentInfo(ctx context.Context, obj *activitypub.Actor) (
 		return nil, err
 	}
 
-	return r.convertStorageUserToAgent(user, governance), nil
+	agent := r.convertStorageUserToAgent(user, governance)
+	if !r.canViewAgentPrivateFields(optionalGraphAuthClaims(ctx), user) {
+		redactGraphAgentPrivateFields(agent)
+	}
+	return agent, nil
 }
 
 // TrustScore implements ActorResolver

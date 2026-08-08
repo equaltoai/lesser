@@ -479,6 +479,7 @@ func TestBuildDirectMessageCanonicalStateRecord_ParsesCanonicalStateRows(t *test
 		"previewStatusPublishedAt": sAttr(updatedAt.Format(time.RFC3339Nano)),
 		"sortAt":                   sAttr(updatedAt.Format(time.RFC3339Nano)),
 		"unread":                   &types.AttributeValueMemberBOOL{Value: true},
+		"unreadCount":              &types.AttributeValueMemberN{Value: "7"},
 		"lastReadAt":               sAttr(lastReadAt.Format(time.RFC3339Nano)),
 		"createdAt":                sAttr(createdAt.Format(time.RFC3339Nano)),
 		"updatedAt":                sAttr(updatedAt.Format(time.RFC3339Nano)),
@@ -494,6 +495,7 @@ func TestBuildDirectMessageCanonicalStateRecord_ParsesCanonicalStateRows(t *test
 	require.Equal(t, models.DmRequestStateAccepted, record.State.RequestState)
 	require.Equal(t, "status-1", record.State.PreviewStatusID)
 	require.Equal(t, updatedAt, record.State.SortAt)
+	require.Equal(t, 7, record.State.UnreadCount)
 	require.Equal(t, lastReadAt, *record.State.LastReadAt)
 
 	record, ok = buildDirectMessageCanonicalStateRecord(map[string]types.AttributeValue{
@@ -711,7 +713,10 @@ func TestBuildMigratedUserConversationStateItem_CoversExistingAndLegacyFallbacks
 	require.True(t, state.Unread)
 	require.Nil(t, state.LastReadAt)
 	require.Equal(t, "status-1", strAttr(t, item["previewStatusID"]))
+	require.Equal(t, "2026-03-25T10:44:00.000000000Z#conv-1", strAttr(t, item["gsi1SK"]))
 
+	state.UnreadCount = 7
+	item["unreadCount"] = &types.AttributeValueMemberN{Value: "7"}
 	existing := &directMessageCanonicalStateRecord{
 		State: state,
 		Item:  cloneAttributeMap(item),
@@ -721,6 +726,7 @@ func TestBuildMigratedUserConversationStateItem_CoversExistingAndLegacyFallbacks
 	require.NotNil(t, state)
 	require.False(t, changed)
 	require.Equal(t, models.UserConversationFolderRequests, state.Folder)
+	require.Equal(t, 7, state.UnreadCount)
 
 	state, item, changed, err = buildMigratedUserConversationStateItem(conversation, "   ", nil, legacyParticipant, legacyReadState)
 	require.NoError(t, err)
@@ -787,6 +793,10 @@ func TestDirectMessageMigrationScalarHelpers_CoverFalseyInputs(t *testing.T) {
 	require.False(t, firstConversationBool(map[string]types.AttributeValue{}, "missing"))
 	require.EqualValues(t, 42, firstConversationInt64(item, "missing", "intValue"))
 	require.Zero(t, firstConversationInt64(map[string]types.AttributeValue{}, "missing"))
+	require.Equal(t, 42, firstConversationInt(item, "missing", "intValue"))
+	require.Equal(t, 7, firstConversationInt(map[string]types.AttributeValue{"stringValue": sAttr("7")}, "stringValue"))
+	require.Zero(t, firstConversationInt(map[string]types.AttributeValue{"negative": &types.AttributeValueMemberN{Value: "-1"}}, "negative"))
+	require.Zero(t, firstConversationInt(map[string]types.AttributeValue{"overflow": &types.AttributeValueMemberN{Value: "999999999999999999999999999999"}}, "overflow"))
 	require.Nil(t, conversationTimePtr(time.Time{}))
 }
 

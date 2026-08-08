@@ -1,11 +1,19 @@
 package graph
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/stretchr/testify/require"
 )
+
+func TestConversationLookupHidesMissingAndNonParticipantIDs(t *testing.T) {
+	require.True(t, conversationLookupMustHideExistence(errors.New("conversation not found")))
+	require.True(t, conversationLookupMustHideExistence(conversations.ErrNotConversationParticipant))
+	require.False(t, conversationLookupMustHideExistence(errors.New("database unavailable")))
+}
 
 func TestRound12ListResolvers_QueryAndMutations(t *testing.T) {
 	resolver, _, _, _, state := newRound12GraphResolverWithMocks(t)
@@ -64,6 +72,15 @@ func TestRound12ConversationResolvers_QueryAndMutations(t *testing.T) {
 	convos, err := resolver.Query().Conversations(ctx, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, convos)
+
+	connection, err := resolver.Query().ConversationConnection(ctx, nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, connection)
+	require.NotNil(t, connection.PageInfo)
+	for _, edge := range connection.Edges {
+		require.NotNil(t, edge.Node)
+		require.NotEmpty(t, edge.Cursor)
+	}
 
 	convo, err := resolver.Query().Conversation(ctx, "conv_1")
 	require.NoError(t, err)

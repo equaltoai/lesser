@@ -90,7 +90,7 @@ func TestRound16_ConversationCanonicalHelpersAndKeys(t *testing.T) {
 		require.Nil(t, state.LastReadAt)
 		require.False(t, state.UnreadQueryVisible())
 		require.Empty(t, state.GSI2PK)
-		require.Equal(t, previewAt.Format(time.RFC3339Nano)+"#conv-1", state.LegacyListCursor())
+		require.Equal(t, "2026-03-25T14:00:00.000000000Z#conv-1", state.LegacyListCursor())
 
 		state.Folder = UserConversationFolderInbox
 		state.DeletedAt = nil
