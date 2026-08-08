@@ -103,6 +103,8 @@ type Draft {
 
   generatedBy: Actor
   reviewedBy: Actor
+  """Latest review verdict for the current draft content, or null when it has not been reviewed."""
+  reviewVerdict: DraftReviewVerdict
 
   autosaveVersion: Int!
   lastSavedAt: Time!
@@ -271,6 +273,8 @@ extend type Query {
   draft(id: ID!): Draft
   draftPreview(id: ID!): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
+  """Review assignments created by the authenticated draft owner."""
+  myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   draftReview(id: ID!): DraftReview
 

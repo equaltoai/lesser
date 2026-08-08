@@ -23,6 +23,10 @@ const (
 	maxCMSPageSize     = 200
 )
 
+type cmsDraftLister interface {
+	ListDraftsByAuthorPaginated(context.Context, string, int, string) ([]*models.Draft, string, error)
+}
+
 func clampCMSPageSize(first *int) int {
 	limit := defaultCMSPageSize
 	if first != nil && *first > 0 {
@@ -381,10 +385,8 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 		return nil, ErrStorageUnavailable
 	}
 
-	limit := clampCMSPageSize(first)
 	cursor := trimDraftReviewCursor(after)
-
-	items, nextCursor, err := store.Draft().ListDraftsByAuthorPaginated(ctx, username, limit, cursor)
+	items, err := listAllCMSDraftsByAuthor(ctx, store.Draft(), username)
 	if err != nil {
 		return nil, err
 	}
@@ -402,9 +404,11 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 		}
 		filtered = append(filtered, item)
 	}
+	totalCount := len(filtered)
+	page, hasNextPage := paginateCMSDrafts(filtered, clampCMSPageSize(first), cursor)
 
-	edges := make([]*model.DraftEdge, 0, len(filtered))
-	for _, draft := range filtered {
+	edges := make([]*model.DraftEdge, 0, len(page))
+	for _, draft := range page {
 		node := r.convertCMSDraft(ctx, draft)
 		if node == nil {
 			continue
@@ -416,7 +420,7 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 	}
 
 	pageInfo := &model.PageInfo{
-		HasNextPage:     nextCursor != "",
+		HasNextPage:     hasNextPage,
 		HasPreviousPage: cursor != "",
 	}
 	if len(edges) > 0 {
@@ -429,8 +433,53 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 	return &model.DraftConnection{
 		Edges:      edges,
 		PageInfo:   pageInfo,
-		TotalCount: len(edges),
+		TotalCount: totalCount,
 	}, nil
+}
+
+func listAllCMSDraftsByAuthor(ctx context.Context, repo cmsDraftLister, username string) ([]*models.Draft, error) {
+	items := make([]*models.Draft, 0)
+	cursor := ""
+	for {
+		page, nextCursor, err := repo.ListDraftsByAuthorPaginated(ctx, username, maxCMSPageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, page...)
+		if nextCursor == "" {
+			return items, nil
+		}
+		if nextCursor == cursor {
+			return nil, errors.New("draft pagination did not advance")
+		}
+		cursor = nextCursor
+	}
+}
+
+func paginateCMSDrafts(items []*models.Draft, limit int, cursor string) ([]*models.Draft, bool) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" && !strings.HasPrefix(cursor, "ID#") {
+		cursor = "ID#" + cursor
+	}
+	start := 0
+	for start < len(items) && draftCursorKey(items[start]) <= cursor {
+		start++
+	}
+	end := start + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end], end < len(items)
+}
+
+func draftCursorKey(draft *models.Draft) string {
+	if draft == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(draft.SK); key != "" {
+		return key
+	}
+	return "ID#" + strings.TrimSpace(draft.ID)
 }
 
 func (r *queryResolver) Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error) {
@@ -1288,6 +1337,72 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 	}
 
 	return out, nil
+}
+
+func (r *queryResolver) MyDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc := r.Registry.Drafts()
+	if svc == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	grants, err := svc.OwnedDraftReviews(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	cursor := trimDraftReviewCursor(after)
+	page, hasNextPage := paginateOwnedDraftReviews(grants, clampCMSPageSize(first), cursor)
+	edges := make([]*model.DraftReviewEdge, 0, len(page))
+	for _, grant := range page {
+		draft, getErr := svc.GetDraft(ctx, username, grant.DraftID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		verdicts, verdictErr := svc.DraftReviewVerdicts(ctx, username, grant.DraftID)
+		if verdictErr != nil {
+			return nil, verdictErr
+		}
+		edges = append(edges, &model.DraftReviewEdge{
+			Node:   r.convertCMSDraftReview(ctx, draft, grant, verdicts),
+			Cursor: model.Cursor(draftReviewGrantCursorKey(grant)),
+		})
+	}
+	pageInfo := &model.PageInfo{HasNextPage: hasNextPage, HasPreviousPage: cursor != ""}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
+	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: len(grants)}, nil
+}
+
+func paginateOwnedDraftReviews(grants []*models.DraftReviewGrant, limit int, cursor string) ([]*models.DraftReviewGrant, bool) {
+	cursor = strings.TrimSpace(cursor)
+	start := 0
+	for start < len(grants) && draftReviewGrantCursorKey(grants[start]) <= cursor {
+		start++
+	}
+	end := start + limit
+	if end > len(grants) {
+		end = len(grants)
+	}
+	return grants[start:end], end < len(grants)
+}
+
+func draftReviewGrantCursorKey(grant *models.DraftReviewGrant) string {
+	if grant == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(grant.SK); key != "" {
+		return key
+	}
+	return fmt.Sprintf("GRANT#%s#REVIEWER#%s", strings.TrimSpace(grant.DraftID), strings.TrimSpace(grant.Reviewer))
 }
 
 func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error) {

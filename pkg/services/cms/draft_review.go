@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -65,6 +66,10 @@ type draftReviewRepository interface {
 
 type draftReviewFieldUpdater interface {
 	UpdateDraftReviewFields(context.Context, string, *models.Draft) error
+}
+
+type ownedDraftReviewRepository interface {
+	ListDraftReviewGrantsByOwner(context.Context, string) ([]*models.DraftReviewGrant, error)
 }
 
 func (s *DraftService) reviewRepository() (draftReviewRepository, error) {
@@ -172,6 +177,27 @@ func (s *DraftService) CountSharedDraftReviews(ctx context.Context, reviewer str
 		return 0, err
 	}
 	return repo.CountActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer))
+}
+
+// OwnedDraftReviews returns active review assignments created by one draft owner.
+// The complete active set is returned so GraphQL can filter before paginating and report an exact count.
+func (s *DraftService) OwnedDraftReviews(ctx context.Context, owner string) ([]*models.DraftReviewGrant, error) {
+	repo, ok := s.draftRepo.(ownedDraftReviewRepository)
+	if !ok || repo == nil {
+		return nil, errDraftReviewStorageUnavailable
+	}
+	grants, err := repo.ListDraftReviewGrantsByOwner(ctx, strings.TrimSpace(owner))
+	if err != nil {
+		return nil, err
+	}
+	active := make([]*models.DraftReviewGrant, 0, len(grants))
+	for _, grant := range grants {
+		if grant != nil && grant.RevokedAt == nil {
+			active = append(active, grant)
+		}
+	}
+	sort.Slice(active, func(i, j int) bool { return active[i].SK < active[j].SK })
+	return active, nil
 }
 
 // DraftReviewForCaller resolves a draft only for its owner or active reviewer.

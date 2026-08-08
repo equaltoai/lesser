@@ -287,3 +287,26 @@ func TestDraftRepositoryListActiveDraftReviewGrantsRoundTripsCursor(t *testing.T
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)
 }
+
+func TestDraftRepositoryListsReviewAssignmentsByOwner(t *testing.T) {
+	ctx := context.Background()
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", mock.AnythingOfType("*models.DraftReviewGrant")).Return(query).Once()
+	query.On("Where", "PK", "=", "USER#owner#DRAFT#REVIEW").Return(query).Once()
+	query.On("Where", "SK", "begins_with", "GRANT#").Return(query).Once()
+	query.On("OrderBy", "SK", "ASC").Return(query).Once()
+	query.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		rows := args.Get(0).(*[]models.DraftReviewGrant)
+		*rows = []models.DraftReviewGrant{{DraftID: "d1", Reviewer: "reviewer"}}
+	}).Return(nil).Once()
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	grants, err := repo.ListDraftReviewGrantsByOwner(ctx, " owner ")
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	require.Equal(t, "d1", grants[0].DraftID)
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}

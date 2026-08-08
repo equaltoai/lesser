@@ -433,7 +433,7 @@ func graphQLErrorRootField(ctx context.Context, gqlErr *gqlerror.Error) string {
 
 func isCMSGraphQLRootField(field string) bool {
 	switch field {
-	case "draft", "draftPreview", "myDrafts", "sharedDraftReviews", "draftReview",
+	case "draft", "draftPreview", "myDrafts", "myDraftReviews", "sharedDraftReviews", "draftReview",
 		"revisions", "revision", "article", "articleBySlug", "articles",
 		"series", "seriesBySlug", "allSeries", "category", "categoryBySlug",
 		"categories", "rootCategories", "publication", "publicationBySlug", "myPublications",

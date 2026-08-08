@@ -136,6 +136,16 @@ func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft st
 	}
 	return out, nil
 }
+func (r *reviewMemRepo) ListDraftReviewGrantsByOwner(_ context.Context, owner string) ([]*models.DraftReviewGrant, error) {
+	out := []*models.DraftReviewGrant{}
+	for _, g := range r.grants {
+		if g.OwnerID == owner {
+			copy := *g
+			out = append(out, &copy)
+		}
+	}
+	return out, nil
+}
 func (r *reviewMemRepo) CreateDraftReviewVerdict(_ context.Context, v *models.DraftReviewVerdict) error {
 	if err := v.UpdateKeys(); err != nil {
 		return err
@@ -699,6 +709,26 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 	total, err := svc.CountSharedDraftReviews(ctx, "reviewer")
 	require.NoError(t, err)
 	require.Equal(t, 3, total)
+}
+
+func TestOwnedDraftReviewsFiltersRevokedAndOrdersAssignments(t *testing.T) {
+	svc, repo := newReviewService(t)
+	now := time.Now().UTC()
+	activeLater := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d2", Reviewer: "reviewer-b", GrantedAt: now.Add(time.Minute)}
+	activeEarlier := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer-a", GrantedAt: now}
+	revokedAt := now.Add(2 * time.Minute)
+	revoked := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d3", Reviewer: "reviewer-c", GrantedAt: now, RevokedAt: &revokedAt}
+	require.NoError(t, repo.storeGrant(activeLater))
+	require.NoError(t, repo.storeGrant(activeEarlier))
+	require.NoError(t, repo.storeGrant(revoked))
+
+	grants, err := svc.OwnedDraftReviews(context.Background(), " owner ")
+	require.NoError(t, err)
+	require.Len(t, grants, 2)
+	require.Less(t, grants[0].SK, grants[1].SK)
+	for _, grant := range grants {
+		require.Nil(t, grant.RevokedAt)
+	}
 }
 
 func TestDraftReviewForCallerPagesPastFormerTwoHundredGrantCap(t *testing.T) {

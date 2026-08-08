@@ -65,10 +65,24 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		ObjectID:        objectID,
 		GeneratedBy:     r.resolveActorByID(ctx, draft.GeneratedBy),
 		ReviewedBy:      r.resolveActorByID(ctx, draft.ReviewedBy),
+		ReviewVerdict:   cmsDraftReviewVerdict(draft.ReviewStatus),
 		AutosaveVersion: draft.AutosaveVersion,
 		LastSavedAt:     model.Time(draft.LastSavedAt),
 		CreatedAt:       model.Time(draft.CreatedAt),
 		UpdatedAt:       model.Time(draft.UpdatedAt),
+	}
+}
+
+func cmsDraftReviewVerdict(value string) *model.DraftReviewVerdict {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case string(model.DraftReviewVerdictApproved):
+		verdict := model.DraftReviewVerdictApproved
+		return &verdict
+	case string(model.DraftReviewVerdictChangesRequested):
+		verdict := model.DraftReviewVerdictChangesRequested
+		return &verdict
+	default:
+		return nil
 	}
 }
 

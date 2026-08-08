@@ -245,6 +245,43 @@ func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 	require.Empty(t, persisted.GSI2SK, "the revoked grant must stay out of the reviewer queue")
 }
 
+func TestGraphQLOwnerCanListDraftReviewAssignments(t *testing.T) {
+	ctx := context.Background()
+	harness := newDraftReviewWireHarness(t, &failingGrantCreateDynamo{Fake: fakedb.New()})
+	require.NoError(t, harness.repository.CreateDraftReviewGrant(ctx, &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: time.Now().UTC(),
+	}))
+
+	requestBody := []byte(`{"query":"query { myDraftReviews(first: 10) { totalCount edges { node { draftId grant { reviewer { username } } } } } }"}`)
+	request := httptest.NewRequest(http.MethodPost, "/graphql", bytes.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	harness.server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	var payload struct {
+		Data struct {
+			MyDraftReviews struct {
+				TotalCount int `json:"totalCount"`
+				Edges      []struct {
+					Node struct {
+						DraftID string `json:"draftId"`
+					} `json:"node"`
+				} `json:"edges"`
+			} `json:"myDraftReviews"`
+		} `json:"data"`
+		Errors []any `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
+	require.Empty(t, payload.Errors, response.Body.String())
+	require.Equal(t, 1, payload.Data.MyDraftReviews.TotalCount)
+	require.Len(t, payload.Data.MyDraftReviews.Edges, 1)
+	require.Equal(t, "draft-1", payload.Data.MyDraftReviews.Edges[0].Node.DraftID)
+}
+
 func TestGraphQLDraftReviewGrantCreateFailureReturnsInternalCode(t *testing.T) {
 	client := &failingGrantCreateDynamo{Fake: fakedb.New()}
 	harness := newDraftReviewWireHarness(t, client)
