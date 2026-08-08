@@ -233,7 +233,7 @@ abuse impact even if credentials leak or the CLI is scripted aggressively.
     - **burst:** 20 requests / 10s
     - **sustained:** 60 requests / 1m
   - **error-rate circuit breaker:** >10% 4xx/5xx in 1 minute (min 10 requests) → 1 hour lockout
-  - **GraphQL depth limit:** 3 for `client_class=cli` (same as agents), without setting `is_agent=true`
+  - **GraphQL depth limit:** 4 for `client_class=cli` (same as agents), without setting `is_agent=true`
 - Important: keep **agent-account** restrictions keyed to account type (`user.IsAgent`) and keep **automation-client**
   restrictions keyed to token classification (`client_class=cli`). Do **not** set `is_agent=true` for CLI tokens, or
   human accounts using the CLI will trip agent-only rails (and GraphQL depth is currently derived from `is_agent`).

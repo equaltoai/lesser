@@ -352,29 +352,19 @@ func initializeGraphQLSpecificServices() {
 	if cfg.GraphQLParserTokenLimit > 0 {
 		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
 	}
-	// Depth enforcement: agents and CLI automation tokens are restricted to shallow queries (max depth 3),
-	// humans use configured depth.
+	// Depth enforcement: agents and CLI automation tokens use a bounded profile;
+	// humans use the configured depth.
 	if cfg.GraphQLMaxDepth > 0 {
 		server.Use(&gqllimits.DepthLimit{
 			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-					if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
-						return 3
-					}
-				}
-				return cfg.GraphQLMaxDepth
+				return gqllimits.RequestDepthLimit(ctx, cfg.GraphQLMaxDepth)
 			},
 		})
 	} else {
-		// Even if depth is disabled for humans, enforce a strict limit for agents.
+		// Even if depth is disabled for humans, retain a strict automation limit.
 		server.Use(&gqllimits.DepthLimit{
 			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-					if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
-						return 3
-					}
-				}
-				return 0
+				return gqllimits.RequestDepthLimit(ctx, 0)
 			},
 		})
 	}
