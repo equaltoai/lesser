@@ -3312,7 +3312,11 @@ func (r *actorResolver) AgentInfo(ctx context.Context, obj *activitypub.Actor) (
 		return nil, err
 	}
 
-	return r.convertStorageUserToAgent(user, governance), nil
+	agent := r.convertStorageUserToAgent(user, governance)
+	if !r.canViewAgentPrivateFields(optionalGraphAuthClaims(ctx), user) {
+		redactGraphAgentPrivateFields(agent)
+	}
+	return agent, nil
 }
 
 // TrustScore implements ActorResolver
