@@ -907,6 +907,15 @@ type ComplexityRoot struct {
 		Timestamp          func(childComplexity int) int
 	}
 
+	CMSFeatures struct {
+		Categories func(childComplexity int) int
+		Drafts     func(childComplexity int) int
+		LongForm   func(childComplexity int) int
+		Revisions  func(childComplexity int) int
+		Scheduling func(childComplexity int) int
+		Series     func(childComplexity int) int
+	}
+
 	Category struct {
 		ArticleCount func(childComplexity int) int
 		Children     func(childComplexity int) int
@@ -1702,25 +1711,29 @@ type ComplexityRoot struct {
 	}
 
 	InstanceInfo struct {
-		ApprovalRequired  func(childComplexity int) int
-		ContactAccount    func(childComplexity int) int
-		Description       func(childComplexity int) int
-		Domain            func(childComplexity int) int
-		DomainCount       func(childComplexity int) int
-		Email             func(childComplexity int) int
-		InvitesEnabled    func(childComplexity int) int
-		Languages         func(childComplexity int) int
-		RegistrationsOpen func(childComplexity int) int
-		Rules             func(childComplexity int) int
-		ShortDescription  func(childComplexity int) int
-		SourceURL         func(childComplexity int) int
-		StatusCount       func(childComplexity int) int
-		StreamingURL      func(childComplexity int) int
-		ThumbnailURL      func(childComplexity int) int
-		Tips              func(childComplexity int) int
-		Title             func(childComplexity int) int
-		UserCount         func(childComplexity int) int
-		Version           func(childComplexity int) int
+		ApprovalRequired    func(childComplexity int) int
+		CmsFeatures         func(childComplexity int) int
+		ContactAccount      func(childComplexity int) int
+		Description         func(childComplexity int) int
+		Domain              func(childComplexity int) int
+		DomainCount         func(childComplexity int) int
+		Email               func(childComplexity int) int
+		InvitesEnabled      func(childComplexity int) int
+		Languages           func(childComplexity int) int
+		MaxStatusCharacters func(childComplexity int) int
+		MaxUploadSizeBytes  func(childComplexity int) int
+		RegistrationsOpen   func(childComplexity int) int
+		Rules               func(childComplexity int) int
+		ShortDescription    func(childComplexity int) int
+		SourceURL           func(childComplexity int) int
+		StatusCount         func(childComplexity int) int
+		StreamingURL        func(childComplexity int) int
+		SubscriptionURL     func(childComplexity int) int
+		ThumbnailURL        func(childComplexity int) int
+		Tips                func(childComplexity int) int
+		Title               func(childComplexity int) int
+		UserCount           func(childComplexity int) int
+		Version             func(childComplexity int) int
 	}
 
 	InstanceMetadata struct {
@@ -8054,6 +8067,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.BudgetAlert.Timestamp(childComplexity), true
 
+	case "CMSFeatures.categories":
+		if e.complexity.CMSFeatures.Categories == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Categories(childComplexity), true
+
+	case "CMSFeatures.drafts":
+		if e.complexity.CMSFeatures.Drafts == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Drafts(childComplexity), true
+
+	case "CMSFeatures.longForm":
+		if e.complexity.CMSFeatures.LongForm == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.LongForm(childComplexity), true
+
+	case "CMSFeatures.revisions":
+		if e.complexity.CMSFeatures.Revisions == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Revisions(childComplexity), true
+
+	case "CMSFeatures.scheduling":
+		if e.complexity.CMSFeatures.Scheduling == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Scheduling(childComplexity), true
+
+	case "CMSFeatures.series":
+		if e.complexity.CMSFeatures.Series == nil {
+			break
+		}
+
+		return e.complexity.CMSFeatures.Series(childComplexity), true
+
 	case "Category.articleCount":
 		if e.complexity.Category.ArticleCount == nil {
 			break
@@ -11566,6 +11621,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.InstanceInfo.ApprovalRequired(childComplexity), true
 
+	case "InstanceInfo.cmsFeatures":
+		if e.complexity.InstanceInfo.CmsFeatures == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.CmsFeatures(childComplexity), true
+
 	case "InstanceInfo.contactAccount":
 		if e.complexity.InstanceInfo.ContactAccount == nil {
 			break
@@ -11615,6 +11677,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.InstanceInfo.Languages(childComplexity), true
 
+	case "InstanceInfo.maxStatusCharacters":
+		if e.complexity.InstanceInfo.MaxStatusCharacters == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.MaxStatusCharacters(childComplexity), true
+
+	case "InstanceInfo.maxUploadSizeBytes":
+		if e.complexity.InstanceInfo.MaxUploadSizeBytes == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.MaxUploadSizeBytes(childComplexity), true
+
 	case "InstanceInfo.registrationsOpen":
 		if e.complexity.InstanceInfo.RegistrationsOpen == nil {
 			break
@@ -11656,6 +11732,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.InstanceInfo.StreamingURL(childComplexity), true
+
+	case "InstanceInfo.subscriptionUrl":
+		if e.complexity.InstanceInfo.SubscriptionURL == nil {
+			break
+		}
+
+		return e.complexity.InstanceInfo.SubscriptionURL(childComplexity), true
 
 	case "InstanceInfo.thumbnailUrl":
 		if e.complexity.InstanceInfo.ThumbnailURL == nil {
@@ -54807,6 +54890,270 @@ func (ec *executionContext) fieldContext_BudgetAlert_timestamp(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _CMSFeatures_longForm(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_longForm(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LongForm, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_longForm(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_drafts(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_drafts(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Drafts, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_drafts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_revisions(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_revisions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Revisions, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_revisions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_scheduling(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_scheduling(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scheduling, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_scheduling(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_series(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_series(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Series, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_series(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CMSFeatures_categories(ctx context.Context, field graphql.CollectedField, obj *model.CMSFeatures) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CMSFeatures_categories(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Categories, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CMSFeatures_categories(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CMSFeatures",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Category_id(ctx context.Context, field graphql.CollectedField, obj *model.Category) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Category_id(ctx, field)
 	if err != nil {
@@ -78897,6 +79244,196 @@ func (ec *executionContext) fieldContext_InstanceInfo_streamingUrl(_ context.Con
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_subscriptionUrl(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_subscriptionUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SubscriptionURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_subscriptionUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_maxUploadSizeBytes(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_maxUploadSizeBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxUploadSizeBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_maxUploadSizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_maxStatusCharacters(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_maxStatusCharacters(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxStatusCharacters, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_maxStatusCharacters(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _InstanceInfo_cmsFeatures(ctx context.Context, field graphql.CollectedField, obj *model.InstanceInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_InstanceInfo_cmsFeatures(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CmsFeatures, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.CMSFeatures)
+	fc.Result = res
+	return ec.marshalNCMSFeatures2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCMSFeatures(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_InstanceInfo_cmsFeatures(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "InstanceInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "longForm":
+				return ec.fieldContext_CMSFeatures_longForm(ctx, field)
+			case "drafts":
+				return ec.fieldContext_CMSFeatures_drafts(ctx, field)
+			case "revisions":
+				return ec.fieldContext_CMSFeatures_revisions(ctx, field)
+			case "scheduling":
+				return ec.fieldContext_CMSFeatures_scheduling(ctx, field)
+			case "series":
+				return ec.fieldContext_CMSFeatures_series(ctx, field)
+			case "categories":
+				return ec.fieldContext_CMSFeatures_categories(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CMSFeatures", field.Name)
 		},
 	}
 	return fc, nil
@@ -113702,6 +114239,14 @@ func (ec *executionContext) fieldContext_Query_instance(_ context.Context, field
 				return ec.fieldContext_InstanceInfo_sourceUrl(ctx, field)
 			case "streamingUrl":
 				return ec.fieldContext_InstanceInfo_streamingUrl(ctx, field)
+			case "subscriptionUrl":
+				return ec.fieldContext_InstanceInfo_subscriptionUrl(ctx, field)
+			case "maxUploadSizeBytes":
+				return ec.fieldContext_InstanceInfo_maxUploadSizeBytes(ctx, field)
+			case "maxStatusCharacters":
+				return ec.fieldContext_InstanceInfo_maxStatusCharacters(ctx, field)
+			case "cmsFeatures":
+				return ec.fieldContext_InstanceInfo_cmsFeatures(ctx, field)
 			case "thumbnailUrl":
 				return ec.fieldContext_InstanceInfo_thumbnailUrl(ctx, field)
 			case "languages":
@@ -167073,6 +167618,70 @@ func (ec *executionContext) _BudgetAlert(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var cMSFeaturesImplementors = []string{"CMSFeatures"}
+
+func (ec *executionContext) _CMSFeatures(ctx context.Context, sel ast.SelectionSet, obj *model.CMSFeatures) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, cMSFeaturesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CMSFeatures")
+		case "longForm":
+			out.Values[i] = ec._CMSFeatures_longForm(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "drafts":
+			out.Values[i] = ec._CMSFeatures_drafts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revisions":
+			out.Values[i] = ec._CMSFeatures_revisions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scheduling":
+			out.Values[i] = ec._CMSFeatures_scheduling(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "series":
+			out.Values[i] = ec._CMSFeatures_series(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "categories":
+			out.Values[i] = ec._CMSFeatures_categories(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var categoryImplementors = []string{"Category"}
 
 func (ec *executionContext) _Category(ctx context.Context, sel ast.SelectionSet, obj *model.Category) graphql.Marshaler {
@@ -173076,6 +173685,26 @@ func (ec *executionContext) _InstanceInfo(ctx context.Context, sel ast.Selection
 			out.Values[i] = ec._InstanceInfo_sourceUrl(ctx, field, obj)
 		case "streamingUrl":
 			out.Values[i] = ec._InstanceInfo_streamingUrl(ctx, field, obj)
+		case "subscriptionUrl":
+			out.Values[i] = ec._InstanceInfo_subscriptionUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxUploadSizeBytes":
+			out.Values[i] = ec._InstanceInfo_maxUploadSizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxStatusCharacters":
+			out.Values[i] = ec._InstanceInfo_maxStatusCharacters(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cmsFeatures":
+			out.Values[i] = ec._InstanceInfo_cmsFeatures(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "thumbnailUrl":
 			out.Values[i] = ec._InstanceInfo_thumbnailUrl(ctx, field, obj)
 		case "languages":
@@ -191060,6 +191689,16 @@ func (ec *executionContext) marshalNBudgetAlert2ᚖgithubᚗcomᚋequaltoaiᚋle
 		return graphql.Null
 	}
 	return ec._BudgetAlert(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNCMSFeatures2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCMSFeatures(ctx context.Context, sel ast.SelectionSet, v *model.CMSFeatures) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CMSFeatures(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNCategory2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v model.Category) graphql.Marshaler {

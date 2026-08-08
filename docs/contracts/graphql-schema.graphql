@@ -578,6 +578,11 @@ type InstanceInfo {
   version: String!
   sourceUrl: String
   streamingUrl: String
+  """GraphQL subscription endpoint using the graphql-transport-ws protocol."""
+  subscriptionUrl: String!
+  maxUploadSizeBytes: Int!
+  maxStatusCharacters: Int!
+  cmsFeatures: CMSFeatures!
   thumbnailUrl: String
   languages: [String!]!
   registrationsOpen: Boolean!
@@ -589,6 +594,15 @@ type InstanceInfo {
   contactAccount: Actor
   rules: [InstanceRule!]!
   tips: TipsConfig!
+}
+
+type CMSFeatures {
+  longForm: Boolean!
+  drafts: Boolean!
+  revisions: Boolean!
+  scheduling: Boolean!
+  series: Boolean!
+  categories: Boolean!
 }
 
 type InstanceActivityEntry {

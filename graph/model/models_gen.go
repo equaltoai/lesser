@@ -826,6 +826,15 @@ type BudgetAlert struct {
 	Timestamp          Time       `json:"timestamp"`
 }
 
+type CMSFeatures struct {
+	LongForm   bool `json:"longForm"`
+	Drafts     bool `json:"drafts"`
+	Revisions  bool `json:"revisions"`
+	Scheduling bool `json:"scheduling"`
+	Series     bool `json:"series"`
+	Categories bool `json:"categories"`
+}
+
 type CategoryStats struct {
 	Category string  `json:"category"`
 	Count    int     `json:"count"`
@@ -1747,25 +1756,30 @@ type InstanceHealthReport struct {
 }
 
 type InstanceInfo struct {
-	Domain            string             `json:"domain"`
-	Title             string             `json:"title"`
-	ShortDescription  *string            `json:"shortDescription,omitempty"`
-	Description       string             `json:"description"`
-	Email             *string            `json:"email,omitempty"`
-	Version           string             `json:"version"`
-	SourceURL         *string            `json:"sourceUrl,omitempty"`
-	StreamingURL      *string            `json:"streamingUrl,omitempty"`
-	ThumbnailURL      *string            `json:"thumbnailUrl,omitempty"`
-	Languages         []string           `json:"languages"`
-	RegistrationsOpen bool               `json:"registrationsOpen"`
-	ApprovalRequired  bool               `json:"approvalRequired"`
-	InvitesEnabled    bool               `json:"invitesEnabled"`
-	UserCount         int                `json:"userCount"`
-	StatusCount       int                `json:"statusCount"`
-	DomainCount       int                `json:"domainCount"`
-	ContactAccount    *activitypub.Actor `json:"contactAccount,omitempty"`
-	Rules             []*InstanceRule    `json:"rules"`
-	Tips              *TipsConfig        `json:"tips"`
+	Domain           string  `json:"domain"`
+	Title            string  `json:"title"`
+	ShortDescription *string `json:"shortDescription,omitempty"`
+	Description      string  `json:"description"`
+	Email            *string `json:"email,omitempty"`
+	Version          string  `json:"version"`
+	SourceURL        *string `json:"sourceUrl,omitempty"`
+	StreamingURL     *string `json:"streamingUrl,omitempty"`
+	// GraphQL subscription endpoint using the graphql-transport-ws protocol.
+	SubscriptionURL     string             `json:"subscriptionUrl"`
+	MaxUploadSizeBytes  int                `json:"maxUploadSizeBytes"`
+	MaxStatusCharacters int                `json:"maxStatusCharacters"`
+	CmsFeatures         *CMSFeatures       `json:"cmsFeatures"`
+	ThumbnailURL        *string            `json:"thumbnailUrl,omitempty"`
+	Languages           []string           `json:"languages"`
+	RegistrationsOpen   bool               `json:"registrationsOpen"`
+	ApprovalRequired    bool               `json:"approvalRequired"`
+	InvitesEnabled      bool               `json:"invitesEnabled"`
+	UserCount           int                `json:"userCount"`
+	StatusCount         int                `json:"statusCount"`
+	DomainCount         int                `json:"domainCount"`
+	ContactAccount      *activitypub.Actor `json:"contactAccount,omitempty"`
+	Rules               []*InstanceRule    `json:"rules"`
+	Tips                *TipsConfig        `json:"tips"`
 }
 
 type InstanceMetadata struct {

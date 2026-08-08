@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -109,14 +110,25 @@ func (r *queryResolver) Instance(ctx context.Context) (*model.InstanceInfo, erro
 	}()
 
 	return &model.InstanceInfo{
-		Domain:            r.Config.Domain,
-		Title:             instanceConfig.Title,
-		ShortDescription:  optionalString(instanceConfig.ShortDescription),
-		Description:       instanceConfig.Description,
-		Email:             optionalString(instanceConfig.Email),
-		Version:           instanceConfig.Version,
-		SourceURL:         optionalString("https://github.com/equaltoai/lesser"),
-		StreamingURL:      optionalString(r.Config.BaseURL()),
+		Domain:              r.Config.Domain,
+		Title:               instanceConfig.Title,
+		ShortDescription:    optionalString(instanceConfig.ShortDescription),
+		Description:         instanceConfig.Description,
+		Email:               optionalString(instanceConfig.Email),
+		Version:             instanceConfig.Version,
+		SourceURL:           optionalString("https://github.com/equaltoai/lesser"),
+		StreamingURL:        optionalString(graphQLWebSocketURL(r.Config.WebSocketEndpoint, r.Config.Domain, "/stream")),
+		SubscriptionURL:     graphQLWebSocketURL(r.Config.GraphQLWebSocketEndpoint, r.Config.Domain, ""),
+		MaxUploadSizeBytes:  instanceMaxUploadSize(r.Config),
+		MaxStatusCharacters: instanceMaxStatusCharacters(r.Config, instanceConfig),
+		CmsFeatures: &model.CMSFeatures{
+			LongForm:   r.cmsLongFormEnabled(),
+			Drafts:     r.cmsDraftsEnabled(),
+			Revisions:  r.cmsRevisionsEnabled(),
+			Scheduling: r.cmsSchedulingEnabled(),
+			Series:     r.cmsSeriesEnabled(),
+			Categories: r.cmsCategoriesEnabled(),
+		},
 		ThumbnailURL:      optionalString(r.Config.BaseURL() + "/assets/thumbnail.png"),
 		Languages:         instanceConfig.Languages,
 		RegistrationsOpen: instanceConfig.RegistrationsOpen && !locked,
@@ -129,6 +141,43 @@ func (r *queryResolver) Instance(ctx context.Context) (*model.InstanceInfo, erro
 		Rules:             ruleModels,
 		Tips:              tipsConfig,
 	}, nil
+}
+
+func graphQLWebSocketURL(endpoint, domain, fallbackPath string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	switch {
+	case strings.HasPrefix(endpoint, "wss://"), strings.HasPrefix(endpoint, "ws://"):
+		return endpoint
+	case strings.HasPrefix(endpoint, "https://"):
+		return "wss://" + strings.TrimPrefix(endpoint, "https://")
+	case strings.HasPrefix(endpoint, "http://"):
+		return "ws://" + strings.TrimPrefix(endpoint, "http://")
+	}
+
+	domain = strings.TrimSpace(domain)
+	scheme := "wss"
+	if domain == "localhost" || domain == "127.0.0.1" {
+		scheme = "ws"
+	}
+	return fmt.Sprintf("%s://ws.%s%s", scheme, domain, fallbackPath)
+}
+
+func instanceMaxUploadSize(cfg *config.Config) int {
+	const defaultMaxUploadSize = 10 * 1024 * 1024
+	if cfg != nil && cfg.MaxUploadSize > 0 && cfg.MaxUploadSize <= math.MaxInt32 {
+		return int(cfg.MaxUploadSize)
+	}
+	return defaultMaxUploadSize
+}
+
+func instanceMaxStatusCharacters(cfg *config.Config, instanceConfig *config.InstanceConfig) int {
+	if cfg != nil && cfg.MaxStatusChars > 0 {
+		return cfg.MaxStatusChars
+	}
+	if instanceConfig != nil && instanceConfig.MaxStatusChars > 0 {
+		return instanceConfig.MaxStatusChars
+	}
+	return 5000
 }
 
 // InstanceActivity returns weekly instance activity metrics.
