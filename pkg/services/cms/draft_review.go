@@ -18,6 +18,7 @@ import (
 const (
 	DraftReviewApproved         = "APPROVED"
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
+	maxDraftReviewReadGrants    = 200
 )
 
 // draftReviewContentHash binds every field that changes the published article's
@@ -37,6 +38,15 @@ func draftReviewContentHash(d *models.Draft) string {
 		_, _ = h.Write([]byte(field))
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// DraftReviewContentHash returns the canonical digest used to bind review
+// verdicts to the exact publishable draft content.
+func DraftReviewContentHash(d *models.Draft) string {
+	if d == nil {
+		return ""
+	}
+	return draftReviewContentHash(d)
 }
 
 var (
@@ -311,6 +321,98 @@ func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 type draftReviewApprovalState struct {
 	active map[string]*models.DraftReviewGrant
 	latest map[string]*models.DraftReviewVerdict
+}
+
+// DraftReviewReadState is the complete, revision-bound review state exposed to
+// authorized clients. CurrentVerdicts contains only verdicts that apply to the
+// present draft digest and were recorded after the active grant.
+type DraftReviewReadState struct {
+	ContentHash               string
+	Grants                    []*models.DraftReviewGrant
+	GrantCount                int
+	GrantsTruncated           bool
+	CurrentVerdicts           map[string]*models.DraftReviewVerdict
+	ReviewersApproved         bool
+	PrincipalApprovalRequired bool
+	PrincipalApproved         bool
+	PublishEligible           bool
+	BlockingReasons           []string
+}
+
+// DraftReviewState returns review grants, current approvals, and the same
+// eligibility decision enforced by publish and schedule operations.
+func (s *DraftService) DraftReviewState(ctx context.Context, owner, draftID string, draft *models.Draft) (*DraftReviewReadState, error) {
+	if draft == nil {
+		var err error
+		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	repo, err := s.reviewRepository()
+	if err != nil {
+		return nil, err
+	}
+	grants, err := repo.ListDraftReviewGrants(ctx, owner, draftID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(grants, func(i, j int) bool {
+		leftActive := grants[i] != nil && grants[i].RevokedAt == nil
+		rightActive := grants[j] != nil && grants[j].RevokedAt == nil
+		if leftActive != rightActive {
+			return leftActive
+		}
+		if grants[i] == nil || grants[j] == nil {
+			return grants[i] != nil
+		}
+		return grants[i].GrantedAt.After(grants[j].GrantedAt)
+	})
+	grantCount := len(grants)
+	grantsTruncated := grantCount > maxDraftReviewReadGrants
+	if grantsTruncated {
+		grants = grants[:maxDraftReviewReadGrants]
+	}
+	approval, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
+	if err != nil {
+		return nil, err
+	}
+
+	reviewersApproved := allActiveReviewersApproved(approval)
+	principalRequired := strings.TrimSpace(draft.GeneratedBy) != ""
+	principalApproved := false
+	principalUnavailable := false
+	if principalRequired {
+		principal, principalErr := s.instancePrincipal(ctx)
+		if principalErr != nil {
+			principalUnavailable = true
+		} else {
+			verdict := approval.latest[principal]
+			principalApproved = approval.active[principal] != nil && verdict != nil && verdict.Verdict == DraftReviewApproved
+		}
+	}
+
+	blockingReasons := make([]string, 0, 2)
+	if !reviewersApproved {
+		blockingReasons = append(blockingReasons, "REVIEW_APPROVAL_REQUIRED")
+	}
+	if principalUnavailable {
+		blockingReasons = append(blockingReasons, "PRINCIPAL_APPROVAL_UNAVAILABLE")
+	} else if principalRequired && !principalApproved {
+		blockingReasons = append(blockingReasons, "PRINCIPAL_APPROVAL_REQUIRED")
+	}
+	return &DraftReviewReadState{
+		ContentHash:               draftReviewContentHash(draft),
+		Grants:                    grants,
+		GrantCount:                grantCount,
+		GrantsTruncated:           grantsTruncated,
+		CurrentVerdicts:           approval.latest,
+		ReviewersApproved:         reviewersApproved,
+		PrincipalApprovalRequired: principalRequired,
+		PrincipalApproved:         principalApproved,
+		PublishEligible:           len(blockingReasons) == 0,
+		BlockingReasons:           blockingReasons,
+	}, nil
 }
 
 func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draftID string, draft *models.Draft) (*draftReviewApprovalState, error) {

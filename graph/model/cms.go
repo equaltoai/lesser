@@ -144,6 +144,8 @@ type Draft struct {
 	GeneratedBy   *activitypub.Actor  `json:"generatedBy"`
 	ReviewedBy    *activitypub.Actor  `json:"reviewedBy"`
 	ReviewVerdict *DraftReviewVerdict `json:"reviewVerdict"`
+	ContentHash   string              `json:"contentHash"`
+	Revision      int                 `json:"revision"`
 
 	AutosaveVersion int  `json:"autosaveVersion"`
 	LastSavedAt     Time `json:"lastSavedAt"`

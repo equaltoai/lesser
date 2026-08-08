@@ -1557,7 +1557,7 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err != nil {
 		return nil, err
 	}
-	return r.convertCMSDraftReview(ctx, d, g, vs), nil
+	return r.buildCMSDraftReview(ctx, d, g, vs)
 }
 func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
@@ -1602,5 +1602,5 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if err != nil {
 		return nil, err
 	}
-	return r.convertCMSDraftReview(ctx, d, g, vs), nil
+	return r.buildCMSDraftReview(ctx, d, g, vs)
 }

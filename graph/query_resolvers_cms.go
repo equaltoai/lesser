@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
@@ -1355,21 +1356,25 @@ func (r *queryResolver) MyDraftReviews(ctx context.Context, first *int, after *m
 	if err != nil {
 		return nil, err
 	}
+	resolved, err := r.resolveDraftReviewGrants(ctx, username, grants)
+	if err != nil {
+		return nil, err
+	}
 	cursor := trimDraftReviewCursor(after)
-	page, hasNextPage := paginateOwnedDraftReviews(grants, clampCMSPageSize(first), cursor)
+	page, hasNextPage := paginateResolvedDraftReviews(resolved, clampCMSPageSize(first), cursor)
 	edges := make([]*model.DraftReviewEdge, 0, len(page))
-	for _, grant := range page {
-		draft, getErr := svc.GetDraft(ctx, username, grant.DraftID)
-		if getErr != nil {
-			return nil, getErr
-		}
-		verdicts, verdictErr := svc.DraftReviewVerdicts(ctx, username, grant.DraftID)
+	for _, review := range page {
+		verdicts, verdictErr := svc.DraftReviewVerdicts(ctx, username, review.grant.DraftID)
 		if verdictErr != nil {
 			return nil, verdictErr
 		}
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, verdicts)
+		if buildErr != nil {
+			return nil, buildErr
+		}
 		edges = append(edges, &model.DraftReviewEdge{
-			Node:   r.convertCMSDraftReview(ctx, draft, grant, verdicts),
-			Cursor: model.Cursor(draftReviewGrantCursorKey(grant)),
+			Node:   node,
+			Cursor: model.Cursor(draftReviewGrantCursorKey(review.grant)),
 		})
 	}
 	pageInfo := &model.PageInfo{HasNextPage: hasNextPage, HasPreviousPage: cursor != ""}
@@ -1379,20 +1384,70 @@ func (r *queryResolver) MyDraftReviews(ctx context.Context, first *int, after *m
 		pageInfo.StartCursor = &start
 		pageInfo.EndCursor = &end
 	}
-	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: len(grants)}, nil
+	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: len(resolved)}, nil
 }
 
-func paginateOwnedDraftReviews(grants []*models.DraftReviewGrant, limit int, cursor string) ([]*models.DraftReviewGrant, bool) {
+type resolvedDraftReview struct {
+	grant *models.DraftReviewGrant
+	draft *models.Draft
+}
+
+func draftReviewDraftMissing(err error) bool {
+	return errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)
+}
+
+func (r *queryResolver) resolveDraftReviewGrants(ctx context.Context, owner string, grants []*models.DraftReviewGrant) ([]resolvedDraftReview, error) {
+	resolved := make([]resolvedDraftReview, 0, len(grants))
+	for _, grant := range grants {
+		if grant == nil {
+			continue
+		}
+		draftOwner := strings.TrimSpace(owner)
+		if draftOwner == "" {
+			draftOwner = strings.TrimSpace(grant.OwnerID)
+		}
+		draft, err := r.Registry.Drafts().GetDraft(ctx, draftOwner, grant.DraftID)
+		if draftReviewDraftMissing(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, resolvedDraftReview{grant: grant, draft: draft})
+	}
+	return resolved, nil
+}
+
+func paginateResolvedDraftReviews(reviews []resolvedDraftReview, limit int, cursor string) ([]resolvedDraftReview, bool) {
 	cursor = strings.TrimSpace(cursor)
 	start := 0
-	for start < len(grants) && draftReviewGrantCursorKey(grants[start]) <= cursor {
-		start++
+	if cursor != "" {
+		for start < len(reviews) {
+			key := draftReviewGrantCursorKey(reviews[start].grant)
+			if key == cursor || key > cursor {
+				if key == cursor {
+					start++
+				}
+				break
+			}
+			start++
+		}
 	}
 	end := start + limit
-	if end > len(grants) {
-		end = len(grants)
+	if end > len(reviews) {
+		end = len(reviews)
 	}
-	return grants[start:end], end < len(grants)
+	return reviews[start:end], end < len(reviews)
+}
+
+func sharedDraftReviewCursorKey(grant *models.DraftReviewGrant) string {
+	if grant == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(grant.GSI2SK); key != "" {
+		return key
+	}
+	return draftReviewGrantCursorKey(grant)
 }
 
 func draftReviewGrantCursorKey(grant *models.DraftReviewGrant) string {
@@ -1422,21 +1477,21 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	if err != nil {
 		return nil, err
 	}
-	totalCount, err := svc.CountSharedDraftReviews(ctx, username)
+	resolved, err := r.resolveDraftReviewGrants(ctx, "", grants)
 	if err != nil {
 		return nil, err
 	}
-	edges := make([]*model.DraftReviewEdge, 0, len(grants))
-	for _, g := range grants {
-		d, e := svc.GetDraft(ctx, g.OwnerID, g.DraftID)
+	edges := make([]*model.DraftReviewEdge, 0, len(resolved))
+	for _, review := range resolved {
+		vs, e := svc.DraftReviewVerdicts(ctx, review.grant.OwnerID, review.grant.DraftID)
 		if e != nil {
 			return nil, e
 		}
-		vs, e := svc.DraftReviewVerdicts(ctx, g.OwnerID, g.DraftID)
-		if e != nil {
-			return nil, e
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, vs)
+		if buildErr != nil {
+			return nil, buildErr
 		}
-		edges = append(edges, &model.DraftReviewEdge{Node: r.convertCMSDraftReview(ctx, d, g, vs), Cursor: model.Cursor(g.GSI2SK)})
+		edges = append(edges, &model.DraftReviewEdge{Node: node, Cursor: model.Cursor(sharedDraftReviewCursorKey(review.grant))})
 	}
 	pageInfo := &model.PageInfo{
 		HasNextPage:     nextCursor != "",
@@ -1447,6 +1502,13 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 		end := edges[len(edges)-1].Cursor
 		pageInfo.StartCursor = &start
 		pageInfo.EndCursor = &end
+	} else if nextCursor != "" {
+		end := model.Cursor(nextCursor)
+		pageInfo.EndCursor = &end
+	}
+	totalCount, err := svc.CountSharedDraftReviews(ctx, username)
+	if err != nil {
+		return nil, err
 	}
 	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: totalCount}, nil
 }
@@ -1470,5 +1532,5 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	if err != nil {
 		return nil, err
 	}
-	return r.convertCMSDraftReview(ctx, d, g, vs), nil
+	return r.buildCMSDraftReview(ctx, d, g, vs)
 }

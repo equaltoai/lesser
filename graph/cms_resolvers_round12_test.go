@@ -54,11 +54,13 @@ func TestRound12CMS_DraftLifecycle(t *testing.T) {
 		ContentFormat: &format,
 	})
 	require.NoError(t, err)
+	require.Equal(t, 1, draft.AutosaveVersion)
 	require.NotNil(t, draft.Title)
 	require.Equal(t, updatedTitle, *draft.Title)
 
 	draft, err = mut.AutosaveDraft(ctx, draft.ID, "autosaved body")
 	require.NoError(t, err)
+	require.Equal(t, 2, draft.AutosaveVersion)
 	require.NotNil(t, draft)
 
 	draftsBeforePublish, err := qry.MyDrafts(ctx, nil, nil, ptrInt(1000), nil)

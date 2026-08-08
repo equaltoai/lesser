@@ -1213,22 +1213,49 @@ type DraftPreview struct {
 	Errors        []string `json:"errors"`
 }
 
+type DraftPublishEligibility struct {
+	Eligible                  bool     `json:"eligible"`
+	BlockingReasons           []string `json:"blockingReasons"`
+	ReviewersApproved         bool     `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool     `json:"principalApprovalRequired"`
+	PrincipalApproved         bool     `json:"principalApproved"`
+}
+
 type DraftReview struct {
-	DraftID       string                      `json:"draftId"`
-	Title         *string                     `json:"title,omitempty"`
-	Subtitle      *string                     `json:"subtitle,omitempty"`
-	Excerpt       *string                     `json:"excerpt,omitempty"`
-	ContentFormat ContentFormat               `json:"contentFormat"`
-	Status        DraftStatus                 `json:"status"`
-	ScheduledAt   *Time                       `json:"scheduledAt,omitempty"`
-	UpdatedAt     Time                        `json:"updatedAt"`
-	CreatedAt     Time                        `json:"createdAt"`
-	GeneratedBy   *activitypub.Actor          `json:"generatedBy,omitempty"`
-	ReviewedBy    *activitypub.Actor          `json:"reviewedBy,omitempty"`
-	ReviewStatus  *string                     `json:"reviewStatus,omitempty"`
-	EditorNotes   *string                     `json:"editorNotes,omitempty"`
-	Grant         *DraftReviewGrant           `json:"grant,omitempty"`
-	Verdicts      []*DraftReviewVerdictRecord `json:"verdicts"`
+	DraftID string  `json:"draftId"`
+	OwnerID string  `json:"ownerId"`
+	Title   *string `json:"title,omitempty"`
+	Slug    *string `json:"slug,omitempty"`
+	Content string  `json:"content"`
+	// Canonical sanitized preview for the exact source and contentHash in this response.
+	RenderedHTML              *string             `json:"renderedHtml,omitempty"`
+	RenderErrors              []string            `json:"renderErrors"`
+	Subtitle                  *string             `json:"subtitle,omitempty"`
+	Excerpt                   *string             `json:"excerpt,omitempty"`
+	ContentFormat             ContentFormat       `json:"contentFormat"`
+	Status                    DraftStatus         `json:"status"`
+	ScheduledAt               *Time               `json:"scheduledAt,omitempty"`
+	UpdatedAt                 Time                `json:"updatedAt"`
+	CreatedAt                 Time                `json:"createdAt"`
+	GeneratedBy               *activitypub.Actor  `json:"generatedBy,omitempty"`
+	ReviewedBy                *activitypub.Actor  `json:"reviewedBy,omitempty"`
+	ReviewStatus              *string             `json:"reviewStatus,omitempty"`
+	EditorNotes               *string             `json:"editorNotes,omitempty"`
+	ContentHash               string              `json:"contentHash"`
+	Revision                  int                 `json:"revision"`
+	ActiveReviewerIds         []string            `json:"activeReviewerIds"`
+	PublishEligible           bool                `json:"publishEligible"`
+	PublishBlockingReasons    []string            `json:"publishBlockingReasons"`
+	ReviewersApproved         bool                `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool                `json:"principalApprovalRequired"`
+	PrincipalApproved         bool                `json:"principalApproved"`
+	GrantCount                int                 `json:"grantCount"`
+	GrantsTruncated           bool                `json:"grantsTruncated"`
+	Grants                    []*DraftReviewGrant `json:"grants"`
+	// Caller-specific grant retained for backwards compatibility.
+	Grant              *DraftReviewGrant           `json:"grant,omitempty"`
+	Verdicts           []*DraftReviewVerdictRecord `json:"verdicts"`
+	PublishEligibility *DraftPublishEligibility    `json:"publishEligibility"`
 }
 
 type DraftReviewConnection struct {
@@ -1243,16 +1270,23 @@ type DraftReviewEdge struct {
 }
 
 type DraftReviewGrant struct {
-	Reviewer  *activitypub.Actor `json:"reviewer"`
-	GrantedAt Time               `json:"grantedAt"`
+	ReviewerID string                 `json:"reviewerId"`
+	Reviewer   *activitypub.Actor     `json:"reviewer"`
+	GrantedAt  Time                   `json:"grantedAt"`
+	Status     DraftReviewGrantStatus `json:"status"`
+	RevokedAt  *Time                  `json:"revokedAt,omitempty"`
 }
 
 type DraftReviewVerdictRecord struct {
 	Verdict     DraftReviewVerdict `json:"verdict"`
 	Notes       *string            `json:"notes,omitempty"`
 	ContentHash *string            `json:"contentHash,omitempty"`
+	ReviewerID  string             `json:"reviewerId"`
 	Reviewer    *activitypub.Actor `json:"reviewer"`
 	RecordedAt  Time               `json:"recordedAt"`
+	// True only when this verdict is valid for the current draft revision and active grant.
+	Current bool `json:"current"`
+	Stale   bool `json:"stale"`
 }
 
 type DroneWorkflowMutationPayload struct {
@@ -4359,6 +4393,61 @@ func (e *DmRequestState) UnmarshalJSON(b []byte) error {
 }
 
 func (e DmRequestState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type DraftReviewGrantStatus string
+
+const (
+	DraftReviewGrantStatusActive  DraftReviewGrantStatus = "ACTIVE"
+	DraftReviewGrantStatusRevoked DraftReviewGrantStatus = "REVOKED"
+)
+
+var AllDraftReviewGrantStatus = []DraftReviewGrantStatus{
+	DraftReviewGrantStatusActive,
+	DraftReviewGrantStatusRevoked,
+}
+
+func (e DraftReviewGrantStatus) IsValid() bool {
+	switch e {
+	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked:
+		return true
+	}
+	return false
+}
+
+func (e DraftReviewGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *DraftReviewGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DraftReviewGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DraftReviewGrantStatus", str)
+	}
+	return nil
+}
+
+func (e DraftReviewGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DraftReviewGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DraftReviewGrantStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

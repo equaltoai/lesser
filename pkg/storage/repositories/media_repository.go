@@ -202,7 +202,8 @@ func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models
 	err := r.Get(ctx, pk, sk, &media)
 	if err != nil {
 		if r.isNotFoundError(err) {
-			return nil, err
+			return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryMedia, "media not found").
+				WithInternalError(storage.ErrNotFound)
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityMedia, mediaID)
 	}

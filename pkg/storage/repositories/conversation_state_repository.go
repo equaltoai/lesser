@@ -259,6 +259,7 @@ func (r *ConversationRepository) initializeUserConversationStates(ctx context.Co
 			state.Folder = existing.Folder
 			state.RequestState = existing.RequestState
 			state.Unread = existing.Unread
+			state.UnreadCount = existing.UnreadCount
 			state.LastReadAt = existing.LastReadAt
 			state.DeletedAt = existing.DeletedAt
 			state.RequestedAt = existing.RequestedAt

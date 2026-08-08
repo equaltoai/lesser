@@ -1395,6 +1395,7 @@ func (r *Registry) Media() *media.Service {
 				sourceBucket,
 				cdnDomain,
 			)
+			r.wireMediaDeletionDependencies(r.mediaService)
 
 			// Wire up optional streaming services if config is available
 			r.wireMediaStreamingServices(r.mediaService)
@@ -1412,6 +1413,39 @@ func (r *Registry) Media() *media.Service {
 	}
 
 	return r.mediaService
+}
+
+type mediaS3ObjectDeleter struct {
+	client *s3.Client
+}
+
+func (d *mediaS3ObjectDeleter) DeleteMediaObject(ctx context.Context, bucket, key string) error {
+	if d == nil || d.client == nil {
+		return errors.New("media S3 client is unavailable")
+	}
+	_, err := d.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	return err
+}
+
+func (r *Registry) wireMediaDeletionDependencies(mediaService *media.Service) {
+	if mediaService == nil || r.storage == nil {
+		return
+	}
+	var metadata media.MetadataDeleter
+	if repository := r.storage.MediaMetadata(); repository != nil {
+		metadata = repository
+	}
+	if r.config == nil || r.config.Config == nil || r.config.Config.IntegrationTestMode {
+		mediaService.SetDeletionDependencies(nil, metadata)
+		return
+	}
+	awsCfg, err := r.getAWSConfig()
+	if err != nil {
+		r.logger.Warn("failed to initialize media deletion object store", zap.Error(err))
+		mediaService.SetDeletionDependencies(nil, metadata)
+		return
+	}
+	mediaService.SetDeletionDependencies(&mediaS3ObjectDeleter{client: s3.NewFromConfig(*awsCfg)}, metadata)
 }
 
 // wireMediaStreamingServices wires up the optional transcoding, manifest, and CloudFront services

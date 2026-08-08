@@ -210,6 +210,7 @@ func TestDraftReviewGateRequiresAllActiveReviewersAndPrincipal(t *testing.T) {
 }
 
 func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
+	require.Empty(t, DraftReviewContentHash(nil))
 	draft := &models.Draft{
 		ContentFormat: "markdown",
 		Title:         "Review draft",
@@ -219,6 +220,7 @@ func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
 	}
 	original := draftReviewContentHash(draft)
 	require.Len(t, original, 64)
+	require.Equal(t, original, DraftReviewContentHash(draft))
 
 	draft.Slug = "renamed"
 	require.NotEqual(t, original, draftReviewContentHash(draft), "the published permalink requires re-review")
@@ -307,6 +309,58 @@ func TestDraftReviewAfterContentEditRestoresApproval(t *testing.T) {
 	require.True(t, approved)
 }
 
+func TestDraftReviewStateExposesRevisionBoundEligibility(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	verdict, err := svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	state, err := svc.DraftReviewState(ctx, "owner", "d1", draft)
+	require.NoError(t, err)
+	require.Equal(t, draftReviewContentHash(draft), state.ContentHash)
+	require.Len(t, state.Grants, 1)
+	require.Contains(t, state.CurrentVerdicts, "principal")
+	require.Equal(t, verdict.ContentHash, state.CurrentVerdicts["principal"].ContentHash)
+	require.True(t, state.ReviewersApproved)
+	require.True(t, state.PrincipalApprovalRequired)
+	require.True(t, state.PrincipalApproved)
+	require.True(t, state.PublishEligible)
+	require.Empty(t, state.BlockingReasons)
+
+	draft.Content = "revision two"
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	state, err = svc.DraftReviewState(ctx, "owner", "d1", draft)
+	require.NoError(t, err)
+	require.Empty(t, state.CurrentVerdicts)
+	require.False(t, state.ReviewersApproved)
+	require.False(t, state.PrincipalApproved)
+	require.False(t, state.PublishEligible)
+	require.ElementsMatch(t, []string{"REVIEW_APPROVAL_REQUIRED", "PRINCIPAL_APPROVAL_REQUIRED"}, state.BlockingReasons)
+}
+
+func TestDraftReviewStateBoundsGrantHistory(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	base := time.Now().UTC()
+	for index := range maxDraftReviewReadGrants + 1 {
+		grant := &models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: "d1", Reviewer: fmt.Sprintf("reviewer-%03d", index), GrantedAt: base.Add(time.Duration(index)),
+		}
+		require.NoError(t, repo.storeGrant(grant))
+	}
+	draft, err := repo.GetDraft(ctx, "owner", "d1")
+	require.NoError(t, err)
+	state, err := svc.DraftReviewState(ctx, "owner", "d1", draft)
+	require.NoError(t, err)
+	require.Equal(t, maxDraftReviewReadGrants+1, state.GrantCount)
+	require.True(t, state.GrantsTruncated)
+	require.Len(t, state.Grants, maxDraftReviewReadGrants)
+}
+
 func TestDraftReviewChangesRequestedAtCurrentHashBlocks(t *testing.T) {
 	svc, _ := newReviewService(t)
 	ctx := context.Background()
@@ -319,6 +373,18 @@ func TestDraftReviewChangesRequestedAtCurrentHashBlocks(t *testing.T) {
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
 	require.False(t, approved)
+}
+
+func TestDeleteDraftRevokesActiveReviewGrants(t *testing.T) {
+	svc, repo := newReviewService(t)
+	ctx := context.Background()
+	_, err := svc.ShareDraftForReview(ctx, "owner", "d1", "reviewer")
+	require.NoError(t, err)
+
+	require.NoError(t, svc.DeleteDraft(ctx, "owner", "d1"))
+	require.NotNil(t, repo.grants[reviewKey("owner", "d1", "reviewer")].RevokedAt)
+	_, err = repo.GetDraft(ctx, "owner", "d1")
+	require.Error(t, err)
 }
 
 func TestDraftReviewDraftFetchFailuresFailClosed(t *testing.T) {

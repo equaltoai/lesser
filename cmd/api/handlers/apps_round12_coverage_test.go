@@ -297,6 +297,10 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, oauthTokenEndpointAuthMethodNone, body.TokenEndpointAuthMethod)
 		require.Empty(t, body.ClientSecret)
+		var rawBody map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &rawBody))
+		require.Contains(t, rawBody, "client_secret")
+		require.Equal(t, "", rawBody["client_secret"])
 
 		require.Len(t, state.oauthClientsByID, 1)
 		for _, client := range state.oauthClientsByID {

@@ -368,6 +368,26 @@ func (m *MockJobQueueService) QueueMediaJob(ctx context.Context, msg JobMessage)
 	return args.Error(0)
 }
 
+type recordingMediaObjectDeleter struct {
+	objects []string
+	err     error
+}
+
+func (d *recordingMediaObjectDeleter) DeleteMediaObject(_ context.Context, bucket, key string) error {
+	d.objects = append(d.objects, bucket+"/"+key)
+	return d.err
+}
+
+type recordingMediaMetadataDeleter struct {
+	mediaIDs []string
+	err      error
+}
+
+func (d *recordingMediaMetadataDeleter) DeleteMediaMetadata(_ context.Context, mediaID string) error {
+	d.mediaIDs = append(d.mediaIDs, mediaID)
+	return d.err
+}
+
 // Test helper functions
 
 func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher) {
@@ -385,6 +405,7 @@ func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQu
 		"test-bucket",
 		"cdn.example.com",
 	)
+	service.SetDeletionDependencies(&recordingMediaObjectDeleter{}, &recordingMediaMetadataDeleter{})
 
 	return service, mediaRepo, jobQueue, publisher
 }
@@ -809,6 +830,121 @@ func TestService_DeleteMediaEnforcesOwnership(t *testing.T) {
 	err = service.DeleteMedia(ctx, &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
 	assert.NoError(t, err)
 	mediaRepo.AssertExpectations(t)
+}
+
+func TestService_DeleteMediaRemovesObjectsMetadataAndRecord(t *testing.T) {
+	service, mediaRepo, _, _ := createTestService(t)
+	ctx := context.Background()
+	media := createTestMedia()
+	media.Variants = map[string]models.MediaVariant{
+		"thumb":     {S3Key: "variants/thumb.jpg"},
+		"duplicate": {S3Key: media.S3Key},
+	}
+	objects := &recordingMediaObjectDeleter{}
+	metadata := &recordingMediaMetadataDeleter{}
+	service.SetDeletionDependencies(objects, metadata)
+	mediaRepo.On("GetMedia", ctx, media.MediaID).Return(media, nil).Once()
+	mediaRepo.On("DeleteMedia", ctx, media.MediaID).Return(nil).Once()
+
+	err := service.DeleteMedia(ctx, &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []string{"test-bucket/" + media.S3Key, "test-bucket/variants/thumb.jpg"}, objects.objects)
+	assert.Equal(t, []string{media.MediaID}, metadata.mediaIDs)
+	mediaRepo.AssertExpectations(t)
+}
+
+func TestService_DeleteMediaFailsClosedForReferencesAndExistence(t *testing.T) {
+	t.Run("referenced media is preserved", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		media := createTestMedia()
+		media.UsageCount = 1
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.ErrorIs(t, err, ErrMediaInUse)
+		mediaRepo.AssertNotCalled(t, "DeleteMedia", mock.Anything, mock.Anything)
+	})
+
+	t.Run("missing media is indistinguishable from non-owner", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		mediaRepo.On("GetMedia", mock.Anything, "missing").Return((*models.Media)(nil), ErrMediaNotFound).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: "missing", UserID: "owner"})
+		assert.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+	})
+
+	t.Run("nil media is indistinguishable from non-owner", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		mediaRepo.On("GetMedia", mock.Anything, "nil-media").Return((*models.Media)(nil), nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: "nil-media", UserID: "owner"})
+		assert.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+	})
+
+	t.Run("object deletion dependency is required", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		service.SetDeletionDependencies(nil, nil)
+		media := createTestMedia()
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.ErrorIs(t, err, ErrMediaDeleteFailed)
+		assert.Contains(t, err.Error(), "object deletion is unavailable")
+		mediaRepo.AssertNotCalled(t, "DeleteMedia", mock.Anything, mock.Anything)
+	})
+
+	t.Run("object deletion failure preserves metadata and record", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		media := createTestMedia()
+		objects := &recordingMediaObjectDeleter{err: fmt.Errorf("storage unavailable")}
+		metadata := &recordingMediaMetadataDeleter{}
+		service.SetDeletionDependencies(objects, metadata)
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.ErrorIs(t, err, ErrMediaDeleteFailed)
+		assert.Empty(t, metadata.mediaIDs)
+		mediaRepo.AssertNotCalled(t, "DeleteMedia", mock.Anything, mock.Anything)
+	})
+
+	t.Run("metadata deletion failure preserves record", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		media := createTestMedia()
+		objects := &recordingMediaObjectDeleter{}
+		metadata := &recordingMediaMetadataDeleter{err: fmt.Errorf("metadata unavailable")}
+		service.SetDeletionDependencies(objects, metadata)
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.ErrorIs(t, err, ErrMediaDeleteFailed)
+		mediaRepo.AssertNotCalled(t, "DeleteMedia", mock.Anything, mock.Anything)
+	})
+
+	t.Run("missing bucket fails before object deletion", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		media := createTestMedia()
+		media.S3Bucket = ""
+		objects := &recordingMediaObjectDeleter{}
+		service.SetDeletionDependencies(objects, nil)
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.ErrorIs(t, err, ErrMediaDeleteFailed)
+		assert.Empty(t, objects.objects)
+	})
+
+	t.Run("records without physical keys remain deletable", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		media := createTestMedia()
+		media.S3Key = ""
+		media.Variants = nil
+		mediaRepo.On("GetMedia", mock.Anything, media.MediaID).Return(media, nil).Once()
+		mediaRepo.On("DeleteMedia", mock.Anything, media.MediaID).Return(nil).Once()
+
+		err := service.DeleteMedia(context.Background(), &DeleteMediaCommand{MediaID: media.MediaID, UserID: media.UserID})
+		assert.NoError(t, err)
+		assert.NoError(t, service.deleteMediaObjects(context.Background(), nil))
+	})
 }
 
 // Test GetMedia method

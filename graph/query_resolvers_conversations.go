@@ -182,7 +182,7 @@ func (r *queryResolver) ConversationMessages(ctx context.Context, conversationID
 		Pagination:     pagination,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if conversationLookupMustHideExistence(err) {
 			return nil, nil
 		}
 		r.Logger.Error("Failed to get conversation messages",

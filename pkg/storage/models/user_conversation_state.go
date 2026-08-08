@@ -174,7 +174,7 @@ func (s *UserConversationState) UpdateKeys() error {
 	s.PK = fmt.Sprintf("USER_CONVERSATION_STATE#%s", s.ViewerID)
 	s.SK = fmt.Sprintf("CONVERSATION#%s", s.ConversationID)
 	s.GSI1PK = fmt.Sprintf("USER_CONVERSATION_FOLDER#%s#%s", s.ViewerID, s.Folder)
-	s.GSI1SK = fmt.Sprintf("%s#%s", s.SortAt.Format(time.RFC3339Nano), s.ConversationID)
+	s.GSI1SK = fmt.Sprintf("%s#%s", formatSortableTimestamp(s.SortAt), s.ConversationID)
 
 	if s.Unread && s.UnreadQueryVisible() {
 		s.GSI2PK = fmt.Sprintf("USER_CONVERSATION_UNREAD#%s", s.ViewerID)
@@ -216,5 +216,5 @@ func (s *UserConversationState) LegacyListCursor() string {
 	if s == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s#%s", s.SortAt.Format(time.RFC3339Nano), s.ConversationID)
+	return fmt.Sprintf("%s#%s", formatSortableTimestamp(s.SortAt), s.ConversationID)
 }

@@ -80,7 +80,7 @@ func TestRound12_ConvertConversationListToGraphQL_UsesCanonicalViewerStateAndPre
 	require.NotNil(t, gqlConversation)
 	require.Equal(t, "conv-1", gqlConversation.ID)
 	require.NotNil(t, gqlConversation.Cursor)
-	require.Equal(t, model.Cursor(sortAt.Format(time.RFC3339Nano)+"#conv-1"), *gqlConversation.Cursor)
+	require.Equal(t, model.Cursor(conversation.ViewerState.LegacyListCursor()), *gqlConversation.Cursor)
 	require.NotNil(t, gqlConversation.ViewerMetadata)
 	require.Equal(t, "PENDING", string(gqlConversation.ViewerMetadata.RequestState))
 	require.NotNil(t, gqlConversation.ViewerMetadata.RequestedAt)

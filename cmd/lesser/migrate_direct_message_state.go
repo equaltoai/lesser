@@ -996,6 +996,7 @@ func buildDirectMessageCanonicalStateRecord(item map[string]types.AttributeValue
 		PreviewStatusPublishedAt: firstConversationTime(item, "previewStatusPublishedAt"),
 		SortAt:                   firstConversationTime(item, "sortAt"),
 		Unread:                   firstConversationBool(item, "unread"),
+		UnreadCount:              int(firstConversationInt64(item, "unreadCount")),
 		LastReadAt:               optionalConversationTime(item, "lastReadAt"),
 		DeletedAt:                optionalConversationTime(item, "deletedAt"),
 		RequestedAt:              optionalConversationTime(item, "requestedAt"),
@@ -1044,6 +1045,9 @@ func buildMigratedUserConversationStateItem(
 		state.RequestState = directMessageMigrationDefaultRequestState(state.Folder)
 	}
 	state.Unread, state.LastReadAt = directMessageMigrationReadState(existing, legacyReadState, legacyParticipant)
+	if existing != nil && existing.State != nil {
+		state.UnreadCount = existing.State.UnreadCount
+	}
 	state.LastReadAt = normalizeLegacyMigrationLastReadAt(state.LastReadAt, state.Unread)
 	state.UpdatedAt = directMessageMigrationUpdatedAt(state, conversation, existing)
 
@@ -1085,6 +1089,7 @@ func buildUserConversationStateItem(state *models.UserConversationState, origina
 	setTimeAttribute(item, original, "previewStatusPublishedAt", state.PreviewStatusPublishedAt)
 	setTimeAttribute(item, original, "sortAt", state.SortAt)
 	setBoolAttribute(item, original, "unread", state.Unread)
+	setInt64Attribute(item, original, "unreadCount", int64(state.UnreadCount))
 	setOptionalTimeAttribute(item, original, "lastReadAt", state.LastReadAt)
 	setOptionalTimeAttribute(item, original, "deletedAt", state.DeletedAt)
 	setOptionalTimeAttribute(item, original, "requestedAt", state.RequestedAt)
