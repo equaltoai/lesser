@@ -49,5 +49,6 @@ An idempotent re-grant refreshes `grantedBy` and `grantedAt`, removes `revokedAt
 - Owner/admin list: query base-table `PK=USER#{agent}` with `SK begins_with AGENT_SHARE#GRANTEE#`. This returns active and revoked records so the audit state remains visible.
 - "Shared with me" discovery: query GSI2 with `gsi2PK=AGENT_SHARE#GRANTEE#{grantee}`. Only active grants populate this sparse index. Callers must still treat discovery as non-authoritative and re-check the base-table row when authorizing a request.
 - Grant and revoke writes are accepted only from the local agent owner or an administrator. Grantees must resolve to an existing local Lesser account. Remote/federated identifiers, unknown accounts, owner/admin self-grants, and grants naming the agent itself are rejected.
+- Grant/re-grant/revoke writes use optimistic concurrency. A losing conditional-write race returns `409 Conflict`; callers may re-read the grant and retry from the current state.
 
 Grant and revoke mutations emit `agent.share.grant` and `agent.share.revoke` activity-log events respectively, with the agent, grantee, and acting owner/admin attribution.

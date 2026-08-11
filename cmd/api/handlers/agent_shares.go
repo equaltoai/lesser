@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	tabletheoryerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 // HandleGrantAgentShareLift handles PUT /api/v1/agents/{username}/share/{grantee}.
@@ -154,6 +155,8 @@ func respondAgentShareError(ctx *apptheory.Context, err error) (*apptheory.Respo
 		return common.RespondNotFound(ctx, "agent share grant")
 	case errors.Is(err, agentshare.ErrInvalidGrantee), errors.Is(err, agentshare.ErrSelfGrant), errors.Is(err, agentshare.ErrAgentSelfGrant):
 		return common.RespondUnprocessableEntity(ctx, err.Error())
+	case tabletheoryerrors.IsConditionFailed(err):
+		return common.RespondConflict(ctx, "agent share grant changed concurrently")
 	default:
 		return common.RespondInternalServerError(ctx)
 	}

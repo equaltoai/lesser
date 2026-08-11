@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	tabletheoryerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 type agentShareServiceStub struct {
@@ -113,6 +114,12 @@ func TestHandleGrantAgentShareLiftRejectsInvalidAndUnavailableGrantees(t *testin
 		ctx.Params["grantee"] = "alice"
 		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleGrantAgentShareLift(ctx))
 	}
+}
+
+func TestRespondAgentShareErrorMapsConditionFailureToConflict(t *testing.T) {
+	ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/agents/agent-one/share/alice", nil, nil, nil)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusConflict)(respondAgentShareError(ctx, tabletheoryerrors.ErrConditionFailed))
 }
 
 func TestHandleRevokeAndListAgentSharesLift(t *testing.T) {
