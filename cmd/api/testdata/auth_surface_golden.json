@@ -679,6 +679,13 @@
     "verdict": "agree"
   },
   {
+    "method": "GET",
+    "path": "/api/v1/agents/shared-with-me",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
     "method": "DELETE",
     "path": "/api/v1/agents/{username}",
     "runtimePosture": "auth-required",
@@ -793,6 +800,27 @@
   {
     "method": "POST",
     "path": "/api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/agents/{username}/share",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/agents/{username}/share/{grantee}",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/agents/{username}/share/{grantee}",
     "runtimePosture": "auth-required",
     "openapiSecurity": "required",
     "verdict": "agree"
