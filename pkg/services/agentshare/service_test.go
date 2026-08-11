@@ -13,7 +13,14 @@ import (
 )
 
 type testRepository struct {
-	grants map[string]*models.AgentShareGrant
+	grants           map[string]*models.AgentShareGrant
+	getErr           error
+	createErr        error
+	regrantErr       error
+	revokeErr        error
+	listByAgentErr   error
+	listByGranteeErr error
+	isActiveErr      error
 }
 
 func newTestRepository() *testRepository {
@@ -31,6 +38,9 @@ func cloneGrant(grant *models.AgentShareGrant) *models.AgentShareGrant {
 }
 
 func (r *testRepository) CreateAgentShareGrant(_ context.Context, grant *models.AgentShareGrant) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
 	key := testGrantKey(grant.AgentUsername, grant.GranteeUsername)
 	if _, exists := r.grants[key]; exists {
 		return errors.New("already exists")
@@ -41,6 +51,9 @@ func (r *testRepository) CreateAgentShareGrant(_ context.Context, grant *models.
 }
 
 func (r *testRepository) RegrantAgentShareGrant(_ context.Context, grant *models.AgentShareGrant) error {
+	if r.regrantErr != nil {
+		return r.regrantErr
+	}
 	grant.Version++
 	grant.RevokedAt = nil
 	grant.RevokedBy = ""
@@ -49,12 +62,18 @@ func (r *testRepository) RegrantAgentShareGrant(_ context.Context, grant *models
 }
 
 func (r *testRepository) RevokeAgentShareGrant(_ context.Context, grant *models.AgentShareGrant) error {
+	if r.revokeErr != nil {
+		return r.revokeErr
+	}
 	grant.Version++
 	r.grants[testGrantKey(grant.AgentUsername, grant.GranteeUsername)] = cloneGrant(grant)
 	return nil
 }
 
 func (r *testRepository) GetAgentShareGrant(_ context.Context, agent, grantee string) (*models.AgentShareGrant, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
 	grant := r.grants[testGrantKey(agent, grantee)]
 	if grant == nil {
 		return nil, storage.ErrNotFound
@@ -63,6 +82,9 @@ func (r *testRepository) GetAgentShareGrant(_ context.Context, agent, grantee st
 }
 
 func (r *testRepository) ListAgentShareGrantsByAgent(_ context.Context, agent string) ([]*models.AgentShareGrant, error) {
+	if r.listByAgentErr != nil {
+		return nil, r.listByAgentErr
+	}
 	result := []*models.AgentShareGrant{}
 	for _, grant := range r.grants {
 		if grant.AgentUsername == agent {
@@ -73,6 +95,9 @@ func (r *testRepository) ListAgentShareGrantsByAgent(_ context.Context, agent st
 }
 
 func (r *testRepository) ListActiveAgentShareGrantsByGrantee(_ context.Context, grantee string) ([]*models.AgentShareGrant, error) {
+	if r.listByGranteeErr != nil {
+		return nil, r.listByGranteeErr
+	}
 	result := []*models.AgentShareGrant{}
 	for _, grant := range r.grants {
 		if grant.GranteeUsername == grantee && grant.RevokedAt == nil {
@@ -83,6 +108,9 @@ func (r *testRepository) ListActiveAgentShareGrantsByGrantee(_ context.Context, 
 }
 
 func (r *testRepository) IsActiveAgentShareGrant(ctx context.Context, agent, grantee string) (bool, error) {
+	if r.isActiveErr != nil {
+		return false, r.isActiveErr
+	}
 	grant, err := r.GetAgentShareGrant(ctx, agent, grantee)
 	if errors.Is(err, storage.ErrNotFound) {
 		return false, nil
@@ -91,11 +119,16 @@ func (r *testRepository) IsActiveAgentShareGrant(ctx context.Context, agent, gra
 }
 
 type testAccounts struct {
-	agents map[string]*storage.Account
-	users  map[string]*storage.User
+	agents   map[string]*storage.Account
+	users    map[string]*storage.User
+	agentErr error
+	userErr  error
 }
 
 func (a *testAccounts) GetAccount(_ context.Context, username string) (*storage.Account, error) {
+	if a.agentErr != nil {
+		return nil, a.agentErr
+	}
 	account := a.agents[username]
 	if account == nil {
 		return nil, storage.ErrNotFound
@@ -104,6 +137,9 @@ func (a *testAccounts) GetAccount(_ context.Context, username string) (*storage.
 }
 
 func (a *testAccounts) GetUser(_ context.Context, username string) (*storage.User, error) {
+	if a.userErr != nil {
+		return nil, a.userErr
+	}
 	user := a.users[username]
 	if user == nil {
 		return nil, storage.ErrNotFound
@@ -117,9 +153,15 @@ type auditEvent struct {
 	metadata  map[string]interface{}
 }
 
-type testAudit struct{ events []auditEvent }
+type testAudit struct {
+	events []auditEvent
+	err    error
+}
 
 func (a *testAudit) StoreAuditEvent(_ context.Context, eventType, _ string, username, _ string, _, _, _, _, _ string, _ bool, _ string, metadata map[string]interface{}) error {
+	if a.err != nil {
+		return a.err
+	}
 	a.events = append(a.events, auditEvent{eventType: eventType, username: username, metadata: metadata})
 	return nil
 }
@@ -224,4 +266,95 @@ func TestServiceRevokeMissingGrant(t *testing.T) {
 		ActorUsername:   "owner",
 	})
 	require.ErrorIs(t, err, ErrGrantNotFound)
+}
+
+func TestServiceDefensivePaths(t *testing.T) {
+	service, repo, audit := newTestService()
+	ctx := context.Background()
+
+	withDefaultLogger := NewService(repo, service.accounts, audit, nil)
+	require.NotNil(t, withDefaultLogger.logger)
+
+	_, err := (*Service)(nil).ListByAgent(ctx, "agent-one", "owner", false)
+	require.Error(t, err)
+	_, err = service.ListSharedWith(ctx, "alice@remote.example")
+	require.ErrorIs(t, err, ErrInvalidGrantee)
+	active, err := service.IsActive(ctx, "agent-one", "alice@remote.example")
+	require.NoError(t, err)
+	require.False(t, active)
+
+	service.auditMutation(ctx, "agent.share.grant", nil)
+	require.Empty(t, audit.events)
+}
+
+func TestServiceDependencyErrors(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("dependency failed")
+	input := ManageInput{AgentUsername: "agent-one", GranteeUsername: "alice", ActorUsername: "owner"}
+
+	t.Run("grant lookup", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		repo.getErr = wantErr
+		_, err := service.Grant(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("grant create", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		repo.createErr = wantErr
+		_, err := service.Grant(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("grant refresh", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		_, err := service.Grant(ctx, input)
+		require.NoError(t, err)
+		repo.regrantErr = wantErr
+		_, err = service.Grant(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("revoke lookup", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		repo.getErr = wantErr
+		_, err := service.Revoke(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("revoke persistence", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		_, err := service.Grant(ctx, input)
+		require.NoError(t, err)
+		repo.revokeErr = wantErr
+		_, err = service.Revoke(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("list operations", func(t *testing.T) {
+		service, repo, _ := newTestService()
+		repo.listByAgentErr = wantErr
+		_, err := service.ListByAgent(ctx, "agent-one", "owner", false)
+		require.ErrorIs(t, err, wantErr)
+		repo.listByGranteeErr = wantErr
+		_, err = service.ListSharedWith(ctx, "alice")
+		require.ErrorIs(t, err, wantErr)
+		repo.isActiveErr = wantErr
+		_, err = service.IsActive(ctx, "agent-one", "alice")
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("account lookup", func(t *testing.T) {
+		service, _, _ := newTestService()
+		service.accounts.(*testAccounts).agentErr = wantErr
+		_, err := service.ListByAgent(ctx, "agent-one", "owner", false)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("grantee lookup", func(t *testing.T) {
+		service, _, _ := newTestService()
+		service.accounts.(*testAccounts).userErr = wantErr
+		_, err := service.Grant(ctx, input)
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("audit failure does not fail grant", func(t *testing.T) {
+		service, _, audit := newTestService()
+		audit.err = wantErr
+		_, err := service.Grant(ctx, input)
+		require.NoError(t, err)
+		require.Empty(t, audit.events)
+	})
 }

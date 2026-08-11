@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAgentShareGrantTableName(t *testing.T) {
+	require.Equal(t, MainTableName, (AgentShareGrant{}).TableName())
+}
+
 func TestAgentShareGrantUpdateKeys(t *testing.T) {
 	grantedAt := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.FixedZone("offset", 3600))
 	grant := &AgentShareGrant{
