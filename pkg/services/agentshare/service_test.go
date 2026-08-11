@@ -179,7 +179,9 @@ func newTestService() (*Service, *testRepository, *testAudit) {
 			"admin": {Username: "admin"},
 		},
 	}
-	service := NewService(repo, accounts, audit, zap.NewNop())
+	service := NewService(repo, accounts, audit, func(username string) string {
+		return "https://example.com/users/" + username
+	}, zap.NewNop())
 	service.now = func() time.Time { return time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC) }
 	return service, repo, audit
 }
@@ -258,6 +260,47 @@ func TestServiceGrantAuthorizationAndGranteeValidation(t *testing.T) {
 	require.Equal(t, "admin", grant.GrantedBy)
 }
 
+func TestServiceOwnerAuthorizationForms(t *testing.T) {
+	tests := []struct {
+		name      string
+		owner     string
+		actor     string
+		wantError error
+	}{
+		{name: "at username", owner: "@owner", actor: "owner"},
+		{name: "plain username", owner: "owner", actor: "owner"},
+		{name: "local actor URL", owner: "https://example.com/users/owner", actor: "owner"},
+		{name: "local actor URL rejects non owner", owner: "https://example.com/users/owner", actor: "intruder", wantError: ErrNotAuthorized},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			service, _, _ := newTestService()
+			service.accounts.(*testAccounts).agents["agent-one"].User.AgentOwner = tc.owner
+
+			_, err := service.ListByAgent(context.Background(), "agent-one", tc.actor, false)
+			if tc.wantError != nil {
+				require.ErrorIs(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestServiceActorURLOwnerCannotBeGrantedByAdmin(t *testing.T) {
+	service, _, _ := newTestService()
+	service.accounts.(*testAccounts).agents["agent-one"].User.AgentOwner = "https://example.com/users/owner"
+
+	_, err := service.Grant(context.Background(), ManageInput{
+		AgentUsername:   "agent-one",
+		GranteeUsername: "owner",
+		ActorUsername:   "admin",
+		ActorIsAdmin:    true,
+	})
+	require.ErrorIs(t, err, ErrSelfGrant)
+}
+
 func TestServiceRevokeMissingGrant(t *testing.T) {
 	service, _, _ := newTestService()
 	_, err := service.Revoke(context.Background(), ManageInput{
@@ -272,7 +315,7 @@ func TestServiceDefensivePaths(t *testing.T) {
 	service, repo, audit := newTestService()
 	ctx := context.Background()
 
-	withDefaultLogger := NewService(repo, service.accounts, audit, nil)
+	withDefaultLogger := NewService(repo, service.accounts, audit, service.actorURL, nil)
 	require.NotNil(t, withDefaultLogger.logger)
 
 	_, err := (*Service)(nil).ListByAgent(ctx, "agent-one", "owner", false)

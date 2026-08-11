@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -66,16 +67,17 @@ type Service struct {
 	repo     Repository
 	accounts AccountRepository
 	audit    AuditRepository
+	actorURL func(string) string
 	logger   *zap.Logger
 	now      func() time.Time
 }
 
 // NewService creates an agent share service.
-func NewService(repo Repository, accounts AccountRepository, audit AuditRepository, logger *zap.Logger) *Service {
+func NewService(repo Repository, accounts AccountRepository, audit AuditRepository, actorURL func(string) string, logger *zap.Logger) *Service {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Service{repo: repo, accounts: accounts, audit: audit, logger: logger, now: func() time.Time { return time.Now().UTC() }}
+	return &Service{repo: repo, accounts: accounts, audit: audit, actorURL: actorURL, logger: logger, now: func() time.Time { return time.Now().UTC() }}
 }
 
 // Grant creates or refreshes one owner-authorized share grant.
@@ -166,7 +168,7 @@ func (s *Service) IsActive(ctx context.Context, agentUsername, granteeUsername s
 }
 
 func (s *Service) validateManageInput(ctx context.Context, input ManageInput, validateGrantee bool) (string, string, string, error) {
-	agent, owner, err := s.authorizeAgentOwner(ctx, input.AgentUsername, input.ActorUsername, input.ActorIsAdmin)
+	agent, ownerIdentifier, err := s.authorizeAgentOwner(ctx, input.AgentUsername, input.ActorUsername, input.ActorIsAdmin)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -178,7 +180,7 @@ func (s *Service) validateManageInput(ctx context.Context, input ManageInput, va
 	if grantee == agent {
 		return "", "", "", ErrAgentSelfGrant
 	}
-	if grantee == actor || grantee == owner {
+	if grantee == actor || auth.AgentOwnerMatchesLocalPrincipal(ownerIdentifier, grantee, s.actorURL) {
 		return "", "", "", ErrSelfGrant
 	}
 	if validateGrantee {
@@ -215,8 +217,8 @@ func (s *Service) authorizeAgentOwner(ctx context.Context, agentUsername, actorU
 	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return "", "", ErrAgentNotFound
 	}
-	owner := canonicalUsername(strings.TrimPrefix(strings.TrimSpace(account.User.AgentOwner), "@"))
-	if !actorIsAdmin && actor != owner {
+	owner := strings.TrimSpace(account.User.AgentOwner)
+	if !actorIsAdmin && !auth.AgentOwnerMatchesLocalPrincipal(account.User.AgentOwner, actor, s.actorURL) {
 		return "", "", ErrNotAuthorized
 	}
 	return agent, owner, nil

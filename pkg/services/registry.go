@@ -1289,10 +1289,20 @@ func (r *Registry) AgentShares() *agentshare.Service {
 
 	if r.agentShareService == nil && r.storage != nil {
 		repo := repositories.NewAgentShareRepository(r.storage.GetDB(), r.storage.GetTableName(), r.logger)
-		r.agentShareService = agentshare.NewService(repo, r.storage.Account(), r.storage.Audit(), r.logger)
+		r.agentShareService = agentshare.NewService(repo, r.storage.Account(), r.storage.Audit(), r.agentShareActorURL, r.logger)
 		r.initialized["AgentShares"] = true
 	}
 	return r.agentShareService
+}
+
+func (r *Registry) agentShareActorURL(username string) string {
+	if r != nil && r.config != nil && r.config.Config != nil {
+		return r.config.Config.ActorURL(username)
+	}
+	if r == nil || r.config == nil {
+		return ""
+	}
+	return strings.TrimRight(r.config.BaseURL, "/") + "/users/" + username
 }
 
 // Relationships returns the relationships service, initializing it if necessary
