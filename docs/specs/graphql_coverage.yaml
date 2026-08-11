@@ -48,8 +48,11 @@ exemptions:
             - /api/v1/agents/memory/search
             - /api/v1/agents/register
             - /api/v1/agents/register/challenge
+            - /api/v1/agents/shared-with-me
             - /api/v1/agents/{username}/rotate-key
             - /api/v1/agents/{username}/rotate-key/challenge
+            - /api/v1/agents/{username}/share
+            - /api/v1/agents/{username}/share/{grantee}
     - id: lesser_host_trust
       reason: Managed-instance lesser-host trust proxy endpoints are REST-only for now.
       match:
@@ -618,6 +621,10 @@ routes:
       path: /api/v1/agents/register/challenge
       policy: rest_only
       exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents/shared-with-me
+      policy: rest_only
+      exemptedBy: agents
     - method: DELETE
       path: /api/v1/agents/{username}
       policy: graphql_required
@@ -716,6 +723,18 @@ routes:
       status: covered
       graphql:
         - Mutation.revokeAgentRuntimeSession
+    - method: GET
+      path: /api/v1/agents/{username}/share
+      policy: rest_only
+      exemptedBy: agents
+    - method: DELETE
+      path: /api/v1/agents/{username}/share/{grantee}
+      policy: rest_only
+      exemptedBy: agents
+    - method: PUT
+      path: /api/v1/agents/{username}/share/{grantee}
+      policy: rest_only
+      exemptedBy: agents
     - method: POST
       path: /api/v1/agents/{username}/suspend
       policy: graphql_required
