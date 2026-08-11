@@ -76,6 +76,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation/remotenotes"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/cms"
@@ -140,6 +141,7 @@ type Registry struct {
 	// Domain services (new service-first architecture)
 	notesService              *notes.Service
 	accountsService           *accounts.Service
+	agentShareService         *agentshare.Service
 	relationshipsService      *relationships.Service
 	conversationsService      *conversations.Service
 	mediaService              *media.Service
@@ -1278,6 +1280,19 @@ func (r *Registry) Accounts() *accounts.Service {
 	}
 
 	return r.accountsService
+}
+
+// AgentShares returns the agent share-list service, initializing it if necessary.
+func (r *Registry) AgentShares() *agentshare.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.agentShareService == nil && r.storage != nil {
+		repo := repositories.NewAgentShareRepository(r.storage.GetDB(), r.storage.GetTableName(), r.logger)
+		r.agentShareService = agentshare.NewService(repo, r.storage.Account(), r.storage.Audit(), r.logger)
+		r.initialized["AgentShares"] = true
+	}
+	return r.agentShareService
 }
 
 // Relationships returns the relationships service, initializing it if necessary
