@@ -472,13 +472,12 @@ func (r *Resolver) listOwnedDroneAgents(ctx context.Context, ownerUsername strin
 	if err != nil {
 		return nil, err
 	}
-	ownerHandle := "@" + strings.TrimSpace(ownerUsername)
 	out := make([]*storage.User, 0, len(allAgents))
 	for _, agentUser := range allAgents {
 		if agentUser == nil {
 			continue
 		}
-		if strings.EqualFold(strings.TrimSpace(agentUser.AgentOwner), ownerHandle) {
+		if auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, ownerUsername, r.agentOwnerActorURL) {
 			out = append(out, agentUser)
 		}
 	}

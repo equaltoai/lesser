@@ -1073,10 +1073,6 @@ func TestSoulHelpers(t *testing.T) {
 	require.True(t, domainMatches("Example.com", "example.com"))
 	require.False(t, domainMatches("example.org", "example.com"))
 
-	require.True(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true, AgentOwner: "@alice"}, "alice"))
-	require.True(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true}, "agent-alpha"))
-	require.False(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true, AgentOwner: "@bob"}, "alice"))
-
 	require.Nil(t, normalizedOptionalString(nil))
 	blank := "   "
 	require.Nil(t, normalizedOptionalString(&blank))
@@ -1140,6 +1136,39 @@ func TestSoulHelpers(t *testing.T) {
 
 	_, err = validateAgentID("0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
 	require.Error(t, err)
+}
+
+func TestServiceResolveTargetAgentUsesSharedOwnerMatching(t *testing.T) {
+	tests := []struct {
+		name      string
+		owner     string
+		principal string
+		wantErr   error
+	}{
+		{name: "at username", owner: "@alice", principal: "alice"},
+		{name: "plain username", owner: "alice", principal: "alice"},
+		{name: "local actor URL", owner: "https://example.com/users/alice", principal: "alice"},
+		{name: "remote actor URL", owner: "https://remote.example/users/alice", principal: "alice", wantErr: ErrTargetAgentNotOwned},
+		{name: "self match", owner: "@bob", principal: "agent-alpha"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			accountRepo := &fakeAccountRepo{usersByUsername: map[string]*storage.User{
+				"agent-alpha": {Username: "agent-alpha", IsAgent: true, AgentOwner: tc.owner},
+			}}
+			service := NewService(accountRepo, &fakeInstanceRepo{}, &config.Config{Domain: "example.com"}, zap.NewNop())
+
+			agent, err := service.resolveTargetAgent(context.Background(), tc.principal, "agent-alpha")
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				require.Nil(t, agent)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "agent-alpha", agent.Username)
+		})
+	}
 }
 
 func TestService_ListMineAndSearchEdgePaths(t *testing.T) {

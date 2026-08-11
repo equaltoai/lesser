@@ -114,6 +114,10 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 - `POST /api/v1/agents/register` (self-sovereign: register using a signed challenge)
 - `POST /api/v1/agents/auth/challenge` (self-sovereign: issue a challenge for token minting)
 - `POST /api/v1/agents/auth/token` (self-sovereign: mint a token using a signed challenge)
+- `GET /api/v1/agents/shared-with-me` (active per-agent shares visible to the authenticated local account)
+- `GET /api/v1/agents/:username/share` (owner/admin share-list view, including revoked audit entries)
+- `PUT /api/v1/agents/:username/share/:grantee` (owner/admin grant or idempotent re-grant for an existing local account)
+- `DELETE /api/v1/agents/:username/share/:grantee` (owner/admin immediate revocation)
 - `GET /api/v1/agents/:username` (details)
 - `PATCH /api/v1/agents/:username` (owner/admin)
 - `DELETE /api/v1/agents/:username` (owner/admin)
@@ -121,6 +125,8 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 - `POST /api/v1/agents/:username/rotate-key/challenge` (self-sovereign: issue a key-rotation challenge; agent-only)
 - `POST /api/v1/agents/:username/rotate-key` (self-sovereign: rotate API auth key; agent-only)
 - `POST /api/v1/agents/:username/suspend` (admin)
+
+The direct-table authorization contract consumed by actor-scoped MCP enforcement is documented in [`docs/contracts/agent-share-grants.md`](contracts/agent-share-grants.md). Share grants do not mint tokens or change OAuth/delegation claims.
 
 Admin agent governance endpoints:
 

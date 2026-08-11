@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
@@ -29,6 +30,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 	t.Run("nil receiver returns nil", func(t *testing.T) {
 		var adapter *servicesRegistryAdapter
 		require.Nil(t, adapter.Accounts())
+		require.Nil(t, adapter.AgentShares())
 		require.Nil(t, adapter.AI())
 		require.Nil(t, adapter.Conversations())
 		require.Nil(t, adapter.Emoji())
@@ -44,6 +46,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 	t.Run("nil backing registry returns nil", func(t *testing.T) {
 		adapter := &servicesRegistryAdapter{}
 		require.Nil(t, adapter.Accounts())
+		require.Nil(t, adapter.AgentShares())
 		require.Nil(t, adapter.AI())
 		require.Nil(t, adapter.Conversations())
 		require.Nil(t, adapter.Emoji())
@@ -67,6 +70,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 		}
 
 		accountsSvc := &accounts.Service{}
+		agentSharesSvc := &agentshare.Service{}
 		aiSvc := &ai.Service{}
 		conversationsSvc := &conversations.Service{}
 		emojiSvc := &emoji.Service{}
@@ -79,6 +83,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 		searchSvc := &search.Service{}
 
 		setField("accountsService", accountsSvc)
+		setField("agentShareService", agentSharesSvc)
 		setField("aiService", aiSvc)
 		setField("conversationsService", conversationsSvc)
 		setField("emojiService", emojiSvc)
@@ -93,6 +98,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 		adapter := newServiceRegistry(reg)
 		require.NotNil(t, adapter)
 		require.Same(t, accountsSvc, adapter.Accounts())
+		require.Same(t, agentSharesSvc, adapter.AgentShares())
 		require.Same(t, aiSvc, adapter.AI())
 		require.Same(t, conversationsSvc, adapter.Conversations())
 		require.Same(t, emojiSvc, adapter.Emoji())

@@ -3,26 +3,15 @@ package handlers
 import (
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 func (h *Handler) agentOwnerMatchesLocalPrincipal(owner string, principalUsername string) bool {
-	principalUsername = strings.TrimSpace(principalUsername)
-	owner = strings.TrimSpace(owner)
-	if principalUsername == "" || owner == "" {
-		return false
+	if h == nil || h.cfg == nil {
+		return auth.AgentOwnerMatchesLocalPrincipal(owner, principalUsername, nil)
 	}
-
-	lowerOwner := strings.ToLower(owner)
-	if strings.HasPrefix(lowerOwner, "http://") || strings.HasPrefix(lowerOwner, "https://") {
-		return h != nil && h.cfg != nil && strings.EqualFold(owner, h.cfg.ActorURL(principalUsername))
-	}
-
-	owner = strings.TrimPrefix(owner, "@")
-	if strings.Contains(owner, "/") {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(owner), principalUsername)
+	return auth.AgentOwnerMatchesLocalPrincipal(owner, principalUsername, h.cfg.ActorURL)
 }
 
 func (h *Handler) agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {

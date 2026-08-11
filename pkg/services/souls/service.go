@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -69,6 +70,7 @@ type Service struct {
 	cfg          *config.Config
 	logger       *zap.Logger
 	httpClient   *http.Client
+	actorURL     func(string) string
 
 	hostInstanceKeyResolver hostInstanceKeyResolver
 }
@@ -129,12 +131,17 @@ type SoulAvatarStyle struct {
 
 // NewService creates a new soul service.
 func NewService(accountRepo accountRepository, instanceRepo instanceRepository, cfg *config.Config, logger *zap.Logger) *Service {
+	var actorURL func(string) string
+	if cfg != nil {
+		actorURL = cfg.ActorURL
+	}
 	return &Service{
 		accountRepo:  accountRepo,
 		instanceRepo: instanceRepo,
 		cfg:          cfg,
 		logger:       logger,
 		httpClient:   &http.Client{Timeout: defaultSoulHTTPTimeout},
+		actorURL:     actorURL,
 	}
 }
 
@@ -398,7 +405,7 @@ func (s *Service) resolveTargetAgent(ctx context.Context, principalUsername stri
 	if !targetAgent.IsAgent {
 		return nil, ErrTargetAgentMustBeAgent
 	}
-	if !agentOwnedByPrincipal(targetAgent, principalUsername) {
+	if !s.agentOwnedByPrincipal(targetAgent, principalUsername) {
 		return nil, ErrTargetAgentNotOwned
 	}
 
@@ -498,7 +505,7 @@ func hostedBindingPrincipal(result *BootstrapFinalizeResult) string {
 	return ""
 }
 
-func agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {
+func (s *Service) agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {
 	if agentUser == nil {
 		return false
 	}
@@ -510,14 +517,7 @@ func agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bo
 	if strings.EqualFold(strings.TrimSpace(agentUser.Username), principalUsername) {
 		return true
 	}
-
-	owner := strings.TrimSpace(agentUser.AgentOwner)
-	if owner == "" {
-		return false
-	}
-
-	owner = strings.TrimPrefix(owner, "@")
-	return strings.EqualFold(owner, principalUsername)
+	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, principalUsername, s.actorURL)
 }
 
 func (s *Service) discoverOwnedSoulIDs(ctx context.Context, trustBaseURL string, instanceDomain string, ownerWallets map[string]struct{}) ([]string, error) {

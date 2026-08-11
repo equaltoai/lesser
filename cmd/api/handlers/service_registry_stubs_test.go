@@ -27,6 +27,7 @@ func missingStub(method string) error {
 
 type RegistryStub struct {
 	AccountsSvc      AccountsService
+	AgentSharesSvc   AgentShareService
 	AISvc            AIService
 	ConversationsSvc ConversationsService
 	EmojiSvc         EmojiService
@@ -43,6 +44,7 @@ type RegistryStub struct {
 var _ ServiceRegistry = (*RegistryStub)(nil)
 
 func (r *RegistryStub) Accounts() AccountsService           { return r.AccountsSvc }
+func (r *RegistryStub) AgentShares() AgentShareService      { return r.AgentSharesSvc }
 func (r *RegistryStub) AI() AIService                       { return r.AISvc }
 func (r *RegistryStub) Conversations() ConversationsService { return r.ConversationsSvc }
 func (r *RegistryStub) Emoji() EmojiService                 { return r.EmojiSvc }
