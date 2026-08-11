@@ -142,7 +142,12 @@ func paginateGraphAgentUsers(users []*storage.User, limit int, cursor string) ([
 	return users[start:end], end < len(users)
 }
 
-func agentUserMatchesListFilters(user *storage.User, governance *storage.AgentGovernanceState, filters agentListFilters) bool {
+func agentUserMatchesListFilters(
+	user *storage.User,
+	governance *storage.AgentGovernanceState,
+	filters agentListFilters,
+	actorURL func(string) string,
+) bool {
 	if user == nil || !user.IsAgent || user.Suspended {
 		return false
 	}
@@ -156,8 +161,7 @@ func agentUserMatchesListFilters(user *storage.User, governance *storage.AgentGo
 	}
 
 	if filters.ownerFilter != "" {
-		owner := strings.TrimPrefix(strings.TrimSpace(user.AgentOwner), "@")
-		if !strings.EqualFold(owner, filters.ownerFilter) {
+		if !auth.AgentOwnerMatchesLocalPrincipal(user.AgentOwner, filters.ownerFilter, actorURL) {
 			return false
 		}
 	}
@@ -245,7 +249,7 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 	matchingUsers := make([]*storage.User, 0, len(users))
 	for _, user := range users {
 		governance := governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]
-		if !agentUserMatchesListFilters(user, governance, filters) {
+		if !agentUserMatchesListFilters(user, governance, filters, r.agentOwnerActorURL) {
 			continue
 		}
 		matchingUsers = append(matchingUsers, user)
@@ -312,7 +316,6 @@ func (r *queryResolver) MyAgents(ctx context.Context) ([]*model.Agent, error) {
 		return nil, ErrAuthenticationRequired
 	}
 
-	ownerHandle := "@" + ownerUsername
 	cursor := ""
 	out := make([]*model.Agent, 0, 8)
 
@@ -330,7 +333,7 @@ func (r *queryResolver) MyAgents(ctx context.Context) ([]*model.Agent, error) {
 			if user == nil || !user.IsAgent || user.Suspended {
 				continue
 			}
-			if !strings.EqualFold(strings.TrimSpace(user.AgentOwner), ownerHandle) {
+			if !auth.AgentOwnerMatchesLocalPrincipal(user.AgentOwner, ownerUsername, r.agentOwnerActorURL) {
 				continue
 			}
 			agent := r.convertStorageUserToAgent(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))])
@@ -1422,7 +1425,7 @@ func scopesAreSubset(ownerScopes, requested []string) bool {
 	return auth.ScopeSetAllows(ownerScopes, requested)
 }
 
-func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User, localActorURL ...string) bool {
+func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User, localActorURL string) bool {
 	if claims == nil || agentUser == nil {
 		return false
 	}
@@ -1431,11 +1434,9 @@ func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User, localActo
 		return true
 	}
 
-	actorURL := ""
-	if len(localActorURL) > 0 {
-		actorURL = localActorURL[0]
-	}
-	return agentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username, actorURL)
+	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username, func(string) string {
+		return localActorURL
+	})
 }
 
 //nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
