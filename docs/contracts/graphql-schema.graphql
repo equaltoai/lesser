@@ -2412,6 +2412,8 @@ type Article {
   generatedBy: Actor
   reviewedBy: Actor
   publishedBy: Actor
+  """Caller attribution: the actor who performed the write on the author's behalf under an active share grant. Private CMS workflow attribution (author/admin viewers only)."""
+  actedBy: Actor
 
   publishedAt: Time!
   createdAt: Time!
@@ -2446,6 +2448,8 @@ type Draft {
 
   generatedBy: Actor
   reviewedBy: Actor
+  """Caller attribution: the actor who performed the write on the author's behalf under an active share grant."""
+  actedBy: Actor
   """Latest review verdict for the current draft content, or null when it has not been reviewed."""
   reviewVerdict: DraftReviewVerdict
 

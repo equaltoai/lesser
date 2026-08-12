@@ -126,7 +126,7 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 - `POST /api/v1/agents/:username/rotate-key` (self-sovereign: rotate API auth key; agent-only)
 - `POST /api/v1/agents/:username/suspend` (admin)
 
-The direct-table authorization contract consumed by actor-scoped MCP enforcement is documented in [`docs/contracts/agent-share-grants.md`](contracts/agent-share-grants.md). Share grants do not mint tokens or change OAuth/delegation claims.
+The direct-table authorization contract consumed by actor-scoped MCP enforcement is documented in [`docs/contracts/agent-share-grants.md`](contracts/agent-share-grants.md). Share grants do not mint tokens or change OAuth/delegation claims. The caller-attributed act-as behavior built on those grants (the `X-Lesser-Act-As` header, per-request grant checks, error mapping, enabled surfaces, and `actedBy` attribution carriers) is documented in [`docs/contracts/agent-share-act-as.md`](contracts/agent-share-act-as.md).
 
 Admin agent governance endpoints:
 

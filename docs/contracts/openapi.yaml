@@ -1405,6 +1405,8 @@ components:
         AgentPostAttribution:
             additionalProperties: false
             properties:
+                acted_by:
+                    type: string
                 approved_by:
                     type: string
                 constraints:
@@ -7741,6 +7743,8 @@ components:
                                 anyOf:
                                     - additionalProperties: false
                                       properties:
+                                        acted_by:
+                                            type: string
                                         approved_by:
                                             type: string
                                         constraints:
@@ -10271,6 +10275,12 @@ paths:
                 - accounts
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -14374,6 +14384,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -14410,6 +14425,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -14533,6 +14553,11 @@ paths:
                     minLength: 1
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -16394,6 +16419,11 @@ paths:
                   in: query
                   schema:
                     type: string
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -16428,6 +16458,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -16464,6 +16499,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -16497,6 +16537,12 @@ paths:
                 - notifications
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "204":
                     description: No Content
@@ -17860,6 +17906,12 @@ paths:
                 - statuses
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             requestBody:
                 content:
                     application/json:
@@ -18161,6 +18213,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18558,6 +18615,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18801,6 +18863,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18969,6 +19036,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -19453,6 +19525,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
