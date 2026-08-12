@@ -106,6 +106,7 @@ type Article struct {
 	GeneratedBy *activitypub.Actor `json:"generatedBy"`
 	ReviewedBy  *activitypub.Actor `json:"reviewedBy"`
 	PublishedBy *activitypub.Actor `json:"publishedBy"`
+	ActedBy     *activitypub.Actor `json:"actedBy"`
 
 	PublishedAt Time `json:"publishedAt"`
 	CreatedAt   Time `json:"createdAt"`
@@ -143,6 +144,7 @@ type Draft struct {
 
 	GeneratedBy   *activitypub.Actor  `json:"generatedBy"`
 	ReviewedBy    *activitypub.Actor  `json:"reviewedBy"`
+	ActedBy       *activitypub.Actor  `json:"actedBy"`
 	ReviewVerdict *DraftReviewVerdict `json:"reviewVerdict"`
 	ContentHash   string              `json:"contentHash"`
 	Revision      int                 `json:"revision"`

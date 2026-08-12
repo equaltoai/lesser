@@ -824,6 +824,7 @@ type ComplexityRoot struct {
 	}
 
 	Article struct {
+		ActedBy            func(childComplexity int) int
 		Author             func(childComplexity int) int
 		AuthorID           func(childComplexity int) int
 		CanonicalURL       func(childComplexity int) int
@@ -1164,6 +1165,7 @@ type ComplexityRoot struct {
 	}
 
 	Draft struct {
+		ActedBy         func(childComplexity int) int
 		Author          func(childComplexity int) int
 		AuthorID        func(childComplexity int) int
 		AutosaveVersion func(childComplexity int) int
@@ -7665,6 +7667,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AnnouncementReaction.URL(childComplexity), true
 
+	case "Article.actedBy":
+		if e.complexity.Article.ActedBy == nil {
+			break
+		}
+
+		return e.complexity.Article.ActedBy(childComplexity), true
+
 	case "Article.author":
 		if e.complexity.Article.Author == nil {
 			break
@@ -9204,6 +9213,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DomainBlockPage.TotalCount(childComplexity), true
+
+	case "Draft.actedBy":
+		if e.complexity.Draft.ActedBy == nil {
+			break
+		}
+
+		return e.complexity.Draft.ActedBy(childComplexity), true
 
 	case "Draft.author":
 		if e.complexity.Draft.Author == nil {
@@ -53551,6 +53567,93 @@ func (ec *executionContext) fieldContext_Article_publishedBy(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Article_actedBy(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Article_actedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ActedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Article_actedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Article",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
+			case "tipAddress":
+				return ec.fieldContext_Actor_tipAddress(ctx, field)
+			case "tipChainId":
+				return ec.fieldContext_Actor_tipChainId(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Article_publishedAt(ctx context.Context, field graphql.CollectedField, obj *model.Article) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Article_publishedAt(ctx, field)
 	if err != nil {
@@ -53924,6 +54027,8 @@ func (ec *executionContext) fieldContext_ArticleEdge_node(_ context.Context, fie
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -63392,6 +63497,93 @@ func (ec *executionContext) fieldContext_Draft_reviewedBy(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Draft_actedBy(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_actedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ActedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_actedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
+			case "tipAddress":
+				return ec.fieldContext_Actor_tipAddress(ctx, field)
+			case "tipChainId":
+				return ec.fieldContext_Actor_tipChainId(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Draft_reviewVerdict(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Draft_reviewVerdict(ctx, field)
 	if err != nil {
@@ -63910,6 +64102,8 @@ func (ec *executionContext) fieldContext_DraftEdge_node(_ context.Context, field
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -98878,6 +99072,8 @@ func (ec *executionContext) fieldContext_Mutation_createDraft(ctx context.Contex
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -98975,6 +99171,8 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -99072,6 +99270,8 @@ func (ec *executionContext) fieldContext_Mutation_autosaveDraft(ctx context.Cont
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -99252,6 +99452,8 @@ func (ec *executionContext) fieldContext_Mutation_publishDraft(ctx context.Conte
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -99341,6 +99543,8 @@ func (ec *executionContext) fieldContext_Mutation_scheduleDraft(ctx context.Cont
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -99438,6 +99642,8 @@ func (ec *executionContext) fieldContext_Mutation_cancelScheduledDraft(ctx conte
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -99860,6 +100066,8 @@ func (ec *executionContext) fieldContext_Mutation_createArticle(ctx context.Cont
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -99977,6 +100185,8 @@ func (ec *executionContext) fieldContext_Mutation_updateArticle(ctx context.Cont
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -100149,6 +100359,8 @@ func (ec *executionContext) fieldContext_Mutation_restoreRevision(ctx context.Co
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -100919,6 +101131,8 @@ func (ec *executionContext) fieldContext_Mutation_addArticleToCategory(ctx conte
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -101036,6 +101250,8 @@ func (ec *executionContext) fieldContext_Mutation_removeArticleFromCategory(ctx 
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -120962,6 +121178,8 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 				return ec.fieldContext_Draft_generatedBy(ctx, field)
 			case "reviewedBy":
 				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
 			case "contentHash":
@@ -121603,6 +121821,8 @@ func (ec *executionContext) fieldContext_Query_article(ctx context.Context, fiel
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -121717,6 +121937,8 @@ func (ec *executionContext) fieldContext_Query_articleBySlug(ctx context.Context
 				return ec.fieldContext_Article_reviewedBy(ctx, field)
 			case "publishedBy":
 				return ec.fieldContext_Article_publishedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Article_actedBy(ctx, field)
 			case "publishedAt":
 				return ec.fieldContext_Article_publishedAt(ctx, field)
 			case "createdAt":
@@ -169143,6 +169365,8 @@ func (ec *executionContext) _Article(ctx context.Context, sel ast.SelectionSet, 
 			out.Values[i] = ec._Article_reviewedBy(ctx, field, obj)
 		case "publishedBy":
 			out.Values[i] = ec._Article_publishedBy(ctx, field, obj)
+		case "actedBy":
+			out.Values[i] = ec._Article_actedBy(ctx, field, obj)
 		case "publishedAt":
 			out.Values[i] = ec._Article_publishedAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -171577,6 +171801,8 @@ func (ec *executionContext) _Draft(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Draft_generatedBy(ctx, field, obj)
 		case "reviewedBy":
 			out.Values[i] = ec._Draft_reviewedBy(ctx, field, obj)
+		case "actedBy":
+			out.Values[i] = ec._Draft_actedBy(ctx, field, obj)
 		case "reviewVerdict":
 			out.Values[i] = ec._Draft_reviewVerdict(ctx, field, obj)
 		case "contentHash":

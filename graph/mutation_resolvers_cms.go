@@ -24,7 +24,7 @@ func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDr
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -60,10 +60,14 @@ func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDr
 		Status:        cmsDraftStatusToStorage(model.DraftStatusDraft),
 	}
 	r.cmsApplyDraftRequestAttribution(ctx, username, draft, false)
+	if acting != nil {
+		draft.ActedBy = cmsLocalActorID(r.getDomain(), acting.ActedBy)
+	}
 
 	if err := draftSvc.CreateDraft(ctx, draft); err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.draft.create", draftID, nil)
 
 	return r.convertCMSDraft(ctx, draft), nil
 }
@@ -73,7 +77,7 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -101,10 +105,14 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 		draft.ContentFormat = cmsContentFormatToStorage(*input.ContentFormat)
 	}
 	r.cmsApplyDraftRequestAttribution(ctx, username, draft, true)
+	if acting != nil {
+		draft.ActedBy = cmsLocalActorID(r.getDomain(), acting.ActedBy)
+	}
 
 	if err := draftSvc.UpdateDraft(ctx, username, draft); err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.draft.update", draft.ID, nil)
 
 	return r.convertCMSDraft(ctx, draft), nil
 }
@@ -188,7 +196,7 @@ func (r *mutationResolver) PublishDraft(ctx context.Context, id string) (*model.
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -198,10 +206,15 @@ func (r *mutationResolver) PublishDraft(ctx context.Context, id string) (*model.
 		return nil, errors.New("draft service is not available")
 	}
 
-	article, err := draftSvc.PublishDraft(ctx, username, strings.TrimSpace(id))
+	actedBy := ""
+	if acting != nil {
+		actedBy = cmsLocalActorID(r.getDomain(), acting.ActedBy)
+	}
+	article, err := draftSvc.PublishDraftWithAttribution(ctx, username, strings.TrimSpace(id), actedBy)
 	if err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.draft.publish", article.ID, nil)
 
 	return r.convertCMSArticle(ctx, article, true), nil
 }
@@ -360,7 +373,7 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 		return nil, errCMSCategoriesDisabled
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -421,10 +434,14 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 	now := time.Now()
 	article.Updated = now
 	article.UpdatedAt = now
+	if acting != nil {
+		article.ActedBy = cmsLocalActorID(r.getDomain(), acting.ActedBy)
+	}
 
 	if err := articleSvc.UpdateArticle(ctx, article); err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.article.update", article.ID, nil)
 
 	return r.convertCMSArticle(ctx, article, true), nil
 }
@@ -1530,7 +1547,7 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	owner, err := r.requireAuth(ctx)
+	owner, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1549,6 +1566,7 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.draft.review_share", draftID, map[string]any{"reviewer": reviewer})
 	d, err := svc.GetDraft(ctx, owner, draftID)
 	if err != nil {
 		return nil, err
@@ -1580,7 +1598,7 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	caller, err := r.requireAuth(ctx)
+	caller, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1598,6 +1616,7 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes)); err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "cms.draft.review_verdict", draftID, map[string]any{"verdict": string(verdict)})
 	vs, err := svc.DraftReviewVerdicts(ctx, d.AuthorID, draftID)
 	if err != nil {
 		return nil, err

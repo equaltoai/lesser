@@ -54,6 +54,7 @@ type round12PermissiveQueryState struct {
 	seededGovernanceStates map[string]*storagepkg.AgentGovernanceState
 	seededImportBudgets    map[string]*models.ImportBudget
 	seededQuotePermissions map[string]*models.QuotePermissions
+	seededAgentShareGrants map[string]*models.AgentShareGrant
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
 }
@@ -240,10 +241,40 @@ func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *
 		_, exists := state.seededGovernanceStates[username]
 		return !exists
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+	// Agent share grants: deterministic act-as authorization reads. Seeded grants
+	// populate; unseeded (agent, grantee) pairs fail closed as not-found.
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*models.AgentShareGrant); !ok {
+			return false
+		}
+		_, exists := state.seededAgentShareGrants[round12AgentShareGrantKey(state.lastPK, state.lastSK)]
+		return exists
+	})).Run(func(args mock.Arguments) {
+		grant, ok := args.Get(0).(*models.AgentShareGrant)
+		if !ok {
+			return
+		}
+		if seeded := state.seededAgentShareGrants[round12AgentShareGrantKey(state.lastPK, state.lastSK)]; seeded != nil {
+			*grant = *seeded
+		}
+	}).Return(nil).Maybe()
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*models.AgentShareGrant); !ok {
+			return false
+		}
+		_, exists := state.seededAgentShareGrants[round12AgentShareGrantKey(state.lastPK, state.lastSK)]
+		return !exists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		round12PopulateStruct(args.Get(0), state)
 	}).Return(nil).Maybe()
 	return mockDB, mockQuery, state
+}
+
+func round12AgentShareGrantKey(pk, sk string) string {
+	agent := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(pk, "USER#")))
+	grantee := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(sk, "AGENT_SHARE#GRANTEE#")))
+	return agent + "|" + grantee
 }
 
 func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
@@ -1579,6 +1610,24 @@ func (s *round12GraphStorage) SeedAccountUser(user *storagepkg.User) {
 	cloned := round12CloneStorageUser(user)
 	cloned.Username = username
 	s.queryState.seededAccountUsers[username] = cloned
+}
+
+func (s *round12GraphStorage) SeedAgentShareGrant(grant *models.AgentShareGrant) {
+	if s == nil || s.queryState == nil || grant == nil {
+		return
+	}
+	agent := strings.ToLower(strings.TrimSpace(grant.AgentUsername))
+	grantee := strings.ToLower(strings.TrimSpace(grant.GranteeUsername))
+	if agent == "" || grantee == "" {
+		return
+	}
+	if s.queryState.seededAgentShareGrants == nil {
+		s.queryState.seededAgentShareGrants = map[string]*models.AgentShareGrant{}
+	}
+	cloned := *grant
+	cloned.AgentUsername = agent
+	cloned.GranteeUsername = grantee
+	s.queryState.seededAgentShareGrants[agent+"|"+grantee] = &cloned
 }
 
 func (s *round12GraphStorage) SeedAgentGovernanceState(state *storagepkg.AgentGovernanceState) {

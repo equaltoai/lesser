@@ -17,6 +17,9 @@ type ContextKey string
 const (
 	// ContextKeyClaims is the context key for JWT claims
 	ContextKeyClaims ContextKey = "claims"
+	// ContextKeyActAsAgent carries the raw X-Lesser-Act-As indicator value from the
+	// HTTP transport into GraphQL resolvers for share-grant act-as resolution.
+	ContextKeyActAsAgent ContextKey = "act_as_agent"
 )
 
 // Claims represents JWT claims interface
