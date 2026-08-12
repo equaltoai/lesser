@@ -664,13 +664,19 @@ func actorSearchNotFound(err error) bool {
 // HandleGetNotificationsLift retrieves notifications for the authenticated user
 func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:notifications scope
-	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
+	claims, err := h.authenticateUserClaims(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	// Build notification filter from query parameters
 	notificationFilter := h.buildNotificationFilter(ctx)
@@ -1672,13 +1678,19 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Authenticate user with read:notifications scope
-	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
+	claims, err := h.authenticateUserClaims(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	if h.registry == nil {
 		return common.RespondServiceUnavailable(ctx, "notification")
@@ -1708,13 +1720,19 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 // HandleClearNotificationsLift handles POST /api/v1/notifications/clear
 func (h *Handler) HandleClearNotificationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write:notifications scope
-	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
+	claims, err := h.authenticateUserClaims(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	// Use the Notifications service to clear all notifications
 	notificationService := h.registry.Notifications()
@@ -1734,6 +1752,9 @@ func (h *Handler) HandleClearNotificationsLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	h.logger.Info("cleared notifications", zap.String("username", username), zap.Int64("deleted", clearResult.ClearedCount))
+	h.recordActAsAuditEvent(ctx, claims, acting, "agent.notification.clear", "", map[string]any{
+		"cleared_count": clearResult.ClearedCount,
+	})
 
 	return noContent(), nil
 }
@@ -1746,13 +1767,19 @@ func (h *Handler) HandleDismissNotificationLift(ctx *apptheory.Context) (*appthe
 	}
 
 	// Authenticate user with write:notifications scope
-	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
+	claims, err := h.authenticateUserClaims(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	// Use the Notifications service to mark as read (dismiss)
 	notificationService := h.registry.Notifications()
@@ -1775,6 +1802,8 @@ func (h *Handler) HandleDismissNotificationLift(ctx *apptheory.Context) (*appthe
 		}
 		return common.RespondInternalServerError(ctx, "failed to dismiss notification")
 	}
+
+	h.recordActAsAuditEvent(ctx, claims, acting, "agent.notification.dismiss", notificationID, nil)
 
 	return noContent(), nil
 }

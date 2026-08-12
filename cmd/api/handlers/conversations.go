@@ -83,13 +83,19 @@ func (h *Handler) convertConversationWithMessagesToAPI(ctx context.Context, resu
 // HandleGetConversationsLift retrieves all conversations for the authenticated user
 func (h *Handler) HandleGetConversationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
+	claims, err := h.authenticateUserClaims(ctx, []string{auth.ScopeRead})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	// Parse query parameters
 	limit := h.parseConversationLimit(ctx)
@@ -141,13 +147,19 @@ func (h *Handler) HandleGetConversationLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondBadRequest(ctx, "missing conversation id")
 	}
 
-	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
+	claims, err := h.authenticateUserClaims(ctx, []string{auth.ScopeRead})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	limit := h.parseConversationLimit(ctx)
 	maxID := queryValue(ctx, "max_id")
@@ -186,13 +198,19 @@ func (h *Handler) HandleLookupConversationByCounterpartLift(ctx *apptheory.Conte
 		return common.RespondBadRequest(ctx, "missing counterpart")
 	}
 
-	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
+	claims, err := h.authenticateUserClaims(ctx, []string{auth.ScopeRead})
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
 	}
+
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
 
 	limit := h.parseConversationLimit(ctx)
 	maxID := queryValue(ctx, "max_id")

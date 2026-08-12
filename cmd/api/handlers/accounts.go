@@ -146,8 +146,14 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 		return nil, err
 	}
 
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
+
 	h.logger.Info("handle verify_credentials: authentication succeeded",
-		zap.String("username", claims.Username))
+		zap.String("username", username))
 
 	// Check if registry is available
 	if h.registry == nil {
@@ -156,23 +162,23 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 	}
 
 	// Call Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("handle verify_credentials: failed to get account",
-			zap.String("username", claims.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
 	h.logger.Info("handle verify_credentials: account retrieved",
-		zap.String("username", claims.Username))
+		zap.String("username", username))
 
-	h.ensureLocalNumericIDMapping(ctx.Context(), claims.Username)
+	h.ensureLocalNumericIDMapping(ctx.Context(), username)
 
 	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), account)
 	if err != nil {
 		h.logger.Error("handle verify_credentials: failed to transform account response",
-			zap.String("username", claims.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
