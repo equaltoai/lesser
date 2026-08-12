@@ -66,6 +66,7 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		ObjectID:        objectID,
 		GeneratedBy:     r.resolveActorByID(ctx, draft.GeneratedBy),
 		ReviewedBy:      r.resolveActorByID(ctx, draft.ReviewedBy),
+		ActedBy:         r.resolveActorByID(ctx, draft.ActedBy),
 		ReviewVerdict:   cmsDraftReviewVerdict(draft.ReviewStatus),
 		ContentHash:     cms.DraftReviewContentHash(draft),
 		Revision:        draft.AutosaveVersion,
@@ -306,13 +307,14 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		EditorNotes:  editorNotes,
 		ReviewStatus: reviewStatus,
 
-		// CSR-049: generatedBy / reviewedBy / publishedBy are private CMS workflow
-		// attribution actors distinct from the public Author (attributedTo) byline.
-		// Only resolve them when the viewer is authenticated and is either the
-		// article author or an instance admin. Public viewers see nil for these fields.
+		// CSR-049: generatedBy / reviewedBy / publishedBy / actedBy are private CMS
+		// workflow attribution actors distinct from the public Author (attributedTo)
+		// byline. Only resolve them when the viewer is authenticated and is either
+		// the article author or an instance admin. Public viewers see nil for these fields.
 		GeneratedBy: r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.GeneratedBy),
 		ReviewedBy:  r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.ReviewedBy),
 		PublishedBy: r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.PublishedBy),
+		ActedBy:     r.resolveCMSPrivateAttributionActor(ctx, article.AttributedTo, article.ActedBy),
 
 		PublishedAt: model.Time(article.Published),
 		CreatedAt:   model.Time(article.CreatedAt),

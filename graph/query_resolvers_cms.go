@@ -329,7 +329,7 @@ func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, err
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +352,7 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.Dra
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 		return nil, err
 	}
 
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1464,7 +1464,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1516,7 +1516,7 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}

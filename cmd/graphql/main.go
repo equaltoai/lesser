@@ -587,6 +587,20 @@ func graphqlWithClaims(requestCtx context.Context, ctx *apptheory.Context) conte
 	return requestCtx
 }
 
+// graphqlWithActAsIndicator carries the raw X-Lesser-Act-As indicator value into the
+// resolver context. Resolvers perform the per-request share-grant check; the transport
+// only forwards the header.
+func graphqlWithActAsIndicator(requestCtx context.Context, ctx *apptheory.Context) context.Context {
+	if ctx == nil {
+		return requestCtx
+	}
+	indicator := strings.TrimSpace(ctx.Header(auth.ActAsAgentHeader))
+	if indicator == "" {
+		return requestCtx
+	}
+	return context.WithValue(requestCtx, common.ContextKeyActAsAgent, indicator)
+}
+
 func graphqlWithCostTracker(requestCtx context.Context, ctx *apptheory.Context) context.Context {
 	if ctx == nil {
 		return requestCtx
@@ -798,6 +812,7 @@ func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
 	)
 
 	requestCtx = graphqlWithClaims(requestCtx, ctx)
+	requestCtx = graphqlWithActAsIndicator(requestCtx, ctx)
 	requestCtx = graphqlWithCostTracker(requestCtx, ctx)
 	requestCtx = graphqlWithLoaders(requestCtx, ctx)
 

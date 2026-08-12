@@ -4,6 +4,7 @@ DELETE /api/v1/admin/domain_blocks/{id}
 DELETE /api/v1/admin/email_domain_blocks/{id}
 DELETE /api/v1/admin/statuses/{id}
 DELETE /api/v1/agents/{username}
+DELETE /api/v1/agents/{username}/share/{grantee}
 DELETE /api/v1/announcements/{id}/reactions/{name}
 DELETE /api/v1/auth/webauthn/credentials/{credentialId}
 DELETE /api/v1/conversations/{id}
@@ -61,10 +62,12 @@ GET /api/v1/admin/statuses
 GET /api/v1/admin/statuses/{id}
 GET /api/v1/agents
 GET /api/v1/agents/memory/search
+GET /api/v1/agents/shared-with-me
 GET /api/v1/agents/{username}
 GET /api/v1/agents/{username}/access-leases
 GET /api/v1/agents/{username}/activity
 GET /api/v1/agents/{username}/runtime-sessions
+GET /api/v1/agents/{username}/share
 GET /api/v1/announcements
 GET /api/v1/auth/webauthn/credentials
 GET /api/v1/blocks
@@ -304,6 +307,7 @@ PUT /api/v1/admin/custom_emojis/{shortcode}
 PUT /api/v1/admin/domain_blocks/{id}
 PUT /api/v1/admin/moderation/trust/{from}/{to}
 PUT /api/v1/admin/soul/well-known
+PUT /api/v1/agents/{username}/share/{grantee}
 PUT /api/v1/announcements/{id}/reactions/{name}
 PUT /api/v1/auth/webauthn/credentials/{credentialId}
 PUT /api/v1/lists/{id}

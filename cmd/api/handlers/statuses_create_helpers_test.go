@@ -101,7 +101,7 @@ func TestStatuses_CreateHelpers_CreateNoteCommandFromStatusRequest(t *testing.T)
 		},
 	}
 
-	cmd := createNoteCommandFromStatusRequest(claims, req, nil)
+	cmd := createNoteCommandFromStatusRequest(claims.Username, req, nil)
 	require.NotNil(t, cmd)
 	require.Equal(t, "alice", cmd.AuthorID)
 	require.Equal(t, "hello", cmd.Content)
@@ -127,7 +127,7 @@ func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequest(t *te
 	}
 
 	attr := &activitypub.AgentPostAttribution{TriggerType: "mention"}
-	cmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, attr)
+	cmd, err := buildDirectMessageCommandFromStatusRequest(claims, nil, req, attr)
 	require.NoError(t, err)
 	require.Equal(t, &conversations.SendDirectMessageCommand{
 		SenderID:         "alice",
@@ -156,7 +156,7 @@ func TestStatuses_CreateHelpers_DirectMessageRecipientUsesCompleteExactUsername(
 				Visibility: VisibilityDirect,
 			}
 
-			cmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, nil)
+			cmd, err := buildDirectMessageCommandFromStatusRequest(claims, nil, req, nil)
 			require.NoError(t, err)
 			require.Equal(t, []string{recipient}, cmd.Recipients)
 		})
@@ -168,13 +168,13 @@ func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequestRequir
 
 	claims := &auth.Claims{Username: "alice"}
 
-	_, err := buildDirectMessageCommandFromStatusRequest(claims, &apimodels.CreateStatusRequest{
+	_, err := buildDirectMessageCommandFromStatusRequest(claims, nil, &apimodels.CreateStatusRequest{
 		Status:     "no recipient",
 		Visibility: VisibilityDirect,
 	}, nil)
 	require.Error(t, err)
 
-	_, err = buildDirectMessageCommandFromStatusRequest(claims, &apimodels.CreateStatusRequest{
+	_, err = buildDirectMessageCommandFromStatusRequest(claims, nil, &apimodels.CreateStatusRequest{
 		Status:     "@bob hi @carol",
 		Visibility: VisibilityDirect,
 	}, nil)

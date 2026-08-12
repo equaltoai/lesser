@@ -1405,6 +1405,8 @@ components:
         AgentPostAttribution:
             additionalProperties: false
             properties:
+                acted_by:
+                    type: string
                 approved_by:
                     type: string
                 constraints:
@@ -1573,6 +1575,42 @@ components:
             required:
                 - account
                 - token
+            type: object
+        AgentShareGrant:
+            additionalProperties: false
+            properties:
+                active:
+                    type: boolean
+                agent_username:
+                    type: string
+                granted_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                granted_by:
+                    type: string
+                grantee_username:
+                    type: string
+                revoked_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                revoked_by:
+                    type: string
+            required:
+                - active
+                - agent_username
+                - granted_at
+                - granted_by
+                - grantee_username
+            type: object
+        AgentShareGrantListResponse:
+            additionalProperties: false
+            properties:
+                grants:
+                    items:
+                        $ref: '#/components/schemas/AgentShareGrant'
+                    type: array
+            required:
+                - grants
             type: object
         Announcement:
             additionalProperties: false
@@ -7705,6 +7743,8 @@ components:
                                 anyOf:
                                     - additionalProperties: false
                                       properties:
+                                        acted_by:
+                                            type: string
                                         approved_by:
                                             type: string
                                         constraints:
@@ -10235,6 +10275,12 @@ paths:
                 - accounts
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -13291,6 +13337,132 @@ paths:
                 - admin:write
                 - write
                 - write:accounts
+    /api/v1/agents/{username}/share:
+        get:
+            operationId: get_api_v1_agents_by_username_share
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentShareGrantListResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListAgentSharesLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
+    /api/v1/agents/{username}/share/{grantee}:
+        put:
+            operationId: put_api_v1_agents_by_username_share_by_grantee
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: grantee
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentShareGrant'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGrantAgentShareLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
+        delete:
+            operationId: delete_api_v1_agents_by_username_share_by_grantee
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: grantee
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentShareGrant'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "409":
+                    $ref: '#/components/responses/Conflict'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleRevokeAgentShareLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+                - write:accounts
     /api/v1/agents/{username}/suspend:
         post:
             operationId: post_api_v1_agents_by_username_suspend
@@ -13563,6 +13735,34 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /api/v1/agents/shared-with-me:
+        get:
+            operationId: get_api_v1_agents_shared_with_me
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentShareGrantListResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListAgentsSharedWithMeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements
@@ -14184,6 +14384,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -14220,6 +14425,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -14343,6 +14553,11 @@ paths:
                     minLength: 1
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -16204,6 +16419,11 @@ paths:
                   in: query
                   schema:
                     type: string
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -16238,6 +16458,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -16274,6 +16499,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -16307,6 +16537,12 @@ paths:
                 - notifications
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "204":
                     description: No Content
@@ -17670,6 +17906,12 @@ paths:
                 - statuses
             security:
                 - bearerAuth: []
+            parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             requestBody:
                 content:
                     application/json:
@@ -17971,6 +18213,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18368,6 +18615,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18611,6 +18863,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -18779,6 +19036,11 @@ paths:
             security:
                 - bearerAuth: []
             parameters:
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
                 - name: id
                   in: path
                   required: true
@@ -19263,6 +19525,11 @@ paths:
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
+                - name: X-Lesser-Act-As
+                  in: header
+                  description: 'Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.'
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK

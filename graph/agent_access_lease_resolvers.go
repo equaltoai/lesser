@@ -563,8 +563,7 @@ func (r *Resolver) requireOwnedAgentLeaseAccount(ctx context.Context, username s
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
 		return nil, nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
-	owner := strings.TrimPrefix(strings.TrimSpace(account.User.AgentOwner), "@")
-	if !strings.EqualFold(owner, claims.Username) {
+	if !auth.AgentOwnerMatchesLocalPrincipal(account.User.AgentOwner, claims.Username, r.agentOwnerActorURL) {
 		return nil, nil, apperrors.Forbidden("not authorized to manage agent lease enrollment")
 	}
 	return claims, account, nil

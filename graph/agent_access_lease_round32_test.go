@@ -111,3 +111,20 @@ func TestGraphAgentAccessLeaseAccountGuards_RejectSuspendedAgent(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent not found")
 }
+
+func TestGraphOwnedAgentLeaseAccountUsesSharedOwnerMatching(t *testing.T) {
+	state := newDelegationGraphState("agent1", []string{auth.ScopeRead})
+	state.users["agent1"].AgentOwner = "http://localhost/users/owner"
+	resolver := newDelegationResolver(t, state, false)
+	ctx := delegatedAgentAuthContext("owner", "write:accounts")
+
+	claims, account, err := resolver.requireOwnedAgentLeaseAccount(ctx, "agent1")
+	require.NoError(t, err)
+	require.Equal(t, "owner", claims.Username)
+	require.Equal(t, "agent1", account.User.Username)
+
+	state.users["agent1"].AgentOwner = "https://remote.example/users/owner"
+	_, _, err = resolver.requireOwnedAgentLeaseAccount(ctx, "agent1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not authorized to manage agent lease enrollment")
+}

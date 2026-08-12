@@ -78,25 +78,6 @@ func graphAgentGovernanceWriteError(err error, action string) error {
 	return apperrors.InternalWithCause(err, fmt.Sprintf("failed to %s agent governance state", action))
 }
 
-func agentOwnerMatchesLocalPrincipal(owner string, principalUsername string, localActorURL string) bool {
-	principalUsername = strings.TrimSpace(principalUsername)
-	owner = strings.TrimSpace(owner)
-	if principalUsername == "" || owner == "" {
-		return false
-	}
-
-	lowerOwner := strings.ToLower(owner)
-	if strings.HasPrefix(lowerOwner, "http://") || strings.HasPrefix(lowerOwner, "https://") {
-		return strings.TrimSpace(localActorURL) != "" && strings.EqualFold(owner, localActorURL)
-	}
-
-	owner = strings.TrimPrefix(owner, "@")
-	if strings.Contains(owner, "/") {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(owner), principalUsername)
-}
-
 func (r *Resolver) agentOwnerActorURL(username string) string {
 	if r == nil || r.Config == nil {
 		return ""

@@ -17,6 +17,40 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applySkillOverrides(op, route)
 	applyStatusOverrides(op, route)
 	applyQuoteOverrides(op, route)
+	applyActAsOverrides(op, route)
+}
+
+// actAsEnabledRoutes are the REST endpoints that honor the X-Lesser-Act-As
+// share-grant act-as indicator (docs/contracts/agent-share-act-as.md). The
+// header is ignored everywhere else.
+var actAsEnabledRoutes = map[string]map[string]bool{
+	"/api/v1/statuses":                    {"POST": true},
+	"/api/v1/statuses/{id}/favourite":     {"POST": true},
+	"/api/v1/statuses/{id}/unfavourite":   {"POST": true},
+	"/api/v1/statuses/{id}/reblog":        {"POST": true},
+	"/api/v1/statuses/{id}/unreblog":      {"POST": true},
+	"/api/v1/notifications":               {"GET": true},
+	"/api/v1/notifications/{id}":          {"GET": true},
+	"/api/v1/notifications/clear":         {"POST": true},
+	"/api/v1/notifications/{id}/dismiss":  {"POST": true},
+	"/api/v1/timelines/home":              {"GET": true},
+	"/api/v1/accounts/verify_credentials": {"GET": true},
+	"/api/v1/conversations":               {"GET": true},
+	"/api/v1/conversations/{id}":          {"GET": true},
+	"/api/v1/conversations/lookup":        {"GET": true},
+}
+
+func applyActAsOverrides(op *operation, route routeDef) {
+	methods, ok := actAsEnabledRoutes[route.Path]
+	if !ok || !methods[strings.ToUpper(route.Method)] {
+		return
+	}
+	ensureQueryParam(op, parameter{
+		Name:        "X-Lesser-Act-As",
+		In:          "header",
+		Description: "Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500.",
+		Schema:      schemaRef{Type: "string"},
+	})
 }
 
 func applyQuoteOverrides(op *operation, route routeDef) {

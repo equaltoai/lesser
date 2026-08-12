@@ -5,6 +5,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
@@ -25,6 +26,7 @@ import (
 // without requiring DynamoDB/AWS/network side-effects.
 type ServiceRegistry interface {
 	Accounts() AccountsService
+	AgentShares() AgentShareService
 	AI() AIService
 	Conversations() ConversationsService
 	Emoji() EmojiService
@@ -36,6 +38,16 @@ type ServiceRegistry interface {
 	Relationships() RelationshipsService
 	Scheduled() ScheduledService
 	Search() SearchService
+}
+
+// AgentShareService defines the per-agent share-list operations used by the API.
+type AgentShareService interface {
+	Grant(context.Context, agentshare.ManageInput) (*storagemodels.AgentShareGrant, error)
+	Revoke(context.Context, agentshare.ManageInput) (*storagemodels.AgentShareGrant, error)
+	ListByAgent(context.Context, string, string, bool) ([]*storagemodels.AgentShareGrant, error)
+	ListSharedWith(context.Context, string) ([]*storagemodels.AgentShareGrant, error)
+	// IsActive performs the uncached, strongly consistent per-request grant check.
+	IsActive(context.Context, string, string) (bool, error)
 }
 
 // AccountsService defines the subset of account-related operations used by the Lift API
@@ -225,6 +237,13 @@ func (a *servicesRegistryAdapter) Accounts() AccountsService {
 		return nil
 	}
 	return svc
+}
+
+func (a *servicesRegistryAdapter) AgentShares() AgentShareService {
+	if a == nil || a.registry == nil {
+		return nil
+	}
+	return a.registry.AgentShares()
 }
 
 func (a *servicesRegistryAdapter) AI() AIService {

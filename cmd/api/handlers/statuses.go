@@ -51,6 +51,12 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		return authResp, authErr
 	}
 
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	authorID := effectiveActingUsername(claims, acting)
+
 	// Default visibility
 	if req.Visibility == "" {
 		req.Visibility = VisibilityPublic
@@ -60,17 +66,21 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	if resp != nil || prepErr != nil {
 		return resp, prepErr
 	}
+	agentAttribution = h.applyActAsStatusAttribution(agentAttribution, acting)
 
 	// Create a scheduled status instead of publishing immediately.
 	if req.ScheduledAt != nil {
+		if acting != nil {
+			return common.RespondBadRequest(ctx, auth.ActAsAgentHeader+" is not supported for scheduled statuses")
+		}
 		return h.handleCreateScheduledStatus(ctx, claims, &req)
 	}
 
 	if req.Visibility == VisibilityDirect {
-		return h.handleCreateDirectStatus(ctx, claims, &req, agentAttribution)
+		return h.handleCreateDirectStatus(ctx, claims, acting, &req, agentAttribution)
 	}
 
-	createCmd := createNoteCommandFromStatusRequest(claims, &req, agentAttribution)
+	createCmd := createNoteCommandFromStatusRequest(authorID, &req, agentAttribution)
 
 	// Call Notes service
 	result, err := h.registry.Notes().CreateNote(ctx.Context(), createCmd)
@@ -114,18 +124,19 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 	appendReplyParentAuditMetadata(auditMetadata, result)
 	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Note.StatusID, auditMetadata)
+	h.recordActAsAuditEvent(ctx, claims, acting, "agent.status.create", result.Note.StatusID, auditMetadata)
 
 	return createdJSON(apiStatus)
 }
 
-func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*apptheory.Response, error) {
+func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.Claims, acting *auth.ActAsResolution, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*apptheory.Response, error) {
 	conversationsService := h.registry.Conversations()
 	if conversationsService == nil {
 		h.logger.Error("conversations service not available for direct status create")
 		return common.RespondServiceUnavailable(ctx, "conversations service")
 	}
 
-	sendCmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, agentAttribution)
+	sendCmd, err := buildDirectMessageCommandFromStatusRequest(claims, acting, req, agentAttribution)
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
@@ -153,7 +164,7 @@ func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.
 		zap.String("id", result.Message.StatusID),
 		zap.String("content", req.Status))
 
-	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Message.StatusID, map[string]any{
+	dmAuditMetadata := map[string]any{
 		"visibility":       req.Visibility,
 		"in_reply_to_id":   req.InReplyToID,
 		"has_media":        len(req.MediaIDs) > 0,
@@ -164,7 +175,9 @@ func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.
 		"sensitive":        req.Sensitive,
 		"scheduled":        req.ScheduledAt != nil,
 		"requested_scopes": strings.Join(claims.Scopes, " "),
-	})
+	}
+	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Message.StatusID, dmAuditMetadata)
+	h.recordActAsAuditEvent(ctx, claims, acting, "agent.status.create", result.Message.StatusID, dmAuditMetadata)
 
 	return createdJSON(apiStatus)
 }
@@ -327,9 +340,9 @@ func buildScheduledPoll(poll *models.Poll) map[string]any {
 	}
 }
 
-func createNoteCommandFromStatusRequest(claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) *notes.CreateNoteCommand {
+func createNoteCommandFromStatusRequest(authorID string, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) *notes.CreateNoteCommand {
 	createCmd := &notes.CreateNoteCommand{
-		AuthorID:         claims.Username,
+		AuthorID:         authorID,
 		Content:          req.Status,
 		Visibility:       req.Visibility,
 		Sensitive:        req.Sensitive,
@@ -348,7 +361,7 @@ func createNoteCommandFromStatusRequest(claims *auth.Claims, req *models.CreateS
 	return createCmd
 }
 
-func buildDirectMessageCommandFromStatusRequest(claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*conversations.SendDirectMessageCommand, error) {
+func buildDirectMessageCommandFromStatusRequest(claims *auth.Claims, acting *auth.ActAsResolution, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*conversations.SendDirectMessageCommand, error) {
 	recipients := directMessageRecipientsFromStatusRequest(req)
 	switch len(recipients) {
 	case 0:
@@ -358,8 +371,8 @@ func buildDirectMessageCommandFromStatusRequest(claims *auth.Claims, req *models
 		return nil, common.ValidationError{Field: "status", Message: "direct messages support exactly one recipient"}
 	}
 
-	return &conversations.SendDirectMessageCommand{
-		SenderID:         claims.Username,
+	cmd := &conversations.SendDirectMessageCommand{
+		SenderID:         effectiveActingUsername(claims, acting),
 		Recipients:       recipients,
 		Content:          req.Status,
 		Sensitive:        req.Sensitive,
@@ -368,7 +381,29 @@ func buildDirectMessageCommandFromStatusRequest(claims *auth.Claims, req *models
 		MediaIDs:         req.MediaIDs,
 		InReplyToID:      req.InReplyToID,
 		AgentAttribution: agentAttribution,
-	}, nil
+	}
+	if acting != nil {
+		cmd.ActedBy = acting.ActedBy
+	}
+	return cmd, nil
+}
+
+// applyActAsStatusAttribution records the mandatory caller attribution for a
+// share-grant act-as post on the note's agent attribution. The value is derived
+// from the authenticated claims (never client input) and normalized to the local
+// actor URI form, matching DelegatedBy conventions.
+func (h *Handler) applyActAsStatusAttribution(attr *activitypub.AgentPostAttribution, acting *auth.ActAsResolution) *activitypub.AgentPostAttribution {
+	if acting == nil {
+		return attr
+	}
+	if attr == nil {
+		attr = &activitypub.AgentPostAttribution{}
+	}
+	attr.ActedBy = h.normalizeDelegatedByActorURI(acting.ActedBy)
+	if attr.SchemaVersion == "" {
+		attr.SchemaVersion = activitypub.AgentAttributionSchemaVersion
+	}
+	return attr
 }
 
 func directMessageRecipientsFromStatusRequest(req *models.CreateStatusRequest) []string {
@@ -839,6 +874,12 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondUnauthorized(ctx)
 	}
 
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	viewerID := effectiveActingUsername(claims, acting)
+
 	// Parse pagination parameters
 	limit, _ := common.ParseStatusTimelineLimit(queryValue(ctx, "limit"))
 
@@ -847,7 +888,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 
 	// Get home timeline using Notes service
 	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
-		ViewerID:     claims.Username,
+		ViewerID:     viewerID,
 		TimelineType: "home",
 		Pagination: interfaces.PaginationOptions{
 			Limit:  limit,
@@ -862,7 +903,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 	// Convert to Mastodon API format
 	timeline := make([]*models.Status, 0, len(result.Notes))
 	for _, status := range result.Notes {
-		apiStatus, err := h.convertStorageStatusToAPI(status, claims.Username)
+		apiStatus, err := h.convertStorageStatusToAPI(status, viewerID)
 		if err != nil {
 			h.logger.Warn("failed to convert home timeline status",
 				zap.String("status_id", status.StatusID),

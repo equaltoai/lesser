@@ -187,12 +187,27 @@ func TestAgentIdentitySemanticsResolverRedactsSoulBindingForPublicViewer(t *test
 	require.Equal(t, "soul-agent-1", *ownerIdentity.SoulAgentID)
 }
 
-func TestGraphAgentOwnerMatchesLocalPrincipal(t *testing.T) {
-	require.True(t, agentOwnerMatchesLocalPrincipal("@alice", "alice", ""))
-	require.True(t, agentOwnerMatchesLocalPrincipal("alice", "alice", ""))
-	require.True(t, agentOwnerMatchesLocalPrincipal("https://example.com/users/alice", "alice", "https://example.com/users/alice"))
-	require.False(t, agentOwnerMatchesLocalPrincipal("https://remote.example/users/alice", "alice", "https://example.com/users/alice"))
-	require.False(t, agentOwnerMatchesLocalPrincipal("example.com/users/alice", "alice", ""))
+func TestGraphAgentOwnerOrAdminUsesSharedOwnerMatching(t *testing.T) {
+	claims := &auth.Claims{Username: "alice"}
+
+	tests := []struct {
+		name  string
+		owner string
+		want  bool
+	}{
+		{name: "at username", owner: "@alice", want: true},
+		{name: "plain username", owner: "alice", want: true},
+		{name: "local actor URL", owner: "https://example.com/users/alice", want: true},
+		{name: "remote actor URL", owner: "https://remote.example/users/alice", want: false},
+		{name: "non URL path", owner: "example.com/users/alice", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			agentUser := &storage.User{Username: "agent-alpha", IsAgent: true, AgentOwner: tc.owner}
+			require.Equal(t, tc.want, isAgentOwnerOrAdmin(claims, agentUser, "https://example.com/users/alice"))
+		})
+	}
 }
 
 func ptrGraphTime(value time.Time) *time.Time {

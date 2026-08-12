@@ -26,6 +26,7 @@ func cmsNormalizeDraftAttribution(draft *models.Draft) {
 	}
 	draft.GeneratedBy = cmsNormalizeAttributionActorID(draft.GeneratedBy)
 	draft.ReviewedBy = cmsNormalizeAttributionActorID(draft.ReviewedBy)
+	draft.ActedBy = cmsNormalizeAttributionActorID(draft.ActedBy)
 }
 
 func cmsNormalizeArticleAttribution(article *models.Article, existing *models.Article) {
@@ -36,6 +37,7 @@ func cmsNormalizeArticleAttribution(article *models.Article, existing *models.Ar
 	article.GeneratedBy = cmsNormalizeAttributionActorID(article.GeneratedBy)
 	article.ReviewedBy = cmsNormalizeAttributionActorID(article.ReviewedBy)
 	article.PublishedBy = cmsNormalizeAttributionActorID(article.PublishedBy)
+	article.ActedBy = cmsNormalizeAttributionActorID(article.ActedBy)
 
 	if existing != nil {
 		if article.GeneratedBy == "" {
@@ -46,6 +48,9 @@ func cmsNormalizeArticleAttribution(article *models.Article, existing *models.Ar
 		}
 		if article.PublishedBy == "" {
 			article.PublishedBy = cmsNormalizeAttributionActorID(existing.PublishedBy)
+		}
+		if article.ActedBy == "" {
+			article.ActedBy = cmsNormalizeAttributionActorID(existing.ActedBy)
 		}
 	}
 
@@ -65,6 +70,9 @@ func cmsApplyDraftAttributionToArticle(article *models.Article, draft *models.Dr
 	}
 	if draft.ReviewedBy != "" || !preserveExisting {
 		article.ReviewedBy = draft.ReviewedBy
+	}
+	if draft.ActedBy != "" || !preserveExisting {
+		article.ActedBy = draft.ActedBy
 	}
 
 	publishedBy := cmsDefaultLocalAttributionActorID(domain, publisherUsername)

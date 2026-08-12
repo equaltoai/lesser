@@ -42,6 +42,11 @@ type Article struct {
 	ReviewedBy  string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
 	PublishedBy string `theorydb:"attr:publishedBy,omitempty" json:"published_by,omitempty"`
 
+	// ActedBy records the local actor URI of the caller who acted on the
+	// attributed author's behalf under an active share grant (empty when
+	// the author acted as themselves).
+	ActedBy string `theorydb:"attr:actedBy,omitempty" json:"acted_by,omitempty"`
+
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 

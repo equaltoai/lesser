@@ -168,15 +168,19 @@ func derefBool(value *bool) bool {
 
 // AcceptMessageRequest is the resolver for the acceptMessageRequest field.
 func (r *mutationResolver) AcceptMessageRequest(ctx context.Context, conversationID string) (*model.Conversation, error) {
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := r.Registry.Conversations().AcceptMessageRequest(ctx, &conversations.AcceptMessageRequestCommand{
+	cmd := &conversations.AcceptMessageRequestCommand{
 		ConversationID: conversationID,
 		UserID:         username,
-	})
+	}
+	if acting != nil {
+		cmd.ActedBy = acting.ActedBy
+	}
+	result, err := r.Registry.Conversations().AcceptMessageRequest(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to accept message request",
 			zap.String("user", username),
@@ -190,15 +194,19 @@ func (r *mutationResolver) AcceptMessageRequest(ctx context.Context, conversatio
 
 // DeclineMessageRequest is the resolver for the declineMessageRequest field.
 func (r *mutationResolver) DeclineMessageRequest(ctx context.Context, conversationID string) (bool, error) {
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	_, err = r.Registry.Conversations().DeclineMessageRequest(ctx, &conversations.DeclineMessageRequestCommand{
+	cmd := &conversations.DeclineMessageRequestCommand{
 		ConversationID: conversationID,
 		UserID:         username,
-	})
+	}
+	if acting != nil {
+		cmd.ActedBy = acting.ActedBy
+	}
+	_, err = r.Registry.Conversations().DeclineMessageRequest(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to decline message request",
 			zap.String("user", username),
