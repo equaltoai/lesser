@@ -27,6 +27,11 @@ type AgentPostAttribution struct {
 	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
 	Scopes         []string `json:"scopes,omitempty"`
 
+	// ActedBy records the real local caller when a share-grant grantee acts on the
+	// agent's account (agent-scoped action with mandatory caller attribution). It is
+	// derived server-side from the authenticated claims, never from client input.
+	ActedBy string `json:"acted_by,omitempty"`
+
 	Constraints       []string `json:"constraints,omitempty"`
 	SchemaVersion     string   `json:"schema_version,omitempty"`
 	ModelID           string   `json:"model_id,omitempty"`
@@ -97,5 +102,6 @@ func normalizeAgentPostAttributionForActor(attr *AgentPostAttribution, actorIRI 
 	normalized := *attr
 	normalized.DelegatedBy = normalizeDelegatedByActorURI(normalized.DelegatedBy, actorIRI)
 	normalized.ApprovedBy = normalizeDelegatedByActorURI(normalized.ApprovedBy, actorIRI)
+	normalized.ActedBy = normalizeDelegatedByActorURI(normalized.ActedBy, actorIRI)
 	return &normalized
 }

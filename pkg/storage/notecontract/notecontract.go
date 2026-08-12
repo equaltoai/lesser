@@ -126,6 +126,7 @@ type persistedAgentPostAttribution struct {
 	DelegatedBy     string   `json:"DelegatedBy,omitempty"`
 	ApprovedBy      string   `json:"ApprovedBy,omitempty"`
 	DelegatedByDID  string   `json:"DelegatedByDID,omitempty"`
+	ActedBy         string   `json:"ActedBy,omitempty"`
 	Scopes          []string `json:"Scopes,omitempty"`
 	Constraints     []string `json:"Constraints,omitempty"`
 	SchemaVersion   string   `json:"SchemaVersion,omitempty"`
@@ -208,6 +209,7 @@ func persistedNoteFromActivityPub(note *activitypub.Note) persistedNote {
 			DelegatedBy:     note.AgentAttribution.DelegatedBy,
 			ApprovedBy:      note.AgentAttribution.ApprovedBy,
 			DelegatedByDID:  note.AgentAttribution.DelegatedByDID,
+			ActedBy:         note.AgentAttribution.ActedBy,
 			Scopes:          append([]string(nil), note.AgentAttribution.Scopes...),
 			Constraints:     append([]string(nil), note.AgentAttribution.Constraints...),
 			SchemaVersion:   note.AgentAttribution.SchemaVersion,
@@ -289,6 +291,7 @@ func (p persistedNote) toActivityPub() *activitypub.Note {
 			DelegatedBy:     p.AgentAttribution.DelegatedBy,
 			ApprovedBy:      p.AgentAttribution.ApprovedBy,
 			DelegatedByDID:  p.AgentAttribution.DelegatedByDID,
+			ActedBy:         p.AgentAttribution.ActedBy,
 			Scopes:          append([]string(nil), p.AgentAttribution.Scopes...),
 			Constraints:     append([]string(nil), p.AgentAttribution.Constraints...),
 			SchemaVersion:   p.AgentAttribution.SchemaVersion,
@@ -397,6 +400,7 @@ func normalizeAgentAttributionMap(raw map[string]any) map[string]any {
 	copyAnyAlias(out, raw, "MemoryCitations", "memory_citations")
 	copyAnyAlias(out, raw, "DelegatedBy", "delegated_by")
 	copyAnyAlias(out, raw, "DelegatedByDID", "delegated_by_did")
+	copyAnyAlias(out, raw, "ActedBy", "acted_by")
 	copyAnyAlias(out, raw, "Scopes", "scopes")
 	copyAnyAlias(out, raw, "Constraints", "constraints")
 	copyAnyAlias(out, raw, "SchemaVersion", "schema_version")

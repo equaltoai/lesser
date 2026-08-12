@@ -38,6 +38,10 @@ func (s *agentShareServiceStub) ListSharedWith(ctx context.Context, grantee stri
 	return s.listSharedWithFunc(ctx, grantee)
 }
 
+func (s *agentShareServiceStub) IsActive(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
 func newAgentShareHandler(t *testing.T, service AgentShareService) (*Handler, map[string]string, map[string]string) {
 	t.Helper()
 	cfg := round10TestConfig()

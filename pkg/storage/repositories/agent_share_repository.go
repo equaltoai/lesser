@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -125,16 +124,24 @@ func (r *AgentShareRepository) GetAgentShareGrant(ctx context.Context, agentUser
 	return &grant, nil
 }
 
-// IsActiveAgentShareGrant performs the uncached per-request membership check.
+// IsActiveAgentShareGrant performs the uncached per-request membership check. This is
+// the authorization read: it uses a strongly consistent direct GetItem so revocation is
+// observed immediately, and it never consults the discovery GSI.
 func (r *AgentShareRepository) IsActiveAgentShareGrant(ctx context.Context, agentUsername, granteeUsername string) (bool, error) {
-	grant, err := r.GetAgentShareGrant(ctx, agentUsername, granteeUsername)
+	var grant models.AgentShareGrant
+	err := r.db.WithContext(ctx).
+		Model(&models.AgentShareGrant{}).
+		Where("PK", "=", models.AgentShareGrantPK(agentUsername)).
+		Where("SK", "=", models.AgentShareGrantSK(granteeUsername)).
+		ConsistentRead().
+		First(&grant)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
+		if tabletheoryerrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return grant != nil && grant.RevokedAt == nil, nil
+	return grant.RevokedAt == nil, nil
 }
 
 // ListAgentShareGrantsByAgent returns the complete owner-view grant history.

@@ -46,6 +46,8 @@ type AgentShareService interface {
 	Revoke(context.Context, agentshare.ManageInput) (*storagemodels.AgentShareGrant, error)
 	ListByAgent(context.Context, string, string, bool) ([]*storagemodels.AgentShareGrant, error)
 	ListSharedWith(context.Context, string) ([]*storagemodels.AgentShareGrant, error)
+	// IsActive performs the uncached, strongly consistent per-request grant check.
+	IsActive(context.Context, string, string) (bool, error)
 }
 
 // AccountsService defines the subset of account-related operations used by the Lift API

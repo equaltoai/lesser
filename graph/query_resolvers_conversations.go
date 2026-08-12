@@ -16,7 +16,7 @@ import (
 
 // Conversations is the resolver for the conversations field.
 func (r *queryResolver) Conversations(ctx context.Context, folder *model.ConversationFolder, first *int, after *model.Cursor) ([]*model.Conversation, error) {
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}

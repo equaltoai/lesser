@@ -338,7 +338,17 @@ func (h *Handler) statusInteraction(ctx *apptheory.Context, operation string) (*
 		return common.RespondUnauthorized(ctx)
 	}
 
-	return h.statusInteractionForUser(ctx, operation, statusID, claims.Username)
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
+
+	resp, err := h.statusInteractionForUser(ctx, operation, statusID, username)
+	if err == nil {
+		h.recordActAsAuditEvent(ctx, claims, acting, statusInteractionActAsAuditEvent(operation), statusID, nil)
+	}
+	return resp, err
 }
 
 func (h *Handler) statusInteractionForUser(ctx *apptheory.Context, operation string, statusID string, username string) (*apptheory.Response, error) {
@@ -371,6 +381,24 @@ func isSupportedStatusInteraction(operation string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// statusInteractionActAsAuditEvent names the act-as audit event for a status
+// interaction. Events are emitted only for act-as requests; the owner path is
+// unchanged and unaudited exactly as before.
+func statusInteractionActAsAuditEvent(operation string) string {
+	switch operation {
+	case statusOpFavorite:
+		return "agent.status.favourite"
+	case statusOpUnfavorite:
+		return "agent.status.unfavourite"
+	case statusOpReblog:
+		return "agent.status.reblog"
+	case statusOpUnreblog:
+		return "agent.status.unreblog"
+	default:
+		return "agent.status.interaction"
 	}
 }
 
@@ -571,15 +599,28 @@ func (h *Handler) HandleReblogLift(ctx *apptheory.Context) (*apptheory.Response,
 		return common.RespondUnauthorized(ctx)
 	}
 
+	acting, actAsResp, actAsErr := h.resolveActAs(ctx, claims)
+	if actAsResp != nil || actAsErr != nil {
+		return actAsResp, actAsErr
+	}
+	username := effectiveActingUsername(claims, acting)
+
 	req, parseResp, err := h.parseUnifiedBoostRequest(ctx)
 	if parseResp != nil || err != nil {
 		return parseResp, err
 	}
 	if req.Comment == nil || strings.TrimSpace(*req.Comment) == "" {
-		return h.statusInteractionForUser(ctx, statusOpReblog, statusID, claims.Username)
+		resp, respErr := h.statusInteractionForUser(ctx, statusOpReblog, statusID, username)
+		if respErr == nil {
+			h.recordActAsAuditEvent(ctx, claims, acting, statusInteractionActAsAuditEvent(statusOpReblog), statusID, nil)
+		}
+		return resp, respErr
+	}
+	if acting != nil {
+		return common.RespondBadRequest(ctx, auth.ActAsAgentHeader+" is not supported for quote boosts")
 	}
 
-	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx)

@@ -164,9 +164,19 @@ func normalizeLocalActorDomain(domain string) string {
 
 // authenticateUser handles the common pattern of extracting and validating user authentication
 func (h *Handler) authenticateUser(ctx *apptheory.Context, requiredScopes []string) (username string, err error) {
+	claims, err := h.authenticateUserClaims(ctx, requiredScopes)
+	if err != nil {
+		return "", err
+	}
+	return claims.Username, nil
+}
+
+// authenticateUserClaims mirrors authenticateUser but returns the full claims so
+// handlers can resolve an optional share-grant act-as indicator after authentication.
+func (h *Handler) authenticateUserClaims(ctx *apptheory.Context, requiredScopes []string) (*auth.Claims, error) {
 	claims, err := h.authenticatedClaimsLift(ctx)
 	if err != nil {
-		return "", helperUnauthorized()
+		return nil, helperUnauthorized()
 	}
 
 	// Check scopes if provided
@@ -179,11 +189,11 @@ func (h *Handler) authenticateUser(ctx *apptheory.Context, requiredScopes []stri
 			}
 		}
 		if !hasScope {
-			return "", helperInsufficientScope()
+			return nil, helperInsufficientScope()
 		}
 	}
 
-	return claims.Username, nil
+	return claims, nil
 }
 
 // authenticateUserOptional handles optional authentication (for search, public endpoints etc.)
@@ -1255,6 +1265,7 @@ func statusAgentAttributionFromNote(noteAttr *activitypub.AgentPostAttribution) 
 	out.DelegatedBy = strings.TrimSpace(noteAttr.DelegatedBy)
 	out.ApprovedBy = strings.TrimSpace(noteAttr.ApprovedBy)
 	out.DelegatedByDID = strings.TrimSpace(noteAttr.DelegatedByDID)
+	out.ActedBy = strings.TrimSpace(noteAttr.ActedBy)
 	out.Scopes = append([]string(nil), noteAttr.Scopes...)
 	out.Constraints = append([]string(nil), noteAttr.Constraints...)
 	out.IdentityState = strings.TrimSpace(noteAttr.IdentityState)

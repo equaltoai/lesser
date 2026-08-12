@@ -12,6 +12,7 @@ type AgentPostAttribution struct {
 	DelegatedBy    string   `json:"delegated_by,omitempty"`
 	ApprovedBy     string   `json:"approved_by,omitempty"`
 	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
+	ActedBy        string   `json:"acted_by,omitempty"`
 	Scopes         []string `json:"scopes,omitempty"`
 
 	Constraints       []string `json:"constraints,omitempty"`

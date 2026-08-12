@@ -181,15 +181,18 @@ var (
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
-	SenderID               string                             `json:"sender_id" validate:"required"`
-	Recipients             []string                           `json:"recipients" validate:"required,min=1"`
-	Content                string                             `json:"content" validate:"required,max=5000"`
-	Sensitive              bool                               `json:"sensitive"`
-	SpoilerText            string                             `json:"spoiler_text"`
-	Language               string                             `json:"language"`
-	MediaIDs               []string                           `json:"media_ids"`
-	InReplyToID            string                             `json:"in_reply_to_id"` // Can reply to messages in the conversation
-	AgentAttribution       *activitypub.AgentPostAttribution  `json:"agent_attribution,omitempty"`
+	SenderID         string                            `json:"sender_id" validate:"required"`
+	Recipients       []string                          `json:"recipients" validate:"required,min=1"`
+	Content          string                            `json:"content" validate:"required,max=5000"`
+	Sensitive        bool                              `json:"sensitive"`
+	SpoilerText      string                            `json:"spoiler_text"`
+	Language         string                            `json:"language"`
+	MediaIDs         []string                          `json:"media_ids"`
+	InReplyToID      string                            `json:"in_reply_to_id"` // Can reply to messages in the conversation
+	AgentAttribution *activitypub.AgentPostAttribution `json:"agent_attribution,omitempty"`
+	// ActedBy records the real local caller when the message is sent under a
+	// share-grant act-as resolution (plain canonical username, audit attribution).
+	ActedBy                string                             `json:"acted_by,omitempty"`
 	ResolvedRecipientActor *activitypub.Actor                 `json:"-"`
 	ResolvedRecipientRef   *models.ConversationParticipantRef `json:"-"`
 }
@@ -248,12 +251,16 @@ type SendMessageCommand struct {
 type AcceptMessageRequestCommand struct {
 	ConversationID string `json:"conversation_id" validate:"required"`
 	UserID         string `json:"user_id" validate:"required"`
+	// ActedBy records the real local caller under a share-grant act-as resolution.
+	ActedBy string `json:"acted_by,omitempty"`
 }
 
 // DeclineMessageRequestCommand contains data needed to decline a pending message request.
 type DeclineMessageRequestCommand struct {
 	ConversationID string `json:"conversation_id" validate:"required"`
 	UserID         string `json:"user_id" validate:"required"`
+	// ActedBy records the real local caller under a share-grant act-as resolution.
+	ActedBy string `json:"acted_by,omitempty"`
 }
 
 // ConversationFolder indicates whether a thread appears in the viewer's inbox or requests list.
@@ -1731,7 +1738,7 @@ func (s *Service) AcceptMessageRequest(ctx context.Context, cmd *AcceptMessageRe
 		return nil, err
 	}
 
-	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateAccepted, "dm.request.accept")
+	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, cmd.ActedBy, models.DmRequestStateAccepted, "dm.request.accept")
 }
 
 // DeclineMessageRequest hides a request thread from the recipient by setting requestState=DECLINED.
@@ -1743,10 +1750,10 @@ func (s *Service) DeclineMessageRequest(ctx context.Context, cmd *DeclineMessage
 		return nil, err
 	}
 
-	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateDeclined, "dm.request.decline")
+	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, cmd.ActedBy, models.DmRequestStateDeclined, "dm.request.decline")
 }
 
-func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationID, userID string, decision models.DmRequestState, auditEvent string) (*ConversationResult, error) {
+func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationID, userID, actedBy string, decision models.DmRequestState, auditEvent string) (*ConversationResult, error) {
 	conversation, err := s.conversationRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		return nil, errors.Join(ErrGetConversation, err)
@@ -1788,9 +1795,13 @@ func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationI
 		conversation.Unread = state.Unread
 	}
 
-	s.auditDMRequestEvent(ctx, auditEvent, userID, conversation.ID, true, "", map[string]any{
+	decisionMetadata := map[string]any{
 		"conversation_id": conversation.ID,
-	})
+	}
+	if actedBy = strings.TrimSpace(actedBy); actedBy != "" {
+		decisionMetadata["acted_by"] = actedBy
+	}
+	s.auditDMRequestEvent(ctx, auditEvent, userID, conversation.ID, true, "", decisionMetadata)
 
 	return &ConversationResult{
 		Conversation: conversation,
@@ -2176,6 +2187,9 @@ func (s *Service) auditDMEvent(ctx context.Context, cmd *SendDirectMessageComman
 	merged := map[string]any{
 		"conversation_id": strings.TrimSpace(conversationID),
 		"sender_id":       strings.TrimSpace(cmd.SenderID),
+	}
+	if actedBy := strings.TrimSpace(cmd.ActedBy); actedBy != "" {
+		merged["acted_by"] = actedBy
 	}
 	for k, v := range metadata {
 		merged[k] = v

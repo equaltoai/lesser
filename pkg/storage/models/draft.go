@@ -48,6 +48,11 @@ type Draft struct {
 	ReviewStatus string `theorydb:"attr:reviewStatus,omitempty" json:"review_status,omitempty"`
 	EditorNotes  string `theorydb:"attr:editorNotes,omitempty" json:"editor_notes,omitempty"`
 
+	// ActedBy records the local actor URI of the caller who acted on the
+	// author's behalf under an active share grant (empty when the author
+	// acted as themselves).
+	ActedBy string `theorydb:"attr:actedBy,omitempty" json:"acted_by,omitempty"`
+
 	// Autosave tracking
 	AutosaveVersion int       `theorydb:"attr:autosaveVersion" json:"autosave_version"`
 	LastSavedAt     time.Time `theorydb:"attr:lastSavedAt" json:"last_saved_at"`

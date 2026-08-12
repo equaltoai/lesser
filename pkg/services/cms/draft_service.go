@@ -255,6 +255,14 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 
 // PublishDraft converts a draft into an article
 func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID string) (*models.Article, error) {
+	return s.PublishDraftWithAttribution(ctx, authorID, draftID, "")
+}
+
+// PublishDraftWithAttribution converts a draft into an article, recording
+// actedBy (a local actor URI) on the resulting article when the publish is
+// performed by a caller acting under an active share grant. An empty actedBy
+// preserves the draft's own attribution.
+func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID, draftID, actedBy string) (*models.Article, error) {
 	s.logger.Info("publishing draft", zap.String("draft_id", draftID))
 
 	domain := s.domain
@@ -295,11 +303,12 @@ func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID strin
 		return nil, err
 	}
 
+	actedBy = cmsNormalizeAttributionActorID(actedBy)
 	if draft.ObjectID != nil && strings.TrimSpace(*draft.ObjectID) != "" {
-		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now)
+		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy)
 	}
 
-	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now)
+	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy)
 }
 
 func (s *DraftService) isPublishedDraftCleanup(draft *models.Draft) bool {
@@ -373,7 +382,7 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
-func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time) (*models.Article, error) {
+func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string) (*models.Article, error) {
 	article, err := s.articleService.GetArticle(ctx, objectID)
 	if err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
@@ -398,6 +407,9 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 		article.ContentFormat = format
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, true)
+	if actedBy != "" {
+		article.ActedBy = actedBy
+	}
 	article.UpdatedAt = now
 	article.Updated = now
 
@@ -440,7 +452,7 @@ func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
 	return &cp
 }
 
-func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time) (*models.Article, error) {
+func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string) (*models.Article, error) {
 	article := &models.Article{
 		Object: models.Object{
 			ID:           objectID,
@@ -457,6 +469,9 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 		UpdatedAt:     now,
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, false)
+	if actedBy != "" {
+		article.ActedBy = actedBy
+	}
 
 	if err := s.articleService.CreateArticle(ctx, article); err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)

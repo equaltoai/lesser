@@ -89,7 +89,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.
 		return resp, err
 	}
 
-	result, err := notesService.CreateNote(ctx.Context(), createNoteCommandFromStatusRequest(claims, &statusRequest, agentAttribution))
+	result, err := notesService.CreateNote(ctx.Context(), createNoteCommandFromStatusRequest(claims.Username, &statusRequest, agentAttribution))
 	if err != nil {
 		h.logger.Error("failed to create quote status", zap.Error(err))
 		return respondQuoteAppError(ctx, err)
