@@ -54,6 +54,9 @@ const (
 
 	oauthInstanceSurfacePtah = "ptah"
 	oauthInstanceSurfaceBa   = "ba"
+
+	// oauthMCPSegment is the URL path segment identifying an actor-scoped MCP resource.
+	oauthMCPSegment = "mcp"
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
@@ -417,7 +420,7 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 	}
 
 	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(segments) != 2 || segments[0] != "mcp" || strings.TrimSpace(segments[1]) == "" {
+	if len(segments) != 2 || segments[0] != oauthMCPSegment || strings.TrimSpace(segments[1]) == "" {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "invalid_target",
 			description: "resource must be the actor-scoped MCP URL for this server",
@@ -439,11 +442,24 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 			description: "resource must reference an existing local MCP actor",
 		}
 	}
+	// Token subject selection. The owner keeps the agent as subject (unchanged);
+	// an active share grantee keeps the grantee as subject with the agent carried
+	// as the token resource/audience. The grant read is the uncached,
+	// strongly-consistent direct base-table check from the agentshare service and
+	// is consulted only for non-owners, so the owner path stays byte-identical.
+	subjectUsername := actorUsername
 	if !h.agentOwnedByPrincipal(actorUser, principalUsername) {
-		return "", "", &oauthAuthorizeTargetError{
-			code:        "access_denied",
-			description: "principal is not authorized for requested MCP resource",
+		grantActive, grantErr := h.agentShareGrantActive(ctx, actorUsername, principalUsername)
+		if grantErr != nil {
+			return "", "", fmt.Errorf("agent share grant check failed: %w", grantErr)
 		}
+		if !grantActive {
+			return "", "", &oauthAuthorizeTargetError{
+				code:        "access_denied",
+				description: "principal is not authorized for requested MCP resource",
+			}
+		}
+		subjectUsername = strings.TrimSpace(principalUsername)
 	}
 
 	canonicalResource := auth.BuildPublicMCPAccessBundle(h.cfg.BaseURL(), actorUsername).MCPURL
@@ -460,7 +476,7 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 		}
 	}
 
-	return actorUsername, canonicalResource, nil
+	return subjectUsername, canonicalResource, nil
 }
 
 func oauthResourceTargetsInstancePlane(resource string) bool {
@@ -529,7 +545,7 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 	}
 
 	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(segments) != 3 || segments[0] != "instance" || segments[2] != "mcp" {
+	if len(segments) != 3 || segments[0] != "instance" || segments[2] != oauthMCPSegment {
 		return "", "", oauthInvalidInstanceResourceTarget()
 	}
 

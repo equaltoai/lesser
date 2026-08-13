@@ -377,7 +377,14 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 			},
 		}
 
-		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{},
+			AgentSharesSvc: &actAsShareServiceStub{
+				isActiveFunc: func(context.Context, string, string) (bool, error) {
+					return false, nil // no active share grant for the intruder
+				},
+			},
+		})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
 			"response_type": "code",
 			"client_id":     "client-1",
