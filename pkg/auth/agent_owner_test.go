@@ -23,6 +23,10 @@ func TestAgentOwnerMatchesLocalPrincipal(t *testing.T) {
 		{name: "path is not username", owner: "alice/path", principal: "alice", resolver: actorURL},
 		{name: "empty owner", principal: "alice", resolver: actorURL},
 		{name: "empty principal", owner: "alice", resolver: actorURL},
+		{name: "URL principal matches URL owner", owner: "https://example.com/users/alice", principal: "https://example.com/users/alice", resolver: actorURL, want: true},
+		{name: "URL principal matches URL owner without resolver", owner: "https://example.com/users/alice", principal: "https://example.com/users/alice", want: true},
+		{name: "URL principal mismatch against URL owner", owner: "https://example.com/users/alice", principal: "https://example.com/users/bob", resolver: actorURL},
+		{name: "URL principal does not match username owner", owner: "@alice", principal: "https://example.com/users/alice", resolver: actorURL},
 	}
 
 	for _, tc := range tests {

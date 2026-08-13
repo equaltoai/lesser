@@ -708,6 +708,13 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/agents/{username}/access",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/agents/{username}/access-leases",
     "runtimePosture": "auth-required",
     "openapiSecurity": "required",

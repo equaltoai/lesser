@@ -64,6 +64,7 @@ GET /api/v1/agents
 GET /api/v1/agents/memory/search
 GET /api/v1/agents/shared-with-me
 GET /api/v1/agents/{username}
+GET /api/v1/agents/{username}/access
 GET /api/v1/agents/{username}/access-leases
 GET /api/v1/agents/{username}/activity
 GET /api/v1/agents/{username}/runtime-sessions
