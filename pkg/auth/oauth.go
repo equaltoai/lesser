@@ -361,7 +361,17 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContext(ctx cont
 
 // GenerateTokensWithAccessTokenTTLAndClientContextAndAudience generates tokens with explicit client context and JWT audience.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID, audience string) (accessToken, refreshToken string, err error) {
-	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{})
+	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{}, "")
+}
+
+// GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy generates tokens with explicit
+// client context, JWT audience, and the human who authorized this token. When the authorizing human is the
+// agent's owner, the DelegatedBy claim keeps the agent's stored owner form (unchanged); otherwise the
+// authorizing human (for example, an active share grantee) is recorded instead. This is used by the
+// actor-scoped MCP OAuth flow, where the agent remains the token subject and the authorizing human rides
+// alongside in DelegatedBy.
+func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID, audience, delegatedBy string) (accessToken, refreshToken string, err error) {
+	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{}, delegatedBy)
 }
 
 // GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation extends Lesser's existing signed
@@ -374,7 +384,7 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelega
 	clientClass, sessionID string,
 	delegation DelegationCredentialClaims,
 ) (accessToken, refreshToken string, err error) {
-	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "", delegation)
+	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "", delegation, "")
 }
 
 func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelegation(
@@ -384,12 +394,13 @@ func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelega
 	accessTokenTTL time.Duration,
 	clientClass, sessionID, audience string,
 	delegation DelegationCredentialClaims,
+	delegatedByOverride string,
 ) (accessToken, refreshToken string, err error) {
 	if accessTokenTTL <= 0 {
 		accessTokenTTL = AccessTokenDuration
 	}
 
-	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username)
+	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username, delegatedByOverride)
 	effectiveSessionID := strings.TrimSpace(sessionID)
 	agentSessionID := ""
 	if isAgent {
@@ -566,7 +577,7 @@ func ValidateDelegationAttestation(claims *Claims, requiredContentClass string) 
 	return normalizeDelegatedBy(rawPrincipal), true, nil
 }
 
-func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string) (bool, string, string) {
+func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string, delegatedByOverride string) (bool, string, string) {
 	if s == nil || s.repos == nil {
 		return false, "", ""
 	}
@@ -581,7 +592,25 @@ func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string) 
 		return false, "", ""
 	}
 
-	return true, strings.TrimSpace(user.AgentType), normalizeDelegatedBy(user.AgentOwner)
+	// DelegatedBy names the human who authorized this token. The owner path is
+	// unchanged: when the authorizing human is the agent's owner, keep the stored
+	// owner form byte-for-byte. Only a different authorizing human (an active share
+	// grantee) overrides it.
+	delegatedBy := normalizeDelegatedBy(user.AgentOwner)
+	override := strings.TrimSpace(delegatedByOverride)
+	if override != "" && !s.agentOwnerMatchesPrincipal(user.AgentOwner, override) {
+		delegatedBy = normalizeDelegatedBy(override)
+	}
+
+	return true, strings.TrimSpace(user.AgentType), delegatedBy
+}
+
+func (s *OAuthService) agentOwnerMatchesPrincipal(owner, principalUsername string) bool {
+	var actorURL func(string) string
+	if s != nil && s.config != nil {
+		actorURL = s.config.ActorURL
+	}
+	return AgentOwnerMatchesLocalPrincipal(owner, principalUsername, actorURL)
 }
 
 // generateRefreshToken creates a random refresh token
@@ -867,7 +896,7 @@ type TokenBlacklist interface {
 
 // GenerateTokensWithContext generates enhanced OAuth tokens with context information including device tracking and refresh token families
 func (s *OAuthService) GenerateTokensWithContext(username, clientID, sessionID, deviceID, ipAddress, userAgent string, scopes []string, tokenVersion int) (accessToken, refreshToken string, err error) {
-	isAgent, agentType, delegatedBy := s.resolveAgentClaims(context.Background(), username)
+	isAgent, agentType, delegatedBy := s.resolveAgentClaims(context.Background(), username, "")
 	agentSessionID := ""
 	if isAgent && strings.TrimSpace(sessionID) != "" {
 		agentSessionID = sessionID

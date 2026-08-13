@@ -120,7 +120,7 @@ func TestResolveAgentClaims_Branches(t *testing.T) {
 
 	{
 		svc := &OAuthService{jwtSecret: []byte("test-secret")}
-		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice")
+		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice", "")
 		require.False(t, isAgent)
 		require.Empty(t, agentType)
 		require.Empty(t, delegatedBy)
@@ -128,7 +128,7 @@ func TestResolveAgentClaims_Branches(t *testing.T) {
 
 	{
 		svc := &OAuthService{jwtSecret: []byte("test-secret"), repos: reposStub{}}
-		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice")
+		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice", "")
 		require.False(t, isAgent)
 		require.Empty(t, agentType)
 		require.Empty(t, delegatedBy)
@@ -137,7 +137,7 @@ func TestResolveAgentClaims_Branches(t *testing.T) {
 	{
 		accountRepo := repositories.NewAccountRepository(nil, "test-table", "example.com", zap.NewNop())
 		svc := &OAuthService{jwtSecret: []byte("test-secret"), repos: reposWithAccount{account: accountRepo}}
-		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice")
+		isAgent, agentType, delegatedBy := svc.resolveAgentClaims(context.Background(), "alice", "")
 		require.False(t, isAgent)
 		require.Empty(t, agentType)
 		require.Empty(t, delegatedBy)

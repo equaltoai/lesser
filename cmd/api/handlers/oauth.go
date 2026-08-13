@@ -439,10 +439,22 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 			description: "resource must reference an existing local MCP actor",
 		}
 	}
+	// The agent is always the token subject. The authorizing human — the owner on
+	// the owner path, an active share grantee on the grantee path — is carried
+	// separately in the authorization code's PrincipalUsername and surfaces as
+	// DelegatedBy at token issuance. The grant read is the uncached,
+	// strongly-consistent direct base-table check from the agentshare service and is
+	// consulted only for non-owners, so the owner path stays unchanged.
 	if !h.agentOwnedByPrincipal(actorUser, principalUsername) {
-		return "", "", &oauthAuthorizeTargetError{
-			code:        "access_denied",
-			description: "principal is not authorized for requested MCP resource",
+		grantActive, grantErr := h.agentShareGrantActive(ctx, actorUsername, principalUsername)
+		if grantErr != nil {
+			return "", "", fmt.Errorf("agent share grant check failed: %w", grantErr)
+		}
+		if !grantActive {
+			return "", "", &oauthAuthorizeTargetError{
+				code:        "access_denied",
+				description: "principal is not authorized for requested MCP resource",
+			}
 		}
 	}
 
@@ -1426,7 +1438,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID, authCode.Resource)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID, authCode.Resource, authCode.PrincipalUsername)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
