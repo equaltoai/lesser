@@ -1,0 +1,60 @@
+{
+  "schema": "gov_infra_pack.v1",
+  "pack": {
+    "version": "2026.08.13-m0-gov-infra-materialization"
+  },
+  "project": {
+    "name": "lesser",
+    "slug": "lesser",
+    "repository": "equaltoai/lesser",
+    "steward": "lesser"
+  },
+  "profile": {
+    "id": "software_repo_gov_infra",
+    "resolved_via": "namespace_governance_profile_get (equaltoai namespace route)",
+    "terminates_in_verifier": true,
+    "ci_hook_required": true,
+    "role": "ci_core",
+    "retirement_policy": "never_retired",
+    "allowed_write_scope": ["gov-infra/**", ".github/workflows/**"],
+    "branch_profile_consistency_surfaces": ["soul", "steward", "AGENTS.md", "skills", "CI"]
+  },
+  "verifier": {
+    "command": "bash gov-infra/verifiers/gov-verify-rubric.sh",
+    "report_path": "gov-infra/evidence/gov-rubric-report.json",
+    "report_schema": "gov_rubric_report.v1",
+    "schema_file": "gov-infra/schemas/gov-rubric-report.schema.json"
+  },
+  "authoritative_sources_inspected": [
+    {
+      "surface": "namespace_governance_profile_get",
+      "fact": "resolved software_repo_gov_infra for lesser: verifier 'bash gov-infra/verifiers/gov-verify-rubric.sh', report 'gov-infra/evidence/gov-rubric-report.json', schema gov_rubric_report.v1, ci_hook_required=true, gov-infra required/ci_core/never_retired, all deploy/merge/sign/cloud/repo-mutation authority denied"
+    },
+    {
+      "surface": "mcp__theorymcp__server_instructions (agent route equaltoai/lesser)",
+      "fact": "published AgentInstructions overlay v18 records the feature → staging → main branch contract and that feature→staging PRs require the existing verify check (./lesser verify ci)"
+    },
+    {
+      "path": ".codex/steward.md",
+      "fact": "soul records software_repo_gov_infra, the feature → staging → main branch model, and ./lesser verify ci as the required rubric gate"
+    },
+    {
+      "path": "cmd/lesser/verify_cmd.go",
+      "fact": "./lesser verify ci runs lint (golangci-lint), auth UI CSP, audit gates, gosec + govulncheck, supply chain, lambda set, inventory, docs, ai-training, graphql schema, graphql coverage --strict, openapi --strict, and overall/pkg/cmd coverage gates (85.0 / 90.0 / 90.0)"
+    },
+    {
+      "path": "equaltoai/lesser#1403",
+      "fact": "M0 materialization: lesser is the only fleet repo without gov-infra; factory requires a fresh green gov_rubric_report.v1 at the PR head; verifier must be authored for a Go repo (do not copy sibling JS verifiers) and terminate in ./lesser verify ci"
+    }
+  ],
+  "authority": {
+    "deploy_authority": false,
+    "merge_authority": false,
+    "branch_delete_authority": false,
+    "cloud_mutation_authority": false,
+    "repository_mutation_authority": false,
+    "signing_authority": false,
+    "signing": "retired/none",
+    "execution_authority": false
+  }
+}

@@ -1,0 +1,5 @@
+# Per-check evidence logs are regenerated on every verifier run. The committed
+# artifact is gov-rubric-report.json; the intermediate result file and raw
+# command output are transient and intentionally not tracked.
+evidence/*-output.log
+evidence/.gov-rubric-results.jsonl

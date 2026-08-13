@@ -1,0 +1,91 @@
+{
+  "$schema": "https://gov.pai.dev/schemas/gov-rubric-report.schema.json",
+  "schemaVersion": 1,
+  "timestamp": "2026-08-13T03:58:43Z",
+  "pack": {
+    "version": "2026.08.13-m0-gov-infra-materialization",
+    "digest": "sha256:fee3b1b45bfdcdda858b0fa3a3b27186ca8b75db4284b1c5c430403740862d03"
+  },
+  "project": {
+    "name": "lesser",
+    "slug": "lesser"
+  },
+  "summary": {
+    "status": "PASS",
+    "pass": 10,
+    "fail": 0,
+    "blocked": 0
+  },
+  "results": [
+    {
+      "id": "QUA-1",
+      "category": "Quality",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/QUA-1-output.log"
+    },
+    {
+      "id": "CON-1",
+      "category": "Consistency",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/CON-1-output.log"
+    },
+    {
+      "id": "COM-1",
+      "category": "Completeness",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/COM-1-output.log"
+    },
+    {
+      "id": "SEC-1",
+      "category": "Security",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/SEC-1-output.log"
+    },
+    {
+      "id": "SEC-2",
+      "category": "Security",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/SEC-2-output.log"
+    },
+    {
+      "id": "CMP-1",
+      "category": "Compliance",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/CMP-1-output.log"
+    },
+    {
+      "id": "CMP-2",
+      "category": "Compliance",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/CMP-2-output.log"
+    },
+    {
+      "id": "MAI-1",
+      "category": "Maintainability",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/MAI-1-output.log"
+    },
+    {
+      "id": "MAI-2",
+      "category": "Maintainability",
+      "status": "PASS",
+      "message": "Command succeeded",
+      "evidencePath": "gov-infra/evidence/MAI-2-output.log"
+    },
+    {
+      "id": "DOC-1",
+      "category": "Docs",
+      "status": "PASS",
+      "message": "Required file present",
+      "evidencePath": "gov-infra/evidence/DOC-1-output.log"
+    }
+  ]
+}

@@ -82,8 +82,8 @@ jobs:
       - name: Disk usage (post lambda build)
         run: bash scripts/ci_disk_usage.sh "post lambda build"
 
-      - name: Verify (CI gate)
-        run: ./lesser verify ci
+      - name: Governance rubric (runs ./lesser verify ci + governance controls)
+        run: bash gov-infra/verifiers/gov-verify-rubric.sh
 
       - name: Verify artifact-driven deploy certification
         run: bash scripts/verify_artifact_deploy.sh

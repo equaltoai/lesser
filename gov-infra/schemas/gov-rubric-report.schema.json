@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gov.pai.dev/schemas/gov-rubric-report.schema.json",
+  "title": "GovTheory Rubric Report",
+  "description": "Machine-readable report produced by gov-verify-rubric.sh. Used by gov.validate to determine rubric status. This is the shared gov_rubric_report.v1 contract materialized for the lesser repository.",
+  "type": "object",
+  "required": ["schemaVersion", "timestamp", "pack", "project", "summary", "results"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URI for validation"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Report schema version (bump on breaking changes)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the report was generated"
+    },
+    "pack": {
+      "type": "object",
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Pack version used to scaffold/validate"
+        },
+        "digest": {
+          "type": "string",
+          "description": "Pack digest (SHA-256) for integrity verification"
+        }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "slug"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable project name"
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "URL-safe project slug used in artifact names"
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": ["status", "pass", "fail", "blocked"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "BLOCKED"],
+          "description": "Overall rubric status"
+        },
+        "pass": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of passing rubric items"
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of failing rubric items"
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of blocked rubric items (missing verifier)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(QUA|CON|COM|SEC|CMP|MAI|DOC)-[0-9]+$",
+            "description": "Rubric item ID"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["Quality", "Consistency", "Completeness", "Security", "Compliance", "Maintainability", "Docs"],
+            "description": "Rubric category"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "BLOCKED"],
+            "description": "Item status"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable status message or error details"
+          },
+          "evidencePath": {
+            "type": "string",
+            "description": "Path to evidence artifact (relative to repo root)"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
