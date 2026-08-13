@@ -769,6 +769,10 @@ func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token strin
 	return nil
 }
 
+// refreshTokenModelFromStorage converts the storage refresh-token type to the
+// persistence model.
+//
+//nolint:dupl // field-for-field model mapping mirrors refreshTokenStorageFromModel
 func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshToken {
 	model := &models.RefreshToken{
 		Token:               token.Token,
@@ -801,14 +805,19 @@ func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshTo
 		CreatedAt:           token.CreatedAt,
 		Version:             token.Version,
 	}
+	model.PrincipalUsername = token.PrincipalUsername
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
 	}
 	return model
 }
 
+// refreshTokenStorageFromModel converts the persistence model back to the storage
+// refresh-token type.
+//
+//nolint:dupl // field-for-field storage mapping mirrors refreshTokenModelFromStorage
 func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshToken {
-	return &storage.RefreshToken{
+	result := &storage.RefreshToken{
 		Token:               model.Token,
 		ClientID:            model.ClientID,
 		Username:            model.Username,
@@ -839,6 +848,8 @@ func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshTok
 		CreatedAt:           model.CreatedAt,
 		Version:             model.Version,
 	}
+	result.PrincipalUsername = model.PrincipalUsername
+	return result
 }
 
 func refreshTokenStorageSliceFromModels(modelsOut []models.RefreshToken) []storage.RefreshToken {

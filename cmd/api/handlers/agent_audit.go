@@ -41,17 +41,31 @@ func (h *Handler) recordAgentAuditEvent(ctx *apptheory.Context, claims *auth.Cla
 		entry.SessionID = claims.SessionID
 	}
 
+	// Record the authorizing human (DelegatedBy) alongside the existing session and
+	// target fields so a grantee-driven action names its driver. Username continues
+	// to hold the agent — the agent is the actor.
+	delegatedBy := strings.TrimSpace(claims.DelegatedBy)
 	if metadata != nil {
 		if targetID != "" {
 			metadata["target_id"] = targetID
+		}
+		if delegatedBy != "" {
+			metadata["delegated_by"] = delegatedBy
 		}
 		if raw, err := json.Marshal(metadata); err == nil {
 			entry.Metadata = string(raw)
 		} else {
 			h.logger.Debug("failed to marshal agent audit metadata", zap.Error(err))
 		}
-	} else if targetID != "" {
-		raw, _ := json.Marshal(map[string]any{"target_id": targetID})
+	} else if targetID != "" || delegatedBy != "" {
+		extra := map[string]any{}
+		if targetID != "" {
+			extra["target_id"] = targetID
+		}
+		if delegatedBy != "" {
+			extra["delegated_by"] = delegatedBy
+		}
+		raw, _ := json.Marshal(extra)
 		entry.Metadata = string(raw)
 	}
 
