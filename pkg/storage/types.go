@@ -267,6 +267,7 @@ type AuthorizationCode struct {
 type RefreshToken struct {
 	Token               string    `json:"token"`
 	Username            string    `json:"username"`
+	PrincipalUsername   string    `json:"principal_username,omitempty"`
 	ClientID            string    `json:"client_id"`
 	Resource            string    `json:"resource,omitempty"`
 	Scopes              []string  `json:"scopes"`
