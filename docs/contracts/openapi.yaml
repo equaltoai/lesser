@@ -1125,6 +1125,23 @@ components:
                 - lease_id
                 - token
             type: object
+        AgentAccessResponse:
+            additionalProperties: false
+            properties:
+                acted_by:
+                    type: string
+                actor:
+                    type: string
+                authorized:
+                    type: boolean
+                relationship:
+                    type: string
+            required:
+                - acted_by
+                - actor
+                - authorized
+                - relationship
+            type: object
         AgentActivityLogEntry:
             additionalProperties: false
             properties:
@@ -12731,6 +12748,42 @@ paths:
                 - admin:write
                 - write
                 - write:accounts
+    /api/v1/agents/{username}/access:
+        get:
+            operationId: get_api_v1_agents_by_username_access
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAgentAccessLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/agents/{username}/access-leases:
         get:
             operationId: get_api_v1_agents_by_username_access_leases

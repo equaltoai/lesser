@@ -173,6 +173,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/agents/{username}/share", apiHandler.HandleListAgentSharesLift, requireManageAgents)
 	app.Put("/api/v1/agents/{username}/share/{grantee}", apiHandler.HandleGrantAgentShareLift, requireManageAgents)
 	app.Delete("/api/v1/agents/{username}/share/{grantee}", apiHandler.HandleRevokeAgentShareLift, requireManageAgents)
+	app.Get("/api/v1/agents/{username}/access", apiHandler.HandleGetAgentAccessLift)
 	app.Get("/api/v1/agents/{username}", apiHandler.HandleGetAgentLift)
 	app.Patch("/api/v1/agents/{username}", apiHandler.HandleUpdateAgentLift, requireManageAgents)
 	app.Delete("/api/v1/agents/{username}", apiHandler.HandleDeleteAgentLift, requireManageAgents)

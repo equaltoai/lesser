@@ -49,6 +49,7 @@ exemptions:
             - /api/v1/agents/register
             - /api/v1/agents/register/challenge
             - /api/v1/agents/shared-with-me
+            - /api/v1/agents/{username}/access
             - /api/v1/agents/{username}/rotate-key
             - /api/v1/agents/{username}/rotate-key/challenge
             - /api/v1/agents/{username}/share
@@ -643,6 +644,10 @@ routes:
       status: covered
       graphql:
         - Mutation.updateAgent
+    - method: GET
+      path: /api/v1/agents/{username}/access
+      policy: rest_only
+      exemptedBy: agents
     - method: GET
       path: /api/v1/agents/{username}/access-leases
       policy: graphql_required
