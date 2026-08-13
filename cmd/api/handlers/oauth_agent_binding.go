@@ -46,3 +46,19 @@ func (h *Handler) agentShareGrantActive(ctx context.Context, agentUsername, prin
 	}
 	return service.IsActive(ctx, agentUsername, principalUsername)
 }
+
+// agentRefreshGrantAuthorized reports whether an actor-scoped agent-subject refresh
+// token's stored authorizing principal may still obtain new tokens. Owners are
+// authorized by ownership and skip the grant check (preserving the owner path);
+// non-owners must hold an active share grant, read uncached and strongly-consistent
+// so a revocation blocks the next refresh rather than the next authorization.
+func (h *Handler) agentRefreshGrantAuthorized(ctx context.Context, agentUsername, principalUsername string) (bool, error) {
+	agentUser, err := h.repos.Account().GetUser(ctx, agentUsername)
+	if err != nil || agentUser == nil || !agentUser.IsAgent {
+		return false, errors.New("agent refresh subject unavailable")
+	}
+	if h.agentOwnedByPrincipal(agentUser, principalUsername) {
+		return true, nil
+	}
+	return h.agentShareGrantActive(ctx, agentUsername, principalUsername)
+}

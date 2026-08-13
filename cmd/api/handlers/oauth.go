@@ -54,6 +54,9 @@ const (
 
 	oauthInstanceSurfacePtah = "ptah"
 	oauthInstanceSurfaceBa   = "ba"
+
+	oauthResourceSegmentMCP      = "mcp"
+	oauthResourceSegmentInstance = "instance"
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
@@ -417,7 +420,7 @@ func (h *Handler) resolveAuthorizeTargetActorFromResource(ctx context.Context, r
 	}
 
 	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(segments) != 2 || segments[0] != "mcp" || strings.TrimSpace(segments[1]) == "" {
+	if len(segments) != 2 || segments[0] != oauthResourceSegmentMCP || strings.TrimSpace(segments[1]) == "" {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "invalid_target",
 			description: "resource must be the actor-scoped MCP URL for this server",
@@ -482,7 +485,20 @@ func oauthResourceTargetsInstancePlane(resource string) bool {
 	}
 
 	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	return len(segments) > 0 && segments[0] == "instance"
+	return len(segments) > 0 && segments[0] == oauthResourceSegmentInstance
+}
+
+// oauthResourceTargetsActorMCP reports whether the resource is an actor-scoped MCP
+// URL (/mcp/{actor}). These tokens always carry an agent subject; the authorizing
+// human rides in DelegatedBy and must survive refresh with the grant re-validated.
+func oauthResourceTargetsActorMCP(resource string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(resource))
+	if err != nil || parsed == nil {
+		return false
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	return len(segments) == 2 && segments[0] == oauthResourceSegmentMCP && strings.TrimSpace(segments[1]) != ""
 }
 
 func oauthClientCanAuthorizeInstanceResource(client *storage.OAuthClient) bool {
@@ -541,7 +557,7 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 	}
 
 	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(segments) != 3 || segments[0] != "instance" || segments[2] != "mcp" {
+	if len(segments) != 3 || segments[0] != oauthResourceSegmentInstance || segments[2] != oauthResourceSegmentMCP {
 		return "", "", oauthInvalidInstanceResourceTarget()
 	}
 
@@ -1653,6 +1669,7 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:             refreshToken,
 		Username:          authCode.Username,
+		PrincipalUsername: authCode.PrincipalUsername,
 		ClientID:          clientID,
 		Resource:          authCode.Resource,
 		Scopes:            authCode.Scopes,
@@ -1875,7 +1892,26 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return "", "", nil, err
 	}
 
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, clientClass, storedToken.SessionID, storedToken.Resource)
+	// The authorizing human must survive a refresh. For actor-scoped MCP tokens the
+	// subject is the agent, so DelegatedBy has to be re-derived from the stored
+	// principal (owner or grantee) rather than silently reverting to the owner, and
+	// a non-owner principal's share grant is re-validated so revocation takes effect
+	// on the next refresh.
+	delegatedByOverride := strings.TrimSpace(storedToken.PrincipalUsername)
+	if oauthResourceTargetsActorMCP(storedToken.Resource) {
+		if delegatedByOverride == "" {
+			// Legacy actor-scoped refresh token issued before the authorizing
+			// principal was persisted. Fail closed: re-deriving DelegatedBy as the
+			// owner would silently re-attribute a grantee's token to the owner.
+			return "", "", nil, auth.ErrInvalidToken
+		}
+		authorized, authErr := h.agentRefreshGrantAuthorized(ctx, storedToken.Username, delegatedByOverride)
+		if authErr != nil || !authorized {
+			return "", "", nil, auth.ErrInvalidToken
+		}
+	}
+
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, clientClass, storedToken.SessionID, storedToken.Resource, delegatedByOverride)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
@@ -1884,6 +1920,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	newOAuthRefreshToken := &storage.RefreshToken{
 		Token:               newRefreshToken,
 		Username:            storedToken.Username,
+		PrincipalUsername:   delegatedByOverride,
 		ClientID:            clientID,
 		Resource:            storedToken.Resource,
 		Scopes:              storedToken.Scopes,

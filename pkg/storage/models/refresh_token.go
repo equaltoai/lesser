@@ -23,14 +23,15 @@ type RefreshToken struct {
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"`
 
 	// Core fields from legacy storage.RefreshToken
-	Token       string    `theorydb:"attr:token" json:"Token"`
-	ClientID    string    `theorydb:"attr:clientID" json:"ClientID"`
-	Username    string    `theorydb:"attr:username" json:"Username"`
-	Resource    string    `theorydb:"attr:resource,omitempty" json:"Resource,omitempty"`
-	ExpiresAt   time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
-	Scopes      []string  `theorydb:"attr:scopes" json:"Scopes"`
-	ClientClass string    `theorydb:"attr:clientClass" json:"ClientClass,omitempty"`
-	SessionID   string    `theorydb:"attr:sessionID" json:"SessionID,omitempty"`
+	Token             string    `theorydb:"attr:token" json:"Token"`
+	ClientID          string    `theorydb:"attr:clientID" json:"ClientID"`
+	Username          string    `theorydb:"attr:username" json:"Username"`
+	PrincipalUsername string    `theorydb:"attr:principalUsername,omitempty" json:"PrincipalUsername,omitempty"`
+	Resource          string    `theorydb:"attr:resource,omitempty" json:"Resource,omitempty"`
+	ExpiresAt         time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
+	Scopes            []string  `theorydb:"attr:scopes" json:"Scopes"`
+	ClientClass       string    `theorydb:"attr:clientClass" json:"ClientClass,omitempty"`
+	SessionID         string    `theorydb:"attr:sessionID" json:"SessionID,omitempty"`
 
 	// Runtime session metadata. These fields are optional for regular OAuth clients and used
 	// only by the dedicated internal agent runtime clients for safe rotation and operator-visible

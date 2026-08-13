@@ -1199,6 +1199,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now)
 		token.Resource = agent1Resource
+		token.PrincipalUsername = "owner"
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
 				"client-agent": {
@@ -1256,16 +1257,17 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		now := time.Now().UTC()
 		accessTTLSeconds := int((10 * time.Minute).Seconds())
 		token := storagemodels.RefreshToken{
-			Token:            "rt-agent-capped",
-			ClientID:         "client-agent",
-			Username:         "agent1",
-			Resource:         agent1Resource,
-			Scopes:           []string{auth.ScopeRead},
-			CreatedAt:        now.Add(-1 * time.Hour),
-			ExpiresAt:        now.Add(2 * time.Hour),
-			ClientClass:      auth.ClientClassAgent,
-			SessionID:        "sid-agent-capped",
-			AccessTTLSeconds: accessTTLSeconds,
+			Token:             "rt-agent-capped",
+			ClientID:          "client-agent",
+			Username:          "agent1",
+			PrincipalUsername: "owner",
+			Resource:          agent1Resource,
+			Scopes:            []string{auth.ScopeRead},
+			CreatedAt:         now.Add(-1 * time.Hour),
+			ExpiresAt:         now.Add(2 * time.Hour),
+			ClientClass:       auth.ClientClassAgent,
+			SessionID:         "sid-agent-capped",
+			AccessTTLSeconds:  accessTTLSeconds,
 		}
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
@@ -1317,6 +1319,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		now := time.Now().UTC()
 		token := buildRuntimeRefreshToken(t, "rt-agent-aged", "agent1", "client-agent", "sid-agent-aged", "family-agent-aged", "Connector App", 1, true, false, now)
 		token.Resource = agent1Resource
+		token.PrincipalUsername = "owner"
 		token.SessionCreatedAt = now.Add(-72 * time.Hour)
 		token.LastUsedAt = now.Add(-2 * time.Hour)
 		token.IdleExpiresAt = now.Add(36 * time.Hour)
@@ -1441,13 +1444,14 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	t.Run("refresh_token legacy agent client class is bounded by current client metadata", func(t *testing.T) {
 		now := time.Now().UTC()
 		token := storagemodels.RefreshToken{
-			Token:     "rt-agent-legacy-class",
-			ClientID:  "client-agent",
-			Username:  "agent1",
-			Resource:  agent1Resource,
-			Scopes:    []string{auth.ScopeRead},
-			CreatedAt: now.Add(-1 * time.Hour),
-			ExpiresAt: now.Add(2 * time.Hour),
+			Token:             "rt-agent-legacy-class",
+			ClientID:          "client-agent",
+			Username:          "agent1",
+			PrincipalUsername: "owner",
+			Resource:          agent1Resource,
+			Scopes:            []string{auth.ScopeRead},
+			CreatedAt:         now.Add(-1 * time.Hour),
+			ExpiresAt:         now.Add(2 * time.Hour),
 		}
 
 		state := &round10QueryState{
