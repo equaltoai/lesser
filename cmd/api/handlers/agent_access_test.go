@@ -241,3 +241,51 @@ func TestHandleGetAgentAccessLiftSubjectMismatchDenied(t *testing.T) {
 	ctx.Params["username"] = "other-agent"
 	requireStatus(t, http.StatusForbidden)(h.HandleGetAgentAccessLift(ctx))
 }
+
+func TestHandleGetAgentAccessLiftURLOwnerAuthorized(t *testing.T) {
+	cfg := agentAccessConfig()
+	ownerURL := "https://example.com/users/owner"
+	state := agentAccessState(ownerURL)
+	h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+		AgentSharesSvc: &actAsShareServiceStub{
+			isActiveFunc: func(context.Context, string, string) (bool, error) {
+				t.Fatal("URL owner path must not consult the share-grant check")
+				return false, nil
+			},
+		},
+	})
+
+	// The real mint path stores the URL-form owner with the leading "@" that
+	// normalizeDelegatedBy prepends to non-"@" values. The handler must strip the
+	// "@" and still resolve the URL-form owner directly.
+	token := agentAccessSignToken(t, cfg.JWTSecret, "agent-one", "@"+ownerURL, true)
+	ctx := agentAccessContext(t, http.MethodGet, "/api/v1/agents/agent-one/access", token)
+	ctx.Params["username"] = "agent-one"
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleGetAgentAccessLift(ctx))
+	body := decodeAgentAccessResponse(t, resp)
+	require.Equal(t, "agent-one", body.Actor)
+	require.Equal(t, "owner", body.Relationship)
+	require.True(t, body.Authorized)
+	require.Equal(t, ownerURL, body.ActedBy)
+}
+
+func TestHandleGetAgentAccessLiftURLPrincipalMismatchDenied(t *testing.T) {
+	cfg := agentAccessConfig()
+	ownerURL := "https://example.com/users/owner"
+	state := agentAccessState(ownerURL)
+	h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+		AgentSharesSvc: &actAsShareServiceStub{
+			isActiveFunc: func(_ context.Context, agent, grantee string) (bool, error) {
+				return false, nil
+			},
+		},
+	})
+
+	// A URL-form DelegatedBy that is not the agent's stored owner must fall
+	// through to the (absent) grant check and receive a uniform 403.
+	token := agentAccessSignToken(t, cfg.JWTSecret, "agent-one", "@https://example.com/users/intruder", true)
+	ctx := agentAccessContext(t, http.MethodGet, "/api/v1/agents/agent-one/access", token)
+	ctx.Params["username"] = "agent-one"
+	requireStatus(t, http.StatusForbidden)(h.HandleGetAgentAccessLift(ctx))
+}
