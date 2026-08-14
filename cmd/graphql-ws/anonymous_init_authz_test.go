@@ -15,13 +15,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testingpkg "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	appTheory "github.com/theory-cloud/apptheory/v3/runtime"
+	tablemocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
@@ -426,6 +430,43 @@ func TestAnonymousSubscriptionOperationAuthorization(t *testing.T) {
 	}
 }
 
+// newListAuthorizedRegistry returns a services.Registry whose list service can
+// authorize the "list-1" list owned by "alice". The authenticated LIST timeline
+// subscription exercises the resolver's list ownership check, so the test must
+// provide a real list repository rather than leaving Registry nil (which makes
+// the resolver return a non-terminal 404 and races the subscription lifecycle
+// assertions).
+func newListAuthorizedRegistry(t *testing.T) *services.Registry {
+	t.Helper()
+
+	mockDB := new(tablemocks.MockDB)
+	mockQuery := new(tablemocks.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("First", mock.Anything).Return(nil).Maybe().Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*models.List); ok {
+			*dest = models.List{
+				ID:            "list-1",
+				Username:      "alice",
+				Title:         "List One",
+				RepliesPolicy: repositories.RepliesPolicyList,
+			}
+		}
+	})
+
+	listRepo := repositories.NewListRepository(mockDB, "test-table", zap.NewNop(), nil)
+	storage := testingpkg.NewMockRepositoryStorage(testingpkg.WithListRepository(listRepo))
+
+	registry, err := services.NewRegistry(
+		services.WithStorage(storage),
+		services.WithPublisher(streaming.NewMockPublisher()),
+		services.WithLogger(zap.NewNop()),
+	)
+	require.NoError(t, err)
+	return registry
+}
+
 func TestAuthenticatedConnectionStreamsTimelineAuthorizationSet(t *testing.T) {
 	manager := graph.NewSubscriptionManager(
 		inmemory.NewStreamingConnectionRepository(),
@@ -437,7 +478,7 @@ func TestAuthenticatedConnectionStreamsTimelineAuthorizationSet(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	t.Cleanup(func() { _ = manager.Stop() })
 
-	resolver := &graph.Resolver{Logger: zap.NewNop(), SubscriptionManager: manager}
+	resolver := &graph.Resolver{Logger: zap.NewNop(), SubscriptionManager: manager, Registry: newListAuthorizedRegistry(t)}
 	exec := executor.New(graph.NewExecutableSchema(graph.NewConfig(resolver)))
 	configureGraphQLExecutor(exec, &appconfig.Config{})
 

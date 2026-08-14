@@ -228,6 +228,8 @@ TRANSLATION_ENABLED=false
 GRAPHQL_ALLOW_INTROSPECTION=false
 GRAPHQL_MAX_DEPTH=12
 GRAPHQL_MAX_COMPLEXITY=500
+GRAPHQL_AUTOMATION_MAX_DEPTH=12
+GRAPHQL_AUTOMATION_MAX_COMPLEXITY=4000
 GRAPHQL_PARSER_TOKEN_LIMIT=15000
 GRAPHQL_REQUEST_TIMEOUT=25s
 ```
@@ -293,9 +295,10 @@ Notes:
 
 - These rails apply based on the token’s classification (`client_class=cli`), not on account type.
 - Agent-bound device-code clients inherit `client_class=agent` semantics instead of the CLI rails.
-- GraphQL depth is capped at 4 for agent and `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher. The fixed
-  complexity ceiling, parser-token limit, and pagination bounds continue to constrain broad or expensive automation
-  queries.
+- GraphQL depth and complexity for agent and `client_class=cli` tokens are independently tunable via
+  `GRAPHQL_AUTOMATION_MAX_DEPTH` (default `12`, matching the human default) and `GRAPHQL_AUTOMATION_MAX_COMPLEXITY`
+  (default `4000`). The parser-token limit and pagination bounds continue to constrain broad or expensive automation
+  queries. Setting either automation value to `0` disables that control for automation callers only.
 - Recommended rollout: enable in `dev`, validate behavior, then `staging`, then `live`.
 
 ### Hardened auth + visibility rollout semantics

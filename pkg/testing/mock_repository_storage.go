@@ -183,6 +183,14 @@ func WithRelationshipRepository(repo interfaces.ConcreteRelationshipRepository) 
 	}
 }
 
+// WithListRepository sets a custom list repository implementation.
+// Use this to inject a mock for testing specific list behavior.
+func WithListRepository(repo *repositories.ListRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.listRepo = repo
+	}
+}
+
 // WithMediaAnalyticsRepository sets a custom media analytics repository implementation.
 // Use this to inject a mock for testing specific media analytics repository behavior.
 func WithMediaAnalyticsRepository(repo interfaces.MediaAnalyticsRepository) Option {
