@@ -48,10 +48,17 @@ type ActAsGrantCheck func(ctx context.Context, agentUsername, granteeUsername st
 // per-request share-grant check. A blank indicator returns (nil, nil): the request is
 // an ordinary owner-scoped request and callers must behave byte-identically to today.
 //
+// Under the shipped identity model the token subject is always the agent; the acting
+// caller is the authorizing human carried in DelegatedBy (server-minted, never
+// client-supplied). An owner never holds a grant on their own agent, so an owner sending
+// act-as for their own agent fails the grant check with ErrActAsNotGranted — the same
+// 403 as any other non-grantee, with no owner-special case.
+//
 // Fail-closed contract: malformed indicators and unknown/non-agent targets return
-// ErrActAsMalformedIndicator / ErrActAsUnknownAgent; a missing or inactive grant
-// returns ErrActAsNotGranted; any storage or check error is returned wrapped and must
-// be surfaced as an operational failure without authorizing the caller.
+// ErrActAsMalformedIndicator / ErrActAsUnknownAgent; a blank/unreadable DelegatedBy or a
+// missing/inactive grant returns ErrActAsNotGranted; any storage or check error is
+// returned wrapped and must be surfaced as an operational failure without authorizing
+// the caller.
 func ResolveActAs(ctx context.Context, claims *Claims, indicator string, lookup ActAsAccountLookup, grantCheck ActAsGrantCheck) (*ActAsResolution, error) {
 	indicator = strings.TrimSpace(indicator)
 	if indicator == "" {
@@ -65,7 +72,15 @@ func ResolveActAs(ctx context.Context, claims *Claims, indicator string, lookup 
 	if strings.ContainsAny(agent, "@/\\") || common.ValidateUsername(agent) != nil {
 		return nil, ErrActAsMalformedIndicator
 	}
-	caller := strings.ToLower(strings.TrimSpace(claims.Username))
+	// The authorizing human rides in DelegatedBy, never the token subject. Strip the
+	// leading "@" that normalizeDelegatedBy prepends, then require a plausible local
+	// username so the grant check receives a grantable identity (a URL-form owner is
+	// unreadable as a local username and fails closed below).
+	human := strings.TrimSpace(claims.DelegatedBy)
+	if human == "" {
+		return nil, ErrActAsNotGranted
+	}
+	caller := strings.ToLower(strings.TrimPrefix(human, "@"))
 	if caller == "" || common.ValidateUsername(caller) != nil {
 		return nil, ErrActAsNotGranted
 	}
