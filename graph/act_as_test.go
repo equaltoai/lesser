@@ -23,6 +23,21 @@ func graphActAsContext(username, indicator string) context.Context {
 	return ctx
 }
 
+// graphActAsAgentContext builds the shipped agent-subject shape for act-as: the token
+// subject is always the agent and the authorizing human rides in DelegatedBy.
+func graphActAsAgentContext(agent, delegatedBy, indicator string) context.Context {
+	ctx := context.WithValue(context.Background(), common.ContextKeyClaims, &auth.Claims{
+		Username:    agent,
+		IsAgent:     true,
+		DelegatedBy: delegatedBy,
+		Scopes:      []string{"read", "write"},
+	})
+	if indicator != "" {
+		ctx = context.WithValue(ctx, common.ContextKeyActAsAgent, indicator)
+	}
+	return ctx
+}
+
 func seedGraphActAsAgentAndGrant(storage *round12GraphStorage) {
 	storage.SeedAccountUser(&storagepkg.User{Username: "agent-one", IsAgent: true, Role: "user", Approved: true})
 	storage.SeedAgentShareGrant(&models.AgentShareGrant{
@@ -45,7 +60,7 @@ func TestGraphActAs_RequireActingIdentity(t *testing.T) {
 		resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 		seedGraphActAsAgentAndGrant(storage)
 
-		username, acting, err := resolver.requireActingIdentity(graphActAsContext("alice", "agent-one"))
+		username, acting, err := resolver.requireActingIdentity(graphActAsAgentContext("agent-one", "@alice", "agent-one"))
 		require.NoError(t, err)
 		require.Equal(t, "agent-one", username)
 		require.NotNil(t, acting)
@@ -57,7 +72,7 @@ func TestGraphActAs_RequireActingIdentity(t *testing.T) {
 		resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 		storage.SeedAccountUser(&storagepkg.User{Username: "agent-one", IsAgent: true, Role: "user", Approved: true})
 
-		_, _, err := resolver.requireActingIdentity(graphActAsContext("alice", "agent-one"))
+		_, _, err := resolver.requireActingIdentity(graphActAsAgentContext("agent-one", "@alice", "agent-one"))
 		require.Error(t, err)
 		require.ErrorContains(t, err, "no active agent share grant")
 	})
@@ -73,7 +88,7 @@ func TestGraphActAs_RequireActingIdentity(t *testing.T) {
 	t.Run("unknown agent is a bad request", func(t *testing.T) {
 		resolver, _ := newRound12GraphResolver(t)
 
-		_, _, err := resolver.requireActingIdentity(graphActAsContext("alice", "ghost-agent"))
+		_, _, err := resolver.requireActingIdentity(graphActAsAgentContext("agent-one", "@alice", "ghost-agent"))
 		require.Error(t, err)
 		require.ErrorContains(t, err, "act-as agent not found")
 	})
@@ -83,7 +98,7 @@ func TestGraphActAs_CreateDraftAgentScopedWithAttribution(t *testing.T) {
 	resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 	seedGraphActAsAgentAndGrant(storage)
 
-	ctx := graphActAsContext("alice", "agent-one")
+	ctx := graphActAsAgentContext("agent-one", "@alice", "agent-one")
 	title := "Acted Draft"
 	draft, err := resolver.Mutation().CreateDraft(ctx, model.CreateDraftInput{
 		ContentType:   model.ObjectTypeArticle,
@@ -102,7 +117,7 @@ func TestGraphActAs_CreateDraftNoGrantForbidden(t *testing.T) {
 	resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 	storage.SeedAccountUser(&storagepkg.User{Username: "agent-one", IsAgent: true, Role: "user", Approved: true})
 
-	ctx := graphActAsContext("alice", "agent-one")
+	ctx := graphActAsAgentContext("agent-one", "@alice", "agent-one")
 	title := "Should Not Exist"
 	_, err := resolver.Mutation().CreateDraft(ctx, model.CreateDraftInput{
 		ContentType:   model.ObjectTypeArticle,
@@ -135,7 +150,7 @@ func TestGraphActAs_AcceptMessageRequestNoGrantForbidden(t *testing.T) {
 	resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 	storage.SeedAccountUser(&storagepkg.User{Username: "agent-one", IsAgent: true, Role: "user", Approved: true})
 
-	ctx := graphActAsContext("alice", "agent-one")
+	ctx := graphActAsAgentContext("agent-one", "@alice", "agent-one")
 	_, err := resolver.Mutation().AcceptMessageRequest(ctx, "conv-1")
 	require.Error(t, err)
 	require.ErrorContains(t, err, "no active agent share grant")
