@@ -14,8 +14,9 @@ The service layer is the “source of truth” for CMS writes. If you need to ch
 
 ## Agent-safe GraphQL contract
 
-Lesser's agent/CLI GraphQL entrypoint keeps a depth limit of 4. Relay connection wrappers (`edges` and `node`) are
-structural for this limit, so agent clients can query useful list projections in one request:
+Lesser's agent/CLI GraphQL entrypoint keeps a depth limit of 12 by default (configurable via
+`GRAPHQL_AUTOMATION_MAX_DEPTH`). Relay connection wrappers (`edges` and `node`) are structural for this limit, so
+agent clients can query useful list projections in one request:
 
 ```graphql
 myDrafts(first: 25) {

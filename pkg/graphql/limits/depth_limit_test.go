@@ -2,9 +2,12 @@ package limits
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -25,6 +28,7 @@ var depthLimitTestSchema = gqlparser.MustLoadSchema(&ast.Source{
 		type User {
 			id: ID!
 			profile: Profile
+			reports: [User!]!
 		}
 
 		type Profile {
@@ -174,6 +178,75 @@ func TestDepthLimit_ConnectionWrappersStillBlockDeepSelections(t *testing.T) {
 	require.Equal(t, 4, stats.Depth)
 }
 
+func TestDepthLimit_AutomationAdmitsNestedNodeConnection(t *testing.T) {
+	query := `
+		query BodyArticles {
+			articles {
+				edges {
+					cursor
+					node {
+						id
+						title
+						author {
+							publicKey {
+								id
+							}
+						}
+					}
+				}
+				pageInfo {
+					hasNextPage
+				}
+			}
+		}
+	`
+	opCtx := mustNamedOpCtx(t, query, "BodyArticles")
+	ctx := context.WithValue(context.Background(), common.ContextKeyClaims, &auth.Claims{IsAgent: true})
+
+	dl := &DepthLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return RequestDepthLimit(ctx, 12, 12)
+		},
+	}
+	require.NoError(t, dl.Validate(nil))
+	require.Nil(t, dl.MutateOperationContext(ctx, opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 4, stats.Depth)
+}
+
+func TestDepthLimit_AutomationStillRejectsAboveLimit(t *testing.T) {
+	opCtx := mustNamedOpCtx(t, nestedUserQuery(13), "DeepReports")
+	ctx := context.WithValue(context.Background(), common.ContextKeyClaims, &auth.Claims{IsAgent: true})
+
+	dl := &DepthLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return RequestDepthLimit(ctx, 12, 12)
+		},
+	}
+	require.NoError(t, dl.Validate(nil))
+	require.NotNil(t, dl.MutateOperationContext(ctx, opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 13, stats.Depth)
+}
+
+func TestDepthLimit_AutomationAdmitsAtLimit(t *testing.T) {
+	opCtx := mustNamedOpCtx(t, nestedUserQuery(12), "DeepReports")
+	ctx := context.WithValue(context.Background(), common.ContextKeyClaims, &auth.Claims{IsAgent: true})
+
+	dl := &DepthLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return RequestDepthLimit(ctx, 12, 12)
+		},
+	}
+	require.NoError(t, dl.Validate(nil))
+	require.Nil(t, dl.MutateOperationContext(ctx, opCtx))
+
+	stats := opCtx.Stats.GetExtension(depthExtension).(*DepthStats)
+	require.Equal(t, 12, stats.Depth)
+}
+
 func TestDepthLimit_NonRelayEdgesCountTowardDepth(t *testing.T) {
 	query := `
 		query FederationMap {
@@ -261,6 +334,24 @@ func TestDepthLimit_HelperDepthFunctions_NilAndInlineFragments(t *testing.T) {
 
 	inline := &ast.InlineFragment{SelectionSet: ast.SelectionSet{&ast.Field{}}}
 	require.Equal(t, 1, selectionDepth(doc, inline, 0, map[string]bool{}))
+}
+
+// nestedUserQuery builds a valid operation over the self-referential
+// User.reports field whose selection depth equals depth: me (1) plus
+// depth-2 reports levels plus the terminal id (1).
+func nestedUserQuery(depth int) string {
+	reports := depth - 2
+	var b strings.Builder
+	b.WriteString("query DeepReports { me ")
+	for i := 0; i < reports; i++ {
+		b.WriteString("{ reports ")
+	}
+	b.WriteString("{ id }")
+	for i := 0; i < reports; i++ {
+		b.WriteString(" }")
+	}
+	b.WriteString(" }")
+	return b.String()
 }
 
 func mustOpCtx(t *testing.T, query string) *graphql.OperationContext {

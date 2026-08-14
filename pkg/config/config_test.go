@@ -119,6 +119,24 @@ func TestConfig_GraphQLMaxComplexity_DefaultAndOverride(t *testing.T) {
 	assert.Equal(t, 2500, cfg.GraphQLMaxComplexity)
 }
 
+func TestConfig_GraphQLAutomationLimits_DefaultAndOverride(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("GRAPHQL_AUTOMATION_MAX_DEPTH", "")
+	t.Setenv("GRAPHQL_AUTOMATION_MAX_COMPLEXITY", "")
+
+	ResetForTests()
+	cfg := Get()
+	assert.Equal(t, DefaultGraphQLAutomationMaxDepth, cfg.GraphQLAutomationMaxDepth)
+	assert.Equal(t, DefaultGraphQLAutomationMaxComplexity, cfg.GraphQLAutomationMaxComplexity)
+
+	t.Setenv("GRAPHQL_AUTOMATION_MAX_DEPTH", "16")
+	t.Setenv("GRAPHQL_AUTOMATION_MAX_COMPLEXITY", "6000")
+	ResetForTests()
+	cfg = Get()
+	assert.Equal(t, 16, cfg.GraphQLAutomationMaxDepth)
+	assert.Equal(t, 6000, cfg.GraphQLAutomationMaxComplexity)
+}
+
 func TestConfig_AgentRegistrationDefaultsSecureAndExplicitOptIn(t *testing.T) {
 	SetupTestEnvironment(t)
 	t.Setenv("ALLOW_AGENTS", "")
