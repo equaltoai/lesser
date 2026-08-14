@@ -1559,21 +1559,22 @@ func configureGraphQLExecutor(exec *executor.Executor, cfg *appconfig.Config) {
 		exec.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
 	}
 
-	// Depth enforcement: agents and CLI automation tokens use a bounded profile;
-	// humans use configured depth.
-	defaultDepth := 0
-	if cfg.GraphQLMaxDepth > 0 {
-		defaultDepth = cfg.GraphQLMaxDepth
-	}
+	// Depth enforcement: agents and CLI automation tokens use a bounded,
+	// independently-configurable profile; humans use configured depth.
 	exec.Use(&gqllimits.DepthLimit{
 		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-			return gqllimits.RequestDepthLimit(ctx, defaultDepth)
+			return gqllimits.RequestDepthLimit(ctx, cfg.GraphQLMaxDepth, cfg.GraphQLAutomationMaxDepth)
 		},
 	})
 
-	if cfg.GraphQLMaxComplexity > 0 {
-		exec.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
-	}
+	// Complexity enforcement mirrors depth: agents and CLI automation tokens use
+	// a bounded, independently-configurable ceiling; humans use the configured
+	// complexity.
+	exec.Use(&gqllimits.ComplexityLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return gqllimits.RequestComplexityLimit(ctx, cfg.GraphQLMaxComplexity, cfg.GraphQLAutomationMaxComplexity)
+		},
+	})
 
 	// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
 	if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {

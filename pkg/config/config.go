@@ -38,6 +38,15 @@ const (
 	DefaultOAuthClientSecretRotationGracePeriod = 24 * time.Hour
 	// DefaultGraphQLMaxComplexity is the conservative operator-safe default query complexity limit.
 	DefaultGraphQLMaxComplexity = 500
+	// DefaultGraphQLAutomationMaxDepth is the GraphQL selection-depth ceiling for
+	// agent and CLI automation tokens. It matches the human default because depth
+	// is a coarse structural bound, not the primary resource-consumption control.
+	DefaultGraphQLAutomationMaxDepth = 12
+	// DefaultGraphQLAutomationMaxComplexity is the query-complexity ceiling for
+	// agent and CLI automation tokens. It admits the schema's own maximum single
+	// rendered Article connection (200 x 16 + base overhead = 3209) with headroom
+	// while still rejecting two such connections in one operation.
+	DefaultGraphQLAutomationMaxComplexity = 4000
 )
 
 // Config holds the application configuration
@@ -147,21 +156,23 @@ type Config struct {
 	DisableRekognition   bool // Disable AWS Rekognition image/video analysis
 
 	// Development & Debug Features
-	DisableMetrics                bool // Disable metrics collection
-	DisableCostTracking           bool // Disable cost tracking
-	DisableRateLimiting           bool // Disable rate limiting
-	DisableFederationRateLimiting bool // Disable federation-specific rate limiting
-	DisableAI                     bool // Disable AI features
-	EnablePlayground              bool // Enable GraphQL playground
-	GraphQLAllowIntrospection     bool // Allow GraphQL introspection (non-debug deployments should keep this off)
-	GraphQLMaxDepth               int  // Maximum GraphQL query depth (0 disables)
-	GraphQLMaxComplexity          int  // Maximum GraphQL query complexity (0 disables)
-	GraphQLParserTokenLimit       int  // Maximum GraphQL parser tokens (0 disables)
-	GraphQLRequestTimeout         time.Duration
-	TranslationEnabled            bool   // Enable translation features
-	XRayTracingEnabled            bool   // Enable X-Ray tracing
-	DebugMode                     bool   // Enable debug mode
-	LogLevel                      string // Log level (debug, info, warn, error)
+	DisableMetrics                 bool // Disable metrics collection
+	DisableCostTracking            bool // Disable cost tracking
+	DisableRateLimiting            bool // Disable rate limiting
+	DisableFederationRateLimiting  bool // Disable federation-specific rate limiting
+	DisableAI                      bool // Disable AI features
+	EnablePlayground               bool // Enable GraphQL playground
+	GraphQLAllowIntrospection      bool // Allow GraphQL introspection (non-debug deployments should keep this off)
+	GraphQLMaxDepth                int  // Maximum GraphQL query depth (0 disables)
+	GraphQLMaxComplexity           int  // Maximum GraphQL query complexity (0 disables)
+	GraphQLAutomationMaxDepth      int  // Maximum GraphQL depth for agent/CLI automation tokens (0 disables)
+	GraphQLAutomationMaxComplexity int  // Maximum GraphQL complexity for agent/CLI automation tokens (0 disables)
+	GraphQLParserTokenLimit        int  // Maximum GraphQL parser tokens (0 disables)
+	GraphQLRequestTimeout          time.Duration
+	TranslationEnabled             bool   // Enable translation features
+	XRayTracingEnabled             bool   // Enable X-Ray tracing
+	DebugMode                      bool   // Enable debug mode
+	LogLevel                       string // Log level (debug, info, warn, error)
 
 	// Testing Configuration
 	IntegrationTestsEnabled bool // Enable integration tests
@@ -436,21 +447,23 @@ func loadConfig() *Config {
 		DisableRekognition:   getEnvAsBoolOrDefault("DISABLE_REKOGNITION", false),
 
 		// Development & Debug Features
-		DisableMetrics:                getEnvAsBoolOrDefault("DISABLE_METRICS", false),
-		DisableCostTracking:           getEnvAsBoolOrDefault("DISABLE_COST_TRACKING", false),
-		DisableRateLimiting:           getEnvAsBoolOrDefault("DISABLE_RATE_LIMITING", false),
-		DisableFederationRateLimiting: getEnvAsBoolOrDefault("DISABLE_FEDERATION_RATE_LIMITING", false),
-		DisableAI:                     getEnvAsBoolOrDefault("DISABLE_AI", false),
-		EnablePlayground:              getEnvAsBoolOrDefault("ENABLE_PLAYGROUND", false),
-		GraphQLAllowIntrospection:     getEnvAsBoolOrDefault("GRAPHQL_ALLOW_INTROSPECTION", false),
-		GraphQLMaxDepth:               getEnvAsIntOrDefault("GRAPHQL_MAX_DEPTH", 12),
-		GraphQLMaxComplexity:          getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", DefaultGraphQLMaxComplexity),
-		GraphQLParserTokenLimit:       getEnvAsIntOrDefault("GRAPHQL_PARSER_TOKEN_LIMIT", 15000),
-		GraphQLRequestTimeout:         getEnvAsDurationOrDefault("GRAPHQL_REQUEST_TIMEOUT", 25*time.Second),
-		TranslationEnabled:            getEnvAsBoolOrDefault("TRANSLATION_ENABLED", false),
-		XRayTracingEnabled:            getEnvAsBoolOrDefault("XRAY_TRACING_ENABLED", true),
-		DebugMode:                     getEnvAsBoolOrDefault("DEBUG", false),
-		LogLevel:                      getEnvOrDefault("LOG_LEVEL", "info"),
+		DisableMetrics:                 getEnvAsBoolOrDefault("DISABLE_METRICS", false),
+		DisableCostTracking:            getEnvAsBoolOrDefault("DISABLE_COST_TRACKING", false),
+		DisableRateLimiting:            getEnvAsBoolOrDefault("DISABLE_RATE_LIMITING", false),
+		DisableFederationRateLimiting:  getEnvAsBoolOrDefault("DISABLE_FEDERATION_RATE_LIMITING", false),
+		DisableAI:                      getEnvAsBoolOrDefault("DISABLE_AI", false),
+		EnablePlayground:               getEnvAsBoolOrDefault("ENABLE_PLAYGROUND", false),
+		GraphQLAllowIntrospection:      getEnvAsBoolOrDefault("GRAPHQL_ALLOW_INTROSPECTION", false),
+		GraphQLMaxDepth:                getEnvAsIntOrDefault("GRAPHQL_MAX_DEPTH", 12),
+		GraphQLMaxComplexity:           getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", DefaultGraphQLMaxComplexity),
+		GraphQLAutomationMaxDepth:      getEnvAsIntOrDefault("GRAPHQL_AUTOMATION_MAX_DEPTH", DefaultGraphQLAutomationMaxDepth),
+		GraphQLAutomationMaxComplexity: getEnvAsIntOrDefault("GRAPHQL_AUTOMATION_MAX_COMPLEXITY", DefaultGraphQLAutomationMaxComplexity),
+		GraphQLParserTokenLimit:        getEnvAsIntOrDefault("GRAPHQL_PARSER_TOKEN_LIMIT", 15000),
+		GraphQLRequestTimeout:          getEnvAsDurationOrDefault("GRAPHQL_REQUEST_TIMEOUT", 25*time.Second),
+		TranslationEnabled:             getEnvAsBoolOrDefault("TRANSLATION_ENABLED", false),
+		XRayTracingEnabled:             getEnvAsBoolOrDefault("XRAY_TRACING_ENABLED", true),
+		DebugMode:                      getEnvAsBoolOrDefault("DEBUG", false),
+		LogLevel:                       getEnvOrDefault("LOG_LEVEL", "info"),
 
 		// Testing Configuration
 		IntegrationTestsEnabled: getEnvAsBoolOrDefault("INTEGRATION_TESTS", false),

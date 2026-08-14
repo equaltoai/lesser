@@ -352,25 +352,21 @@ func initializeGraphQLSpecificServices() {
 	if cfg.GraphQLParserTokenLimit > 0 {
 		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
 	}
-	// Depth enforcement: agents and CLI automation tokens use a bounded profile;
-	// humans use the configured depth.
-	if cfg.GraphQLMaxDepth > 0 {
-		server.Use(&gqllimits.DepthLimit{
-			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-				return gqllimits.RequestDepthLimit(ctx, cfg.GraphQLMaxDepth)
-			},
-		})
-	} else {
-		// Even if depth is disabled for humans, retain a strict automation limit.
-		server.Use(&gqllimits.DepthLimit{
-			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-				return gqllimits.RequestDepthLimit(ctx, 0)
-			},
-		})
-	}
-	if cfg.GraphQLMaxComplexity > 0 {
-		server.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
-	}
+	// Depth enforcement: agents and CLI automation tokens use a bounded,
+	// independently-configurable profile; humans use the configured depth.
+	server.Use(&gqllimits.DepthLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return gqllimits.RequestDepthLimit(ctx, cfg.GraphQLMaxDepth, cfg.GraphQLAutomationMaxDepth)
+		},
+	})
+	// Complexity enforcement mirrors depth: agents and CLI automation tokens use
+	// a bounded, independently-configurable ceiling; humans use the configured
+	// complexity.
+	server.Use(&gqllimits.ComplexityLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			return gqllimits.RequestComplexityLimit(ctx, cfg.GraphQLMaxComplexity, cfg.GraphQLAutomationMaxComplexity)
+		},
+	})
 
 	// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
 	if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
