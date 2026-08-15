@@ -78,6 +78,7 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		AgentOwner:                agentOwner,
 		DelegatedScopes:           delegatedScopes,
 		ViewerCanSeePrivateFields: true,
+		ViewerIsOwner:             false,
 		McpAccess:                 graphAgentMCPAccessModel(auth.BuildPublicMCPAccessBundle(baseURL, username)),
 		Verified:                  verified,
 		VerifiedAt:                verifiedAt,

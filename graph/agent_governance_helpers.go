@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
@@ -98,6 +99,24 @@ func (r *Resolver) canViewAgentPrivateFields(claims *auth.Claims, agentUser *sto
 		return false
 	}
 	return isAgentOwnerOrAdmin(claims, agentUser, r.agentOwnerActorURL(claims.Username))
+}
+
+func (r *Resolver) viewerOwnsAgent(claims *auth.Claims, agentUser *storage.User) bool {
+	if claims == nil || agentUser == nil {
+		return false
+	}
+	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username, r.agentOwnerActorURL)
+}
+
+func (r *Resolver) applyGraphAgentViewerState(agent *model.Agent, claims *auth.Claims, agentUser *storage.User) *model.Agent {
+	if agent == nil {
+		return nil
+	}
+	agent.ViewerIsOwner = r.viewerOwnsAgent(claims, agentUser)
+	if !r.canViewAgentPrivateFields(claims, agentUser) {
+		redactGraphAgentPrivateFields(agent)
+	}
+	return agent
 }
 
 func graphClaimsIsAdmin(claims *auth.Claims) bool {

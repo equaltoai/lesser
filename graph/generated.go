@@ -563,6 +563,7 @@ type ComplexityRoot struct {
 		VerifiedAt                func(childComplexity int) int
 		Version                   func(childComplexity int) int
 		ViewerCanSeePrivateFields func(childComplexity int) int
+		ViewerIsOwner             func(childComplexity int) int
 		Workflow                  func(childComplexity int) int
 	}
 
@@ -6343,6 +6344,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.ViewerCanSeePrivateFields(childComplexity), true
+
+	case "Agent.viewerIsOwner":
+		if e.complexity.Agent.ViewerIsOwner == nil {
+			break
+		}
+
+		return e.complexity.Agent.ViewerIsOwner(childComplexity), true
 
 	case "Agent.workflow":
 		if e.complexity.Agent.Workflow == nil {
@@ -32029,6 +32037,8 @@ func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, fiel
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -42878,6 +42888,50 @@ func (ec *executionContext) fieldContext_Agent_viewerCanSeePrivateFields(_ conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_viewerIsOwner(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_viewerIsOwner(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ViewerIsOwner, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_viewerIsOwner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_mcpAccess(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_mcpAccess(ctx, field)
 	if err != nil {
@@ -46788,6 +46842,8 @@ func (ec *executionContext) fieldContext_AgentEdge_node(_ context.Context, field
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -62241,6 +62297,8 @@ func (ec *executionContext) fieldContext_DelegationPayload_agent(_ context.Conte
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -67452,6 +67510,8 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_agent(_ co
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -103993,6 +104053,8 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -104106,6 +104168,8 @@ func (ec *executionContext) fieldContext_Mutation_deleteAgent(ctx context.Contex
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -105263,6 +105327,8 @@ func (ec *executionContext) fieldContext_Mutation_adminVerifyAgent(ctx context.C
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -105376,6 +105442,8 @@ func (ec *executionContext) fieldContext_Mutation_adminUnverifyAgent(ctx context
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -105489,6 +105557,8 @@ func (ec *executionContext) fieldContext_Mutation_adminSuspendAgent(ctx context.
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -125490,6 +125560,8 @@ func (ec *executionContext) fieldContext_Query_agent(ctx context.Context, field 
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -125666,6 +125738,8 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -128749,6 +128823,8 @@ func (ec *executionContext) fieldContext_RegisterAgentPayload_agent(_ context.Co
 				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
 			case "viewerCanSeePrivateFields":
 				return ec.fieldContext_Agent_viewerCanSeePrivateFields(ctx, field)
+			case "viewerIsOwner":
+				return ec.fieldContext_Agent_viewerIsOwner(ctx, field)
 			case "mcpAccess":
 				return ec.fieldContext_Agent_mcpAccess(ctx, field)
 			case "verified":
@@ -167633,6 +167709,11 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "viewerCanSeePrivateFields":
 			out.Values[i] = ec._Agent_viewerCanSeePrivateFields(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "viewerIsOwner":
+			out.Values[i] = ec._Agent_viewerIsOwner(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
