@@ -4336,6 +4336,8 @@ type Agent {
   delegatedScopes: [String!]!
   """Whether private ownership, delegation, and soul-binding fields are visible to this viewer."""
   viewerCanSeePrivateFields: Boolean!
+  """True when the requesting viewer is this agent's owner under Lesser's canonical local-identity comparison."""
+  viewerIsOwner: Boolean!
   mcpAccess: AgentMCPAccess!
   verified: Boolean!
   verifiedAt: Time
@@ -5280,6 +5282,7 @@ type DroneWorkflowMutationPayload {
 extend type Query {
   agent(username: String!): Agent
   agents(first: Int = 20, after: Cursor, type: AgentType, query: String, verified: Boolean, ownerUsername: String): AgentConnection!
+  """Agents owned by the viewer. Agents shared with the viewer are served by the shared-with-me index, not this field."""
   myAgents: [Agent!]!
   agentActivity(username: String!, first: Int = 20, after: Cursor): AgentActivityConnection!
   agentAccessLeases(username: String!): [AgentAccessLease!]!

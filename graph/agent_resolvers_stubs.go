@@ -60,10 +60,7 @@ func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agen
 	}
 
 	agent := r.convertStorageUserToAgent(user, governance)
-	if !r.canViewAgentPrivateFields(optionalGraphAuthClaims(ctx), user) {
-		redactGraphAgentPrivateFields(agent)
-	}
-	return agent, nil
+	return r.applyGraphAgentViewerState(agent, optionalGraphAuthClaims(ctx), user), nil
 }
 
 type agentListFilters struct {
@@ -265,9 +262,7 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		if agent == nil {
 			continue
 		}
-		if !r.canViewAgentPrivateFields(viewerClaims, user) {
-			redactGraphAgentPrivateFields(agent)
-		}
+		agent = r.applyGraphAgentViewerState(agent, viewerClaims, user)
 
 		edges = append(edges, &model.AgentEdge{
 			Node:   agent,
@@ -338,7 +333,7 @@ func (r *queryResolver) MyAgents(ctx context.Context) ([]*model.Agent, error) {
 			}
 			agent := r.convertStorageUserToAgent(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))])
 			if agent != nil {
-				out = append(out, agent)
+				out = append(out, r.applyGraphAgentViewerState(agent, claims, user))
 			}
 		}
 
@@ -623,7 +618,7 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 		return nil, err
 	}
 
-	return r.convertStorageUserToAgent(account.User, governance), nil
+	return r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User), nil
 }
 
 func (r *mutationResolver) applyGraphAgentUpdateInput(
@@ -754,7 +749,7 @@ func (r *mutationResolver) DeleteAgent(ctx context.Context, username string) (*m
 		return nil, apperrors.InternalWithCause(err, "failed to delete agent")
 	}
 
-	return r.convertStorageUserToAgent(account.User, governance), nil
+	return r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User), nil
 }
 
 // DelegateToAgent is the resolver for the delegateToAgent field.
@@ -817,7 +812,7 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	}
 
 	return &model.DelegationPayload{
-		Agent:        r.convertStorageUserToAgent(account.User, governance),
+		Agent:        r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User),
 		AccessToken:  bundle.AccessToken,
 		RefreshToken: bundle.RefreshToken,
 		TokenType:    "Bearer",
@@ -1163,7 +1158,7 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 		return nil, graphAgentGovernanceWriteError(err, "verify")
 	}
 
-	return r.convertStorageUserToAgent(account.User, governance), nil
+	return r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User), nil
 }
 
 // AdminUnverifyAgent is the resolver for the adminUnverifyAgent field.
@@ -1218,7 +1213,7 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 		return nil, graphAgentGovernanceWriteError(err, "unverify")
 	}
 
-	return r.convertStorageUserToAgent(account.User, governance), nil
+	return r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User), nil
 }
 
 // AdminSuspendAgent is the resolver for the adminSuspendAgent field.
@@ -1259,7 +1254,7 @@ func (r *mutationResolver) AdminSuspendAgent(ctx context.Context, username strin
 		return nil, apperrors.InternalWithCause(err, "failed to suspend agent")
 	}
 
-	return r.convertStorageUserToAgent(account.User, governance), nil
+	return r.applyGraphAgentViewerState(r.convertStorageUserToAgent(account.User, governance), claims, account.User), nil
 }
 
 func (r *Resolver) requireAuthClaims(ctx context.Context) (*auth.Claims, error) {

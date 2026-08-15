@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
@@ -98,6 +99,33 @@ func (r *Resolver) canViewAgentPrivateFields(claims *auth.Claims, agentUser *sto
 		return false
 	}
 	return isAgentOwnerOrAdmin(claims, agentUser, r.agentOwnerActorURL(claims.Username))
+}
+
+func (r *Resolver) viewerUsernameOwnsAgent(viewerUsername string, agentUser *storage.User) bool {
+	if agentUser == nil || strings.TrimSpace(viewerUsername) == "" {
+		return false
+	}
+	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, viewerUsername, r.agentOwnerActorURL)
+}
+
+func (r *Resolver) applyGraphAgentViewerOwnership(agent *model.Agent, viewerUsername string, agentUser *storage.User) *model.Agent {
+	if agent == nil {
+		return nil
+	}
+	agent.ViewerIsOwner = r.viewerUsernameOwnsAgent(viewerUsername, agentUser)
+	return agent
+}
+
+func (r *Resolver) applyGraphAgentViewerState(agent *model.Agent, claims *auth.Claims, agentUser *storage.User) *model.Agent {
+	viewerUsername := ""
+	if claims != nil {
+		viewerUsername = claims.Username
+	}
+	agent = r.applyGraphAgentViewerOwnership(agent, viewerUsername, agentUser)
+	if !r.canViewAgentPrivateFields(claims, agentUser) {
+		redactGraphAgentPrivateFields(agent)
+	}
+	return agent
 }
 
 func graphClaimsIsAdmin(claims *auth.Claims) bool {
