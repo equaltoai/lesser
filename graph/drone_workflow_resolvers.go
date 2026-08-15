@@ -461,12 +461,8 @@ func (r *Resolver) droneWorkflowMutationPayload(
 	if err != nil {
 		return nil, err
 	}
-	claims := optionalGraphAuthClaims(ctx)
-	if claims == nil && strings.TrimSpace(viewerUsername) != "" {
-		claims = &auth.Claims{Username: viewerUsername}
-	}
 	return &model.DroneWorkflowMutationPayload{
-		Agent:    r.applyGraphAgentViewerState(r.convertStorageUserToAgent(agentUser, governance), claims, agentUser),
+		Agent:    r.applyGraphAgentViewerOwnership(r.convertStorageUserToAgent(agentUser, governance), viewerUsername, agentUser),
 		Workflow: surface,
 	}, nil
 }

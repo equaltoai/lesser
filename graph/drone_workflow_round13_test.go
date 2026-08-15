@@ -175,9 +175,11 @@ func TestRound13DroneWorkflowMutationsPersistWorkflowState(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, requestPayload)
+	require.NotNil(t, requestPayload.Agent)
 	require.NotNil(t, requestPayload.Workflow.Request)
 	require.Equal(t, workflow.DroneWorkflowStateRequestSubmitted, requestPayload.Workflow.CurrentState)
 	require.Len(t, requestPayload.Workflow.Request.Artifacts, 1)
+	assertRound13PayloadAgent(t, requestPayload.Agent, true, true, "@owner", []string{auth.ScopeRead, auth.ScopeWrite})
 
 	reviewPayload, err := mut.ReviewSoulPromotion(round13DroneAuthContext("owner", auth.ScopeWrite), model.ReviewSoulPromotionInput{
 		Username:        "drone-beta",
@@ -191,10 +193,12 @@ func TestRound13DroneWorkflowMutationsPersistWorkflowState(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+	require.NotNil(t, reviewPayload.Agent)
 	require.NotNil(t, reviewPayload.Workflow.Review)
 	require.Equal(t, workflow.DroneWorkflowStateReviewApproved, reviewPayload.Workflow.CurrentState)
 	require.NotNil(t, reviewPayload.Workflow.Checkpoint)
 	require.Len(t, reviewPayload.Workflow.Checkpoint.Signers, 1)
+	assertRound13PayloadAgent(t, reviewPayload.Agent, true, true, "@owner", []string{auth.ScopeRead, auth.ScopeWrite})
 
 	finalPayload, err := mut.FinalizeSoulPromotion(round13DroneAuthContext("owner", auth.ScopeWrite), model.FinalizeSoulPromotionInput{
 		Username:              "drone-beta",
@@ -215,12 +219,14 @@ func TestRound13DroneWorkflowMutationsPersistWorkflowState(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, finalPayload)
+	require.NotNil(t, finalPayload.Agent)
 	require.NotNil(t, finalPayload.Workflow.Declaration)
 	require.NotNil(t, finalPayload.Workflow.Graduation)
 	require.NotNil(t, finalPayload.Workflow.Continuity)
 	require.Equal(t, workflow.DroneWorkflowPhaseContinuity, finalPayload.Workflow.CurrentPhase)
 	require.Equal(t, workflow.DroneIdentityStateSouled, finalPayload.Workflow.IdentitySemantics.IdentityState)
 	require.Equal(t, "0xsoul", derefString(finalPayload.Workflow.IdentitySemantics.SoulAgentID))
+	assertRound13PayloadAgent(t, finalPayload.Agent, true, true, "@owner", []string{auth.ScopeRead, auth.ScopeWrite})
 
 	storedUser, err := storageRepo.Account().GetUser(context.Background(), "drone-beta")
 	require.NoError(t, err)
@@ -325,10 +331,39 @@ func TestRound13DroneWorkflowAssignedReviewerAccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, reviewPayload)
+	require.NotNil(t, reviewPayload.Agent)
 	require.NotNil(t, reviewPayload.Workflow)
 	require.Equal(t, workflow.DroneWorkflowStateReviewApproved, reviewPayload.Workflow.CurrentState)
 	require.NotNil(t, reviewPayload.Workflow.Review)
 	require.Equal(t, "reviewer", reviewPayload.Workflow.Review.Reviewer.ID)
+	assertRound13PayloadAgent(t, reviewPayload.Agent, true, false, "@owner", []string{auth.ScopeRead, auth.ScopeWrite})
+}
+
+func TestRound13DroneWorkflowMutationPayloadUsesExplicitViewerUsernameForOwnershipOnly(t *testing.T) {
+	resolver, storageRepo := newRound12GraphResolver(t)
+	now := time.Date(2026, 3, 28, 12, 45, 0, 0, time.UTC)
+
+	round13SeedGraphUser(t, storageRepo, &storage.User{
+		Username:    "drone-theta",
+		DisplayName: "Drone Theta",
+		Approved:    true,
+		IsAgent:     true,
+		AgentOwner:  "@owner",
+		CreatedAt:   now.Add(-24 * time.Hour),
+		UpdatedAt:   now,
+	}, &storage.AgentGovernanceState{
+		Username:        "drone-theta",
+		DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+	})
+
+	agentUser, governance, err := resolver.loadDroneAgent(context.Background(), "drone-theta")
+	require.NoError(t, err)
+
+	payload, err := resolver.droneWorkflowMutationPayload(context.Background(), "reviewer", agentUser, governance)
+	require.NoError(t, err)
+	require.NotNil(t, payload)
+	require.NotNil(t, payload.Agent)
+	assertRound13PayloadAgent(t, payload.Agent, true, false, "@owner", []string{auth.ScopeRead, auth.ScopeWrite})
 }
 
 func TestRound13DroneWorkflowSouledContinuityStatePreserved(t *testing.T) {
@@ -405,4 +440,15 @@ func round13DroneAuthContext(username string, scopes ...string) context.Context 
 
 func round13StringPtr(value string) *string {
 	return &value
+}
+
+func assertRound13PayloadAgent(t *testing.T, agent *model.Agent, viewerCanSeePrivateFields bool, viewerIsOwner bool, agentOwner string, delegatedScopes []string) {
+	t.Helper()
+
+	require.NotNil(t, agent)
+	require.Equal(t, viewerCanSeePrivateFields, agent.ViewerCanSeePrivateFields)
+	require.Equal(t, viewerIsOwner, agent.ViewerIsOwner)
+	require.NotNil(t, agent.AgentOwner)
+	require.Equal(t, agentOwner, *agent.AgentOwner)
+	require.ElementsMatch(t, delegatedScopes, agent.DelegatedScopes)
 }

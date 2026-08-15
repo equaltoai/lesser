@@ -101,18 +101,27 @@ func (r *Resolver) canViewAgentPrivateFields(claims *auth.Claims, agentUser *sto
 	return isAgentOwnerOrAdmin(claims, agentUser, r.agentOwnerActorURL(claims.Username))
 }
 
-func (r *Resolver) viewerOwnsAgent(claims *auth.Claims, agentUser *storage.User) bool {
-	if claims == nil || agentUser == nil {
+func (r *Resolver) viewerUsernameOwnsAgent(viewerUsername string, agentUser *storage.User) bool {
+	if agentUser == nil || strings.TrimSpace(viewerUsername) == "" {
 		return false
 	}
-	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, claims.Username, r.agentOwnerActorURL)
+	return auth.AgentOwnerMatchesLocalPrincipal(agentUser.AgentOwner, viewerUsername, r.agentOwnerActorURL)
 }
 
-func (r *Resolver) applyGraphAgentViewerState(agent *model.Agent, claims *auth.Claims, agentUser *storage.User) *model.Agent {
+func (r *Resolver) applyGraphAgentViewerOwnership(agent *model.Agent, viewerUsername string, agentUser *storage.User) *model.Agent {
 	if agent == nil {
 		return nil
 	}
-	agent.ViewerIsOwner = r.viewerOwnsAgent(claims, agentUser)
+	agent.ViewerIsOwner = r.viewerUsernameOwnsAgent(viewerUsername, agentUser)
+	return agent
+}
+
+func (r *Resolver) applyGraphAgentViewerState(agent *model.Agent, claims *auth.Claims, agentUser *storage.User) *model.Agent {
+	viewerUsername := ""
+	if claims != nil {
+		viewerUsername = claims.Username
+	}
+	agent = r.applyGraphAgentViewerOwnership(agent, viewerUsername, agentUser)
 	if !r.canViewAgentPrivateFields(claims, agentUser) {
 		redactGraphAgentPrivateFields(agent)
 	}
