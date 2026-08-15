@@ -462,7 +462,7 @@ func (r *Resolver) droneWorkflowMutationPayload(
 		return nil, err
 	}
 	return &model.DroneWorkflowMutationPayload{
-		Agent:    r.convertStorageUserToAgent(agentUser, governance),
+		Agent:    r.applyGraphAgentViewerOwnership(r.convertStorageUserToAgent(agentUser, governance), viewerUsername, agentUser),
 		Workflow: surface,
 	}, nil
 }
