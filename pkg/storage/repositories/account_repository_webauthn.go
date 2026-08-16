@@ -16,6 +16,31 @@ import (
 // ===== WebAuthn Methods =====
 // This file contains WebAuthn-related methods for the AccountRepository
 
+func webAuthnCredentialHasCanonicalKeys(model *models.WebAuthnCredential) bool {
+	if model == nil {
+		return false
+	}
+
+	return strings.TrimSpace(model.PK) == fmt.Sprintf("USER#%s", model.UserID) &&
+		strings.TrimSpace(model.SK) == fmt.Sprintf("WEBAUTHN_CRED#%s", model.ID) &&
+		strings.TrimSpace(model.GSI1PK) == fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", model.ID) &&
+		strings.TrimSpace(model.GSI1SK) == fmt.Sprintf("USER#%s", model.UserID)
+}
+
+func webAuthnCredentialsHaveCanonicalKeys(models []models.WebAuthnCredential) bool {
+	if len(models) == 0 {
+		return true
+	}
+
+	for i := range models {
+		if !webAuthnCredentialHasCanonicalKeys(&models[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // CreateWebAuthnCredential creates a new WebAuthn credential for a user
 func (r *AccountRepository) CreateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
 	// Create DynamORM model
@@ -55,9 +80,17 @@ func (r *AccountRepository) GetWebAuthnCredential(ctx context.Context, credentia
 	var model models.WebAuthnCredential
 
 	err := r.db.WithContext(ctx).Model(&model).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
+		Limit(1).
 		First(&model)
+
+	if err == nil && !webAuthnCredentialHasCanonicalKeys(&model) {
+		err = r.db.WithContext(ctx).Model(&model).
+			Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
+			Where("SK", "=", "CREDENTIAL").
+			First(&model)
+	}
 
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
@@ -90,10 +123,18 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 	var credentials []models.WebAuthnCredential
 
 	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsi1SK", "BEGINS_WITH", "WEBAUTHN#").
+		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#").
 		All(&credentials)
+
+	if err == nil && !webAuthnCredentialsHaveCanonicalKeys(credentials) {
+		credentials = nil
+		err = r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
+			Where("gsi1SK", "BEGINS_WITH", "WEBAUTHN#").
+			All(&credentials)
+	}
 
 	if err != nil {
 		r.logger.Error("failed to get user WebAuthn credentials",
@@ -125,9 +166,17 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 
 // DeleteWebAuthnCredential removes a WebAuthn credential
 func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, credentialID string) error {
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
+	credential, err := r.GetWebAuthnCredential(ctx, credentialID)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	err = r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", credential.UserID)).
+		Where("SK", "=", fmt.Sprintf("WEBAUTHN_CRED#%s", credentialID)).
 		Delete()
 
 	if err != nil && !dynamormerrors.IsNotFound(err) {
@@ -145,12 +194,19 @@ func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, creden
 
 // UpdateWebAuthnLastUsed updates the last used timestamp and sign count for a credential
 func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error {
-	// Get existing credential
 	var credential models.WebAuthnCredential
 	err := r.db.WithContext(ctx).Model(&credential).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
+		Limit(1).
 		First(&credential)
+
+	if err == nil && !webAuthnCredentialHasCanonicalKeys(&credential) {
+		err = r.db.WithContext(ctx).Model(&credential).
+			Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
+			Where("SK", "=", "CREDENTIAL").
+			First(&credential)
+	}
 
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
@@ -159,9 +215,12 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 		return ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
-	// Update fields
 	credential.SignCount = signCount
-	credential.LastUsedAt = time.Now()
+	credential.LastUsedAt = time.Now().UTC()
+	credential.PK = fmt.Sprintf("USER#%s", credential.UserID)
+	credential.SK = fmt.Sprintf("WEBAUTHN_CRED#%s", credential.ID)
+	credential.GSI1PK = fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credential.ID)
+	credential.GSI1SK = fmt.Sprintf("USER#%s", credential.UserID)
 
 	err = r.db.WithContext(ctx).Model(&credential).Update()
 	if err != nil {
