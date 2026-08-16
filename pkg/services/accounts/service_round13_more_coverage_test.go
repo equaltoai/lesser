@@ -130,17 +130,36 @@ type permissiveDBOptions struct {
 	firstMuteFirstError         error
 }
 
+type permissiveUpdateCondition struct {
+	field string
+	op    string
+	value any
+}
+
+type permissiveUpdateBuilder struct {
+	currentModel func() any
+	getProof     func(string) (models.PasskeyRegistrationProof, bool)
+	storeProof   func(models.PasskeyRegistrationProof)
+
+	sets       map[string]any
+	conditions []permissiveUpdateCondition
+}
+
 func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcore.DB {
 	t.Helper()
 
 	db := new(dynamormMocks.MockDB)
 	q := new(dynamormMocks.MockQuery)
-	updateBuilder := new(dynamormMocks.MockUpdateBuilder)
+	updateBuilder := &permissiveUpdateBuilder{
+		sets: make(map[string]any),
+	}
 	batchGetBuilder := new(dynamormMocks.MockBatchGetBuilder)
 
 	var mu sync.Mutex
 	where := make(map[string]any)
 	walletChallenges := make(map[string]models.WalletChallenge)
+	passkeyProofs := make(map[string]models.PasskeyRegistrationProof)
+	webAuthnCredentials := make(map[string]models.WebAuthnCredential)
 	var currentModel any
 	resetWhere := func() {
 		mu.Lock()
@@ -169,6 +188,44 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		model, ok := walletChallenges[challengeID]
 		return model, ok
 	}
+	storePasskeyProof := func(model models.PasskeyRegistrationProof) {
+		mu.Lock()
+		defer mu.Unlock()
+		passkeyProofs[model.ID] = model
+	}
+	getPasskeyProof := func(proofID string) (models.PasskeyRegistrationProof, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		model, ok := passkeyProofs[proofID]
+		return model, ok
+	}
+	storeWebAuthnCredential := func(model models.WebAuthnCredential) {
+		mu.Lock()
+		defer mu.Unlock()
+		webAuthnCredentials[model.ID] = model
+	}
+	deleteWebAuthnCredential := func(credentialID string) {
+		mu.Lock()
+		defer mu.Unlock()
+		delete(webAuthnCredentials, credentialID)
+	}
+	getWebAuthnCredential := func(credentialID string) (models.WebAuthnCredential, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		model, ok := webAuthnCredentials[credentialID]
+		return model, ok
+	}
+	getWebAuthnCredentialsByUser := func(userID string) []models.WebAuthnCredential {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]models.WebAuthnCredential, 0)
+		for _, credential := range webAuthnCredentials {
+			if strings.EqualFold(strings.TrimSpace(credential.UserID), strings.TrimSpace(userID)) {
+				out = append(out, credential)
+			}
+		}
+		return out
+	}
 	setCurrentModel := func(model any) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -179,6 +236,9 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		defer mu.Unlock()
 		return currentModel
 	}
+	updateBuilder.currentModel = getCurrentModel
+	updateBuilder.getProof = getPasskeyProof
+	updateBuilder.storeProof = storePasskeyProof
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
 	db.On("Model", mock.Anything).Run(func(arguments mock.Arguments) {
@@ -244,13 +304,49 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		q.On("First", mock.AnythingOfType("*models.Mute")).Return(opts.firstMuteFirstError).Once()
 	}
 	q.On("Create").Run(func(_ mock.Arguments) {
-		if model, ok := getCurrentModel().(*models.WalletChallenge); ok && model != nil {
-			storeWalletChallenge(*model)
+		switch model := getCurrentModel().(type) {
+		case *models.WalletChallenge:
+			if model != nil {
+				storeWalletChallenge(*model)
+			}
+		case *models.PasskeyRegistrationProof:
+			if model != nil {
+				storePasskeyProof(*model)
+			}
+		case *models.WebAuthnCredential:
+			if model != nil {
+				storeWebAuthnCredential(*model)
+			}
 		}
 	}).Return(nil).Maybe()
 	q.On("Update", mock.Anything).Run(func(_ mock.Arguments) {
 		if model, ok := getCurrentModel().(*models.WalletChallenge); ok && model != nil {
 			storeWalletChallenge(*model)
+		}
+	}).Return(nil).Maybe()
+	q.On("Delete").Run(func(_ mock.Arguments) {
+		switch model := getCurrentModel().(type) {
+		case *models.WebAuthnCredential:
+			if model == nil {
+				return
+			}
+			credentialID := strings.TrimPrefix(extractStringFromWhere(getWhere, "gsi1PK"), "WEBAUTHN_CREDENTIAL#")
+			if credentialID == "" {
+				credentialID = strings.TrimPrefix(extractStringFromWhere(getWhere, "SK"), "WEBAUTHN_CRED#")
+			}
+			if credentialID != "" {
+				deleteWebAuthnCredential(credentialID)
+			}
+		case *models.PasskeyRegistrationProof:
+			proofID := strings.TrimPrefix(extractStringFromWhere(getWhere, "PK"), "PASSKEY_REGISTRATION_PROOF#")
+			if proofID == "" && model != nil {
+				proofID = strings.TrimSpace(model.ID)
+			}
+			if proofID != "" {
+				mu.Lock()
+				delete(passkeyProofs, proofID)
+				mu.Unlock()
+			}
 		}
 	}).Return(nil).Maybe()
 	q.On("First", mock.AnythingOfType("*models.WalletChallenge")).Run(func(arguments mock.Arguments) {
@@ -270,6 +366,22 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		dest.ExpiresAt = time.Now().Add(5 * time.Minute)
 		_ = dest.UpdateKeys()
 	}).Return(nil).Maybe()
+	q.On("First", mock.AnythingOfType("*models.PasskeyRegistrationProof")).Run(func(arguments mock.Arguments) {
+		dest := arguments.Get(0).(*models.PasskeyRegistrationProof)
+		proofID := extractUsernameFromWhere(getWhere, "PK", "PASSKEY_REGISTRATION_PROOF#", "")
+		if stored, ok := getPasskeyProof(proofID); ok {
+			*dest = stored
+			return
+		}
+	}).Return(nil).Maybe()
+	q.On("First", mock.AnythingOfType("*models.WebAuthnCredential")).Run(func(arguments mock.Arguments) {
+		dest := arguments.Get(0).(*models.WebAuthnCredential)
+		credentialID := strings.TrimPrefix(extractStringFromWhere(getWhere, "gsi1PK"), "WEBAUTHN_CREDENTIAL#")
+		if stored, ok := getWebAuthnCredential(credentialID); ok {
+			*dest = stored
+			return
+		}
+	}).Return(nil).Maybe()
 
 	q.On("First", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
@@ -278,22 +390,22 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 
 	q.On("All", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
-		fillSlicePointer(t, dest, getWhere, opts)
+		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
 	}).Return(nil).Maybe()
 
 	q.On("Scan", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
-		fillSlicePointer(t, dest, getWhere, opts)
+		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
 	}).Return(nil).Maybe()
 
 	q.On("BatchGet", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
-		fillSlicePointer(t, dest, getWhere, opts)
+		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
 	}).Return(batchGetBuilder).Maybe()
 
 	q.On("ScanAllSegments", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
-		fillSlicePointer(t, dest, getWhere, opts)
+		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
 	}).Return(nil).Maybe()
 
 	if opts.firstCountError != nil {
@@ -314,7 +426,7 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 
 		// Already handled above with custom behavior.
 		switch method.Name {
-		case "Where", "UpdateBuilder", "First", "All", "Scan", "BatchGet", "ScanAllSegments", "Count":
+		case "Where", "UpdateBuilder", "First", "All", "Scan", "BatchGet", "ScanAllSegments", "Count", "Delete":
 			continue
 		}
 
@@ -356,35 +468,6 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		}
 	}
 
-	// Permissive UpdateBuilder behavior.
-	updateBuilderType := reflect.TypeOf((*dynamormcore.UpdateBuilder)(nil)).Elem()
-	for i := 0; i < updateBuilderType.NumMethod(); i++ {
-		method := updateBuilderType.Method(i)
-		args := make([]any, method.Type.NumIn())
-		for j := range args {
-			args[j] = mock.Anything
-		}
-
-		switch method.Type.NumOut() {
-		case 0:
-			updateBuilder.On(method.Name, args...).Return().Maybe()
-		case 1:
-			out0 := method.Type.Out(0)
-			switch {
-			case out0.Implements(updateBuilderType) || out0.AssignableTo(updateBuilderType):
-				updateBuilder.On(method.Name, args...).Return(updateBuilder).Maybe()
-			default:
-				updateBuilder.On(method.Name, args...).Return(reflect.Zero(out0).Interface()).Maybe()
-			}
-		default:
-			zero := make([]any, method.Type.NumOut())
-			for j := range zero {
-				zero[j] = reflect.Zero(method.Type.Out(j)).Interface()
-			}
-			updateBuilder.On(method.Name, args...).Return(zero...).Maybe()
-		}
-	}
-
 	// Permissive BatchGetBuilder behavior.
 	batchGetBuilderType := reflect.TypeOf((*dynamormcore.BatchGetBuilder)(nil)).Elem()
 	for i := 0; i < batchGetBuilderType.NumMethod(); i++ {
@@ -415,6 +498,110 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 	}
 
 	return db
+}
+
+func (b *permissiveUpdateBuilder) Set(field string, value any) dynamormcore.UpdateBuilder {
+	if b.sets == nil {
+		b.sets = make(map[string]any)
+	}
+	b.sets[field] = value
+	return b
+}
+
+func (b *permissiveUpdateBuilder) SetIfNotExists(string, any, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *permissiveUpdateBuilder) Add(string, any) dynamormcore.UpdateBuilder              { return b }
+func (b *permissiveUpdateBuilder) Increment(string) dynamormcore.UpdateBuilder             { return b }
+func (b *permissiveUpdateBuilder) Decrement(string) dynamormcore.UpdateBuilder             { return b }
+func (b *permissiveUpdateBuilder) Remove(string) dynamormcore.UpdateBuilder                { return b }
+func (b *permissiveUpdateBuilder) Delete(string, any) dynamormcore.UpdateBuilder           { return b }
+func (b *permissiveUpdateBuilder) AppendToList(string, any) dynamormcore.UpdateBuilder     { return b }
+func (b *permissiveUpdateBuilder) PrependToList(string, any) dynamormcore.UpdateBuilder    { return b }
+func (b *permissiveUpdateBuilder) RemoveFromListAt(string, int) dynamormcore.UpdateBuilder { return b }
+func (b *permissiveUpdateBuilder) SetListElement(string, int, any) dynamormcore.UpdateBuilder {
+	return b
+}
+
+func (b *permissiveUpdateBuilder) Condition(field string, op string, value any) dynamormcore.UpdateBuilder {
+	b.conditions = append(b.conditions, permissiveUpdateCondition{field: field, op: op, value: value})
+	return b
+}
+
+func (b *permissiveUpdateBuilder) OrCondition(string, string, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *permissiveUpdateBuilder) ConditionExists(string) dynamormcore.UpdateBuilder    { return b }
+func (b *permissiveUpdateBuilder) ConditionNotExists(string) dynamormcore.UpdateBuilder { return b }
+func (b *permissiveUpdateBuilder) ConditionVersion(int64) dynamormcore.UpdateBuilder    { return b }
+func (b *permissiveUpdateBuilder) ReturnValues(string) dynamormcore.UpdateBuilder       { return b }
+
+func (b *permissiveUpdateBuilder) Execute() error {
+	defer func() {
+		b.sets = make(map[string]any)
+		b.conditions = nil
+	}()
+
+	currentProof, ok := b.currentModel().(*models.PasskeyRegistrationProof)
+	if !ok || currentProof == nil {
+		return nil
+	}
+
+	proof, ok := b.getProof(strings.TrimSpace(currentProof.ID))
+	if !ok {
+		return dynamormErrors.ErrItemNotFound
+	}
+
+	for _, condition := range b.conditions {
+		if !permissivePasskeyProofConditionMet(&proof, condition) {
+			return dynamormErrors.ErrConditionFailed
+		}
+	}
+
+	for field, value := range b.sets {
+		switch field {
+		case "Consumed":
+			boolValue, _ := value.(bool)
+			proof.Consumed = boolValue
+		case "ConsumedAt":
+			if ts, ok := value.(time.Time); ok {
+				proof.ConsumedAt = ts
+			}
+		}
+	}
+
+	b.storeProof(proof)
+	return nil
+}
+
+func (b *permissiveUpdateBuilder) ExecuteWithResult(any) error {
+	return b.Execute()
+}
+
+func permissivePasskeyProofConditionMet(proof *models.PasskeyRegistrationProof, condition permissiveUpdateCondition) bool {
+	switch condition.field {
+	case "Consumed":
+		expected, _ := condition.value.(bool)
+		return condition.op == "=" && proof.Consumed == expected
+	case "TTL":
+		expected, _ := condition.value.(int64)
+		switch condition.op {
+		case ">":
+			return proof.TTL > expected
+		case "=":
+			return proof.TTL == expected
+		default:
+			return false
+		}
+	case "Username":
+		expected, _ := condition.value.(string)
+		return condition.op == "=" && strings.TrimSpace(proof.Username) == strings.TrimSpace(expected)
+	case "CeremonyID":
+		expected, _ := condition.value.(string)
+		return condition.op == "=" && strings.TrimSpace(proof.CeremonyID) == strings.TrimSpace(expected)
+	default:
+		return true
+	}
 }
 
 func fillModelPointer(t *testing.T, dest any, getWhere func(string) (any, bool), opts permissiveDBOptions) {
@@ -558,7 +745,7 @@ func setAccountsProjectionField(target reflect.Value, name string, value any) {
 	}
 }
 
-func fillSlicePointer(t *testing.T, dest any, getWhere func(string) (any, bool), opts permissiveDBOptions) {
+func fillSlicePointer(t *testing.T, dest any, getWhere func(string) (any, bool), opts permissiveDBOptions, getWebAuthnCredentialsByUser func(string) []models.WebAuthnCredential) {
 	t.Helper()
 
 	ptr := reflect.ValueOf(dest)
@@ -571,6 +758,14 @@ func fillSlicePointer(t *testing.T, dest any, getWhere func(string) (any, bool),
 	}
 
 	switch elem.Type().Elem() {
+	case reflect.TypeOf(models.WebAuthnCredential{}):
+		userID := extractUsernameFromWhere(getWhere, "PK", "USER#", "alice")
+		credentials := getWebAuthnCredentialsByUser(userID)
+		elem.Set(reflect.MakeSlice(elem.Type(), 0, len(credentials)))
+		for _, credential := range credentials {
+			elem.Set(reflect.Append(elem, reflect.ValueOf(credential)))
+		}
+		return
 	case reflect.TypeOf(models.User{}):
 		// SearchAccounts expects users with mixed suspended statuses.
 		elem.Set(reflect.MakeSlice(elem.Type(), 0, 3))

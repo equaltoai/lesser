@@ -337,6 +337,9 @@ type RegisterAccountCommand struct {
 	// RegistrationChallengeID is a registration-time proof reference (e.g. wallet challenge ID).
 	// Successful registration binds that proof to the typed wallet challenge row.
 	RegistrationChallengeID string `json:"registration_challenge_id,omitempty"`
+
+	// PasskeyRegistrationProof is the single-use proof emitted by the public WebAuthn signup finish ceremony.
+	PasskeyRegistrationProof string `json:"passkey_registration_proof,omitempty"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -1911,6 +1914,21 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrUsernameAlreadyTaken
 	}
 
+	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
+	passkeyRegistrationProofID := strings.TrimSpace(cmd.PasskeyRegistrationProof)
+
+	var err error
+	var passkeyProof *models.PasskeyRegistrationProof
+	if passkeyRegistrationProofID != "" {
+		passkeyProof, err = accountRepo.GetPasskeyRegistrationProof(ctx, passkeyRegistrationProofID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get passkey registration proof: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(passkeyProof.Username), strings.TrimSpace(cmd.Username)) {
+			return nil, fmt.Errorf("passkey registration proof was created for a different username")
+		}
+	}
+
 	// Generate RSA keypair for the actor
 	privateKey, err := s.generateRSAKeyPair()
 	if err != nil {
@@ -1999,8 +2017,17 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, err
 	}
 
-	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
-	if registrationChallengeID != "" {
+	if passkeyProof != nil {
+		credential := passkeyRegistrationProofToCredential(passkeyProof)
+		if err := accountRepo.StoreWebAuthnCredential(ctx, credential); err != nil {
+			s.rollbackAccountCreationWithCredential(ctx, accountRepo, cmd.Username, credential.ID, err)
+			return nil, fmt.Errorf("failed to store initial passkey credential: %w", err)
+		}
+		if _, err := accountRepo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, cmd.Username, passkeyProof.CeremonyID); err != nil {
+			s.rollbackAccountCreationWithCredential(ctx, accountRepo, cmd.Username, credential.ID, err)
+			return nil, fmt.Errorf("failed to finalize passkey registration proof: %w", err)
+		}
+	} else if registrationChallengeID != "" {
 		if err := accountRepo.MarkWalletChallengeRegistrationCompleted(ctx, registrationChallengeID); err != nil {
 			s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
 			return nil, fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
@@ -2051,6 +2078,9 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 
 	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
 		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
+	}
+	if strings.TrimSpace(cmd.RegistrationChallengeID) != "" && strings.TrimSpace(cmd.PasskeyRegistrationProof) != "" {
+		return errors.New("wallet challenge and passkey registration proof cannot both be provided")
 	}
 	// Additional validation can be added here
 	return nil
@@ -2143,6 +2173,38 @@ func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegis
 	s.logger.Warn("rolled back account after registration failure",
 		zap.String("username", username),
 		zap.NamedError("cause", cause))
+}
+
+func (s *Service) rollbackAccountCreationWithCredential(ctx context.Context, repo *repositories.AccountRepository, username string, credentialID string, cause error) {
+	if strings.TrimSpace(credentialID) != "" {
+		if err := repo.DeleteWebAuthnCredential(ctx, credentialID); err != nil {
+			s.logger.Error("failed to rollback passkey credential after registration failure",
+				zap.String("username", username),
+				zap.String("credential_id", credentialID),
+				zap.NamedError("rollback_error", err),
+				zap.NamedError("cause", cause))
+		}
+	}
+
+	s.rollbackAccountCreation(ctx, repo, username, cause)
+}
+
+func passkeyRegistrationProofToCredential(proof *models.PasskeyRegistrationProof) *storage.WebAuthnCredential {
+	now := time.Now().UTC()
+	return &storage.WebAuthnCredential{
+		ID:              proof.CredentialID,
+		UserID:          strings.TrimSpace(proof.Username),
+		PublicKey:       append([]byte(nil), proof.PublicKey...),
+		AttestationType: proof.AttestationType,
+		AAGUID:          append([]byte(nil), proof.AAGUID...),
+		SignCount:       proof.SignCount,
+		CloneWarning:    proof.CloneWarning,
+		BackupEligible:  proof.BackupEligible,
+		BackupState:     proof.BackupState,
+		CreatedAt:       now,
+		LastUsedAt:      now,
+		Name:            "Passkey 1",
+	}
 }
 
 // Helper methods for account registration
