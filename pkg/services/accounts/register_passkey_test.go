@@ -162,7 +162,7 @@ func TestService_RegisterAccount_WithConsumedPasskeyRegistrationProof_DeletesCre
 	require.Empty(t, credentials)
 }
 
-func TestService_validateRegisterAccountCommand_RejectsBothRegistrationProofTypes(t *testing.T) {
+func TestService_validateRegisterAccountCommand_RequiresExactlyOneRegistrationProof(t *testing.T) {
 	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 
 	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
@@ -172,7 +172,14 @@ func TestService_validateRegisterAccountCommand_RejectsBothRegistrationProofType
 		PasskeyRegistrationProof: "passkey-proof",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot both be provided")
+	assert.Contains(t, err.Error(), "exactly one")
+
+	err = svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:  "alice",
+		Agreement: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one")
 }
 
 func TestPasskeyRegistrationProofToCredential(t *testing.T) {

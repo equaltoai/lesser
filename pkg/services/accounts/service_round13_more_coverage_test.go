@@ -1256,6 +1256,7 @@ func TestService_Round13_RegisterAccount_SucceedsWithoutEmail(t *testing.T) {
 	}
 
 	svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, cryptoSvc, staticAuthService{hash: "hash"}, logger, "example.com")
+	storeRegistrationWalletChallenge(t, accountRepo, "alice", "wc-1")
 
 	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
 		Username:                 "alice",
@@ -1264,6 +1265,7 @@ func TestService_Round13_RegisterAccount_SucceedsWithoutEmail(t *testing.T) {
 		Locale:                   "en",
 		Agreement:                true,
 		DefaultPostingVisibility: "public",
+		RegistrationChallengeID:  "wc-1",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, got)
@@ -1599,11 +1601,13 @@ func TestService_Round13_RegisterAccount_ErrorsAndRollbacks(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("username already taken", func(t *testing.T) {
-		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com"})
+		svc, storageIface := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com"})
+		storeRegistrationWalletChallenge(t, storageIface.(*permissiveAccountsStorage).account, "alice", "wc-1")
 		_, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
-			Username:  "alice",
-			Email:     "",
-			Agreement: true,
+			Username:                "alice",
+			Email:                   "",
+			Agreement:               true,
+			RegistrationChallengeID: "wc-1",
 		})
 		assert.ErrorIs(t, err, ErrUsernameAlreadyTaken)
 	})
@@ -1612,9 +1616,10 @@ func TestService_Round13_RegisterAccount_ErrorsAndRollbacks(t *testing.T) {
 		storageImpl := NewMockRepositoryStorage()
 		svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 		_, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
-			Username:  "alice",
-			Email:     "",
-			Agreement: true,
+			Username:                "alice",
+			Email:                   "",
+			Agreement:               true,
+			RegistrationChallengeID: "wc-1",
 		})
 		assert.ErrorIs(t, err, ErrAccountRepositoryNotAvailable)
 	})
@@ -1638,9 +1643,10 @@ func TestService_Round13_RegisterAccount_ErrorsAndRollbacks(t *testing.T) {
 
 		svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, nil, nil, logger, "example.com")
 		_, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
-			Username:  "alice",
-			Email:     "",
-			Agreement: true,
+			Username:                "alice",
+			Email:                   "",
+			Agreement:               true,
+			RegistrationChallengeID: "wc-1",
 		})
 		assert.ErrorIs(t, err, ErrGenerateKeypair)
 	})
@@ -1673,9 +1679,10 @@ func TestService_Round13_RegisterAccount_ErrorsAndRollbacks(t *testing.T) {
 
 		svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, cryptoSvc, nil, logger, "example.com")
 		_, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
-			Username:  "alice",
-			Email:     "",
-			Agreement: true,
+			Username:                "alice",
+			Email:                   "",
+			Agreement:               true,
+			RegistrationChallengeID: "wc-1",
 		})
 		require.Error(t, err)
 	})

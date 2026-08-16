@@ -2091,8 +2091,10 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
 		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
-	if strings.TrimSpace(cmd.RegistrationChallengeID) != "" && strings.TrimSpace(cmd.PasskeyRegistrationProof) != "" {
-		return errors.New("wallet challenge and passkey registration proof cannot both be provided")
+	hasWalletChallenge := strings.TrimSpace(cmd.RegistrationChallengeID) != ""
+	hasPasskeyProof := strings.TrimSpace(cmd.PasskeyRegistrationProof) != ""
+	if hasWalletChallenge == hasPasskeyProof {
+		return errors.New("exactly one of wallet challenge and passkey registration proof must be provided")
 	}
 	// Additional validation can be added here
 	return nil
