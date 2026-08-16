@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -283,6 +284,10 @@ func TestAccountRepository_GetPasskeyRegistrationProof_QueryError(t *testing.T) 
 
 	got, err := repo.GetPasskeyRegistrationProof(context.Background(), proof.ID)
 	require.Nil(t, got)
+	var appErr *apperrors.AppError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, apperrors.CodeInternal, appErr.Code)
+	require.Equal(t, apperrors.CategoryStorage, appErr.Category)
 	require.ErrorIs(t, err, lookupErr)
 }
 
