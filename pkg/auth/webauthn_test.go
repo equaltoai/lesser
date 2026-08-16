@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,7 @@ type inMemoryWebAuthnRepo struct {
 	credentialsByUsername map[string][]*storage.WebAuthnCredential
 	credentialsByID       map[string]*storage.WebAuthnCredential
 	challengesByChallenge map[string]*storage.WebAuthnChallenge
+	proofsByID            map[string]*storagemodels.PasskeyRegistrationProof
 	walletsByUsername     map[string][]*storage.WalletCredential
 
 	updateCalls int
@@ -31,6 +33,7 @@ func newInMemoryWebAuthnRepo() *inMemoryWebAuthnRepo {
 		credentialsByUsername: make(map[string][]*storage.WebAuthnCredential),
 		credentialsByID:       make(map[string]*storage.WebAuthnCredential),
 		challengesByChallenge: make(map[string]*storage.WebAuthnChallenge),
+		proofsByID:            make(map[string]*storagemodels.PasskeyRegistrationProof),
 		walletsByUsername:     make(map[string][]*storage.WalletCredential),
 	}
 }
@@ -114,6 +117,25 @@ func (r *inMemoryWebAuthnRepo) UpdateWebAuthnAuthenticationState(
 		cred.LastUsedAt = lastUsedAt
 	}
 	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) StorePasskeyRegistrationProof(_ context.Context, proof *storagemodels.PasskeyRegistrationProof) error {
+	clone := *proof
+	clone.PublicKey = append([]byte(nil), proof.PublicKey...)
+	clone.AAGUID = append([]byte(nil), proof.AAGUID...)
+	r.proofsByID[proof.ID] = &clone
+	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) GetPasskeyRegistrationProof(_ context.Context, proofID string) (*storagemodels.PasskeyRegistrationProof, error) {
+	proof, ok := r.proofsByID[proofID]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	clone := *proof
+	clone.PublicKey = append([]byte(nil), proof.PublicKey...)
+	clone.AAGUID = append([]byte(nil), proof.AAGUID...)
+	return &clone, nil
 }
 
 type fakeWebAuthnEngine struct {

@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageinterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
@@ -282,6 +283,30 @@ func (as *AuthService) FinishWebAuthnRegistration(ctx context.Context, username 
 		return ErrWebAuthnNotConfigured
 	}
 	return as.webAuthnService.FinishRegistration(ctx, username, challenge, response, credentialName)
+}
+
+// BeginWebAuthnSignup starts the public WebAuthn signup process.
+func (as *AuthService) BeginWebAuthnSignup(ctx context.Context, username string) (any, string, error) {
+	if as.webAuthnService == nil {
+		return nil, "", ErrWebAuthnNotConfigured
+	}
+	return as.webAuthnService.BeginSignup(ctx, username)
+}
+
+// FinishWebAuthnSignup completes the public WebAuthn signup process and returns a single-use registration proof.
+func (as *AuthService) FinishWebAuthnSignup(ctx context.Context, username string, challenge string, response []byte) (string, error) {
+	if as.webAuthnService == nil {
+		return "", ErrWebAuthnNotConfigured
+	}
+	return as.webAuthnService.FinishSignup(ctx, username, challenge, response)
+}
+
+// GetPasskeyRegistrationProof retrieves a stored single-use passkey signup proof.
+func (as *AuthService) GetPasskeyRegistrationProof(ctx context.Context, proofID string) (*storagemodels.PasskeyRegistrationProof, error) {
+	if as.webAuthnService == nil {
+		return nil, ErrWebAuthnNotConfigured
+	}
+	return as.webAuthnService.GetPasskeyRegistrationProof(ctx, proofID)
 }
 
 // BeginWebAuthnLogin starts the WebAuthn login process
