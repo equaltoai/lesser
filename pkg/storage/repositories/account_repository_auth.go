@@ -1169,48 +1169,7 @@ func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credent
 		return ErrorHandler.HandleCreateError(ErrWebAuthnValidationFailed, EntityWebAuthnCredential, "nil")
 	}
 
-	// Convert storage.WebAuthnCredential to models.WebAuthnCredential
-	modelCredential := &models.WebAuthnCredential{
-		ID:              credential.ID,
-		UserID:          credential.UserID,
-		PublicKey:       credential.PublicKey,
-		AttestationType: credential.AttestationType,
-		AAGUID:          credential.AAGUID,
-		SignCount:       credential.SignCount,
-		CloneWarning:    credential.CloneWarning,
-		BackupEligible:  credential.BackupEligible,
-		BackupState:     credential.BackupState,
-		CreatedAt:       credential.CreatedAt,
-		LastUsedAt:      credential.LastUsedAt,
-		Name:            credential.Name,
-	}
-
-	// Use LastUsed if LastUsedAt is zero
-	if modelCredential.LastUsedAt.IsZero() && !credential.LastUsed.IsZero() {
-		modelCredential.LastUsedAt = credential.LastUsed
-	}
-
-	// Call BeforeCreate to set keys
-	err := modelCredential.BeforeCreate()
-	if err != nil {
-		return ErrorHandler.HandleCreateError(err, EntityWebAuthnCredential, credential.ID)
-	}
-
-	// Store in DynamoDB
-	err = r.db.WithContext(ctx).Model(modelCredential).Create()
-	if err != nil {
-		r.logger.Error("failed to store WebAuthn credential",
-			zap.String("credentialID", credential.ID),
-			zap.String("userID", credential.UserID),
-			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, EntityWebAuthnCredential, credential.ID)
-	}
-
-	r.logger.Debug("WebAuthn credential stored successfully",
-		zap.String("credentialID", credential.ID),
-		zap.String("userID", credential.UserID))
-
-	return nil
+	return r.CreateWebAuthnCredential(ctx, credential)
 }
 
 // UpdateWebAuthnCredential updates a WebAuthn credential
@@ -1219,45 +1178,7 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 		return ErrorHandler.HandleUpdateError(ErrWebAuthnValidationFailed, EntityWebAuthnCredential, "empty")
 	}
 
-	var credential models.WebAuthnCredential
-
-	query := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "WEBAUTHN_CREDENTIAL#"+credentialID).
-		Limit(1)
-
-	err := query.First(&credential)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(ErrWebAuthnCredentialNotFound, EntityWebAuthnCredential, credentialID)
-		}
-		r.logger.Error("failed to find WebAuthn credential for update",
-			zap.String("credentialID", credentialID),
-			zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, credentialID)
-	}
-
-	credential.SignCount = signCount
-	credential.LastUsedAt = time.Now()
-
-	if err := credential.BeforeUpdate(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
-	}
-
-	err = r.db.WithContext(ctx).Model(&credential).Update()
-	if err != nil {
-		r.logger.Error("failed to update WebAuthn credential",
-			zap.String("credentialID", credentialID),
-			zap.Uint32("signCount", signCount),
-			zap.Error(err))
-		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
-	}
-
-	r.logger.Debug("WebAuthn credential updated successfully",
-		zap.String("credentialID", credentialID),
-		zap.Uint32("signCount", signCount))
-
-	return nil
+	return r.UpdateWebAuthnLastUsed(ctx, credentialID, signCount)
 }
 
 // UpdateWalletLastUsed updates when a wallet was last used

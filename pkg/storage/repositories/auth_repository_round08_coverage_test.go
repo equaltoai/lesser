@@ -59,11 +59,11 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 		})
 	})
 
-	t.Run("GetWebAuthnCredential scan error / empty / success", func(t *testing.T) {
+	t.Run("GetWebAuthnCredential query error / not found / success", func(t *testing.T) {
 		t.Run("query error", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+			mockQuery.On("First", mock.Anything).Return(errors.New("query failed")).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
@@ -71,13 +71,10 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("empty results", func(t *testing.T) {
+		t.Run("not found", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-				out := args.Get(0).(*[]models.WebAuthnCredential)
-				*out = nil
-			}).Return(nil).Once()
+			mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
@@ -86,36 +83,41 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 			require.Nil(t, cred)
 		})
 
-		t.Run("empty results prevent delete and update nil panics", func(t *testing.T) {
+		t.Run("not found prevents delete and update nil panics", func(t *testing.T) {
 			for _, tc := range []struct {
-				name string
-				call func(*AuthRepository) error
+				name      string
+				call      func(*AuthRepository) error
+				assertErr bool
 			}{
 				{
 					name: "delete",
 					call: func(repo *AuthRepository) error {
 						return repo.DeleteWebAuthnCredential(ctx, "missing")
 					},
+					assertErr: false,
 				},
 				{
 					name: "update",
 					call: func(repo *AuthRepository) error {
 						return repo.UpdateWebAuthnLastUsed(ctx, "missing", 1)
 					},
+					assertErr: true,
 				},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					mockDB := new(mocks.MockDB)
 					mockQuery := new(mocks.MockQuery)
-					mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-						out := args.Get(0).(*[]models.WebAuthnCredential)
-						*out = nil
-					}).Return(nil).Once()
+					mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
 					setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 					repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 					require.NotPanics(t, func() {
-						require.Error(t, tc.call(repo))
+						err := tc.call(repo)
+						if tc.assertErr {
+							require.Error(t, err)
+							return
+						}
+						require.NoError(t, err)
 					})
 				})
 			}
@@ -124,16 +126,17 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-				out := args.Get(0).(*[]models.WebAuthnCredential)
-				*out = append(*out, models.WebAuthnCredential{
+			mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+				out := args.Get(0).(*models.WebAuthnCredential)
+				*out = models.WebAuthnCredential{
 					ID:         "cred-1",
 					UserID:     "user-1",
 					PublicKey:  []byte("pk"),
 					CreatedAt:  baseTime,
 					LastUsedAt: baseTime,
 					Type:       "WebAuthnCredential",
-				})
+				}
+				_ = out.BeforeCreate()
 			}).Return(nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
@@ -144,28 +147,21 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 		})
 	})
 
-	t.Run("GetUserWebAuthnCredentials paginates", func(t *testing.T) {
+	t.Run("GetUserWebAuthnCredentials lists credentials", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		call := 0
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			call++
-			out := args.Get(0).(*[]*models.WebAuthnCredential)
-			if call == 1 {
-				for i := 0; i < 101; i++ {
-					cred := &models.WebAuthnCredential{
-						ID:     "cred",
-						UserID: "user-1",
-					}
-					_ = cred.BeforeCreate()
-					cred.SK = "WEBAUTHN_CRED#cred-" + string(rune('a'+(i%26)))
-					*out = append(*out, cred)
+			out := args.Get(0).(*[]models.WebAuthnCredential)
+			for i := 0; i < 3; i++ {
+				cred := models.WebAuthnCredential{
+					ID:     "cred-" + string(rune('a'+i)),
+					UserID: "user-1",
 				}
-				return
+				_ = cred.BeforeCreate()
+				*out = append(*out, cred)
 			}
-			// Second page: empty results stops loop.
-		}).Return(nil).Maybe()
+		}).Return(nil).Once()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
