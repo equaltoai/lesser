@@ -312,9 +312,7 @@ type WebAuthnChallenge struct {
 // WebAuthnCredential represents a WebAuthn credential
 type WebAuthnCredential struct {
 	ID              string    `json:"id"`
-	Username        string    `json:"username"`
 	UserID          string    `json:"user_id"`
-	CredentialID    string    `json:"credential_id"`
 	PublicKey       []byte    `json:"public_key"`
 	AttestationType string    `json:"attestation_type"`
 	AAGUID          []byte    `json:"aaguid"`
@@ -323,7 +321,6 @@ type WebAuthnCredential struct {
 	BackupEligible  bool      `json:"backup_eligible"`
 	BackupState     bool      `json:"backup_state"`
 	CreatedAt       time.Time `json:"created_at"`
-	LastUsed        time.Time `json:"last_used"`
 	LastUsedAt      time.Time `json:"last_used_at"`
 	Name            string    `json:"name,omitempty"`
 }

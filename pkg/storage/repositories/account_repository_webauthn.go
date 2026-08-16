@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -16,9 +17,7 @@ import (
 // ===== WebAuthn Methods =====
 // This file contains WebAuthn-related methods for the AccountRepository
 
-// CreateWebAuthnCredential creates a new WebAuthn credential for a user
-func (r *AccountRepository) CreateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
-	// Create DynamORM model
+func webAuthnCredentialModelFromStorage(credential *storage.WebAuthnCredential) *models.WebAuthnCredential {
 	model := &models.WebAuthnCredential{
 		ID:              credential.ID,
 		UserID:          credential.UserID,
@@ -34,7 +33,192 @@ func (r *AccountRepository) CreateWebAuthnCredential(ctx context.Context, creden
 		Name:            credential.Name,
 	}
 
-	err := r.db.WithContext(ctx).Model(model).Create()
+	return model
+}
+
+func webAuthnCredentialFromModel(model *models.WebAuthnCredential) *storage.WebAuthnCredential {
+	if model == nil {
+		return nil
+	}
+
+	return &storage.WebAuthnCredential{
+		ID:              model.ID,
+		UserID:          model.UserID,
+		PublicKey:       model.PublicKey,
+		AttestationType: model.AttestationType,
+		AAGUID:          model.AAGUID,
+		SignCount:       model.SignCount,
+		CloneWarning:    model.CloneWarning,
+		BackupEligible:  model.BackupEligible,
+		BackupState:     model.BackupState,
+		CreatedAt:       model.CreatedAt,
+		LastUsedAt:      model.LastUsedAt,
+		Name:            model.Name,
+	}
+}
+
+func ensureWebAuthnCredentialCanonicalKeys(model *models.WebAuthnCredential) {
+	if model == nil {
+		return
+	}
+
+	model.PK = fmt.Sprintf("USER#%s", model.UserID)
+	model.SK = fmt.Sprintf("WEBAUTHN_CRED#%s", model.ID)
+	model.GSI1PK = fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", model.ID)
+	model.GSI1SK = fmt.Sprintf("USER#%s", model.UserID)
+}
+
+func createWebAuthnCredentialRecord(ctx context.Context, db core.DB, credential *storage.WebAuthnCredential) error {
+	model := webAuthnCredentialModelFromStorage(credential)
+	if err := model.BeforeCreate(); err != nil {
+		return err
+	}
+
+	return db.WithContext(ctx).Model(model).Create()
+}
+
+func lookupWebAuthnCredentialModel(ctx context.Context, db core.DB, credentialID string) (*models.WebAuthnCredential, error) {
+	var model models.WebAuthnCredential
+
+	err := db.WithContext(ctx).Model(&model).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
+		Limit(1).
+		First(&model)
+
+	if err != nil {
+		return nil, err
+	}
+
+	ensureWebAuthnCredentialCanonicalKeys(&model)
+	return &model, nil
+}
+
+func listWebAuthnCredentialModels(ctx context.Context, db core.DB, userID string) ([]models.WebAuthnCredential, error) {
+	var credentials []models.WebAuthnCredential
+
+	err := db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#").
+		All(&credentials)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range credentials {
+		ensureWebAuthnCredentialCanonicalKeys(&credentials[i])
+	}
+
+	return credentials, nil
+}
+
+func deleteWebAuthnCredentialRecord(ctx context.Context, db core.DB, credentialID string) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	return db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+		Where("PK", "=", credential.PK).
+		Where("SK", "=", credential.SK).
+		Delete()
+}
+
+func updateWebAuthnCredentialLastUsedRecord(ctx context.Context, db core.DB, credentialID string, signCount uint32) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	return persistWebAuthnCredentialAuthenticationState(
+		ctx,
+		db,
+		credential,
+		signCount,
+		credential.CloneWarning,
+		credential.BackupState,
+		time.Now().UTC(),
+	)
+}
+
+func updateWebAuthnCredentialNameRecord(ctx context.Context, db core.DB, credentialID string, name string) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	update, err := keyedUpdateBuilder(ctx, db, credential)
+	if err != nil {
+		return err
+	}
+
+	return update.
+		Set("Name", name).
+		Execute()
+}
+
+func persistWebAuthnCredentialAuthenticationState(
+	ctx context.Context,
+	db core.DB,
+	credential *models.WebAuthnCredential,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	if credential == nil {
+		return storage.ErrInvalidInput
+	}
+
+	ensureWebAuthnCredentialCanonicalKeys(credential)
+	if lastUsedAt.IsZero() {
+		lastUsedAt = time.Now().UTC()
+	} else {
+		lastUsedAt = lastUsedAt.UTC()
+	}
+
+	update, err := keyedUpdateBuilder(ctx, db, credential)
+	if err != nil {
+		return err
+	}
+
+	return update.
+		Set("SignCount", signCount).
+		Set("CloneWarning", cloneWarning).
+		Set("BackupState", backupState).
+		Set("LastUsedAt", lastUsedAt).
+		Execute()
+}
+
+func updateWebAuthnCredentialAuthenticationStateRecord(
+	ctx context.Context,
+	db core.DB,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	return persistWebAuthnCredentialAuthenticationState(
+		ctx,
+		db,
+		credential,
+		signCount,
+		cloneWarning,
+		backupState,
+		lastUsedAt,
+	)
+}
+
+// CreateWebAuthnCredential creates a new WebAuthn credential for a user
+func (r *AccountRepository) CreateWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
+	err := createWebAuthnCredentialRecord(ctx, r.db, credential)
 	if err != nil {
 		r.logger.Error("failed to create WebAuthn credential",
 			zap.String("id", credential.ID),
@@ -52,13 +236,7 @@ func (r *AccountRepository) CreateWebAuthnCredential(ctx context.Context, creden
 
 // GetWebAuthnCredential retrieves a WebAuthn credential by ID
 func (r *AccountRepository) GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error) {
-	var model models.WebAuthnCredential
-
-	err := r.db.WithContext(ctx).Model(&model).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
-		First(&model)
-
+	model, err := lookupWebAuthnCredentialModel(ctx, r.db, credentialID)
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
@@ -69,32 +247,12 @@ func (r *AccountRepository) GetWebAuthnCredential(ctx context.Context, credentia
 		return nil, ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
-	return &storage.WebAuthnCredential{
-		ID:              model.ID,
-		UserID:          model.UserID,
-		PublicKey:       model.PublicKey,
-		AttestationType: model.AttestationType,
-		AAGUID:          model.AAGUID,
-		SignCount:       model.SignCount,
-		CloneWarning:    model.CloneWarning,
-		BackupEligible:  model.BackupEligible,
-		BackupState:     model.BackupState,
-		CreatedAt:       model.CreatedAt,
-		LastUsedAt:      model.LastUsedAt,
-		Name:            model.Name,
-	}, nil
+	return webAuthnCredentialFromModel(model), nil
 }
 
 // GetUserWebAuthnCredentials retrieves all WebAuthn credentials for a user
 func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, userID string) ([]*storage.WebAuthnCredential, error) {
-	var credentials []models.WebAuthnCredential
-
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsi1SK", "BEGINS_WITH", "WEBAUTHN#").
-		All(&credentials)
-
+	credentials, err := listWebAuthnCredentialModels(ctx, r.db, userID)
 	if err != nil {
 		r.logger.Error("failed to get user WebAuthn credentials",
 			zap.String("userID", userID),
@@ -103,21 +261,8 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 	}
 
 	result := make([]*storage.WebAuthnCredential, len(credentials))
-	for i, model := range credentials {
-		result[i] = &storage.WebAuthnCredential{
-			ID:              model.ID,
-			UserID:          model.UserID,
-			PublicKey:       model.PublicKey,
-			AttestationType: model.AttestationType,
-			AAGUID:          model.AAGUID,
-			SignCount:       model.SignCount,
-			CloneWarning:    model.CloneWarning,
-			BackupEligible:  model.BackupEligible,
-			BackupState:     model.BackupState,
-			CreatedAt:       model.CreatedAt,
-			LastUsedAt:      model.LastUsedAt,
-			Name:            model.Name,
-		}
+	for i := range credentials {
+		result[i] = webAuthnCredentialFromModel(&credentials[i])
 	}
 
 	return result, nil
@@ -125,10 +270,7 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 
 // DeleteWebAuthnCredential removes a WebAuthn credential
 func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, credentialID string) error {
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
-		Delete()
+	err := deleteWebAuthnCredentialRecord(ctx, r.db, credentialID)
 
 	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to delete WebAuthn credential",
@@ -145,13 +287,7 @@ func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, creden
 
 // UpdateWebAuthnLastUsed updates the last used timestamp and sign count for a credential
 func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error {
-	// Get existing credential
-	var credential models.WebAuthnCredential
-	err := r.db.WithContext(ctx).Model(&credential).
-		Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-		Where("SK", "=", "CREDENTIAL").
-		First(&credential)
-
+	err := updateWebAuthnCredentialLastUsedRecord(ctx, r.db, credentialID, signCount)
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
 			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
@@ -159,15 +295,44 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 		return ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
-	// Update fields
-	credential.SignCount = signCount
-	credential.LastUsedAt = time.Now()
+	return nil
+}
 
-	err = r.db.WithContext(ctx).Model(&credential).Update()
+// UpdateWebAuthnCredentialName persists a renamed WebAuthn credential without mutating its last-used timestamp.
+func (r *AccountRepository) UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error {
+	err := updateWebAuthnCredentialNameRecord(ctx, r.db, credentialID, name)
 	if err != nil {
-		r.logger.Error("failed to update WebAuthn credential usage",
-			zap.String("id", credentialID),
-			zap.Error(err))
+		if dynamormerrors.IsNotFound(err) {
+			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
+	}
+
+	return nil
+}
+
+// UpdateWebAuthnAuthenticationState persists the authentication-derived WebAuthn credential state.
+func (r *AccountRepository) UpdateWebAuthnAuthenticationState(
+	ctx context.Context,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	err := updateWebAuthnCredentialAuthenticationStateRecord(
+		ctx,
+		r.db,
+		credentialID,
+		signCount,
+		cloneWarning,
+		backupState,
+		lastUsedAt,
+	)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
+		}
 		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
 	}
 

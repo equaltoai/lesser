@@ -57,7 +57,8 @@ type webAuthnRepository interface {
 	StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error
 	GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error)
 	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
-	UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error
+	UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error
+	UpdateWebAuthnAuthenticationState(ctx context.Context, credentialID string, signCount uint32, cloneWarning bool, backupState bool, lastUsedAt time.Time) error
 }
 
 // NewWebAuthnService creates a new WebAuthn service
@@ -368,7 +369,14 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
-	if err := s.repo.UpdateWebAuthnLastUsed(ctx, usedCredential.ID, usedCredential.SignCount); err != nil {
+	if err := s.repo.UpdateWebAuthnAuthenticationState(
+		ctx,
+		usedCredential.ID,
+		usedCredential.SignCount,
+		usedCredential.CloneWarning,
+		usedCredential.BackupState,
+		usedCredential.LastUsedAt,
+	); err != nil {
 		common.Logger().Error("failed to update credential", zap.Error(err))
 	}
 
@@ -427,8 +435,7 @@ func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username str
 		return ErrCredentialNotFound
 	}
 
-	credential.Name = newName
-	return s.repo.UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
+	return s.repo.UpdateWebAuthnCredentialName(ctx, credential.ID, newName)
 }
 
 // webAuthnUser implements the webauthn.User interface

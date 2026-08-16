@@ -175,6 +175,99 @@ func (s *round10QueryState) whereString(field string) (string, bool) {
 	return str, ok
 }
 
+func round10CanonicalizeWebAuthnCredential(cred storagemodels.WebAuthnCredential) storagemodels.WebAuthnCredential {
+	if strings.TrimSpace(cred.PK) == "" && strings.TrimSpace(cred.UserID) != "" {
+		cred.PK = "USER#" + cred.UserID
+	}
+	if strings.TrimSpace(cred.SK) == "" && strings.TrimSpace(cred.ID) != "" {
+		cred.SK = "WEBAUTHN_CRED#" + cred.ID
+	}
+	if strings.TrimSpace(cred.GSI1PK) == "" && strings.TrimSpace(cred.ID) != "" {
+		cred.GSI1PK = "WEBAUTHN_CREDENTIAL#" + cred.ID
+	}
+	if strings.TrimSpace(cred.GSI1SK) == "" && strings.TrimSpace(cred.UserID) != "" {
+		cred.GSI1SK = "USER#" + cred.UserID
+	}
+	return cred
+}
+
+func round10UpsertWebAuthnCredential(state *round10QueryState, cred storagemodels.WebAuthnCredential) {
+	if state == nil {
+		return
+	}
+
+	cred = round10CanonicalizeWebAuthnCredential(cred)
+
+	if state.webAuthnCredentialByID == nil {
+		state.webAuthnCredentialByID = map[string]storagemodels.WebAuthnCredential{}
+	}
+	state.webAuthnCredentialByID[cred.ID] = cred
+
+	if strings.TrimSpace(cred.UserID) == "" {
+		return
+	}
+
+	if state.webAuthnCredentialsByUser == nil {
+		state.webAuthnCredentialsByUser = map[string][]storagemodels.WebAuthnCredential{}
+	}
+
+	creds := state.webAuthnCredentialsByUser[cred.UserID]
+	for i := range creds {
+		if creds[i].ID == cred.ID {
+			creds[i] = cred
+			state.webAuthnCredentialsByUser[cred.UserID] = creds
+			return
+		}
+	}
+	state.webAuthnCredentialsByUser[cred.UserID] = append(creds, cred)
+}
+
+func round10DeleteWebAuthnCredential(state *round10QueryState, credentialID string) {
+	if state == nil || strings.TrimSpace(credentialID) == "" {
+		return
+	}
+
+	cred, ok := state.webAuthnCredentialByID[credentialID]
+	if ok {
+		delete(state.webAuthnCredentialByID, credentialID)
+		creds := state.webAuthnCredentialsByUser[cred.UserID]
+		filtered := creds[:0]
+		for _, candidate := range creds {
+			if candidate.ID == credentialID {
+				continue
+			}
+			filtered = append(filtered, candidate)
+		}
+		if len(filtered) == 0 {
+			delete(state.webAuthnCredentialsByUser, cred.UserID)
+			return
+		}
+		state.webAuthnCredentialsByUser[cred.UserID] = filtered
+		return
+	}
+
+	for username, creds := range state.webAuthnCredentialsByUser {
+		filtered := creds[:0]
+		removed := false
+		for _, candidate := range creds {
+			if candidate.ID == credentialID {
+				removed = true
+				continue
+			}
+			filtered = append(filtered, candidate)
+		}
+		if !removed {
+			continue
+		}
+		if len(filtered) == 0 {
+			delete(state.webAuthnCredentialsByUser, username)
+		} else {
+			state.webAuthnCredentialsByUser[username] = filtered
+		}
+		return
+	}
+}
+
 func round10CommunityNoteGSI3SK(note storagemodels.CommunityNote) string {
 	if note.GSI3SK != "" {
 		return note.GSI3SK
@@ -525,6 +618,8 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
+	} else if state.updateErrorOnce != nil {
+		mockUpdate.On("Execute").Return(state.updateErrorOnce).Once()
 	}
 	mockUpdate.On("Execute").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
@@ -566,6 +661,32 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				client.UpdatedAt = updatedAt
 			}
 			state.oauthClientsByID[clientID] = client
+		case *storagemodels.WebAuthnCredential:
+			model, _ := state.model.(*storagemodels.WebAuthnCredential)
+			if model == nil {
+				return
+			}
+
+			credential := round10CanonicalizeWebAuthnCredential(*model)
+			if existing, ok := state.webAuthnCredentialByID[credential.ID]; ok {
+				credential = round10CanonicalizeWebAuthnCredential(existing)
+			}
+			if name, ok := state.sets["Name"].(string); ok {
+				credential.Name = name
+			}
+			if signCount, ok := state.sets["SignCount"].(uint32); ok {
+				credential.SignCount = signCount
+			}
+			if cloneWarning, ok := state.sets["CloneWarning"].(bool); ok {
+				credential.CloneWarning = cloneWarning
+			}
+			if backupState, ok := state.sets["BackupState"].(bool); ok {
+				credential.BackupState = backupState
+			}
+			if lastUsedAt, ok := state.sets["LastUsedAt"].(time.Time); ok {
+				credential.LastUsedAt = lastUsedAt
+			}
+			round10UpsertWebAuthnCredential(state, credential)
 		}
 	}).Maybe()
 
@@ -635,6 +756,11 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
 			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
+		case *storagemodels.WebAuthnCredential:
+			if m == nil {
+				return
+			}
+			round10UpsertWebAuthnCredential(state, *m)
 		case *storagemodels.AuthAuditLog:
 			if m == nil {
 				return
@@ -717,6 +843,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Delete").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
+		case *storagemodels.WebAuthnCredential:
+			credentialID := ""
+			if model, ok := state.model.(*storagemodels.WebAuthnCredential); ok && model != nil && strings.TrimSpace(model.ID) != "" {
+				credentialID = strings.TrimSpace(model.ID)
+			}
+			if credentialID == "" {
+				if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "WEBAUTHN_CRED#") {
+					credentialID = strings.TrimPrefix(sk, "WEBAUTHN_CRED#")
+				}
+			}
+			round10DeleteWebAuthnCredential(state, credentialID)
 		case *storagemodels.WalletCredential:
 			pk, okPK := state.whereString("PK")
 			sk, okSK := state.whereString("SK")
@@ -798,6 +935,11 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.walletChallengesByID = map[string]storagemodels.WalletChallenge{}
 			}
 			state.walletChallengesByID[m.ID] = *m
+		case *storagemodels.WebAuthnCredential:
+			if m == nil {
+				return
+			}
+			round10UpsertWebAuthnCredential(state, *m)
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
@@ -1824,21 +1966,23 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 		case *storagemodels.WebAuthnCredential:
 			credentialID := ""
-			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "WEBAUTHN_CREDENTIAL#") {
-				credentialID = strings.TrimPrefix(pk, "WEBAUTHN_CREDENTIAL#")
+			if gsi1PK, ok := state.whereString("gsi1PK"); ok && strings.HasPrefix(gsi1PK, "WEBAUTHN_CREDENTIAL#") {
+				credentialID = strings.TrimPrefix(gsi1PK, "WEBAUTHN_CREDENTIAL#")
+			} else if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "WEBAUTHN_CRED#") {
+				credentialID = strings.TrimPrefix(sk, "WEBAUTHN_CRED#")
 			}
 			if cred, ok := state.webAuthnCredentialByID[credentialID]; ok {
-				*d = cred
+				*d = round10CanonicalizeWebAuthnCredential(cred)
 				return
 			}
-			*d = storagemodels.WebAuthnCredential{
+			*d = round10CanonicalizeWebAuthnCredential(storagemodels.WebAuthnCredential{
 				ID:         "Y3JlZA==",
 				UserID:     "alice",
 				PublicKey:  []byte{0x01, 0x02},
 				Name:       "Test Key",
 				CreatedAt:  time.Now().Add(-2 * time.Hour),
 				LastUsedAt: time.Now().Add(-1 * time.Hour),
-			}
+			})
 		case *storagemodels.OAuthClient:
 			clientID := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OAUTH_CLIENT#") {
@@ -2255,10 +2399,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			*d = []*storagemodels.Import{}
 		case *[]storagemodels.WebAuthnCredential:
-			username, _ := state.whereString("gsi1PK")
+			username, _ := state.whereString("PK")
 			username = strings.TrimPrefix(username, "USER#")
 			if creds, ok := state.webAuthnCredentialsByUser[username]; ok {
-				*d = creds
+				items := make([]storagemodels.WebAuthnCredential, len(creds))
+				for i := range creds {
+					items[i] = round10CanonicalizeWebAuthnCredential(creds[i])
+				}
+				*d = items
 				return
 			}
 			*d = []storagemodels.WebAuthnCredential{
@@ -2270,6 +2418,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					CreatedAt:  time.Now().Add(-2 * time.Hour),
 					LastUsedAt: time.Now().Add(-1 * time.Hour),
 				},
+			}
+			for i := range *d {
+				(*d)[i] = round10CanonicalizeWebAuthnCredential((*d)[i])
 			}
 		case *[]storagemodels.PushSubscription:
 			username, _ := state.whereString("PK")
