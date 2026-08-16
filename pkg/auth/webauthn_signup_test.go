@@ -211,3 +211,28 @@ func TestWebAuthnService_FinishSignup_ErrorBranches(t *testing.T) {
 		require.True(t, ok)
 	})
 }
+
+func TestWebAuthnService_FinishSignup_RejectsNonSignupChallengeTypes(t *testing.T) {
+	t.Parallel()
+
+	baseChallenge := &storage.WebAuthnChallenge{
+		Challenge:   "chal-signup",
+		UserID:      "alice",
+		SessionData: []byte(`{"challenge":"chal-signup"}`),
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+
+	for _, challengeType := range []string{webAuthnChallengeTypeRegistration, webAuthnChallengeTypeAuthentication} {
+		t.Run(challengeType, func(t *testing.T) {
+			repo := newInMemoryWebAuthnRepo()
+			challenge := *baseChallenge
+			challenge.Type = challengeType
+			repo.challengesByChallenge["chal-signup"] = &challenge
+
+			svc := &WebAuthnService{repo: repo}
+			proofID, err := svc.FinishSignup(context.Background(), "alice", "chal-signup", []byte("ignored"))
+			require.Empty(t, proofID)
+			require.ErrorIs(t, err, ErrChallengeNotFound)
+		})
+	}
+}
