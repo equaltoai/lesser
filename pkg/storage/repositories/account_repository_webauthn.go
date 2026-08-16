@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 	"time"
@@ -17,10 +16,6 @@ import (
 
 // ===== WebAuthn Methods =====
 // This file contains WebAuthn-related methods for the AccountRepository
-
-func runningUnderGoTest() bool {
-	return flag.Lookup("test.v") != nil
-}
 
 func webAuthnCredentialModelFromStorage(credential *storage.WebAuthnCredential) *models.WebAuthnCredential {
 	model := &models.WebAuthnCredential{
@@ -62,31 +57,6 @@ func webAuthnCredentialFromModel(model *models.WebAuthnCredential) *storage.WebA
 	}
 }
 
-func webAuthnCredentialHasCanonicalKeys(model *models.WebAuthnCredential) bool {
-	if model == nil {
-		return false
-	}
-
-	return strings.TrimSpace(model.PK) == fmt.Sprintf("USER#%s", model.UserID) &&
-		strings.TrimSpace(model.SK) == fmt.Sprintf("WEBAUTHN_CRED#%s", model.ID) &&
-		strings.TrimSpace(model.GSI1PK) == fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", model.ID) &&
-		strings.TrimSpace(model.GSI1SK) == fmt.Sprintf("USER#%s", model.UserID)
-}
-
-func webAuthnCredentialsHaveCanonicalKeys(models []models.WebAuthnCredential) bool {
-	if len(models) == 0 {
-		return true
-	}
-
-	for i := range models {
-		if !webAuthnCredentialHasCanonicalKeys(&models[i]) {
-			return false
-		}
-	}
-
-	return true
-}
-
 func ensureWebAuthnCredentialCanonicalKeys(model *models.WebAuthnCredential) {
 	if model == nil {
 		return
@@ -116,12 +86,6 @@ func lookupWebAuthnCredentialModel(ctx context.Context, db core.DB, credentialID
 		Limit(1).
 		First(&model)
 
-	if err == nil && runningUnderGoTest() && !webAuthnCredentialHasCanonicalKeys(&model) {
-		err = db.WithContext(ctx).Model(&model).
-			Where("PK", "=", fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)).
-			Where("SK", "=", "CREDENTIAL").
-			First(&model)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +102,6 @@ func listWebAuthnCredentialModels(ctx context.Context, db core.DB, userID string
 		Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#").
 		All(&credentials)
 
-	if err == nil && runningUnderGoTest() && !webAuthnCredentialsHaveCanonicalKeys(credentials) {
-		credentials = nil
-		err = db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-			Where("gsi1SK", "BEGINS_WITH", "WEBAUTHN#").
-			All(&credentials)
-	}
 	if err != nil {
 		return nil, err
 	}
