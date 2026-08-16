@@ -131,11 +131,89 @@ func updateWebAuthnCredentialLastUsedRecord(ctx context.Context, db core.DB, cre
 		return err
 	}
 
-	credential.SignCount = signCount
-	credential.LastUsedAt = time.Now().UTC()
-	ensureWebAuthnCredentialCanonicalKeys(credential)
+	return persistWebAuthnCredentialAuthenticationState(
+		ctx,
+		db,
+		credential,
+		signCount,
+		credential.CloneWarning,
+		credential.BackupState,
+		time.Now().UTC(),
+	)
+}
 
-	return db.WithContext(ctx).Model(credential).Update()
+func updateWebAuthnCredentialNameRecord(ctx context.Context, db core.DB, credentialID string, name string) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	update, err := keyedUpdateBuilder(ctx, db, credential)
+	if err != nil {
+		return err
+	}
+
+	return update.
+		Set("Name", name).
+		Execute()
+}
+
+func persistWebAuthnCredentialAuthenticationState(
+	ctx context.Context,
+	db core.DB,
+	credential *models.WebAuthnCredential,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	if credential == nil {
+		return storage.ErrInvalidInput
+	}
+
+	ensureWebAuthnCredentialCanonicalKeys(credential)
+	if lastUsedAt.IsZero() {
+		lastUsedAt = time.Now().UTC()
+	} else {
+		lastUsedAt = lastUsedAt.UTC()
+	}
+
+	update, err := keyedUpdateBuilder(ctx, db, credential)
+	if err != nil {
+		return err
+	}
+
+	return update.
+		Set("SignCount", signCount).
+		Set("CloneWarning", cloneWarning).
+		Set("BackupState", backupState).
+		Set("LastUsedAt", lastUsedAt).
+		Execute()
+}
+
+func updateWebAuthnCredentialAuthenticationStateRecord(
+	ctx context.Context,
+	db core.DB,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	credential, err := lookupWebAuthnCredentialModel(ctx, db, credentialID)
+	if err != nil {
+		return err
+	}
+
+	return persistWebAuthnCredentialAuthenticationState(
+		ctx,
+		db,
+		credential,
+		signCount,
+		cloneWarning,
+		backupState,
+		lastUsedAt,
+	)
 }
 
 // CreateWebAuthnCredential creates a new WebAuthn credential for a user
@@ -215,6 +293,47 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
 		}
 		return ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
+	}
+
+	return nil
+}
+
+// UpdateWebAuthnCredentialName persists a renamed WebAuthn credential without mutating its last-used timestamp.
+func (r *AccountRepository) UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error {
+	err := updateWebAuthnCredentialNameRecord(ctx, r.db, credentialID, name)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
+	}
+
+	return nil
+}
+
+// UpdateWebAuthnAuthenticationState persists the authentication-derived WebAuthn credential state.
+func (r *AccountRepository) UpdateWebAuthnAuthenticationState(
+	ctx context.Context,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
+	err := updateWebAuthnCredentialAuthenticationStateRecord(
+		ctx,
+		r.db,
+		credentialID,
+		signCount,
+		cloneWarning,
+		backupState,
+		lastUsedAt,
+	)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	return nil

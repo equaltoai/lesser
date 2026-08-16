@@ -22,6 +22,7 @@ type inMemoryWebAuthnRepo struct {
 	walletsByUsername     map[string][]*storage.WalletCredential
 
 	updateCalls int
+	renameCalls int
 }
 
 func newInMemoryWebAuthnRepo() *inMemoryWebAuthnRepo {
@@ -87,12 +88,30 @@ func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredential(_ context.Context, crede
 	return nil
 }
 
-func (r *inMemoryWebAuthnRepo) UpdateWebAuthnLastUsed(_ context.Context, credentialID string, signCount uint32) error {
+func (r *inMemoryWebAuthnRepo) UpdateWebAuthnCredentialName(_ context.Context, credentialID string, name string) error {
+	r.renameCalls++
+	cred, ok := r.credentialsByID[credentialID]
+	if ok {
+		cred.Name = name
+	}
+	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) UpdateWebAuthnAuthenticationState(
+	_ context.Context,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
 	r.updateCalls++
 	cred, ok := r.credentialsByID[credentialID]
 	if ok {
 		cred.SignCount = signCount
-		cred.LastUsedAt = time.Now()
+		cred.CloneWarning = cloneWarning
+		cred.BackupState = backupState
+		cred.LastUsedAt = lastUsedAt
 	}
 	return nil
 }

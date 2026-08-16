@@ -57,7 +57,8 @@ type webAuthnRepository interface {
 	StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error
 	GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error)
 	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
-	UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error
+	UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error
+	UpdateWebAuthnAuthenticationState(ctx context.Context, credentialID string, signCount uint32, cloneWarning bool, backupState bool, lastUsedAt time.Time) error
 }
 
 // NewWebAuthnService creates a new WebAuthn service
@@ -427,8 +428,7 @@ func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username str
 		return ErrCredentialNotFound
 	}
 
-	credential.Name = newName
-	return s.repo.UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
+	return s.repo.UpdateWebAuthnCredentialName(ctx, credential.ID, newName)
 }
 
 // webAuthnUser implements the webauthn.User interface

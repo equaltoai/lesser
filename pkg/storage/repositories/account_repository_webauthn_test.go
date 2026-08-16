@@ -162,6 +162,7 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 	mockDB := new(mocks.MockDB)
 	lookupQuery := new(mocks.MockQuery)
 	updateQuery := new(mocks.MockQuery)
+	updateBuilder := new(mocks.MockUpdateBuilder)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
 	mockDB.On("Model", mock.AnythingOfType("*models.WebAuthnCredential")).Return(lookupQuery).Once()
@@ -174,8 +175,7 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 			model.SK == "WEBAUTHN_CRED#cred-123" &&
 			model.GSI1PK == "WEBAUTHN_CREDENTIAL#cred-123" &&
 			model.GSI1SK == "USER#alice" &&
-			model.SignCount == 9 &&
-			!model.LastUsedAt.IsZero()
+			model.ID == "cred-123"
 	})).Return(updateQuery).Once()
 
 	lookupQuery.On("Index", "gsi1").Return(lookupQuery).Once()
@@ -190,11 +190,20 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 		model.GSI1PK = "WEBAUTHN_CREDENTIAL#cred-123"
 		model.GSI1SK = "USER#alice"
 		model.PublicKey = []byte("pk")
+		model.CloneWarning = true
+		model.BackupState = true
 		model.CreatedAt = time.Unix(100, 0).UTC()
 		model.LastUsedAt = time.Unix(200, 0).UTC()
 	}).Return(nil).Once()
 
-	updateQuery.On("Update", mock.Anything).Return(nil).Once()
+	updateQuery.On("Where", "PK", "=", "USER#alice").Return(updateQuery).Once()
+	updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
+	updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+	updateBuilder.On("Set", "SignCount", uint32(9)).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "CloneWarning", true).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "BackupState", true).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "LastUsedAt", mock.AnythingOfType("time.Time")).Return(updateBuilder).Once()
+	updateBuilder.On("Execute").Return(nil).Once()
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
 	repo.SetValidationService(nil)
@@ -207,4 +216,124 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 	mockDB.AssertExpectations(t)
 	lookupQuery.AssertExpectations(t)
 	updateQuery.AssertExpectations(t)
+	updateBuilder.AssertExpectations(t)
+}
+
+func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateNameByCredentialID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	lookupQuery := new(mocks.MockQuery)
+	updateQuery := new(mocks.MockQuery)
+	updateBuilder := new(mocks.MockUpdateBuilder)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.WebAuthnCredential")).Return(lookupQuery).Once()
+	mockDB.On("Model", mock.MatchedBy(func(v any) bool {
+		model, ok := v.(*models.WebAuthnCredential)
+		if !ok {
+			return false
+		}
+		return model.PK == "USER#alice" &&
+			model.SK == "WEBAUTHN_CRED#cred-123" &&
+			model.GSI1PK == "WEBAUTHN_CREDENTIAL#cred-123" &&
+			model.GSI1SK == "USER#alice" &&
+			model.ID == "cred-123"
+	})).Return(updateQuery).Once()
+
+	lookupQuery.On("Index", "gsi1").Return(lookupQuery).Once()
+	lookupQuery.On("Where", "gsi1PK", "=", "WEBAUTHN_CREDENTIAL#cred-123").Return(lookupQuery).Once()
+	lookupQuery.On("Limit", 1).Return(lookupQuery).Once()
+	lookupQuery.On("First", mock.AnythingOfType("*models.WebAuthnCredential")).Run(func(args mock.Arguments) {
+		model := args.Get(0).(*models.WebAuthnCredential)
+		model.ID = "cred-123"
+		model.UserID = "alice"
+		model.PK = "USER#alice"
+		model.SK = "WEBAUTHN_CRED#cred-123"
+		model.GSI1PK = "WEBAUTHN_CREDENTIAL#cred-123"
+		model.GSI1SK = "USER#alice"
+		model.Name = "old"
+		model.LastUsedAt = time.Unix(200, 0).UTC()
+	}).Return(nil).Once()
+
+	updateQuery.On("Where", "PK", "=", "USER#alice").Return(updateQuery).Once()
+	updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
+	updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+	updateBuilder.On("Set", "Name", "Renamed Key").Return(updateBuilder).Once()
+	updateBuilder.On("Execute").Return(nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	repo.SetValidationService(nil)
+	repo.SetPermissionService(nil)
+	repo.SetEventService(nil)
+	repo.SetCachingService(nil)
+
+	require.NoError(t, repo.UpdateWebAuthnCredentialName(ctx, "cred-123", "Renamed Key"))
+
+	mockDB.AssertExpectations(t)
+	lookupQuery.AssertExpectations(t)
+	updateQuery.AssertExpectations(t)
+	updateBuilder.AssertExpectations(t)
+}
+
+func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateAuthenticationStateByCredentialID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	lookupQuery := new(mocks.MockQuery)
+	updateQuery := new(mocks.MockQuery)
+	updateBuilder := new(mocks.MockUpdateBuilder)
+	lastUsedAt := time.Unix(300, 0).UTC()
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.WebAuthnCredential")).Return(lookupQuery).Once()
+	mockDB.On("Model", mock.MatchedBy(func(v any) bool {
+		model, ok := v.(*models.WebAuthnCredential)
+		if !ok {
+			return false
+		}
+		return model.PK == "USER#alice" &&
+			model.SK == "WEBAUTHN_CRED#cred-123" &&
+			model.GSI1PK == "WEBAUTHN_CREDENTIAL#cred-123" &&
+			model.GSI1SK == "USER#alice" &&
+			model.ID == "cred-123"
+	})).Return(updateQuery).Once()
+
+	lookupQuery.On("Index", "gsi1").Return(lookupQuery).Once()
+	lookupQuery.On("Where", "gsi1PK", "=", "WEBAUTHN_CREDENTIAL#cred-123").Return(lookupQuery).Once()
+	lookupQuery.On("Limit", 1).Return(lookupQuery).Once()
+	lookupQuery.On("First", mock.AnythingOfType("*models.WebAuthnCredential")).Run(func(args mock.Arguments) {
+		model := args.Get(0).(*models.WebAuthnCredential)
+		model.ID = "cred-123"
+		model.UserID = "alice"
+		model.PK = "USER#alice"
+		model.SK = "WEBAUTHN_CRED#cred-123"
+		model.GSI1PK = "WEBAUTHN_CREDENTIAL#cred-123"
+		model.GSI1SK = "USER#alice"
+		model.SignCount = 1
+	}).Return(nil).Once()
+
+	updateQuery.On("Where", "PK", "=", "USER#alice").Return(updateQuery).Once()
+	updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
+	updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+	updateBuilder.On("Set", "SignCount", uint32(7)).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "CloneWarning", true).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "BackupState", true).Return(updateBuilder).Once()
+	updateBuilder.On("Set", "LastUsedAt", lastUsedAt).Return(updateBuilder).Once()
+	updateBuilder.On("Execute").Return(nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	repo.SetValidationService(nil)
+	repo.SetPermissionService(nil)
+	repo.SetEventService(nil)
+	repo.SetCachingService(nil)
+
+	require.NoError(t, repo.UpdateWebAuthnAuthenticationState(ctx, "cred-123", 7, true, true, lastUsedAt))
+
+	mockDB.AssertExpectations(t)
+	lookupQuery.AssertExpectations(t)
+	updateQuery.AssertExpectations(t)
+	updateBuilder.AssertExpectations(t)
 }

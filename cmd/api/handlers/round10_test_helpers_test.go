@@ -618,6 +618,8 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
+	} else if state.updateErrorOnce != nil {
+		mockUpdate.On("Execute").Return(state.updateErrorOnce).Once()
 	}
 	mockUpdate.On("Execute").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
@@ -659,6 +661,32 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				client.UpdatedAt = updatedAt
 			}
 			state.oauthClientsByID[clientID] = client
+		case *storagemodels.WebAuthnCredential:
+			model, _ := state.model.(*storagemodels.WebAuthnCredential)
+			if model == nil {
+				return
+			}
+
+			credential := round10CanonicalizeWebAuthnCredential(*model)
+			if existing, ok := state.webAuthnCredentialByID[credential.ID]; ok {
+				credential = round10CanonicalizeWebAuthnCredential(existing)
+			}
+			if name, ok := state.sets["Name"].(string); ok {
+				credential.Name = name
+			}
+			if signCount, ok := state.sets["SignCount"].(uint32); ok {
+				credential.SignCount = signCount
+			}
+			if cloneWarning, ok := state.sets["CloneWarning"].(bool); ok {
+				credential.CloneWarning = cloneWarning
+			}
+			if backupState, ok := state.sets["BackupState"].(bool); ok {
+				credential.BackupState = backupState
+			}
+			if lastUsedAt, ok := state.sets["LastUsedAt"].(time.Time); ok {
+				credential.LastUsedAt = lastUsedAt
+			}
+			round10UpsertWebAuthnCredential(state, credential)
 		}
 	}).Maybe()
 
