@@ -59,6 +59,7 @@ type round10QueryState struct {
 	webAuthnCredentialsByUser     map[string][]storagemodels.WebAuthnCredential
 	webAuthnCredentialByID        map[string]storagemodels.WebAuthnCredential
 	webAuthnChallengesByID        map[string]storagemodels.WebAuthnChallenge
+	passkeyRegistrationProofsByID map[string]storagemodels.PasskeyRegistrationProof
 	oauthClientsByID              map[string]storagemodels.OAuthClient
 	authorizationCodesByCode      map[string]storagemodels.AuthorizationCode
 	refreshTokensByToken          map[string]storagemodels.RefreshToken
@@ -940,6 +941,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				return
 			}
 			round10UpsertWebAuthnCredential(state, *m)
+		case *storagemodels.PasskeyRegistrationProof:
+			if m == nil {
+				return
+			}
+			if state.passkeyRegistrationProofsByID == nil {
+				state.passkeyRegistrationProofsByID = map[string]storagemodels.PasskeyRegistrationProof{}
+			}
+			state.passkeyRegistrationProofsByID[m.ID] = *m
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
@@ -1963,6 +1972,24 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				UserID:    "alice",
 				Type:      "registration",
 				ExpiresAt: time.Now().Add(5 * time.Minute),
+			}
+		case *storagemodels.PasskeyRegistrationProof:
+			proofID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "PASSKEY_REGISTRATION_PROOF#") {
+				proofID = strings.TrimPrefix(pk, "PASSKEY_REGISTRATION_PROOF#")
+			}
+			if proof, ok := state.passkeyRegistrationProofsByID[proofID]; ok {
+				*d = proof
+				return
+			}
+			*d = storagemodels.PasskeyRegistrationProof{
+				ID:           proofID,
+				Username:     "alice",
+				CeremonyID:   "signup-1",
+				CredentialID: "cred-1",
+				PublicKey:    []byte{0x01},
+				CreatedAt:    time.Now().Add(-1 * time.Minute),
+				ExpiresAt:    time.Now().Add(5 * time.Minute),
 			}
 		case *storagemodels.WebAuthnCredential:
 			credentialID := ""

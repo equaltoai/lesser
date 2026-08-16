@@ -168,6 +168,133 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 			WalletChallengeID: "c1",
 		}))
 	})
+
+	t.Run("validateRegistrationRequestLift_requires_exactly_one_registration_proof", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, round10TestConfig(), &round10QueryState{}, &RegistryStub{})
+
+		err := h.validateRegistrationRequestLift(apimodels.AccountRegistrationRequest{
+			Username:  "alice",
+			Agreement: true,
+		})
+		require.EqualError(t, err, "exactly one of wallet_challenge_id or passkey_registration_proof is required")
+
+		err = h.validateRegistrationRequestLift(apimodels.AccountRegistrationRequest{
+			Username:                 "alice",
+			Agreement:                true,
+			WalletChallengeID:        "c1",
+			PasskeyRegistrationProof: "proof-1",
+		})
+		require.EqualError(t, err, "wallet_challenge_id and passkey_registration_proof cannot both be provided")
+	})
+
+	t.Run("passkey_registration_proof_errors_are_mapped", func(t *testing.T) {
+		cfg := round10TestConfig()
+
+		t.Run("invalid_or_expired", func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+				notFoundPKSK: map[string]bool{"PASSKEY_REGISTRATION_PROOF#proof-1#PROOF": true},
+			}, &RegistryStub{
+				AccountsSvc: &AccountsServiceStub{
+					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+						return nil, errors.New("unexpected service call")
+					},
+				},
+			})
+
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+				Username:                 "alice",
+				Agreement:                true,
+				PasskeyRegistrationProof: "proof-1",
+			})
+			require.NoError(t, err)
+
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+		})
+
+		t.Run("proof_bound_to_different_username", func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+				passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+					"proof-1": {
+						ID:         "proof-1",
+						Username:   "bob",
+						CeremonyID: "signup-1",
+						PublicKey:  []byte{0x01},
+						CreatedAt:  time.Now().Add(-time.Minute),
+						ExpiresAt:  time.Now().Add(5 * time.Minute),
+					},
+				},
+			}, &RegistryStub{
+				AccountsSvc: &AccountsServiceStub{
+					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+						return nil, errors.New("unexpected service call")
+					},
+				},
+			})
+
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+				Username:                 "alice",
+				Agreement:                true,
+				PasskeyRegistrationProof: "proof-1",
+			})
+			require.NoError(t, err)
+
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+		})
+	})
+
+	t.Run("passkey_registration_proof_success", func(t *testing.T) {
+		cfg := round10TestConfig()
+
+		var gotCmd *accounts.RegisterAccountCommand
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+				"proof-1": {
+					ID:         "proof-1",
+					Username:   "alice",
+					CeremonyID: "signup-1",
+					PublicKey:  []byte{0x01},
+					CreatedAt:  time.Now().Add(-time.Minute),
+					ExpiresAt:  time.Now().Add(5 * time.Minute),
+				},
+			},
+		}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				RegisterAccountFunc: func(_ context.Context, cmd *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+					gotCmd = cmd
+					return &accounts.RegisterAccountResult{
+						Account: &storage.Account{User: &storage.User{Username: cmd.Username}},
+						Actor: &activitypub.Actor{
+							BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + cmd.Username},
+							PreferredUsername: cmd.Username,
+						},
+					}, nil
+				},
+			},
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+			Username:                 "alice",
+			Password:                 "ignored",
+			Agreement:                true,
+			PasskeyRegistrationProof: "proof-1",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleRegistrationLift(ctx))
+
+		require.NotNil(t, gotCmd)
+		require.Equal(t, "alice", gotCmd.Username)
+		require.Empty(t, gotCmd.Email)
+		require.Empty(t, gotCmd.Password)
+		require.Empty(t, gotCmd.RegistrationChallengeID)
+		require.Equal(t, "proof-1", gotCmd.PasskeyRegistrationProof)
+
+		var regResp apimodels.AccountRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &regResp))
+		require.Equal(t, cfg.BaseURL()+"/users/alice", regResp.ID)
+		require.Equal(t, "alice", regResp.Username)
+		require.True(t, regResp.Created)
+	})
 }
 
 func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {

@@ -128,12 +128,20 @@ components:
             type: array
         AccountRegistrationRequest:
             additionalProperties: false
+            oneOf:
+                - required:
+                    - wallet_challenge_id
+                - required:
+                    - passkey_registration_proof
             properties:
                 agreement:
                     type: boolean
                 default_posting_visibility:
                     type: string
                 locale:
+                    type: string
+                passkey_registration_proof:
+                    description: Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required.
                     type: string
                 password:
                     type: string
@@ -142,6 +150,7 @@ components:
                 username:
                     type: string
                 wallet_challenge_id:
+                    description: Single-use wallet registration proof. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required.
                     type: string
             required:
                 - agreement

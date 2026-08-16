@@ -76,18 +76,29 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	challengeID := strings.TrimSpace(req.WalletChallengeID)
-	challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
-	if err != nil || challenge == nil {
-		return common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
-	}
-	if strings.TrimSpace(challenge.Username) != strings.TrimSpace(req.Username) {
-		return common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
-	}
-	if !challenge.Used {
-		return common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
-	}
-	if challenge.Spent {
-		return common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
+	passkeyProofID := strings.TrimSpace(req.PasskeyRegistrationProof)
+	if challengeID != "" {
+		challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
+		if err != nil || challenge == nil {
+			return common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
+		}
+		if strings.TrimSpace(challenge.Username) != strings.TrimSpace(req.Username) {
+			return common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
+		}
+		if !challenge.Used {
+			return common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
+		}
+		if challenge.Spent {
+			return common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
+		}
+	} else {
+		proof, err := authService.GetPasskeyRegistrationProof(ctx.Context(), passkeyProofID)
+		if err != nil || proof == nil || proof.Consumed {
+			return common.RespondUnprocessableEntity(ctx, "passkey_registration_proof is invalid or expired")
+		}
+		if strings.TrimSpace(proof.Username) != strings.TrimSpace(req.Username) {
+			return common.RespondUnprocessableEntity(ctx, "passkey registration proof was created for a different username")
+		}
 	}
 
 	// NOTE: Password-based authentication is disabled. This system uses WebAuthn/crypto wallet authentication only.
@@ -109,6 +120,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		Reason:                   req.Reason,
 		DefaultPostingVisibility: req.DefaultPostingVisibility,
 		RegistrationChallengeID:  challengeID,
+		PasskeyRegistrationProof: passkeyProofID,
 	})
 	if err != nil {
 		if errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
@@ -1311,8 +1323,13 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 		}
 	}
 
-	if strings.TrimSpace(req.WalletChallengeID) == "" {
-		return errors.New("wallet_challenge_id is required")
+	walletChallengeID := strings.TrimSpace(req.WalletChallengeID)
+	passkeyProofID := strings.TrimSpace(req.PasskeyRegistrationProof)
+	switch {
+	case walletChallengeID != "" && passkeyProofID != "":
+		return errors.New("wallet_challenge_id and passkey_registration_proof cannot both be provided")
+	case walletChallengeID == "" && passkeyProofID == "":
+		return errors.New("exactly one of wallet_challenge_id or passkey_registration_proof is required")
 	}
 
 	return nil

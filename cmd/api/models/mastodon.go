@@ -17,6 +17,9 @@ type AccountRegistrationRequest struct {
 	// WalletChallengeID is required for passwordless wallet-based registration flows.
 	// The challenge must have been verified via POST /auth/wallet/verify before registration.
 	WalletChallengeID string `json:"wallet_challenge_id,omitempty"`
+
+	// PasskeyRegistrationProof is the single-use proof emitted by POST /api/v1/auth/webauthn/signup/finish.
+	PasskeyRegistrationProof string `json:"passkey_registration_proof,omitempty"`
 }
 
 // AccountRegistrationResponse represents the response after successful registration
