@@ -261,6 +261,80 @@ func TestAccountRepository_ConsumePasskeyRegistrationProof_MissingProof(t *testi
 	require.Error(t, err)
 }
 
+func TestAccountRepository_GetPasskeyRegistrationProof_QueryError(t *testing.T) {
+	t.Parallel()
+
+	db := newPasskeyRegistrationProofDB()
+	repo := NewAccountRepository(db, "test-table", "example.com", zap.NewNop())
+
+	proof := &models.PasskeyRegistrationProof{
+		ID:           "proof-query-error",
+		Username:     "alice",
+		CeremonyID:   "ceremony-query-error",
+		CredentialID: "cred-query-error",
+		PublicKey:    []byte("pk"),
+		ExpiresAt:    time.Now().Add(5 * time.Minute).UTC(),
+	}
+
+	require.NoError(t, repo.StorePasskeyRegistrationProof(context.Background(), proof))
+	db.state.lookupErr = stdErrors.New("lookup failed")
+
+	got, err := repo.GetPasskeyRegistrationProof(context.Background(), proof.ID)
+	require.Nil(t, got)
+	require.Error(t, err)
+}
+
+func TestAccountRepository_DeletePasskeyRegistrationProof_DeleteError(t *testing.T) {
+	t.Parallel()
+
+	db := newPasskeyRegistrationProofDB()
+	repo := NewAccountRepository(db, "test-table", "example.com", zap.NewNop())
+
+	proof := &models.PasskeyRegistrationProof{
+		ID:           "proof-delete-error",
+		Username:     "alice",
+		CeremonyID:   "ceremony-delete-error",
+		CredentialID: "cred-delete-error",
+		PublicKey:    []byte("pk"),
+		ExpiresAt:    time.Now().Add(5 * time.Minute).UTC(),
+	}
+
+	require.NoError(t, repo.StorePasskeyRegistrationProof(context.Background(), proof))
+	db.state.deleteErr = stdErrors.New("delete failed")
+
+	require.Error(t, repo.DeletePasskeyRegistrationProof(context.Background(), proof.ID))
+}
+
+func TestAccountRepository_GetPasskeyRegistrationProof_ExpiredDeleteFailureStillReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	db := newPasskeyRegistrationProofDB()
+	repo := NewAccountRepository(db, "test-table", "example.com", zap.NewNop())
+
+	now := time.Now().UTC()
+	proof := &models.PasskeyRegistrationProof{
+		ID:           "expired-proof-delete-error",
+		Username:     "alice",
+		CeremonyID:   "ceremony-expired-delete-error",
+		CredentialID: "cred-expired-delete-error",
+		PublicKey:    []byte("pk"),
+		CreatedAt:    now.Add(-15 * time.Minute),
+		ExpiresAt:    now.Add(-5 * time.Minute),
+	}
+
+	require.NoError(t, repo.StorePasskeyRegistrationProof(context.Background(), proof))
+	db.state.deleteErr = stdErrors.New("delete failed")
+
+	got, err := repo.GetPasskeyRegistrationProof(context.Background(), proof.ID)
+	require.Nil(t, got)
+	require.Error(t, err)
+
+	db.state.mu.Lock()
+	defer db.state.mu.Unlock()
+	_, exists := db.state.proofs[proof.ID]
+	require.True(t, exists)
+}
+
 type passkeyRegistrationProofDB struct {
 	state *passkeyRegistrationProofState
 }
@@ -268,6 +342,9 @@ type passkeyRegistrationProofDB struct {
 type passkeyRegistrationProofState struct {
 	mu     sync.Mutex
 	proofs map[string]*models.PasskeyRegistrationProof
+
+	lookupErr error
+	deleteErr error
 }
 
 func newPasskeyRegistrationProofDB() *passkeyRegistrationProofDB {
@@ -408,6 +485,10 @@ func (q *passkeyRegistrationProofQuery) Delete() error {
 	q.state.mu.Lock()
 	defer q.state.mu.Unlock()
 
+	if q.state.deleteErr != nil {
+		return q.state.deleteErr
+	}
+
 	if _, exists := q.state.proofs[proofID]; !exists {
 		return dynamormerrors.ErrItemNotFound
 	}
@@ -424,6 +505,10 @@ func (q *passkeyRegistrationProofQuery) lookup() (*models.PasskeyRegistrationPro
 
 	q.state.mu.Lock()
 	defer q.state.mu.Unlock()
+
+	if q.state.lookupErr != nil {
+		return nil, q.state.lookupErr
+	}
 
 	proof, exists := q.state.proofs[proofID]
 	if !exists {
