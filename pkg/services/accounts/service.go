@@ -244,7 +244,25 @@ func NewService(
 	return svc
 }
 
-func (s *Service) normalizeUsername(username string) string {
+// RegisterAccountMode names the registration caller context for explicit service-level exceptions.
+type RegisterAccountMode string
+
+const (
+	// RegisterAccountModeSetupAdminBootstrap is the setup-only bootstrap lane.
+	// It is allowed to create the first admin account without a public registration proof because
+	// /setup/admin already runs behind the bootstrap setup-session + wallet-verification gate.
+	RegisterAccountModeSetupAdminBootstrap RegisterAccountMode = "setup_admin_bootstrap"
+)
+
+// NormalizeUsernameForDomain applies the account-service canonical username normalization
+// rules against the supplied local domain.
+func NormalizeUsernameForDomain(username, localDomain string) string {
+	return normalizeUsernameWithLocalDomainMatcher(username, func(domain string) bool {
+		return isLocalDomainForUsername(domain, localDomain)
+	})
+}
+
+func normalizeUsernameWithLocalDomainMatcher(username string, isLocalDomain func(string) bool) string {
 	trimmed := strings.TrimSpace(username)
 	if trimmed == "" {
 		return trimmed
@@ -263,7 +281,7 @@ func (s *Service) normalizeUsername(username string) string {
 		// https://remote.example/users/admin would normalize to "admin" and
 		// collide with a same-named local account. (CSR-052)
 		parsed, parseErr := neturl.Parse(urlWithoutScheme)
-		if parseErr == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !s.isLocalDomain(parsed.Hostname()) {
+		if parseErr == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !isLocalDomain(parsed.Hostname()) {
 			remoteDomain = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 		}
 
@@ -288,12 +306,20 @@ func (s *Service) normalizeUsername(username string) string {
 	if at := strings.LastIndex(trimmed, "@"); at != -1 {
 		localPart := trimmed[:at]
 		domainPart := trimmed[at+1:]
-		if s.isLocalDomain(domainPart) {
+		if isLocalDomain(domainPart) {
 			trimmed = localPart
 		}
 	}
 
 	return strings.ToLower(strings.TrimSpace(trimmed))
+}
+
+func (s *Service) normalizeUsername(username string) string {
+	return normalizeUsernameWithLocalDomainMatcher(username, s.isLocalDomain)
+}
+
+func (s *Service) isLocalDomain(domain string) bool {
+	return isLocalDomainForUsername(domain, s.domainName)
 }
 
 func storedUsernameMatches(storedUsername, candidate string) bool {
@@ -306,11 +332,11 @@ func storedUsernameMatches(storedUsername, candidate string) bool {
 	return strings.EqualFold(storedUsername, candidate)
 }
 
-func (s *Service) isLocalDomain(domain string) bool {
+func isLocalDomainForUsername(domain, localDomain string) bool {
 	if domain == "" {
 		return false
 	}
-	return normalizeDomain(domain) == normalizeDomain(s.domainName)
+	return normalizeDomain(domain) == normalizeDomain(localDomain)
 }
 
 func normalizeDomain(domain string) string {
@@ -340,6 +366,10 @@ type RegisterAccountCommand struct {
 
 	// PasskeyRegistrationProof is the single-use proof emitted by the public WebAuthn signup finish ceremony.
 	PasskeyRegistrationProof string `json:"passkey_registration_proof,omitempty"`
+
+	// RegistrationMode is an explicit service-path selector for non-public registration lanes.
+	// Zero-value callers remain on the public exactly-one-proof path.
+	RegistrationMode RegisterAccountMode `json:"registration_mode,omitempty"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -2064,6 +2094,17 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 	}
 	hasWalletChallenge := strings.TrimSpace(cmd.RegistrationChallengeID) != ""
 	hasPasskeyProof := strings.TrimSpace(cmd.PasskeyRegistrationProof) != ""
+	switch cmd.RegistrationMode {
+	case "", RegisterAccountModeSetupAdminBootstrap:
+	default:
+		return fmt.Errorf("unsupported register account mode %q", cmd.RegistrationMode)
+	}
+	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+		if hasWalletChallenge || hasPasskeyProof {
+			return errors.New("setup admin bootstrap registration must not include public registration proofs")
+		}
+		return nil
+	}
 	if hasWalletChallenge == hasPasskeyProof {
 		return errors.New("exactly one of wallet challenge and passkey registration proof must be provided")
 	}

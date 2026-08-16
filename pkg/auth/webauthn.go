@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	accountservice "github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 
@@ -157,7 +158,7 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string
 
 // BeginSignup starts the public WebAuthn signup process for a not-yet-created account.
 func (s *WebAuthnService) BeginSignup(ctx context.Context, username string) (any, string, error) {
-	username = strings.TrimSpace(username)
+	username = accountservice.NormalizeUsernameForDomain(username, s.domain)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, "", err
 	}
@@ -290,7 +291,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 
 // FinishSignup completes the public WebAuthn signup process and produces a single-use registration proof.
 func (s *WebAuthnService) FinishSignup(ctx context.Context, username string, challenge string, response []byte) (string, error) {
-	username = strings.TrimSpace(username)
+	username = accountservice.NormalizeUsernameForDomain(username, s.domain)
 	challenge = strings.TrimSpace(challenge)
 
 	challengeData, err := s.repo.GetWebAuthnChallenge(ctx, challenge)

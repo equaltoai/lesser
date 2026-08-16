@@ -64,7 +64,7 @@ func TestWebAuthnService_BeginAndFinishSignup_Success(t *testing.T) {
 		},
 	}
 
-	options, challenge, err := svc.BeginSignup(context.Background(), "alice")
+	options, challenge, err := svc.BeginSignup(context.Background(), "Alice")
 	require.NoError(t, err)
 	require.NotNil(t, options)
 	require.Equal(t, "chal-signup", challenge)
@@ -74,7 +74,7 @@ func TestWebAuthnService_BeginAndFinishSignup_Success(t *testing.T) {
 	require.Equal(t, "alice", storedChallenge.UserID)
 	require.Equal(t, webAuthnChallengeTypeSignup, storedChallenge.Type)
 
-	proofID, err := svc.FinishSignup(context.Background(), "alice", challenge, []byte("ignored"))
+	proofID, err := svc.FinishSignup(context.Background(), "Alice", challenge, []byte("ignored"))
 	require.NoError(t, err)
 	require.NotEmpty(t, proofID)
 

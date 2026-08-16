@@ -69,7 +69,7 @@ func TestService_RegisterAccount_WithPasskeyRegistrationProof_Succeeds(t *testin
 	svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, cryptoSvc, staticAuthService{hash: "hash"}, logger, "example.com")
 
 	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
-		Username:                 "alice",
+		Username:                 "Alice",
 		Agreement:                true,
 		Locale:                   "en",
 		PasskeyRegistrationProof: "proof-1",
@@ -77,6 +77,7 @@ func TestService_RegisterAccount_WithPasskeyRegistrationProof_Succeeds(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.NotNil(t, got.Actor)
+	require.Equal(t, "alice", got.Account.User.Username)
 
 	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "alice")
 	require.NoError(t, err)
@@ -180,6 +181,30 @@ func TestService_validateRegisterAccountCommand_RequiresExactlyOneRegistrationPr
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one")
+}
+
+func TestService_validateRegisterAccountCommand_AllowsSetupAdminBootstrapWithoutPublicProof(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:         "alice",
+		Agreement:        true,
+		RegistrationMode: RegisterAccountModeSetupAdminBootstrap,
+	})
+	require.NoError(t, err)
+}
+
+func TestService_validateRegisterAccountCommand_RejectsPublicProofsInSetupAdminBootstrapMode(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:                "alice",
+		Agreement:               true,
+		RegistrationChallengeID: "wallet-proof",
+		RegistrationMode:        RegisterAccountModeSetupAdminBootstrap,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "setup admin bootstrap")
 }
 
 func TestPasskeyRegistrationProofToCredential(t *testing.T) {

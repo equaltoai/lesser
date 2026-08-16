@@ -1338,7 +1338,7 @@ type Query {
 # Mutations
 type Mutation {
   # Accounts
-  registerAccount(input: RegisterAccountInput!): RegisterAccountPayload!
+  registerAccount(input: RegisterAccountInput!): RegisterAccountPayload! @deprecated(reason: "Registration is not supported over GraphQL; use POST /api/v1/accounts.")
   updateAccountQuotePermissions(input: UpdateAccountQuotePermissionsInput!): AccountQuotePermissions!
   acceptFollowRequest(accountId: ID!): Relationship!
   rejectFollowRequest(accountId: ID!): Relationship!
