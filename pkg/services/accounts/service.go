@@ -1898,6 +1898,8 @@ func (s *Service) buildNextPageID(collectionID, nextCursor string) string {
 
 // RegisterAccount creates a new user account with actor
 func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountCommand) (*RegisterAccountResult, error) {
+	cmd.Username = s.normalizeUsername(cmd.Username)
+
 	// Validate command
 	if err := s.validateRegisterAccountCommand(ctx, cmd); err != nil {
 		return nil, ErrValidationFailed
@@ -1914,6 +1916,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrUsernameAlreadyTaken
 	}
 
+	username := cmd.Username
 	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
 	passkeyRegistrationProofID := strings.TrimSpace(cmd.PasskeyRegistrationProof)
 
@@ -1924,7 +1927,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		if err != nil {
 			return nil, fmt.Errorf("failed to get passkey registration proof: %w", err)
 		}
-		if !strings.EqualFold(strings.TrimSpace(passkeyProof.Username), strings.TrimSpace(cmd.Username)) {
+		if strings.TrimSpace(passkeyProof.Username) != username {
 			return nil, fmt.Errorf("passkey registration proof was created for a different username")
 		}
 	}
@@ -1953,7 +1956,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 
 	// Create user object
 	user := &storage.User{
-		Username:     cmd.Username,
+		Username:     username,
 		Email:        cmd.Email,
 		PasswordHash: "",   // Will be set if password provided
 		Approved:     true, // Auto-approve for now
@@ -1973,10 +1976,10 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Create corresponding actor
-	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, cmd.Username)
-	actor := activitypub.NewActor(activitypub.PersonType, actorID, cmd.Username)
-	actor.Name = cmd.Username
-	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, cmd.Username)
+	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, username)
+	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
+	actor.Name = username
+	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, username)
 	actor.CreatedAt = &user.CreatedAt
 	actor.PublicKey = &activitypub.PublicKey{
 		ID:           fmt.Sprintf("%s#main-key", actorID),
@@ -1985,7 +1988,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Set manifest-driven local actor identifiers.
-	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), cmd.Username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), username)
 
 	// Create account with actor
 	account := &storage.Account{
@@ -1995,47 +1998,56 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Save to storage
-	if err := accountRepo.CreateAccount(ctx, account); err != nil {
+	if err := accountRepo.CreateAccountIfNotExists(ctx, account); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return nil, ErrUsernameAlreadyTaken
 		}
 		s.logger.Error("failed to create account",
-			zap.String("username", cmd.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		// Return the actual error instead of wrapping it
 		return nil, fmt.Errorf("failed to create account: %w", err)
 	}
+	accountCreated := true
 
 	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
-	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), cmd.Username, initialVisibility); err != nil {
-		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, username, err)
 		return nil, fmt.Errorf("failed to create default quote permissions: %w", err)
 	}
 
-	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, cmd.Username, initialVisibility); err != nil {
-		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, username, err)
 		return nil, err
 	}
 
 	if passkeyProof != nil {
 		credential := passkeyRegistrationProofToCredential(passkeyProof)
 		if err := accountRepo.StoreWebAuthnCredential(ctx, credential); err != nil {
-			s.rollbackAccountCreationWithCredential(ctx, accountRepo, cmd.Username, credential.ID, err)
+			if accountCreated {
+				s.rollbackAccountCreation(ctx, accountRepo, username, err)
+			}
 			return nil, fmt.Errorf("failed to store initial passkey credential: %w", err)
 		}
-		if _, err := accountRepo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, cmd.Username, passkeyProof.CeremonyID); err != nil {
-			s.rollbackAccountCreationWithCredential(ctx, accountRepo, cmd.Username, credential.ID, err)
+		credentialCreated := true
+		if _, err := accountRepo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID); err != nil {
+			if credentialCreated {
+				s.rollbackPasskeyCredentialCreation(ctx, accountRepo, username, credential.ID, err)
+			}
+			if accountCreated {
+				s.rollbackAccountCreation(ctx, accountRepo, username, err)
+			}
 			return nil, fmt.Errorf("failed to finalize passkey registration proof: %w", err)
 		}
 	} else if registrationChallengeID != "" {
 		if err := accountRepo.MarkWalletChallengeRegistrationCompleted(ctx, registrationChallengeID); err != nil {
-			s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+			s.rollbackAccountCreation(ctx, accountRepo, username, err)
 			return nil, fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
 		}
 	}
 
 	s.logger.Info("account created successfully, recording activity",
-		zap.String("username", cmd.Username))
+		zap.String("username", username))
 
 	// Record registration activity for metrics
 	if err := s.storage.Activity().RecordActivity(ctx, "registration", actor.ID, time.Now()); err != nil {
@@ -2044,13 +2056,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	s.logger.Info("emitting account created events",
-		zap.String("username", cmd.Username))
+		zap.String("username", username))
 
 	// Create events for streaming
 	events := s.emitAccountCreatedEvents(ctx, account)
 
 	s.logger.Info("returning registration result",
-		zap.String("username", cmd.Username),
+		zap.String("username", username),
 		zap.String("actor_id", actor.ID))
 
 	return &RegisterAccountResult{
@@ -2175,7 +2187,7 @@ func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegis
 		zap.NamedError("cause", cause))
 }
 
-func (s *Service) rollbackAccountCreationWithCredential(ctx context.Context, repo *repositories.AccountRepository, username string, credentialID string, cause error) {
+func (s *Service) rollbackPasskeyCredentialCreation(ctx context.Context, repo *repositories.AccountRepository, username string, credentialID string, cause error) {
 	if strings.TrimSpace(credentialID) != "" {
 		if err := repo.DeleteWebAuthnCredential(ctx, credentialID); err != nil {
 			s.logger.Error("failed to rollback passkey credential after registration failure",
@@ -2185,8 +2197,6 @@ func (s *Service) rollbackAccountCreationWithCredential(ctx context.Context, rep
 				zap.NamedError("cause", cause))
 		}
 	}
-
-	s.rollbackAccountCreation(ctx, repo, username, cause)
 }
 
 func passkeyRegistrationProofToCredential(proof *models.PasskeyRegistrationProof) *storage.WebAuthnCredential {

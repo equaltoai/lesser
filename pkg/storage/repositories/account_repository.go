@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -242,6 +243,16 @@ func (r *AccountRepository) SetStorage(_ interface{}) {
 // CreateAccount creates both User and Actor entities atomically using enhanced patterns
 // This ensures consistency between authentication and federation data
 func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.Account) error {
+	return r.createAccount(ctx, account, false)
+}
+
+// CreateAccountIfNotExists creates both User and Actor entities while rejecting duplicate user creation.
+// This is used by registration flows that must fail loudly under concurrent duplicate submits.
+func (r *AccountRepository) CreateAccountIfNotExists(ctx context.Context, account *storage.Account) error {
+	return r.createAccount(ctx, account, true)
+}
+
+func (r *AccountRepository) createAccount(ctx context.Context, account *storage.Account, createUserIfNotExists bool) error {
 	if account == nil || account.User == nil {
 		return common.ValidationError{Field: "account", Message: "account and user are required"}
 	}
@@ -292,7 +303,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	r.setUserDefaults(userModel)
 
 	// Use enhanced validation and creation with event emission
-	if err := r.ValidateAndCreate(ctx, userModel); err != nil {
+	if err := r.validateAndCreateUser(ctx, userModel, createUserIfNotExists); err != nil {
 		if dynamormErrors.IsConditionFailed(err) {
 			return common.ConflictError{Resource: "user", Message: fmt.Sprintf("user %s already exists", user.Username)}
 		}
@@ -322,6 +333,40 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		zap.Bool("with_actor", actor != nil),
 		zap.Bool("validation_enabled", r.HasValidation()),
 		zap.Bool("events_enabled", r.HasEvents()))
+
+	return nil
+}
+
+func (r *AccountRepository) validateAndCreateUser(ctx context.Context, userModel *models.User, ifNotExists bool) error {
+	if r.validator != nil {
+		if err := r.validator.ValidateRequiredFields(ctx, userModel); err != nil {
+			return pkgErrors.ValidationFailed("required fields", err.Error())
+		}
+
+		if err := r.validator.ValidateBusinessRules(ctx, userModel, "create"); err != nil {
+			return pkgErrors.ValidationFailed("business rules", err.Error())
+		}
+	}
+
+	if err := r.checkCreatePermissions(ctx, userModel); err != nil {
+		return err
+	}
+
+	var err error
+	if ifNotExists {
+		err = r.CreateIfNotExists(ctx, userModel)
+	} else {
+		err = r.Create(ctx, userModel)
+	}
+	if err != nil {
+		return err
+	}
+
+	if r.events != nil {
+		event := NewEvent("entity.created", r.entityName, userModel.GetPK(), "create", userModel)
+		event.Actor = r.getActorFromContext(ctx)
+		_ = r.events.Emit(ctx, event)
+	}
 
 	return nil
 }
