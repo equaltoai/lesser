@@ -79,6 +79,13 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/auth/webauthn/login/finish", ratelimit.ApplyRateLimit(
 		apiHandler.HandleFinishWebAuthnLoginLift,
 		20, 5*time.Minute, logger))
+	// Signup begin/finish is public (username provided), but rate limited.
+	app.Post("/api/v1/auth/webauthn/signup/begin", ratelimit.ApplyRateLimit(
+		apiHandler.HandleBeginWebAuthnSignupLift,
+		20, 5*time.Minute, logger))
+	app.Post("/api/v1/auth/webauthn/signup/finish", ratelimit.ApplyRateLimit(
+		apiHandler.HandleFinishWebAuthnSignupLift,
+		20, 5*time.Minute, logger))
 
 	app.Get("/api/v1/auth/webauthn/credentials", apiHandler.HandleListWebAuthnCredentialsLift, requireAuth)
 	app.Delete("/api/v1/auth/webauthn/credentials/{credentialId}", apiHandler.HandleDeleteWebAuthnCredentialLift, requireAuth)

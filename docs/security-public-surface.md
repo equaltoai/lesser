@@ -135,6 +135,8 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | POST | exact | `/setup/finalize` | gate-reachable setup finalization; handler enforces OAuth bearer/admin scope |
 | POST | exact | `/api/v1/auth/webauthn/login/begin` | WebAuthn login begin |
 | POST | exact | `/api/v1/auth/webauthn/login/finish` | WebAuthn login finish |
+| POST | exact | `/api/v1/auth/webauthn/signup/begin` | WebAuthn signup begin |
+| POST | exact | `/api/v1/auth/webauthn/signup/finish` | WebAuthn signup finish |
 | POST | exact | `/auth/wallet/challenge` | wallet challenge |
 | POST | exact | `/auth/wallet/verify` | wallet verification |
 | POST | exact | `/auth/wallet/login` | wallet login |

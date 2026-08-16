@@ -936,6 +936,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.walletChallengesByID = map[string]storagemodels.WalletChallenge{}
 			}
 			state.walletChallengesByID[m.ID] = *m
+		case *storagemodels.WebAuthnChallenge:
+			if m == nil {
+				return
+			}
+			if state.webAuthnChallengesByID == nil {
+				state.webAuthnChallengesByID = map[string]storagemodels.WebAuthnChallenge{}
+			}
+			state.webAuthnChallengesByID[m.Challenge] = *m
 		case *storagemodels.WebAuthnCredential:
 			if m == nil {
 				return

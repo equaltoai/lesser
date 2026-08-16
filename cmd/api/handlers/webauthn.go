@@ -13,6 +13,16 @@ import (
 	"go.uber.org/zap"
 )
 
+type webAuthnSignupFinishRequest struct {
+	Username  string         `json:"username"`
+	Challenge string         `json:"challenge"`
+	Response  map[string]any `json:"response"`
+}
+
+type webAuthnSignupFinishResponse struct {
+	PasskeyRegistrationProof string `json:"passkey_registration_proof"`
+}
+
 func webAuthnPublicKeyMap(options any) (map[string]any, error) {
 	if options == nil {
 		return nil, nil
@@ -40,6 +50,76 @@ func webAuthnPublicKeyMap(options any) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// HandleBeginWebAuthnSignupLift starts the public WebAuthn signup process.
+// POST /api/v1/auth/webauthn/signup/begin
+func (h *Handler) HandleBeginWebAuthnSignupLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	var req apimodels.WebAuthnBeginLoginRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
+	}
+
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return h.respondBadRequest(ctx, "username required")
+	}
+
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	options, challenge, err := authService.BeginWebAuthnSignup(ctx.Context(), req.Username)
+	if err != nil {
+		return h.handleAuthServiceError(ctx, err, "begin signup")
+	}
+
+	publicKey, err := webAuthnPublicKeyMap(options)
+	if err != nil {
+		h.logger.Error("failed to serialize webauthn signup options", zap.Error(err))
+		return h.respondInternalError(ctx, "failed to begin signup")
+	}
+
+	return okJSON(apimodels.WebAuthnBeginResponse{
+		PublicKey: publicKey,
+		Challenge: challenge,
+	})
+}
+
+// HandleFinishWebAuthnSignupLift completes the public WebAuthn signup process
+// and returns a single-use registration proof.
+// POST /api/v1/auth/webauthn/signup/finish
+func (h *Handler) HandleFinishWebAuthnSignupLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	var req webAuthnSignupFinishRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
+	}
+
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return h.respondBadRequest(ctx, "username required")
+	}
+	if err := common.ValidateRequiredParam("challenge", req.Challenge); err != nil {
+		return h.respondBadRequest(ctx, "challenge required")
+	}
+
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	rawResponse, err := json.Marshal(req.Response)
+	if err != nil {
+		return h.respondBadRequest(ctx, "invalid response payload")
+	}
+
+	proofID, err := authService.FinishWebAuthnSignup(ctx.Context(), req.Username, req.Challenge, rawResponse)
+	if err != nil {
+		return h.handleAuthServiceError(ctx, err, "complete signup")
+	}
+
+	return okJSON(webAuthnSignupFinishResponse{
+		PasskeyRegistrationProof: proofID,
+	})
 }
 
 // HandleBeginWebAuthnRegistrationLift starts the WebAuthn registration process
