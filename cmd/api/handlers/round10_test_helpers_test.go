@@ -935,6 +935,11 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.walletChallengesByID = map[string]storagemodels.WalletChallenge{}
 			}
 			state.walletChallengesByID[m.ID] = *m
+		case *storagemodels.WebAuthnCredential:
+			if m == nil {
+				return
+			}
+			round10UpsertWebAuthnCredential(state, *m)
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()

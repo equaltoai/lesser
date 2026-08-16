@@ -214,16 +214,20 @@ func TestWebAuthnService_BeginLoginAndFinishLogin_SuccessAndCredentialNotFound(t
 	repo.usersByUsername["alice"] = &storage.User{Username: "alice", PasswordHash: "hashed"}
 
 	credID := base64.StdEncoding.EncodeToString([]byte{7, 7})
+	previousLastUsedAt := time.Unix(123, 0).UTC()
+	credentialRecord := &storage.WebAuthnCredential{ID: credID, UserID: "alice", PublicKey: []byte("pub"), SignCount: 1, LastUsedAt: previousLastUsedAt}
 	repo.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{
-		{ID: credID, UserID: "alice", PublicKey: []byte("pub"), SignCount: 1},
+		credentialRecord,
 	}
+	repo.credentialsByID[credID] = credentialRecord
 
 	engine := &fakeWebAuthnEngine{
 		beginLoginChallenge: "chal-login",
 		loginCredential: &webauthn.Credential{
 			ID: []byte{7, 7},
 			Authenticator: webauthn.Authenticator{
-				SignCount: 2,
+				SignCount:    2,
+				CloneWarning: true,
 			},
 			Flags: webauthn.CredentialFlags{BackupState: true},
 		},
@@ -262,7 +266,14 @@ func TestWebAuthnService_BeginLoginAndFinishLogin_SuccessAndCredentialNotFound(t
 	require.NoError(t, err)
 	require.Equal(t, credID, used.ID)
 	require.Equal(t, uint32(2), used.SignCount)
+	require.True(t, used.CloneWarning)
+	require.True(t, used.BackupState)
+	require.True(t, used.LastUsedAt.After(previousLastUsedAt))
 	require.GreaterOrEqual(t, repo.updateCalls, 1)
+	require.Equal(t, used.LastUsedAt, repo.credentialsByID[credID].LastUsedAt)
+	require.Equal(t, uint32(2), repo.credentialsByID[credID].SignCount)
+	require.True(t, repo.credentialsByID[credID].CloneWarning)
+	require.True(t, repo.credentialsByID[credID].BackupState)
 
 	// Credential not found in map.
 	engine.loginCredential = &webauthn.Credential{ID: []byte{8, 8}}

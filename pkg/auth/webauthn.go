@@ -369,7 +369,14 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
-	if err := s.repo.UpdateWebAuthnLastUsed(ctx, usedCredential.ID, usedCredential.SignCount); err != nil {
+	if err := s.repo.UpdateWebAuthnAuthenticationState(
+		ctx,
+		usedCredential.ID,
+		usedCredential.SignCount,
+		usedCredential.CloneWarning,
+		usedCredential.BackupState,
+		usedCredential.LastUsedAt,
+	); err != nil {
 		common.Logger().Error("failed to update credential", zap.Error(err))
 	}
 
