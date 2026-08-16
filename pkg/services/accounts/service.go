@@ -1920,16 +1920,9 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
 	passkeyRegistrationProofID := strings.TrimSpace(cmd.PasskeyRegistrationProof)
 
-	var err error
-	var passkeyProof *models.PasskeyRegistrationProof
-	if passkeyRegistrationProofID != "" {
-		passkeyProof, err = accountRepo.GetPasskeyRegistrationProof(ctx, passkeyRegistrationProofID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get passkey registration proof: %w", err)
-		}
-		if strings.TrimSpace(passkeyProof.Username) != username {
-			return nil, fmt.Errorf("passkey registration proof was created for a different username")
-		}
+	passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate RSA keypair for the actor
@@ -2008,7 +2001,6 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		// Return the actual error instead of wrapping it
 		return nil, fmt.Errorf("failed to create account: %w", err)
 	}
-	accountCreated := true
 
 	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
 	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), username, initialVisibility); err != nil {
@@ -2021,29 +2013,8 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, err
 	}
 
-	if passkeyProof != nil {
-		credential := passkeyRegistrationProofToCredential(passkeyProof)
-		if err := accountRepo.StoreWebAuthnCredential(ctx, credential); err != nil {
-			if accountCreated {
-				s.rollbackAccountCreation(ctx, accountRepo, username, err)
-			}
-			return nil, fmt.Errorf("failed to store initial passkey credential: %w", err)
-		}
-		credentialCreated := true
-		if _, err := accountRepo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID); err != nil {
-			if credentialCreated {
-				s.rollbackPasskeyCredentialCreation(ctx, accountRepo, username, credential.ID, err)
-			}
-			if accountCreated {
-				s.rollbackAccountCreation(ctx, accountRepo, username, err)
-			}
-			return nil, fmt.Errorf("failed to finalize passkey registration proof: %w", err)
-		}
-	} else if registrationChallengeID != "" {
-		if err := accountRepo.MarkWalletChallengeRegistrationCompleted(ctx, registrationChallengeID); err != nil {
-			s.rollbackAccountCreation(ctx, accountRepo, username, err)
-			return nil, fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
-		}
+	if err := s.finalizeRegistrationProof(ctx, accountRepo, username, registrationChallengeID, passkeyProof); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("account created successfully, recording activity",
@@ -2120,6 +2091,54 @@ func (s *Service) initialPostingVisibility(requested string) string {
 	}
 
 	return models.VisibilityPublic
+}
+
+func (s *Service) loadRegistrationPasskeyProof(ctx context.Context, repo *repositories.AccountRepository, username, proofID string) (*models.PasskeyRegistrationProof, error) {
+	if strings.TrimSpace(proofID) == "" {
+		return nil, nil
+	}
+
+	proof, err := repo.GetPasskeyRegistrationProof(ctx, proofID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get passkey registration proof: %w", err)
+	}
+	if strings.TrimSpace(proof.Username) != username {
+		return nil, fmt.Errorf("passkey registration proof was created for a different username")
+	}
+
+	return proof, nil
+}
+
+func (s *Service) finalizeRegistrationProof(ctx context.Context, repo *repositories.AccountRepository, username, walletChallengeID string, passkeyProof *models.PasskeyRegistrationProof) error {
+	if passkeyProof != nil {
+		return s.finalizePasskeyRegistrationProof(ctx, repo, username, passkeyProof)
+	}
+	if strings.TrimSpace(walletChallengeID) == "" {
+		return nil
+	}
+
+	if err := repo.MarkWalletChallengeRegistrationCompleted(ctx, walletChallengeID); err != nil {
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) finalizePasskeyRegistrationProof(ctx context.Context, repo *repositories.AccountRepository, username string, passkeyProof *models.PasskeyRegistrationProof) error {
+	credential := passkeyRegistrationProofToCredential(passkeyProof)
+	if err := repo.StoreWebAuthnCredential(ctx, credential); err != nil {
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to store initial passkey credential: %w", err)
+	}
+
+	if _, err := repo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID); err != nil {
+		s.rollbackPasskeyCredentialCreation(ctx, repo, username, credential.ID, err)
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to finalize passkey registration proof: %w", err)
+	}
+
+	return nil
 }
 
 func isNilInterface(value any) bool {
