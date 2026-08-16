@@ -134,7 +134,6 @@ func TestRound08_AccountRepositoryAuth_CoverageSweep(t *testing.T) {
 		PublicKey:  []byte("pk"),
 		CreatedAt:  baseTime,
 		LastUsedAt: baseTime,
-		LastUsed:   baseTime,
 	})
 	_ = repo.UpdateWebAuthnCredential(ctx, "cred-1", 1)
 

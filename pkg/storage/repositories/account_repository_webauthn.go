@@ -38,10 +38,6 @@ func webAuthnCredentialModelFromStorage(credential *storage.WebAuthnCredential) 
 		Name:            credential.Name,
 	}
 
-	if model.LastUsedAt.IsZero() && !credential.LastUsed.IsZero() {
-		model.LastUsedAt = credential.LastUsed
-	}
-
 	return model
 }
 
