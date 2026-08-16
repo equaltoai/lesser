@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
@@ -277,11 +278,12 @@ func TestAccountRepository_GetPasskeyRegistrationProof_QueryError(t *testing.T) 
 	}
 
 	require.NoError(t, repo.StorePasskeyRegistrationProof(context.Background(), proof))
-	db.state.lookupErr = stdErrors.New("lookup failed")
+	lookupErr := stdErrors.New("lookup failed")
+	db.state.lookupErr = lookupErr
 
 	got, err := repo.GetPasskeyRegistrationProof(context.Background(), proof.ID)
 	require.Nil(t, got)
-	require.Error(t, err)
+	require.ErrorIs(t, err, lookupErr)
 }
 
 func TestAccountRepository_DeletePasskeyRegistrationProof_DeleteError(t *testing.T) {
@@ -327,7 +329,7 @@ func TestAccountRepository_GetPasskeyRegistrationProof_ExpiredDeleteFailureStill
 
 	got, err := repo.GetPasskeyRegistrationProof(context.Background(), proof.ID)
 	require.Nil(t, got)
-	require.Error(t, err)
+	require.ErrorIs(t, err, storage.ErrNotFound)
 
 	db.state.mu.Lock()
 	defer db.state.mu.Unlock()
