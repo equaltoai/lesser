@@ -326,8 +326,8 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 		plan.survivingPasskeyID,
 		plan.survivingWalletAddress,
 	); err != nil {
-		if classifiedErr := classifyGuardedAuthenticatorRemovalFailure(err); classifiedErr != nil {
-			if errors.Is(classifiedErr, ErrLastAuthMethodDelete) {
+		if classifiedErr := classifyGuardedWalletRemovalFailure(ctx, s.repo, username, address, err); classifiedErr != nil {
+			if errors.Is(classifiedErr, ErrLastAuthMethodDelete) || isAuthenticatorRemovalTargetNotFound(classifiedErr) {
 				return classifiedErr
 			}
 			s.logger.Error("failed to delete wallet credential", zap.Error(classifiedErr), zap.String("username", username), zap.String("address", address))

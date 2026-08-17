@@ -8,6 +8,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
 )
@@ -342,6 +343,9 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *apptheory.Context) (*apptheory.Res
 
 	// Unlink the wallet
 	if err := authService.UnlinkWallet(requestCtx, username, address); err != nil {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return h.respondWithError(ctx, http.StatusNotFound, "wallet not found")
+		}
 		if errors.Is(err, auth.ErrLastAuthMethodDelete) {
 			return h.respondBadRequest(ctx, "cannot delete last authentication method")
 		}

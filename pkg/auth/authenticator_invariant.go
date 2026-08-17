@@ -79,16 +79,6 @@ func planAuthenticatorRemoval(
 	return authenticatorRemovalPlan{}, ErrLastAuthMethodDelete
 }
 
-func classifyGuardedAuthenticatorRemovalFailure(err error) error {
-	if err == nil {
-		return nil
-	}
-	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, dynamormerrors.ErrTransactionConflict) {
-		return ErrLastAuthMethodDelete
-	}
-	return err
-}
-
 func classifyGuardedWebAuthnRemovalFailure(
 	ctx context.Context,
 	repo webAuthnRepository,
@@ -98,12 +88,6 @@ func classifyGuardedWebAuthnRemovalFailure(
 ) error {
 	if err == nil {
 		return nil
-	}
-	if stdErrors.Is(err, dynamormerrors.ErrTransactionConflict) {
-		return ErrLastAuthMethodDelete
-	}
-	if !dynamormerrors.IsConditionFailed(err) {
-		return err
 	}
 
 	credential, lookupErr := repo.GetWebAuthnCredential(ctx, credentialID)
@@ -117,7 +101,46 @@ func classifyGuardedWebAuthnRemovalFailure(
 		return ErrCredentialNotFound
 	}
 
-	return ErrLastAuthMethodDelete
+	_, planErr := planAuthenticatorRemoval(ctx, repo, username, authenticatorRemovalPasskey, credentialID, "")
+	if planErr == nil {
+		return err
+	}
+	if stdErrors.Is(planErr, ErrLastAuthMethodDelete) {
+		return ErrLastAuthMethodDelete
+	}
+	return planErr
+}
+
+func classifyGuardedWalletRemovalFailure(
+	ctx context.Context,
+	repo walletRepository,
+	username string,
+	address string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+
+	wallet, lookupErr := repo.GetWalletCredential(ctx, address)
+	if lookupErr != nil {
+		if isAuthenticatorRemovalTargetNotFound(lookupErr) {
+			return lessererrors.CredentialNotFound()
+		}
+		return lookupErr
+	}
+	if wallet == nil || wallet.Username != username {
+		return lessererrors.CredentialNotFound()
+	}
+
+	_, planErr := planAuthenticatorRemoval(ctx, repo, username, authenticatorRemovalWallet, "", address)
+	if planErr == nil {
+		return err
+	}
+	if stdErrors.Is(planErr, ErrLastAuthMethodDelete) {
+		return ErrLastAuthMethodDelete
+	}
+	return planErr
 }
 
 func isAuthenticatorRemovalTargetNotFound(err error) bool {

@@ -360,6 +360,16 @@ func (q *authenticatorInvariantQuery) First(dest any) error {
 			}
 		}
 		return dynamormerrors.ErrItemNotFound
+	case *models.WalletCredential:
+		pk := q.whereString("PK")
+		sk := q.whereString("SK")
+		for _, wallet := range q.state.wallets {
+			if wallet != nil && wallet.PK == pk && wallet.SK == sk {
+				*target = *cloneAuthenticatorInvariantWallet(wallet)
+				return nil
+			}
+		}
+		return dynamormerrors.ErrItemNotFound
 	default:
 		return fmt.Errorf("unsupported destination %T", dest)
 	}
@@ -406,6 +416,15 @@ func (q *authenticatorInvariantQuery) All(dest any) error {
 			sliceValue.Set(reflect.Append(sliceValue, reflect.ValueOf(*cloneAuthenticatorInvariantWallet(wallet))))
 		}
 		return nil
+	case reflect.TypeOf(models.WalletIndex{}):
+		pk := q.whereString("PK")
+		for _, index := range q.state.walletIndexes {
+			if index == nil || index.PK != pk {
+				continue
+			}
+			sliceValue.Set(reflect.Append(sliceValue, reflect.ValueOf(*cloneAuthenticatorInvariantWalletIndex(index))))
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported destination %T", dest)
 	}
@@ -427,6 +446,16 @@ func (q *authenticatorInvariantQuery) Create() error {
 			return fmt.Errorf("nil wallet credential")
 		}
 		q.state.wallets[authenticatorInvariantWalletKey(model.Username, model.Address)] = cloneAuthenticatorInvariantWallet(model)
+		q.state.walletIndexes[authenticatorInvariantWalletIndexKey(
+			fmt.Sprintf("WALLET#%s#%s", model.Type, strings.ToLower(model.Address)),
+			fmt.Sprintf("USER#%s", model.Username),
+		)] = &models.WalletIndex{
+			PK:         fmt.Sprintf("WALLET#%s#%s", model.Type, strings.ToLower(model.Address)),
+			SK:         fmt.Sprintf("USER#%s", model.Username),
+			Username:   model.Username,
+			Address:    strings.ToLower(model.Address),
+			WalletType: model.Type,
+		}
 		return nil
 	case *models.WalletIndex:
 		if model == nil {
