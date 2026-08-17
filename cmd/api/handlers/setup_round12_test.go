@@ -706,8 +706,35 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		require.Equal(t, cfg.ActorURL("alice"), actorID)
 	})
 
-	t.Run("real accounts service bootstrap mode creates admin without public proofs", func(t *testing.T) {
-		state := &round10QueryState{}
+	t.Run("real accounts service bootstrap mode repairs genuine admin partial without public proofs", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:    "alice",
+					DisplayName: "Before",
+					Approved:    true,
+					Role:        "admin",
+					CreatedAt:   time.Now().Add(-2 * time.Minute),
+					UpdatedAt:   time.Now().Add(-2 * time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {
+					Username: "alice",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   cfg.ActorURL("alice"),
+							Type: "Person",
+						},
+						PreferredUsername: "alice",
+						Name:              "Before",
+						URL:               cfg.BaseURL() + "/@alice",
+					},
+					CreatedAt: time.Now().Add(-2 * time.Minute),
+					UpdatedAt: time.Now().Add(-2 * time.Minute),
+				},
+			},
+		}
 		handler, repos, _ := round11NewHandler(t, cfg, state)
 		repos.Account().SetEncryptor(noopEncryptor{})
 
@@ -1518,7 +1545,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		require.NotContains(t, promotionEntry.Metadata, "proof-1")
 	})
 
-	t.Run("success repairs genuine admin partial", func(t *testing.T) {
+	t.Run("success creates admin", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 
 		sess := storagemodels.SetupSession{
@@ -1540,32 +1567,6 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 			},
 			setupSessionsByID: map[string]storagemodels.SetupSession{
 				sess.ID: sess,
-			},
-			usersByUsername: map[string]storagemodels.User{
-				"admin": {
-					Username:    "admin",
-					DisplayName: "Before",
-					Approved:    true,
-					Role:        "admin",
-					CreatedAt:   time.Now().Add(-2 * time.Minute),
-					UpdatedAt:   time.Now().Add(-2 * time.Minute),
-				},
-			},
-			actorsByUser: map[string]storagemodels.Actor{
-				"admin": {
-					Username: "admin",
-					Actor: &activitypub.Actor{
-						BaseObject: activitypub.BaseObject{
-							ID:   cfg.ActorURL("admin"),
-							Type: "Person",
-						},
-						PreferredUsername: "admin",
-						Name:              "Before",
-						URL:               cfg.BaseURL() + "/@admin",
-					},
-					CreatedAt: time.Now().Add(-2 * time.Minute),
-					UpdatedAt: time.Now().Add(-2 * time.Minute),
-				},
 			},
 		}
 
