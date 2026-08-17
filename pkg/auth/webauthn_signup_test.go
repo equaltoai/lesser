@@ -236,3 +236,17 @@ func TestWebAuthnService_FinishSignup_RejectsNonSignupChallengeTypes(t *testing.
 		})
 	}
 }
+
+func TestWebAuthnService_GetPasskeyRegistrationProof_TrimsID(t *testing.T) {
+	t.Parallel()
+
+	repo := newInMemoryWebAuthnRepo()
+	repo.proofsByID["proof-1"] = &storagemodels.PasskeyRegistrationProof{ID: "proof-1", Username: "alice"}
+
+	svc := &WebAuthnService{repo: repo}
+	proof, err := svc.GetPasskeyRegistrationProof(context.Background(), "  proof-1  ")
+	require.NoError(t, err)
+	require.NotNil(t, proof)
+	require.Equal(t, "proof-1", proof.ID)
+	require.Equal(t, "alice", proof.Username)
+}

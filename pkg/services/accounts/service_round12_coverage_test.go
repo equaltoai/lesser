@@ -27,6 +27,27 @@ func (f *federationRecorder) QueueActivity(ctx context.Context, activity *activi
 	return f.err
 }
 
+func TestNormalizeUsernameForDomain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		username    string
+		localDomain string
+		expected    string
+	}{
+		{name: "local handle strips domain", username: " Alice@Example.com ", localDomain: "example.com", expected: "alice"},
+		{name: "remote users url preserves foreign host", username: "https://Remote.Social/users/Alice", localDomain: "example.com", expected: "alice@remote.social"},
+		{name: "remote at-url preserves foreign host", username: "https://Remote.Social/@Alice", localDomain: "example.com", expected: "alice@remote.social"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, NormalizeUsernameForDomain(tt.username, tt.localDomain))
+		})
+	}
+}
+
 func TestService_normalizeUsername(t *testing.T) {
 	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 
