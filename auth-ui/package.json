@@ -13,6 +13,10 @@
     "dev": "astro dev --port 4322",
     "build": "astro build",
     "preview": "astro preview",
+    "check": "astro check",
+    "check:svelte": "svelte-check --threshold error",
+    "test": "playwright test",
+    "test:e2e": "astro build && playwright test",
     "clean": "rm -rf dist .astro node_modules"
   },
   "dependencies": {
@@ -45,9 +49,12 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@astrojs/check": "0.9.4",
+    "@playwright/test": "1.62.1",
     "@types/hast": "^3.0.4",
     "@types/mdast": "^4.0.4",
     "@types/node": "^25.5.0",
+    "svelte-check": "4.1.5",
     "typescript": "5.9.3"
   },
   "pnpm": {

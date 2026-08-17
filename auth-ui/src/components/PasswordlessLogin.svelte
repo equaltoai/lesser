@@ -10,15 +10,24 @@
    * - NEVER sets cookies or creates sessions
    * - Continues OAuth via /oauth/authorize UI-mode using Authorization headers
    * 
-   * Authentication methods:
+   * Authentication methods (equal alternatives — neither is required):
    * 1. WebAuthn (passkeys, biometrics, security keys)
    * 2. Crypto wallets (MetaMask, WalletConnect, etc.)
-   * 
+   *
    * Both methods return JWTs from Lesser's backend, which are used once
    * and discarded. All session management is stateless JWT validation.
+   *
+   * On the registration page (isRegistration=true) the passkey button drives
+   * the SIGNUP ceremony — /auth/webauthn/signup/begin + navigator.credentials
+   * .create() + /auth/webauthn/signup/finish — and exchanges the resulting
+   * single-use proof for an account at POST /api/v1/accounts. It must never
+   * call the LOGIN endpoints in that mode: a brand-new username has no
+   * credentials, so login/begin deterministically fails with
+   * "no passkeys registered for this user".
    */
   
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import type { components } from 'src/lib/greater/adapters/rest/generated/lesser-api.js';
   import Button from 'src/lib/greater/primitives/components/Button.svelte';
   import CopyButton from 'src/lib/greater/primitives/components/CopyButton.svelte';
   import DefinitionItem from 'src/lib/greater/primitives/components/DefinitionItem.svelte';
@@ -83,7 +92,119 @@
   const UI_BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
   const loginHref = `${UI_BASE_PATH}/login`;
   const registerHref = `${UI_BASE_PATH}/register`;
-  
+
+  // Request/response shapes come from the generated OpenAPI client so the UI
+  // and the server contract cannot drift silently.
+  type ApiErrorBody = components['schemas']['Error'];
+  type WebAuthnBeginLoginRequest = components['schemas']['WebAuthnBeginLoginRequest'];
+  type WebAuthnBeginResponse = components['schemas']['WebAuthnBeginResponse'];
+  type WebAuthnFinishLoginRequest = components['schemas']['WebAuthnFinishLoginRequest'];
+  type WebAuthnSignupFinishRequest = components['schemas']['WebAuthnSignupFinishRequest'];
+  type WebAuthnSignupFinishResponse = components['schemas']['WebAuthnSignupFinishResponse'];
+  type AccountRegistrationRequest = components['schemas']['AccountRegistrationRequest'];
+  type AccountRegistrationResponse = components['schemas']['AccountRegistrationResponse'];
+  type AuthAuthResponse = components['schemas']['AuthAuthResponse'];
+
+  /** Error carrying the server's `Error` contract fields so callers can map status+code to advice. */
+  class ApiRequestError extends Error {
+    readonly status: number;
+    readonly errorCode: string;
+    readonly serverMessage: string;
+
+    constructor(status: number, body: Partial<ApiErrorBody> | null) {
+      const serverMessage = (body?.error ?? '').trim();
+      super(serverMessage || `Request failed (${status})`);
+      this.name = 'ApiRequestError';
+      this.status = status;
+      this.errorCode = (body?.error_code ?? '').trim();
+      this.serverMessage = serverMessage;
+    }
+  }
+
+  async function postJson<TRequest, TResponse>(path: string, body: TRequest): Promise<TResponse> {
+    const response = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new ApiRequestError(response.status, data as Partial<ApiErrorBody> | null);
+    }
+    return data as TResponse;
+  }
+
+  /**
+   * True when the WebAuthn ceremony ended because the person dismissed the
+   * platform prompt (or we aborted it), rather than because it failed.
+   */
+  function isCeremonyCancellation(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+      return false;
+    }
+    return err.name === 'NotAllowedError' || err.name === 'AbortError';
+  }
+
+  /** Decode the base64url fields the server sends inside PublicKeyCredential options. */
+  function decodePublicKeyOptions(publicKey: Record<string, unknown>): Record<string, unknown> {
+    const options: Record<string, unknown> = { ...publicKey };
+    options.challenge = base64ToArrayBuffer(String(options.challenge));
+
+    const user = options.user as { id?: unknown } | undefined;
+    if (user && typeof user.id === 'string') {
+      options.user = { ...user, id: base64ToArrayBuffer(user.id) };
+    }
+
+    for (const key of ['allowCredentials', 'excludeCredentials'] as const) {
+      const list = options[key];
+      if (Array.isArray(list)) {
+        options[key] = list.map((cred: Record<string, unknown>) => ({
+          ...cred,
+          id: base64ToArrayBuffer(String(cred.id))
+        }));
+      }
+    }
+
+    return options;
+  }
+
+  /** Serialize an attestation (registration) credential into the shape the server parses. */
+  function encodeAttestation(credential: PublicKeyCredential): Record<string, unknown> {
+    const response = credential.response as AuthenticatorAttestationResponse;
+    const transports =
+      typeof response.getTransports === 'function' ? response.getTransports() : undefined;
+
+    return {
+      id: credential.id,
+      rawId: arrayBufferToBase64(credential.rawId),
+      type: credential.type,
+      clientExtensionResults: credential.getClientExtensionResults(),
+      response: {
+        clientDataJSON: arrayBufferToBase64(response.clientDataJSON),
+        attestationObject: arrayBufferToBase64(response.attestationObject),
+        ...(transports && transports.length > 0 ? { transports } : {})
+      }
+    };
+  }
+
+  /** Serialize an assertion (login) credential into the shape the server parses. */
+  function encodeAssertion(credential: PublicKeyCredential): Record<string, unknown> {
+    const response = credential.response as AuthenticatorAssertionResponse;
+
+    return {
+      id: credential.id,
+      rawId: arrayBufferToBase64(credential.rawId),
+      type: credential.type,
+      response: {
+        clientDataJSON: arrayBufferToBase64(response.clientDataJSON),
+        authenticatorData: arrayBufferToBase64(response.authenticatorData),
+        signature: arrayBufferToBase64(response.signature),
+        userHandle: response.userHandle ? arrayBufferToBase64(response.userHandle) : null
+      }
+    };
+  }
+
   // State
   let username = $state('');
   let isLoading = $state(false);
@@ -93,7 +214,39 @@
   let walletConnected = $state(false);
   let connectedAddress = $state('');
   let walletChallengeId = $state('');
+  // Progress text for the multi-step passkey signup, announced politely.
+  let statusMessage = $state('');
+  let errorRegion = $state<HTMLDivElement | null>(null);
+  // Aborts an in-flight WebAuthn ceremony when the person cancels explicitly.
+  let ceremonyAbort: AbortController | null = null;
   const nonOAuthURLParams = new Set(['auth_request', 'return_to', 'session_id']);
+
+  /**
+   * Surface an error and move focus to it, so keyboard and screen-reader users
+   * are told what happened instead of being left on a button that did nothing.
+   */
+  async function failWith(message: string) {
+    error = message;
+    statusMessage = '';
+    await tick();
+    errorRegion?.focus();
+  }
+
+  /** Reset every transient bit of ceremony state. Cancellation must not strand the form. */
+  function resetCeremonyState() {
+    ceremonyAbort = null;
+    isLoading = false;
+    statusMessage = '';
+  }
+
+  /**
+   * Abort a passkey ceremony that is waiting on the authenticator. Without this
+   * a keyboard user who cannot dismiss the platform dialog has no way back to
+   * the form. The ceremony's catch block does the actual state cleanup.
+   */
+  function cancelCeremony() {
+    ceremonyAbort?.abort();
+  }
 
   function setOAuthParam(params: URLSearchParams, key: string, value: unknown) {
     if (value == null) {
@@ -286,110 +439,241 @@
     }
   }
   
-  // WebAuthn Login
+  /**
+   * Passkey button entry point. Registration and login are different ceremonies
+   * against different endpoints; the label the person clicked has to match the
+   * request that goes out.
+   */
   async function loginWithWebAuthn() {
-    if (!username.trim()) {
-      error = 'Please enter your username';
+    if (isRegistration) {
+      await registerWithPasskey();
       return;
     }
-    
+    await signInWithPasskey();
+  }
+
+  /**
+   * Run the WebAuthn assertion ceremony and return the issued JWT.
+   * Shared by passkey login and the sign-in that completes passkey signup.
+   */
+  async function runPasskeyLoginCeremony(usernameValue: string): Promise<string> {
+    const beginData = await postJson<WebAuthnBeginLoginRequest, WebAuthnBeginResponse>(
+      '/api/v1/auth/webauthn/login/begin',
+      { username: usernameValue }
+    );
+
+    ceremonyAbort = new AbortController();
+    const credential = (await navigator.credentials.get({
+      publicKey: decodePublicKeyOptions(beginData.publicKey) as unknown as PublicKeyCredentialRequestOptions,
+      signal: ceremonyAbort.signal
+    })) as PublicKeyCredential | null;
+    ceremonyAbort = null;
+
+    if (!credential) {
+      throw new Error('Authentication cancelled');
+    }
+
+    const finishData = await postJson<WebAuthnFinishLoginRequest, AuthAuthResponse>(
+      '/api/v1/auth/webauthn/login/finish',
+      {
+        username: usernameValue,
+        challenge: beginData.challenge,
+        response: encodeAssertion(credential),
+        device_name: 'Web Browser'
+      }
+    );
+
+    return finishData.access_token;
+  }
+
+  // WebAuthn Login (existing account)
+  async function signInWithPasskey() {
+    if (!username.trim()) {
+      await failWith('Please enter your username');
+      return;
+    }
+
     isLoading = true;
     error = '';
     authMethod = 'webauthn';
-    
+    statusMessage = 'Waiting for your passkey…';
+
     try {
-      // Step 1: Begin WebAuthn login
-      const beginResponse = await fetch(`${API_URL}/api/v1/auth/webauthn/login/begin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
-      });
-      
-      const beginData = await beginResponse.json();
-      if (!beginResponse.ok) {
-        throw new Error(beginData.error || 'Failed to start login');
+      const accessToken = await runPasskeyLoginCeremony(username.trim());
+      if (!accessToken) {
+        throw new Error('Login succeeded but no access token was returned');
       }
-      
-      // Step 2: Convert base64 challenge and credentials
-      const publicKeyOptions = beginData.publicKey;
-      publicKeyOptions.challenge = base64ToArrayBuffer(publicKeyOptions.challenge);
-      
-      if (publicKeyOptions.allowCredentials) {
-        publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map((cred: any) => ({
-          ...cred,
-          id: base64ToArrayBuffer(cred.id)
-        }));
-      }
-      
-      // Step 3: Get credential from authenticator
-      const credential = await navigator.credentials.get({ publicKey: publicKeyOptions }) as PublicKeyCredential;
-      
-      if (!credential) {
-        throw new Error('Authentication cancelled');
-      }
-      
-      // Step 4: Prepare response
-      const credentialResponse = {
-        id: credential.id,
-        rawId: arrayBufferToBase64(credential.rawId),
-        type: credential.type,
-        response: {
-          clientDataJSON: arrayBufferToBase64((credential.response as AuthenticatorAssertionResponse).clientDataJSON),
-          authenticatorData: arrayBufferToBase64((credential.response as AuthenticatorAssertionResponse).authenticatorData),
-          signature: arrayBufferToBase64((credential.response as AuthenticatorAssertionResponse).signature),
-          userHandle: (credential.response as AuthenticatorAssertionResponse).userHandle ? 
-            arrayBufferToBase64((credential.response as AuthenticatorAssertionResponse).userHandle!) : null
-        }
-      };
-      
-      // Step 5: Complete login
-      const finishResponse = await fetch(`${API_URL}/api/v1/auth/webauthn/login/finish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          challenge: beginData.challenge,
-          response: credentialResponse,
-          device_name: 'Web Browser'
-        })
-      });
-      
-      const finishData = await finishResponse.json();
-      
-      if (!finishResponse.ok) {
-        throw new Error(finishData.error || 'Login failed');
-      }
-      
-      // Step 6: Store JWT temporarily in sessionStorage ONLY for the redirect
-      if (finishData.access_token) {
-        sessionStorage.setItem('lesser_auth_jwt', finishData.access_token);
-        handleAuthSuccess();
-      }
+
+      // Store JWT temporarily in sessionStorage ONLY for the redirect
+      sessionStorage.setItem('lesser_auth_jwt', accessToken);
+      statusMessage = 'Signed in. Continuing…';
+      handleAuthSuccess();
     } catch (err) {
-      error = err instanceof Error ? err.message : 'WebAuthn login failed';
       console.error('WebAuthn login error:', err);
+      await failWith(describePasskeyLoginError(err));
     } finally {
-      isLoading = false;
+      resetCeremonyState();
     }
   }
-  
+
+  /**
+   * Passkey-first account creation. No wallet, no extension, no existing
+   * credential: signup ceremony -> single-use proof -> account -> signed in.
+   */
+  async function registerWithPasskey() {
+    const usernameValue = username.trim();
+    if (!usernameValue) {
+      await failWith('Please choose a username');
+      return;
+    }
+
+    isLoading = true;
+    error = '';
+    authMethod = 'webauthn';
+    statusMessage = 'Starting passkey registration…';
+
+    try {
+      // Step 1: begin the SIGNUP ceremony (not login — this username has no credentials yet)
+      const beginData = await postJson<WebAuthnBeginLoginRequest, WebAuthnBeginResponse>(
+        '/api/v1/auth/webauthn/signup/begin',
+        { username: usernameValue }
+      );
+
+      // Step 2: create the credential on the authenticator
+      statusMessage = 'Confirm the new passkey on your device…';
+      ceremonyAbort = new AbortController();
+      const credential = (await navigator.credentials.create({
+        publicKey: decodePublicKeyOptions(beginData.publicKey) as unknown as PublicKeyCredentialCreationOptions,
+        signal: ceremonyAbort.signal
+      })) as PublicKeyCredential | null;
+      ceremonyAbort = null;
+
+      if (!credential) {
+        throw new Error('Passkey registration was cancelled');
+      }
+
+      // Step 3: exchange the attestation for a single-use registration proof
+      statusMessage = 'Verifying your new passkey…';
+      const finishData = await postJson<WebAuthnSignupFinishRequest, WebAuthnSignupFinishResponse>(
+        '/api/v1/auth/webauthn/signup/finish',
+        {
+          username: usernameValue,
+          challenge: beginData.challenge,
+          response: encodeAttestation(credential)
+        }
+      );
+
+      // Step 4: create the account with the proof (exactly one of
+      // wallet_challenge_id / passkey_registration_proof is permitted)
+      statusMessage = 'Creating your account…';
+      await postJson<AccountRegistrationRequest, AccountRegistrationResponse>('/api/v1/accounts', {
+        username: usernameValue,
+        agreement: true,
+        locale: 'en',
+        passkey_registration_proof: finishData.passkey_registration_proof
+      });
+
+      // Step 5: the account now owns the passkey — sign in with it so the
+      // person lands authenticated rather than on a login form.
+      statusMessage = 'Signing you in with your new passkey…';
+      const accessToken = await runPasskeyLoginCeremony(usernameValue);
+      if (!accessToken) {
+        throw new Error('Account created but no access token was returned');
+      }
+
+      sessionStorage.setItem('lesser_auth_jwt', accessToken);
+      statusMessage = 'Account created. Continuing…';
+      handleAuthSuccess();
+    } catch (err) {
+      console.error('Passkey registration error:', err);
+      await failWith(describePasskeySignupError(err));
+    } finally {
+      resetCeremonyState();
+    }
+  }
+
+  /**
+   * Map signup failures onto advice the person can act on. The distinctions
+   * matter: a taken username needs a different username, an expired proof
+   * needs the ceremony run again.
+   */
+  function describePasskeySignupError(err: unknown): string {
+    if (isCeremonyCancellation(err)) {
+      return 'Passkey registration was cancelled. Your account was not created — you can try again.';
+    }
+
+    if (err instanceof ApiRequestError) {
+      const message = err.serverMessage.toLowerCase();
+
+      if (err.status === 409 || message.includes('already exists')) {
+        return 'That username is already taken. Choose a different username and try again.';
+      }
+      if (message.includes('passkey_registration_proof') || message.includes('passkey registration proof')) {
+        return 'Your passkey registration expired before the account was created. Please register the passkey again.';
+      }
+      if (message.includes('challenge')) {
+        return 'The passkey registration timed out. Please try again.';
+      }
+      if (message.includes('webauthn not configured')) {
+        return 'Passkey sign-up is unavailable on this server. You can register with a wallet instead.';
+      }
+      if (err.status === 422) {
+        return `That username was rejected: ${err.serverMessage}`;
+      }
+      if (err.status >= 500) {
+        return 'The server could not complete registration. Please try again in a moment.';
+      }
+      return err.serverMessage || 'Registration failed. Please try again.';
+    }
+
+    return err instanceof Error ? err.message : 'Passkey registration failed';
+  }
+
+  /** Map login failures onto advice, including the "you may need to register" case. */
+  function describePasskeyLoginError(err: unknown): string {
+    if (isCeremonyCancellation(err)) {
+      return 'Passkey sign-in was cancelled. You can try again.';
+    }
+
+    if (err instanceof ApiRequestError) {
+      const message = err.serverMessage.toLowerCase();
+
+      if (message.includes('no passkeys registered')) {
+        return 'No passkey is registered for that username. Register first, or sign in another way.';
+      }
+      if (message.includes('user not found')) {
+        return 'We could not find that username.';
+      }
+      if (err.status === 401) {
+        return 'That passkey was not accepted. Please try again.';
+      }
+      if (err.status >= 500) {
+        return 'The server could not complete sign-in. Please try again in a moment.';
+      }
+      return err.serverMessage || 'Sign-in failed. Please try again.';
+    }
+
+    return err instanceof Error ? err.message : 'WebAuthn login failed';
+  }
+
+
   // Wallet Login
   async function loginWithWallet() {
     if (!window.ethereum) {
-      error = 'No wallet detected. Please install MetaMask or another Web3 wallet.';
+      await failWith('No wallet detected. Please install MetaMask or another Web3 wallet.');
       return;
     }
 
     // For registration, require username first (signature must bind to username)
     if (isRegistration && !username.trim()) {
-      error = 'Please enter a username first';
+      await failWith('Please enter a username first');
       return;
     }
-    
+
     isLoading = true;
     error = '';
     authMethod = 'wallet';
-    
+
     try {
       // Step 1: Request wallet connection
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -403,8 +687,8 @@
       // Step 3: Create challenge (includes username for security)
       // Username MUST be provided - signature binds to username
       if (!username.trim()) {
-        error = 'Username is required for wallet authentication';
         isLoading = false;
+        await failWith('Username is required for wallet authentication');
         return;
       }
 
@@ -461,11 +745,11 @@
         await registerWithWallet(username, address, chainIdDecimal, challengeData.id, signature, challengeData.message);
       } else if (!isRegistration) {
         // Login failed - wallet not linked
-        error = 'This wallet is not linked to any account. Please register first.';
+        await failWith('This wallet is not linked to any account. Please register first.');
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Wallet login failed';
       console.error('Wallet login error:', err);
+      await failWith(err instanceof Error ? err.message : 'Wallet login failed');
     } finally {
       isLoading = false;
     }
@@ -541,17 +825,17 @@
         handleAuthSuccess();
       } else {
         // Fallback: if backend doesn't return JWT (shouldn't happen, but handle gracefully)
-        error = 'Registration successful, but authentication token missing. Please log in.';
         console.error('Link response missing access_token:', linkData);
-        
+        await failWith('Registration successful, but authentication token missing. Please log in.');
+
         setTimeout(() => {
           const loginUrl = new URL(loginHref, window.location.origin);
           window.location.href = loginUrl.toString();
         }, 2000);
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Registration failed';
       console.error('Wallet registration error:', err);
+      await failWith(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       isLoading = false;
     }
@@ -714,15 +998,34 @@
 
 <div class="passwordless-login">
     {#if error}
-      <div class="alert alert-error">
+      <div
+        class="alert alert-error"
+        role="alert"
+        aria-live="assertive"
+        tabindex="-1"
+        bind:this={errorRegion}
+        data-testid="auth-error"
+      >
         <h3>Error</h3>
         <p>{error}</p>
         <div class="error-actions">
-          <a href={loginHref} class="btn btn-primary">Try Again</a>
+          {#if isRegistration}
+            <!-- Stay on the register page: sending a registering person to
+                 /login strands them mid-signup with no account to log in to. -->
+            <a href={loginHref} class="btn btn-primary">Sign in instead</a>
+          {:else}
+            <a href={loginHref} class="btn btn-primary">Try Again</a>
+          {/if}
         </div>
       </div>
     {/if}
-    
+
+    <!-- Progress for the multi-step passkey ceremony. Polite: it must not
+         interrupt the platform's own passkey prompt. -->
+    <div class="gr-sr-only" role="status" aria-live="polite" data-testid="auth-status">
+      {statusMessage}
+    </div>
+
     <!-- Single username field -->
     <div class="form-group">
         <TextField
@@ -743,11 +1046,16 @@
           type="button"
           variant="solid"
           disabled={!webAuthnSupported || isLoading}
+          aria-busy={isLoading && authMethod === 'webauthn'}
+          aria-label={isRegistration
+            ? 'Register a passkey and create your account'
+            : 'Sign in with your passkey'}
+          data-testid="passkey-button"
           onclick={loginWithWebAuthn}
         >
           {#if isLoading && authMethod === 'webauthn'}
             <span class="spinner"></span>
-            Authenticating...
+            {isRegistration ? 'Registering...' : 'Authenticating...'}
           {:else if !webAuthnSupported}
             Passkeys Not Supported
           {:else}
@@ -755,12 +1063,17 @@
             {isRegistration ? 'Register Passkey' : 'Passkey Login'}
           {/if}
         </Button>
-        
+
         <Button
           type="button"
           variant="solid"
           onclick={loginWithWallet}
           disabled={isLoading}
+          aria-busy={isLoading && authMethod === 'wallet'}
+          aria-label={isRegistration
+            ? 'Register a crypto wallet and create your account'
+            : 'Sign in with your crypto wallet'}
+          data-testid="wallet-button"
         >
           {#if isLoading && authMethod === 'wallet'}
             <span class="spinner"></span>
@@ -771,7 +1084,20 @@
           {/if}
         </Button>
       </div>
-      
+
+      {#if isLoading && authMethod === 'webauthn'}
+        <div class="ceremony-actions">
+          <Button
+            type="button"
+            variant="ghost"
+            onclick={cancelCeremony}
+            data-testid="cancel-ceremony-button"
+          >
+            Cancel
+          </Button>
+        </div>
+      {/if}
+
       {#if connectedAddress}
         <div class="wallet-details">
           <DefinitionList density="sm" dividers>
@@ -846,6 +1172,12 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .ceremony-actions {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--spacing-md);
   }
 
   .wallet-details {

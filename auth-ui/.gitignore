@@ -2,6 +2,12 @@
 dist/
 .astro/
 
+# Browser test artifacts
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # Dependencies
 node_modules/
 
