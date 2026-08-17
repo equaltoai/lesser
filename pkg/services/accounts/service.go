@@ -369,7 +369,7 @@ type RegisterAccountCommand struct {
 
 	// RegistrationMode is an explicit service-path selector for non-public registration lanes.
 	// Zero-value callers remain on the public exactly-one-proof path.
-	RegistrationMode RegisterAccountMode `json:"registration_mode,omitempty"`
+	RegistrationMode RegisterAccountMode
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
