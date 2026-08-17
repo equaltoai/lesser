@@ -40,9 +40,10 @@ const (
 
 // WebAuthnService handles WebAuthn operations
 type WebAuthnService struct {
-	webAuthn webAuthnEngine
-	repo     webAuthnRepository
-	domain   string
+	webAuthn    webAuthnEngine
+	repo        webAuthnRepository
+	domain      string
+	auditLogger *AuditLogger
 
 	parseCreationResponse  func([]byte) (*protocol.ParsedCredentialCreationData, error)
 	parseAssertionResponse func([]byte) (*protocol.ParsedCredentialAssertionData, error)
@@ -65,6 +66,7 @@ type webAuthnRepository interface {
 	StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error
 	GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error)
 	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
+	DeleteWebAuthnCredentialConditionedOnSurvivor(ctx context.Context, username string, credentialID string, survivingPasskeyID string, survivingWalletAddress string) error
 	UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error
 	UpdateWebAuthnAuthenticationState(ctx context.Context, credentialID string, signCount uint32, cloneWarning bool, backupState bool, lastUsedAt time.Time) error
 	StorePasskeyRegistrationProof(ctx context.Context, proof *storagemodels.PasskeyRegistrationProof) error
@@ -90,9 +92,10 @@ func NewWebAuthnService(repos StorageProvider, domain string, displayName string
 	}
 
 	return &WebAuthnService{
-		webAuthn: webAuthn,
-		repo:     repos.Account(),
-		domain:   domain,
+		webAuthn:    webAuthn,
+		repo:        repos.Account(),
+		domain:      domain,
+		auditLogger: NewAuditLogger(repos, common.Logger(), DefaultAuditConfig()),
 		parseCreationResponse: func(data []byte) (*protocol.ParsedCredentialCreationData, error) {
 			return protocol.ParseCredentialCreationResponseBytes(data)
 		},
@@ -281,6 +284,13 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 
 	if err := s.repo.StoreWebAuthnCredential(ctx, storedCredential); err != nil {
 		return errors.Join(ErrCredentialStorage, err)
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnRegistrationCompleted, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "added",
+			"registration_mode":     "authenticated",
+		}, true, nil)
 	}
 
 	// Delete the used challenge
@@ -524,24 +534,28 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		return ErrCredentialNotFound
 	}
 
-	// Make sure user has at least one other auth method
-	credentials, err := s.repo.GetUserWebAuthnCredentials(ctx, username)
+	plan, err := planAuthenticatorRemoval(ctx, s.repo, username, authenticatorRemovalPasskey, credential.ID, "")
 	if err != nil {
 		return err
 	}
 
-	if len(credentials) <= 1 {
-		// Ensure the user has at least one other auth method (wallet).
-		wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
-		if err != nil {
-			return err
-		}
-		if len(wallets) == 0 {
-			return ErrLastAuthMethodDelete
-		}
+	if err := s.repo.DeleteWebAuthnCredentialConditionedOnSurvivor(
+		ctx,
+		username,
+		credentialID,
+		plan.survivingPasskeyID,
+		plan.survivingWalletAddress,
+	); err != nil {
+		return classifyGuardedWebAuthnRemovalFailure(ctx, s.repo, username, credentialID, err)
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnCredentialRemoved, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "removed",
+		}, true, nil)
 	}
 
-	return s.repo.DeleteWebAuthnCredential(ctx, credentialID)
+	return nil
 }
 
 // UpdateCredentialName updates the display name of a credential

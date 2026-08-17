@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -189,7 +189,10 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *apptheory.Context) (
 		return h.respondBadRequest(ctx, "invalid response payload")
 	}
 
-	err = authService.FinishWebAuthnRegistration(ctx.Context(), username, req.Challenge, rawResponse, req.CredentialName)
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	requestCtx := auth.WithAuditRequestMetadata(ctx.Context(), ipAddress, userAgent)
+
+	err = authService.FinishWebAuthnRegistration(requestCtx, username, req.Challenge, rawResponse, req.CredentialName)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "complete registration")
 	}
@@ -338,13 +341,16 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *apptheory.Context) (*a
 		return resp, err
 	}
 
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	requestCtx := auth.WithAuditRequestMetadata(ctx.Context(), ipAddress, userAgent)
+
 	// Delete credential
-	err = authService.DeleteWebAuthnCredential(ctx.Context(), username, credentialID)
+	err = authService.DeleteWebAuthnCredential(requestCtx, username, credentialID)
 	if err != nil {
-		if err == auth.ErrCredentialNotFound {
+		if errors.Is(err, auth.ErrCredentialNotFound) {
 			return h.respondWithError(ctx, http.StatusNotFound, "credential not found")
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "cannot delete last authentication method") {
+		if errors.Is(err, auth.ErrLastAuthMethodDelete) {
 			return h.respondBadRequest(ctx, "cannot delete last authentication method")
 		}
 		h.logger.Error("failed to delete WebAuthn credential", zap.Error(err))

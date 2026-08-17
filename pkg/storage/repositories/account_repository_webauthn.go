@@ -2,13 +2,14 @@ package repositories
 
 import (
 	"context"
-	"errors"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/theory-cloud/tabletheory/v3"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
@@ -123,6 +124,30 @@ func deleteWebAuthnCredentialRecord(ctx context.Context, db core.DB, credentialI
 		Where("PK", "=", credential.PK).
 		Where("SK", "=", credential.SK).
 		Delete()
+}
+
+func newWebAuthnCredentialKeyModel(username, credentialID string) *models.WebAuthnCredential {
+	model := &models.WebAuthnCredential{
+		ID:     credentialID,
+		UserID: username,
+	}
+	ensureWebAuthnCredentialCanonicalKeys(model)
+	return model
+}
+
+func newWalletCredentialKeyModel(username, address string) *models.WalletCredential {
+	model := &models.WalletCredential{
+		Username: username,
+		Address:  strings.ToLower(address),
+	}
+	_ = model.UpdateKeys()
+	return model
+}
+
+func newWalletIndexKeyModel(username, address, walletType string) *models.WalletIndex {
+	index := &models.WalletIndex{}
+	index.UpdateKeys(walletType, address, username)
+	return index
 }
 
 func updateWebAuthnCredentialLastUsedRecord(ctx context.Context, db core.DB, credentialID string, signCount uint32) error {
@@ -285,6 +310,45 @@ func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, creden
 	return nil
 }
 
+// DeleteWebAuthnCredentialConditionedOnSurvivor removes a passkey only if the
+// caller-provided surviving authenticator still exists at commit time.
+func (r *AccountRepository) DeleteWebAuthnCredentialConditionedOnSurvivor(
+	ctx context.Context,
+	username string,
+	credentialID string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	target := newWebAuthnCredentialKeyModel(username, credentialID)
+	survivor, err := guardedAuthenticatorModel(username, survivingPasskeyID, survivingWalletAddress)
+	if err != nil {
+		return err
+	}
+
+	err = r.transactWrite(ctx, func(tx core.TransactionBuilder) error {
+		tx.Delete(target, tabletheory.IfExists())
+		tx.ConditionCheck(survivor, tabletheory.IfExists())
+		return nil
+	})
+	if err != nil {
+		r.logAuthenticatorTransactionError("guarded WebAuthn delete failed", err,
+			zap.String("username", username),
+			zap.String("credential_id", credentialID),
+			zap.String("surviving_passkey_id", survivingPasskeyID),
+			zap.String("surviving_wallet_address", survivingWalletAddress),
+		)
+		if dynamormerrors.IsConditionFailed(err) {
+			return err
+		}
+		return ErrorHandler.HandleDeleteError(err, EntityWebAuthnCredential, credentialID)
+	}
+
+	r.logger.Info("deleted WebAuthn credential with survivor guard",
+		zap.String("username", username),
+		zap.String("credential_id", credentialID))
+	return nil
+}
+
 // UpdateWebAuthnLastUsed updates the last used timestamp and sign count for a credential
 func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error {
 	err := updateWebAuthnCredentialLastUsedRecord(ctx, r.db, credentialID, signCount)
@@ -394,7 +458,7 @@ func (r *AccountRepository) GetWebAuthnChallenge(ctx context.Context, challenge 
 				zap.String("challenge", challenge),
 				zap.Error(err))
 		}
-		return nil, ErrorHandler.HandleNotFound(errors.New("challenge expired"), EntityWebAuthnChallenge, challenge)
+		return nil, ErrorHandler.HandleNotFound(stdErrors.New("challenge expired"), EntityWebAuthnChallenge, challenge)
 	}
 
 	return &storage.WebAuthnChallenge{
@@ -429,12 +493,12 @@ func (r *AccountRepository) StoreWalletCredential(ctx context.Context, credentia
 	if credential.Username == "" {
 		r.logger.Error("username is required for wallet credential",
 			zap.String("address", credential.Address))
-		return ErrorHandler.HandleCreateError(errors.New("username is required"), EntityWalletCredential, credential.Address)
+		return ErrorHandler.HandleCreateError(stdErrors.New("username is required"), EntityWalletCredential, credential.Address)
 	}
 	if credential.Address == "" {
 		r.logger.Error("address is required for wallet credential",
 			zap.String("username", credential.Username))
-		return ErrorHandler.HandleCreateError(errors.New("address is required"), EntityWalletCredential, credential.Username)
+		return ErrorHandler.HandleCreateError(stdErrors.New("address is required"), EntityWalletCredential, credential.Username)
 	}
 
 	model := &models.WalletCredential{
@@ -459,7 +523,7 @@ func (r *AccountRepository) StoreWalletCredential(ctx context.Context, credentia
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		if dynamormerrors.IsConditionFailed(err) {
-			return ErrorHandler.HandleCreateError(errors.New("already exists"), EntityWalletCredential, credential.Address)
+			return ErrorHandler.HandleCreateError(stdErrors.New("already exists"), EntityWalletCredential, credential.Address)
 		}
 		r.logger.Error("failed to store wallet credential",
 			zap.String("address", credential.Address),
@@ -698,7 +762,7 @@ func (r *AccountRepository) GetWalletChallenge(ctx context.Context, challengeID 
 				zap.String("challengeID", challengeID),
 				zap.Error(err))
 		}
-		return nil, ErrorHandler.HandleNotFound(errors.New("challenge expired"), EntityWalletChallenge, challengeID)
+		return nil, ErrorHandler.HandleNotFound(stdErrors.New("challenge expired"), EntityWalletChallenge, challengeID)
 	}
 
 	return &storage.WalletChallenge{
@@ -847,7 +911,7 @@ func (r *AccountRepository) GetWalletByAddress(ctx context.Context, walletType, 
 
 	// Filter by wallet type if specified
 	if walletType != "" && wallet.Type != walletType {
-		return nil, ErrorHandler.HandleNotFound(errors.New("type mismatch"), EntityWalletCredential, address)
+		return nil, ErrorHandler.HandleNotFound(stdErrors.New("type mismatch"), EntityWalletCredential, address)
 	}
 
 	return wallet, nil
@@ -896,4 +960,90 @@ func (r *AccountRepository) DeleteWalletCredential(ctx context.Context, username
 	}
 
 	return nil
+}
+
+// DeleteWalletCredentialConditionedOnSurvivor removes a wallet only if the
+// caller-provided surviving authenticator still exists at commit time.
+func (r *AccountRepository) DeleteWalletCredentialConditionedOnSurvivor(
+	ctx context.Context,
+	username, address, walletType string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	address = strings.ToLower(address)
+	target := newWalletCredentialKeyModel(username, address)
+	survivor, err := guardedAuthenticatorModel(username, survivingPasskeyID, survivingWalletAddress)
+	if err != nil {
+		return err
+	}
+
+	err = r.transactWrite(ctx, func(tx core.TransactionBuilder) error {
+		tx.Delete(target, tabletheory.IfExists())
+		tx.ConditionCheck(survivor, tabletheory.IfExists())
+		return nil
+	})
+	if err != nil {
+		r.logAuthenticatorTransactionError("guarded wallet delete failed", err,
+			zap.String("username", username),
+			zap.String("address", address),
+			zap.String("surviving_passkey_id", survivingPasskeyID),
+			zap.String("surviving_wallet_address", survivingWalletAddress),
+		)
+		if dynamormerrors.IsConditionFailed(err) {
+			return err
+		}
+		return ErrorHandler.HandleDeleteError(err, EntityWalletCredential, address)
+	}
+
+	r.deleteWalletIndexEntriesBestEffort(ctx, username, address, walletType)
+
+	r.logger.Info("deleted wallet credential with survivor guard",
+		zap.String("username", username),
+		zap.String("address", address),
+		zap.String("wallet_type", walletType))
+	return nil
+}
+
+func guardedAuthenticatorModel(username, survivingPasskeyID, survivingWalletAddress string) (any, error) {
+	if strings.TrimSpace(survivingPasskeyID) != "" {
+		return newWebAuthnCredentialKeyModel(username, survivingPasskeyID), nil
+	}
+	if strings.TrimSpace(survivingWalletAddress) != "" {
+		return newWalletCredentialKeyModel(username, survivingWalletAddress), nil
+	}
+	return nil, storage.ErrInvalidInput
+}
+
+func (r *AccountRepository) deleteWalletIndexEntriesBestEffort(ctx context.Context, username, address, walletType string) {
+	walletTypes := []string{"ethereum", "solana", "bitcoin"}
+	if strings.TrimSpace(walletType) != "" {
+		walletTypes = []string{walletType}
+	}
+
+	for _, candidateType := range walletTypes {
+		indexErr := r.db.WithContext(ctx).Model(newWalletIndexKeyModel(username, address, candidateType)).
+			Where("PK", "=", fmt.Sprintf("WALLET#%s#%s", candidateType, strings.ToLower(address))).
+			Where("SK", "=", fmt.Sprintf("USER#%s", username)).
+			Delete()
+
+		if indexErr != nil && !dynamormerrors.IsNotFound(indexErr) {
+			r.logger.Warn("failed to delete wallet index entry after guarded wallet delete",
+				zap.String("username", username),
+				zap.String("address", address),
+				zap.String("walletType", candidateType),
+				zap.Error(indexErr))
+		}
+	}
+}
+
+func (r *AccountRepository) logAuthenticatorTransactionError(message string, err error, fields ...zap.Field) {
+	var txErr *dynamormerrors.TransactionError
+	if stdErrors.As(err, &txErr) {
+		fields = append(fields,
+			zap.Int("transaction_op_index", txErr.OperationIndex),
+			zap.String("transaction_operation", txErr.Operation),
+			zap.String("transaction_reason", txErr.Reason),
+		)
+	}
+	r.logger.Warn(message, append(fields, zap.Error(err))...)
 }

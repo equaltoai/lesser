@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -363,7 +365,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		require.True(t, state.walletChallengesByID["c1"].Spent)
 	})
 
-	t.Run("link_wallet_session_creation_error_restores_retry_for_new_link", func(t *testing.T) {
+	t.Run("link_wallet_session_creation_error_restores_retry_without_unlinking_new_wallet", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -391,7 +393,8 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		challenge := state.walletChallengesByID["c1"]
 		require.False(t, challenge.Spent)
-		require.Empty(t, state.walletCredentialsByAddress)
+		require.Len(t, state.walletCredentialsByAddress, 1)
+		require.Contains(t, state.walletCredentialsByAddress, strings.ToLower(address))
 
 		user := state.usersByUsername["alice"]
 		user.Approved = true
@@ -408,6 +411,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxRetry))
 		require.True(t, state.walletChallengesByID["c1"].Spent)
+		require.Len(t, state.walletCredentialsByAddress, 1)
 	})
 
 	t.Run("unlink_wallet_unauthorized_returns_401", func(t *testing.T) {
@@ -427,8 +431,80 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(handler.HandleUnlinkWalletLift(ctx))
 	})
 
+	t.Run("unlink_wallet_last_authenticator_returns_400", func(t *testing.T) {
+		state := &round10QueryState{
+			webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
+				"alice": {},
+			},
+			walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+				"alice": {
+					{Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+				},
+			},
+		}
+		handler, repos, _ := round11NewHandler(t, cfg, state)
+		authService, err := auth.NewAuthService(cfg, repos)
+		require.NoError(t, err)
+		require.ErrorIs(t, authService.UnlinkWallet(context.Background(), "alice", "0xabc"), auth.ErrLastAuthMethodDelete)
+
+		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["address"] = "0xabc"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUnlinkWalletLift(ctx))
+	})
+
+	t.Run("unlink_wallet_double_unlink_returns_404", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Role: "user", Approved: true, Version: 1, CreatedAt: now.Add(-time.Hour)},
+			},
+			webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
+				"alice": {
+					{ID: "cred-1", UserID: "alice"},
+				},
+			},
+			walletCredentialsByAddress: map[string]storagemodels.WalletCredential{
+				"0xabc": {Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+			},
+			walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+				"alice": {
+					{Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctxFirst, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)
+		require.NoError(t, err)
+		ctxFirst.Params["address"] = "0xabc"
+		requireStatus(t, http.StatusOK)(handler.HandleUnlinkWalletLift(ctxFirst))
+
+		ctxSecond, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)
+		require.NoError(t, err)
+		ctxSecond.Params["address"] = "0xabc"
+		requireStatus(t, http.StatusNotFound)(handler.HandleUnlinkWalletLift(ctxSecond))
+	})
+
 	t.Run("unlink_wallet_delete_error_returns_500", func(t *testing.T) {
-		state := &round10QueryState{deleteErrorOnce: errors.New("delete failed")}
+		state := &round10QueryState{
+			deleteErrorOnce: errors.New("delete failed"),
+			webAuthnCredentialByID: map[string]storagemodels.WebAuthnCredential{
+				"Y3JlZA==": {ID: "Y3JlZA==", UserID: "alice"},
+			},
+			webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
+				"alice": {
+					{ID: "Y3JlZA==", UserID: "alice"},
+				},
+			},
+			walletCredentialsByAddress: map[string]storagemodels.WalletCredential{
+				"0xabc": {Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+			},
+			walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+				"alice": {
+					{Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+				},
+			},
+		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)

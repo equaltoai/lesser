@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -522,10 +524,229 @@ func round10NewLiftContextWithBodyBytes(method, path string, headers, query map[
 }
 
 type round10DynamoHarness struct {
-	db     *mocks.MockDB
+	db     *round10TransactionalDB
 	query  *mocks.MockQuery
 	update *mocks.MockUpdateBuilder
 	state  *round10QueryState
+}
+
+type round10TransactionalDB struct {
+	inner *mocks.MockDB
+	state *round10QueryState
+}
+
+func (db *round10TransactionalDB) Model(model any) dynamormcore.Query {
+	return db.inner.Model(model)
+}
+
+func (db *round10TransactionalDB) Migrate() error {
+	return db.inner.Migrate()
+}
+
+func (db *round10TransactionalDB) AutoMigrate(models ...any) error {
+	return db.inner.AutoMigrate(models...)
+}
+
+func (db *round10TransactionalDB) Close() error {
+	return db.inner.Close()
+}
+
+func (db *round10TransactionalDB) WithContext(context.Context) dynamormcore.DB {
+	return db
+}
+
+func (db *round10TransactionalDB) Transact() dynamormcore.TransactionBuilder {
+	return &round10TransactionBuilder{state: db.state}
+}
+
+func (db *round10TransactionalDB) TransactWrite(_ context.Context, fn func(dynamormcore.TransactionBuilder) error) error {
+	builder := &round10TransactionBuilder{state: db.state}
+	if err := fn(builder); err != nil {
+		return err
+	}
+	return builder.Execute()
+}
+
+type round10TransactionBuilder struct {
+	state      *round10QueryState
+	operations []round10TransactionOperation
+}
+
+type round10TransactionOperation struct {
+	kind       string
+	model      any
+	conditions []dynamormcore.TransactCondition
+}
+
+func (b *round10TransactionBuilder) Put(any, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Create(any, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Update(any, []string, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) UpdateWithBuilder(any, func(dynamormcore.UpdateBuilder) error, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Delete(model any, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{
+		kind:       "delete",
+		model:      model,
+		conditions: append([]dynamormcore.TransactCondition(nil), conditions...),
+	})
+	return b
+}
+
+func (b *round10TransactionBuilder) ConditionCheck(model any, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{
+		kind:       "condition_check",
+		model:      model,
+		conditions: append([]dynamormcore.TransactCondition(nil), conditions...),
+	})
+	return b
+}
+
+func (b *round10TransactionBuilder) WithContext(context.Context) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Execute() error {
+	for idx, operation := range b.operations {
+		if !round10TransactionConditionsMet(b.state, operation.model, operation.conditions) {
+			return &dynamormerrors.TransactionError{
+				Err:            dynamormerrors.ErrConditionFailed,
+				Operation:      operation.kind,
+				OperationIndex: idx,
+				Reason:         "ConditionalCheckFailed",
+			}
+		}
+	}
+
+	for idx, operation := range b.operations {
+		if operation.kind != "delete" {
+			continue
+		}
+		if b.state.deleteErrorOnce != nil {
+			err := b.state.deleteErrorOnce
+			b.state.deleteErrorOnce = nil
+			return err
+		}
+		if !round10TransactionDeleteModel(b.state, operation.model) {
+			return &dynamormerrors.TransactionError{
+				Err:            dynamormerrors.ErrConditionFailed,
+				Operation:      operation.kind,
+				OperationIndex: idx,
+				Reason:         "ConditionalCheckFailed",
+			}
+		}
+	}
+
+	return nil
+}
+
+func (b *round10TransactionBuilder) ExecuteWithContext(context.Context) error {
+	return b.Execute()
+}
+
+func round10TransactionConditionsMet(state *round10QueryState, model any, conditions []dynamormcore.TransactCondition) bool {
+	for _, condition := range conditions {
+		switch condition.Kind {
+		case dynamormcore.TransactConditionKindPrimaryKeyExists:
+			if !round10TransactionModelExists(state, model) {
+				return false
+			}
+		case dynamormcore.TransactConditionKindPrimaryKeyNotExists:
+			if round10TransactionModelExists(state, model) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func round10TransactionModelExists(state *round10QueryState, model any) bool {
+	switch typed := model.(type) {
+	case *storagemodels.WebAuthnCredential:
+		if typed == nil {
+			return false
+		}
+		credential := round10CanonicalizeWebAuthnCredential(*typed)
+		if _, ok := state.webAuthnCredentialByID[credential.ID]; ok {
+			return true
+		}
+		for _, creds := range state.webAuthnCredentialsByUser {
+			for _, candidate := range creds {
+				if candidate.ID == credential.ID {
+					return true
+				}
+			}
+		}
+		return false
+	case *storagemodels.WalletCredential:
+		if typed == nil {
+			return false
+		}
+		username := strings.TrimSpace(typed.Username)
+		address := strings.ToLower(strings.TrimSpace(typed.Address))
+		if _, ok := state.walletCredentialsByAddress[address]; ok {
+			return true
+		}
+		for _, wallet := range state.walletCredentialsByUser[username] {
+			if strings.EqualFold(wallet.Address, address) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func round10TransactionDeleteModel(state *round10QueryState, model any) bool {
+	switch typed := model.(type) {
+	case *storagemodels.WebAuthnCredential:
+		if typed == nil {
+			return false
+		}
+		credential := round10CanonicalizeWebAuthnCredential(*typed)
+		if !round10TransactionModelExists(state, typed) {
+			return false
+		}
+		round10DeleteWebAuthnCredential(state, credential.ID)
+		return true
+	case *storagemodels.WalletCredential:
+		if typed == nil {
+			return false
+		}
+		username := strings.TrimSpace(typed.Username)
+		address := strings.ToLower(strings.TrimSpace(typed.Address))
+		if !round10TransactionModelExists(state, typed) {
+			return false
+		}
+		delete(state.walletCredentialsByAddress, address)
+		wallets := state.walletCredentialsByUser[username]
+		filtered := wallets[:0]
+		for _, wallet := range wallets {
+			if strings.EqualFold(wallet.Address, address) {
+				continue
+			}
+			filtered = append(filtered, wallet)
+		}
+		if len(filtered) == 0 {
+			delete(state.walletCredentialsByUser, username)
+		} else {
+			state.walletCredentialsByUser[username] = filtered
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10DynamoHarness {
@@ -2980,7 +3201,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}).Maybe()
 
 	return &round10DynamoHarness{
-		db:     mockDB,
+		db:     &round10TransactionalDB{inner: mockDB, state: state},
 		query:  mockQuery,
 		update: mockUpdate,
 		state:  state,

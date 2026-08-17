@@ -25,6 +25,29 @@ var accountAuthRandRead = rand.Read
 
 const entityPasskeyRegistrationProof = "passkey registration proof"
 
+func passkeyProofLogFields(proofID, username, ceremonyID string) []zap.Field {
+	fields := []zap.Field{
+		zap.Bool("proof_reference_present", strings.TrimSpace(proofID) != ""),
+	}
+	if strings.TrimSpace(username) != "" {
+		fields = append(fields, zap.String("username", username))
+	}
+	if strings.TrimSpace(ceremonyID) != "" {
+		fields = append(fields, zap.Bool("ceremony_reference_present", true))
+	}
+	return fields
+}
+
+func webAuthnChallengeLogFields(challengeID, userID string) []zap.Field {
+	fields := []zap.Field{
+		zap.Bool("challenge_reference_present", strings.TrimSpace(challengeID) != ""),
+	}
+	if strings.TrimSpace(userID) != "" {
+		fields = append(fields, zap.String("userID", userID))
+	}
+	return fields
+}
+
 // ValidatePassword validates a user's password and tracks login attempts
 func (r *AccountRepository) ValidatePassword(ctx context.Context, username, password string) (*storage.User, error) {
 	// Get user first
@@ -1133,21 +1156,14 @@ func (r *AccountRepository) StorePasskeyRegistrationProof(ctx context.Context, p
 		"failed to prepare passkey registration proof",
 		"failed to store passkey registration proof",
 		func(model *models.PasskeyRegistrationProof) []zap.Field {
-			return []zap.Field{
-				zap.String("proof_id", model.ID),
-				zap.String("username", model.Username),
-				zap.String("ceremony_id", model.CeremonyID),
-			}
+			return passkeyProofLogFields(model.ID, model.Username, model.CeremonyID)
 		},
 	)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, entityPasskeyRegistrationProof, proof.ID)
 	}
 
-	r.logger.Debug("stored passkey registration proof",
-		zap.String("proof_id", proof.ID),
-		zap.String("username", proof.Username),
-		zap.String("ceremony_id", proof.CeremonyID))
+	r.logger.Debug("stored passkey registration proof", passkeyProofLogFields(proof.ID, proof.Username, proof.CeremonyID)...)
 
 	return nil
 }
@@ -1167,17 +1183,15 @@ func (r *AccountRepository) GetPasskeyRegistrationProof(ctx context.Context, pro
 		if errors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleNotFound(err, entityPasskeyRegistrationProof, proofID)
 		}
-		r.logger.Error("failed to get passkey registration proof",
-			zap.String("proof_id", proofID),
-			zap.Error(err))
+		fields := append(passkeyProofLogFields(proofID, "", ""), zap.Error(err))
+		r.logger.Error("failed to get passkey registration proof", fields...)
 		return nil, ErrorHandler.HandleGetError(err, entityPasskeyRegistrationProof, proofID)
 	}
 
 	if proof.IsExpired(time.Now().UTC()) {
 		if delErr := r.DeletePasskeyRegistrationProof(ctx, proofID); delErr != nil {
-			r.logger.Warn("failed to delete expired passkey registration proof",
-				zap.String("proof_id", proofID),
-				zap.Error(delErr))
+			fields := append(passkeyProofLogFields(proofID, "", ""), zap.Error(delErr))
+			r.logger.Warn("failed to delete expired passkey registration proof", fields...)
 		}
 		return nil, ErrorHandler.HandleNotFound(storage.ErrNotFound, entityPasskeyRegistrationProof, proofID)
 	}
@@ -1192,9 +1206,8 @@ func (r *AccountRepository) DeletePasskeyRegistrationProof(ctx context.Context, 
 		Where("SK", "=", models.SKPasskeyRegistrationProof).
 		Delete()
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Error("failed to delete passkey registration proof",
-			zap.String("proof_id", proofID),
-			zap.Error(err))
+		fields := append(passkeyProofLogFields(proofID, "", ""), zap.Error(err))
+		r.logger.Error("failed to delete passkey registration proof", fields...)
 		return ErrorHandler.HandleDeleteError(err, entityPasskeyRegistrationProof, proofID)
 	}
 
@@ -1221,9 +1234,8 @@ func (r *AccountRepository) ConsumePasskeyRegistrationProof(ctx context.Context,
 	now := time.Now().UTC()
 	update, err := keyedUpdateBuilder(ctx, r.db, &models.PasskeyRegistrationProof{ID: proofID})
 	if err != nil {
-		r.logger.Error("failed to build passkey registration proof consume update",
-			zap.String("proof_id", proofID),
-			zap.Error(err))
+		fields := append(passkeyProofLogFields(proofID, "", ceremonyID), zap.Error(err))
+		r.logger.Error("failed to build passkey registration proof consume update", fields...)
 		return nil, ErrorHandler.HandleUpdateError(err, entityPasskeyRegistrationProof, proofID)
 	}
 
@@ -1236,21 +1248,15 @@ func (r *AccountRepository) ConsumePasskeyRegistrationProof(ctx context.Context,
 		Condition("CeremonyID", "=", strings.TrimSpace(ceremonyID)).
 		Execute()
 	if err != nil {
-		r.logger.Warn("failed to consume passkey registration proof",
-			zap.String("proof_id", proofID),
-			zap.String("username", username),
-			zap.String("ceremony_id", ceremonyID),
-			zap.Error(err))
+		fields := append(passkeyProofLogFields(proofID, username, ceremonyID), zap.Error(err))
+		r.logger.Warn("failed to consume passkey registration proof", fields...)
 		return nil, ErrorHandler.HandleUpdateError(err, entityPasskeyRegistrationProof, proofID)
 	}
 
 	proof.Consumed = true
 	proof.ConsumedAt = now
 
-	r.logger.Debug("consumed passkey registration proof",
-		zap.String("proof_id", proofID),
-		zap.String("username", username),
-		zap.String("ceremony_id", ceremonyID))
+	r.logger.Debug("consumed passkey registration proof", passkeyProofLogFields(proofID, username, ceremonyID)...)
 
 	return proof, nil
 }
@@ -1287,16 +1293,12 @@ func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challeng
 	// Store in DynamoDB
 	err = r.db.WithContext(ctx).Model(modelChallenge).Create()
 	if err != nil {
-		r.logger.Error("failed to store WebAuthn challenge",
-			zap.String("challenge", challenge.Challenge),
-			zap.String("userID", challenge.UserID),
-			zap.Error(err))
+		fields := append(webAuthnChallengeLogFields(challenge.Challenge, challenge.UserID), zap.Error(err))
+		r.logger.Error("failed to store WebAuthn challenge", fields...)
 		return ErrorHandler.HandleCreateError(err, EntityWebAuthnChallenge, challenge.Challenge)
 	}
 
-	r.logger.Debug("WebAuthn challenge stored successfully",
-		zap.String("challenge", challenge.Challenge),
-		zap.String("userID", challenge.UserID))
+	r.logger.Debug("WebAuthn challenge stored successfully", webAuthnChallengeLogFields(challenge.Challenge, challenge.UserID)...)
 
 	return nil
 }
