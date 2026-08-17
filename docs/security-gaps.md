@@ -271,15 +271,20 @@ turns “link wallet” into an account-takeover vector.
 
 ## P1 — Registration proof missing: `/api/v1/accounts` does not require wallet/WebAuthn verification
 
-**Status:** confirmed  
+**Status:** fixed (2026-08-17)  
 **Confidence:** 8/10  
 
-Registration currently accepts a username + agreement without requiring a passwordless proof-of-control step (wallet
-signature or WebAuthn attestation). This makes “registration” a remotely callable operation without the intended
-WebAuthn/wallet proof.
+Public registration no longer accepts username + agreement alone. `POST /api/v1/accounts` now requires exactly one
+passwordless proof-of-control step before account creation:
+- a verified wallet challenge, or
+- a single-use WebAuthn passkey registration proof produced by the public signup ceremony.
+
+The legacy GraphQL `registerAccount` mutation is now deprecated and fails closed with an actionable error directing
+callers to `POST /api/v1/accounts`; it no longer provides a proof-less registration path.
 
 **Primary location:**
 - `cmd/api/handlers/accounts.go` (`HandleRegistrationLift`)
+- `graph/mutation_resolvers_accounts.go` (`RegisterAccount`)
 
 **Recommendation (implemented as part of remediation):**
 - Require a verified wallet challenge (or WebAuthn flow) as a precondition to account creation.

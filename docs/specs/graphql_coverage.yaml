@@ -12,6 +12,7 @@ exemptions:
       reason: Wallet auth, WebAuthn, and setup bootstrap flows are REST-only.
       match:
         exact:
+            - /api/v1/accounts
             - /auth/device
         prefixes:
             - /auth/wallet
@@ -122,10 +123,8 @@ routes:
       exemptedBy: embeds
     - method: POST
       path: /api/v1/accounts
-      policy: graphql_required
-      status: covered
-      graphql:
-        - Mutation.registerAccount
+      policy: rest_only
+      exemptedBy: auth_setup
     - method: GET
       path: /api/v1/accounts/lookup
       policy: graphql_required
