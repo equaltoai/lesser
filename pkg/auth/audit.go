@@ -463,11 +463,19 @@ func (al *AuditLogger) LogOAuthClientSecretRotation(ctx context.Context, usernam
 	al.logEventBestEffort(ctx, event)
 }
 
-// LogWebAuthn logs WebAuthn operations
-func (al *AuditLogger) LogWebAuthn(ctx context.Context, username, ipAddress, userAgent string, eventType AuditEventType, credentialID string, success bool, err error) {
+// LogAuthEvent logs a generic authentication audit event with caller-supplied safe metadata.
+func (al *AuditLogger) LogAuthEvent(ctx context.Context, username, ipAddress, userAgent string, eventType AuditEventType, metadata map[string]interface{}, success bool, err error) {
 	failureReason := ""
 	if err != nil {
 		failureReason = err.Error()
+	}
+
+	var safeMetadata map[string]interface{}
+	if len(metadata) > 0 {
+		safeMetadata = make(map[string]interface{}, len(metadata))
+		for key, value := range metadata {
+			safeMetadata[key] = value
+		}
 	}
 
 	event := &AuditEvent{
@@ -477,13 +485,22 @@ func (al *AuditLogger) LogWebAuthn(ctx context.Context, username, ipAddress, use
 		UserAgent:     userAgent,
 		Success:       success,
 		FailureReason: failureReason,
-		Metadata: map[string]interface{}{
-			"credential_id":         credentialID,
-			"authentication_method": "webauthn",
-		},
+		Metadata:      safeMetadata,
 	}
 
 	al.logEventBestEffort(ctx, event)
+}
+
+// LogWebAuthn logs WebAuthn operations
+func (al *AuditLogger) LogWebAuthn(ctx context.Context, username, ipAddress, userAgent string, eventType AuditEventType, credentialID string, success bool, err error) {
+	metadata := map[string]interface{}{
+		"authentication_method": "webauthn",
+	}
+	if strings.TrimSpace(credentialID) != "" {
+		metadata["credential_reference_present"] = true
+	}
+
+	al.LogAuthEvent(ctx, username, ipAddress, userAgent, eventType, metadata, success, err)
 }
 
 // LogSession logs session operations
@@ -702,6 +719,7 @@ func (al *AuditLogger) determineSeverity(eventType AuditEventType, success bool)
 			AuditPasswordChangeFailed,
 			AuditOAuthAuthorizeFailed,
 			AuditOAuthClientSecretRotationFailed,
+			AuditWebAuthnRegistrationFailed,
 			AuditWebAuthnLoginFailed,
 			AuditWalletLoginFailed,
 			AuditTwoFactorFailed,
@@ -920,7 +938,14 @@ func (al *AuditLogger) redactSensitiveData(event *AuditEvent) {
 	// Redact sensitive fields in metadata
 	if event.Metadata != nil {
 		sensitiveKeys := []string{"password", "token", "secret", "key", "credential"}
+		safeKeys := map[string]struct{}{
+			"credential_event":             {},
+			"credential_reference_present": {},
+		}
 		for key := range event.Metadata {
+			if _, ok := safeKeys[key]; ok {
+				continue
+			}
 			for _, sensitive := range sensitiveKeys {
 				if strings.Contains(strings.ToLower(key), sensitive) {
 					event.Metadata[key] = "[REDACTED]"

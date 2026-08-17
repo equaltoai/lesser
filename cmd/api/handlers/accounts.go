@@ -55,6 +55,8 @@ func (req updateCredentialsPatchRequest) accountParams() map[string]interface{} 
 	return params
 }
 
+type passkeyProofAuditRecorder func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{})
+
 // HandleRegistrationLift handles user registration requests
 func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request body
@@ -68,6 +70,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 	req.Username = accounts.NormalizeUsernameForDomain(req.Username, h.cfg.Domain)
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
 
 	// Require wallet verification as the registration proof (passwordless signup).
 	// The auth-ui flow calls POST /auth/wallet/verify first, which marks the challenge as used.
@@ -78,28 +81,9 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 
 	challengeID := strings.TrimSpace(req.WalletChallengeID)
 	passkeyProofID := strings.TrimSpace(req.PasskeyRegistrationProof)
-	if challengeID != "" {
-		challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
-		if err != nil || challenge == nil {
-			return common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
-		}
-		if accounts.NormalizeUsernameForDomain(challenge.Username, h.cfg.Domain) != req.Username {
-			return common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
-		}
-		if !challenge.Used {
-			return common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
-		}
-		if challenge.Spent {
-			return common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
-		}
-	} else {
-		proof, err := authService.GetPasskeyRegistrationProof(ctx.Context(), passkeyProofID)
-		if err != nil || proof == nil || proof.Consumed {
-			return common.RespondUnprocessableEntity(ctx, "passkey_registration_proof is invalid or expired")
-		}
-		if accounts.NormalizeUsernameForDomain(proof.Username, h.cfg.Domain) != req.Username {
-			return common.RespondUnprocessableEntity(ctx, "passkey registration proof was created for a different username")
-		}
+	recordPasskeyProofAudit := h.newPasskeyProofAuditRecorder(ctx, req.Username, passkeyProofID, userAgent, ipAddress)
+	if proofResp := h.validateRegistrationCredentialProofLift(ctx, authService, req.Username, challengeID, passkeyProofID, recordPasskeyProofAudit); proofResp != nil {
+		return proofResp, nil
 	}
 
 	// NOTE: Password-based authentication is disabled. This system uses WebAuthn/crypto wallet authentication only.
@@ -130,6 +114,12 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		if errors.Is(err, accounts.ErrValidationFailed) {
 			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
+		if passkeyProofID != "" && strings.Contains(err.Error(), "failed to finalize passkey registration proof") {
+			recordPasskeyProofAudit(auth.AuditWebAuthnRegistrationFailed, false, err, map[string]interface{}{
+				"credential_event": "rejected",
+				"rejection_reason": "proof_consume_rejected",
+			})
+		}
 		// Log the full error for debugging
 		h.logger.Error("failed to register account",
 			zap.String("username", req.Username),
@@ -144,8 +134,86 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		Username: result.Account.User.Username,
 		Created:  true,
 	}
+	if passkeyProofID != "" {
+		recordPasskeyProofAudit(auth.AuditWebAuthnRegistrationCompleted, true, nil, map[string]interface{}{
+			"credential_event": "added",
+		})
+	}
 
 	return h.respondCreated(ctx, resp)
+}
+
+func (h *Handler) newPasskeyProofAuditRecorder(ctx *apptheory.Context, username, passkeyProofID, userAgent, ipAddress string) passkeyProofAuditRecorder {
+	passkeyAuditLogger := auth.NewAuditLogger(h.repos, h.logger, auth.DefaultAuditConfig())
+	return func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{}) {
+		if passkeyProofID == "" || passkeyAuditLogger == nil {
+			return
+		}
+		metadataWithDefaults := map[string]interface{}{
+			"authentication_method": "webauthn",
+			"registration_mode":     "signup",
+		}
+		for key, value := range metadata {
+			metadataWithDefaults[key] = value
+		}
+		passkeyAuditLogger.LogAuthEvent(ctx.Context(), username, ipAddress, userAgent, eventType, metadataWithDefaults, success, failure)
+	}
+}
+
+func (h *Handler) validateRegistrationCredentialProofLift(
+	ctx *apptheory.Context,
+	authService *auth.AuthService,
+	username, challengeID, passkeyProofID string,
+	recordPasskeyProofAudit passkeyProofAuditRecorder,
+) *apptheory.Response {
+	if challengeID != "" {
+		challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
+		if err != nil || challenge == nil {
+			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
+			return resp
+		}
+		if accounts.NormalizeUsernameForDomain(challenge.Username, h.cfg.Domain) != username {
+			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
+			return resp
+		}
+		if !challenge.Used {
+			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
+			return resp
+		}
+		if challenge.Spent {
+			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
+			return resp
+		}
+		return nil
+	}
+
+	proof, err := authService.GetPasskeyRegistrationProof(ctx.Context(), passkeyProofID)
+	if err != nil || proof == nil {
+		recordPasskeyProofAudit(auth.AuditWebAuthnRegistrationFailed, false, err, map[string]interface{}{
+			"credential_event": "rejected",
+			"rejection_reason": "proof_invalid_or_expired",
+		})
+		resp, _ := common.RespondUnprocessableEntity(ctx, "passkey_registration_proof is invalid or expired")
+		return resp
+	}
+	if proof.Consumed {
+		recordPasskeyProofAudit(auth.AuditWebAuthnRegistrationFailed, false, nil, map[string]interface{}{
+			"credential_event": "rejected",
+			"rejection_reason": "proof_replayed",
+		})
+		resp, _ := common.RespondUnprocessableEntity(ctx, "passkey_registration_proof is invalid or expired")
+		return resp
+	}
+	if accounts.NormalizeUsernameForDomain(proof.Username, h.cfg.Domain) != username {
+		recordPasskeyProofAudit(auth.AuditWebAuthnRegistrationFailed, false, nil, map[string]interface{}{
+			"credential_event": "rejected",
+			"rejection_reason": "proof_cross_user_rejected",
+		})
+		resp, _ := common.RespondUnprocessableEntity(ctx, "passkey registration proof was created for a different username")
+		return resp
+	}
+
+	return nil
 }
 
 // HandleVerifyCredentialsLift returns the current user's information

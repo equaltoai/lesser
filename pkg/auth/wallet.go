@@ -55,8 +55,9 @@ type WalletVerifyRequest struct {
 
 // WalletService handles wallet authentication
 type WalletService struct {
-	repo   walletRepository
-	logger *zap.Logger
+	repo        walletRepository
+	logger      *zap.Logger
+	auditLogger *AuditLogger
 }
 
 type walletRepository interface {
@@ -79,8 +80,9 @@ func NewWalletService(repos StorageProvider) *WalletService {
 		return &WalletService{logger: common.Logger()}
 	}
 	return &WalletService{
-		repo:   repos.Account(),
-		logger: common.Logger(),
+		repo:        repos.Account(),
+		logger:      common.Logger(),
+		auditLogger: NewAuditLogger(repos, common.Logger(), DefaultAuditConfig()),
 	}
 }
 
@@ -125,14 +127,15 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 
 	// Store challenge in DynamoDB
 	if err := s.repo.StoreWalletChallenge(ctx, challenge); err != nil {
-		s.logger.Error("failed to store wallet challenge", zap.Error(err), zap.String("challengeId", challenge.ID))
+		s.logger.Error("failed to store wallet challenge", append([]zap.Field{zap.Error(err)}, challengeLogFields(challenge.ID)...)...)
 		return nil, errors.Join(ErrChallengeStorage, err)
 	}
 
-	s.logger.Info("created wallet challenge",
-		zap.String("challengeId", challenge.ID),
+	fields := append(challengeLogFields(challenge.ID),
 		zap.String("address", address),
-		zap.Int("chainId", chainID))
+		zap.Int("chainId", chainID),
+	)
+	s.logger.Info("created wallet challenge", fields...)
 
 	return challenge, nil
 }
@@ -142,7 +145,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	// Get challenge from DynamoDB
 	challenge, err := s.repo.GetWalletChallenge(ctx, req.ChallengeID)
 	if err != nil {
-		s.logger.Error("failed to retrieve wallet challenge", zap.Error(err), zap.String("challengeId", req.ChallengeID))
+		s.logger.Error("failed to retrieve wallet challenge", append([]zap.Field{zap.Error(err)}, challengeLogFields(req.ChallengeID)...)...)
 		return "", errors.Join(ErrChallengeRetrieval, err)
 	}
 
@@ -155,9 +158,8 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 
 	// Check if challenge is already spent (used twice)
 	if challenge.Spent {
-		s.logger.Warn("challenge already spent",
-			zap.String("challengeId", req.ChallengeID),
-			zap.String("address", req.Address))
+		fields := append(challengeLogFields(req.ChallengeID), zap.String("address", req.Address))
+		s.logger.Warn("challenge already spent", fields...)
 		return "", ErrChallengeExpired
 	}
 
@@ -179,12 +181,10 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	// This prevents replay attacks where someone uses your signature for a different username
 	// The username was embedded in the message and signed by the wallet
 	if challenge.Username != "" {
-		s.logger.Info("challenge has username binding",
-			zap.String("challengeId", req.ChallengeID),
-			zap.String("bound_username", challenge.Username))
+		fields := append(challengeLogFields(req.ChallengeID), zap.String("bound_username", challenge.Username))
+		s.logger.Info("challenge has username binding", fields...)
 	} else {
-		s.logger.Warn("challenge created without username binding - this is a security risk",
-			zap.String("challengeId", req.ChallengeID))
+		s.logger.Warn("challenge created without username binding - this is a security risk", challengeLogFields(req.ChallengeID)...)
 	}
 
 	// Verify Ethereum signature
@@ -262,6 +262,13 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 		s.logger.Error("failed to store wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
 		return false, errors.Join(ErrWalletStorage, err)
 	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWalletConnected, map[string]interface{}{
+			"authentication_method": "wallet",
+			"credential_event":      "added",
+			"wallet_type":           walletType,
+		}, true, nil)
+	}
 
 	s.logger.Info("linked wallet to account",
 		zap.String("username", username),
@@ -299,6 +306,12 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 	if err := s.repo.DeleteWalletCredential(ctx, username, address); err != nil {
 		s.logger.Error("failed to delete wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
 		return errors.Join(ErrWalletDeletion, err)
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWalletDisconnected, map[string]interface{}{
+			"authentication_method": "wallet",
+			"credential_event":      "removed",
+		}, true, nil)
 	}
 
 	s.logger.Info("unlinked wallet from account",
@@ -367,6 +380,12 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 	}
 
 	return nil
+}
+
+func challengeLogFields(challengeID string) []zap.Field {
+	return []zap.Field{
+		zap.Bool("challenge_reference_present", strings.TrimSpace(challengeID) != ""),
+	}
 }
 
 func generateNonce() (string, error) {

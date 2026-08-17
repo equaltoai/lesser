@@ -245,9 +245,10 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		cfg := round10TestConfig()
 
 		t.Run("invalid_or_expired", func(t *testing.T) {
-			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			state := &round10QueryState{
 				notFoundPKSK: map[string]bool{"PASSKEY_REGISTRATION_PROOF#proof-1#PROOF": true},
-			}, &RegistryStub{
+			}
+			h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 				AccountsSvc: &AccountsServiceStub{
 					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
 						return nil, errors.New("unexpected service call")
@@ -263,10 +264,60 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 			require.NoError(t, err)
 
 			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+			entry := requireSingleAuditLog(t, state, "alice")
+			metadata := mustParseAuditMetadata(t, entry)
+			require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+			require.False(t, entry.Success)
+			require.Equal(t, "webauthn", metadata["authentication_method"])
+			require.Equal(t, "signup", metadata["registration_mode"])
+			require.Equal(t, "rejected", metadata["credential_event"])
+			require.Equal(t, "proof_invalid_or_expired", metadata["rejection_reason"])
+			require.NotContains(t, entry.Metadata, "proof-1")
+			require.NotContains(t, entry.FailureReason, "proof-1")
+		})
+
+		t.Run("proof_replayed", func(t *testing.T) {
+			state := &round10QueryState{
+				passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+					"proof-1": {
+						ID:         "proof-1",
+						Username:   "alice",
+						CeremonyID: "signup-1",
+						PublicKey:  []byte{0x01},
+						Consumed:   true,
+						CreatedAt:  time.Now().Add(-time.Minute),
+						ExpiresAt:  time.Now().Add(5 * time.Minute),
+					},
+				},
+			}
+			h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+				AccountsSvc: &AccountsServiceStub{
+					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+						return nil, errors.New("unexpected service call")
+					},
+				},
+			})
+
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+				Username:                 "alice",
+				Agreement:                true,
+				PasskeyRegistrationProof: "proof-1",
+			})
+			require.NoError(t, err)
+
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+			entry := requireSingleAuditLog(t, state, "alice")
+			metadata := mustParseAuditMetadata(t, entry)
+			require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+			require.False(t, entry.Success)
+			require.Equal(t, "rejected", metadata["credential_event"])
+			require.Equal(t, "proof_replayed", metadata["rejection_reason"])
+			require.NotContains(t, entry.Metadata, "proof-1")
+			require.Empty(t, entry.FailureReason)
 		})
 
 		t.Run("proof_bound_to_different_username", func(t *testing.T) {
-			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			state := &round10QueryState{
 				passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
 					"proof-1": {
 						ID:         "proof-1",
@@ -277,7 +328,8 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 						ExpiresAt:  time.Now().Add(5 * time.Minute),
 					},
 				},
-			}, &RegistryStub{
+			}
+			h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 				AccountsSvc: &AccountsServiceStub{
 					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
 						return nil, errors.New("unexpected service call")
@@ -293,6 +345,51 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 			require.NoError(t, err)
 
 			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+			entry := requireSingleAuditLog(t, state, "alice")
+			metadata := mustParseAuditMetadata(t, entry)
+			require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+			require.False(t, entry.Success)
+			require.Equal(t, "rejected", metadata["credential_event"])
+			require.Equal(t, "proof_cross_user_rejected", metadata["rejection_reason"])
+			require.NotContains(t, entry.Metadata, "proof-1")
+		})
+
+		t.Run("proof_consume_rejected", func(t *testing.T) {
+			state := &round10QueryState{
+				passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+					"proof-1": {
+						ID:         "proof-1",
+						Username:   "alice",
+						CeremonyID: "signup-1",
+						PublicKey:  []byte{0x01},
+						CreatedAt:  time.Now().Add(-time.Minute),
+						ExpiresAt:  time.Now().Add(5 * time.Minute),
+					},
+				},
+			}
+			h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+				AccountsSvc: &AccountsServiceStub{
+					RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+						return nil, errors.New("failed to finalize passkey registration proof: conditional check failed")
+					},
+				},
+			})
+
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+				Username:                 "alice",
+				Agreement:                true,
+				PasskeyRegistrationProof: "proof-1",
+			})
+			require.NoError(t, err)
+
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+			entry := requireSingleAuditLog(t, state, "alice")
+			metadata := mustParseAuditMetadata(t, entry)
+			require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+			require.False(t, entry.Success)
+			require.Equal(t, "rejected", metadata["credential_event"])
+			require.Equal(t, "proof_consume_rejected", metadata["rejection_reason"])
+			require.NotContains(t, entry.Metadata, "proof-1")
 		})
 	})
 
@@ -300,7 +397,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		cfg := round10TestConfig()
 
 		var gotCmd *accounts.RegisterAccountCommand
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		state := &round10QueryState{
 			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
 				"proof-1": {
 					ID:         "proof-1",
@@ -311,7 +408,8 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 					ExpiresAt:  time.Now().Add(5 * time.Minute),
 				},
 			},
-		}, &RegistryStub{
+		}
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
 				RegisterAccountFunc: func(_ context.Context, cmd *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
 					gotCmd = cmd
@@ -348,6 +446,14 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.Equal(t, cfg.BaseURL()+"/users/alice", regResp.ID)
 		require.Equal(t, "alice", regResp.Username)
 		require.True(t, regResp.Created)
+		entry := requireSingleAuditLog(t, state, "alice")
+		metadata := mustParseAuditMetadata(t, entry)
+		require.Equal(t, string(auth.AuditWebAuthnRegistrationCompleted), entry.EventType)
+		require.True(t, entry.Success)
+		require.Equal(t, "webauthn", metadata["authentication_method"])
+		require.Equal(t, "signup", metadata["registration_mode"])
+		require.Equal(t, "added", metadata["credential_event"])
+		require.NotContains(t, entry.Metadata, "proof-1")
 	})
 
 	t.Run("passkey_registration_proof_mixed_case_stored_username_is_canonicalized_at_handler_boundary", func(t *testing.T) {
@@ -399,6 +505,25 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.Equal(t, "alice", regResp.Username)
 		require.True(t, regResp.Created)
 	})
+}
+
+func requireSingleAuditLog(t *testing.T, state *round10QueryState, username string) *storagemodels.AuthAuditLog {
+	t.Helper()
+
+	require.NotNil(t, state)
+	require.Contains(t, state.auditLogsByUser, username)
+	require.Len(t, state.auditLogsByUser[username], 1)
+
+	return state.auditLogsByUser[username][0]
+}
+
+func mustParseAuditMetadata(t *testing.T, entry *storagemodels.AuthAuditLog) map[string]any {
+	t.Helper()
+
+	require.NotNil(t, entry)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &metadata))
+	return metadata
 }
 
 func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {

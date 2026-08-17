@@ -2,8 +2,10 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +17,8 @@ import (
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestAccountRepository_PasskeyRegistrationProofLifecycle(t *testing.T) {
@@ -261,6 +265,48 @@ func TestAccountRepository_ConsumePasskeyRegistrationProof_MissingProof(t *testi
 	proof, err := repo.ConsumePasskeyRegistrationProof(context.Background(), "missing-proof", "alice", "ceremony")
 	require.Nil(t, proof)
 	require.Error(t, err)
+}
+
+func TestAccountRepository_PasskeyProofLogsRedactSensitiveMaterial(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	db := newPasskeyRegistrationProofDB()
+	repo := NewAccountRepository(db, "test-table", "example.com", logger)
+
+	ctx := context.Background()
+	proof := &models.PasskeyRegistrationProof{
+		ID:              "proof-sensitive-raw",
+		Username:        "alice",
+		CeremonyID:      "ceremony-sensitive-raw",
+		CredentialID:    "cred-sensitive-raw",
+		PublicKey:       []byte("public-key-sensitive-raw"),
+		AttestationType: "none",
+		AAGUID:          []byte("aaguid-sensitive-raw"),
+		ExpiresAt:       time.Now().Add(5 * time.Minute).UTC(),
+	}
+
+	require.NoError(t, repo.StorePasskeyRegistrationProof(ctx, proof))
+
+	_, err := repo.ConsumePasskeyRegistrationProof(ctx, proof.ID, "mallory", proof.CeremonyID)
+	require.Error(t, err)
+
+	var rendered []string
+	for _, entry := range observed.All() {
+		payload, marshalErr := json.Marshal(entry.ContextMap())
+		require.NoError(t, marshalErr)
+		rendered = append(rendered, entry.Message+" "+string(payload))
+	}
+	combined := strings.Join(rendered, "\n")
+
+	require.NotContains(t, combined, proof.ID)
+	require.NotContains(t, combined, proof.CeremonyID)
+	require.NotContains(t, combined, string(proof.PublicKey))
+	require.NotContains(t, combined, string(proof.AAGUID))
+	require.Contains(t, combined, "proof_reference_present")
+	require.Contains(t, combined, "ceremony_reference_present")
 }
 
 func TestAccountRepository_GetPasskeyRegistrationProof_QueryError(t *testing.T) {

@@ -40,9 +40,10 @@ const (
 
 // WebAuthnService handles WebAuthn operations
 type WebAuthnService struct {
-	webAuthn webAuthnEngine
-	repo     webAuthnRepository
-	domain   string
+	webAuthn    webAuthnEngine
+	repo        webAuthnRepository
+	domain      string
+	auditLogger *AuditLogger
 
 	parseCreationResponse  func([]byte) (*protocol.ParsedCredentialCreationData, error)
 	parseAssertionResponse func([]byte) (*protocol.ParsedCredentialAssertionData, error)
@@ -90,9 +91,10 @@ func NewWebAuthnService(repos StorageProvider, domain string, displayName string
 	}
 
 	return &WebAuthnService{
-		webAuthn: webAuthn,
-		repo:     repos.Account(),
-		domain:   domain,
+		webAuthn:    webAuthn,
+		repo:        repos.Account(),
+		domain:      domain,
+		auditLogger: NewAuditLogger(repos, common.Logger(), DefaultAuditConfig()),
 		parseCreationResponse: func(data []byte) (*protocol.ParsedCredentialCreationData, error) {
 			return protocol.ParseCredentialCreationResponseBytes(data)
 		},
@@ -281,6 +283,13 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 
 	if err := s.repo.StoreWebAuthnCredential(ctx, storedCredential); err != nil {
 		return errors.Join(ErrCredentialStorage, err)
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnRegistrationCompleted, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "added",
+			"registration_mode":     "authenticated",
+		}, true, nil)
 	}
 
 	// Delete the used challenge
@@ -528,7 +537,17 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		return err
 	}
 
-	return s.repo.DeleteWebAuthnCredential(ctx, credentialID)
+	if err := s.repo.DeleteWebAuthnCredential(ctx, credentialID); err != nil {
+		return err
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnCredentialRemoved, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "removed",
+		}, true, nil)
+	}
+
+	return nil
 }
 
 // UpdateCredentialName updates the display name of a credential

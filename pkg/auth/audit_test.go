@@ -106,7 +106,8 @@ func TestAuditLogger_LogWebAuthn_LogSession_AndStoreFallbacks(t *testing.T) {
 	require.Equal(t, "ua", repo.lastStore.userAgent)
 	require.True(t, repo.lastStore.success)
 	require.Empty(t, repo.lastStore.failureReason)
-	require.Equal(t, "cred-1", repo.lastStore.metadata["credential_id"])
+	require.Equal(t, true, repo.lastStore.metadata["credential_reference_present"])
+	require.Equal(t, "webauthn", repo.lastStore.metadata["authentication_method"])
 
 	al.LogSession(context.Background(), "alice", "sid-1", "192.0.2.10", AuditSessionCreated)
 	require.Equal(t, 2, repo.storeCalls)
