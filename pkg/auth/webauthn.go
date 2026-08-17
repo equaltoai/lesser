@@ -13,6 +13,7 @@ import (
 	accountservice "github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -66,6 +67,7 @@ type webAuthnRepository interface {
 	StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error
 	GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error)
 	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
+	DeleteWebAuthnCredentialConditionedOnSurvivor(ctx context.Context, username string, credentialID string, survivingPasskeyID string, survivingWalletAddress string) error
 	UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error
 	UpdateWebAuthnAuthenticationState(ctx context.Context, credentialID string, signCount uint32, cloneWarning bool, backupState bool, lastUsedAt time.Time) error
 	StorePasskeyRegistrationProof(ctx context.Context, proof *storagemodels.PasskeyRegistrationProof) error
@@ -533,11 +535,21 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		return ErrCredentialNotFound
 	}
 
-	if err := ensureAuthenticatorRemovalAllowed(ctx, s.repo, username, authenticatorRemovalPasskey); err != nil {
+	plan, err := planAuthenticatorRemoval(ctx, s.repo, username, authenticatorRemovalPasskey, credential.ID, "")
+	if err != nil {
 		return err
 	}
 
-	if err := s.repo.DeleteWebAuthnCredential(ctx, credentialID); err != nil {
+	if err := s.repo.DeleteWebAuthnCredentialConditionedOnSurvivor(
+		ctx,
+		username,
+		credentialID,
+		plan.survivingPasskeyID,
+		plan.survivingWalletAddress,
+	); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return ErrLastAuthMethodDelete
+		}
 		return err
 	}
 	if s.auditLogger != nil {

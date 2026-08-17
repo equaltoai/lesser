@@ -16,6 +16,96 @@ type authenticatorInventory struct {
 	wallets  int
 }
 
+type authenticatorInventoryRepoStub struct {
+	passkeys   []*storage.WebAuthnCredential
+	wallets    []*storage.WalletCredential
+	passkeyErr error
+	walletErr  error
+}
+
+func (s authenticatorInventoryRepoStub) GetUserWebAuthnCredentials(context.Context, string) ([]*storage.WebAuthnCredential, error) {
+	if s.passkeyErr != nil {
+		return nil, s.passkeyErr
+	}
+	return s.passkeys, nil
+}
+
+func (s authenticatorInventoryRepoStub) GetUserWalletCredentials(context.Context, string) ([]*storage.WalletCredential, error) {
+	if s.walletErr != nil {
+		return nil, s.walletErr
+	}
+	return s.wallets, nil
+}
+
+func TestPlanAuthenticatorRemoval_PrefersSameKindSurvivorsAndSurfacesErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passkey removal prefers another passkey before wallet", func(t *testing.T) {
+		t.Parallel()
+
+		plan, err := planAuthenticatorRemoval(
+			context.Background(),
+			authenticatorInventoryRepoStub{
+				passkeys: []*storage.WebAuthnCredential{{ID: "cred-1"}, {ID: "cred-2"}},
+				wallets:  []*storage.WalletCredential{{Address: "0xabc"}},
+			},
+			"alice",
+			authenticatorRemovalPasskey,
+			"cred-1",
+			"",
+		)
+		require.NoError(t, err)
+		require.Equal(t, authenticatorRemovalPlan{survivingPasskeyID: "cred-2"}, plan)
+	})
+
+	t.Run("wallet removal prefers another wallet before passkey", func(t *testing.T) {
+		t.Parallel()
+
+		plan, err := planAuthenticatorRemoval(
+			context.Background(),
+			authenticatorInventoryRepoStub{
+				passkeys: []*storage.WebAuthnCredential{{ID: "cred-1"}},
+				wallets:  []*storage.WalletCredential{{Address: "0xabc"}, {Address: "0xdef"}},
+			},
+			"alice",
+			authenticatorRemovalWallet,
+			"",
+			"0xabc",
+		)
+		require.NoError(t, err)
+		require.Equal(t, authenticatorRemovalPlan{survivingWalletAddress: "0xdef"}, plan)
+	})
+
+	t.Run("unknown removal kind is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := planAuthenticatorRemoval(
+			context.Background(),
+			authenticatorInventoryRepoStub{},
+			"alice",
+			authenticatorRemovalKind("unknown"),
+			"",
+			"",
+		)
+		require.ErrorIs(t, err, ErrLastAuthMethodDelete)
+	})
+
+	t.Run("wallet inventory errors are surfaced", func(t *testing.T) {
+		t.Parallel()
+
+		boom := errors.New("boom")
+		_, err := planAuthenticatorRemoval(
+			context.Background(),
+			authenticatorInventoryRepoStub{walletErr: boom},
+			"alice",
+			authenticatorRemovalPasskey,
+			"cred-1",
+			"",
+		)
+		require.ErrorIs(t, err, boom)
+	})
+}
+
 func TestWebAuthnService_DeleteCredential_RejectsLastPasskeyWithoutWallet(t *testing.T) {
 	t.Parallel()
 

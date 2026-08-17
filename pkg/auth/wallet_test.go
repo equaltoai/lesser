@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -125,6 +126,31 @@ func (r *inMemoryWalletRepo) DeleteWalletCredential(_ context.Context, username,
 	delete(r.walletsByUserAddr, walletKey(username, address))
 	delete(r.walletsByAddr, address)
 	return nil
+}
+
+func (r *inMemoryWalletRepo) DeleteWalletCredentialConditionedOnSurvivor(
+	_ context.Context,
+	username, address, _ string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	if survivingPasskeyID != "" {
+		found := false
+		for _, passkey := range r.passkeysByUser[username] {
+			if passkey != nil && passkey.ID == survivingPasskeyID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return dynamormerrors.ErrConditionFailed
+		}
+	} else if survivingWalletAddress != "" {
+		if _, ok := r.walletsByUserAddr[walletKey(username, survivingWalletAddress)]; !ok {
+			return dynamormerrors.ErrConditionFailed
+		}
+	}
+	return r.DeleteWalletCredential(context.Background(), username, address)
 }
 
 func TestWalletService_CreateChallenge_VerifySignatureAndLinkFlow(t *testing.T) {

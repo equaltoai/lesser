@@ -66,6 +66,7 @@ func TestWebAuthnService_CredentialLifecycleAuditsExcludeSensitiveMaterial(t *te
 
 		require.NoError(t, svc.DeleteCredential(context.Background(), "alice", cred.ID))
 		require.Equal(t, string(AuditWebAuthnCredentialRemoved), auditRepo.lastStore.eventType)
+		require.Equal(t, string(SeverityWarning), auditRepo.lastStore.severity)
 		require.Equal(t, "webauthn", auditRepo.lastStore.metadata["authentication_method"])
 		require.Equal(t, "removed", auditRepo.lastStore.metadata["credential_event"])
 		require.NotContains(t, auditRepo.lastStore.metadata, "credential_id")
@@ -98,10 +99,93 @@ func TestWalletService_CredentialLifecycleAuditsExcludeSensitiveMaterial(t *test
 
 	require.NoError(t, svc.UnlinkWallet(context.Background(), "alice", "0xabc"))
 	require.Equal(t, string(AuditWalletDisconnected), auditRepo.lastStore.eventType)
+	require.Equal(t, string(SeverityWarning), auditRepo.lastStore.severity)
 	require.Equal(t, "wallet", auditRepo.lastStore.metadata["authentication_method"])
 	require.Equal(t, "removed", auditRepo.lastStore.metadata["credential_event"])
 	require.NotContains(t, auditRepo.lastStore.metadata, "address")
 	require.NotContains(t, auditRepo.lastStore.metadata, "signature")
+}
+
+func TestAuditLogger_CredentialSafeKeysSurviveProductionRedaction(t *testing.T) {
+	t.Parallel()
+
+	auditRepo := newInMemoryAuditRepo()
+	logger := newAuditLoggerForTests(auditRepo)
+
+	logger.LogAuthEvent(context.Background(), "alice", "192.0.2.10", "ua", AuditWalletConnected, map[string]interface{}{
+		"credential_event":             "added",
+		"credential_reference_present": true,
+		"credential_secret":            "should-not-survive",
+	}, true, nil)
+
+	require.Equal(t, "added", auditRepo.lastStore.metadata["credential_event"])
+	require.Equal(t, true, auditRepo.lastStore.metadata["credential_reference_present"])
+	require.Equal(t, "[REDACTED]", auditRepo.lastStore.metadata["credential_secret"])
+}
+
+func TestCredentialLifecycleAuditsCarryRequestMetadataFromContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("webauthn_delete", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newInMemoryWebAuthnRepo()
+		cred := &storage.WebAuthnCredential{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")}
+		repo.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{cred}
+		repo.credentialsByID[cred.ID] = cred
+		repo.walletsByUsername["alice"] = []*storage.WalletCredential{{Username: "alice", Address: "0xabc", Type: "ethereum", ChainID: 1}}
+		auditRepo := newInMemoryAuditRepo()
+
+		svc := &WebAuthnService{
+			repo:        repo,
+			auditLogger: newAuditLoggerForTests(auditRepo),
+		}
+
+		ctx := WithAuditRequestMetadata(context.Background(), "198.51.100.20", "passkey-agent")
+		require.NoError(t, svc.DeleteCredential(ctx, "alice", cred.ID))
+		require.Equal(t, "198.51.100.20", auditRepo.lastStore.ipAddress)
+		require.Equal(t, "passkey-agent", auditRepo.lastStore.userAgent)
+	})
+
+	t.Run("wallet_link_and_unlink", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newInMemoryWalletRepo()
+		repo.passkeysByUser["alice"] = []*storage.WebAuthnCredential{
+			{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")},
+		}
+		auditRepo := newInMemoryAuditRepo()
+		svc := &WalletService{
+			repo:        repo,
+			logger:      zap.NewNop(),
+			auditLogger: newAuditLoggerForTests(auditRepo),
+		}
+
+		ctx := WithAuditRequestMetadata(context.Background(), "198.51.100.21", "wallet-agent")
+		created, err := svc.LinkWallet(ctx, "alice", "0xabc", 1, "ethereum")
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, "198.51.100.21", auditRepo.lastStore.ipAddress)
+		require.Equal(t, "wallet-agent", auditRepo.lastStore.userAgent)
+
+		require.NoError(t, svc.UnlinkWallet(ctx, "alice", "0xabc"))
+		require.Equal(t, "198.51.100.21", auditRepo.lastStore.ipAddress)
+		require.Equal(t, "wallet-agent", auditRepo.lastStore.userAgent)
+	})
+}
+
+func TestAuthenticatorRemovalRiskScoreHasSecurityBaseline(t *testing.T) {
+	t.Parallel()
+
+	logger := newAuditLoggerForTests(newInMemoryAuditRepo())
+	require.Equal(t, 15.0, logger.calculateRiskScore(context.Background(), &AuditEvent{
+		EventType: AuditWebAuthnCredentialRemoved,
+		Success:   true,
+	}))
+	require.Equal(t, 15.0, logger.calculateRiskScore(context.Background(), &AuditEvent{
+		EventType: AuditWalletDisconnected,
+		Success:   true,
+	}))
 }
 
 var webauthnCredentialFixture = webauthn.Credential{
@@ -123,10 +207,11 @@ func newAuditLoggerForTests(repo *inMemoryAuditRepo) *AuditLogger {
 		auditRepo: repo,
 		logger:    zap.NewNop(),
 		config: &AuditConfig{
-			Enabled:     true,
-			StoreToDB:   true,
-			StoreToFile: false,
-			StoreToSIEM: false,
+			Enabled:         true,
+			StoreToDB:       true,
+			StoreToFile:     false,
+			StoreToSIEM:     false,
+			RedactSensitive: true,
 		},
 	}
 }

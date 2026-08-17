@@ -183,6 +183,9 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		return resp, err
 	}
 
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	requestCtx := auth.WithAuditRequestMetadata(ctx.Context(), ipAddress, userAgent)
+
 	// Get the challenge to verify username binding
 	challenge, err := authService.GetWalletChallenge(ctx.Context(), req.ChallengeID)
 	if err != nil {
@@ -250,7 +253,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Link the wallet
-	walletLinkCreated, err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType)
+	walletLinkCreated, err := authService.LinkWallet(requestCtx, username, req.Address, req.ChainID, req.WalletType)
 	if err != nil {
 		if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
 			h.logger.Error("failed to restore wallet challenge after wallet-link failure",
@@ -270,8 +273,6 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	// This creates a server-side session so /oauth/authorize can authenticate the user
 	// Signature was already verified in /auth/wallet/verify, so we can create session directly
 	if !isAuthenticated {
-		// Get device info for session creation
-		userAgent, ipAddress := h.getDeviceInfo(ctx)
 		deviceName := userAgent
 		if deviceName == "" {
 			deviceName = "Unknown Device"
@@ -281,31 +282,18 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		// This session will be used by /oauth/authorize to generate authorization code
 		authResponse, err := authService.LoginWithWalletAfterLinking(ctx.Context(), username, deviceName, userAgent, ipAddress)
 		if err != nil {
-			if walletLinkCreated {
-				if unlinkErr := authService.UnlinkWallet(ctx.Context(), username, req.Address); unlinkErr != nil {
-					h.logger.Error("failed to rollback wallet link after session creation failure",
-						zap.String("username", username),
-						zap.String("address", req.Address),
-						zap.String("challengeId", req.ChallengeID),
-						zap.Error(unlinkErr))
-				} else if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
-					h.logger.Error("failed to restore wallet challenge after session creation failure",
-						zap.String("username", username),
-						zap.String("address", req.Address),
-						zap.String("challengeId", req.ChallengeID),
-						zap.Error(resetErr))
-					if _, relinkErr := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); relinkErr != nil {
-						h.logger.Error("failed to restore wallet link after challenge reset failure",
-							zap.String("username", username),
-							zap.String("address", req.Address),
-							zap.String("challengeId", req.ChallengeID),
-							zap.Error(relinkErr))
-					}
-				}
+			if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
+				h.logger.Error("failed to restore wallet challenge after session creation failure",
+					zap.String("username", username),
+					zap.String("address", req.Address),
+					zap.String("challengeId", req.ChallengeID),
+					zap.Bool("wallet_link_created", walletLinkCreated),
+					zap.Error(resetErr))
 			}
 			h.logger.Error("failed to create session after wallet linking",
 				zap.String("username", username),
 				zap.String("address", req.Address),
+				zap.Bool("wallet_link_created", walletLinkCreated),
 				zap.Error(err))
 			return h.respondWithError(ctx, http.StatusInternalServerError, "failed to create session")
 		}
@@ -349,8 +337,11 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *apptheory.Context) (*apptheory.Res
 		return resp, err
 	}
 
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	requestCtx := auth.WithAuditRequestMetadata(ctx.Context(), ipAddress, userAgent)
+
 	// Unlink the wallet
-	if err := authService.UnlinkWallet(ctx.Context(), username, address); err != nil {
+	if err := authService.UnlinkWallet(requestCtx, username, address); err != nil {
 		if errors.Is(err, auth.ErrLastAuthMethodDelete) {
 			return h.respondBadRequest(ctx, "cannot delete last authentication method")
 		}

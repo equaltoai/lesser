@@ -470,6 +470,16 @@ func (al *AuditLogger) LogAuthEvent(ctx context.Context, username, ipAddress, us
 		failureReason = err.Error()
 	}
 
+	if ipAddress == "" || userAgent == "" {
+		ctxIPAddress, ctxUserAgent := auditRequestMetadataFromContext(ctx)
+		if ipAddress == "" {
+			ipAddress = ctxIPAddress
+		}
+		if userAgent == "" {
+			userAgent = ctxUserAgent
+		}
+	}
+
 	var safeMetadata map[string]interface{}
 	if len(metadata) > 0 {
 		safeMetadata = make(map[string]interface{}, len(metadata))
@@ -716,6 +726,7 @@ func (al *AuditLogger) determineSeverity(eventType AuditEventType, success bool)
 	if !success {
 		errorEvents := []AuditEventType{
 			AuditLoginFailed,
+			AuditRegistrationFailed,
 			AuditPasswordChangeFailed,
 			AuditOAuthAuthorizeFailed,
 			AuditOAuthClientSecretRotationFailed,
@@ -739,6 +750,8 @@ func (al *AuditLogger) determineSeverity(eventType AuditEventType, success bool)
 		AuditAnomalousLocation,
 		AuditDeviceNotRecognized,
 		AuditIPBlocked,
+		AuditWebAuthnCredentialRemoved,
+		AuditWalletDisconnected,
 	}
 	for _, e := range warningEvents {
 		if eventType == e {
@@ -768,6 +781,10 @@ func (al *AuditLogger) calculateRiskScore(ctx context.Context, event *AuditEvent
 	}
 
 	if event.EventType == AuditDeviceNotRecognized {
+		score += 15.0
+	}
+
+	if event.EventType == AuditWebAuthnCredentialRemoved || event.EventType == AuditWalletDisconnected {
 		score += 15.0
 	}
 

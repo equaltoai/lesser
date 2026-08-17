@@ -393,6 +393,126 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		})
 	})
 
+	t.Run("wallet_registration_proof_errors_are_audited", func(t *testing.T) {
+		cfg := round10TestConfig()
+
+		cases := []struct {
+			name                 string
+			state                *round10QueryState
+			username             string
+			wantReason           string
+			wantResponseFragment string
+		}{
+			{
+				name: "invalid_or_expired",
+				state: &round10QueryState{
+					notFoundPKSK: map[string]bool{"WALLET_CHALLENGE#c1#CHALLENGE": true},
+				},
+				username:             "alice",
+				wantReason:           "challenge_invalid_or_expired",
+				wantResponseFragment: "wallet_challenge_id is invalid or expired",
+			},
+			{
+				name: "challenge_bound_to_different_username",
+				state: &round10QueryState{
+					walletChallengesByID: map[string]storagemodels.WalletChallenge{
+						"c1": {
+							ID:        "c1",
+							Username:  "bob",
+							Address:   "0xabc",
+							ChainID:   1,
+							Nonce:     "nonce",
+							Message:   "message",
+							IssuedAt:  time.Now().Add(-time.Minute),
+							ExpiresAt: time.Now().Add(5 * time.Minute),
+							Used:      true,
+						},
+					},
+				},
+				username:             "alice",
+				wantReason:           "challenge_cross_user_rejected",
+				wantResponseFragment: "wallet challenge was created for a different username",
+			},
+			{
+				name: "challenge_not_verified",
+				state: &round10QueryState{
+					walletChallengesByID: map[string]storagemodels.WalletChallenge{
+						"c1": {
+							ID:        "c1",
+							Username:  "alice",
+							Address:   "0xabc",
+							ChainID:   1,
+							Nonce:     "nonce",
+							Message:   "message",
+							IssuedAt:  time.Now().Add(-time.Minute),
+							ExpiresAt: time.Now().Add(5 * time.Minute),
+							Used:      false,
+						},
+					},
+				},
+				username:             "alice",
+				wantReason:           "challenge_unverified",
+				wantResponseFragment: "wallet challenge has not been verified",
+			},
+			{
+				name: "challenge_replayed",
+				state: &round10QueryState{
+					walletChallengesByID: map[string]storagemodels.WalletChallenge{
+						"c1": {
+							ID:        "c1",
+							Username:  "alice",
+							Address:   "0xabc",
+							ChainID:   1,
+							Nonce:     "nonce",
+							Message:   "message",
+							IssuedAt:  time.Now().Add(-time.Minute),
+							ExpiresAt: time.Now().Add(5 * time.Minute),
+							Used:      true,
+							Spent:     true,
+						},
+					},
+				},
+				username:             "alice",
+				wantReason:           "challenge_replayed",
+				wantResponseFragment: "wallet challenge was already spent",
+			},
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				h, _, _ := round11NewHandler(t, cfg, tc.state, &RegistryStub{
+					AccountsSvc: &AccountsServiceStub{
+						RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+							return nil, errors.New("unexpected service call")
+						},
+					},
+				})
+
+				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+					Username:          tc.username,
+					Agreement:         true,
+					WalletChallengeID: "c1",
+				})
+				require.NoError(t, err)
+
+				resp := requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
+				require.Contains(t, string(resp.Body), tc.wantResponseFragment)
+
+				entry := requireSingleAuditLog(t, tc.state, tc.username)
+				metadata := mustParseAuditMetadata(t, entry)
+				require.Equal(t, string(auth.AuditRegistrationFailed), entry.EventType)
+				require.False(t, entry.Success)
+				require.Equal(t, "wallet", metadata["authentication_method"])
+				require.Equal(t, "signup", metadata["registration_mode"])
+				require.Equal(t, "rejected", metadata["credential_event"])
+				require.Equal(t, tc.wantReason, metadata["rejection_reason"])
+				require.NotContains(t, entry.Metadata, "c1")
+				require.NotContains(t, entry.FailureReason, "c1")
+			})
+		}
+	})
+
 	t.Run("passkey_registration_proof_success", func(t *testing.T) {
 		cfg := round10TestConfig()
 

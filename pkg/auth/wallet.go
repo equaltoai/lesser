@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"github.com/spruceid/siwe-go"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -72,6 +73,7 @@ type walletRepository interface {
 	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
 	StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error
 	DeleteWalletCredential(ctx context.Context, username, address string) error
+	DeleteWalletCredentialConditionedOnSurvivor(ctx context.Context, username, address, walletType string, survivingPasskeyID string, survivingWalletAddress string) error
 }
 
 // NewWalletService creates a new wallet service
@@ -298,12 +300,36 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 	// Normalize address
 	address = strings.ToLower(address)
 
-	if err := ensureAuthenticatorRemovalAllowed(ctx, s.repo, username, authenticatorRemovalWallet); err != nil {
+	plan, err := planAuthenticatorRemoval(ctx, s.repo, username, authenticatorRemovalWallet, "", address)
+	if err != nil {
 		return err
 	}
 
+	wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
+	if err != nil {
+		s.logger.Error("failed to get user wallet credentials", zap.Error(err), zap.String("username", username))
+		return errors.Join(ErrWalletRetrieval, err)
+	}
+	walletType := ""
+	for _, wallet := range wallets {
+		if wallet != nil && strings.EqualFold(wallet.Address, address) {
+			walletType = wallet.Type
+			break
+		}
+	}
+
 	// Delete wallet credential
-	if err := s.repo.DeleteWalletCredential(ctx, username, address); err != nil {
+	if err := s.repo.DeleteWalletCredentialConditionedOnSurvivor(
+		ctx,
+		username,
+		address,
+		walletType,
+		plan.survivingPasskeyID,
+		plan.survivingWalletAddress,
+	); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return ErrLastAuthMethodDelete
+		}
 		s.logger.Error("failed to delete wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
 		return errors.Join(ErrWalletDeletion, err)
 	}

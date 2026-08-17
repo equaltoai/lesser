@@ -13,6 +13,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 type inMemoryWebAuthnRepo struct {
@@ -87,8 +88,47 @@ func (r *inMemoryWebAuthnRepo) GetWebAuthnCredential(_ context.Context, credenti
 }
 
 func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredential(_ context.Context, credentialID string) error {
+	credential, ok := r.credentialsByID[credentialID]
 	delete(r.credentialsByID, credentialID)
+	if ok {
+		credentials := r.credentialsByUsername[credential.UserID]
+		filtered := credentials[:0]
+		for _, existing := range credentials {
+			if existing == nil || existing.ID == credentialID {
+				continue
+			}
+			filtered = append(filtered, existing)
+		}
+		r.credentialsByUsername[credential.UserID] = append([]*storage.WebAuthnCredential(nil), filtered...)
+	}
 	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredentialConditionedOnSurvivor(
+	_ context.Context,
+	username string,
+	credentialID string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	if survivingPasskeyID != "" {
+		survivor, ok := r.credentialsByID[survivingPasskeyID]
+		if !ok || survivor.UserID != username {
+			return dynamormerrors.ErrConditionFailed
+		}
+	} else if survivingWalletAddress != "" {
+		found := false
+		for _, wallet := range r.walletsByUsername[username] {
+			if wallet != nil && wallet.Address == survivingWalletAddress {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return dynamormerrors.ErrConditionFailed
+		}
+	}
+	return r.DeleteWebAuthnCredential(context.Background(), credentialID)
 }
 
 func (r *inMemoryWebAuthnRepo) UpdateWebAuthnCredentialName(_ context.Context, credentialID string, name string) error {

@@ -55,7 +55,7 @@ func (req updateCredentialsPatchRequest) accountParams() map[string]interface{} 
 	return params
 }
 
-type passkeyProofAuditRecorder func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{})
+type registrationProofAuditRecorder func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{})
 
 // HandleRegistrationLift handles user registration requests
 func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -82,7 +82,16 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 	challengeID := strings.TrimSpace(req.WalletChallengeID)
 	passkeyProofID := strings.TrimSpace(req.PasskeyRegistrationProof)
 	recordPasskeyProofAudit := h.newPasskeyProofAuditRecorder(ctx, req.Username, passkeyProofID, userAgent, ipAddress)
-	if proofResp := h.validateRegistrationCredentialProofLift(ctx, authService, req.Username, challengeID, passkeyProofID, recordPasskeyProofAudit); proofResp != nil {
+	recordWalletChallengeAudit := h.newWalletChallengeAuditRecorder(ctx, req.Username, challengeID, userAgent, ipAddress)
+	if proofResp := h.validateRegistrationCredentialProofLift(
+		ctx,
+		authService,
+		req.Username,
+		challengeID,
+		passkeyProofID,
+		recordWalletChallengeAudit,
+		recordPasskeyProofAudit,
+	); proofResp != nil {
 		return proofResp, nil
 	}
 
@@ -143,44 +152,76 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 	return h.respondCreated(ctx, resp)
 }
 
-func (h *Handler) newPasskeyProofAuditRecorder(ctx *apptheory.Context, username, passkeyProofID, userAgent, ipAddress string) passkeyProofAuditRecorder {
-	passkeyAuditLogger := auth.NewAuditLogger(h.repos, h.logger, auth.DefaultAuditConfig())
+func (h *Handler) newRegistrationAuditRecorder(
+	ctx *apptheory.Context,
+	username string,
+	proofID string,
+	userAgent string,
+	ipAddress string,
+	authenticationMethod string,
+) registrationProofAuditRecorder {
+	auditLogger := auth.NewAuditLogger(h.repos, h.logger, auth.DefaultAuditConfig())
 	return func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{}) {
-		if passkeyProofID == "" || passkeyAuditLogger == nil {
+		if proofID == "" || auditLogger == nil {
 			return
 		}
 		metadataWithDefaults := map[string]interface{}{
-			"authentication_method": "webauthn",
+			"authentication_method": authenticationMethod,
 			"registration_mode":     "signup",
 		}
 		for key, value := range metadata {
 			metadataWithDefaults[key] = value
 		}
-		passkeyAuditLogger.LogAuthEvent(ctx.Context(), username, ipAddress, userAgent, eventType, metadataWithDefaults, success, failure)
+		auditLogger.LogAuthEvent(ctx.Context(), username, ipAddress, userAgent, eventType, metadataWithDefaults, success, failure)
 	}
+}
+
+func (h *Handler) newPasskeyProofAuditRecorder(ctx *apptheory.Context, username, passkeyProofID, userAgent, ipAddress string) registrationProofAuditRecorder {
+	return h.newRegistrationAuditRecorder(ctx, username, passkeyProofID, userAgent, ipAddress, "webauthn")
+}
+
+func (h *Handler) newWalletChallengeAuditRecorder(ctx *apptheory.Context, username, challengeID, userAgent, ipAddress string) registrationProofAuditRecorder {
+	return h.newRegistrationAuditRecorder(ctx, username, challengeID, userAgent, ipAddress, "wallet")
 }
 
 func (h *Handler) validateRegistrationCredentialProofLift(
 	ctx *apptheory.Context,
 	authService *auth.AuthService,
 	username, challengeID, passkeyProofID string,
-	recordPasskeyProofAudit passkeyProofAuditRecorder,
+	recordWalletChallengeAudit registrationProofAuditRecorder,
+	recordPasskeyProofAudit registrationProofAuditRecorder,
 ) *apptheory.Response {
 	if challengeID != "" {
 		challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
 		if err != nil || challenge == nil {
+			recordWalletChallengeAudit(auth.AuditRegistrationFailed, false, err, map[string]interface{}{
+				"credential_event": "rejected",
+				"rejection_reason": "challenge_invalid_or_expired",
+			})
 			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
 			return resp
 		}
 		if accounts.NormalizeUsernameForDomain(challenge.Username, h.cfg.Domain) != username {
+			recordWalletChallengeAudit(auth.AuditRegistrationFailed, false, nil, map[string]interface{}{
+				"credential_event": "rejected",
+				"rejection_reason": "challenge_cross_user_rejected",
+			})
 			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
 			return resp
 		}
 		if !challenge.Used {
+			recordWalletChallengeAudit(auth.AuditRegistrationFailed, false, nil, map[string]interface{}{
+				"credential_event": "rejected",
+				"rejection_reason": "challenge_unverified",
+			})
 			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
 			return resp
 		}
 		if challenge.Spent {
+			recordWalletChallengeAudit(auth.AuditRegistrationFailed, false, nil, map[string]interface{}{
+				"credential_event": "rejected",
+				"rejection_reason": "challenge_replayed",
+			})
 			resp, _ := common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
 			return resp
 		}
