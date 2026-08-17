@@ -16,7 +16,16 @@ const sessionId = Astro.url.searchParams.get('session_id') || '';
 ---
 
 <AuthLayout title="Register" subtitle="Create your Lesser account">
-  <PasswordlessLogin 
+  <!--
+    Passkey and wallet are equal ways to create an account: pick either one.
+    A passkey needs no browser extension, and a wallet needs no passkey.
+    Both use the same username field, validation and error handling below.
+  -->
+  <p class="auth-footnote text-center">
+    Choose either method below — a passkey or a crypto wallet. Both create the
+    same account, and neither requires the other.
+  </p>
+  <PasswordlessLogin
     client:only="svelte"
     authRequest={authRequest}
     returnTo={returnTo}
