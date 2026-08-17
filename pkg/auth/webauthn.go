@@ -524,21 +524,8 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		return ErrCredentialNotFound
 	}
 
-	// Make sure user has at least one other auth method
-	credentials, err := s.repo.GetUserWebAuthnCredentials(ctx, username)
-	if err != nil {
+	if err := ensureAuthenticatorRemovalAllowed(ctx, s.repo, username, authenticatorRemovalPasskey); err != nil {
 		return err
-	}
-
-	if len(credentials) <= 1 {
-		// Ensure the user has at least one other auth method (wallet).
-		wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
-		if err != nil {
-			return err
-		}
-		if len(wallets) == 0 {
-			return ErrLastAuthMethodDelete
-		}
 	}
 
 	return s.repo.DeleteWebAuthnCredential(ctx, credentialID)

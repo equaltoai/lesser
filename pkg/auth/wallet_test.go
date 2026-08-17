@@ -19,6 +19,7 @@ type inMemoryWalletRepo struct {
 	challenges        map[string]*storage.WalletChallenge
 	walletsByUserAddr map[string]*storage.WalletCredential
 	walletsByAddr     map[string]*storage.WalletCredential
+	passkeysByUser    map[string][]*storage.WebAuthnCredential
 
 	errGetUserWallets error
 	errStoreWallet    error
@@ -32,6 +33,7 @@ func newInMemoryWalletRepo() *inMemoryWalletRepo {
 		challenges:        make(map[string]*storage.WalletChallenge),
 		walletsByUserAddr: make(map[string]*storage.WalletCredential),
 		walletsByAddr:     make(map[string]*storage.WalletCredential),
+		passkeysByUser:    make(map[string][]*storage.WebAuthnCredential),
 	}
 }
 
@@ -48,6 +50,10 @@ func (r *inMemoryWalletRepo) GetWalletChallenge(_ context.Context, challengeID s
 		return nil, lessererrors.ItemNotFoundWithID("wallet_challenge", challengeID)
 	}
 	return challenge, nil
+}
+
+func (r *inMemoryWalletRepo) GetUserWebAuthnCredentials(_ context.Context, username string) ([]*storage.WebAuthnCredential, error) {
+	return append([]*storage.WebAuthnCredential(nil), r.passkeysByUser[username]...), nil
 }
 
 func (r *inMemoryWalletRepo) DeleteWalletChallenge(_ context.Context, challengeID string) error {
@@ -172,6 +178,9 @@ func TestWalletService_CreateChallenge_VerifySignatureAndLinkFlow(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, wallets, 1)
 
+	repo.passkeysByUser["alice"] = []*storage.WebAuthnCredential{
+		{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")},
+	}
 	require.NoError(t, svc.UnlinkWallet(context.Background(), "alice", address))
 }
 

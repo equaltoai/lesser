@@ -65,6 +65,7 @@ type walletRepository interface {
 	DeleteWalletChallenge(ctx context.Context, challengeID string) error
 	MarkWalletChallengeUsed(ctx context.Context, challengeID string) error
 
+	GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error)
 	GetWalletCredential(ctx context.Context, address string) (*storage.WalletCredential, error)
 	UpdateWalletLastUsed(ctx context.Context, username, address string) error
 	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
@@ -289,6 +290,10 @@ func (s *WalletService) GetUserWallets(ctx context.Context, username string) ([]
 func (s *WalletService) UnlinkWallet(ctx context.Context, username, address string) error {
 	// Normalize address
 	address = strings.ToLower(address)
+
+	if err := ensureAuthenticatorRemovalAllowed(ctx, s.repo, username, authenticatorRemovalWallet); err != nil {
+		return err
+	}
 
 	// Delete wallet credential
 	if err := s.repo.DeleteWalletCredential(ctx, username, address); err != nil {

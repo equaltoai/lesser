@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -424,6 +425,28 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/", writeHeaders, nil, nil)
 		require.NoError(t, err)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUnlinkWalletLift(ctx))
+	})
+
+	t.Run("unlink_wallet_last_authenticator_returns_400", func(t *testing.T) {
+		state := &round10QueryState{
+			webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
+				"alice": {},
+			},
+			walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+				"alice": {
+					{Username: "alice", Address: "0xabc", ChainID: 1, Type: "ethereum"},
+				},
+			},
+		}
+		handler, repos, _ := round11NewHandler(t, cfg, state)
+		authService, err := auth.NewAuthService(cfg, repos)
+		require.NoError(t, err)
+		require.ErrorIs(t, authService.UnlinkWallet(context.Background(), "alice", "0xabc"), auth.ErrLastAuthMethodDelete)
+
+		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["address"] = "0xabc"
 		requireStatus(t, http.StatusBadRequest)(handler.HandleUnlinkWalletLift(ctx))
 	})
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -350,6 +351,9 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *apptheory.Context) (*apptheory.Res
 
 	// Unlink the wallet
 	if err := authService.UnlinkWallet(ctx.Context(), username, address); err != nil {
+		if errors.Is(err, auth.ErrLastAuthMethodDelete) {
+			return h.respondBadRequest(ctx, "cannot delete last authentication method")
+		}
 		h.logger.Error("failed to unlink wallet",
 			zap.String("username", username),
 			zap.String("address", address),

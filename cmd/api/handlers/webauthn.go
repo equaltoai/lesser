@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -341,10 +341,10 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *apptheory.Context) (*a
 	// Delete credential
 	err = authService.DeleteWebAuthnCredential(ctx.Context(), username, credentialID)
 	if err != nil {
-		if err == auth.ErrCredentialNotFound {
+		if errors.Is(err, auth.ErrCredentialNotFound) {
 			return h.respondWithError(ctx, http.StatusNotFound, "credential not found")
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "cannot delete last authentication method") {
+		if errors.Is(err, auth.ErrLastAuthMethodDelete) {
 			return h.respondBadRequest(ctx, "cannot delete last authentication method")
 		}
 		h.logger.Error("failed to delete WebAuthn credential", zap.Error(err))
